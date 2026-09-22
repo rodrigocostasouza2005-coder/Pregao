@@ -1,0 +1,199 @@
+/* PREGAO - tema terminal financeiro via variaveis CSS (trocadas em runtime pelo app.py) */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+
+/* valores padrao (tema AMBAR / densidade COMPACTA / fonte M) - sobrescritos pelo app.py */
+:root {
+    --bg: #000000;
+    --painel-bg: #0A0A0A;
+    --borda: #333333;
+    --destaque: #FFA028;
+    --alta: #00D26A;
+    --baixa: #FF3B3B;
+    --neutro: #E6E6E6;
+    --cinza: #8C8C8C;
+    --ciano: #3FC1FF;
+    --padding-painel: 0.5rem;
+    --fonte-base: 13px;
+}
+
+html, body, [class*="css"] {
+    font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace !important;
+}
+
+/* fundo geral e densidade -------------------------------------------- */
+.stApp {
+    background-color: var(--bg);
+    color: var(--neutro);
+    font-size: var(--fonte-base);
+}
+
+#MainMenu, header, footer { visibility: hidden; height: 0; }
+
+.block-container {
+    padding-top: 0.5rem;
+    padding-bottom: 0.6rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    max-width: 100%;
+}
+
+/* reduz o espaco vertical entre elementos empilhados */
+[data-testid="stVerticalBlock"] { gap: 0.4rem; }
+div[data-testid="stElementContainer"] { margin-bottom: 0; }
+
+/* titulo PREGAO ---------------------------------------------------------- */
+.pregao-logo {
+    color: var(--destaque);
+    font-weight: 700;
+    font-size: 1.3rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--borda);
+    padding-bottom: 0.25rem;
+    margin-bottom: 0.4rem;
+}
+
+/* painel = container com borda nativo do Streamlit (st.container(border=True)) */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    border: 1px solid var(--borda) !important;
+    border-radius: 0 !important;
+    background-color: var(--painel-bg) !important;
+    padding: var(--padding-painel) !important;
+}
+
+.painel-titulo {
+    color: var(--destaque);
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    font-size: 0.78rem;
+    padding-bottom: 0.3rem;
+    margin: calc(var(--padding-painel) * -1) calc(var(--padding-painel) * -1) 0.4rem calc(var(--padding-painel) * -1);
+    padding: 0.25rem 0.6rem 0.3rem 0.6rem;
+    border-bottom: 1px solid var(--borda);
+}
+
+/* cores de sinal ----------------------------------------------------------- */
+.alta { color: var(--alta); }
+.baixa { color: var(--baixa); }
+.neutro { color: var(--neutro); }
+.cinza { color: var(--cinza); }
+.ciano { color: var(--ciano); }
+
+/* sidebar -------------------------------------------------------------------- */
+section[data-testid="stSidebar"] {
+    background-color: var(--painel-bg);
+    border-right: 1px solid var(--borda);
+}
+section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
+
+/* botoes ---------------------------------------------------------------------- */
+.stButton button, .stFormSubmitButton button, button[data-testid^="stBaseButton"] {
+    background-color: var(--painel-bg) !important;
+    border: 1px solid var(--borda) !important;
+    color: var(--destaque) !important;
+    border-radius: 0 !important;
+    padding: 0.15rem 0.6rem !important;
+    min-height: 28px !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 0.78rem !important;
+    letter-spacing: 0.04em;
+    box-shadow: none !important;
+}
+.stButton button:hover, .stFormSubmitButton button:hover, button[data-testid^="stBaseButton"]:hover {
+    border-color: var(--destaque) !important;
+    color: var(--destaque) !important;
+    background-color: var(--bg) !important;
+}
+
+/* inputs de texto -------------------------------------------------------------- */
+.stTextInput input, .stNumberInput input {
+    background-color: var(--bg) !important;
+    border: 1px solid var(--borda) !important;
+    color: var(--neutro) !important;
+    border-radius: 0 !important;
+    font-size: 0.8rem !important;
+    min-height: 28px !important;
+}
+.stTextInput input:focus, .stNumberInput input:focus {
+    border-color: var(--destaque) !important;
+    box-shadow: none !important;
+}
+
+/* selectbox (BaseWeb) ----------------------------------------------------------- */
+[data-baseweb="select"] > div {
+    background-color: var(--bg) !important;
+    border-color: var(--borda) !important;
+    border-radius: 0 !important;
+    min-height: 28px !important;
+    font-size: 0.8rem !important;
+}
+[data-baseweb="popover"] li {
+    background-color: var(--painel-bg) !important;
+    color: var(--neutro) !important;
+    font-size: 0.8rem !important;
+}
+[data-baseweb="popover"] li:hover { background-color: var(--bg) !important; color: var(--destaque) !important; }
+
+/* checkbox --------------------------------------------------------------------- */
+.stCheckbox label p { color: var(--neutro) !important; font-size: 0.8rem !important; }
+
+/* segmented_control / pills: pilulas compactas, selecionado = fundo ambar ------- */
+[data-testid="stSegmentedControl"] button, [data-testid="stPills"] button {
+    background-color: var(--painel-bg) !important;
+    border: 1px solid var(--borda) !important;
+    color: var(--cinza) !important;
+    border-radius: 0 !important;
+    font-size: 0.78rem !important;
+    padding: 0.1rem 0.7rem !important;
+    min-height: 26px !important;
+}
+[data-testid="stSegmentedControl"] button[aria-checked="true"],
+[data-testid="stPills"] button[aria-checked="true"],
+[data-testid="stSegmentedControl"] button[aria-pressed="true"],
+[data-testid="stPills"] button[aria-pressed="true"] {
+    background-color: var(--destaque) !important;
+    border-color: var(--destaque) !important;
+    color: #000000 !important;
+    font-weight: 600;
+}
+
+/* abas (tabs) -------------------------------------------------------------------- */
+.stTabs [data-baseweb="tab-list"] { gap: 0.3rem; border-bottom: 1px solid var(--borda); }
+.stTabs [data-baseweb="tab"] {
+    color: var(--cinza) !important;
+    font-size: 0.78rem !important;
+    letter-spacing: 0.05em;
+    padding: 0.35rem 0.7rem !important;
+}
+.stTabs [aria-selected="true"] { color: var(--destaque) !important; font-weight: 600; }
+.stTabs [data-baseweb="tab-highlight"] { background-color: var(--destaque) !important; }
+.stTabs [data-baseweb="tab-border"] { background-color: var(--borda) !important; }
+
+/* alertas (avisos) - barra fina de uma linha, sem bloco colorido alto ------------- */
+[data-testid="stAlert"] {
+    background-color: var(--bg) !important;
+    border: none !important;
+    border-left: 2px solid var(--destaque) !important;
+    border-radius: 0 !important;
+    padding: 0.3rem 0.6rem !important;
+    min-height: 1.7rem;
+    display: flex !important;
+    align-items: center !important;
+    margin-bottom: 0.4rem !important;
+}
+[data-testid="stAlert"] svg { display: none !important; }
+[data-testid="stAlert"] p {
+    color: var(--destaque) !important;
+    font-size: 0.72rem !important;
+    margin: 0 !important;
+    line-height: 1.3 !important;
+}
+
+/* tabelas --------------------------------------------------------------------------- */
+table { font-size: 0.78rem; border-collapse: collapse; }
+table td, table th { padding: 0.15rem 0.5rem; }
+
+/* radio (usado apenas onde segmented_control nao se aplica) ------------------------- */
+.stRadio label p { color: var(--neutro) !important; font-size: 0.8rem !important; }

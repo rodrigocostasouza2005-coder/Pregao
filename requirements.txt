@@ -1,0 +1,11 @@
+streamlit[auth]>=1.42
+yfinance>=0.2.40
+requests>=2.31
+beautifulsoup4>=4.12
+feedparser>=6.0
+plotly>=5.22
+pandas>=2.2
+supabase>=2.7
+# playwright fica de fora por enquanto: precisa de binario de navegador
+# no servidor (Fase de research do BTG). Ver nota no relatorio sobre
+# como instalar isso no Streamlit Community Cloud quando chegar a hora.
