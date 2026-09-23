@@ -12,6 +12,7 @@ from plotly.subplots import make_subplots
 
 import auth
 import config
+from data import diagnostico
 from data.prices import (
     calcular_retornos,
     dias_sem_pregao,
@@ -648,3 +649,51 @@ if secao_atual == "CONFIG":
             else:
                 st.warning("Preferências restauradas nesta sessão (banco indisponível, não foram salvas).")
             st.rerun()
+
+    # --- painel DIAGNOSTICO DE FONTES: so pro(s) e-mail(s) em config.EMAILS_DIAGNOSTICO -
+    # testa cada fonte de verdade, rodando neste servidor (local ou Streamlit Cloud),
+    # pra saber o que funciona em producao sem depender do sandbox de desenvolvimento
+    # (varios dominios ficam bloqueados por WAF/CDN so la - ver BACKLOG.md)
+    if usuario["email"] in config.EMAILS_DIAGNOSTICO:
+        with st.container(border=True):
+            st.markdown('<div class="painel-titulo">DIAGNÓSTICO DE FONTES</div>', unsafe_allow_html=True)
+            st.markdown(
+                "<div class='cinza' style='font-size:0.7rem; margin-bottom:0.4rem;'>"
+                "Testa cada fonte externa rodando aqui no servidor — mostra o que "
+                "funciona de verdade em produção.</div>",
+                unsafe_allow_html=True,
+            )
+            if st.button("TESTAR TODAS AS FONTES"):
+                resultados = []
+                with st.status("Testando fontes...", expanded=True) as status_box:
+                    for fonte in diagnostico.FONTES:
+                        st.write(f"Testando {fonte['nome']}...")
+                        resultado = diagnostico.testar_fonte(fonte)
+                        resultados.append(resultado)
+                        sinal = "OK" if resultado["ok"] else "FALHOU"
+                        st.write(f"→ {fonte['nome']}: {sinal} ({resultado['status']}, {resultado['tempo_ms']}ms)")
+                    status_box.update(label="Diagnóstico concluído.", state="complete")
+
+                linhas_html = "".join(
+                    f"<tr><td style='text-align:left;' class='neutro'>{r['nome']}</td>"
+                    f"<td class='{'alta' if r['ok'] else 'baixa'}'>{r['status']}</td>"
+                    f"<td class='neutro'>{r['tempo_ms']}ms</td>"
+                    f"<td class='neutro'>{r['tamanho_bytes']:,} bytes</td></tr>"
+                    for r in resultados
+                )
+                st.markdown(
+                    f"""
+                    <div style="overflow-x:auto; overflow-y:hidden;">
+                    <table style="width:100%; border-collapse:collapse;">
+                    <thead><tr>
+                        <th style="text-align:left; font-weight:400;" class="cinza">FONTE</th>
+                        <th class="cinza">STATUS</th>
+                        <th class="cinza">TEMPO</th>
+                        <th class="cinza">TAMANHO</th>
+                    </tr></thead>
+                    <tbody>{linhas_html}</tbody>
+                    </table>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )

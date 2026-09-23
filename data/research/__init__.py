@@ -9,13 +9,14 @@ Verificado na pratica quais casas de research tem conteudo publico
 coletavel sem login:
 - Genial Analisa: publica, coletavel (JSON __NEXT_DATA__ da home).
 - XP Investimentos: publica, coletavel (API do WordPress, wp-json/wp/v2 -
-  ver xp.py). IP deste sandbox de dev bloqueado pelo CDN da XP, coletor
-  escrito a partir da estrutura confirmada pelo Rodrigo no navegador, sem
-  teste ao vivo aqui - por isso comeca com ativa_por_padrao=False.
+  ver xp.py). Campos confirmados com requisicao real feita fora do
+  sandbox (2026-09-23) - IP deste sandbox de dev continua bloqueado pelo
+  CDN da XP, mas o coletor esta ativo por padrao.
 - BTG Research: API interna identificada mas bloqueada por bot-detection
   (Akamai) - ver genial.py/relatorio da tarefa pros detalhes tecnicos.
 - Itau BBA, BB Investimentos, Santander, Safra, Agora/Bradesco, Inter:
-  ainda nao investigadas (ver BACKLOG.md).
+  ainda nao investigadas (ver BACKLOG.md; reconhecimento rapido de
+  reachability em data/diagnostico.py).
 
 Os itens coletados sao persistidos no Supabase (tabela research_itens,
 ver data/research/store.py) - a aba RESEARCH sempre le do banco primeiro
@@ -41,7 +42,7 @@ CASAS = [
     {
         "id": "xp",
         "nome": "XP Investimentos",
-        "ativa_por_padrao": False,  # nao testado ao vivo neste ambiente, ver xp.py
+        "ativa_por_padrao": True,  # campos confirmados com requisicao real (fora do sandbox), ver xp.py
         "disponivel": True,
         "obter_relatorios": xp.obter_relatorios,
         "extrator_texto": xp.obter_texto_aberto,  # nunca baixa a pagina publica (paywall)

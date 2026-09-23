@@ -69,6 +69,9 @@ JANELAS_RETORNO = ["1D", "1S", "1M", "3M", "6M", "12M", "ANO"]
 # --- Abas do app (chave interna = titulo exibido na navegacao) ----------
 ABAS_DISPONIVEIS = ["EQUITY", "MACRO", "RESEARCH", "NEWS", "CVM"]
 
+# --- E-mails com acesso ao painel DIAGNOSTICO DE FONTES (aba CONFIG) ----
+EMAILS_DIAGNOSTICO = ["rodrigo.costa.souza2005@gmail.com"]
+
 # --- Groq: modelo usado nos resumos por IA (research hoje, news quando
 # plugar) - GROQ_MODELO_PADRAO e' o modelo verificado como disponivel na
 # Groq nesta data; obter_modelo_groq() permite trocar sem mexer em codigo
