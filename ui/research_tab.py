@@ -130,10 +130,12 @@ def _painel_watchlist(prefs: dict, relatorios: list):
             potencial = recomendacao_ticker.get("potencial_pct")
             sinal = "alta" if (potencial or 0) >= 0 else "baixa"
             preco_alvo = recomendacao_ticker.get("preco_alvo")
+            potencial_txt = f"{config.formatar_numero(potencial, 1, fmt)}%" if potencial is not None else "—"
+            preco_alvo_txt = f"R$ {config.formatar_numero(preco_alvo, 2, fmt)}" if preco_alvo is not None else "—"
             st.markdown(
                 f"<div style='font-size:0.78rem;'>Genial: <b>{recomendacao_ticker['recomendacao']}</b>"
-                f" · potencial <span class='{sinal}'>{config.formatar_numero(potencial, 1, fmt)}%</span>"
-                f" · preço-alvo R$ {config.formatar_numero(preco_alvo, 2, fmt)}</div>",
+                f" · potencial <span class='{sinal}'>{potencial_txt}</span>"
+                f" · preço-alvo {preco_alvo_txt}</div>",
                 unsafe_allow_html=True,
             )
 
