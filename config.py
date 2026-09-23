@@ -69,6 +69,24 @@ JANELAS_RETORNO = ["1D", "1S", "1M", "3M", "6M", "12M", "ANO"]
 # --- Abas do app (chave interna = titulo exibido na navegacao) ----------
 ABAS_DISPONIVEIS = ["EQUITY", "MACRO", "RESEARCH", "NEWS", "CVM"]
 
+# --- Groq: modelo usado nos resumos por IA (research hoje, news quando
+# plugar) - GROQ_MODELO_PADRAO e' o modelo verificado como disponivel na
+# Groq nesta data; obter_modelo_groq() permite trocar sem mexer em codigo
+# via st.secrets["groq"]["modelo"], util quando a Groq descontinuar de
+# novo (ja aconteceu com o llama-3.1-8b-instant, trocado por este).
+GROQ_MODELO_PADRAO = "openai/gpt-oss-20b"
+
+
+def obter_modelo_groq() -> str:
+    try:
+        import streamlit as st
+        modelo = st.secrets.get("groq", {}).get("modelo")
+        if modelo:
+            return modelo
+    except Exception:
+        pass
+    return GROQ_MODELO_PADRAO
+
 # --- Preferencias padrao (usuario novo ou banco fora do ar) -------------
 PREFS_PADRAO = {
     "tema": "AMBAR",

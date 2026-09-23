@@ -15,10 +15,9 @@ import streamlit as st
 from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi_requests
 
+import config
 from . import store
 from .base import HEADERS, TIMEOUT, permitido
-
-_MODELO_GROQ = "openai/gpt-oss-20b"
 
 _PROMPT_SISTEMA = (
     "Voce resume relatorios de research financeiro em portugues, em no maximo 6 linhas, "
@@ -101,7 +100,7 @@ def resumir_com_groq(texto: str, titulo: str) -> tuple:
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {chave}", "Content-Type": "application/json"},
             json={
-                "model": _MODELO_GROQ,
+                "model": config.obter_modelo_groq(),
                 "messages": [
                     {"role": "system", "content": _PROMPT_SISTEMA},
                     {"role": "user", "content": f"Titulo: {titulo}\n\nTexto do relatorio:\n{texto_truncado}"},
@@ -135,5 +134,5 @@ def obter_resumo(link: str, titulo: str) -> dict:
     if resumo is None:
         return {"resumo": None, "motivo_indisponivel": motivo}
 
-    store.salvar_resumo(link, resumo, _MODELO_GROQ)
+    store.salvar_resumo(link, resumo, config.obter_modelo_groq())
     return {"resumo": resumo, "motivo_indisponivel": None}

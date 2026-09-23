@@ -4,7 +4,7 @@
 import streamlit as st
 
 import config
-from data.research import CASAS, obter_relatorios_unificado
+from data.research import CASAS, coletar_pendentes, preparar_leitura
 from data.research.genial import obter_recomendacoes, obter_swing_trade
 from data.research.resumir import obter_resumo
 
@@ -199,12 +199,33 @@ def _painel_feed(prefs: dict, relatorios: list, falhas: list):
 
 
 def render_research(prefs: dict):
-    """Ponto de entrada da aba RESEARCH, chamado pelo app.py."""
+    """Ponto de entrada da aba RESEARCH, chamado pelo app.py.
+
+    Mostra o cabecalho e o que ja esta salvo no Supabase imediatamente
+    (leitura rapida, preparar_leitura) - so DEPOIS, se alguma casa estiver
+    desatualizada (>30min), tenta coletar da fonte com timeout por
+    requisicao e orcamento total de tempo (coletar_pendentes, ver
+    data/research/base.py). Se a coleta atualizar algo, um st.rerun()
+    reexibe a tela com os dados novos; se falhar, fica com o que ja tinha
+    mostrado + um aviso de uma linha - nunca trava a tela."""
+    st.markdown('<div class="painel-titulo">RESEARCH</div>', unsafe_allow_html=True)
+
     casas_ativas = _casas_ativas(prefs)
-    relatorios, falhas = obter_relatorios_unificado(casas_ativas)
+    relatorios, falhas, casas_para_coletar, _ = preparar_leitura(casas_ativas)
 
     with st.container(border=True):
         _painel_watchlist(prefs, relatorios)
 
     with st.container(border=True):
         _painel_feed(prefs, relatorios, falhas)
+
+    if casas_para_coletar:
+        with st.spinner("Coletando relatórios novos..."):
+            falhas_coleta = coletar_pendentes(casas_para_coletar)
+        if len(falhas_coleta) < len(casas_para_coletar):
+            # pelo menos uma casa atualizou - vale reler do banco. Reler
+            # so quando algo mudou evita loop de rerun se a coleta falhar
+            # sempre (coletado_em so avanca em coleta bem-sucedida).
+            st.rerun()
+        elif falhas_coleta:
+            st.warning("Nem tudo pôde ser atualizado agora: " + "; ".join(falhas_coleta) + ".")
