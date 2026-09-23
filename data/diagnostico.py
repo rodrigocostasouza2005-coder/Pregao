@@ -11,12 +11,24 @@ import time
 
 from curl_cffi import requests as cffi_requests
 
+from .research import genial, xp
+
 _HEADERS = {"User-Agent": "PregaoApp/0.1 (uso pessoal, nao comercial; contato via github)"}
 _TIMEOUT = 10
 
+# Genial e XP tem coletor com retry (varias tentativas de TLS/HTTP/UA -
+# ver testar_conexao em cada modulo) - o diagnostico chama a MESMA funcao
+# que o coletor real usa, pra refletir se a coleta de verdade funcionaria,
+# nao so um GET generico de uma tentativa so.
+_TESTES_ESPECIFICOS = {
+    "Genial Analisa": genial.testar_conexao,
+    "XP Investimentos": xp.testar_conexao,
+}
+
 # uma URL representativa por fonte - pra APIs, o endpoint real usado pelo
 # coletor/consumidor; pra sites ainda nao investigados, a home da area de
-# research (ver BACKLOG.md pra contexto de cada uma)
+# research (ver BACKLOG.md pra contexto de cada uma). Genial/XP tambem tem
+# url aqui so de referencia (o teste de verdade usa _TESTES_ESPECIFICOS).
 FONTES = [
     {"nome": "Genial Analisa", "url": "https://analisa.genialinvestimentos.com.br"},
     {"nome": "XP Investimentos", "url": "https://conteudos.xpi.com.br/wp-json/wp/v2/rel-acoes-fund?per_page=1"},
@@ -34,12 +46,30 @@ FONTES = [
 
 
 def testar_fonte(fonte: dict) -> dict:
-    """Testa uma fonte de verdade: GET com timeout curto e impersonate
-    Chrome (mesmo metodo que os coletores reais usam, pra o teste refletir
-    a mesma coisa que aconteceria numa coleta de verdade). Nunca lanca
-    excecao - status vira 'timeout' ou 'erro: <msg>' se a requisicao
-    falhar. Retorna {nome, url, status, tempo_ms, tamanho_bytes, ok}."""
+    """Testa uma fonte de verdade. Pra Genial/XP, chama o testar_conexao()
+    do proprio coletor (varias tentativas de TLS/HTTP/UA, a mesma logica
+    da coleta real). Pras demais, um GET simples com timeout curto e
+    impersonate Chrome. Nunca lanca excecao - status vira 'timeout' ou
+    'erro: <msg>' se a requisicao falhar. Retorna {nome, url, status,
+    tempo_ms, tamanho_bytes, ok}."""
     inicio = time.monotonic()
+
+    teste_especifico = _TESTES_ESPECIFICOS.get(fonte["nome"])
+    if teste_especifico:
+        try:
+            ok, detalhe = teste_especifico()
+            tempo_ms = int((time.monotonic() - inicio) * 1000)
+            return {
+                "nome": fonte["nome"], "url": fonte["url"], "status": detalhe,
+                "tempo_ms": tempo_ms, "tamanho_bytes": 0, "ok": ok,
+            }
+        except Exception as e:
+            tempo_ms = int((time.monotonic() - inicio) * 1000)
+            return {
+                "nome": fonte["nome"], "url": fonte["url"], "status": f"erro: {e}",
+                "tempo_ms": tempo_ms, "tamanho_bytes": 0, "ok": False,
+            }
+
     try:
         r = cffi_requests.get(fonte["url"], headers=_HEADERS, impersonate="chrome", timeout=_TIMEOUT)
         tempo_ms = int((time.monotonic() - inicio) * 1000)

@@ -12,17 +12,65 @@ Observado na pratica: o dominio fica atras de um WAF (Akamai) que derruba
 e' fingerprint de TLS (JA3), nao o conteudo da requisicao: usar
 `curl_cffi` com `impersonate="chrome"` (que replica o handshake TLS de um
 Chrome de verdade) resolve, e a partir dai a resposta e' um HTML estatico
-comum, sem nenhum desafio JS pra resolver."""
+comum, sem nenhum desafio JS pra resolver.
+
+Diagnostico de producao (Streamlit Cloud, 2026-09-23) mostrou um sintoma
+diferente do WAF: "HTTP/2 stream reset by server" - a conexao chega no
+servidor (diferente do sandbox de dev, que bloqueia o dominio inteiro
+antes disso) mas e' derrubada especificamente no HTTP/2. _tentar_buscar
+tenta uma sequencia de combinacoes (comecando por forcar HTTP/1.1) ate
+uma funcionar, e imprime qual funcionou/falhou - aparece nos Logs do
+Streamlit Cloud e no painel DIAGNOSTICO DE FONTES (CONFIG)."""
 
 import json
 import re
 
 import streamlit as st
 from curl_cffi import requests as cffi_requests
+from curl_cffi.const import CurlHttpVersion
 
 from .base import HEADERS, TIMEOUT, TTL_COLETA, permitido
 
 BASE_URL = "https://analisa.genialinvestimentos.com.br"
+
+# ordem de tentativa: HTTP/1.1 primeiro (suspeita principal do reset de
+# stream HTTP/2), depois o comportamento original (HTTP/2 via chrome),
+# depois outros perfis de impersonate com HTTP/1.1 forcado
+_TENTATIVAS = [
+    {"impersonate": "chrome", "http_version": CurlHttpVersion.V1_1},
+    {"impersonate": "chrome"},
+    {"impersonate": "chrome124", "http_version": CurlHttpVersion.V1_1},
+    {"impersonate": "safari17_0", "http_version": CurlHttpVersion.V1_1},
+]
+
+
+def _tentar_buscar(url: str):
+    """Tenta baixar `url` com cada combinacao de _TENTATIVAS ate uma dar
+    certo (200 com corpo). Retorna (Response, rotulo) ou (None, None) se
+    todas falharem. print() de cada tentativa - visivel nos Logs do
+    Streamlit Cloud."""
+    for tentativa in _TENTATIVAS:
+        rotulo = f"impersonate={tentativa.get('impersonate')} http={tentativa.get('http_version', 'auto')}"
+        try:
+            r = cffi_requests.get(url, headers=HEADERS, timeout=TIMEOUT, **tentativa)
+            if r.status_code == 200 and r.text:
+                print(f"[genial] conexao OK ({rotulo})")
+                return r, rotulo
+            print(f"[genial] tentativa falhou ({rotulo}): HTTP {r.status_code}")
+        except Exception as e:
+            print(f"[genial] tentativa falhou ({rotulo}): {e}")
+    return None, None
+
+
+def testar_conexao() -> tuple:
+    """So testa se consegue baixar a home (sem parsear __NEXT_DATA__) -
+    usado pelo painel DIAGNOSTICO DE FONTES. Retorna (ok, detalhe)."""
+    if not permitido(BASE_URL):
+        return False, "bloqueado pelo robots.txt"
+    r, rotulo = _tentar_buscar(BASE_URL)
+    if r is None:
+        return False, "todas as tentativas falharam"
+    return True, rotulo
 
 # tipos de secao na home (campo "type" do __NEXT_DATA__) - estavel e em
 # ingles, ao contrario do "titulo" (localizado, mais fragil de casar)
@@ -38,10 +86,8 @@ _TICKER_NO_LINK = re.compile(r"^/acoes/([A-Z0-9]{4,6})(?:/|$)")
 def _buscar_next_data() -> dict | None:
     if not permitido(BASE_URL):
         return None
-    try:
-        r = cffi_requests.get(BASE_URL, headers=HEADERS, impersonate="chrome", timeout=TIMEOUT)
-        r.raise_for_status()
-    except Exception:
+    r, _ = _tentar_buscar(BASE_URL)
+    if r is None:
         return None
     m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', r.text, re.DOTALL)
     if not m:
