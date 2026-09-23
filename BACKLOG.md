@@ -12,7 +12,9 @@ enquanto avançamos nas próximas fases).
   cortado ao meio, e sobra um espaço vazio logo abaixo da tabela.
   Ajustes já tentados (wrapper com `overflow-x:auto`, reset no
   `st.fragment`) não resolveram por completo — investigar a causa real,
-  de preferência com inspeção visual.
+  de preferência com inspeção visual. Mesmo sintoma confirmado também no
+  cabeçalho da tabela do painel RESUMO (aba MACRO) — provavelmente a
+  mesma causa raiz, ainda não identificada; corrigir os dois juntos.
 - Título "INDICADORES" sumiu do painel (o painel em si continua
   aparecendo, só o cabeçalho com o nome não).
 

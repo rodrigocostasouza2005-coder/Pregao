@@ -38,11 +38,11 @@ header[data-testid="stHeader"] {
     height: 3rem;
 }
 
-/* padding-top maior que a altura do header: no Streamlit Community Cloud
-   ele tambem carrega os icones de Share/estrela/GitHub, que senao ficam
-   por cima do cabecalho do app (e-mail / SAIR) */
+/* padding-top cobre: header nativo do Streamlit (3rem, com os icones de
+   Share/estrela/GitHub do Community Cloud) + a ticker tape fixa (~2rem,
+   que agora e' position:fixed e nao ocupa espaco no fluxo normal) */
 .block-container {
-    padding-top: 3.8rem;
+    padding-top: 5.3rem;
     padding-bottom: 0.6rem;
     padding-left: 1rem;
     padding-right: 1rem;
@@ -105,6 +105,11 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 section[data-testid="stSidebar"] {
     background-color: var(--painel-bg);
     border-right: 1px solid var(--borda);
+    /* fica ACIMA da ticker tape fixa (z-index 90): como a tape e'
+       position:fixed de ponta a ponta da tela, sem isso ela ficaria por
+       cima da sidebar aberta em vez de atras dela */
+    position: relative;
+    z-index: 150;
 }
 section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
 
@@ -230,17 +235,20 @@ table td, table th { padding: 0.15rem 0.5rem; }
     overflow: hidden;
     white-space: nowrap;
     border-bottom: 1px solid var(--borda);
-    padding: 0.35rem 0;
-    margin-top: 0.2rem;
-    margin-bottom: 1rem;
-    /* gruda logo abaixo do header fixo do Streamlit (3rem) ao rolar a
-       pagina - sticky, nao fixed, pra nao precisar calcular largura/
-       posicao manualmente com a sidebar aberta/fechada (fixed ignoraria
-       a sidebar; sticky respeita o fluxo normal do bloco principal) */
-    position: sticky;
-    top: 3rem;
-    z-index: 90;
+    padding: 0.35rem 1rem;
     background-color: var(--bg);
+    /* position:sticky nao funcionou de verdade no Streamlit Cloud (algum
+       container no meio do caminho - fragment, coluna etc. - quebra o
+       contexto de scroll necessario). Fixed de ponta a ponta da tela em
+       vez de calcular a largura da area principal: a sidebar (z-index
+       150, acima da tape) cobre a parte da esquerda quando esta aberta,
+       entao nao precisa saber a largura dela (que o usuario pode
+       arrastar/redimensionar) */
+    position: fixed;
+    top: 3rem;
+    left: 0;
+    right: 0;
+    z-index: 90;
 }
 .ticker-tape-wrap.fixo { overflow-x: auto; }
 .ticker-tape-track {

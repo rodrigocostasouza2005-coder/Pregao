@@ -86,26 +86,12 @@ _css_vars = (
 st.markdown(f"<style>{_css_vars}</style>", unsafe_allow_html=True)
 
 
-# --- cabecalho ------------------------------------------------------------
-col_logo, col_email, col_sair = st.columns([6, 2, 1])
-with col_logo:
-    st.markdown('<div class="pregao-logo">PREGÃO</div>', unsafe_allow_html=True)
-with col_email:
-    st.markdown(
-        f"<div class='cinza' style='text-align:right; padding-top:0.65rem; font-size:0.7rem; "
-        f"white-space:nowrap; overflow:hidden; text-overflow:ellipsis;' title='{usuario['email']}'>"
-        f"{usuario['email']}</div>",
-        unsafe_allow_html=True,
-    )
-with col_sair:
-    if st.button("SAIR", width="stretch"):
-        st.logout()
-
-if not st.session_state.banco_ok:
-    st.warning("Sem conexão com o Supabase — preferências e watchlist valem só para esta sessão.")
-
-
-# --- ticker tape: Ibovespa, dolar e a watchlist, atualiza no mesmo ritmo dos precos
+# --- ticker tape: Ibovespa, dolar e a watchlist, atualiza no mesmo ritmo dos
+# precos. Renderizada ANTES do cabecalho de proposito: e' position:fixed (ver
+# style.css), entao so precisa saber que fica logo abaixo do header nativo do
+# Streamlit (3rem) - o resto do conteudo (cabecalho PREGAO, abas etc.) vem
+# depois, em fluxo normal, com espaco reservado no padding-top do
+# block-container pra nao ficar por baixo da faixa fixa.
 @st.fragment(run_every=prefs["atualizacao_intervalo"])
 def _ticker_tape():
     fmt = prefs["formato_numerico"]
@@ -171,6 +157,24 @@ def _ticker_tape():
 
 
 _ticker_tape()
+
+# --- cabecalho ------------------------------------------------------------
+col_logo, col_email, col_sair = st.columns([6, 2, 1])
+with col_logo:
+    st.markdown('<div class="pregao-logo">PREGÃO</div>', unsafe_allow_html=True)
+with col_email:
+    st.markdown(
+        f"<div class='cinza' style='text-align:right; padding-top:0.65rem; font-size:0.7rem; "
+        f"white-space:nowrap; overflow:hidden; text-overflow:ellipsis;' title='{usuario['email']}'>"
+        f"{usuario['email']}</div>",
+        unsafe_allow_html=True,
+    )
+with col_sair:
+    if st.button("SAIR", width="stretch"):
+        st.logout()
+
+if not st.session_state.banco_ok:
+    st.warning("Sem conexão com o Supabase — preferências e watchlist valem só para esta sessão.")
 
 # --- abas: ordem/visibilidade vem das preferencias, CONFIG sempre por ultimo
 abas_visiveis = [a for a in prefs["abas_visiveis"] if a in config.ABAS_DISPONIVEIS]

@@ -238,7 +238,18 @@ def _painel_ipca(prefs):
 
     _layout_grafico_escuro(fig, tema)
     fig.update_yaxes(title_text="Mensal (%)", secondary_y=False, gridcolor="#1A1A1A")
-    fig.update_yaxes(title_text="12 meses (%)", secondary_y=True, gridcolor="#1A1A1A")
+
+    # eixo do 12m com range fixo (nao autorange): sem isso, o shape da
+    # meta (1.5 a 4.5) entra no calculo do autorange do Plotly junto com
+    # os dados e produz um range/ticks esquisitos (ex: 2.462/3.633/4.804)
+    # que faziam a faixa parecer cobrir o grafico quase todo
+    piso = min(0.0, float(df["ipca_12m_pct"].min()) - 1.0, META_IPCA_CENTRO - META_IPCA_TOLERANCIA - 1.0)
+    teto = max(6.0, float(df["ipca_12m_pct"].max()) + 1.0, META_IPCA_CENTRO + META_IPCA_TOLERANCIA + 1.0)
+    ticks_1_5 = [v * 1.5 for v in range(0, 20) if piso - 0.01 <= v * 1.5 <= teto + 0.01]
+    fig.update_yaxes(
+        title_text="12 meses (%)", secondary_y=True, gridcolor="#1A1A1A",
+        range=[piso, teto], tickvals=ticks_1_5,
+    )
 
     # faixa da meta de inflacao (centro +- tolerancia), plotada no eixo do
     # acumulado 12m, que e o que a meta efetivamente mede
