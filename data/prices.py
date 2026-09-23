@@ -1,11 +1,20 @@
 # -*- coding: utf-8 -*-
 """Cotações e histórico de preços via yfinance (tickers da B3, sufixo .SA)."""
 
+import re
+
 import pandas as pd
 import streamlit as st
 import yfinance as yf
 
 from config import PERIODOS_BUFFER, PERIODOS_GRAFICO
+
+# sufixo de classe de acao (ON/PN/PNA/PNB/UNT) + segmento de listagem (N1/N2/NM/MA/MB)
+# no final do nome, ex: "VALE ON NM" -> "VALE". So remove se vier separado
+# por espaco: o yfinance as vezes cola o sufixo no nome (sem espaco), caso
+# em que a limpeza nao acerta - por isso tickers problematicos tambem
+# entram direto no config.TICKER_NOME.
+_SUFIXO_CLASSE_ACAO = re.compile(r"\s+(ON|PN[ABC]?|UNT)(\s+(N[1-3]|NM|MA|MB))?\s*$", re.IGNORECASE)
 
 # dias corridos aproximados de cada periodo de exibicao, usados pra recortar
 # o historico depois de calcular as medias moveis sobre o buffer maior
@@ -66,13 +75,20 @@ def obter_cotacao(ticker: str) -> dict:
         return {"ticker": ticker, "erro": str(e)}
 
 
+def _limpar_nome_empresa(nome: str) -> str:
+    """Remove sufixo de classe de acao/segmento e ajusta capitalizacao."""
+    nome = _SUFIXO_CLASSE_ACAO.sub("", nome).strip()
+    return nome.title()
+
+
 @st.cache_data(ttl=86400, show_spinner=False)
 def obter_nome_yf(ticker: str) -> str:
     """Nome da empresa via yfinance (fallback pra quando nao esta no config.TICKER_NOME)."""
     symbol = _para_symbol_yf(ticker)
     try:
         info = yf.Ticker(symbol).info
-        return info.get("shortName") or info.get("longName") or ""
+        nome = info.get("shortName") or info.get("longName") or ""
+        return _limpar_nome_empresa(nome) if nome else ""
     except Exception:
         return ""
 

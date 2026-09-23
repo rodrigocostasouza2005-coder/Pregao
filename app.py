@@ -2,6 +2,7 @@
 """PREGÃO - terminal de mercado pessoal. Interface principal (Streamlit)."""
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import plotly.graph_objects as go
 import streamlit as st
@@ -16,6 +17,8 @@ st.set_page_config(page_title="PREGÃO", layout="wide", initial_sidebar_state="e
 
 with open(config.BASE_DIR / "style.css", encoding="utf-8") as f:
     st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+FUSO_BR = ZoneInfo("America/Sao_Paulo")
 
 
 # --- login obrigatorio: sem login, so a tela de apresentacao -------------
@@ -139,9 +142,11 @@ with st.sidebar:
 
             col_info, col_remover = st.columns([4, 1])
             col_info.markdown(
+                f"<div style='padding-bottom:0.35rem; margin-bottom:0.35rem; border-bottom:1px solid var(--borda);'>"
                 f"<div style='display:flex; justify-content:space-between; align-items:baseline;'>"
                 f"<span style='color:var(--destaque); font-weight:600;'>{t}</span>{var_html}</div>"
-                f"<div class='cinza' style='font-size:0.66rem;'>{nome}</div>",
+                f"<div class='cinza' style='font-size:0.66rem; margin-top:0.1rem;'>{nome}</div>"
+                f"</div>",
                 unsafe_allow_html=True,
             )
             if col_remover.button("x", key=f"remover_{t}"):
@@ -207,7 +212,7 @@ if "EQUITY" in abas_por_chave:
                     )
                     st.markdown(
                         f"<div class='cinza' style='font-size:0.65rem; margin-top:0.3rem;'>"
-                        f"Última atualização {datetime.now().strftime('%H:%M:%S')} — "
+                        f"Última atualização {datetime.now(FUSO_BR).strftime('%H:%M:%S')} — "
                         f"cotação com atraso de ~15 min (fonte: Yahoo Finance)</div>",
                         unsafe_allow_html=True,
                     )

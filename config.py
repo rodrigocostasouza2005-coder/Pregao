@@ -33,6 +33,7 @@ TICKER_NOME = {
     "JBSS3": "JBS",
     "LREN3": "Lojas Renner",
     "CSAN3": "Cosan",
+    "BBSE3": "BB Seguridade",
 }
 
 # --- Temas visuais (estetica terminal financeiro) -----------------------

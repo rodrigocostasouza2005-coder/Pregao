@@ -35,11 +35,14 @@ html, body, [class*="css"] {
 #MainMenu, footer { visibility: hidden; height: 0; }
 header[data-testid="stHeader"] {
     background: transparent;
-    height: 2.5rem;
+    height: 3rem;
 }
 
+/* padding-top maior que a altura do header: no Streamlit Community Cloud
+   ele tambem carrega os icones de Share/estrela/GitHub, que senao ficam
+   por cima do cabecalho do app (e-mail / SAIR) */
 .block-container {
-    padding-top: 0.5rem;
+    padding-top: 3.3rem;
     padding-bottom: 0.6rem;
     padding-left: 1rem;
     padding-right: 1rem;
