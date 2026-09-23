@@ -28,7 +28,15 @@ html, body, [class*="css"] {
     font-size: var(--fonte-base);
 }
 
-#MainMenu, header, footer { visibility: hidden; height: 0; }
+/* esconde o menu hamburguer e o rodape, mas MANTEM o header: e' onde
+   fica o botao de abrir/fechar a sidebar (esconder o header inteiro
+   remove esse botao e trava o usuario fora da sidebar sem jeito de
+   reabrir) */
+#MainMenu, footer { visibility: hidden; height: 0; }
+header[data-testid="stHeader"] {
+    background: transparent;
+    height: 2.5rem;
+}
 
 .block-container {
     padding-top: 0.5rem;

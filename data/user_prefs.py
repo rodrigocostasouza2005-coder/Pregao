@@ -18,10 +18,10 @@ def _cliente():
         return None
     try:
         url = st.secrets["supabase"]["url"]
-        key = st.secrets["supabase"]["key"]
-        if not url or not key or "SEU-PROJETO" in url or "COLE_AQUI" in key:
+        secret_key = st.secrets["supabase"]["secret_key"]
+        if not url or not secret_key or "SEU-PROJETO" in url or "COLE_AQUI" in secret_key:
             return None
-        return create_client(url, key)
+        return create_client(url, secret_key)
     except Exception:
         return None
 
