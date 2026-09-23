@@ -23,6 +23,7 @@ from data.prices import (
     validar_ticker,
 )
 from data.user_prefs import obter_prefs, salvar_prefs
+from ui.macro_tab import render_macro
 
 st.set_page_config(page_title="PREGÃO", layout="wide", initial_sidebar_state="expanded")
 
@@ -342,15 +343,15 @@ if "EQUITY" in abas_por_chave:
                         <th class="cinza">P/L</th>
                         <th class="cinza">P/VP</th>
                         <th class="cinza">DIV. YIELD (12M)</th>
-                        <th class="cinza">BETA</th>
                     </tr></thead>
                     <tbody><tr>
                         <td class="neutro">{config.formatar_valor_mercado(ind['valor_mercado'], fmt)}</td>
                         <td class="neutro">{config.formatar_numero(ind['pl'], 2, fmt) if ind['pl'] is not None else '—'}</td>
                         <td class="neutro">{config.formatar_numero(ind['pvp'], 2, fmt) if ind['pvp'] is not None else '—'}</td>
                         <td class="neutro">{config.formatar_numero(dy, 2, fmt) + '%' if dy is not None else '—'}</td>
-                        <td class="neutro">{config.formatar_numero(ind['beta'], 2, fmt) if ind['beta'] is not None else '—'}</td>
                     </tr></tbody>
+                    <!-- BETA escondido de proposito: o campo do yfinance nao e confiavel
+                         pra B3, ver BACKLOG.md. Volta quando for calculado localmente. -->
                     </table>
                     </div>
                     """,
@@ -485,8 +486,14 @@ if "EQUITY" in abas_por_chave:
                     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
+# --- aba MACRO -----------------------------------------------------------
+if "MACRO" in abas_por_chave:
+    with abas_por_chave["MACRO"]:
+        render_macro(prefs)
+
+
 # --- abas futuras (placeholders) ------------------------------------------
-_titulos_futuros = {"MACRO": "Fase 2", "RESEARCH": "Fase 4", "NEWS": "Fase 3", "CVM": "Fase 5"}
+_titulos_futuros = {"RESEARCH": "Fase 4", "NEWS": "Fase 3", "CVM": "Fase 5"}
 for chave, fase in _titulos_futuros.items():
     if chave in abas_por_chave:
         with abas_por_chave[chave]:

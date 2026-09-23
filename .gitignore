@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 cache/*.json
 .streamlit/secrets.toml
+preview_macro.py

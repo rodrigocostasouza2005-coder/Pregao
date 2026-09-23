@@ -233,6 +233,14 @@ table td, table th { padding: 0.15rem 0.5rem; }
     padding: 0.35rem 0;
     margin-top: 0.2rem;
     margin-bottom: 1rem;
+    /* gruda logo abaixo do header fixo do Streamlit (3rem) ao rolar a
+       pagina - sticky, nao fixed, pra nao precisar calcular largura/
+       posicao manualmente com a sidebar aberta/fechada (fixed ignoraria
+       a sidebar; sticky respeita o fluxo normal do bloco principal) */
+    position: sticky;
+    top: 3rem;
+    z-index: 90;
+    background-color: var(--bg);
 }
 .ticker-tape-wrap.fixo { overflow-x: auto; }
 .ticker-tape-track {
@@ -264,7 +272,10 @@ table td, table th { padding: 0.15rem 0.5rem; }
 
 /* responsividade: tabela/markdown que estourar a largura vira scroll
    horizontal dentro do proprio bloco em vez de cortar conteudo */
-[data-testid="stMarkdown"] { overflow-x: auto; }
+/* so nos blocos com tabela: aplicar isso em TODO stMarkdown criava um
+   contexto de scroll em qualquer markdown (inclusive o da ticker tape),
+   o que quebra position:sticky em qualquer descendente */
+[data-testid="stMarkdown"]:has(table) { overflow-x: auto; }
 
 @media (max-width: 640px) {
     .block-container { padding-left: 0.5rem; padding-right: 0.5rem; }
