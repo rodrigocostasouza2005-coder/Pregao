@@ -87,11 +87,13 @@ st.markdown(f"<style>{_css_vars}</style>", unsafe_allow_html=True)
 
 
 # --- ticker tape: Ibovespa, dolar e a watchlist, atualiza no mesmo ritmo dos
-# precos. Renderizada ANTES do cabecalho de proposito: e' position:fixed (ver
-# style.css), entao so precisa saber que fica logo abaixo do header nativo do
-# Streamlit (3rem) - o resto do conteudo (cabecalho PREGAO, abas etc.) vem
-# depois, em fluxo normal, com espaco reservado no padding-top do
-# block-container pra nao ficar por baixo da faixa fixa.
+# precos. Renderizada ANTES do cabecalho de proposito: fica dentro de uma
+# faixa position:fixed no topo (ver .pregao-topo-fixo no style.css), que
+# reserva o espaco de cima pro header nativo do Streamlit (onde mora a barra
+# de Share/estrela/GitHub do Community Cloud - essa barra tem z-index muito
+# maior que o nosso e sempre aparece por cima, nunca escondida). O resto do
+# conteudo (cabecalho PREGAO, abas etc.) vem depois, em fluxo normal, com
+# espaco reservado no padding-top do block-container.
 @st.fragment(run_every=prefs["atualizacao_intervalo"])
 def _ticker_tape():
     fmt = prefs["formato_numerico"]
@@ -127,8 +129,8 @@ def _ticker_tape():
 
     if not animado:
         st.markdown(
-            f"<div class='ticker-tape-wrap fixo'><div class='ticker-tape-track'>"
-            f"<span class='ticker-tape-set'>{conteudo}</span></div></div>",
+            f"<div class='pregao-topo-fixo'><div class='ticker-tape-wrap fixo'><div class='ticker-tape-track'>"
+            f"<span class='ticker-tape-set'>{conteudo}</span></div></div></div>",
             unsafe_allow_html=True,
         )
         return
@@ -147,11 +149,11 @@ def _ticker_tape():
     atraso_s = -(time.time() % duracao_s)
 
     st.markdown(
-        f"<div class='ticker-tape-wrap'>"
+        f"<div class='pregao-topo-fixo'><div class='ticker-tape-wrap'>"
         f"<div class='ticker-tape-track' style='animation-duration:{duracao_s:.1f}s; animation-delay:{atraso_s:.1f}s;'>"
         f"<span class='ticker-tape-set'>{conteudo}</span>"
         f"<span class='ticker-tape-set'>{conteudo}</span>"
-        f"</div></div>",
+        f"</div></div></div>",
         unsafe_allow_html=True,
     )
 
@@ -304,6 +306,12 @@ if "EQUITY" in abas_por_chave:
                         unsafe_allow_html=True,
                     )
                     retornos = calcular_retornos(ticker_sel)
+                    # 1D tem que bater com a VARIACAO DIA da tabela acima -
+                    # em vez de duas contas independentes (uma via fast_info,
+                    # outra via historico diario, que podem divergir por
+                    # causa de lag/fuso), reusa o mesmo valor da cotacao
+                    if retornos and not cotacao.get("erro"):
+                        retornos["1D"] = cotacao["variacao_pct"]
                     if retornos:
                         partes = []
                         for rotulo in config.JANELAS_RETORNO:

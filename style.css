@@ -21,6 +21,11 @@ html, body, [class*="css"] {
     font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace !important;
 }
 
+/* trava rolagem horizontal da pagina inteira - rede de seguranca contra
+   qualquer elemento interno (tabela larga, trilho do letreiro) que force
+   a pagina toda pra lado, o que desalinha os elementos fixos do topo */
+html, body { overflow-x: hidden; max-width: 100vw; }
+
 /* fundo geral e densidade -------------------------------------------- */
 .stApp {
     background-color: var(--bg);
@@ -38,17 +43,35 @@ header[data-testid="stHeader"] {
     height: 3rem;
 }
 
-/* padding-top so cobre o header nativo do Streamlit (3rem, com os icones
-   de Share/estrela/GitHub do Community Cloud). padding-bottom cobre a
-   ticker tape, que agora fica fixa no RODAPE (ver .ticker-tape-wrap) -
-   colada no topo ela brigava com o header/toolbar do Cloud de um jeito
-   que nao dava pra resolver so com z-index */
+/* padding-top cobre a faixa fixa do topo inteira: header nativo do
+   Streamlit (3rem, onde mora a barra de Share/estrela/GitHub do Cloud)
+   + a ticker tape (ver .pregao-topo-fixo) */
 .block-container {
-    padding-top: 3.5rem;
-    padding-bottom: 2.6rem;
+    padding-top: 5.4rem;
+    padding-bottom: 0.6rem;
     padding-left: 1rem;
     padding-right: 1rem;
     max-width: 100%;
+    overflow-x: hidden;
+}
+
+/* faixa fixa no topo: fundo preto solido cobrindo do topo da tela ate o
+   fim do letreiro. padding-top reserva o espaco do header nativo do
+   Streamlit (que tem z-index muito maior e sempre renderiza por cima,
+   entao nunca fica escondido atras dessa faixa) - so DEPOIS desse espaco
+   e' que o letreiro em si (filho normal aqui dentro) comeca a aparecer */
+.pregao-topo-fixo {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100vw;
+    max-width: 100vw;
+    background-color: var(--bg);
+    padding-top: 3rem;
+    border-bottom: 1px solid var(--borda);
+    overflow: hidden;
+    z-index: 50;
 }
 
 /* botao de abrir a sidebar quando ela esta recolhida fica fora do header,
@@ -107,9 +130,9 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 section[data-testid="stSidebar"] {
     background-color: var(--painel-bg);
     border-right: 1px solid var(--borda);
-    /* fica ACIMA da ticker tape fixa (z-index 1000, no rodape): como a
-       tape e' fixed de ponta a ponta da tela, sem isso ela cobriria o
-       rodape da sidebar aberta em vez de ficar atras dela */
+    /* fica ACIMA da faixa fixa do topo (.pregao-topo-fixo, z-index 50):
+       como essa faixa e' fixed de ponta a ponta da tela, sem isso ela
+       cobriria o topo da sidebar aberta em vez de ficar atras dela */
     position: relative;
     z-index: 1100;
 }
@@ -233,23 +256,14 @@ table td, table th { padding: 0.15rem 0.5rem; }
 /* ticker tape: letreiro rolando continuo, sem "pulo" na emenda ------------------------
    conteudo duplicado dentro do trilho: translateX(-50%) empurra exatamente
    uma copia inteira pra fora, a segunda copia fica onde a primeira comecou */
+/* o letreiro em si NAO e' mais position:fixed - o pai .pregao-topo-fixo
+   ja cuida disso. Aqui e' so um bloco normal, contido e sem estourar a
+   largura (trilho tem overflow:hidden proprio mais abaixo tambem) */
 .ticker-tape-wrap {
     overflow: hidden;
     white-space: nowrap;
-    border-top: 1px solid var(--borda);
     padding: 0.35rem 1rem;
-    background-color: var(--bg);
-    /* position:sticky nao funcionava de verdade no Streamlit Cloud, e
-       fixa no TOPO brigava com o header nativo e a barra de Share/
-       estrela/GitHub do Community Cloud (nao dava pra garantir que nada
-       ficava visivel por cima so com z-index). Rodape resolve de vez:
-       nao tem NADA do Streamlit nem do app ocupando essa area, entao
-       nao ha com o que brigar - estilo barra de status de terminal */
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 1000;
+    max-width: 100%;
 }
 .ticker-tape-wrap.fixo { overflow-x: auto; }
 .ticker-tape-track {
