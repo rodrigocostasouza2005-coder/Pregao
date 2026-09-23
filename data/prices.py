@@ -153,9 +153,13 @@ _JANELAS_RETORNO_DIAS = {"1D": 1, "1S": 7, "1M": 30, "3M": 91, "6M": 182, "12M":
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def calcular_retornos(ticker: str) -> dict:
-    """Retorno percentual em varias janelas (1D/1S/1M/3M/6M/12M/ANO=YTD).
-    None na janela que nao tiver historico suficiente."""
+def _precos_base_retornos(ticker: str) -> dict:
+    """Preco de fechamento de referencia em cada janela (1D/1S/.../ANO=YTD),
+    pra calcular retorno percentual contra o preco atual de fora (fast_info,
+    o mesmo do painel PRECOS). Cacheavel porque so depende de historico
+    (estavel dentro do TTL); o preco atual muda a cada 30s e fica de fora
+    de proposito, senao o cache nunca acertaria. None na janela sem
+    historico suficiente."""
     symbol = _para_symbol_yf(ticker)
     try:
         df = yf.Ticker(symbol).history(period="2y", interval="1d")
@@ -170,26 +174,32 @@ def calcular_retornos(ticker: str) -> dict:
     except Exception:
         return {}
 
-    preco_atual = df.iloc[-1]["Close"]
     data_atual = df.iloc[-1]["Data"]
 
-    resultados = {}
+    bases = {}
     for rotulo, dias in _JANELAS_RETORNO_DIAS.items():
         alvo = data_atual - pd.Timedelta(days=dias)
         anteriores = df[df["Data"] <= alvo]
-        if anteriores.empty:
-            resultados[rotulo] = None
-        else:
-            preco_base = anteriores.iloc[-1]["Close"]
-            resultados[rotulo] = ((preco_atual - preco_base) / preco_base) * 100
+        bases[rotulo] = float(anteriores.iloc[-1]["Close"]) if not anteriores.empty else None
 
     inicio_ano = df[df["Data"].dt.year == data_atual.year]
-    resultados["ANO"] = (
-        ((preco_atual - inicio_ano.iloc[0]["Close"]) / inicio_ano.iloc[0]["Close"]) * 100
-        if not inicio_ano.empty else None
-    )
+    bases["ANO"] = float(inicio_ano.iloc[0]["Close"]) if not inicio_ano.empty else None
 
-    return resultados
+    return bases
+
+
+def calcular_retornos(ticker: str, preco_atual: float) -> dict:
+    """Retorno percentual em varias janelas (1D/1S/1M/3M/6M/12M/ANO=YTD),
+    sempre contra o mesmo preco_atual usado no painel PRECOS (fast_info) -
+    garante que 1D bate com a VARIACAO DIA e as demais janelas partem do
+    mesmo ponto, nao do fechamento historico de ontem."""
+    bases = _precos_base_retornos(ticker)
+    if not bases or not preco_atual:
+        return {}
+    return {
+        rotulo: ((preco_atual - base) / base) * 100 if base else None
+        for rotulo, base in bases.items()
+    }
 
 
 def _limpar_sufixo_juridico(nome: str) -> str:

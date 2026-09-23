@@ -280,7 +280,7 @@ if "EQUITY" in abas_por_chave:
 
                     st.markdown(
                         f"""
-                        <div style="overflow-x:auto; overflow-y:visible;">
+                        <div style="overflow-x:auto; overflow-y:hidden;">
                         <table style="width:100%; border-collapse:collapse;">
                         <thead><tr>
                             <th style="text-align:left; font-weight:400; white-space:normal;" class="cinza">{ticker_sel} {nome_empresa_sel}</th>
@@ -305,11 +305,16 @@ if "EQUITY" in abas_por_chave:
                         """,
                         unsafe_allow_html=True,
                     )
-                    retornos = calcular_retornos(ticker_sel)
-                    # 1D tem que bater com a VARIACAO DIA da tabela acima -
-                    # em vez de duas contas independentes (uma via fast_info,
-                    # outra via historico diario, que podem divergir por
-                    # causa de lag/fuso), reusa o mesmo valor da cotacao
+                    # todas as janelas partem do mesmo preco atual do painel
+                    # PRECOS (fast_info), nao do fechamento historico de
+                    # ontem - senao cada janela podia comparar contra uma
+                    # "foto" diferente do preco
+                    preco_para_retornos = cotacao["preco"] if not cotacao.get("erro") else None
+                    retornos = calcular_retornos(ticker_sel, preco_para_retornos) if preco_para_retornos else {}
+                    # garante 1D identico a VARIACAO DIA por construcao,
+                    # mesmo que o "fechamento de 1 dia atras" do historico
+                    # caia numa data ligeiramente diferente do previousClose
+                    # do fast_info
                     if retornos and not cotacao.get("erro"):
                         retornos["1D"] = cotacao["variacao_pct"]
                     if retornos:
@@ -327,7 +332,7 @@ if "EQUITY" in abas_por_chave:
                                 )
                         st.markdown(
                             "<div style='display:flex; gap:0.9rem; flex-wrap:wrap; font-size:0.72rem; "
-                            "margin-top:0.4rem; overflow-x:auto; overflow-y:visible;'>" + "".join(partes) + "</div>",
+                            "margin-top:0.4rem; overflow-x:auto; overflow-y:hidden;'>" + "".join(partes) + "</div>",
                             unsafe_allow_html=True,
                         )
 
@@ -348,7 +353,7 @@ if "EQUITY" in abas_por_chave:
                 dy = ind["dividend_yield"]
                 st.markdown(
                     f"""
-                    <div style="overflow-x:auto; overflow-y:visible;">
+                    <div style="overflow-x:auto; overflow-y:hidden;">
                     <table style="width:100%; border-collapse:collapse;">
                     <thead><tr>
                         <th class="cinza">VALOR DE MERCADO</th>

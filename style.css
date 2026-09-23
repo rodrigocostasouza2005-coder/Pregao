@@ -298,12 +298,12 @@ table td, table th { padding: 0.15rem 0.5rem; }
 /* so nos blocos com tabela: aplicar isso em TODO stMarkdown criava um
    contexto de scroll em qualquer markdown (inclusive o da ticker tape),
    o que quebra position:sticky em qualquer descendente */
-/* overflow-y:visible explicito e' necessario: definir so overflow-x vira
+/* overflow-y:hidden explicito e' necessario: definir so overflow-x vira
    "auto" nos dois eixos por padrao do CSS (spec: overflow-x/y "visible"
    vira "auto" quando o outro eixo nao e' visible), o que criava uma
    barra de rolagem VERTICAL indevida nas tabelas do RESUMO e do
    INDICADORES mesmo sem o conteudo estourar a altura */
-[data-testid="stMarkdown"]:has(table) { overflow-x: auto; overflow-y: visible; }
+[data-testid="stMarkdown"]:has(table) { overflow-x: auto; overflow-y: hidden; }
 
 @media (max-width: 640px) {
     .block-container { padding-left: 0.5rem; padding-right: 0.5rem; }
