@@ -280,7 +280,7 @@ if "EQUITY" in abas_por_chave:
 
                     st.markdown(
                         f"""
-                        <div style="overflow-x:auto;">
+                        <div style="overflow-x:auto; overflow-y:visible;">
                         <table style="width:100%; border-collapse:collapse;">
                         <thead><tr>
                             <th style="text-align:left; font-weight:400; white-space:normal;" class="cinza">{ticker_sel} {nome_empresa_sel}</th>
@@ -327,7 +327,7 @@ if "EQUITY" in abas_por_chave:
                                 )
                         st.markdown(
                             "<div style='display:flex; gap:0.9rem; flex-wrap:wrap; font-size:0.72rem; "
-                            "margin-top:0.4rem; overflow-x:auto;'>" + "".join(partes) + "</div>",
+                            "margin-top:0.4rem; overflow-x:auto; overflow-y:visible;'>" + "".join(partes) + "</div>",
                             unsafe_allow_html=True,
                         )
 
@@ -348,7 +348,7 @@ if "EQUITY" in abas_por_chave:
                 dy = ind["dividend_yield"]
                 st.markdown(
                     f"""
-                    <div style="overflow-x:auto;">
+                    <div style="overflow-x:auto; overflow-y:visible;">
                     <table style="width:100%; border-collapse:collapse;">
                     <thead><tr>
                         <th class="cinza">VALOR DE MERCADO</th>
