@@ -63,6 +63,15 @@ enquanto avançamos nas próximas fases).
 - Conferir se os avisos (fonte indisponível etc.) na aba MACRO estão
   usando o mesmo estilo fino/compacto do resto do app.
 
+## Research
+- BTG Research: API pública em
+  `https://content.btgpactual.com/api/research/public-router/<servico>/api/<servico>/public/v1/...`
+  (ex. que funciona: `.../media-research/.../medias/lives?status=LIVE&pageNumber=1&pageSize=8`).
+  A lista de relatórios (requisição "ALL?pageNumber=1&pageSize=9&channel=...")
+  deu 404 na home e não apareceu em /acoes/ultimos-relatorios; pode ser
+  restrita a clientes. Próximo passo: procurar "public-router" nos bundles
+  JS para mapear as rotas, ou testar a área aberta content.btgpactual.us.
+
 ## Fases futuras
 - Morning Call da Genial: transcrição + resumo automático. Fase futura,
   ainda não desenhada (fonte, formato do resumo, frequência de
