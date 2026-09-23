@@ -38,12 +38,14 @@ header[data-testid="stHeader"] {
     height: 3rem;
 }
 
-/* padding-top cobre: header nativo do Streamlit (3rem, com os icones de
-   Share/estrela/GitHub do Community Cloud) + a ticker tape fixa (~2rem,
-   que agora e' position:fixed e nao ocupa espaco no fluxo normal) */
+/* padding-top so cobre o header nativo do Streamlit (3rem, com os icones
+   de Share/estrela/GitHub do Community Cloud). padding-bottom cobre a
+   ticker tape, que agora fica fixa no RODAPE (ver .ticker-tape-wrap) -
+   colada no topo ela brigava com o header/toolbar do Cloud de um jeito
+   que nao dava pra resolver so com z-index */
 .block-container {
-    padding-top: 5.3rem;
-    padding-bottom: 0.6rem;
+    padding-top: 3.5rem;
+    padding-bottom: 2.6rem;
     padding-left: 1rem;
     padding-right: 1rem;
     max-width: 100%;
@@ -105,11 +107,11 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 section[data-testid="stSidebar"] {
     background-color: var(--painel-bg);
     border-right: 1px solid var(--borda);
-    /* fica ACIMA da ticker tape fixa (z-index 90): como a tape e'
-       position:fixed de ponta a ponta da tela, sem isso ela ficaria por
-       cima da sidebar aberta em vez de atras dela */
+    /* fica ACIMA da ticker tape fixa (z-index 1000, no rodape): como a
+       tape e' fixed de ponta a ponta da tela, sem isso ela cobriria o
+       rodape da sidebar aberta em vez de ficar atras dela */
     position: relative;
-    z-index: 150;
+    z-index: 1100;
 }
 section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
 
@@ -234,21 +236,20 @@ table td, table th { padding: 0.15rem 0.5rem; }
 .ticker-tape-wrap {
     overflow: hidden;
     white-space: nowrap;
-    border-bottom: 1px solid var(--borda);
+    border-top: 1px solid var(--borda);
     padding: 0.35rem 1rem;
     background-color: var(--bg);
-    /* position:sticky nao funcionou de verdade no Streamlit Cloud (algum
-       container no meio do caminho - fragment, coluna etc. - quebra o
-       contexto de scroll necessario). Fixed de ponta a ponta da tela em
-       vez de calcular a largura da area principal: a sidebar (z-index
-       150, acima da tape) cobre a parte da esquerda quando esta aberta,
-       entao nao precisa saber a largura dela (que o usuario pode
-       arrastar/redimensionar) */
+    /* position:sticky nao funcionava de verdade no Streamlit Cloud, e
+       fixa no TOPO brigava com o header nativo e a barra de Share/
+       estrela/GitHub do Community Cloud (nao dava pra garantir que nada
+       ficava visivel por cima so com z-index). Rodape resolve de vez:
+       nao tem NADA do Streamlit nem do app ocupando essa area, entao
+       nao ha com o que brigar - estilo barra de status de terminal */
     position: fixed;
-    top: 3rem;
+    bottom: 0;
     left: 0;
     right: 0;
-    z-index: 90;
+    z-index: 1000;
 }
 .ticker-tape-wrap.fixo { overflow-x: auto; }
 .ticker-tape-track {

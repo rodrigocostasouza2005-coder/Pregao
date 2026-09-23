@@ -17,6 +17,16 @@ enquanto avançamos nas próximas fases).
   mesma causa raiz, ainda não identificada; corrigir os dois juntos.
 - Título "INDICADORES" sumiu do painel (o painel em si continua
   aparecendo, só o cabeçalho com o nome não).
+- Painel INDICADORES ficou com barra de rolagem interna (altura fixa)
+  em vez de crescer conforme o conteúdo.
+- Limpeza de nome de empresa parece remover acentos em produção (ex:
+  "Ginástica e Dança" → "Ginástica e Danca"). Testado localmente
+  (`obter_nome_yf('SMFT3')`) e o resultado veio com acento correto —
+  `longName` do yfinance e a função de limpeza não mexem em
+  maiúscula/minúscula nem em encoding, só cortam o sufixo jurídico do
+  final. Suspeita: diferença de locale/encoding entre o ambiente local e
+  o container do Streamlit Cloud, não bug na lógica em si — investigar
+  direto em produção (não reproduz local).
 
 ## Gráfico
 - Modo LINHA: a linha de preço e a MM20 saem na mesma cor (ambas usam
