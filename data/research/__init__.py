@@ -27,8 +27,20 @@ cada 30min por casa (store.precisa_recoletar)."""
 
 import time
 
+import streamlit as st
+
 from . import genial, store, xp
 from .base import TEMPO_MAX_COLETA_S
+
+# nao tenta recoletar a mesma casa antes desse tempo desde a ULTIMA
+# TENTATIVA (sucesso ou falha) - existe pra nao martelar uma fonte que
+# acabou de falhar a cada interacao do usuario na aba RESEARCH (era o
+# caso real do Genial/XP quando bloqueados em producao: cada rerun
+# tentava de novo, ate ~25s de orcamento, deixando a aba lenta em TODA
+# interacao, nao so na primeira). store.precisa_recoletar() so evita
+# recoleta apos SUCESSO (coletado_em so avanca quando salva); este
+# cooldown cobre a lacuna de tentativas que falharam.
+_COOLDOWN_FALHA_S = 10 * 60
 
 CASAS = [
     {
@@ -143,20 +155,38 @@ def ler_itens_salvos(nomes: list):
     return store.listar_itens(nomes)
 
 
+@st.cache_resource(show_spinner=False)
+def _ultimas_tentativas() -> dict:
+    """casa_id -> time.monotonic() da ultima tentativa de coleta (sucesso
+    OU falha). st.cache_resource = estado compartilhado entre sessoes e
+    reruns no MESMO processo do servidor (reseta em redeploy) - e' o
+    cooldown de _COOLDOWN_FALHA_S."""
+    return {}
+
+
 def coletar_pendentes(casas: list) -> list:
     """Coleta uma lista de casas (ja filtradas como pendentes por
     preparar_leitura), respeitando um orcamento total de tempo
-    (base.TEMPO_MAX_COLETA_S) - se estourar, para e deixa o resto pra
-    proxima chamada (a casa nao coletada continua 'pendente' porque seu
-    coletado_em nao foi atualizado). Retorna as falhas (nomes de casa que
-    nao atualizaram, por erro ou tempo esgotado)."""
+    (base.TEMPO_MAX_COLETA_S) e um cooldown por casa desde a ultima
+    tentativa (_COOLDOWN_FALHA_S) - se estourar o orcamento, ou se a casa
+    tiver falhado ha pouco tempo, pula e deixa pra proxima chamada (a
+    casa nao coletada continua 'pendente' porque seu coletado_em nao foi
+    atualizado). Retorna as falhas (nomes de casa que nao atualizaram,
+    por erro, cooldown ou tempo esgotado)."""
+    tentativas = _ultimas_tentativas()
     falhas = []
     limite = time.monotonic() + TEMPO_MAX_COLETA_S
     for casa in casas:
-        if time.monotonic() > limite:
+        agora = time.monotonic()
+        ultima_tentativa = tentativas.get(casa["id"])
+        if ultima_tentativa is not None and (agora - ultima_tentativa) < _COOLDOWN_FALHA_S:
+            falhas.append(f"{casa['nome']} (tentativa recente, aguardando)")
+            continue
+        if agora > limite:
             falhas.append(f"{casa['nome']} (tempo esgotado)")
             continue
         _, ok = coletar_casa(casa)
+        tentativas[casa["id"]] = time.monotonic()
         if not ok:
             falhas.append(casa["nome"])
     return falhas
