@@ -5,17 +5,17 @@ formato (casa, titulo, data, autor, tipo, setor, tickers, link).
 Pra ligar/desligar uma casa (por padrao ou por usuario, via prefs), mexa
 so nessa lista - a UI (ui/research_tab.py) le CASAS pra montar o filtro.
 
-Verificado na pratica (data desta implementacao) quais casas de research
-tem conteudo publico coletavel sem login:
+Verificado na pratica quais casas de research tem conteudo publico
+coletavel sem login:
 - Genial Analisa: publica, coletavel (JSON __NEXT_DATA__ da home).
+- XP Investimentos: publica, coletavel (API do WordPress, wp-json/wp/v2 -
+  ver xp.py). IP deste sandbox de dev bloqueado pelo CDN da XP, coletor
+  escrito a partir da estrutura confirmada pelo Rodrigo no navegador, sem
+  teste ao vivo aqui - por isso comeca com ativa_por_padrao=False.
 - BTG Research: API interna identificada mas bloqueada por bot-detection
   (Akamai) - ver genial.py/relatorio da tarefa pros detalhes tecnicos.
-- XP, Itau BBA, BB Investimentos, Santander, Safra, Agora/Bradesco,
-  Inter: nao entraram nesta versao (robots.txt permite em varias delas,
-  mas ou o conteudo publico e' raso/generico - caso da XP - ou nao foi
-  possivel confirmar a pagina/API certa de research dentro do tempo desta
-  tarefa - casos de Itau BBA e Agora, os mais promissores pra um proximo
-  passo). Nenhuma delas guarda credenciais nem tenta contornar login.
+- Itau BBA, BB Investimentos, Santander, Safra, Agora/Bradesco, Inter:
+  ainda nao investigadas (ver BACKLOG.md).
 
 Os itens coletados sao persistidos no Supabase (tabela research_itens,
 ver data/research/store.py) - a aba RESEARCH sempre le do banco primeiro
@@ -26,7 +26,7 @@ cada 30min por casa (store.precisa_recoletar)."""
 
 import time
 
-from . import genial, store
+from . import genial, store, xp
 from .base import TEMPO_MAX_COLETA_S
 
 CASAS = [
@@ -36,6 +36,15 @@ CASAS = [
         "ativa_por_padrao": True,
         "disponivel": True,
         "obter_relatorios": genial.obter_relatorios,
+        "extrator_texto": None,  # generico (baixa a pagina publica do relatorio)
+    },
+    {
+        "id": "xp",
+        "nome": "XP Investimentos",
+        "ativa_por_padrao": False,  # nao testado ao vivo neste ambiente, ver xp.py
+        "disponivel": True,
+        "obter_relatorios": xp.obter_relatorios,
+        "extrator_texto": xp.obter_texto_aberto,  # nunca baixa a pagina publica (paywall)
     },
     {
         "id": "btg",
@@ -43,6 +52,7 @@ CASAS = [
         "ativa_por_padrao": False,
         "disponivel": False,
         "obter_relatorios": None,
+        "extrator_texto": None,
         "motivo_indisponivel": (
             "API interna identificada, mas bloqueada por bot-detection (Akamai) - "
             "precisa de navegador real (Playwright/Chromium) pra passar do desafio JS."

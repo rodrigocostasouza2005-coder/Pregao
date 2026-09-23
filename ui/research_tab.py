@@ -13,9 +13,15 @@ _TIPO_LABEL = {
     "ESTRATEGIA": "ESTRATÉGIA",
     "MACRO": "MACRO",
     "NEWSLETTER": "NEWSLETTER",
+    "ANALISE_TECNICA": "ANÁLISE TÉCNICA",
 }
 
 _AVISO_COTA = "Cota gratuita de resumo por IA esgotada por enquanto — os links continuam disponíveis normalmente."
+
+# casa -> funcao (link)->(texto, motivo_falha) pra gerar resumo; None usa
+# o generico (baixa a pagina publica do relatorio) - ver CASAS em
+# data/research/__init__.py
+_EXTRATOR_POR_CASA = {c["nome"]: c["extrator_texto"] for c in CASAS}
 
 
 def _casas_ativas(prefs):
@@ -79,9 +85,11 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
         _bloco_resumo(rel["resumo"])
         return
 
+    extrator = _EXTRATOR_POR_CASA.get(rel["casa"])
+
     if permitir_resumo_auto:
         with st.spinner("Resumindo..."):
-            resultado = obter_resumo(rel["link"], rel["titulo"])
+            resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator)
         if resultado["resumo"]:
             _bloco_resumo(resultado["resumo"])
         elif resultado["motivo_indisponivel"] == "cota":
@@ -92,7 +100,7 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
     chave_botao = f"research_resumir_{abs(hash(rel['link']))}"
     if st.button("RESUMIR", key=chave_botao):
         with st.spinner("Resumindo..."):
-            resultado = obter_resumo(rel["link"], rel["titulo"])
+            resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator)
         if resultado["resumo"]:
             _bloco_resumo(resultado["resumo"])
         elif resultado["motivo_indisponivel"] == "cota":

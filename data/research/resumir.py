@@ -119,14 +119,22 @@ def resumir_com_groq(texto: str, titulo: str) -> tuple:
         return None, str(e)
 
 
-def obter_resumo(link: str, titulo: str) -> dict:
-    """Resumo de um relatorio: baixa+extrai+resume via Groq e grava no
+def obter_resumo(link: str, titulo: str, extrator_texto=None) -> dict:
+    """Resumo de um relatorio: extrai texto+resume via Groq e grava no
     Supabase (upsert pelo link, ja existente na tabela - ver
     store.salvar_resumo). Quem chama deve conferir antes se o item ja tem
     resumo salvo (rel.get('resumo')) pra nao gastar cota de IA a toa.
+
+    extrator_texto: funcao (link)->(texto, motivo_falha) pra casas que nao
+    podem usar o download generico da pagina publica (ex: XP, onde o
+    conteudo pago fica na mesma pagina do trecho aberto - ver
+    CASAS[i]['extrator_texto'] em data/research/__init__.py). None usa o
+    generico (obter_texto_relatorio, baixa a pagina do link).
+
     Retorna {resumo, motivo_indisponivel}; resumo=None se qualquer etapa
     falhar (nao grava nada nesse caso)."""
-    texto, motivo = obter_texto_relatorio(link)
+    extrator = extrator_texto or obter_texto_relatorio
+    texto, motivo = extrator(link)
     if texto is None:
         return {"resumo": None, "motivo_indisponivel": motivo}
 

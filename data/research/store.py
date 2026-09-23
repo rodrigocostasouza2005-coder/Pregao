@@ -81,12 +81,19 @@ def salvar_itens(itens: list) -> bool:
     """Upsert em lote por link. So envia as colunas de metadado (nunca
     resumo/modelo_resumo) - o upsert do PostgREST so mexe nas colunas
     presentes no payload, entao resumos ja salvos de uma coleta anterior
-    nao sao apagados quando o item e' recoletado."""
+    nao sao apagados quando o item e' recoletado.
+
+    Deduplica por link antes de enviar (mantem a ultima ocorrencia) - um
+    upsert com o mesmo link repetido dentro do MESMO lote falha inteiro
+    no Postgres ("ON CONFLICT DO UPDATE command cannot affect row a
+    second time"); pode acontecer se a fonte listar o mesmo relatorio em
+    mais de uma categoria (confirmado em teste com a XP)."""
     cliente = obter_cliente()
     if cliente is None:
         return False
     if not itens:
         return True
+    itens = list({it["link"]: it for it in itens}.values())
     agora = datetime.now(timezone.utc).isoformat()
     linhas = [
         {

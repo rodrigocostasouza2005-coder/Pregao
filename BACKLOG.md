@@ -71,6 +71,30 @@ enquanto avançamos nas próximas fases).
   deu 404 na home e não apareceu em /acoes/ultimos-relatorios; pode ser
   restrita a clientes. Próximo passo: procurar "public-router" nos bundles
   JS para mapear as rotas, ou testar a área aberta content.btgpactual.us.
+- XP Investimentos: implementada (`data/research/xp.py`), API pública do
+  WordPress (`conteudos.xpi.com.br/wp-json/wp/v2/{rel-acoes-fund,
+  rel-artigo-aloc,rel-acoes-tec}`). IP deste sandbox de dev é bloqueado
+  pelo CDN da XP (confirmado com `requests` e com `curl_cffi
+  impersonate="chrome"` - mesmo Reference ID de bloqueio, então é IP/geo,
+  não fingerprint de TLS); coletor testado só com dados mockados aqui,
+  `ativa_por_padrao=False` até confirmar em produção/local.
+- Reconhecimento rápido das 6 casas restantes (2026-09-23, sem
+  implementar nada ainda):
+  - **Itaú BBA** (`itau.com.br/itaubba-pt/analises-economicas`) e
+    **Santander** (`santandercorretora.com.br`): domínio bloqueado (403)
+    já na raiz, deste sandbox - não deu pra investigar mais.
+  - **BB Investimentos** (`investalk.bb.com.br/relatorios-e-analises`):
+    site acessível, mas `/wp-json/` e `/feed/` retornam 403 - API
+    deliberadamente fechada.
+  - **Safra** (`oespecialista.safra.com.br`): é WordPress de verdade
+    (`/wp-json/` existe), mas a REST API está bloqueada por plugin
+    ("DRA: Only authenticated users can access the REST API").
+  - **Ágora/Bradesco** (`insights.agorainvestimentos.com.br/conteudo`) e
+    **Inter** (`interinvest.inter.co`): site acessível, mas sem
+    WordPress/JSON óbvio no HTML de superfície (Inter parece SPA React -
+    `data-react-helmet`). Precisariam do mesmo trabalho de arqueologia de
+    bundle JS feito pro BTG pra confirmar se têm API interna usável - não
+    investigado a fundo ainda.
 
 ## Fases futuras
 - Morning Call da Genial: transcrição + resumo automático. Fase futura,
