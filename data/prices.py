@@ -33,11 +33,12 @@ _DIAS_EXIBICAO = {
 
 
 def _para_symbol_yf(ticker: str) -> str:
-    """Converte 'PETR4' -> 'PETR4.SA' (mantém se já tiver sufixo)."""
+    """Converte 'PETR4' -> 'PETR4.SA' (mantém se já tiver sufixo, ou se for
+    indice/moeda do yfinance, ex: '^BVSP', 'USDBRL=X', que nao levam .SA)."""
     ticker = ticker.strip().upper()
-    if not ticker.endswith(".SA"):
-        ticker += ".SA"
-    return ticker
+    if ticker.startswith("^") or "=" in ticker or ticker.endswith(".SA"):
+        return ticker
+    return ticker + ".SA"
 
 
 def validar_ticker(ticker: str) -> bool:
@@ -78,6 +79,86 @@ def obter_cotacao(ticker: str) -> dict:
         }
     except Exception as e:
         return {"ticker": ticker, "erro": str(e)}
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def obter_cotacao_indice(nome: str, symbol: str) -> dict:
+    """
+    Cotacao de indice/moeda pra ticker tape (ex: Ibovespa, dolar). Usa
+    info() em vez de fast_info porque o fast_info do yfinance nao da um
+    previousClose confiavel pra pares de moeda (mercado 24/5, sem
+    fechamento diario bem definido) - testado, previousClose vinha igual
+    ao preco atual.
+    """
+    try:
+        info = yf.Ticker(symbol).info
+        preco = info.get("regularMarketPrice")
+        fechamento_anterior = info.get("regularMarketPreviousClose")
+        if preco is None or fechamento_anterior in (None, 0):
+            raise ValueError("dados incompletos retornados pelo yfinance")
+        variacao = preco - fechamento_anterior
+        variacao_pct = (variacao / fechamento_anterior) * 100
+        return {"nome": nome, "preco": preco, "variacao": variacao, "variacao_pct": variacao_pct, "erro": None}
+    except Exception as e:
+        return {"nome": nome, "erro": str(e)}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def obter_indicadores(ticker: str) -> dict:
+    """Indicadores fundamentalistas via yfinance. Campos ausentes viram None
+    (a interface mostra '-' em vez de inventar)."""
+    symbol = _para_symbol_yf(ticker)
+    try:
+        info = yf.Ticker(symbol).info
+    except Exception:
+        info = {}
+    return {
+        "valor_mercado": info.get("marketCap"),
+        "pl": info.get("trailingPE"),
+        "pvp": info.get("priceToBook"),
+        "dividend_yield": info.get("dividendYield"),
+        "beta": info.get("beta"),
+    }
+
+
+_JANELAS_RETORNO_DIAS = {"1D": 1, "1S": 7, "1M": 30, "3M": 91, "6M": 182, "12M": 365}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def calcular_retornos(ticker: str) -> dict:
+    """Retorno percentual em varias janelas (1D/1S/1M/3M/6M/12M/ANO=YTD).
+    None na janela que nao tiver historico suficiente."""
+    symbol = _para_symbol_yf(ticker)
+    try:
+        df = yf.Ticker(symbol).history(period="2y", interval="1d")
+        if df.empty:
+            return {}
+        df = df.reset_index()
+        col_data = "Date" if "Date" in df.columns else "Datetime"
+        df = df.rename(columns={col_data: "Data"})
+    except Exception:
+        return {}
+
+    preco_atual = df.iloc[-1]["Close"]
+    data_atual = df.iloc[-1]["Data"]
+
+    resultados = {}
+    for rotulo, dias in _JANELAS_RETORNO_DIAS.items():
+        alvo = data_atual - pd.Timedelta(days=dias)
+        anteriores = df[df["Data"] <= alvo]
+        if anteriores.empty:
+            resultados[rotulo] = None
+        else:
+            preco_base = anteriores.iloc[-1]["Close"]
+            resultados[rotulo] = ((preco_atual - preco_base) / preco_base) * 100
+
+    inicio_ano = df[df["Data"].dt.year == data_atual.year]
+    resultados["ANO"] = (
+        ((preco_atual - inicio_ano.iloc[0]["Close"]) / inicio_ano.iloc[0]["Close"]) * 100
+        if not inicio_ano.empty else None
+    )
+
+    return resultados
 
 
 def _limpar_sufixo_juridico(nome: str) -> str:

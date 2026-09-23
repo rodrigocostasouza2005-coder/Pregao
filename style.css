@@ -204,7 +204,27 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
 
 /* tabelas --------------------------------------------------------------------------- */
 table { font-size: 0.78rem; border-collapse: collapse; }
-table td, table th { padding: 0.15rem 0.5rem; }
+table td, table th { padding: 0.15rem 0.5rem; white-space: nowrap; }
 
 /* radio (usado apenas onde segmented_control nao se aplica) ------------------------- */
 .stRadio label p { color: var(--neutro) !important; font-size: 0.8rem !important; }
+
+/* ticker tape ------------------------------------------------------------------------ */
+.ticker-tape {
+    white-space: nowrap;
+    overflow-x: auto;
+    font-size: 0.75rem;
+    padding: 0.35rem 0.2rem;
+    border-bottom: 1px solid var(--borda);
+    margin-bottom: 0.6rem;
+}
+
+/* responsividade: nada de tabela/markdown cortando em tela estreita - vira
+   scroll horizontal dentro do proprio bloco em vez de estourar a pagina */
+[data-testid="stMarkdown"] { overflow-x: auto; }
+.block-container { overflow-x: hidden; }
+
+@media (max-width: 640px) {
+    .block-container { padding-left: 0.5rem; padding-right: 0.5rem; }
+    .pregao-logo { font-size: 1.05rem; }
+}

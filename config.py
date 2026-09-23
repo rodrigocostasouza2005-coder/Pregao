@@ -53,6 +53,16 @@ FONTES = {"P": "0.78rem", "M": "0.9rem", "G": "1.05rem"}
 # --- Intervalo de atualizacao automatica dos paineis de cotacao (segundos)
 INTERVALOS_ATUALIZACAO = {"30S": 30, "1MIN": 60, "5MIN": 300}
 
+# --- Indices/moedas da ticker tape: rotulo -> simbolo do yfinance -------
+INDICES_TICKER_TAPE = {
+    "IBOVESPA": "^BVSP",
+    "DOLAR": "USDBRL=X",
+}
+SIMBOLO_IBOVESPA = "^BVSP"  # usado na comparacao de desempenho no grafico
+
+# --- Janelas de retorno mostradas na linha compacta abaixo da cotacao ----
+JANELAS_RETORNO = ["1D", "1S", "1M", "3M", "6M", "12M", "ANO"]
+
 # --- Abas do app (chave interna = titulo exibido na navegacao) ----------
 ABAS_DISPONIVEIS = ["EQUITY", "MACRO", "RESEARCH", "NEWS", "CVM"]
 
@@ -99,3 +109,14 @@ def formatar_numero(valor: float, casas: int = 2, formato: str = "BR") -> str:
     if formato == "BR":
         texto = texto.replace(",", "X").replace(".", ",").replace("X", ".")
     return texto
+
+
+def formatar_valor_mercado(valor, formato: str = "BR") -> str:
+    """Valor de mercado compacto: 'R$ 660,6 bi' / 'R$ 45,2 mi'. '-' se None."""
+    if valor is None:
+        return "—"
+    if valor >= 1_000_000_000:
+        return f"R$ {formatar_numero(valor / 1_000_000_000, 1, formato)} bi"
+    if valor >= 1_000_000:
+        return f"R$ {formatar_numero(valor / 1_000_000, 1, formato)} mi"
+    return f"R$ {formatar_numero(valor, 0, formato)}"

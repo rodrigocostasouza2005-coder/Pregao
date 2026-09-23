@@ -10,7 +10,16 @@ from plotly.subplots import make_subplots
 
 import auth
 import config
-from data.prices import dias_sem_pregao, obter_cotacao, obter_historico, obter_nome_yf, validar_ticker
+from data.prices import (
+    calcular_retornos,
+    dias_sem_pregao,
+    obter_cotacao,
+    obter_cotacao_indice,
+    obter_historico,
+    obter_indicadores,
+    obter_nome_yf,
+    validar_ticker,
+)
 from data.user_prefs import obter_prefs, salvar_prefs
 
 st.set_page_config(page_title="PREGÃO", layout="wide", initial_sidebar_state="expanded")
@@ -91,6 +100,46 @@ with col_sair:
 
 if not st.session_state.banco_ok:
     st.warning("Sem conexão com o Supabase — preferências e watchlist valem só para esta sessão.")
+
+
+# --- ticker tape: Ibovespa, dolar e a watchlist, atualiza no mesmo ritmo dos precos
+@st.fragment(run_every=prefs["atualizacao_intervalo"])
+def _ticker_tape():
+    fmt = prefs["formato_numerico"]
+    itens = []
+
+    for nome_idx, symbol_idx in config.INDICES_TICKER_TAPE.items():
+        cot = obter_cotacao_indice(nome_idx, symbol_idx)
+        if cot.get("erro"):
+            itens.append(f"<span class='cinza'>{nome_idx} --</span>")
+        else:
+            cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
+            sinal = "+" if cot["variacao_pct"] >= 0 else ""
+            itens.append(
+                f"<span class='cinza'>{nome_idx}</span> "
+                f"<span class='{cls}'>{config.formatar_numero(cot['preco'], 2, fmt)} "
+                f"({sinal}{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%)</span>"
+            )
+
+    for t in prefs["watchlist"]:
+        cot = obter_cotacao(t)
+        if cot.get("erro"):
+            itens.append(f"<span style='color:var(--destaque);'>{t}</span> <span class='cinza'>--</span>")
+        else:
+            cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
+            sinal = "+" if cot["variacao_pct"] >= 0 else ""
+            itens.append(
+                f"<span style='color:var(--destaque);'>{t}</span> "
+                f"<span class='{cls}'>{sinal}{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%</span>"
+            )
+
+    st.markdown(
+        "<div class='ticker-tape'>" + " &nbsp;·&nbsp; ".join(itens) + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+_ticker_tape()
 
 # --- abas: ordem/visibilidade vem das preferencias, CONFIG sempre por ultimo
 abas_visiveis = [a for a in prefs["abas_visiveis"] if a in config.ABAS_DISPONIVEIS]
@@ -210,6 +259,26 @@ if "EQUITY" in abas_por_chave:
                         """,
                         unsafe_allow_html=True,
                     )
+                    retornos = calcular_retornos(ticker_sel)
+                    if retornos:
+                        partes = []
+                        for rotulo in config.JANELAS_RETORNO:
+                            valor = retornos.get(rotulo)
+                            if valor is None:
+                                partes.append(f"<span class='cinza'>{rotulo} —</span>")
+                            else:
+                                cls = "alta" if valor >= 0 else "baixa"
+                                sinal = "+" if valor >= 0 else ""
+                                partes.append(
+                                    f"<span class='cinza'>{rotulo}</span> "
+                                    f"<span class='{cls}'>{sinal}{config.formatar_numero(valor, 1, fmt)}%</span>"
+                                )
+                        st.markdown(
+                            "<div style='display:flex; gap:0.9rem; flex-wrap:wrap; font-size:0.72rem; "
+                            "margin-top:0.4rem; overflow-x:auto;'>" + "".join(partes) + "</div>",
+                            unsafe_allow_html=True,
+                        )
+
                     st.markdown(
                         f"<div class='cinza' style='font-size:0.65rem; margin-top:0.3rem;'>"
                         f"Última atualização {datetime.now(FUSO_BR).strftime('%H:%M:%S')} — "
@@ -219,6 +288,33 @@ if "EQUITY" in abas_por_chave:
 
             with st.container(border=True):
                 _painel_precos(ticker_selecionado)
+
+            with st.container(border=True):
+                st.markdown('<div class="painel-titulo">INDICADORES</div>', unsafe_allow_html=True)
+                fmt = prefs["formato_numerico"]
+                ind = obter_indicadores(ticker_selecionado)
+                dy = ind["dividend_yield"]
+                st.markdown(
+                    f"""
+                    <table style="width:100%; border-collapse:collapse;">
+                    <thead><tr>
+                        <th class="cinza">VALOR DE MERCADO</th>
+                        <th class="cinza">P/L</th>
+                        <th class="cinza">P/VP</th>
+                        <th class="cinza">DIV. YIELD</th>
+                        <th class="cinza">BETA</th>
+                    </tr></thead>
+                    <tbody><tr>
+                        <td class="neutro">{config.formatar_valor_mercado(ind['valor_mercado'], fmt)}</td>
+                        <td class="neutro">{config.formatar_numero(ind['pl'], 2, fmt) if ind['pl'] is not None else '—'}</td>
+                        <td class="neutro">{config.formatar_numero(ind['pvp'], 2, fmt) if ind['pvp'] is not None else '—'}</td>
+                        <td class="neutro">{config.formatar_numero(dy, 2, fmt) + '%' if dy is not None else '—'}</td>
+                        <td class="neutro">{config.formatar_numero(ind['beta'], 2, fmt) if ind['beta'] is not None else '—'}</td>
+                    </tr></tbody>
+                    </table>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
             with st.container(border=True):
                 st.markdown('<div class="painel-titulo">GRÁFICO</div>', unsafe_allow_html=True)
@@ -233,10 +329,48 @@ if "EQUITY" in abas_por_chave:
                 periodo = sel_periodo or padrao_periodo
                 st.session_state[mem_periodo] = periodo
 
+                comparar_ibov = st.checkbox("Comparar com Ibovespa (base 100)", value=False, key="comparar_ibov")
+
                 df = obter_historico(ticker_selecionado, periodo)
+
+                def _layout_grafico_escuro(fig, altura=480):
+                    fig.update_layout(
+                        template="plotly_dark",
+                        paper_bgcolor=tema["fundo"],
+                        plot_bgcolor=tema["fundo"],
+                        font=dict(color=tema["cinza"], family="IBM Plex Mono", size=11),
+                        xaxis_rangeslider_visible=False,
+                        height=altura,
+                        margin=dict(l=10, r=10, t=10, b=10),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.01, font=dict(size=10)),
+                    )
+                    fig.update_xaxes(gridcolor="#1A1A1A")
+                    fig.update_yaxes(gridcolor="#1A1A1A")
 
                 if df is None:
                     st.warning(f"Não foi possível obter o histórico de {ticker_selecionado} para o período {periodo}.")
+                elif comparar_ibov:
+                    fig = go.Figure()
+                    serie_acao = (df["Close"] / df["Close"].iloc[0]) * 100
+                    fig.add_trace(go.Scatter(x=df["Data"], y=serie_acao, name=ticker_selecionado,
+                                              line=dict(color=tema["destaque"], width=1.5)))
+
+                    df_ibov = obter_historico(config.SIMBOLO_IBOVESPA, periodo)
+                    if df_ibov is None:
+                        st.warning("Não foi possível obter o histórico do Ibovespa para comparação.")
+                    else:
+                        serie_ibov = (df_ibov["Close"] / df_ibov["Close"].iloc[0]) * 100
+                        fig.add_trace(go.Scatter(x=df_ibov["Data"], y=serie_ibov, name="IBOVESPA",
+                                                  line=dict(color=tema["ciano"], width=1.5)))
+
+                    _layout_grafico_escuro(fig)
+                    fig.update_yaxes(title="Base 100")
+
+                    _, intervalo_periodo = config.PERIODOS_GRAFICO[periodo]
+                    if intervalo_periodo == "1d":
+                        fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=dias_sem_pregao(df))])
+
+                    st.plotly_chart(fig, width="stretch")
                 else:
                     fig = make_subplots(
                         rows=2, cols=1, shared_xaxes=True,
@@ -299,25 +433,13 @@ if "EQUITY" in abas_por_chave:
                         row=2, col=1,
                     )
 
-                    fig.update_layout(
-                        template="plotly_dark",
-                        paper_bgcolor=tema["fundo"],
-                        plot_bgcolor=tema["fundo"],
-                        font=dict(color=tema["cinza"], family="IBM Plex Mono", size=11),
-                        xaxis_rangeslider_visible=False,
-                        height=480,
-                        margin=dict(l=10, r=10, t=10, b=10),
-                        legend=dict(orientation="h", yanchor="bottom", y=1.01, font=dict(size=10)),
-                    )
+                    _layout_grafico_escuro(fig)
 
                     # remove buracos de fim de semana/feriado no eixo X (so faz sentido em barras diarias)
                     _, intervalo_periodo = config.PERIODOS_GRAFICO[periodo]
                     if intervalo_periodo == "1d":
                         feriados = dias_sem_pregao(df)
                         fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=feriados)])
-
-                    fig.update_xaxes(gridcolor="#1A1A1A")
-                    fig.update_yaxes(gridcolor="#1A1A1A")
 
                     st.plotly_chart(fig, width="stretch")
 
