@@ -23,8 +23,10 @@ from data.prices import (
     obter_nome_yf,
     validar_ticker,
 )
+from data.research import CASAS as CASAS_RESEARCH
 from data.user_prefs import obter_prefs, salvar_prefs
 from ui.macro_tab import render_macro
+from ui.research_tab import render_research
 
 st.set_page_config(page_title="PREGÃO", layout="wide", initial_sidebar_state="expanded")
 
@@ -540,8 +542,14 @@ if "MACRO" in abas_por_chave:
         render_macro(prefs)
 
 
+# --- aba RESEARCH ---------------------------------------------------------
+if "RESEARCH" in abas_por_chave:
+    with abas_por_chave["RESEARCH"]:
+        render_research(prefs)
+
+
 # --- abas futuras (placeholders) ------------------------------------------
-_titulos_futuros = {"RESEARCH": "Fase 4", "NEWS": "Fase 3", "CVM": "Fase 5"}
+_titulos_futuros = {"NEWS": "Fase 3", "CVM": "Fase 5"}
 for chave, fase in _titulos_futuros.items():
     if chave in abas_por_chave:
         with abas_por_chave[chave]:
@@ -586,6 +594,15 @@ with aba_config:
                 config.ABAS_DISPONIVEIS, default=abas_visiveis,
             )
 
+            ids_casas_research = [c["id"] for c in CASAS_RESEARCH]
+            nomes_casas_research = {c["id"]: c["nome"] for c in CASAS_RESEARCH}
+            padrao_casas_research = [c for c in prefs.get("research_casas_ativas", []) if c in ids_casas_research]
+            novas_casas_research = st.multiselect(
+                "CASAS DE RESEARCH",
+                ids_casas_research, default=padrao_casas_research,
+                format_func=lambda cid: nomes_casas_research.get(cid, cid),
+            )
+
             salvar = st.form_submit_button("SALVAR")
             if salvar:
                 st.session_state.prefs.update({
@@ -599,6 +616,7 @@ with aba_config:
                     "mm50": novo_mm50,
                     "mm200": novo_mm200,
                     "abas_visiveis": novas_abas or list(config.ABAS_DISPONIVEIS),
+                    "research_casas_ativas": novas_casas_research or list(config.PREFS_PADRAO["research_casas_ativas"]),
                     "atualizacao_intervalo": config.INTERVALOS_ATUALIZACAO[novo_rotulo_intervalo],
                     "ticker_tape_modo": novo_tape_modo,
                     "ticker_tape_velocidade": novo_tape_velocidade,

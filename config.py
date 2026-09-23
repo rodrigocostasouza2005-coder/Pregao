@@ -85,6 +85,7 @@ PREFS_PADRAO = {
     "atualizacao_intervalo": 60,
     "ticker_tape_modo": "ANIMADO",
     "ticker_tape_velocidade": "NORMAL",
+    "research_casas_ativas": ["genial"],
 }
 
 # --- Periodos intradiarios (candles de minutos, tratados a parte em
