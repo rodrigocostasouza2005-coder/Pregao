@@ -20,7 +20,6 @@ TICKER_NOME = {
     "PETR4": "Petrobras",
     "PETR3": "Petrobras",
     "B3SA3": "B3",
-    "JBSS3": "JBS",
 }
 
 # --- Temas visuais (estetica terminal financeiro) -----------------------

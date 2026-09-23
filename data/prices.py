@@ -19,7 +19,7 @@ _SUFIXO_CLASSE_ACAO = re.compile(r"\s+(ON|PN[ABC]?|UNT)(\s+(N[1-3]|NM|MA|MB))?\s
 # sufixo juridico no final do longName, ex: "Vale S.A." -> "Vale",
 # "BB Seguridade Participacoes S.A." -> remove "S.A." e depois
 # "Participacoes" (aplicado em loop, ja que pode ter mais de um no final)
-_SUFIXO_JURIDICO = re.compile(r"\s*(S\.A\.?|S/A|Participações)\s*$", re.IGNORECASE)
+_SUFIXO_JURIDICO = re.compile(r"\s*(S\.A\.?|S/A|Participações|Holding)\s*$", re.IGNORECASE)
 
 # dias corridos aproximados de cada periodo de exibicao, usados pra recortar
 # o historico depois de calcular as medias moveis sobre o buffer maior
