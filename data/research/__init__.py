@@ -164,6 +164,9 @@ def _ultimas_tentativas() -> dict:
     return {}
 
 
+_INTERVALO_LIMPEZA_S = 60 * 60  # limpeza de itens antigos roda no maximo 1x por hora
+
+
 def coletar_pendentes(casas: list) -> list:
     """Coleta uma lista de casas (ja filtradas como pendentes por
     preparar_leitura), respeitando um orcamento total de tempo
@@ -172,8 +175,18 @@ def coletar_pendentes(casas: list) -> list:
     tiver falhado ha pouco tempo, pula e deixa pra proxima chamada (a
     casa nao coletada continua 'pendente' porque seu coletado_em nao foi
     atualizado). Retorna as falhas (nomes de casa que nao atualizaram,
-    por erro, cooldown ou tempo esgotado)."""
+    por erro, cooldown ou tempo esgotado).
+
+    Tambem aproveita esse ponto de atividade pra rodar a limpeza de itens
+    com mais de store.RETENCAO_DIAS (store.apagar_itens_antigos),
+    throttled a 1x por hora (_INTERVALO_LIMPEZA_S) via o mesmo cache de
+    tentativas - nao vale a pena bater no banco toda vez so' pra isso."""
     tentativas = _ultimas_tentativas()
+    ultima_limpeza = tentativas.get("_limpeza")
+    if ultima_limpeza is None or (time.monotonic() - ultima_limpeza) >= _INTERVALO_LIMPEZA_S:
+        store.apagar_itens_antigos()
+        tentativas["_limpeza"] = time.monotonic()
+
     falhas = []
     limite = time.monotonic() + TEMPO_MAX_COLETA_S
     for casa in casas:

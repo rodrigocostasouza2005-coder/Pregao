@@ -18,7 +18,7 @@ detalhe de implementacao deste coletor, nao configuracao do app.
 
 import re
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlparse
 from zoneinfo import ZoneInfo
 
@@ -130,6 +130,42 @@ def _e_pagina_de_cotacao(titulo: str) -> bool:
     de ativo (nao e' materia jornalistica) - ver _PADROES_PAGINA_NAO_NOTICIA."""
     t = _sem_acento(titulo)
     return any(p.search(t) for p in _PADROES_PAGINA_NAO_NOTICIA)
+
+
+# --- Paginas "ao vivo" / live blog -----------------------------------------
+# cobertura continua de pregao ("Ibovespa Hoje Ao Vivo", "Bolsa em Tempo
+# Real") nao e' uma materia sobre uma empresa especifica - o titulo so cita
+# tickers de passagem, no resumo do dia. Filtrada da aba NEWS por ticker (so
+# gera ruido - ver _montar_item); no TOP MERCADO vira uma tag "AO VIVO" em
+# vez de filtrada (ver _montar_item_mercado/ui/top_mercado_tab.py).
+_PADROES_AO_VIVO = [
+    re.compile(r"\bao\s+vivo\b"),
+    re.compile(r"\btempo\s+real\b"),
+]
+
+
+def _e_pagina_ao_vivo(titulo: str) -> bool:
+    t = _sem_acento(titulo)
+    return any(p.search(t) for p in _PADROES_AO_VIVO)
+
+
+# --- Retencao: noticia e' conteudo perecivel, nao guarda historico longo --
+_RETENCAO_DIAS = 5
+
+
+def _dentro_da_retencao(data_iso: str) -> bool:
+    """True se `data_iso` tiver menos de _RETENCAO_DIAS dias. Data invalida
+    ou vazia conta como "dentro" (nunca inventa exclusao por falta de
+    dado - so filtra o que sabe de fato que esta velho)."""
+    if not data_iso:
+        return True
+    try:
+        dt = datetime.fromisoformat(data_iso)
+    except Exception:
+        return True
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_TZ_SP)
+    return (datetime.now(_TZ_SP) - dt) < timedelta(days=_RETENCAO_DIAS)
 
 # --- Normalizacao de nome de veiculo: dominio -> nome de exibicao --------
 # so pras excecoes onde o titulo que o Google News da pro veiculo vem cru
@@ -376,7 +412,7 @@ def _montar_item(entry, ticker: str, nome_empresa: str):
     titulo, veiculo = _extrair_veiculo_e_titulo(entry)
     data = _extrair_data(entry)
     link = entry.get("link") or ""
-    if not titulo or not link or data is None or _e_pagina_de_cotacao(titulo):
+    if not titulo or not link or data is None or _e_pagina_de_cotacao(titulo) or _e_pagina_ao_vivo(titulo):
         return None
     return {
         "titulo": titulo,
@@ -409,6 +445,7 @@ def _agrupar(itens: list) -> list:
             grupo["fontes"].append({"veiculo": item["veiculo"], "link": item["link"]})
             grupo["titulos"].append(item["titulo"])
             grupo["relevante"] = grupo["relevante"] or item["relevante"]
+            grupo["ao_vivo"] = grupo["ao_vivo"] or item.get("ao_vivo", False)
         else:
             grupos.append({
                 "titulo": item["titulo"],
@@ -417,6 +454,7 @@ def _agrupar(itens: list) -> list:
                 "data": item["data"],
                 "link": item["link"],
                 "relevante": item["relevante"],
+                "ao_vivo": item.get("ao_vivo", False),
                 "_tokens_sim": item["_tokens_sim"],
                 "_data": item["data"],
             })
@@ -427,13 +465,18 @@ def _agrupar(itens: list) -> list:
 def obter_noticias(ticker: str):
     """Noticias de uma empresa (nome + ticker), agrupadas e com score de
     confiabilidade. None se a fonte falhar; [] se a fonte respondeu mas
-    nao ha noticia nenhuma pro papel. selo vira SELO_MENCAO quando a
-    empresa so aparece de passagem em todos os titulos do grupo (ver
-    _relevante) - nesse caso o score deixa de ser exibido, ja que a
-    questao ali nao e' confiabilidade e sim relevancia. "fontes" carrega
-    (veiculo, link) de cada materia do grupo - usado pra tentar resumir
-    (ver obter_resumo_grupo), o "link" solto no topo e' so o da materia
-    mais recente (o que a manchete do grupo mostra e abre)."""
+    nao ha noticia nenhuma pro papel. Um grupo so entra no resultado se o
+    ticker ou o nome da empresa aparecer no titulo de PELO MENOS um dos
+    itens do grupo (ver _relevante) - senao e' ruido da busca (o Google
+    News as vezes devolve materia que so cita a empresa de passagem no
+    corpo do texto, nunca no titulo de nenhuma fonte) e nao e' noticia
+    dessa empresa; nao mostramos mais isso com selo MENÇÃO, so deixamos
+    de fora (antes gerava falso positivo tipo o card explicar "citada de
+    passagem no título" quando o titulo mostrado nem citava a empresa).
+    "fontes" carrega (veiculo, link) de cada materia do grupo - usado pra
+    tentar resumir (ver obter_resumo_grupo), o "link" solto no topo e' so
+    o da materia mais recente (o que a manchete do grupo mostra e abre).
+    Filtra tambem noticias com mais de _RETENCAO_DIAS dias."""
     nome = obter_nome_yf(ticker)
     termo = f'"{nome}" {ticker}' if nome else ticker
 
@@ -447,12 +490,12 @@ def obter_noticias(ticker: str):
 
     resultado = []
     for grupo in _agrupar(itens):
+        if not grupo["relevante"]:
+            continue
+        if not _dentro_da_retencao(grupo["data"].isoformat()):
+            continue
         veiculos = [f["veiculo"] for f in grupo["fontes"]]
         score, regras = _calcular_score(grupo["titulos"], veiculos)
-        selo = _selo(score)
-        if not grupo["relevante"]:
-            selo = SELO_MENCAO
-            regras = regras + ["empresa citada de passagem no título, não é o assunto principal"]
         resultado.append({
             "ticker": ticker,
             "titulo": grupo["titulo"],
@@ -462,7 +505,7 @@ def obter_noticias(ticker: str):
             "data": grupo["data"].isoformat(),
             "link": grupo["link"],
             "score": score,
-            "selo": selo,
+            "selo": _selo(score),
             "regras": regras,
             "tickers": sorted({t for titulo in grupo["titulos"] for t in _tickers_no_titulo(titulo)}),
         })
@@ -471,10 +514,53 @@ def obter_noticias(ticker: str):
     return resultado
 
 
+def _mesclar_entre_tickers(noticias: list) -> list:
+    """obter_noticias(ticker) ja agrupa DENTRO de um ticker (mesma busca);
+    isso funde noticias de tickers DIFERENTES que sao o mesmo fato (ex:
+    materia que cita duas empresas da watchlist, capturada nas buscas das
+    duas) - mesma logica de similaridade de _agrupar, agora entre
+    resultados ja processados. Quando um fato acaba envolvendo mais de um
+    ticker, troca 'ticker' (singular) por 'tickers' (lista - mesmo formato
+    que o TOP MERCADO usa, a UI ja sabe desenhar como tags)."""
+    noticias = sorted(noticias, key=lambda n: n["data"], reverse=True)
+    fundidas = []
+    for n in noticias:
+        tokens_n = _tokens_similaridade(n["titulo"], "")
+        data_n = datetime.fromisoformat(n["data"])
+        alvo = next(
+            (f for f in fundidas
+             if abs((f["_data_dt"] - data_n).days) <= _JANELA_DIAS_GRUPO
+             and _similaridade(f["_tokens_sim"], tokens_n) >= _LIMIAR_SIMILARIDADE),
+            None,
+        )
+        if alvo:
+            tickers_fundidos = set(alvo.get("tickers") or ([alvo["ticker"]] if alvo.get("ticker") else []))
+            tickers_fundidos |= {n["ticker"]} if n.get("ticker") else set(n.get("tickers") or [])
+            alvo["tickers"] = sorted(tickers_fundidos)
+            alvo.pop("ticker", None)
+            veiculos_vistos = {f2["veiculo"] for f2 in alvo["fontes"]}
+            for f2 in n["fontes"]:
+                if f2["veiculo"] not in veiculos_vistos:
+                    alvo["fontes"].append(f2)
+                    veiculos_vistos.add(f2["veiculo"])
+            alvo["veiculos"] = sorted(veiculos_vistos)
+            alvo["fontes_count"] = len(veiculos_vistos)
+        else:
+            item = dict(n)
+            item["_tokens_sim"] = tokens_n
+            item["_data_dt"] = data_n
+            fundidas.append(item)
+    for f in fundidas:
+        del f["_tokens_sim"]
+        del f["_data_dt"]
+    return fundidas
+
+
 def obter_noticias_watchlist(tickers: list) -> tuple:
-    """Agrega obter_noticias de varios tickers. Retorna (noticias, falhas)
-    - falhas e' a lista de tickers cuja fonte nao respondeu, pra interface
-    avisar sem esconder o resto do feed."""
+    """Agrega obter_noticias de varios tickers, fundindo fatos que
+    aparecem em mais de um (ver _mesclar_entre_tickers). Retorna
+    (noticias, falhas) - falhas e' a lista de tickers cuja fonte nao
+    respondeu, pra interface avisar sem esconder o resto do feed."""
     todas = []
     falhas = []
     for ticker in tickers:
@@ -483,6 +569,7 @@ def obter_noticias_watchlist(tickers: list) -> tuple:
             falhas.append(ticker)
             continue
         todas.extend(r)
+    todas = _mesclar_entre_tickers(todas)
     todas.sort(key=lambda n: n["data"], reverse=True)
     return todas, falhas
 
@@ -519,6 +606,7 @@ def _montar_item_mercado(entry, veiculo_fixo: str = None):
         "link": link,
         "data": data,
         "relevante": True,
+        "ao_vivo": _e_pagina_ao_vivo(titulo),
         "_tokens_sim": _tokens_similaridade(titulo, ""),
     }
 
@@ -631,6 +719,8 @@ def _processar_pool(entries_por_link: dict, setor: str, regiao: str) -> list:
 
     resultado = []
     for grupo in _agrupar(itens):
+        if not _dentro_da_retencao(grupo["data"].isoformat()):
+            continue
         veiculos = [f["veiculo"] for f in grupo["fontes"]]
         tickers = sorted({t for titulo in grupo["titulos"] for t in _tickers_no_titulo(titulo)})
         setores_grupo = news_setores.classificar_setores(" ".join(grupo["titulos"]), tickers)
@@ -654,6 +744,7 @@ def _processar_pool(entries_por_link: dict, setor: str, regiao: str) -> list:
             "tickers": tickers,
             "setores": setores_grupo,
             "regiao": regiao,
+            "ao_vivo": grupo.get("ao_vivo", False),
         })
     return resultado
 
@@ -843,10 +934,17 @@ def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple) -> dict:
     (e' o link que a manchete do grupo ja usa).
 
     Cache em memoria por 24h (cache_data padrao do Streamlit) - "por
-    enquanto", ver nota de _TTL_RESUMO sobre migrar pra Supabase depois."""
+    enquanto", ver nota de _TTL_RESUMO sobre migrar pra Supabase depois.
+
+    motivo_indisponivel guarda o motivo ESPECIFICO da ULTIMA fonte
+    tentada (decode falhou / erro ao baixar / conteúdo curto / cota da
+    IA) - a interface mostra isso em vez de um "indisponível" generico,
+    ajuda a diferenciar bloqueio do servidor de paywall de verdade."""
+    ultimo_motivo = "nenhuma fonte disponível no grupo"
     for veiculo, link in fontes_ordenadas:
-        texto, link_real, _motivo_extracao = _extrair_texto_artigo(link)
+        texto, link_real, motivo_extracao = _extrair_texto_artigo(link)
         if texto is None:
+            ultimo_motivo = motivo_extracao or ultimo_motivo
             continue
         resumo, motivo_groq = _resumir_com_groq(texto, titulo)
         if resumo:
@@ -855,8 +953,5 @@ def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple) -> dict:
             # falha do Groq em si (cota/config), nao da fonte - tentar as
             # proximas fontes do grupo so repetiria o mesmo erro a toa
             return {"resumo": None, "link_original": link_real, "motivo_indisponivel": motivo_groq}
-    return {
-        "resumo": None,
-        "link_original": None,
-        "motivo_indisponivel": "não foi possível extrair o texto de nenhuma fonte do grupo",
-    }
+        ultimo_motivo = motivo_groq or ultimo_motivo
+    return {"resumo": None, "link_original": None, "motivo_indisponivel": ultimo_motivo}

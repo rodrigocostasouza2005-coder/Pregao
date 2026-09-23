@@ -69,6 +69,21 @@ def _persistir_prefs():
     return ok
 
 
+# --- migra abas novas (ex: TOP MERCADO) pras prefs de usuarios existentes -
+# so adiciona em abas_visiveis o que o usuario AINDA NAO CONHECIA (nao
+# reaparece uma aba que ele escondeu de proposito) - abas_conhecidas
+# registra o que ja foi oferecido a ele, pra diferenciar "nunca vi essa
+# aba" de "vi e escondi de proposito". So persiste quando ha algo novo
+# (evita escrita no Supabase a toa em toda rerun).
+_abas_novas = [a for a in config.ABAS_DISPONIVEIS if a not in prefs.get("abas_conhecidas", [])]
+if _abas_novas:
+    prefs["abas_visiveis"] = list(prefs.get("abas_visiveis", [])) + [
+        a for a in _abas_novas if a not in prefs.get("abas_visiveis", [])
+    ]
+    prefs["abas_conhecidas"] = list(prefs.get("abas_conhecidas", [])) + _abas_novas
+    _persistir_prefs()
+
+
 def _escolha_estavel(chave_widget: str, opcoes: list, padrao):
     """Guarda a ultima escolha valida de um segmented_control (que pode voltar None ao desmarcar)."""
     chave_memoria = chave_widget + "_valido"

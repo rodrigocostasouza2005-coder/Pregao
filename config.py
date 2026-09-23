@@ -101,6 +101,7 @@ PREFS_PADRAO = {
     "mm50": True,
     "mm200": False,
     "abas_visiveis": list(ABAS_DISPONIVEIS),
+    "abas_conhecidas": list(ABAS_DISPONIVEIS),  # ver app.py: migracao automatica de abas novas
     "formato_numerico": "BR",
     "watchlist": list(TICKERS_PADRAO),
     "atualizacao_intervalo": 60,

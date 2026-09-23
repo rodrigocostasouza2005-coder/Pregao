@@ -90,24 +90,49 @@ def obter_cotacao(ticker: str) -> dict:
 
 
 @st.cache_data(ttl=30, show_spinner=False)
+@st.cache_resource(show_spinner=False)
+def _ultima_cotacao_indice_valida() -> dict:
+    """nome -> ultimo dict de cotacao de indice/moeda que veio sem erro.
+    st.cache_resource = estado compartilhado entre sessoes/reruns no
+    mesmo processo do servidor - usado como fallback quando o yfinance
+    falhar, pra nunca mostrar "--" na ticker tape se ja tivermos um valor
+    valido recente (o yfinance falha bem mais em IP de datacenter, como
+    o do Streamlit Cloud, do que localmente - visto na pratica com
+    IBOVESPA/DOLAR ficando "--" em producao)."""
+    return {}
+
+
 def obter_cotacao_indice(nome: str, symbol: str) -> dict:
     """
     Cotacao de indice/moeda pra ticker tape (ex: Ibovespa, dolar). Usa
-    info() em vez de fast_info porque o fast_info do yfinance nao da um
+    history() em vez de info()/fast_info: fast_info nao da um
     previousClose confiavel pra pares de moeda (mercado 24/5, sem
-    fechamento diario bem definido) - testado, previousClose vinha igual
-    ao preco atual.
+    fechamento diario bem definido - testado, previousClose vinha igual
+    ao preco atual); info() e' uma chamada mais pesada e mais sujeita a
+    falhar/ser limitada pelo Yahoo Finance em IP de datacenter - history()
+    e' o mesmo caminho ja usado (e confiavel) pro grafico de precos.
+
+    Se essa chamada falhar, cai pro ultimo valor que deu certo
+    (_ultima_cotacao_indice_valida) em vez de mostrar erro/"--" - so
+    retorna erro se NUNCA tiver conseguido buscar esse indice ainda.
     """
+    cache = _ultima_cotacao_indice_valida()
     try:
-        info = yf.Ticker(symbol).info
-        preco = info.get("regularMarketPrice")
-        fechamento_anterior = info.get("regularMarketPreviousClose")
-        if preco is None or fechamento_anterior in (None, 0):
-            raise ValueError("dados incompletos retornados pelo yfinance")
+        hist = yf.Ticker(symbol).history(period="5d")
+        if len(hist) < 2:
+            raise ValueError("histórico insuficiente retornado pelo yfinance")
+        preco = float(hist["Close"].iloc[-1])
+        fechamento_anterior = float(hist["Close"].iloc[-2])
+        if fechamento_anterior == 0:
+            raise ValueError("fechamento anterior zerado")
         variacao = preco - fechamento_anterior
         variacao_pct = (variacao / fechamento_anterior) * 100
-        return {"nome": nome, "preco": preco, "variacao": variacao, "variacao_pct": variacao_pct, "erro": None}
+        resultado = {"nome": nome, "preco": preco, "variacao": variacao, "variacao_pct": variacao_pct, "erro": None}
+        cache[nome] = resultado
+        return resultado
     except Exception as e:
+        if nome in cache:
+            return cache[nome]
         return {"nome": nome, "erro": str(e)}
 
 

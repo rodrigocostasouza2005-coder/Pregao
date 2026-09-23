@@ -227,7 +227,20 @@ def _bloco_rank_coluna(n: dict, idx: int) -> str:
     tooltip = html.escape("estimativa de relevância — " + "; ".join(n["criterio_ranking"]))
     regiao = n.get("regiao")
     badge = f"<span class='w-regiao-tag'>{regiao}</span>" if regiao else ""
+    if n.get("ao_vivo"):
+        badge += "<span class='w-regiao-tag' style='color:var(--destaque); border-color:var(--destaque);' title='cobertura contínua, não é uma matéria específica'>AO VIVO</span>"
     return f"<div class='w-hora' style='cursor:help;' title='{tooltip}'>#{idx + 1}{badge}</div>"
+
+
+def _tickers_do_item(n: dict) -> list:
+    """Itens fundidos entre tickers (data/news.py:_mesclar_entre_tickers)
+    perdem 'ticker' (singular) e ganham 'tickers' (lista, quando o fato
+    envolve mais de uma empresa da watchlist) - usado onde precisamos do
+    conjunto de tickers de UM item (filtro por ticker), nao so pra
+    desenhar a coluna (ver _bloco_ticker_coluna)."""
+    if n.get("ticker"):
+        return [n["ticker"]]
+    return n.get("tickers") or []
 
 
 def _bloco_ticker_coluna(n: dict, watchlist: list) -> str:
@@ -321,7 +334,8 @@ def _abrir_card(n: dict, watchlist: list):
         st.markdown(f"<div class='w-resumo-dialogo'>{html.escape(resultado['resumo'])}</div>", unsafe_allow_html=True)
         link_final = resultado["link_original"] or n["link"]
     else:
-        st.caption("resumo indisponível")
+        motivo = resultado.get("motivo_indisponivel") or "motivo desconhecido"
+        st.caption(f"resumo indisponível ({motivo})")
 
     st.markdown("<div style='height:0.6rem;'></div>", unsafe_allow_html=True)
     st.link_button("ABRIR MATÉRIA ↗", link_final, use_container_width=True)
@@ -402,7 +416,7 @@ def render_news(prefs: dict):
 
         st.caption("Selo de confiabilidade calculado por regras simples (fonte, nº de veículos, linguagem) — não é uma verificação factual definitiva. Clique numa manchete para ver os detalhes.")
 
-        tickers_no_feed = ["TODOS"] + sorted({n["ticker"] for n in noticias})
+        tickers_no_feed = ["TODOS"] + sorted({t for n in noticias for t in _tickers_do_item(n)})
         selos_no_feed = ["TODOS"] + [s for s in _ORDEM_SELOS if s in {n["selo"] for n in noticias}]
 
         filtro_ticker = st.pills(
@@ -414,7 +428,7 @@ def render_news(prefs: dict):
 
         base = [
             n for n in noticias
-            if (filtro_ticker == "TODOS" or n["ticker"] == filtro_ticker)
+            if (filtro_ticker == "TODOS" or filtro_ticker in _tickers_do_item(n))
             and (filtro_selo == "TODOS" or n["selo"] == filtro_selo)
         ]
 

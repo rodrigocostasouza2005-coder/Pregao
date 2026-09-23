@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from data.supabase_client import obter_cliente
 
 TTL_RECOLETA_MIN = 30
+RETENCAO_DIAS = 5
 
 
 def _linha_para_item(linha: dict) -> dict:
@@ -109,6 +110,38 @@ def salvar_itens(itens: list) -> bool:
         return True
     except Exception:
         return False
+
+
+def apagar_itens_antigos(dias: int = RETENCAO_DIAS) -> int:
+    """Apaga da tabela research_itens os itens cuja DATA DE PUBLICACAO
+    ('data') OU cujo COLETADO_EM tenham mais de `dias` dias - research e'
+    conteudo perecivel, nao guarda historico longo. E' OR (nao AND)
+    porque cobrem casos diferentes: 'data' velha pega um relatorio antigo
+    que a fonte continua listando (coletado_em fica sempre fresco a cada
+    recoleta, nunca dispararia sozinho); 'coletado_em' velho pega um item
+    que sumiu da fonte e parou de ser recoletado (poderia nao ter 'data'
+    valida pra comparar). Rodado em duas chamadas separadas (nao um OR
+    so' do PostgREST) pra nao arriscar apagar item com 'data' vazia so'
+    por causa da comparacao textual. Retorna quantas linhas foram
+    removidas ao todo, ou -1 se o banco estiver fora do ar."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return -1
+    limite = datetime.now(timezone.utc) - timedelta(days=dias)
+    limite_data = limite.strftime("%Y-%m-%d")
+    limite_coletado = limite.isoformat()
+    total = 0
+    try:
+        resp = cliente.table("research_itens").delete().neq("data", "").lt("data", limite_data).execute()
+        total += len(resp.data)
+    except Exception:
+        return -1
+    try:
+        resp = cliente.table("research_itens").delete().lt("coletado_em", limite_coletado).execute()
+        total += len(resp.data)
+    except Exception:
+        return -1
+    return total
 
 
 def salvar_resumo(link: str, resumo: str, modelo: str) -> bool:
