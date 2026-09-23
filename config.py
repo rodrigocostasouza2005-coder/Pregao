@@ -11,29 +11,16 @@ CACHE_DIR.mkdir(exist_ok=True)
 # --- Watchlist padrao (usuario sem preferencias salvas / banco fora do ar)
 TICKERS_PADRAO = ["PETR4", "VALE3", "ITUB4"]
 
-# --- Mapa ticker -> nome da empresa (usado nas Fases 3/4/5 tambem) -----
+# --- Mapa ticker -> nome da empresa: SO excecoes onde o longName do
+# yfinance (fonte principal, ver data/prices.py) nao da conta - o "S.A."
+# nao esta no final ("Petroleo Brasileiro S.A. - Petrobras") ou o
+# yfinance simplesmente nao retorna nada pro ticker. Todo o resto vem
+# automatico do yfinance, sem precisar cadastrar aqui.
 TICKER_NOME = {
     "PETR4": "Petrobras",
     "PETR3": "Petrobras",
-    "VALE3": "Vale",
-    "ITUB4": "Itaú Unibanco",
-    "BBDC4": "Bradesco",
-    "BBAS3": "Banco do Brasil",
-    "ABEV3": "Ambev",
-    "SBFG3": "Grupo SBF",
-    "WEGE3": "WEG",
-    "MGLU3": "Magazine Luiza",
     "B3SA3": "B3",
-    "RENT3": "Localiza",
-    "SUZB3": "Suzano",
-    "PRIO3": "PRIO",
-    "RAIL3": "Rumo",
-    "EQTL3": "Equatorial Energia",
-    "GGBR4": "Gerdau",
     "JBSS3": "JBS",
-    "LREN3": "Lojas Renner",
-    "CSAN3": "Cosan",
-    "BBSE3": "BB Seguridade",
 }
 
 # --- Temas visuais (estetica terminal financeiro) -----------------------

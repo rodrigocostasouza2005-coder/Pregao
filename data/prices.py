@@ -16,6 +16,11 @@ from config import PERIODOS_BUFFER, PERIODOS_GRAFICO
 # entram direto no config.TICKER_NOME.
 _SUFIXO_CLASSE_ACAO = re.compile(r"\s+(ON|PN[ABC]?|UNT)(\s+(N[1-3]|NM|MA|MB))?\s*$", re.IGNORECASE)
 
+# sufixo juridico no final do longName, ex: "Vale S.A." -> "Vale",
+# "BB Seguridade Participacoes S.A." -> remove "S.A." e depois
+# "Participacoes" (aplicado em loop, ja que pode ter mais de um no final)
+_SUFIXO_JURIDICO = re.compile(r"\s*(S\.A\.?|S/A|Participações)\s*$", re.IGNORECASE)
+
 # dias corridos aproximados de cada periodo de exibicao, usados pra recortar
 # o historico depois de calcular as medias moveis sobre o buffer maior
 _DIAS_EXIBICAO = {
@@ -75,22 +80,44 @@ def obter_cotacao(ticker: str) -> dict:
         return {"ticker": ticker, "erro": str(e)}
 
 
-def _limpar_nome_empresa(nome: str) -> str:
-    """Remove sufixo de classe de acao/segmento e ajusta capitalizacao."""
+def _limpar_sufixo_juridico(nome: str) -> str:
+    """Remove S.A./S/A/Participacoes do final, repetindo ate nao sobrar nenhum."""
+    anterior = None
+    while anterior != nome:
+        anterior = nome
+        nome = _SUFIXO_JURIDICO.sub("", nome).strip()
+    return nome
+
+
+def _limpar_nome_curto(nome: str) -> str:
+    """Remove sufixo de classe de acao/segmento e ajusta capitalizacao (shortName)."""
     nome = _SUFIXO_CLASSE_ACAO.sub("", nome).strip()
     return nome.title()
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def obter_nome_yf(ticker: str) -> str:
-    """Nome da empresa via yfinance (fallback pra quando nao esta no config.TICKER_NOME)."""
+    """
+    Nome da empresa via yfinance (fallback pra quando nao esta no config.TICKER_NOME,
+    que fica so pras excecoes onde isso aqui nao da conta). longName e' a fonte
+    principal (ja vem bem capitalizado, so tira o sufixo juridico do final);
+    shortName limpo entra so se o longName nao existir.
+    """
     symbol = _para_symbol_yf(ticker)
     try:
         info = yf.Ticker(symbol).info
-        nome = info.get("shortName") or info.get("longName") or ""
-        return _limpar_nome_empresa(nome) if nome else ""
     except Exception:
         return ""
+
+    nome_longo = (info.get("longName") or "").strip()
+    if nome_longo:
+        return _limpar_sufixo_juridico(nome_longo)
+
+    nome_curto = (info.get("shortName") or "").strip()
+    if nome_curto:
+        return _limpar_nome_curto(nome_curto)
+
+    return ""
 
 
 def calcular_medias_moveis(df):
