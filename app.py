@@ -263,11 +263,20 @@ if "EQUITY" in abas_por_chave:
                     sinal_sim = "+" if cotacao["variacao"] >= 0 else ""
                     nome_empresa_sel = nome_empresa(ticker_sel)
 
+                    def _num_ou_traco(valor, casas=2):
+                        return config.formatar_numero(valor, casas, fmt) if valor is not None else "—"
+
+                    max_min_dia = (
+                        f"{_num_ou_traco(cotacao['maxima_dia'])} / {_num_ou_traco(cotacao['minima_dia'])}"
+                        if cotacao["maxima_dia"] is not None or cotacao["minima_dia"] is not None else "—"
+                    )
+
                     st.markdown(
                         f"""
+                        <div style="overflow-x:auto;">
                         <table style="width:100%; border-collapse:collapse;">
                         <thead><tr>
-                            <th style="text-align:left; font-weight:400;" class="cinza">{ticker_sel} {nome_empresa_sel}</th>
+                            <th style="text-align:left; font-weight:400; white-space:normal;" class="cinza">{ticker_sel} {nome_empresa_sel}</th>
                             <th class="cinza">VARIAÇÃO DIA</th>
                             <th class="cinza">MÁX/MÍN DIA</th>
                             <th class="cinza">VOLUME</th>
@@ -276,16 +285,16 @@ if "EQUITY" in abas_por_chave:
                         </tr></thead>
                         <tbody><tr>
                             <td style="text-align:left; font-size:1.15rem; font-weight:600;" class="{sinal_classe}">
-                                R$ {config.formatar_numero(cotacao['preco'], 2, fmt)}</td>
-                            <td class="{sinal_classe}">{sinal_sim}{config.formatar_numero(cotacao['variacao'], 2, fmt)}
-                                ({sinal_sim}{config.formatar_numero(cotacao['variacao_pct'], 2, fmt)}%)</td>
-                            <td class="neutro">{config.formatar_numero(cotacao['maxima_dia'], 2, fmt)} /
-                                {config.formatar_numero(cotacao['minima_dia'], 2, fmt)}</td>
-                            <td class="neutro">{config.formatar_numero(cotacao['volume'], 0, fmt)}</td>
-                            <td class="neutro">{config.formatar_numero(cotacao['maxima_52s'], 2, fmt)}</td>
-                            <td class="neutro">{config.formatar_numero(cotacao['minima_52s'], 2, fmt)}</td>
+                                R$ {_num_ou_traco(cotacao['preco'])}</td>
+                            <td class="{sinal_classe}">{sinal_sim}{_num_ou_traco(cotacao['variacao'])}
+                                ({sinal_sim}{_num_ou_traco(cotacao['variacao_pct'])}%)</td>
+                            <td class="neutro">{max_min_dia}</td>
+                            <td class="neutro">{_num_ou_traco(cotacao['volume'], 0)}</td>
+                            <td class="neutro">{_num_ou_traco(cotacao['maxima_52s'])}</td>
+                            <td class="neutro">{_num_ou_traco(cotacao['minima_52s'])}</td>
                         </tr></tbody>
                         </table>
+                        </div>
                         """,
                         unsafe_allow_html=True,
                     )
@@ -326,12 +335,13 @@ if "EQUITY" in abas_por_chave:
                 dy = ind["dividend_yield"]
                 st.markdown(
                     f"""
+                    <div style="overflow-x:auto;">
                     <table style="width:100%; border-collapse:collapse;">
                     <thead><tr>
                         <th class="cinza">VALOR DE MERCADO</th>
                         <th class="cinza">P/L</th>
                         <th class="cinza">P/VP</th>
-                        <th class="cinza">DIV. YIELD</th>
+                        <th class="cinza">DIV. YIELD (12M)</th>
                         <th class="cinza">BETA</th>
                     </tr></thead>
                     <tbody><tr>
@@ -342,6 +352,7 @@ if "EQUITY" in abas_por_chave:
                         <td class="neutro">{config.formatar_numero(ind['beta'], 2, fmt) if ind['beta'] is not None else '—'}</td>
                     </tr></tbody>
                     </table>
+                    </div>
                     """,
                     unsafe_allow_html=True,
                 )
@@ -400,7 +411,7 @@ if "EQUITY" in abas_por_chave:
                     if intervalo_periodo == "1d":
                         fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=dias_sem_pregao(df))])
 
-                    st.plotly_chart(fig, width="stretch")
+                    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
                 else:
                     fig = make_subplots(
                         rows=2, cols=1, shared_xaxes=True,
@@ -471,7 +482,7 @@ if "EQUITY" in abas_por_chave:
                         feriados = dias_sem_pregao(df)
                         fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=feriados)])
 
-                    st.plotly_chart(fig, width="stretch")
+                    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 # --- abas futuras (placeholders) ------------------------------------------

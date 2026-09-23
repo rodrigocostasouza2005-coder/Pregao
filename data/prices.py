@@ -65,14 +65,22 @@ def obter_cotacao(ticker: str) -> dict:
         variacao = preco - fechamento_anterior
         variacao_pct = (variacao / fechamento_anterior) * 100
 
+        # o yfinance as vezes reporta o dia com dayHigh/dayLow/lastVolume
+        # zerados (visto no SMFT3: papel ainda sem negocio no dia, ou
+        # atraso na atualizacao) - 0 pareceria uma cotacao valida, entao
+        # vira None e a interface mostra "-" em vez de "0,00"
+        maxima_dia = fi["dayHigh"] or None
+        minima_dia = fi["dayLow"] or None
+        volume = fi["lastVolume"] or None
+
         return {
             "ticker": ticker,
             "preco": preco,
             "variacao": variacao,
             "variacao_pct": variacao_pct,
-            "maxima_dia": fi["dayHigh"],
-            "minima_dia": fi["dayLow"],
-            "volume": fi["lastVolume"],
+            "maxima_dia": maxima_dia,
+            "minima_dia": minima_dia,
+            "volume": volume,
             "maxima_52s": fi["yearHigh"],
             "minima_52s": fi["yearLow"],
             "erro": None,
@@ -103,20 +111,40 @@ def obter_cotacao_indice(nome: str, symbol: str) -> dict:
         return {"nome": nome, "erro": str(e)}
 
 
+def _dividend_yield_12m(ticker_obj, preco_atual: float):
+    """DY = soma dos dividendos/JCP pagos nos ultimos 12 meses / preco atual.
+    Calculado a partir do historico de dividendos (mais confiavel pra B3 do
+    que o campo 'dividendYield' do yfinance, que em alguns papeis destoa
+    do que realmente foi pago). None se nao houver historico ou preco."""
+    try:
+        divs = ticker_obj.dividends
+        if divs.empty or not preco_atual:
+            return None
+        limite = pd.Timestamp.now(tz=divs.index.tz) - pd.Timedelta(days=365)
+        soma_12m = divs[divs.index >= limite].sum()
+        if soma_12m <= 0:
+            return None
+        return (soma_12m / preco_atual) * 100
+    except Exception:
+        return None
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def obter_indicadores(ticker: str) -> dict:
     """Indicadores fundamentalistas via yfinance. Campos ausentes viram None
     (a interface mostra '-' em vez de inventar)."""
     symbol = _para_symbol_yf(ticker)
+    tk = yf.Ticker(symbol)
     try:
-        info = yf.Ticker(symbol).info
+        info = tk.info
     except Exception:
         info = {}
+    preco_atual = info.get("currentPrice") or info.get("regularMarketPrice")
     return {
         "valor_mercado": info.get("marketCap"),
         "pl": info.get("trailingPE"),
         "pvp": info.get("priceToBook"),
-        "dividend_yield": info.get("dividendYield"),
+        "dividend_yield": _dividend_yield_12m(tk, preco_atual),
         "beta": info.get("beta"),
     }
 
@@ -136,6 +164,9 @@ def calcular_retornos(ticker: str) -> dict:
         df = df.reset_index()
         col_data = "Date" if "Date" in df.columns else "Datetime"
         df = df.rename(columns={col_data: "Data"})
+        df = _descartar_linhas_invalidas(df)
+        if df.empty:
+            return {}
     except Exception:
         return {}
 
@@ -201,6 +232,15 @@ def obter_nome_yf(ticker: str) -> str:
     return ""
 
 
+def _descartar_linhas_invalidas(df):
+    """Remove candles com Open/High/Low/Close <= 0 ou NaN - o yfinance as
+    vezes publica o pregao do dia assim antes de fechar/consolidar (visto
+    no SMFT3: O/H/L=0 com Close ainda valido). Nunca mostrar 0 como cotacao."""
+    colunas = ["Open", "High", "Low", "Close"]
+    valido = (df[colunas] > 0).all(axis=1) & df[colunas].notna().all(axis=1)
+    return df[valido].reset_index(drop=True)
+
+
 def calcular_medias_moveis(df):
     """Adiciona colunas MM20, MM50 e MM200 (média móvel simples do fechamento)."""
     df = df.copy()
@@ -229,6 +269,9 @@ def obter_historico(ticker: str, periodo_label: str):
         # yfinance nomeia a coluna de data como 'Date' (diario) ou 'Datetime' (intraday)
         col_data = "Date" if "Date" in df.columns else "Datetime"
         df = df.rename(columns={col_data: "Data"})
+        df = _descartar_linhas_invalidas(df)
+        if df.empty:
+            return None
 
         df = calcular_medias_moveis(df)
 

@@ -42,12 +42,16 @@ header[data-testid="stHeader"] {
    ele tambem carrega os icones de Share/estrela/GitHub, que senao ficam
    por cima do cabecalho do app (e-mail / SAIR) */
 .block-container {
-    padding-top: 3.3rem;
+    padding-top: 3.8rem;
     padding-bottom: 0.6rem;
     padding-left: 1rem;
     padding-right: 1rem;
     max-width: 100%;
 }
+
+/* botao de abrir a sidebar quando ela esta recolhida fica fora do header,
+   fixo perto do topo - da folga extra pro conteudo nao nascer embaixo dele */
+[data-testid="collapsedControl"] { z-index: 999; }
 
 /* reduz o espaco vertical entre elementos empilhados */
 [data-testid="stVerticalBlock"] { gap: 0.4rem; }
@@ -209,7 +213,12 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
 
 /* tabelas --------------------------------------------------------------------------- */
 table { font-size: 0.78rem; border-collapse: collapse; }
-table td, table th { padding: 0.15rem 0.5rem; white-space: nowrap; }
+table td, table th { padding: 0.15rem 0.5rem; }
+
+/* remove qualquer espaco fantasma que o wrapper nativo do st.fragment
+   adicione por conta propria - o espacamento entre paineis ja vem do
+   proprio st.container(border=True) */
+[data-testid="stFragment"] { margin: 0 !important; padding: 0 !important; }
 
 /* radio (usado apenas onde segmented_control nao se aplica) ------------------------- */
 .stRadio label p { color: var(--neutro) !important; font-size: 0.8rem !important; }
