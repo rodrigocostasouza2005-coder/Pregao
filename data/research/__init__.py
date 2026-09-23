@@ -15,9 +15,14 @@ tem conteudo publico coletavel sem login:
   mas ou o conteudo publico e' raso/generico - caso da XP - ou nao foi
   possivel confirmar a pagina/API certa de research dentro do tempo desta
   tarefa - casos de Itau BBA e Agora, os mais promissores pra um proximo
-  passo). Nenhuma delas guarda credenciais nem tenta contornar login."""
+  passo). Nenhuma delas guarda credenciais nem tenta contornar login.
 
-from . import genial
+Os itens coletados sao persistidos no Supabase (tabela research_itens,
+ver data/research/store.py) - a aba RESEARCH sempre le do banco, nunca
+direto da fonte; a coleta (fonte -> banco) roda no maximo a cada 30min
+por casa (store.precisa_recoletar)."""
+
+from . import genial, store
 
 CASAS = [
     {
@@ -41,25 +46,63 @@ CASAS = [
 ]
 
 
+def coletar_casa(casa: dict) -> tuple[int, bool]:
+    """Busca relatorios de uma casa na fonte real e grava no Supabase
+    (upsert por link, coletado_em=agora). Retorna (n_itens, ok) - ok=False
+    se a fonte ou o Supabase falharem. Funcao separada (nao inline em
+    obter_relatorios_unificado) pra poder ser chamada tambem por um job
+    agendado no futuro (GitHub Actions, fase opcional do roadmap), sem
+    depender da UI nem do gate de 30min - so import data.research e chama
+    coletar_casa(casa) ou coletar_todas_disponiveis() direto."""
+    itens = casa["obter_relatorios"]()
+    if itens is None:
+        return 0, False
+    return len(itens), store.salvar_itens(itens)
+
+
+def coletar_todas_disponiveis() -> dict:
+    """Coleta (sem gate de tempo) todas as casas marcadas como disponiveis.
+    Pensada pra ser chamada por um job agendado, nao pelo app ao vivo (o
+    app usa obter_relatorios_unificado, que respeita o gate de 30min).
+    Retorna {nome_da_casa: {'coletados': N, 'ok': bool}}."""
+    resultado = {}
+    for casa in CASAS:
+        if not casa["disponivel"]:
+            continue
+        coletados, ok = coletar_casa(casa)
+        resultado[casa["nome"]] = {"coletados": coletados, "ok": ok}
+    return resultado
+
+
 def obter_relatorios_unificado(casas_ativas=None):
-    """Agrega relatorios de todas as casas ativas (por id). Retorna
-    (relatorios, casas_com_falha) - casas_com_falha e' lista de nomes
-    cuja coleta falhou ou nao esta disponivel nesta versao."""
+    """Le os itens de research salvos no Supabase, das casas ativas (por
+    id). Antes de ler, garante que cada casa foi coletada ha no maximo
+    30min (store.precisa_recoletar) - se nao, chama coletar_casa() pra
+    essa casa antes de ler. A leitura em si sempre vem do banco, nunca
+    direto da fonte. Retorna (relatorios, falhas) - falhas: casas
+    indisponiveis ou cuja coleta/leitura deu erro."""
     if casas_ativas is None:
         casas_ativas = [c["id"] for c in CASAS if c["ativa_por_padrao"]]
 
-    relatorios = []
     falhas = []
+    nomes_para_ler = []
     for casa in CASAS:
         if casa["id"] not in casas_ativas:
             continue
         if not casa["disponivel"]:
-            motivo = casa.get("motivo_indisponivel", "indisponível")
-            falhas.append(f"{casa['nome']} ({motivo})")
+            falhas.append(f"{casa['nome']} ({casa.get('motivo_indisponivel', 'indisponível')})")
             continue
-        resultado = casa["obter_relatorios"]()
-        if resultado is None:
-            falhas.append(casa["nome"])
-        else:
-            relatorios.extend(resultado)
+        nomes_para_ler.append(casa["nome"])
+        if store.precisa_recoletar(casa["nome"]):
+            _, ok = coletar_casa(casa)
+            if not ok:
+                falhas.append(casa["nome"])
+
+    if not nomes_para_ler:
+        return [], falhas
+
+    relatorios = store.listar_itens(nomes_para_ler)
+    if relatorios is None:
+        falhas.append("Supabase (leitura do research)")
+        return [], falhas
     return relatorios, falhas

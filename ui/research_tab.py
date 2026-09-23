@@ -75,6 +75,10 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
         unsafe_allow_html=True,
     )
 
+    if rel.get("resumo"):
+        _bloco_resumo(rel["resumo"])
+        return
+
     if permitir_resumo_auto:
         with st.spinner("Resumindo..."):
             resultado = obter_resumo(rel["link"], rel["titulo"])

@@ -181,14 +181,27 @@ with col_sair:
 if not st.session_state.banco_ok:
     st.warning("Sem conexão com o Supabase — preferências e watchlist valem só para esta sessão.")
 
-# --- abas: ordem/visibilidade vem das preferencias, CONFIG sempre por ultimo
+# --- secoes de navegacao: ordem/visibilidade vem das preferencias, CONFIG
+# sempre por ultimo. So a secao ativa executa (diferente de st.tabs(), que
+# roda o conteudo de TODAS as abas em toda rerun e so esconde por CSS) -
+# alem de mais rapido, uma excecao numa secao nao derruba as outras (era
+# o caso do bug que deixava RESEARCH e CONFIG em branco juntos).
 abas_visiveis = [a for a in prefs["abas_visiveis"] if a in config.ABAS_DISPONIVEIS]
 if not abas_visiveis:
     abas_visiveis = list(config.ABAS_DISPONIVEIS)
-rotulos = [f"{i + 1} {chave}" for i, chave in enumerate(abas_visiveis)] + [f"{len(abas_visiveis) + 1} CONFIG"]
-abas = st.tabs(rotulos)
-abas_por_chave = dict(zip(abas_visiveis, abas))
-aba_config = abas[-1]
+secoes = abas_visiveis + ["CONFIG"]
+rotulos_secao = [f"{i + 1} {chave}" for i, chave in enumerate(secoes)]
+mapa_rotulo_secao = dict(zip(rotulos_secao, secoes))
+
+padrao_rotulo_secao, mem_secao = _escolha_estavel("secao_ativa", rotulos_secao, rotulos_secao[0])
+with st.container(key="nav_secao"):
+    sel_secao = st.segmented_control(
+        "Seção", rotulos_secao, default=padrao_rotulo_secao,
+        label_visibility="collapsed", key="secao_ativa",
+    )
+rotulo_secao_atual = sel_secao or padrao_rotulo_secao
+st.session_state[mem_secao] = rotulo_secao_atual
+secao_atual = mapa_rotulo_secao[rotulo_secao_atual]
 
 
 # --- sidebar: gestao da watchlist ------------------------------------------
@@ -247,8 +260,8 @@ with st.sidebar:
 
 
 # --- aba EQUITY --------------------------------------------------------------
-if "EQUITY" in abas_por_chave:
-    with abas_por_chave["EQUITY"]:
+if secao_atual == "EQUITY":
+    with st.container():
         if not prefs["watchlist"]:
             st.info("Adicione um ticker na barra lateral para começar.")
         else:
@@ -537,27 +550,26 @@ if "EQUITY" in abas_por_chave:
 
 
 # --- aba MACRO -----------------------------------------------------------
-if "MACRO" in abas_por_chave:
-    with abas_por_chave["MACRO"]:
+if secao_atual == "MACRO":
+    with st.container():
         render_macro(prefs)
 
 
 # --- aba RESEARCH ---------------------------------------------------------
-if "RESEARCH" in abas_por_chave:
-    with abas_por_chave["RESEARCH"]:
+if secao_atual == "RESEARCH":
+    with st.container():
         render_research(prefs)
 
 
 # --- abas futuras (placeholders) ------------------------------------------
 _titulos_futuros = {"NEWS": "Fase 3", "CVM": "Fase 5"}
-for chave, fase in _titulos_futuros.items():
-    if chave in abas_por_chave:
-        with abas_por_chave[chave]:
-            st.info(f"Painel {chave} ainda não implementado ({fase}).")
+if secao_atual in _titulos_futuros:
+    with st.container():
+        st.info(f"Painel {secao_atual} ainda não implementado ({_titulos_futuros[secao_atual]}).")
 
 
 # --- aba CONFIG --------------------------------------------------------------
-with aba_config:
+if secao_atual == "CONFIG":
     with st.container(border=True):
         st.markdown('<div class="painel-titulo">CONFIG</div>', unsafe_allow_html=True)
 

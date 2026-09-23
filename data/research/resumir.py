@@ -3,12 +3,10 @@
 API compativel com OpenAI, sem SDK extra: so `requests`).
 
 Fluxo: baixa o relatorio (HTML ou PDF) -> extrai texto (nunca copiado
-verbatim pro resumo) -> resume com o LLM num formato fixo. Resultado
-cacheado em memoria por link via `st.cache_data` - nao resume o mesmo
-relatorio duas vezes na mesma sessao do servidor, mas nada e' persistido
-em banco (o resumo so "existe" enquanto o app estiver no ar; reinicio/
-redeploy perde o cache e resume de novo se pedido). Se qualquer etapa
-falhar, retorna resumo=None com o motivo - nunca inventa conteudo."""
+verbatim pro resumo) -> resume com o LLM num formato fixo -> grava no
+Supabase (tabela research_itens, ver data/research/store.py) pra nunca
+resumir o mesmo link duas vezes. Se qualquer etapa falhar, retorna
+resumo=None com o motivo - nunca inventa conteudo."""
 
 from io import BytesIO
 
@@ -17,7 +15,8 @@ import streamlit as st
 from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi_requests
 
-from .base import HEADERS, TIMEOUT, TTL_COLETA, permitido
+from . import store
+from .base import HEADERS, TIMEOUT, permitido
 
 _MODELO_GROQ = "llama-3.1-8b-instant"
 
@@ -121,14 +120,13 @@ def resumir_com_groq(texto: str, titulo: str) -> tuple:
         return None, str(e)
 
 
-@st.cache_data(ttl=TTL_COLETA, show_spinner=False)
 def obter_resumo(link: str, titulo: str) -> dict:
-    """Resumo de um relatorio: baixa+extrai+resume via Groq. Cacheado em
-    memoria por link (`st.cache_data`, TTL de 30min) - nao resume o mesmo
-    link duas vezes seguidas nem fica preso numa falha transitoria pra
-    sempre; nada persiste em banco.
+    """Resumo de um relatorio: baixa+extrai+resume via Groq e grava no
+    Supabase (upsert pelo link, ja existente na tabela - ver
+    store.salvar_resumo). Quem chama deve conferir antes se o item ja tem
+    resumo salvo (rel.get('resumo')) pra nao gastar cota de IA a toa.
     Retorna {resumo, motivo_indisponivel}; resumo=None se qualquer etapa
-    falhar."""
+    falhar (nao grava nada nesse caso)."""
     texto, motivo = obter_texto_relatorio(link)
     if texto is None:
         return {"resumo": None, "motivo_indisponivel": motivo}
@@ -137,4 +135,5 @@ def obter_resumo(link: str, titulo: str) -> dict:
     if resumo is None:
         return {"resumo": None, "motivo_indisponivel": motivo}
 
+    store.salvar_resumo(link, resumo, _MODELO_GROQ)
     return {"resumo": resumo, "motivo_indisponivel": None}

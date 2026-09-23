@@ -209,18 +209,6 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
     font-weight: 600;
 }
 
-/* abas (tabs) -------------------------------------------------------------------- */
-.stTabs [data-baseweb="tab-list"] { gap: 0.3rem; border-bottom: 1px solid var(--borda); }
-.stTabs [data-baseweb="tab"] {
-    color: var(--cinza) !important;
-    font-size: 0.78rem !important;
-    letter-spacing: 0.05em;
-    padding: 0.35rem 0.7rem !important;
-}
-.stTabs [aria-selected="true"] { color: var(--destaque) !important; font-weight: 600; }
-.stTabs [data-baseweb="tab-highlight"] { background-color: var(--destaque) !important; }
-.stTabs [data-baseweb="tab-border"] { background-color: var(--borda) !important; }
-
 /* alertas (avisos) - barra fina de uma linha, sem bloco colorido alto ------------- */
 [data-testid="stAlert"] {
     background-color: var(--bg) !important;
@@ -290,8 +278,8 @@ table td, table th { padding: 0.15rem 0.5rem; }
     .ticker-tape-wrap { overflow-x: auto; }
 }
 
-/* garante respiro entre o letreiro e as abas, mesmo com margens colapsando */
-.stTabs { margin-top: 0.3rem; }
+/* garante respiro entre o letreiro e o seletor de secao, mesmo com margens colapsando */
+.st-key-nav_secao { margin-top: 0.3rem; }
 
 /* responsividade: tabela/markdown que estourar a largura vira scroll
    horizontal dentro do proprio bloco em vez de cortar conteudo */
