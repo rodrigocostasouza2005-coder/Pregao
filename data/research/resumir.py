@@ -11,7 +11,6 @@ resumo=None com o motivo - nunca inventa conteudo."""
 from io import BytesIO
 
 import requests
-import streamlit as st
 from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi_requests
 
@@ -89,10 +88,9 @@ def resumir_com_groq(texto: str, titulo: str) -> tuple:
     """Resume via Groq (free tier). Retorna (resumo, motivo_falha).
     motivo_falha='cota' especificamente em erro 429 (rate limit/cota
     esgotada), pra UI mostrar um aviso diferenciado."""
-    try:
-        chave = st.secrets["groq"]["api_key"]
-    except Exception:
-        return None, "GROQ_API_KEY nao configurada em st.secrets"
+    chave, modelo = config.obter_credenciais_groq()
+    if not chave:
+        return None, "GROQ_API_KEY não configurada em st.secrets"
 
     texto_truncado = texto[:12000]
     try:
@@ -100,13 +98,14 @@ def resumir_com_groq(texto: str, titulo: str) -> tuple:
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {chave}", "Content-Type": "application/json"},
             json={
-                "model": config.obter_modelo_groq(),
+                "model": modelo,
                 "messages": [
                     {"role": "system", "content": _PROMPT_SISTEMA},
                     {"role": "user", "content": f"Titulo: {titulo}\n\nTexto do relatorio:\n{texto_truncado}"},
                 ],
                 "temperature": 0.2,
-                "max_tokens": 400,
+                "max_tokens": config.GROQ_MAX_TOKENS,
+                "reasoning_effort": config.GROQ_REASONING_EFFORT,
             },
             timeout=30,
         )

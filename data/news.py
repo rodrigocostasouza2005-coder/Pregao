@@ -814,8 +814,6 @@ _TTL_RESUMO = 24 * 60 * 60  # 24h - "por enquanto" em memoria (st.cache_data);
 # de chamar Groq, salvar o resultado no lugar do cache) - a assinatura ja e'
 # pura (titulo + fontes -> resultado), da pra embrulhar sem mexer em quem chama.
 
-_MODELO_GROQ_NEWS = "openai/gpt-oss-20b"
-
 # veiculos com paywall conhecido pra materia comum (nao institucional) -
 # tentamos essas por ultimo dentro do grupo, ja que costumam falhar
 _VEICULOS_PROVAVEL_PAYWALL = {"valor", "estadao", "folha", "bloomberg", "wall street journal", "wsj", "financial times"}
@@ -884,10 +882,11 @@ def _resumir_com_groq(texto: str, titulo: str) -> tuple:
     """Resume via Groq (free tier, mesma API usada no research - ver
     data/research/resumir.py - mas com prompt proprio: aqui e' noticia
     curta em 2-3 linhas, la e' relatorio de research em topicos fixos).
-    Retorna (resumo, motivo_falha); motivo_falha='cota' em 429."""
-    try:
-        chave = st.secrets["groq"]["api_key"]
-    except Exception:
+    Chave/modelo vem de config.obter_credenciais_groq() (lugar unico,
+    compartilhado com research). Retorna (resumo, motivo_falha);
+    motivo_falha='cota' em 429."""
+    chave, modelo = config.obter_credenciais_groq()
+    if not chave:
         return None, "GROQ_API_KEY não configurada em st.secrets"
 
     texto_truncado = texto[:6000]
@@ -896,18 +895,18 @@ def _resumir_com_groq(texto: str, titulo: str) -> tuple:
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {chave}", "Content-Type": "application/json"},
             json={
-                "model": _MODELO_GROQ_NEWS,
+                "model": modelo,
                 "messages": [
                     {"role": "system", "content": _PROMPT_SISTEMA_RESUMO},
                     {"role": "user", "content": f"Título: {titulo}\n\nTexto extraído da página:\n{texto_truncado}"},
                 ],
                 "temperature": 0.3,
-                "max_tokens": 400,
+                "max_tokens": config.GROQ_MAX_TOKENS,
                 # gpt-oss e' modelo de raciocinio: sem isso ele gasta boa parte
                 # do max_tokens "pensando" (campo message.reasoning) antes de
                 # responder, e o resumo sai cortado no meio - visto na pratica
                 # (raciocinio consumindo ~60 tokens de um orcamento de 200)
-                "reasoning_effort": "low",
+                "reasoning_effort": config.GROQ_REASONING_EFFORT,
             },
             timeout=30,
         )

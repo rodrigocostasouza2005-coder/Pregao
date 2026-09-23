@@ -72,23 +72,39 @@ ABAS_DISPONIVEIS = ["EQUITY", "MACRO", "RESEARCH", "NEWS", "TOP MERCADO", "CVM"]
 # --- E-mails com acesso ao painel DIAGNOSTICO DE FONTES (aba CONFIG) ----
 EMAILS_DIAGNOSTICO = ["rodrigo.costa.souza2005@gmail.com"]
 
-# --- Groq: modelo usado nos resumos por IA (research hoje, news quando
-# plugar) - GROQ_MODELO_PADRAO e' o modelo verificado como disponivel na
-# Groq nesta data; obter_modelo_groq() permite trocar sem mexer em codigo
-# via st.secrets["groq"]["modelo"], util quando a Groq descontinuar de
-# novo (ja aconteceu com o llama-3.1-8b-instant, trocado por este).
+# --- Groq: chave e modelo usados nos resumos por IA (research e news) --
+# GROQ_MODELO_PADRAO e' o modelo verificado como disponivel na Groq nesta
+# data; sobrescrevivel via st.secrets["groq"]["modelo"], util quando a
+# Groq descontinuar de novo (ja aconteceu com o llama-3.1-8b-instant,
+# trocado por este). reasoning_effort="low" nas chamadas: gpt-oss e'
+# modelo de raciocinio, sem isso ele gasta boa parte do max_tokens
+# "pensando" (campo message.reasoning) antes de responder e o resumo sai
+# cortado no meio (visto na pratica no resumo de noticias).
 GROQ_MODELO_PADRAO = "openai/gpt-oss-20b"
+GROQ_REASONING_EFFORT = "low"
+GROQ_MAX_TOKENS = 400
 
 
 def obter_modelo_groq() -> str:
+    return obter_credenciais_groq()[1]
+
+
+def obter_credenciais_groq() -> tuple:
+    """(api_key, modelo) do Groq, lidos num lugar so' - usado por
+    data/research/resumir.py e data/news.py. api_key: st.secrets["groq"]
+    ["api_key"], com fallback pra st.secrets["GROQ_API_KEY"] na raiz
+    (configuracao de uma linha so, sem precisar da secao [groq]). modelo:
+    st.secrets["groq"]["modelo"] ou GROQ_MODELO_PADRAO. api_key vem None
+    se nao configurada em lugar nenhum - quem chama mostra "resumo
+    indisponível (GROQ_API_KEY não configurada)" e segue sem quebrar."""
     try:
         import streamlit as st
-        modelo = st.secrets.get("groq", {}).get("modelo")
-        if modelo:
-            return modelo
+        secao_groq = st.secrets.get("groq", {})
+        api_key = secao_groq.get("api_key") or st.secrets.get("GROQ_API_KEY")
+        modelo = secao_groq.get("modelo") or GROQ_MODELO_PADRAO
+        return api_key, modelo
     except Exception:
-        pass
-    return GROQ_MODELO_PADRAO
+        return None, GROQ_MODELO_PADRAO
 
 # --- Preferencias padrao (usuario novo ou banco fora do ar) -------------
 PREFS_PADRAO = {
