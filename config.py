@@ -67,7 +67,7 @@ VELOCIDADES_TICKER_TAPE = {"LENTA": 25, "NORMAL": 50, "RAPIDA": 80}
 JANELAS_RETORNO = ["1D", "1S", "1M", "3M", "6M", "12M", "ANO"]
 
 # --- Abas do app (chave interna = titulo exibido na navegacao) ----------
-ABAS_DISPONIVEIS = ["EQUITY", "MACRO", "RESEARCH", "NEWS", "CVM"]
+ABAS_DISPONIVEIS = ["EQUITY", "MACRO", "RESEARCH", "NEWS", "TOP MERCADO", "CVM"]
 
 # --- E-mails com acesso ao painel DIAGNOSTICO DE FONTES (aba CONFIG) ----
 EMAILS_DIAGNOSTICO = ["rodrigo.costa.souza2005@gmail.com"]

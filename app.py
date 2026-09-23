@@ -27,7 +27,9 @@ from data.prices import (
 from data.research import CASAS as CASAS_RESEARCH
 from data.user_prefs import obter_prefs, salvar_prefs
 from ui.macro_tab import render_macro
+from ui.news_tab import render_news, render_news_ticker
 from ui.research_tab import render_research
+from ui.top_mercado_tab import render_top_mercado
 
 st.set_page_config(page_title="PREGÃO", layout="wide", initial_sidebar_state="expanded")
 
@@ -549,6 +551,9 @@ if secao_atual == "EQUITY":
 
                     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
+            with st.container(border=True):
+                render_news_ticker(ticker_selecionado, prefs)
+
 
 # --- aba MACRO -----------------------------------------------------------
 if secao_atual == "MACRO":
@@ -562,8 +567,20 @@ if secao_atual == "RESEARCH":
         render_research(prefs)
 
 
+# --- aba NEWS --------------------------------------------------------------
+if secao_atual == "NEWS":
+    with st.container():
+        render_news(prefs)
+
+
+# --- aba TOP MERCADO --------------------------------------------------------
+if secao_atual == "TOP MERCADO":
+    with st.container():
+        render_top_mercado(prefs)
+
+
 # --- abas futuras (placeholders) ------------------------------------------
-_titulos_futuros = {"NEWS": "Fase 3", "CVM": "Fase 5"}
+_titulos_futuros = {"CVM": "Fase 5"}
 if secao_atual in _titulos_futuros:
     with st.container():
         st.info(f"Painel {secao_atual} ainda não implementado ({_titulos_futuros[secao_atual]}).")

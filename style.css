@@ -189,8 +189,12 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
 /* checkbox --------------------------------------------------------------------- */
 .stCheckbox label p { color: var(--neutro) !important; font-size: 0.8rem !important; }
 
-/* segmented_control / pills: pilulas compactas, selecionado = fundo ambar ------- */
-[data-testid="stSegmentedControl"] button, [data-testid="stPills"] button {
+/* segmented_control / pills: pilulas compactas, selecionado = fundo ambar -------
+   Nesta versao do Streamlit, st.segmented_control E st.pills renderizam os
+   dois sob data-testid="stButtonGroup" (confirmado no bundle JS: nao existe
+   "stPills" nem "stSegmentedControl" ali) - os seletores antigos nunca
+   bateram, entao esses controles vinham sem estilo nenhum no app inteiro. */
+[data-testid="stButtonGroup"] button {
     background-color: var(--painel-bg) !important;
     border: 1px solid var(--borda) !important;
     color: var(--cinza) !important;
@@ -199,10 +203,8 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
     padding: 0.1rem 0.7rem !important;
     min-height: 26px !important;
 }
-[data-testid="stSegmentedControl"] button[aria-checked="true"],
-[data-testid="stPills"] button[aria-checked="true"],
-[data-testid="stSegmentedControl"] button[aria-pressed="true"],
-[data-testid="stPills"] button[aria-pressed="true"] {
+[data-testid="stButtonGroup"] button[aria-checked="true"],
+[data-testid="stButtonGroup"] button[aria-pressed="true"] {
     background-color: var(--destaque) !important;
     border-color: var(--destaque) !important;
     color: #000000 !important;
