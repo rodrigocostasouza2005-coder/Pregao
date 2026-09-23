@@ -41,6 +41,15 @@ enquanto avançamos nas próximas fases).
   o limite). Para viabilizar essa comparação, salvar um snapshot diário
   da curva no Supabase via GitHub Actions (Fase 7 do roadmap original,
   coleta automática).
+- Curva pré: legenda (Hoje / 1 semana atrás / 1 mês atrás) aparece
+  sobreposta/cortada no gráfico.
+- Barra de ferramentas do Plotly não está escondida nos gráficos da aba
+  MACRO (`displayModeBar: False` já existe em app.py, faltou aplicar em
+  `ui/macro_tab.py`).
+- IPCA: eixo X do gráfico 12 meses deveria mostrar mês/ano (ex:
+  "ago/2026") em vez do formato padrão do Plotly.
+- Conferir se os avisos (fonte indisponível etc.) na aba MACRO estão
+  usando o mesmo estilo fino/compacto do resto do app.
 
 ## Fases futuras
 - Morning Call da Genial: transcrição + resumo automático. Fase futura,
