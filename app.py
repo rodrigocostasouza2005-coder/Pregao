@@ -18,6 +18,7 @@ from data.prices import (
     obter_cotacao,
     obter_cotacao_indice,
     obter_historico,
+    obter_historico_intraday,
     obter_indicadores,
     obter_nome_yf,
     validar_ticker,
@@ -376,9 +377,10 @@ if "EQUITY" in abas_por_chave:
                 )
 
             with st.container(border=True):
-                st.markdown('<div class="painel-titulo">GRÁFICO</div>', unsafe_allow_html=True)
+                titulo_grafico = st.empty()
+                titulo_grafico.markdown('<div class="painel-titulo">GRÁFICO</div>', unsafe_allow_html=True)
 
-                periodos = list(config.PERIODOS_GRAFICO.keys())
+                periodos = config.PERIODOS_INTRADIARIOS + list(config.PERIODOS_GRAFICO.keys())
                 padrao_periodo = prefs["grafico_periodo_padrao"] if prefs["grafico_periodo_padrao"] in periodos else "6M"
                 padrao_periodo, mem_periodo = _escolha_estavel("periodo_grafico", periodos, padrao_periodo)
                 sel_periodo = st.segmented_control(
@@ -387,10 +389,21 @@ if "EQUITY" in abas_por_chave:
                 )
                 periodo = sel_periodo or padrao_periodo
                 st.session_state[mem_periodo] = periodo
+                eh_intraday = periodo in config.PERIODOS_INTRADIARIOS
 
                 comparar_ibov = st.checkbox("Comparar com Ibovespa (base 100)", value=False, key="comparar_ibov")
 
-                df = obter_historico(ticker_selecionado, periodo)
+                if eh_intraday:
+                    df = obter_historico_intraday(ticker_selecionado, periodo)
+                else:
+                    df = obter_historico(ticker_selecionado, periodo)
+
+                if eh_intraday and periodo == "1D" and df is not None and not df.empty:
+                    data_pregao = df["Data"].iloc[-1].strftime("%d/%m")
+                    titulo_grafico.markdown(
+                        f'<div class="painel-titulo">GRÁFICO — PREGÃO DE {data_pregao}</div>',
+                        unsafe_allow_html=True,
+                    )
 
                 def _layout_grafico_escuro(fig, altura=480):
                     fig.update_layout(
@@ -407,8 +420,11 @@ if "EQUITY" in abas_por_chave:
                     fig.update_yaxes(gridcolor="#1A1A1A")
 
                 if df is None:
-                    st.warning(f"Não foi possível obter o histórico de {ticker_selecionado} para o período {periodo}.")
-                elif comparar_ibov:
+                    if eh_intraday:
+                        st.warning(f"Não foi possível obter o histórico intradiário de {ticker_selecionado}.")
+                    else:
+                        st.warning(f"Não foi possível obter o histórico de {ticker_selecionado} para o período {periodo}.")
+                elif comparar_ibov and not eh_intraday:
                     fig = go.Figure()
                     serie_acao = (df["Close"] / df["Close"].iloc[0]) * 100
                     fig.add_trace(go.Scatter(x=df["Data"], y=serie_acao, name=ticker_selecionado,
@@ -431,6 +447,9 @@ if "EQUITY" in abas_por_chave:
 
                     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
                 else:
+                    if comparar_ibov and eh_intraday:
+                        st.info("Comparação com Ibovespa não disponível para períodos intradiários (1D/1S).")
+
                     fig = make_subplots(
                         rows=2, cols=1, shared_xaxes=True,
                         row_heights=[0.75, 0.25], vertical_spacing=0.03,
@@ -463,21 +482,25 @@ if "EQUITY" in abas_por_chave:
                             row=1, col=1,
                         )
 
-                    if prefs["mm20"]:
+                    sufixo_mm = ""
+                    if eh_intraday:
+                        sufixo_mm = " (5 min)" if periodo == "1D" else " (30 min)"
+
+                    if prefs["mm20"] and df["MM20"].notna().any():
                         fig.add_trace(
-                            go.Scatter(x=df["Data"], y=df["MM20"], name="MM20",
+                            go.Scatter(x=df["Data"], y=df["MM20"], name=f"MM20{sufixo_mm}",
                                        line=dict(color=tema["destaque"], width=1)),
                             row=1, col=1,
                         )
-                    if prefs["mm50"]:
+                    if prefs["mm50"] and df["MM50"].notna().any():
                         fig.add_trace(
-                            go.Scatter(x=df["Data"], y=df["MM50"], name="MM50",
+                            go.Scatter(x=df["Data"], y=df["MM50"], name=f"MM50{sufixo_mm}",
                                        line=dict(color=tema["ciano"], width=1)),
                             row=1, col=1,
                         )
-                    if prefs["mm200"]:
+                    if prefs["mm200"] and df["MM200"].notna().any():
                         fig.add_trace(
-                            go.Scatter(x=df["Data"], y=df["MM200"], name="MM200",
+                            go.Scatter(x=df["Data"], y=df["MM200"], name=f"MM200{sufixo_mm}",
                                        line=dict(color=tema["cinza"], width=1)),
                             row=1, col=1,
                         )
@@ -494,11 +517,19 @@ if "EQUITY" in abas_por_chave:
 
                     _layout_grafico_escuro(fig)
 
-                    # remove buracos de fim de semana/feriado no eixo X (so faz sentido em barras diarias)
-                    _, intervalo_periodo = config.PERIODOS_GRAFICO[periodo]
-                    if intervalo_periodo == "1d":
-                        feriados = dias_sem_pregao(df)
-                        fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=feriados)])
+                    if eh_intraday:
+                        # esconde fim de semana e fora do horario de pregao da B3
+                        # (10h-17h, conferido nos dados intradiarios reais)
+                        fig.update_xaxes(rangebreaks=[
+                            dict(bounds=["sat", "mon"]),
+                            dict(bounds=[17, 10], pattern="hour"),
+                        ])
+                    else:
+                        # remove buracos de fim de semana/feriado no eixo X (so faz sentido em barras diarias)
+                        _, intervalo_periodo = config.PERIODOS_GRAFICO[periodo]
+                        if intervalo_periodo == "1d":
+                            feriados = dias_sem_pregao(df)
+                            fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=feriados)])
 
                     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 

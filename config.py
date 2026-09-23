@@ -87,6 +87,11 @@ PREFS_PADRAO = {
     "ticker_tape_velocidade": "NORMAL",
 }
 
+# --- Periodos intradiarios (candles de minutos, tratados a parte em
+# data/prices.py:obter_historico_intraday - nao usam buffer/recorte por
+# dias, o mecanismo dos periodos diarios/semanais abaixo) ---------------
+PERIODOS_INTRADIARIOS = ["1D", "1S"]
+
 # --- Periodos disponiveis no grafico de candles -------------------------
 # rotulo -> (period do yfinance, interval do yfinance)
 PERIODOS_GRAFICO = {

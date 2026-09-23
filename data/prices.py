@@ -294,6 +294,45 @@ def obter_historico(ticker: str, periodo_label: str):
         return None
 
 
+_PERIODOS_INTRADIARIOS_YF = {
+    "1D": ("5d", "5m"),   # busca 5 pregoes e filtra so o mais recente - funciona
+    "1S": ("5d", "30m"),  # tambem com mercado fechado (fim de semana/feriado)
+}
+
+
+@st.cache_data(ttl=90, show_spinner=False)
+def obter_historico_intraday(ticker: str, periodo_label: str):
+    """
+    Historico intradiario (candles de 5min pro '1D', 30min pro '1S') +
+    medias moveis. Se o mercado estiver fechado, '1D' mostra o ultimo
+    pregao completo disponivel (filtra pela data mais recente que tiver
+    dado, em vez de depender do periodo 'ultimo dia' do yfinance, que se
+    comporta de forma inconsistente fora do horario de pregao). None se
+    a fonte nao tiver intradiario pro ticker (comum em alguns papeis).
+    """
+    symbol = _para_symbol_yf(ticker)
+    period, interval = _PERIODOS_INTRADIARIOS_YF[periodo_label]
+    try:
+        df = yf.Ticker(symbol).history(period=period, interval=interval)
+        if df.empty:
+            return None
+        df = df.reset_index()
+        col_data = "Date" if "Date" in df.columns else "Datetime"
+        df = df.rename(columns={col_data: "Data"})
+        df = _descartar_linhas_invalidas(df)
+        if df.empty:
+            return None
+
+        if periodo_label == "1D":
+            ultimo_dia = df["Data"].dt.date.max()
+            df = df[df["Data"].dt.date == ultimo_dia].reset_index(drop=True)
+
+        df = calcular_medias_moveis(df)
+        return df
+    except Exception:
+        return None
+
+
 def dias_sem_pregao(df):
     """Dias uteis dentro do periodo do df que nao tem pregao (feriados), pra
     remover do eixo X do grafico via rangebreaks."""
