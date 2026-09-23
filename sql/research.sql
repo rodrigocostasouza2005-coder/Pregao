@@ -10,7 +10,7 @@ create table if not exists research_itens (
   tipo          text not null,              -- ACOES / ESTRATEGIA / MACRO / NEWSLETTER
   tickers       text[] not null default '{}',
   resumo        text,                       -- resumo por IA, com palavras proprias - NUNCA o texto completo
-  modelo_resumo text,                       -- ex: 'llama-3.1-8b-instant' (qual LLM gerou o resumo)
+  modelo_resumo text,                       -- ex: 'openai/gpt-oss-20b' (qual LLM gerou o resumo)
   coletado_em   timestamptz not null default now()
 );
 

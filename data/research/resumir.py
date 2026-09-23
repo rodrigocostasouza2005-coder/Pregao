@@ -18,7 +18,7 @@ from curl_cffi import requests as cffi_requests
 from . import store
 from .base import HEADERS, TIMEOUT, permitido
 
-_MODELO_GROQ = "llama-3.1-8b-instant"
+_MODELO_GROQ = "openai/gpt-oss-20b"
 
 _PROMPT_SISTEMA = (
     "Voce resume relatorios de research financeiro em portugues, em no maximo 6 linhas, "
