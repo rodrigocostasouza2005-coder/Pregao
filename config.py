@@ -60,6 +60,9 @@ INDICES_TICKER_TAPE = {
 }
 SIMBOLO_IBOVESPA = "^BVSP"  # usado na comparacao de desempenho no grafico
 
+# --- Velocidade do letreiro animado da ticker tape (pixels por segundo) --
+VELOCIDADES_TICKER_TAPE = {"LENTA": 25, "NORMAL": 50, "RAPIDA": 80}
+
 # --- Janelas de retorno mostradas na linha compacta abaixo da cotacao ----
 JANELAS_RETORNO = ["1D", "1S", "1M", "3M", "6M", "12M", "ANO"]
 
@@ -80,6 +83,8 @@ PREFS_PADRAO = {
     "formato_numerico": "BR",
     "watchlist": list(TICKERS_PADRAO),
     "atualizacao_intervalo": 60,
+    "ticker_tape_modo": "ANIMADO",
+    "ticker_tape_velocidade": "NORMAL",
 }
 
 # --- Periodos disponiveis no grafico de candles -------------------------

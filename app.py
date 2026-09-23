@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """PREGÃO - terminal de mercado pessoal. Interface principal (Streamlit)."""
 
+import re
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -133,8 +135,36 @@ def _ticker_tape():
                 f"<span class='{cls}'>{sinal}{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%</span>"
             )
 
+    conteudo = " &nbsp;·&nbsp; ".join(itens)
+    animado = prefs["ticker_tape_modo"] == "ANIMADO"
+
+    if not animado:
+        st.markdown(
+            f"<div class='ticker-tape-wrap fixo'><div class='ticker-tape-track'>"
+            f"<span class='ticker-tape-set'>{conteudo}</span></div></div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    # velocidade constante: duracao da animacao escala com o tamanho do
+    # conteudo (estimado pelo numero de caracteres visiveis, fonte mono),
+    # senao a rolagem acelera visualmente quando a watchlist cresce
+    velocidade_px_s = config.VELOCIDADES_TICKER_TAPE[prefs["ticker_tape_velocidade"]]
+    texto_visivel = re.sub(r"<[^>]+>", "", conteudo)
+    largura_estimada_px = len(texto_visivel) * 7.5
+    duracao_s = max(largura_estimada_px / velocidade_px_s, 8)
+
+    # animation-delay negativo: a animacao parece ter comecado no epoch e
+    # estar rodando continuamente, entao o refresh do fragment (que troca o
+    # elemento HTML inteiro) nao gera um "pulo" visivel de volta ao inicio
+    atraso_s = -(time.time() % duracao_s)
+
     st.markdown(
-        "<div class='ticker-tape'>" + " &nbsp;·&nbsp; ".join(itens) + "</div>",
+        f"<div class='ticker-tape-wrap'>"
+        f"<div class='ticker-tape-track' style='animation-duration:{duracao_s:.1f}s; animation-delay:{atraso_s:.1f}s;'>"
+        f"<span class='ticker-tape-set'>{conteudo}</span>"
+        f"<span class='ticker-tape-set'>{conteudo}</span>"
+        f"</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -480,6 +510,10 @@ with aba_config:
                 novo_mm20 = st.checkbox("MÉDIA MÓVEL 20", value=prefs["mm20"])
                 novo_mm50 = st.checkbox("MÉDIA MÓVEL 50", value=prefs["mm50"])
                 novo_mm200 = st.checkbox("MÉDIA MÓVEL 200", value=prefs["mm200"])
+                novo_tape_modo = st.selectbox("LETREIRO", ["ANIMADO", "FIXO"],
+                                               index=["ANIMADO", "FIXO"].index(prefs["ticker_tape_modo"]))
+                novo_tape_velocidade = st.selectbox("VELOCIDADE DO LETREIRO", list(config.VELOCIDADES_TICKER_TAPE.keys()),
+                                                     index=list(config.VELOCIDADES_TICKER_TAPE.keys()).index(prefs["ticker_tape_velocidade"]))
 
             novas_abas = st.multiselect(
                 "ABAS VISÍVEIS (a ordem de seleção define a ordem de exibição)",
@@ -500,6 +534,8 @@ with aba_config:
                     "mm200": novo_mm200,
                     "abas_visiveis": novas_abas or list(config.ABAS_DISPONIVEIS),
                     "atualizacao_intervalo": config.INTERVALOS_ATUALIZACAO[novo_rotulo_intervalo],
+                    "ticker_tape_modo": novo_tape_modo,
+                    "ticker_tape_velocidade": novo_tape_velocidade,
                 })
                 if _persistir_prefs():
                     st.success("Preferências salvas.")

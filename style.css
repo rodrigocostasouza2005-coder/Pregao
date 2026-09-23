@@ -85,6 +85,11 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     border-bottom: 1px solid var(--borda);
 }
 
+/* colunas do Streamlit: por padrao um filho com texto "nowrap" longo (ex:
+   e-mail no header) recusa encolher (min-width:auto do flex), estoura a
+   coluna e pode empurrar/cortar conteudo vizinho. Forca encolher direito. */
+[data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { min-width: 0; }
+
 /* cores de sinal ----------------------------------------------------------- */
 .alta { color: var(--alta); }
 .baixa { color: var(--baixa); }
@@ -209,20 +214,48 @@ table td, table th { padding: 0.15rem 0.5rem; white-space: nowrap; }
 /* radio (usado apenas onde segmented_control nao se aplica) ------------------------- */
 .stRadio label p { color: var(--neutro) !important; font-size: 0.8rem !important; }
 
-/* ticker tape ------------------------------------------------------------------------ */
-.ticker-tape {
+/* ticker tape: letreiro rolando continuo, sem "pulo" na emenda ------------------------
+   conteudo duplicado dentro do trilho: translateX(-50%) empurra exatamente
+   uma copia inteira pra fora, a segunda copia fica onde a primeira comecou */
+.ticker-tape-wrap {
+    overflow: hidden;
     white-space: nowrap;
-    overflow-x: auto;
-    font-size: 0.75rem;
-    padding: 0.35rem 0.2rem;
     border-bottom: 1px solid var(--borda);
-    margin-bottom: 0.6rem;
+    padding: 0.35rem 0;
+    margin-top: 0.2rem;
+    margin-bottom: 1rem;
+}
+.ticker-tape-wrap.fixo { overflow-x: auto; }
+.ticker-tape-track {
+    display: inline-flex;
+    animation-name: pregao-marquee;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+}
+.ticker-tape-wrap:hover .ticker-tape-track,
+.ticker-tape-wrap.fixo .ticker-tape-track {
+    animation-play-state: paused;
+}
+.ticker-tape-set {
+    display: inline-block;
+    padding-right: 2.5rem;
+    font-size: 0.75rem;
+}
+@keyframes pregao-marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ticker-tape-track { animation: none !important; }
+    .ticker-tape-wrap { overflow-x: auto; }
 }
 
-/* responsividade: nada de tabela/markdown cortando em tela estreita - vira
-   scroll horizontal dentro do proprio bloco em vez de estourar a pagina */
+/* garante respiro entre o letreiro e as abas, mesmo com margens colapsando */
+.stTabs { margin-top: 0.3rem; }
+
+/* responsividade: tabela/markdown que estourar a largura vira scroll
+   horizontal dentro do proprio bloco em vez de cortar conteudo */
 [data-testid="stMarkdown"] { overflow-x: auto; }
-.block-container { overflow-x: hidden; }
 
 @media (max-width: 640px) {
     .block-container { padding-left: 0.5rem; padding-right: 0.5rem; }
