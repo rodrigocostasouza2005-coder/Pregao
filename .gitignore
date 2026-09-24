@@ -4,3 +4,4 @@ __pycache__/
 cache/*.json
 .streamlit/secrets.toml
 preview_macro.py
+coletor_local.log*
