@@ -31,6 +31,7 @@ from googlenewsdecoder import gnewsdecoder
 
 import config
 from data import news_setores
+from data.cvm import documento_confirmador
 from data.prices import obter_nome_yf
 
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -653,6 +654,22 @@ def obter_noticias(ticker: str):
             continue
         veiculos = [f["veiculo"] for f in grupo["fontes"]]
         score, regras = _calcular_score(grupo["titulos"], veiculos)
+        data_iso = grupo["data"].isoformat()
+        selo = _selo(score)
+        # selo CONFIRMADA: existe um Fato Relevante/Comunicado ao Mercado
+        # oficial da CVM do MESMO ticker, com assunto parecido (sobreposicao
+        # de palavras) e data proxima (ate 2 dias) - ver
+        # data/cvm.py:documento_confirmador. Sobrescreve o selo baseado em
+        # regras porque uma confirmacao oficial da CVM e' um sinal mais
+        # forte que qualquer heuristica de veiculo/linguagem. None (fonte
+        # da CVM fora do ar ou sem match) nunca rebaixa o selo - so' promove.
+        confirmacao_cvm = documento_confirmador(ticker, grupo["titulo"], data_iso)
+        if confirmacao_cvm:
+            selo = SELO_CONFIRMADA
+            regras = regras + [
+                f"confirmado por documento oficial da CVM: {confirmacao_cvm['tipo_label']} "
+                f"({confirmacao_cvm['assunto'][:70]})"
+            ]
         resultado.append({
             "ticker": ticker,
             "titulo": grupo["titulo"],
@@ -660,11 +677,12 @@ def obter_noticias(ticker: str):
             "veiculos": sorted(set(veiculos)),
             "fontes": grupo["fontes"],
             "fontes_count": len(set(veiculos)),
-            "data": grupo["data"].isoformat(),
+            "data": data_iso,
             "link": grupo["link"],
             "score": score,
-            "selo": _selo(score),
+            "selo": selo,
             "regras": regras,
+            "cvm_confirmacao": confirmacao_cvm,
             "tickers": sorted({t for titulo in grupo["titulos"] for t in _tickers_no_titulo(titulo)}),
         })
 

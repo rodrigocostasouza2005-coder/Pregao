@@ -27,6 +27,7 @@ from data.prices import (
 from data.research import CASAS as CASAS_RESEARCH
 from data.user_prefs import obter_prefs, salvar_prefs
 from ui import paineis
+from ui.cvm_tab import render_cvm, render_cvm_ticker
 from ui.macro_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MACRO
 from ui.macro_tab import render_macro
 from ui.mercado_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MERCADO
@@ -678,6 +679,9 @@ if secao_atual == "EQUITY":
             with st.container(border=True):
                 render_news_ticker(ticker_selecionado, prefs)
 
+            with st.container(border=True):
+                render_cvm_ticker(ticker_selecionado, prefs)
+
 
 # --- aba MACRO -----------------------------------------------------------
 if secao_atual == "MACRO":
@@ -715,11 +719,11 @@ if secao_atual == "SISTEMA":
         render_sistema(prefs)
 
 
-# --- abas futuras (placeholders) ------------------------------------------
-_titulos_futuros = {"CVM": "Fase 5"}
-if secao_atual in _titulos_futuros:
+# --- aba CVM (documentos oficiais: fato relevante, comunicado, resultados,
+# proventos, calendario - watchlist inteira, ver ui/cvm_tab.py) -------------
+if secao_atual == "CVM":
     with st.container():
-        st.info(f"Painel {secao_atual} ainda não implementado ({_titulos_futuros[secao_atual]}).")
+        render_cvm(prefs)
 
 
 # --- aba CONFIG --------------------------------------------------------------

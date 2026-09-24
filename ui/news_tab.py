@@ -22,13 +22,14 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
-from data.news import SELO_MENCAO, eh_fonte_confiavel, obter_noticias, obter_noticias_watchlist, obter_resumo_grupo, ordenar_fontes_para_resumo
+from data.news import SELO_CONFIRMADA, SELO_MENCAO, eh_fonte_confiavel, obter_noticias, obter_noticias_watchlist, obter_resumo_grupo, ordenar_fontes_para_resumo
 
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
 
-_ORDEM_SELOS = ["PROVÁVEL", "NÃO CONFIRMADA", "SUSPEITA", SELO_MENCAO]
+_ORDEM_SELOS = [SELO_CONFIRMADA, "PROVÁVEL", "NÃO CONFIRMADA", "SUSPEITA", SELO_MENCAO]
 
 _CLASSE_SELO = {
+    SELO_CONFIRMADA: "selo-confirmada",
     "PROVÁVEL": "selo-provavel",
     "NÃO CONFIRMADA": "selo-naoconfirmada",
     "SUSPEITA": "selo-suspeita",
@@ -36,6 +37,7 @@ _CLASSE_SELO = {
 }
 
 _SELO_ABREV = {
+    SELO_CONFIRMADA: "CONF",
     "PROVÁVEL": "PROV",
     "NÃO CONFIRMADA": "N.CONF",
     "SUSPEITA": "SUSP",
@@ -82,6 +84,7 @@ _CSS_WIRE = """
     cursor:help;
     text-align:center;
 }
+.selo-confirmada { background:var(--destaque); color:var(--bg); font-weight:700; }
 .selo-provavel { background:var(--alta); color:var(--bg); }
 .selo-naoconfirmada { background:var(--cinza); color:var(--bg); }
 .selo-suspeita { background:var(--baixa); color:var(--bg); }
@@ -208,7 +211,7 @@ def _dentro_de_horas(data_iso: str, horas: int) -> bool:
 
 def _texto_tag(n: dict) -> str:
     abrev = _SELO_ABREV.get(n["selo"], n["selo"])
-    if n["selo"] == SELO_MENCAO:
+    if n["selo"] in (SELO_MENCAO, SELO_CONFIRMADA):
         return abrev
     return f"{abrev} {n['score']}"
 
@@ -322,13 +325,23 @@ def _abrir_card(n: dict, watchlist: list):
     st.caption(_fmt_hora(n["data"]))
 
     classe_selo = _CLASSE_SELO.get(n["selo"], "selo-naoconfirmada")
-    sufixo_score = "" if n["selo"] == SELO_MENCAO else f" · {n['score']}"
+    sufixo_score = "" if n["selo"] in (SELO_MENCAO, SELO_CONFIRMADA) else f" · {n['score']}"
     st.markdown(
         f"<span class='selo-tag {classe_selo}'>{n['selo']}{sufixo_score}</span>",
         unsafe_allow_html=True,
     )
     for regra in n["regras"]:
         st.markdown(f"<div class='cinza' style='font-size:0.76rem; margin-top:0.15rem;'>• {html.escape(regra)}</div>", unsafe_allow_html=True)
+
+    confirmacao = n.get("cvm_confirmacao")
+    if confirmacao:
+        data_doc = confirmacao["data"][:10]  # so' a data (Data_Entrega da CVM nao tem hora de verdade)
+        st.markdown(
+            f"<div style='margin-top:0.3rem;'><a href='{confirmacao['link']}' target='_blank' "
+            f"style='color:var(--alta); font-size:0.76rem;'>↗ ver documento oficial na CVM "
+            f"({html.escape(confirmacao['tipo_label'])}, {data_doc})</a></div>",
+            unsafe_allow_html=True,
+        )
 
     if n.get("tickers"):
         tags = "".join(
