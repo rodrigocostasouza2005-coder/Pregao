@@ -172,6 +172,28 @@ indefinido). Nenhuma mudança necessária.
 
 ## FILA 1 — CONCLUÍDA (T1 a T11, todas as tarefas do adendo original)
 
+## FILA 2 — Tarefas concluídas
+
+### FILA2-T0 — Acompanhamento (CHANGELOG, MANUAL, aba SISTEMA)
+- `CHANGELOG.md` (criado antes, na FILA 1) — mantido a partir daqui.
+- `MANUAL.md` (novo): o que cada aba/painel faz, fonte de dados,
+  limitações conhecidas — escrito com base no código atual (EQUITY,
+  MACRO, RESEARCH, NEWS, TOP MERCADO, CONFIG; CVM deixado em aberto de
+  propósito, é de outra sessão ainda em andamento).
+- `ui/sistema_tab.py` (novo) + `app.py`: aba SISTEMA, visível só pra
+  `config.obter_emails_admin()` — **não** entra em
+  `config.ABAS_DISPONIVEIS` de propósito (isso faria a migração
+  automática de abas oferecer ela pra todo mundo); é adicionada à lista
+  de seções só quando o e-mail logado é admin, então nem aparece no
+  menu de usuário comum. 3 sub-abas (`st.tabs` local, ok aqui — não é a
+  navegação principal, é conteúdo estático de 3 arquivos): CHANGELOG,
+  PROGRESSO, MANUAL, lidos do disco.
+- Arquivos: app.py, ui/sistema_tab.py (novo), MANUAL.md (novo)
+- Testes: `compileall` limpo; AppTest confirma SISTEMA aparece e
+  renderiza sem exceção pro e-mail admin, e fica totalmente ausente
+  (nem o texto "SISTEMA" aparece) pra outro e-mail.
+- Commit: (ver abaixo)
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

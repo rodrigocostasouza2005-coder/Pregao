@@ -29,6 +29,7 @@ from data.user_prefs import obter_prefs, salvar_prefs
 from ui.macro_tab import render_macro
 from ui.news_tab import render_news, render_news_ticker
 from ui.research_tab import render_research
+from ui.sistema_tab import render_sistema
 from ui.top_mercado_tab import render_top_mercado
 
 st.set_page_config(page_title="PREGÃO", layout="wide", initial_sidebar_state="expanded")
@@ -208,6 +209,12 @@ abas_visiveis = [a for a in prefs["abas_visiveis"] if a in config.ABAS_DISPONIVE
 if not abas_visiveis:
     abas_visiveis = list(config.ABAS_DISPONIVEIS)
 secoes = abas_visiveis + ["CONFIG"]
+# SISTEMA: so pros e-mails admin, e so no menu deles - de proposito NAO
+# entra em config.ABAS_DISPONIVEIS (isso faria abas_conhecidas oferecer
+# a aba pra todo mundo, ver migracao de abas novas la em cima)
+_eh_admin = usuario["email"] in config.obter_emails_admin()
+if _eh_admin:
+    secoes = secoes + ["SISTEMA"]
 rotulos_secao = [f"{i + 1} {chave}" for i, chave in enumerate(secoes)]
 mapa_rotulo_secao = dict(zip(rotulos_secao, secoes))
 
@@ -597,6 +604,12 @@ if secao_atual == "NEWS":
 if secao_atual == "TOP MERCADO":
     with st.container():
         render_top_mercado(prefs)
+
+
+# --- aba SISTEMA (so admin) -------------------------------------------------
+if secao_atual == "SISTEMA":
+    with st.container():
+        render_sistema(prefs)
 
 
 # --- abas futuras (placeholders) ------------------------------------------
