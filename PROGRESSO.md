@@ -162,6 +162,18 @@ código nas duas.
   `coletor_local.py` rodado de verdade (exit 1, esperado neste sandbox).
 - Commit: (ver abaixo)
 
+### FILA1-T11 — Qualidade (limpeza)
+`pyflakes` (instalado localmente só pra essa checagem, não faz parte de
+requirements.txt) rodado em todos os arquivos tocados na FILA 1 hoje
+(app.py, config.py, data/news.py, data/prices.py, data/diagnostico.py,
+data/research/*, ui/news_tab.py, ui/macro_tab.py, ui/research_tab.py,
+coletor_local.py) — zero avisos (sem import não usado, sem nome
+indefinido). Nenhuma mudança necessária.
+
+## FILA 1 — CONCLUÍDA (T1 a T11, todas as tarefas do adendo original)
+
+## FILA 2 — em andamento (ver seção própria abaixo)
+
 ## Tarefas bloqueadas
 
 (preenchido se alguma falhar 2x)
