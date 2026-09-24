@@ -17,6 +17,13 @@ Mais recente primeiro.
   do `st.columns()`), coluna de ticker vazia removida (vira prefixo
   inline), tooltip nativo da manchete removido (cobria o `st.dialog`
   aberto por cima de qualquer coisa da página — mantido só no selo).
+- **T4 (modo autônomo 2):** barra de status fixa com relógio de Brasília,
+  indicador de pregão aberto/fechado e nota de atraso de cotação — dentro
+  do mesmo fragment do letreiro, sem rerun extra.
+- **T5 (modo autônomo 2):** NÃO implementado por decisão do próprio
+  Rodrigo (mudança arquitetural grande) — layout de painéis
+  arrastável/redimensionável fica só documentado em PROGRESSO.md como
+  sugestão futura.
 - **T3 (modo autônomo 2) — nova aba MERCADO:** visão ampla do pregão -
   termômetro, maiores altas/baixas, mais negociados, desempenho setorial
   (gráfico de barras), mapa de calor (treemap) e mercados globais (S&P

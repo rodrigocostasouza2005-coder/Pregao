@@ -464,6 +464,58 @@ Três sub-itens do pedido original do T3 foram tratados assim:
   fonte (scraping do calendário do BCB? alguma API paga de agenda
   corporativa?) antes de implementar — não é uma tarefa surgical.
 
+### FILA2-T4 — Polimento visual
+Barra de status fixa (relógio de Brasília HH:MM:SS, indicador ●PREGÃO
+ABERTO/FECHADO em verde/vermelho — dia útil + horário 10h-17h,
+simplificado de propósito, não é fonte oficial de horário de pregão —,
+nota de atraso de cotação ~15min) — adicionada dentro do MESMO fragment
+do letreiro (`_ticker_tape()`), no mesmo `run_every` das cotações, de
+propósito: um fragment próprio só pro relógio precisaria rodar a
+1x/segundo pra não "travar" visualmente, o que geraria muito mais rerun
+do que o necessário e contrariaria o trabalho de performance da FILA1.
+
+O resto do pedido do T4 (header de painel estilizado, tabelas densas
+alinhadas) já estava coberto por CSS de sessões anteriores a este modo
+autônomo (`.painel-titulo`, regra global `table { font-size:0.78rem;
+... } td,th { padding:0.15rem 0.5rem; }`) — não havia nada quebrado ou
+pendente aí, então não mexi por mexer.
+
+- Arquivos: `app.py`, `style.css`.
+- Testes: `compileall` limpo; AppTest EQUITY/MERCADO sem exceção;
+  conferido o HTML gerado de verdade (via `at.markdown`) pra confirmar
+  que o indicador de pregão aberto/fechado está no marcador certo.
+- Commit: enviado.
+
+### FILA2-T5 — Layout de painéis arrastável/redimensionável (NÃO implementado)
+Por decisão explícita do Rodrigo (regra 6 da FILA 2: mudanças
+arquiteturais grandes só devem ser documentadas como sugestão, não
+implementadas), este item fica só registrado aqui, sem código:
+
+**O que seria**: cada usuário podendo arrastar/reordenar/redimensionar os
+painéis de cada aba (EQUITY, MERCADO etc.), com o layout persistido por
+usuário no Supabase (tabela nova, ex: `user_layout`, chave por
+`usuario_id + aba`).
+
+**Por que é uma mudança grande**: a navegação atual (`if secao_atual ==
+"X": render_x(prefs)`) já foi deliberadamente desenhada pra renderizar só
+a seção ativa, sem "grid" de posições — introduzir arrastar/redimensionar
+exigiria (a) trocar `st.container(border=True)` sequencial por um
+sistema de grid com posições/tamanhos salvos, (b) uma biblioteca de
+drag-and-drop pro Streamlit (não é nativo — precisaria de um componente
+customizado ou HTML/JS via `st.components.v1.html`, algo que o projeto
+não usa em lugar nenhum hoje), (c) uma nova tabela no Supabase +
+migração, (d) redesenhar CADA painel de CADA aba pra funcionar dentro de
+um container redimensionável. Não é uma tarefa surgical - é uma mudança
+de arquitetura de UI inteira.
+
+**Sugestão pra quando for pra frente**: como passo intermediário mais
+barato, dá pra oferecer só REORDENAR (sem redimensionar) os painéis via
+um `st.multiselect`/lista com drag simples (existe componente de
+terceiros pra isso, ex: `streamlit-sortables`) salvando só uma lista de
+ordem por aba em `user_prefs` (reaproveitando a tabela que já existe,
+sem tabela nova) - cobre a parte mais pedida ("quero ver X antes de Y")
+sem entrar no redimensionamento livre, que é o pedaço realmente caro.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas
