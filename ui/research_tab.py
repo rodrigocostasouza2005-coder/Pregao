@@ -23,6 +23,16 @@ _AVISO_COTA = "Cota gratuita de resumo por IA esgotada por enquanto — os links
 # data/research/__init__.py
 _EXTRATOR_POR_CASA = {c["nome"]: c["extrator_texto"] for c in CASAS}
 
+# recomendacoes/swing trade da Genial sao SEMPRE ao vivo (obter_recomendacoes/
+# obter_swing_trade so' tem cache em memoria de processo, TTL_COLETA - nunca
+# passam pelo Supabase nem pelo gate tentar_coleta_automatica de
+# coletar_pendentes) - sem essa checagem aqui, o painel de watchlist ia
+# tentar buscar da Genial de novo a cada estouro do cache, mesmo com a
+# coleta automatica desligada pra ela (ver data/research/__init__.py).
+_GENIAL_COLETA_AUTOMATICA = next(
+    (c.get("tentar_coleta_automatica", True) for c in CASAS if c["id"] == "genial"), True
+)
+
 
 def _casas_ativas(prefs):
     """Le prefs['research_casas_ativas'] (gravada pelo multiselect "CASAS
@@ -116,8 +126,11 @@ def _painel_watchlist(prefs: dict, relatorios: list):
         st.info("Adicione tickers na barra lateral para ver research direcionado.")
         return
 
-    recomendacoes = obter_recomendacoes() or []
-    swing = obter_swing_trade() or []
+    if _GENIAL_COLETA_AUTOMATICA:
+        recomendacoes = obter_recomendacoes() or []
+        swing = obter_swing_trade() or []
+    else:
+        recomendacoes, swing = [], []
     fmt = prefs["formato_numerico"]
 
     mostrou_algo = False

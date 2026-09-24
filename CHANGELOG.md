@@ -17,6 +17,20 @@ Mais recente primeiro.
   do `st.columns()`), coluna de ticker vazia removida (vira prefixo
   inline), tooltip nativo da manchete removido (cobria o `st.dialog`
   aberto por cima de qualquer coisa da página — mantido só no selo).
+- **Diagnóstico Genial/XP mais rápido:** `testar_conexao()` de ambas
+  (usada só pelo painel DIAGNÓSTICO DE FONTES, aba CONFIG) agora usa
+  orçamento/timeout ≤5s por padrão, em vez do orçamento de 20s da coleta
+  real — a coleta real (usada pelo `coletor_local.py`) continua com o
+  orçamento cheio.
+- **Bug real corrigido — RESEARCH ainda travava por causa da Genial:** o
+  painel "NA SUA WATCHLIST" chamava `obter_recomendacoes()`/
+  `obter_swing_trade()` da Genial direto, sem passar pelo gate
+  `tentar_coleta_automatica` nem pelo cooldown do `coletar_pendentes` —
+  eram dados só-ao-vivo (cache em memória, nunca gravados no Supabase),
+  então a trava de até 20s continuava acontecendo nesse painel específico
+  mesmo depois do resto da aba já pular a coleta. Corrigido em
+  `ui/research_tab.py`: pula as duas chamadas quando a Genial está com
+  coleta automática desligada.
 - **Genial/XP no Cloud:** confirmado por diagnóstico real de produção que
   ambas ficam bloqueadas também no Streamlit Cloud (não só no sandbox de
   dev) — `tentar_coleta_automatica: False` pras duas; a aba RESEARCH só lê

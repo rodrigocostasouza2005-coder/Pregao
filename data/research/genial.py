@@ -52,13 +52,13 @@ _TENTATIVAS = [
 _ORCAMENTO_TOTAL_S = 20
 
 
-def _tentar_buscar(url: str):
+def _tentar_buscar(url: str, orcamento_s: float = _ORCAMENTO_TOTAL_S):
     """Tenta baixar `url` com cada combinacao de _TENTATIVAS ate uma dar
-    certo (200 com corpo) ou o orcamento total (_ORCAMENTO_TOTAL_S)
-    estourar. Retorna (Response, rotulo) ou (None, None) se todas
-    falharem/o tempo acabar. print() de cada tentativa - visivel nos Logs
-    do Streamlit Cloud."""
-    limite = time.monotonic() + _ORCAMENTO_TOTAL_S
+    certo (200 com corpo) ou o orcamento total (`orcamento_s`, default
+    _ORCAMENTO_TOTAL_S) estourar. Retorna (Response, rotulo) ou (None,
+    None) se todas falharem/o tempo acabar. print() de cada tentativa -
+    visivel nos Logs do Streamlit Cloud."""
+    limite = time.monotonic() + orcamento_s
     for tentativa in _TENTATIVAS:
         if time.monotonic() > limite:
             print("[genial] orçamento de tempo esgotado, parando tentativas")
@@ -75,12 +75,15 @@ def _tentar_buscar(url: str):
     return None, None
 
 
-def testar_conexao() -> tuple:
+def testar_conexao(orcamento_s: float = 5) -> tuple:
     """So testa se consegue baixar a home (sem parsear __NEXT_DATA__) -
-    usado pelo painel DIAGNOSTICO DE FONTES. Retorna (ok, detalhe)."""
+    usado pelo painel DIAGNOSTICO DE FONTES. Orcamento default bem menor
+    que o da coleta real (_ORCAMENTO_TOTAL_S=20): e' so' um teste de
+    reachability, nao vale a pena travar o painel por 20s numa fonte que
+    ja se sabe bloqueada. Retorna (ok, detalhe)."""
     if not permitido(BASE_URL):
         return False, "bloqueado pelo robots.txt"
-    r, rotulo = _tentar_buscar(BASE_URL)
+    r, rotulo = _tentar_buscar(BASE_URL, orcamento_s=orcamento_s)
     if r is None:
         return False, "todas as tentativas falharam"
     return True, rotulo

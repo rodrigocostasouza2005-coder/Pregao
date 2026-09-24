@@ -271,6 +271,40 @@ FUTURAS se ele quiser depois.
   exceção.
 - Commit: enviado.
 
+### Timeout curto no diagnóstico + bug real corrigido na watchlist do RESEARCH
+Pendências do item 2/3 do "Diagnóstico no Cloud" (24/09), fechadas agora:
+- `data/research/genial.py`/`xp.py`: `testar_conexao()` ganhou um
+  parâmetro de orçamento/timeout com default de 5s (`orcamento_s`/
+  `timeout`), usado só pelo painel DIAGNÓSTICO DE FONTES
+  (`data/diagnostico.py`, chama sem argumentos → pega o novo default). A
+  coleta real (`obter_relatorios`, usada por `coletar_pendentes` e por
+  `coletor_local.py`) continua chamando `_tentar_buscar`/
+  `_tentar_requisitar` sem esse argumento, então mantém o orçamento cheio
+  de 20s/10s — só o diagnóstico ficou mais rápido.
+- **Achado durante o teste desse item:** rodando AppTest na aba RESEARCH
+  depois da mudança, o log ainda mostrava tentativas reais de conexão com
+  a Genial levando ~20s, mesmo com `tentar_coleta_automatica: False`.
+  Causa: `ui/research_tab.py`/`_painel_watchlist` chama
+  `obter_recomendacoes()`/`obter_swing_trade()` da Genial DIRETO, sem
+  passar pelo `preparar_leitura`/`coletar_pendentes` (que já respeitava o
+  flag) — esses dois retornam dado só-ao-vivo, cacheado só em memória do
+  processo (`@st.cache_data(ttl=TTL_COLETA)`), nunca gravado no Supabase,
+  então não tem como o `coletor_local.py` alimentar isso. Ou seja, a
+  correção anterior ("pule a coleta da Genial/XP no Cloud") estava
+  incompleta: cobria a listagem geral de relatórios, mas não esse painel
+  específico, que continuava travando a aba periodicamente (a cada
+  estouro do cache em memória). Corrigido pulando as duas chamadas quando
+  `tentar_coleta_automatica` da Genial é `False` — a seção "Genial:
+  recomendação"/"Swing trade" some da watchlist nesse caso, mas o resto
+  do painel (relatórios vindos do Supabase) continua normal.
+- Arquivos: `data/research/genial.py`, `data/research/xp.py`,
+  `ui/research_tab.py`.
+- Testes: `compileall` limpo; AppTest em EQUITY/RESEARCH sem exceção;
+  reprodução direta do bug (rodei o teste ANTES da correção do
+  `research_tab.py` e vi as tentativas reais de conexão com a Genial no
+  log/stdout, confirmando que era um problema de verdade, não suspeita).
+- Commit: enviado, registrado no CHANGELOG.
+
 ## Nota: decisão FILA1-T9 (abaixo) superada
 A decisão "não desativar coleta automática de Genial/XP no Cloud" (ver
 "Decisões registradas" abaixo) foi **revertida** depois do diagnóstico real

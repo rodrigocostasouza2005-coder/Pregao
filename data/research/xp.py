@@ -57,7 +57,7 @@ _TICKER_CLASSE = re.compile(r"^tag-([a-z]{4}\d{1,2})$")
 _MARCADOR_PAYWALL = "paywall-gateway"
 
 
-def _tentar_requisitar(url: str, params: dict):
+def _tentar_requisitar(url: str, params: dict, timeout: float = TIMEOUT):
     """Tenta buscar `url` de duas formas ate uma dar certo (200): primeiro
     curl_cffi impersonate="chrome" (contorna bloqueio por fingerprint de
     TLS), depois requests puro com User-Agent comum + Accept: application/
@@ -66,11 +66,11 @@ def _tentar_requisitar(url: str, params: dict):
     print() de cada tentativa - visivel nos Logs do Streamlit Cloud."""
     tentativas = [
         ("curl_cffi+UA-identificado", lambda: cffi_requests.get(
-            url, headers=HEADERS, params=params, impersonate="chrome", timeout=TIMEOUT,
+            url, headers=HEADERS, params=params, impersonate="chrome", timeout=timeout,
         )),
         ("requests+UA-comum+Accept-json", lambda: plain_requests.get(
             url, headers={"User-Agent": _UA_COMUM, "Accept": "application/json"},
-            params=params, timeout=TIMEOUT,
+            params=params, timeout=timeout,
         )),
     ]
     for rotulo, fazer_requisicao in tentativas:
@@ -100,14 +100,16 @@ def _requisitar(path: str, params: dict):
         return None
 
 
-def testar_conexao() -> tuple:
+def testar_conexao(timeout: float = 5) -> tuple:
     """So testa se consegue baixar a lista de relatorios de acoes (sem
-    parsear os itens) - usado pelo painel DIAGNOSTICO DE FONTES. Retorna
-    (ok, detalhe)."""
+    parsear os itens) - usado pelo painel DIAGNOSTICO DE FONTES. Timeout
+    default bem menor que o TIMEOUT da coleta real (10s): e' so' um teste
+    de reachability, nao vale a pena travar o painel numa fonte que ja se
+    sabe bloqueada. Retorna (ok, detalhe)."""
     url = f"{BASE_URL}/wp-json/wp/v2/rel-acoes-fund"
     if not permitido(url):
         return False, "bloqueado pelo robots.txt"
-    r, rotulo = _tentar_requisitar(url, {"per_page": 1})
+    r, rotulo = _tentar_requisitar(url, {"per_page": 1}, timeout=timeout)
     if r is None:
         return False, "todas as tentativas falharam"
     return True, rotulo
