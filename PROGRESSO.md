@@ -573,6 +573,63 @@ posição (melhor/pior).
   jeito por sorte de timing.
 - Commit: enviado, registrado no CHANGELOG.
 
+### FILA2-T8 — Lives da Genial no YouTube (implementado, mas desligado)
+Pedido original: transcrever e resumir as lives da Genial no YouTube
+(Morning Call, Resumo da Manhã, Fechamento de Mercado, Podcast Genial
+Analisa ter/qui 19h, Estratégia em Ação última quarta 18h30, Conversa com
+Zé Márcio sáb 14h, Reunião do Copom quartas 19h30 ~45 dias), identificado
+pelo título do vídeo, mesmo formato de resumo.
+
+**Investigação (com ferramenta de busca/fetch web, dados reais, não
+suposição)**:
+1. Canal oficial confirmado: "Genial Investimentos",
+   `UCYSOMA4Yx1CJvrdI8epLfnA` (conferido pelo conteúdo do feed batendo
+   com notícias do dia 24/09/2026 de verdade).
+2. O feed RSS público do canal (`/feeds/videos.xml?channel_id=...`, sem
+   API key) retorna os ~15 vídeos mais recentes com título/data/link -
+   testado e os títulos reais batem com os padrões esperados ("Morning
+   Call Genial", "Resumo da Manhã", "Fechamento Genial" etc.).
+3. Legenda automática em português existe pra todo vídeo testado do
+   canal (`youtube_transcript_api`) - texto extraído de verdade (41 mil
+   caracteres num teste real), qualidade suficiente pra resumir.
+4. **Bloqueio real encontrado**: o `robots.txt` do YouTube
+   (`https://www.youtube.com/robots.txt`) tem, sob `User-agent: *`
+   (aplica a qualquer bot genérico, inclusive o `PregaoApp/...` deste
+   projeto): `Disallow: /feeds/videos.xml` E `Disallow: /api/`. O
+   `permitido()` que TODA coleta deste projeto já respeita (mesma função
+   usada por Genial/XP/etc, ver `data/research/base.py`) bloqueia
+   corretamente esse feed - não é bug, é a proteção funcionando como
+   projetada.
+
+**Decisão (regra 1 de autonomia)**: implementei o módulo inteiro
+(`data/research/genial_lives.py` - feed, identificação de programa por
+título, extração de legenda) e testei cada parte contra dado real
+(funciona tecnicamente), mas registrei a "casa" como `disponivel: False`
+(mesmo padrão do BTG) em vez de ativá-la - contrariar o robots.txt
+específico pra este source, depois de o projeto inteiro seguir essa
+política em toda outra fonte, seria inconsistente e é uma decisão de
+risco/ToS que não é minha pra tomar sozinho. Caminho limpo seria a API
+oficial do YouTube Data v3 (precisa de API key nova - ver AÇÕES MANUAIS
+PENDENTES) pra LISTAR vídeos; mesmo essa API, a parte de BAIXAR legenda
+de vídeo de outro canal exige OAuth do dono do canal (Genial não vai
+autorizar o app pessoal do Rodrigo), então nem a API oficial cobre
+transcrição de terceiro de forma limpa - **este item pode não ter uma
+solução 100% "por dentro das regras" com o canal de outra empresa**, vale
+alinhar com o Rodrigo se ele topa usar o mecanismo já pronto mesmo assim
+(ele mesmo pode religar em 1 linha: `disponivel: True` em
+`data/research/__init__.py`) ou se prefere deixar desligado.
+
+- Arquivos: `data/research/genial_lives.py` (novo), `data/research/__init__.py`,
+  `data/diagnostico.py` (entrada no painel de diagnóstico, testa e mostra
+  o bloqueio honestamente), `ui/research_tab.py` (label "LIVE/VÍDEO"),
+  `requirements.txt` (`youtube-transcript-api`).
+- Testes: `compileall` limpo; teste funcional direto contra dado real
+  (feed, identificação de programa, transcrição) ANTES da decisão de
+  desligar; AppTest EQUITY/RESEARCH/CONFIG sem exceção; `testar_conexao()`
+  confirmado reportando o bloqueio corretamente ("bloqueado pelo
+  robots.txt").
+- Commit: enviado, registrado no CHANGELOG.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas
@@ -600,6 +657,32 @@ emails = ["rodrigo.costa.souza2005@gmail.com"]
 Até colar isso, o painel DIAGNÓSTICO DE FONTES continua funcionando
 normalmente (usa o fallback fixo em `config._EMAILS_ADMIN_PADRAO`) — não
 é bloqueante, só uma ação de segurança pra repo público.
+
+### Lives da Genial no YouTube (T8) — decisão sua antes de eu religar
+O mecanismo está pronto e testado (`data/research/genial_lives.py`), mas
+desligado (`disponivel: False`) por bloqueio de `robots.txt` do YouTube
+no feed público usado pra listar os vídeos - ver decisão detalhada acima,
+seção "FILA2-T8". Duas opções, sua escolha:
+
+1. **Deixar desligado** (padrão atual) - não precisa fazer nada.
+2. **Religar mesmo assim** (uso pessoal, sem republicar o conteúdo) - só
+   mudar `"disponivel": False` pra `True` no dict `genial_lives` em
+   `data/research/__init__.py`. Funciona tecnicamente (testado), mas
+   contraria o robots.txt do YouTube - decisão sua, não fiz sozinho.
+3. **Caminho "oficial"**: criar uma API key do YouTube Data v3 (Google
+   Cloud Console → criar projeto → ativar "YouTube Data API v3" → criar
+   credencial tipo "Chave de API") e colar em `secrets.toml`:
+   ```toml
+   [youtube]
+   api_key = "sua-chave-aqui"
+   ```
+   Mesmo assim, resolveria só a LISTAGEM de vídeos (endpoint `search`/
+   `playlistItems`, sem bloqueio de robots.txt pra chamadas de API) - a
+   parte de TRANSCRIÇÃO continuaria dependendo do mesmo mecanismo atual
+   (legenda automática via `youtube_transcript_api`, que não é uma API
+   key), já que a API oficial de legendas exige OAuth do dono do canal
+   (a Genial não vai autorizar o app pessoal do Rodrigo). Se quiser essa
+   opção, avise que eu escrevo a parte de listagem via API antes de usar.
 
 ### Agendador de Tarefas do Windows — coleta local do RESEARCH
 Genial e XP estão bloqueadas tanto neste sandbox quanto (confirmado pelo

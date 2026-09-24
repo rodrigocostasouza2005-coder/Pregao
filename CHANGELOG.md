@@ -17,6 +17,16 @@ Mais recente primeiro.
   do `st.columns()`), coluna de ticker vazia removida (vira prefixo
   inline), tooltip nativo da manchete removido (cobria o `st.dialog`
   aberto por cima de qualquer coisa da página — mantido só no selo).
+- **T8 (modo autônomo 2) — lives da Genial no YouTube:** mecanismo
+  completo implementado e testado com dados reais
+  (`data/research/genial_lives.py` - identifica Morning Call/Resumo da
+  Manhã/Fechamento/Podcast Genial Analisa/Estratégia em Ação/Conversa com
+  Zé Márcio/Reunião do Copom pelo título do vídeo, extrai legenda
+  automática em pt), mas **desligado por padrão**: o robots.txt do
+  YouTube proíbe o feed usado pra listar vídeos pra bots genéricos, e
+  este projeto sempre respeitou robots.txt em toda coleta - não fiz
+  exceção sozinho. Decisão de religar ou não fica com o Rodrigo (ver
+  AÇÕES MANUAIS PENDENTES em PROGRESSO.md).
 - **T7 (modo autônomo 2):** painel COMPARATIVO DA WATCHLIST em EQUITY
   (preço/variação/P-L/P-VP/DY lado a lado pra todos os papéis da
   watchlist + melhor/pior desempenho do dia). Corrigido um rótulo
