@@ -17,6 +17,15 @@ Mais recente primeiro.
   do `st.columns()`), coluna de ticker vazia removida (vira prefixo
   inline), tooltip nativo da manchete removido (cobria o `st.dialog`
   aberto por cima de qualquer coisa da página — mantido só no selo).
+- **T1 (modo autônomo 2) — resumo de NEWS estruturado + fallback por
+  manchetes:** formato fixo (O QUE ACONTECEU/NÚMEROS/IMPACTO/PRÓXIMOS
+  PASSOS, 5-8 linhas); quando todas as fontes do grupo falham a extração
+  mas há 2+ manchetes diferentes cobrindo o fato, tenta um resumo mais
+  curto só com as manchetes (nota "(resumo baseado nas manchetes)").
+  Corrigido também um bug de renderização (`white-space: pre-line`
+  faltando fazia o resumo virar uma linha só no card). Medido em amostra
+  real de 20 grupos: 100% de sucesso via texto completo; fallback
+  validado à parte com teste dirigido (mock forçando falha total).
 - **`coletor_local.py` grava log em arquivo:** rodando sem janela pelo
   Agendador de Tarefas, o stdout não fica visível em lugar nenhum — agora
   grava também em `coletor_local.log` (raiz do projeto, rotativo: 1MB x 3

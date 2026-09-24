@@ -336,6 +336,56 @@ no sandbox). `data/research/__init__.py`: `CASAS["genial"|"xp"]` agora tem
 pra essas duas, sem tentar coletar (e sem os ~20s de espera). Coleta real
 dessas casas fica só com `coletor_local.py` rodando fora do Cloud.
 
+### FILA2-T1 — Qualidade do resumo de notícias
+Formato antigo (2-3 linhas livres) trocado por formato fixo estruturado
+em `_PROMPT_SISTEMA_RESUMO` (`data/news.py`): O QUE ACONTECEU / NÚMEROS /
+IMPACTO / PRÓXIMOS PASSOS, 5-8 linhas, sempre em palavras próprias (nunca
+copia o texto original), campo sem informação vira "não informado" (não
+inventa dado). Orçamento de tokens próprio (`_MAX_TOKENS_RESUMO_NEWS =
+700`, maior que o do research, que usa formato mais enxuto) — antes o
+resumo de NEWS usava por engano `config.GROQ_MAX_TOKENS` (o budget do
+research), pequeno demais pro formato de 4 campos.
+
+**Fallback por manchetes:** quando TODAS as fontes do grupo falham a
+extração (paywall/bloqueio total), mas o grupo tem 2+ manchetes
+diferentes (fontes distintas cobrindo o mesmo fato, graças ao
+agrupamento por entidade da correção urgente), `_resumir_das_manchetes`
+tenta sintetizar um resumo mais curto (3-5 linhas) só com base nas
+manchetes, mesmo formato fixo, com nota "(resumo baseado nas manchetes)"
+anexada no fim pra deixar claro que a fonte foi mais fraca. Com só 1
+manchete (sem info extra pra cruzar), não tenta — continua "resumo
+indisponível" como antes, pra não inventar conteúdo a partir de uma
+frase só.
+
+**Bug pego durante a implementação:** a `<div class='w-resumo-dialogo'>`
+que mostra o resumo no card (`ui/news_tab.py`) não tinha
+`white-space: pre-line` — o formato de 4 linhas ia colapsar tudo numa
+linha só no navegador (HTML ignora quebra de linha simples por padrão).
+Corrigido.
+
+Refatorado `_resumir_com_groq` em duas partes: `_chamar_groq(prompt_sistema,
+prompt_usuario)` genérico (reusado pelos dois prompts) +
+`_resumir_com_groq`/`_resumir_das_manchetes` específicos.
+`obter_resumo_grupo` ganhou o parâmetro `titulos` (tupla, default vazio
+por compatibilidade) — `ui/news_tab.py`/`_abrir_card` passa
+`n.get("titulos") or [n["titulo"]]`.
+
+- Arquivos: `data/news.py`, `ui/news_tab.py`.
+- Testes: `compileall` limpo; AppTest EQUITY/NEWS/TOP MERCADO sem
+  exceção; **medição real de taxa de sucesso** — amostra de 20 grupos
+  reais do TOP MERCADO (`obter_top_mercado_tudo()[:20]`, mistura de
+  Ibovespa/câmbio/juros/Copom/ações/internacional): **20/20 (100%)**
+  geraram resumo com sucesso via extração de texto completo (0 precisou
+  do fallback de manchetes nessa amostra — as fontes usadas responderam
+  bem). Como a amostra real não exercitou o fallback, testei ele
+  separado com mocks (fora do repo, scratchpad): forçando falha de
+  extração em TODAS as fontes de um grupo sintético com 3 manchetes
+  diferentes sobre o mesmo fato ("Banco Genial...") — o fallback gerou
+  resumo corretamente, com a nota "(resumo baseado nas manchetes)"; um
+  segundo caso com 1 manchete só (sem 2+ pra cruzar) corretamente NÃO
+  tentou o fallback e voltou "indisponível", como esperado.
+- Commit: enviado, registrado no CHANGELOG.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas
