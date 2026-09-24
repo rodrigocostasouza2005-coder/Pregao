@@ -6,6 +6,7 @@ import re
 import pandas as pd
 import streamlit as st
 import yfinance as yf
+from curl_cffi import requests as cffi_requests
 
 from config import PERIODOS_BUFFER, PERIODOS_GRAFICO
 
@@ -194,24 +195,87 @@ def _calcular_beta(ticker: str) -> float | None:
     return float(df["ticker"].cov(df["ibov"]) / variancia_ibov)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_resource(show_spinner=False)
+def _ultimo_indicadores_valido() -> dict:
+    """ticker -> ultimo dict de obter_indicadores() que veio com pelo
+    menos um campo preenchido. Mesmo mecanismo de fallback ja usado na
+    ticker tape (ver _ultima_cotacao_indice_valida) - Yahoo Finance
+    bloqueia/rate-limita tk.info bem mais em IP de datacenter (Streamlit
+    Cloud) do que localmente (achado real, 2026-09-25: todos os
+    indicadores voltavam None em producao mas funcionavam no sandbox de
+    dev). Sem isso, um bloqueio temporario derruba os indicadores pra
+    "-" mesmo tendo um valor real recente guardado."""
+    return {}
+
+
+def _tk_info_com_retry(symbol: str) -> dict:
+    """tk.info com 2 tentativas: primeiro simulando um Chrome de verdade
+    via curl_cffi (mesma tecnica ja usada pra contornar bloqueio na
+    Genial - ver data/research/genial.py), depois a sessao padrao do
+    yfinance. Yahoo Finance bloqueia bem mais requisicoes vindas de IP de
+    datacenter (Cloud) que fingem ser um script generico do que as que
+    parecem um navegador comum. Retorna {} se as duas falharem - nunca
+    lanca excecao."""
+    for sessao in (cffi_requests.Session(impersonate="chrome"), None):
+        try:
+            info = yf.Ticker(symbol, session=sessao).info
+            if info:
+                return info
+        except Exception:
+            continue
+    return {}
+
+
+# fundamentos (P/L, P/VP, valor de mercado) mudam pouco intra-dia - TTL
+# bem mais longo que uma cotacao (30s) ou ate' o beta (1h), reduz quantas
+# vezes bate no Yahoo (que e' onde o bloqueio de IP de datacenter
+# acontece) sem perder precisao de verdade
+_TTL_INDICADORES = 12 * 60 * 60  # 12h
+
+
+@st.cache_data(ttl=_TTL_INDICADORES, show_spinner=False)
 def obter_indicadores(ticker: str) -> dict:
-    """Indicadores fundamentalistas via yfinance. Campos ausentes viram None
-    (a interface mostra '-' em vez de inventar)."""
+    """Indicadores fundamentalistas via yfinance. Campos ausentes viram
+    None (a interface mostra '-' em vez de inventar) - EXCETO se houver
+    um valor valido guardado de uma coleta anterior bem-sucedida
+    (_ultimo_indicadores_valido), caso em que ele e' usado como fallback
+    em vez de "-" (mais util que apagar um dado real por causa de um
+    bloqueio temporario do Yahoo)."""
     symbol = _para_symbol_yf(ticker)
-    tk = yf.Ticker(symbol)
-    try:
-        info = tk.info
-    except Exception:
-        info = {}
+    info = _tk_info_com_retry(symbol)
     preco_atual = info.get("currentPrice") or info.get("regularMarketPrice")
-    return {
+
+    resultado = {
         "valor_mercado": info.get("marketCap"),
         "pl": info.get("trailingPE"),
         "pvp": info.get("priceToBook"),
-        "dividend_yield": _dividend_yield_12m(tk, preco_atual),
+        "dividend_yield": _dividend_yield_12m(yf.Ticker(symbol), preco_atual) if info else None,
         "beta": _calcular_beta(ticker),
     }
+
+    cache_fallback = _ultimo_indicadores_valido()
+    algum_campo_valido = any(v is not None for k, v in resultado.items() if k != "beta")
+    if algum_campo_valido:
+        cache_fallback[ticker] = resultado
+        return resultado
+
+    anterior = cache_fallback.get(ticker)
+    if anterior:
+        # beta e' recalculado sempre (cache proprio de 1h, nao depende
+        # do tk.info) - so os campos vindos do tk.info usam o fallback
+        return {**anterior, "beta": resultado["beta"]}
+    return resultado
+
+
+def testar_conexao_indicadores(ticker: str = "PETR4") -> tuple:
+    """So' testa se tk.info retorna dado de verdade pra um ticker
+    conhecido - usado pelo painel DIAGNOSTICO DE FONTES. Retorna
+    (ok, detalhe)."""
+    symbol = _para_symbol_yf(ticker)
+    info = _tk_info_com_retry(symbol)
+    if not info or info.get("trailingPE") is None:
+        return False, f"tk.info vazio ou sem trailingPE pra {ticker} (Yahoo pode estar bloqueando/limitando este IP)"
+    return True, f"OK (P/L de {ticker} = {info['trailingPE']:.2f})"
 
 
 _JANELAS_RETORNO_DIAS = {"1D": 1, "1S": 7, "1M": 30, "3M": 91, "6M": 182, "12M": 365}

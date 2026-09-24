@@ -197,10 +197,19 @@ def _painel_curva_pre(prefs):
         st.warning("Curva pré indisponível no momento (fonte ANBIMA fora do ar ou sem publicação hoje).")
         return
 
+    # a ANBIMA publica a ETTJ so' ao FIM do dia - antes disso (ou num fim
+    # de semana/feriado), obter_curva_pre() ainda retorna a ultima
+    # publicacao disponivel, que pode ser de um dia anterior. Rotular
+    # isso de "Hoje" seria enganoso - "Última" com a data real deixa
+    # claro que pode nao ser a publicacao de hoje.
+    data_ref_hoje = curva_hoje["data_referencia"].iloc[0]
+    eh_hoje = hasattr(data_ref_hoje, "date") and data_ref_hoje.date() == hoje
+    rotulo_hoje = "Hoje" if eh_hoje else "Última"
+
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=curva_hoje["dias_uteis"] / 252, y=curva_hoje["taxa_aa_pct"],
-        name=f"Hoje ({_fmt_data(curva_hoje['data_referencia'].iloc[0])})",
+        name=f"{rotulo_hoje} ({_fmt_data(data_ref_hoje)})",
         mode="lines+markers", line=dict(color=tema["destaque"], width=2),
     ))
     if curva_semana is not None:

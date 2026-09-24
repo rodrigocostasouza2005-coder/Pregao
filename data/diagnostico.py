@@ -11,6 +11,7 @@ import time
 
 from curl_cffi import requests as cffi_requests
 
+from .prices import testar_conexao_indicadores
 from .research import genial, genial_lives, xp
 
 _HEADERS = {"User-Agent": "PregaoApp/0.1 (uso pessoal, nao comercial; contato via github)"}
@@ -65,6 +66,7 @@ _TESTES_ESPECIFICOS = {
     "Genial Analisa": genial.testar_conexao,
     "XP Investimentos": xp.testar_conexao,
     "Genial (Lives)": genial_lives.testar_conexao,
+    "Yahoo Finance (indicadores)": testar_conexao_indicadores,
     "Google News (decode+extração)": _testar_gnews_decode,
     "InfoMoney (extração)": _testar_trafilatura("https://www.infomoney.com.br/"),
     "Money Times (extração)": _testar_trafilatura("https://www.moneytimes.com.br/"),
@@ -78,6 +80,7 @@ FONTES = [
     {"nome": "Genial Analisa", "url": "https://analisa.genialinvestimentos.com.br"},
     {"nome": "XP Investimentos", "url": "https://conteudos.xpi.com.br/wp-json/wp/v2/rel-acoes-fund?per_page=1"},
     {"nome": "Genial (Lives)", "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCYSOMA4Yx1CJvrdI8epLfnA"},
+    {"nome": "Yahoo Finance (indicadores)", "url": "https://query1.finance.yahoo.com/v10/finance/quoteSummary/PETR4.SA"},
     {"nome": "BTG Research", "url": "https://content.btgpactual.com/api/research/public-router/media-research/api/media-research/public/v1/medias/lives?status=LIVE&pageNumber=1&pageSize=1"},
     {"nome": "Itaú BBA", "url": "https://www.itau.com.br/itaubba-pt/analises-economicas"},
     {"nome": "Santander", "url": "https://www.santandercorretora.com.br/corretora/home/nossos-servicos/relatorios.html"},
