@@ -397,10 +397,10 @@ if secao_atual == "EQUITY":
                     <div style="overflow-x:auto; overflow-y:hidden;">
                     <table style="width:100%; border-collapse:collapse;">
                     <thead><tr>
-                        <th class="cinza">VALOR DE MERCADO</th>
-                        <th class="cinza">P/L</th>
-                        <th class="cinza">P/VP</th>
-                        <th class="cinza">DIV. YIELD (12M)</th>
+                        <th class="cinza" title="Preço da ação x número total de ações em circulação - o que o mercado paga pela empresa inteira hoje">VALOR DE MERCADO</th>
+                        <th class="cinza" title="Preço/Lucro: preço da ação dividido pelo lucro por ação nos últimos 12 meses - quantos anos de lucro atual pagariam o preço de hoje (menor = mais barato, na média do setor)">P/L</th>
+                        <th class="cinza" title="Preço/Valor Patrimonial: preço da ação dividido pelo patrimônio líquido por ação - acima de 1 significa que o mercado paga mais que o valor contábil da empresa">P/VP</th>
+                        <th class="cinza" title="Dividend Yield: total pago em dividendos/JCP nos últimos 12 meses dividido pelo preço da ação - retorno percentual só de proventos, sem contar valorização">DIV. YIELD (12M)</th>
                         <th class="cinza" title="cov(retornos semanais do papel, retornos semanais do Ibovespa) / var(retornos semanais do Ibovespa), 2 anos - calculado localmente, nao vem do yfinance">BETA (2A)</th>
                     </tr></thead>
                     <tbody><tr>
@@ -644,9 +644,18 @@ if secao_atual == "CONFIG":
                                                   index=["CANDLE", "LINHA", "AREA"].index(prefs["grafico_tipo"]))
                 novo_periodo_padrao = st.selectbox("PERÍODO PADRÃO", list(config.PERIODOS_GRAFICO.keys()),
                                                     index=list(config.PERIODOS_GRAFICO.keys()).index(prefs["grafico_periodo_padrao"]))
-                novo_mm20 = st.checkbox("MÉDIA MÓVEL 20", value=prefs["mm20"])
-                novo_mm50 = st.checkbox("MÉDIA MÓVEL 50", value=prefs["mm50"])
-                novo_mm200 = st.checkbox("MÉDIA MÓVEL 200", value=prefs["mm200"])
+                novo_mm20 = st.checkbox(
+                    "MÉDIA MÓVEL 20", value=prefs["mm20"],
+                    help="Média dos últimos 20 preços de fechamento - referência de curto prazo; cruzamento com o preço costuma ser lido como sinal de tendência recente",
+                )
+                novo_mm50 = st.checkbox(
+                    "MÉDIA MÓVEL 50", value=prefs["mm50"],
+                    help="Média dos últimos 50 preços de fechamento - referência de médio prazo",
+                )
+                novo_mm200 = st.checkbox(
+                    "MÉDIA MÓVEL 200", value=prefs["mm200"],
+                    help="Média dos últimos 200 preços de fechamento - referência de longo prazo; muito usada como linha de tendência de fundo (acima = tendência de alta no longo prazo)",
+                )
                 novo_tape_modo = st.selectbox("LETREIRO", ["ANIMADO", "FIXO"],
                                                index=["ANIMADO", "FIXO"].index(prefs["ticker_tape_modo"]))
                 novo_tape_velocidade = st.selectbox("VELOCIDADE DO LETREIRO", list(config.VELOCIDADES_TICKER_TAPE.keys()),
