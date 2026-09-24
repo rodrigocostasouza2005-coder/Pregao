@@ -17,6 +17,14 @@ Mais recente primeiro.
   do `st.columns()`), coluna de ticker vazia removida (vira prefixo
   inline), tooltip nativo da manchete removido (cobria o `st.dialog`
   aberto por cima de qualquer coisa da página — mantido só no selo).
+- **T3 (modo autônomo 2) — nova aba MERCADO:** visão ampla do pregão -
+  termômetro, maiores altas/baixas, mais negociados, desempenho setorial
+  (gráfico de barras), mapa de calor (treemap) e mercados globais (S&P
+  500, Nasdaq, Dow, FTSE, DAX, Nikkei, Hang Seng, Xangai). Dados via lote
+  único do yfinance sobre uma lista curada de blue chips do Ibovespa
+  (`config.IBOVESPA_COMPOSICAO`, não a composição oficial completa - ver
+  MANUAL.md). Curva de juros e agenda de Copom/resultados ficaram de
+  fora de propósito (ver PROGRESSO.md, decisão registrada).
 - **T2 (modo autônomo 2):** tooltips explicativos em VALOR DE MERCADO,
   P/L, P/VP, DIV. YIELD e nas médias móveis 20/50/200 (BETA já tinha).
 - **T1 (modo autônomo 2) — resumo de NEWS estruturado + fallback por

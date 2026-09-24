@@ -396,6 +396,74 @@ na prática (curto/médio/longo prazo).
 - Testes: `compileall` limpo; AppTest EQUITY e CONFIG sem exceção.
 - Commit: enviado.
 
+### FILA2-T3 — Nova aba MERCADO
+Nova aba (`data/mercado.py`, `ui/mercado_tab.py`): termômetro (papéis em
+alta/baixa/estáveis), maiores altas/baixas, mais negociados (por volume
+financeiro), desempenho setorial (barra horizontal), mapa de calor
+(treemap Plotly, tamanho=volume financeiro, cor=variação %) e mercados
+globais (S&P 500, Nasdaq, Dow, FTSE, DAX, Nikkei, Hang Seng, Xangai).
+
+**Dados**: lote único via `yf.download` (não um `fast_info` por papel —
+com ~60 tickers, uma chamada em lote é ordens de magnitude mais rápida
+que 60 sequenciais, mesmo raciocínio do `ThreadPoolExecutor` do TOP
+MERCADO). Fonte: `config.IBOVESPA_COMPOSICAO`, lista curada de blue
+chips com setor — **decisão registrada abaixo** sobre por que não é a
+composição oficial completa.
+
+**Bugs reais pegos durante o teste funcional** (rodei as funções de
+`data/mercado.py` contra dado real antes de construir a UI em cima,
+scratchpad da sessão):
+1. `obter_mercados_globais` reusava `_para_symbol_yf` (de
+   `data/prices.py`), que só sabe lidar com tickers da B3 (`PETR4` →
+   `PETR4.SA`) e símbolos de índice/moeda que começam com `^` ou têm `=`
+   — o símbolo de Xangai (`000001.SS`) não bate em nenhum desses casos e
+   virou `000001.SS.SA` (inválido, 0 resultado). Corrigido com
+   `_baixar_lote_bruto`, que NÃO passa os símbolos de
+   `config.INDICES_GLOBAIS` por essa conversão (eles já vêm no formato
+   exato que o yfinance espera).
+2. Confirmado que 13 dos 64 tickers curados falharam no lote no momento
+   do teste (`ELET3`, `ELET6`, `EMBR3`, `AZUL4` etc. — mensagem "no data
+   found, symbol may be delisted" do yfinance). Não investiguei se é
+   delisting real, instabilidade do yfinance ou bloqueio de IP do
+   sandbox (mesmo tipo de problema já visto com Genial/XP) — o
+   importante é que o código já trata isso corretamente por design:
+   papel sem dado válido simplesmente sai do panorama (nunca aparece com
+   número inventado/zerado). 51/64 papéis responderam bem o suficiente
+   pra alimentar todos os painéis.
+
+- Arquivos: `config.py` (`IBOVESPA_COMPOSICAO`, `INDICES_GLOBAIS`,
+  `ABAS_DISPONIVEIS`), `data/mercado.py` (novo), `ui/mercado_tab.py`
+  (novo), `app.py` (import + roteamento), `MANUAL.md`.
+- Testes: `compileall` limpo; teste funcional direto de
+  `data/mercado.py` contra yfinance real (scratchpad, achou os 2 bugs
+  acima); AppTest em EQUITY/MERCADO/CONFIG sem exceção (inclusive com a
+  migração automática de `abas_visiveis` pra usuário com prefs antigas,
+  já testada na FILA1, cobrindo a aba nova sem precisar de código extra).
+- Commit: enviado, registrado no CHANGELOG.
+
+## Decisão registrada (regra 1 de autonomia) — escopo do T3
+Três sub-itens do pedido original do T3 foram tratados assim:
+- **Composição do Ibovespa "via config file"**: implementada como um
+  dict curado (`config.IBOVESPA_COMPOSICAO`, ~60 blue chips com setor)
+  em vez de raspar a composição oficial completa (~86 papéis) do site da
+  B3. Motivo: scraping da B3 não tinha sido investigado/confirmado como
+  viável (like Genial/BTG, pode estar atrás de bot-detection), e o
+  próprio pedido já previu esse risco ("facilmente atualizável") — dict
+  simples resolve isso sem depender de mais uma fonte externa frágil.
+- **Curva de juros (DI futuro)**: NÃO duplicada na aba MERCADO — já
+  existe uma curva de juros prefixada real (ANBIMA ETTJ,
+  `data/macro.py:obter_curva_pre`) na aba MACRO, construída antes desta
+  sessão. Motivo: reimplementar o mesmo dado dentro de outra aba seria
+  redundante e aumentaria a chance de os dois painéis mostrarem números
+  diferentes se algo divergir.
+- **Agenda de Copom/resultados**: NÃO implementada. Motivo: exigiria uma
+  fonte de calendário confiável (datas de reunião do Copom, datas de
+  resultados por empresa) que o projeto não tem hoje — inventar essas
+  datas violaria o princípio já estabelecido em `data/macro.py` ("Nunca
+  inventa dados"). Fica como MELHORIA FUTURA: precisa de uma decisão de
+  fonte (scraping do calendário do BCB? alguma API paga de agenda
+  corporativa?) antes de implementar — não é uma tarefa surgical.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

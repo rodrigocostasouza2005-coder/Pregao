@@ -126,6 +126,36 @@ confiáveis e temas de mercado no título. Filtro por setor.
   filtradas (aqui faz sentido mostrar, diferente do feed por ticker).
 - Mesma retenção de 5 dias e mesmo resumo sob demanda do NEWS.
 
+## MERCADO
+
+Visão ampla do pregão (não é sobre um papel específico, ao contrário de
+EQUITY): termômetro, altas/baixas, mais negociados, desempenho setorial,
+mapa de calor e mercados globais.
+
+- **Fonte de dados**: lote único via `yf.download` sobre uma lista curada
+  de blue chips do Ibovespa (`config.IBOVESPA_COMPOSICAO`, ~60 papéis com
+  setor) — **não é a composição oficial completa do índice** (~86 papéis,
+  rebalanceada trimestralmente pela B3). Atualize esse dict conforme
+  rebalanceamentos; é só um dicionário ticker→setor, não exige mexer em
+  mais nada. Alguns papéis podem falhar no lote em determinados momentos
+  (bloqueio/instabilidade do yfinance) — nesse caso saem do cálculo em
+  vez de aparecer com dado errado (nunca inventa número).
+- **Termômetro**: quantos papéis da lista estão em alta/baixa/estáveis.
+- **Maiores altas/baixas** e **mais negociados**: por variação % e por
+  volume financeiro estimado (preço × volume em ações) no dia.
+- **Desempenho setorial**: variação média simples (não ponderada por
+  valor de mercado) dos papéis de cada setor.
+- **Mapa do mercado**: treemap (tamanho = volume financeiro, cor =
+  variação % no dia).
+- **Mercados globais**: S&P 500, Nasdaq, Dow Jones, FTSE 100, DAX, Nikkei
+  225, Hang Seng, Xangai (`config.INDICES_GLOBAIS`).
+- **Curva de juros (DI futuro)**: não duplicada aqui — já existe uma
+  curva de juros prefixada real (ANBIMA ETTJ) na aba MACRO.
+- **Agenda de Copom/resultados**: não implementada. Exigiria uma fonte de
+  calendário confiável (datas de reunião do Copom, datas de divulgação de
+  resultados por empresa) que o projeto ainda não integra — não dá pra
+  inventar essas datas. Ver MELHORIAS FUTURAS em PROGRESSO.md.
+
 ## CONFIG
 
 Preferências por usuário (tema, densidade, fonte, gráfico, abas
