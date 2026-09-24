@@ -630,6 +630,155 @@ alinhar com o Rodrigo se ele topa usar o mecanismo já pronto mesmo assim
   robots.txt").
 - Commit: enviado, registrado no CHANGELOG.
 
+## MODO AUTÔNOMO 3 — bugs P0/P1 (em andamento)
+
+### P0.1 — Indicadores (P/L, P/VP, DY, valor de mercado) regrediram pra "—"
+Causa real: `obter_indicadores` usava `tk.info` do yfinance sem nenhuma
+resiliência - um bloqueio/instabilidade do Yahoo (mais comum em IP de
+datacenter como o do Streamlit Cloud) derrubava TODOS os campos pra
+None de uma vez, sem fallback. Corrigido em `data/prices.py`:
+- `_tk_info_com_retry`: tenta `tk.info` primeiro com uma sessão
+  `curl_cffi` impersonando Chrome (mesma técnica já usada pra Genial -
+  Yahoo bloqueia menos requisições que parecem vir de um navegador de
+  verdade), com fallback pra sessão padrão do yfinance.
+- TTL de `obter_indicadores` de 1h pra 12h (fundamentos mudam pouco
+  intra-dia, reduz quanto bate no Yahoo).
+- `_ultimo_indicadores_valido` (`st.cache_resource`, mesmo padrão do
+  fallback da ticker tape): se a coleta atual não trouxer NENHUM campo
+  válido, usa o último valor bem-sucedido em vez de "—" - só troca por
+  "—" de verdade se NUNCA tiver havido uma coleta boa.
+- `testar_conexao_indicadores` registrada em DIAGNÓSTICO DE FONTES.
+- Testado com dado real: PETR4/VALE3/MELI34 voltando P/L, P/VP, DY,
+  valor de mercado corretos.
+
+### P0.3 — Coletor local não tinha tarefa agendada ("Última coleta: nunca")
+Tarefa "PREGAO - coleta research" criada no Agendador de Tarefas do
+Windows via PowerShell (dias úteis Seg-Sex, 7h-20h, a cada 30min,
+`pythonw.exe` do `.venv`, sem janela). Rodei manualmente pra testar.
+
+**Achado real ajustando a pedido do Rodrigo** (a primeira versão usava
+`python.exe`, abrindo uma janela de console visível): trocado pra
+`pythonw.exe`. Isso expôs um bug real: sob `pythonw` (sem console),
+`sys.stdout`/`sys.stderr` podem vir `None`, e os módulos de coleta usam
+`print()` de propósito (aparecem nos Logs do Streamlit Cloud) - um
+`print()` batendo em `stdout=None` derruba o processo antes de logar
+qualquer coisa. Corrigido em `coletor_local.py`: guarda `sys.stdout`/
+`sys.stderr` pra um sink seguro (`os.devnull`) se vierem `None`, ANTES
+de importar qualquer coisa que possa chamar `print()`; logger do
+`streamlit` (barulhento com warnings "No runtime found...") silenciado
+pra ERROR, sem mexer no logger próprio do script.
+
+**Resultado do teste real**: a tarefa roda corretamente, sem crash, log
+gravado certinho em `coletor_local.log`. MAS Genial e XP continuam
+FALHANDO mesmo rodando localmente nesta máquina (timeout na Genial,
+HTTP 403 na XP) - ou seja, o bloqueio não é exclusivo do Streamlit
+Cloud, afeta essa rede também. "Última coleta: nunca" **continua sem
+resolver de verdade** pra essas duas casas específicas, mesmo com a
+infraestrutura de agendamento 100% funcional agora - depende de rodar
+de uma rede onde esses sites não estejam bloqueados (não é algo que eu
+controle a partir daqui).
+
+- Arquivos: `coletor_local.py`.
+- Testes: tarefa disparada manualmente 2x (antes e depois da correção
+  do pythonw), log conferido, `Get-ScheduledTask`/`Get-ScheduledTaskInfo`
+  conferidos via PowerShell.
+- Commit: enviado.
+
+### P0.5 — Curva pré: rótulo "Hoje" quando a publicação não é de hoje
+`_painel_curva_pre` (`ui/macro_tab.py`) comparava a data real da
+publicação da ANBIMA (`data_referencia`) contra a data de hoje - se
+diferente (ANBIMA publica só no fim do dia, ou não publicou hoje ainda),
+rotula "Última (dd/mm/aaaa)" em vez de "Hoje (dd/mm/aaaa)".
+- Testes: `compileall` limpo; AppTest MACRO sem exceção.
+- Commit: enviado (junto com P0.1).
+
+### PRIORIDADE 1/2 — Notícias de BDR não apareciam (MELI34 e outras)
+**Investigação completa da cadeia** (ATIVO → identidade → busca → fontes
+→ relevância → dedup → exibição), causa raiz encontrada em DOIS bugs
+reais, ambos genéricos (não específicos de MELI34):
+
+1. `_SUFIXO_JURIDICO` (`data/prices.py`) só removia sufixos jurídicos em
+   português (S.A., Participações, Holding) do `longName` do yfinance -
+   nomes de empresa estrangeira em BDR vêm em inglês (ex: MELI34 ->
+   "MercadoLibre, Inc.") e ficavam com a vírgula+sufixo grudados no nome
+   "limpo". `_nome_curto` (`data/news.py`) então derivava
+   `"mercadolibre,"` (COM vírgula) como o "nome curto" pra checar
+   relevância - isso NUNCA batia com nenhum token de título de notícia
+   de verdade (o tokenizador separa a vírgula), então `_relevante()`
+   sempre retornava False pra BDR de empresa estrangeira, mesmo com a
+   empresa claramente no título.
+2. A busca em si (`termo = f'"{nome}" {ticker}'`) só tentava o nome
+   legal completo do yfinance + o ticker local da B3 - cobertura de
+   imprensa (BR ou internacional) sobre uma BDR quase nunca menciona o
+   ticker da B3 (ex: "MELI34") nem o nome legal completo, e sim o
+   ticker/nome originais (MELI, MercadoLibre) ou o nome popular em
+   português (Mercado Livre).
+
+**Correção genérica** (não é um `if ticker == "MELI34"`):
+- `_SUFIXO_JURIDICO` ganhou sufixos em inglês (Inc., Corp., Ltd., LLC,
+  N.V., PLC, Co., AG, SE) + vírgula opcional antes do sufixo, com `\b`
+  (limite de palavra) - **bug pego no próprio teste desta correção**: a
+  primeira versão sem `\b` cortava "Unibanco" pra "Unibanc" (o "co" do
+  final de "Unibanco" batia com o padrão solto "Co\.?" por não exigir
+  fronteira de palavra) - corrigido antes de commitar.
+- `_nome_curto` reescrito pra usar a MESMA extração de tokens do
+  tokenizador de relevância (`_tokenizar`, regex `[a-z0-9]+`) em vez de
+  `.split()` por espaço - garante que o "nome curto" comparado é sempre
+  extraído do mesmo jeito que os tokens do título, eliminando essa
+  classe inteira de bug de pontuação.
+- `config.TICKER_ALIASES` (novo, dict genérico ticker->lista de aliases,
+  mesmo padrão de `TICKER_NOME`): cadastrado pros BDRs mais comuns
+  (MELI34, NFLX34, AAPL34, GOGL34, AMZO34, MSFT34, TSLA34, NVDC34,
+  DISB34, COCA34) com ticker original + nome popular. Ticker sem entrada
+  = comportamento idêntico a antes (nome do yfinance + ticker local).
+- `obter_noticias` agora busca UM termo por alias (além do termo padrão
+  nome+ticker), consolida os resultados por LINK (dedup) antes de seguir
+  pro agrupamento/relevância normais - só retorna None se TODAS as
+  buscas falharem (mais resiliente que antes: uma busca de alias falhar
+  não derruba as outras).
+- `_relevante` ganhou o parâmetro `aliases`: além do ticker/nome
+  derivado do yfinance, aceita qualquer alias cadastrado cujas palavras
+  apareçam TODAS no título (cobre nome de 2+ palavras tipo "Mercado
+  Livre", que nunca bateria com o "nome curto" de 1 palavra só).
+
+**Teste real, com dado de produção**: MELI34 passou de "nenhuma notícia"
+pra 3 grupos reais e relevantes ("Mercado Livre (MELI34) vai vender
+remédios...", etc.); ITUB4 passou de 0 (por causa do bug do truncamento
+"Unibanc") pra notícia real encontrada; PETR4/VALE3 (sem alias, já
+funcionavam) continuam idênticos - sem regressão. NFLX34/SMFT3/SBFG3
+com 0 resultados **confirmados como corretos** (não é bug): rastreei a
+cadeia inteira pro NFLX34 e vi 111 itens relevantes encontrados, TODOS
+fora da janela de retenção de 5 dias (notícias de jan/abr/jul, nenhuma
+recente - não há cobertura de Netflix nos últimos 5 dias agora mesmo).
+
+- Arquivos: `data/prices.py`, `data/news.py`, `config.py`.
+- Testes: `compileall` limpo; testes unitários diretos de
+  `_limpar_sufixo_juridico`/`_nome_curto`/`_relevante` (scratchpad);
+  `obter_noticias()` rodado de verdade pra MELI34, PETR4, VALE3, ITUB4,
+  NFLX34, ALPA4 (os tickers que o Rodrigo pediu pra testar) contra rede
+  real; AppTest EQUITY/RESEARCH/NEWS/TOP MERCADO sem exceção.
+- Commit: enviado.
+
+### P0.4 — Formatação/filtro de NEWS
+- Filtro de ticker (aba NEWS) mostrava tickers fora da watchlist (achado
+  real: WDOV26/WINV26 - código de contrato futuro, não ticker de ação).
+  Corrigido com interseção explícita contra a watchlist do usuário.
+- Manchete duplicando o ticker no prefixo (ex: "PETR4 · PETR4 vê alta")
+  quando o título já começa citando o próprio ticker/empresa - corrigido
+  em `_prefixo_tickers`: pula ticker que já aparece nos primeiros 40
+  caracteres do título.
+- Título "página de cotação/perfil" tipo "Alpargatas (ALPA4)" (achado
+  real testando ALPA4: o Google News as vezes indexa a própria página de
+  perfil de um agregador como se fosse notícia) - novo padrão
+  `_PADRAO_SO_NOME_E_TICKER` filtra título que é SÓ "Nome (TICKER)" sem
+  mais nada (nome curto, até 4 palavras, pra não filtrar por engano uma
+  manchete de verdade que só COMECE citando a empresa).
+- Janela de tempo (48h padrão, até 5 dias com "VER MAIS") agora
+  explícita no caption da aba, como pedido.
+- Arquivos: `ui/news_tab.py`, `data/news.py`.
+- Testes: incluído no mesmo teste/commit da correção de MELI34 acima.
+- Commit: enviado (junto com PRIORIDADE 1/2).
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

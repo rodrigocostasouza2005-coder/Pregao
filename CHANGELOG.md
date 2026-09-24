@@ -3,7 +3,38 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
-## 2026-09-24
+## 2026-09-24 (modo autônomo 3 — bugs P0/P1)
+
+- **P0.1 — indicadores (P/L, P/VP, DY, valor de mercado) voltaram a
+  funcionar:** estavam todos "—" em produção (Yahoo bloqueando `tk.info`
+  em IP de datacenter). Corrigido com sessão `curl_cffi` (impersonate
+  Chrome) + fallback pra sessão padrão, cache de 12h e fallback pro
+  último valor válido conhecido se a coleta do momento falhar.
+- **PRIORIDADE 1/2 — notícias de BDR (MELI34 e outras) não apareciam:**
+  causa raiz eram dois bugs genéricos de normalização de nome de empresa
+  (sufixo jurídico em inglês não removido do longName do yfinance,
+  quebrando o filtro de relevância; busca só tentava o nome legal/ticker
+  da B3, nunca o ticker/nome originais). Corrigido com sufixos em inglês
+  no regex de limpeza + `config.TICKER_ALIASES` (genérico, qualquer
+  ticker pode ganhar aliases) + busca multi-termo com dedup. MELI34
+  testado de verdade: 0 → 3 notícias reais.
+- **P0.4 — formatação/filtro de NEWS:** filtro de ticker restrito à
+  watchlist (não mostra mais código de contrato futuro tipo WDOV26),
+  ticker duplicado no prefixo da manchete corrigido, páginas de
+  perfil/cotação sem conteúdo real ("Alpargatas (ALPA4)") filtradas,
+  janela de tempo (48h/5 dias) explícita no caption.
+- **P0.3 — coletor local agendado:** tarefa criada no Agendador de
+  Tarefas do Windows (dias úteis, 7h-20h, a cada 30min, `pythonw.exe`
+  sem janela). Achado real ajustando pra `pythonw`: `sys.stdout`/
+  `sys.stderr` podem vir `None` sob esse modo, e os módulos de coleta
+  usam `print()` — corrigido com um sink seguro antes de qualquer
+  import. Genial/XP continuam bloqueadas mesmo localmente (rede desta
+  máquina também bloqueia) — infraestrutura de agendamento funcional,
+  mas ainda sem coletar dado novo dessas duas casas especificamente.
+- **P0.5 — curva pré:** rótulo "Última (dd/mm)" em vez de "Hoje" quando
+  a publicação da ANBIMA não é do dia atual.
+
+## 2026-09-24 (sessão anterior)
 
 - **Letreiro (ticker tape) maior:** fonte de ~12px pra ~14px, mais espaço
   entre itens, ticker da watchlist em negrito, `padding-top` do conteúdo
