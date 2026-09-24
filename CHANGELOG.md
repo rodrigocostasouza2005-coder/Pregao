@@ -17,6 +17,12 @@ Mais recente primeiro.
   do `st.columns()`), coluna de ticker vazia removida (vira prefixo
   inline), tooltip nativo da manchete removido (cobria o `st.dialog`
   aberto por cima de qualquer coisa da página — mantido só no selo).
+- **T7 (modo autônomo 2):** painel COMPARATIVO DA WATCHLIST em EQUITY
+  (preço/variação/P-L/P-VP/DY lado a lado pra todos os papéis da
+  watchlist + melhor/pior desempenho do dia). Corrigido um rótulo
+  enganoso pego no teste: "maior alta" podia mostrar um ticker negativo
+  quando a watchlist inteira estava no vermelho — renomeado pra "melhor/
+  pior desempenho", neutro quanto ao sinal.
 - **T6 (modo autônomo 2):** NÃO implementado — `data/cvm.py`/
   `ui/cvm_tab.py` parecem prontos, mas estão sem commit (trabalho em
   andamento de outra sessão); integrar agora dependeria de uma interface

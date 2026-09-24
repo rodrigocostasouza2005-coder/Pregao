@@ -546,6 +546,33 @@ confirmar que já pode integrar) - aí sim dá pra fazer o badge/painel/
 diagnóstico sem risco de trabalhar em cima de areia movediça.
 - Commit: nenhum (nada mudou nos arquivos do projeto pra este item).
 
+### FILA2-T7 — Painéis novos em EQUITY (comparador + altas/baixas da watchlist)
+Painel "COMPARATIVO DA WATCHLIST" (só aparece com 2+ tickers na
+watchlist): tabela lado a lado com TICKER/PREÇO/VAR. DIA/P-L/P-VP/DY pra
+todos os papéis da watchlist (reusa `obter_cotacao`/`obter_indicadores`
+já existentes, sem função de dado nova), mais uma linha de destaque
+"melhor desempenho do dia" / "pior desempenho do dia" (cobre o pedido de
+"altas e baixas da watchlist" sem precisar de um painel separado).
+
+**Bug pego no teste** (rodei AppTest de verdade e conferi o HTML gerado
+via `at.markdown`, não só "sem exceção"): a primeira versão rotulava os
+extremos como "maior alta"/"maior baixa" usando `max`/`min` por
+variação % puro — se a watchlist inteira estivesse no vermelho no dia,
+o "maior alta" mostrava um ticker NEGATIVO rotulado como alta (ex:
+"PETR4 -0,70%" chamado de "maior alta do dia"), enganoso. Corrigido
+renomeando pra "melhor/pior desempenho do dia" (neutro quanto ao sinal)
+e colorindo cada rótulo pela classe REAL do valor (alta/baixa), não pela
+posição (melhor/pior).
+
+- Arquivos: `app.py`.
+- Testes: `compileall` limpo; AppTest EQUITY sem exceção; conferido o
+  HTML de verdade (via `at.markdown`) ANTES e DEPOIS da correção do bug
+  do rótulo, com a watchlist padrão de teste (PETR4/VALE3/ITUB4, todos
+  em queda no dia do teste) — cenário que só acontece na prática quando
+  o mercado inteiro cai, mas que o teste automático pegou de qualquer
+  jeito por sorte de timing.
+- Commit: enviado, registrado no CHANGELOG.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas
