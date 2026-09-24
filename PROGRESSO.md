@@ -386,6 +386,16 @@ por compatibilidade) — `ui/news_tab.py`/`_abrir_card` passa
   tentou o fallback e voltou "indisponível", como esperado.
 - Commit: enviado, registrado no CHANGELOG.
 
+### FILA2-T2 — Tooltips explicativos
+`title=` nos cabeçalhos da tabela INDICADORES (EQUITY): VALOR DE MERCADO,
+P/L, P/VP, DIV. YIELD (12M) — BETA (2A) já tinha desde a auditoria da
+FILA1. `help=` nos checkboxes de média móvel (CONFIG): MÉDIA MÓVEL
+20/50/200, cada um com uma frase curta do que representa e pra que serve
+na prática (curto/médio/longo prazo).
+- Arquivos: `app.py`.
+- Testes: `compileall` limpo; AppTest EQUITY e CONFIG sem exceção.
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

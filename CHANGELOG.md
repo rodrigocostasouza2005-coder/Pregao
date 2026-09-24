@@ -17,6 +17,8 @@ Mais recente primeiro.
   do `st.columns()`), coluna de ticker vazia removida (vira prefixo
   inline), tooltip nativo da manchete removido (cobria o `st.dialog`
   aberto por cima de qualquer coisa da página — mantido só no selo).
+- **T2 (modo autônomo 2):** tooltips explicativos em VALOR DE MERCADO,
+  P/L, P/VP, DIV. YIELD e nas médias móveis 20/50/200 (BETA já tinha).
 - **T1 (modo autônomo 2) — resumo de NEWS estruturado + fallback por
   manchetes:** formato fixo (O QUE ACONTECEU/NÚMEROS/IMPACTO/PRÓXIMOS
   PASSOS, 5-8 linhas); quando todas as fontes do grupo falham a extração
