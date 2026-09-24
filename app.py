@@ -137,12 +137,12 @@ def _ticker_tape():
     for t in prefs["watchlist"]:
         cot = obter_cotacao(t)
         if cot.get("erro"):
-            itens.append(f"<span style='color:var(--destaque);'>{t}</span> <span class='cinza'>--</span>")
+            itens.append(f"<span style='color:var(--destaque); font-weight:600;'>{t}</span> <span class='cinza'>--</span>")
         else:
             cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
             sinal = "+" if cot["variacao_pct"] >= 0 else ""
             itens.append(
-                f"<span style='color:var(--destaque);'>{t}</span> "
+                f"<span style='color:var(--destaque); font-weight:600;'>{t}</span> "
                 f"<span class='{cls}'>{sinal}{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%</span>"
             )
 
@@ -162,7 +162,7 @@ def _ticker_tape():
     # senao a rolagem acelera visualmente quando a watchlist cresce
     velocidade_px_s = config.VELOCIDADES_TICKER_TAPE[prefs["ticker_tape_velocidade"]]
     texto_visivel = re.sub(r"<[^>]+>", "", conteudo)
-    largura_estimada_px = len(texto_visivel) * 7.5
+    largura_estimada_px = len(texto_visivel) * 8.75  # px/char pra fonte 0.875rem (ver ticker-tape-set no style.css)
     duracao_s = max(largura_estimada_px / velocidade_px_s, 8)
 
     # animation-delay negativo: a animacao parece ter comecado no epoch e

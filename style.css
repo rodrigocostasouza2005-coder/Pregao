@@ -47,7 +47,7 @@ header[data-testid="stHeader"] {
    Streamlit (3rem, onde mora a barra de Share/estrela/GitHub do Cloud)
    + a ticker tape (ver .pregao-topo-fixo) */
 .block-container {
-    padding-top: 5.4rem;
+    padding-top: 5.65rem;
     padding-bottom: 0.6rem;
     padding-left: 1rem;
     padding-right: 1rem;
@@ -252,7 +252,7 @@ table td, table th { padding: 0.15rem 0.5rem; }
 .ticker-tape-wrap {
     overflow: hidden;
     white-space: nowrap;
-    padding: 0.35rem 1rem;
+    padding: 0.4rem 1rem;
     max-width: 100%;
 }
 .ticker-tape-wrap.fixo { overflow-x: auto; }
@@ -268,8 +268,8 @@ table td, table th { padding: 0.15rem 0.5rem; }
 }
 .ticker-tape-set {
     display: inline-block;
-    padding-right: 2.5rem;
-    font-size: 0.75rem;
+    padding-right: 3rem;
+    font-size: 0.875rem;
 }
 @keyframes pregao-marquee {
     from { transform: translateX(0); }
