@@ -138,13 +138,44 @@ código nas duas.
   plausíveis); AppTest EQUITY/MACRO sem exceção.
 - Commit: (ver abaixo)
 
+### FILA1-T9 — "última coleta" + coletor local
+- `data/research/__init__.py`: `ultimas_coletas_formatadas(casas_ativas)`
+  - texto "casa: dd/mm hh:mm" (fuso BR) por casa ativa, usando
+    `store.ultima_coleta_em`. Mostrado no topo da aba RESEARCH.
+- `coletor_local.py` (novo, raiz do projeto): script standalone que
+  chama `coletar_todas_disponiveis()` (sem gate de 30min — quem decide a
+  frequência é o agendamento) + `apagar_itens_antigos()`, exit code 1 se
+  alguma casa falhar. Testado rodando de verdade (falha aqui, esperado —
+  sandbox bloqueia as duas fontes — mas roda sem quebrar e reporta certo).
+- Passo a passo do Agendador de Tarefas do Windows: ver AÇÕES MANUAIS
+  PENDENTES abaixo. Não agendei nada — só preparei o script e o guia.
+- Não fiz: desligar a tentativa de coleta no Cloud quando uma fonte
+  está bloqueada. O cooldown de 10min (FILA1-T5) já evita martelar a
+  fonte a cada interação; ativar/desativar por ambiente (Cloud vs local)
+  exigiria detectar em qual ambiente o app está rodando, o que não há
+  hoje um jeito limpo de fazer — decisão conservadora: manter tentando
+  (com cooldown), não me pareceu certo desativar sem confirmar com o
+  Rodrigo se ele quer isso.
+- Arquivos: data/research/__init__.py, ui/research_tab.py,
+  coletor_local.py (novo)
+- Testes: `compileall` limpo; AppTest EQUITY/RESEARCH sem exceção;
+  `coletor_local.py` rodado de verdade (exit 1, esperado neste sandbox).
+- Commit: (ver abaixo)
+
 ## Tarefas bloqueadas
 
 (preenchido se alguma falhar 2x)
 
 ## Decisões registradas (regra 1 de autonomia)
 
-(preenchido conforme surgirem dúvidas)
+- **T9 (Genial/XP bloqueadas no Cloud):** não desativei a tentativa
+  automática de coleta quando rodando no Cloud (deixei o cooldown de
+  10min do FILA1-T5 como única proteção contra martelar a fonte).
+  Motivo: não há um jeito limpo de detectar "estou no Cloud vs local"
+  sem introduzir um novo flag/config, e desativar coleta automática é
+  uma mudança de comportamento maior — opção mais conservadora foi
+  manter tentando (já protegido pelo cooldown) e deixar o
+  `coletor_local.py` como reforço, não substituto.
 
 ## Ações manuais pendentes
 
@@ -156,3 +187,43 @@ emails = ["rodrigo.costa.souza2005@gmail.com"]
 Até colar isso, o painel DIAGNÓSTICO DE FONTES continua funcionando
 normalmente (usa o fallback fixo em `config._EMAILS_ADMIN_PADRAO`) — não
 é bloqueante, só uma ação de segurança pra repo público.
+
+### Agendador de Tarefas do Windows — coleta local do RESEARCH
+Genial e XP estão bloqueadas tanto neste sandbox quanto (confirmado pelo
+diagnóstico) no Streamlit Cloud. `coletor_local.py` (novo, na raiz do
+projeto) roda a coleta de fora do Cloud — se a sua rede de casa/trabalho
+não tiver o mesmo bloqueio, os dados ficam frescos mesmo com o Cloud sem
+conseguir coletar. Passo a passo (interface gráfica, sem PowerShell):
+
+1. Abra o **Agendador de Tarefas** (pesquisar no menu Iniciar).
+2. **Ação → Criar Tarefa Básica...**
+3. Nome: `PREGAO - coleta research`. Avançar.
+4. Gatilho: **Diariamente**. Avançar. Hora de início: `07:00`. Avançar.
+5. Ação: **Iniciar um programa**. Avançar.
+6. Programa/script: caminho completo do python do `.venv`, algo como
+   `C:\Users\Dell\Projects\pregao\.venv\Scripts\python.exe`.
+   Argumentos: `coletor_local.py`.
+   Iniciar em: `C:\Users\Dell\Projects\pregao` (importante — sem isso não
+   acha `.streamlit\secrets.toml` nem os módulos do projeto).
+7. Concluir. Depois, clique com o botão direito na tarefa criada →
+   **Propriedades**:
+   - Aba **Disparadores** → editar o gatilho → marcar **Repetir a cada**:
+     `30 minutos`, **por até**: `13 horas` (cobre 7h–20h).
+   - Aba **Condições**: desmarcar "Iniciar a tarefa somente se o
+     computador estiver ligado à energia CA" se for notebook na bateria
+     (opcional).
+   - Aba **Geral**: marcar "Executar estando o usuário conectado ou não"
+     se quiser que rode mesmo deslogado (pede a senha do Windows uma
+     vez).
+   - Não há campo nativo de "só dias úteis" combinado com "a cada 30min"
+     numa tarefa só — mais simples: criar o gatilho **Semanalmente**, dias
+     Seg-Sex, em vez de Diariamente no passo 4, e aplicar a repetição do
+     mesmo jeito.
+8. Teste: botão direito na tarefa → **Executar**. Confira em alguns
+   segundos se rodou sem erro (aba **Histórico**, se estiver habilitado,
+   ou apenas veja se novos itens apareceram no Supabase/na aba RESEARCH).
+
+Nada disso é bloqueante — o app funciona normalmente sem essa tarefa
+configurada, só não atualiza Genial/XP enquanto o Cloud estiver
+bloqueado. A aba RESEARCH agora mostra "última coleta: hh:mm" por casa,
+então dá pra ver quando os dados foram atualizados de verdade.

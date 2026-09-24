@@ -155,6 +155,29 @@ def ler_itens_salvos(nomes: list):
     return store.listar_itens(nomes)
 
 
+def ultimas_coletas_formatadas(casas_ativas: list) -> str:
+    """Texto "última coleta: <casa> hh:mm · <casa> hh:mm" (fuso
+    America/Sao_Paulo) com o horario da ultima coleta BEM-SUCEDIDA de
+    cada casa ativa+disponivel - transparencia de quando os dados foram
+    atualizados de verdade. Especialmente util quando a coleta pelo
+    proprio servidor (Cloud) esta bloqueada e quem mantem os dados
+    frescos e' o coletor_local.py rodando na maquina do usuario (ver
+    coletor_local.py e docs/agendador_tarefas.md)."""
+    from zoneinfo import ZoneInfo
+
+    tz_br = ZoneInfo("America/Sao_Paulo")
+    partes = []
+    for casa in CASAS:
+        if casa["id"] not in casas_ativas or not casa["disponivel"]:
+            continue
+        ultima = store.ultima_coleta_em(casa["nome"])
+        if ultima is None:
+            partes.append(f"{casa['nome']}: nunca")
+        else:
+            partes.append(f"{casa['nome']}: {ultima.astimezone(tz_br).strftime('%d/%m %H:%M')}")
+    return " · ".join(partes)
+
+
 @st.cache_resource(show_spinner=False)
 def _ultimas_tentativas() -> dict:
     """casa_id -> time.monotonic() da ultima tentativa de coleta (sucesso

@@ -4,7 +4,7 @@
 import streamlit as st
 
 import config
-from data.research import CASAS, coletar_pendentes, preparar_leitura
+from data.research import CASAS, coletar_pendentes, preparar_leitura, ultimas_coletas_formatadas
 from data.research.genial import obter_recomendacoes, obter_swing_trade
 from data.research.resumir import obter_resumo
 
@@ -220,6 +220,13 @@ def render_research(prefs: dict):
 
     casas_ativas = _casas_ativas(prefs)
     relatorios, falhas, casas_para_coletar, _ = preparar_leitura(casas_ativas)
+
+    texto_coletas = ultimas_coletas_formatadas(casas_ativas)
+    if texto_coletas:
+        st.markdown(
+            f"<div class='cinza' style='font-size:0.65rem; margin-bottom:0.3rem;'>última coleta: {texto_coletas}</div>",
+            unsafe_allow_html=True,
+        )
 
     with st.container(border=True):
         _painel_watchlist(prefs, relatorios)
