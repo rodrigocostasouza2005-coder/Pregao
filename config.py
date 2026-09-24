@@ -69,8 +69,24 @@ JANELAS_RETORNO = ["1D", "1S", "1M", "3M", "6M", "12M", "ANO"]
 # --- Abas do app (chave interna = titulo exibido na navegacao) ----------
 ABAS_DISPONIVEIS = ["EQUITY", "MACRO", "RESEARCH", "NEWS", "TOP MERCADO", "CVM"]
 
-# --- E-mails com acesso ao painel DIAGNOSTICO DE FONTES (aba CONFIG) ----
-EMAILS_DIAGNOSTICO = ["rodrigo.costa.souza2005@gmail.com"]
+# --- E-mails com acesso a paineis de admin (DIAGNOSTICO DE FONTES, SISTEMA) --
+# repo publico: nao deixar e-mail pessoal fixo no codigo. Le
+# st.secrets["admin"]["emails"] (lista); enquanto esse secret nao for
+# configurado, cai pro fallback abaixo - o painel continua funcionando
+# antes e depois da acao manual (ver AÇÕES MANUAIS PENDENTES em
+# PROGRESSO.md pro bloco a colar em secrets.toml).
+_EMAILS_ADMIN_PADRAO = ["rodrigo.costa.souza2005@gmail.com"]
+
+
+def obter_emails_admin() -> list:
+    try:
+        import streamlit as st
+        emails = st.secrets.get("admin", {}).get("emails")
+        if emails:
+            return list(emails)
+    except Exception:
+        pass
+    return _EMAILS_ADMIN_PADRAO
 
 # --- Groq: chave e modelo usados nos resumos por IA (research e news) --
 # GROQ_MODELO_PADRAO e' o modelo verificado como disponivel na Groq nesta

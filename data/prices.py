@@ -89,7 +89,6 @@ def obter_cotacao(ticker: str) -> dict:
         return {"ticker": ticker, "erro": str(e)}
 
 
-@st.cache_data(ttl=30, show_spinner=False)
 @st.cache_resource(show_spinner=False)
 def _ultima_cotacao_indice_valida() -> dict:
     """nome -> ultimo dict de cotacao de indice/moeda que veio sem erro.
@@ -102,6 +101,7 @@ def _ultima_cotacao_indice_valida() -> dict:
     return {}
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def obter_cotacao_indice(nome: str, symbol: str) -> dict:
     """
     Cotacao de indice/moeda pra ticker tape (ex: Ibovespa, dolar). Usa

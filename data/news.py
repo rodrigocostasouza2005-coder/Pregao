@@ -18,6 +18,7 @@ detalhe de implementacao deste coletor, nao configuracao do app.
 
 import re
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlparse
 from zoneinfo import ZoneInfo
@@ -645,6 +646,22 @@ def _calcular_importancia(titulos: list, veiculos: list, data_mais_recente) -> t
     return total, regras
 
 
+def _coletar_em_paralelo(tarefas: list) -> list:
+    """tarefas: lista de (url, veiculo_fixo). Busca todas em paralelo
+    (ThreadPoolExecutor leve - sao so downloads HTTP, nao CPU-bound) em
+    vez de sequencial: o TOP MERCADO bate em ~8-10 fontes independentes
+    (_TEMAS_MERCADO + feeds diretos), sequencial isso somava alguns
+    segundos so' de rede. Cada fonte ja tem timeout proprio
+    (_buscar_feed_de_url) e falha isolada (None, nunca lanca excecao) -
+    o paralelismo so' economiza tempo de espera, nao muda o resultado.
+    Retorna lista de (feed_ou_None, veiculo_fixo) na mesma ordem."""
+    if not tarefas:
+        return []
+    with ThreadPoolExecutor(max_workers=min(8, len(tarefas))) as executor:
+        feeds = list(executor.map(lambda t: _buscar_feed_de_url(t[0]), tarefas))
+    return list(zip(feeds, (t[1] for t in tarefas)))
+
+
 def _coletar_pool_brasil(setor: str) -> tuple:
     """Retorna (entries_por_link, alguma_fonte_ok). entries_por_link
     mapeia link -> (entry, veiculo_fixo) - veiculo_fixo=None aqui porque
@@ -652,26 +669,17 @@ def _coletar_pool_brasil(setor: str) -> tuple:
     entries_por_link = {}
     alguma_fonte_ok = False
 
-    feed_business = _buscar_feed_de_url(_URL_BUSINESS_BR)
-    if feed_business is not None:
-        alguma_fonte_ok = True
-        for e in feed_business:
-            entries_por_link.setdefault(e.get("link"), (e, None))
+    tarefas = [(_URL_BUSINESS_BR, None)]
+    tarefas += [(_RSS_URL.format(termo=quote(tema)), None) for tema in _TEMAS_MERCADO]
+    if setor != "TODOS":
+        tarefas.append((_RSS_URL.format(termo=quote(news_setores.termo_busca(setor))), None))
 
-    for tema in _TEMAS_MERCADO:
-        feed_tema = _buscar_feed(tema)
-        if feed_tema is None:
+    for feed, veiculo_fixo in _coletar_em_paralelo(tarefas):
+        if feed is None:
             continue
         alguma_fonte_ok = True
-        for e in feed_tema:
-            entries_por_link.setdefault(e.get("link"), (e, None))
-
-    if setor != "TODOS":
-        feed_setor = _buscar_feed(news_setores.termo_busca(setor))
-        if feed_setor is not None:
-            alguma_fonte_ok = True
-            for e in feed_setor:
-                entries_por_link.setdefault(e.get("link"), (e, None))
+        for e in feed:
+            entries_por_link.setdefault(e.get("link"), (e, veiculo_fixo))
 
     return entries_por_link, alguma_fonte_ok
 
@@ -684,26 +692,17 @@ def _coletar_pool_internacional(setor: str) -> tuple:
     entries_por_link = {}
     alguma_fonte_ok = False
 
-    feed_business = _buscar_feed_de_url(_URL_BUSINESS_US)
-    if feed_business is not None:
-        alguma_fonte_ok = True
-        for e in feed_business:
-            entries_por_link.setdefault(e.get("link"), (e, None))
+    tarefas = [(_URL_BUSINESS_US, None)]
+    tarefas += [(url, veiculo) for veiculo, url in _FEEDS_DIRETOS_INTERNACIONAIS.items()]
+    if setor != "TODOS":
+        tarefas.append((_RSS_URL.format(termo=quote(news_setores.termo_busca(setor))), None))
 
-    for veiculo, url in _FEEDS_DIRETOS_INTERNACIONAIS.items():
-        feed = _buscar_feed_de_url(url)
+    for feed, veiculo_fixo in _coletar_em_paralelo(tarefas):
         if feed is None:
             continue
         alguma_fonte_ok = True
         for e in feed:
-            entries_por_link.setdefault(e.get("link"), (e, veiculo))
-
-    if setor != "TODOS":
-        feed_setor = _buscar_feed(news_setores.termo_busca(setor))
-        if feed_setor is not None:
-            alguma_fonte_ok = True
-            for e in feed_setor:
-                entries_por_link.setdefault(e.get("link"), (e, None))
+            entries_por_link.setdefault(e.get("link"), (e, veiculo_fixo))
 
     return entries_por_link, alguma_fonte_ok
 

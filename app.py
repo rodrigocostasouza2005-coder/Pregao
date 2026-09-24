@@ -682,11 +682,11 @@ if secao_atual == "CONFIG":
                 st.warning("Preferências restauradas nesta sessão (banco indisponível, não foram salvas).")
             st.rerun()
 
-    # --- painel DIAGNOSTICO DE FONTES: so pro(s) e-mail(s) em config.EMAILS_DIAGNOSTICO -
+    # --- painel DIAGNOSTICO DE FONTES: so pro(s) e-mail(s) admin (config.obter_emails_admin) -
     # testa cada fonte de verdade, rodando neste servidor (local ou Streamlit Cloud),
     # pra saber o que funciona em producao sem depender do sandbox de desenvolvimento
     # (varios dominios ficam bloqueados por WAF/CDN so la - ver BACKLOG.md)
-    if usuario["email"] in config.EMAILS_DIAGNOSTICO:
+    if usuario["email"] in config.obter_emails_admin():
         with st.container(border=True):
             st.markdown('<div class="painel-titulo">DIAGNÓSTICO DE FONTES</div>', unsafe_allow_html=True)
             st.markdown(

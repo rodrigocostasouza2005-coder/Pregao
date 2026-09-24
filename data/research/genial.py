@@ -24,6 +24,7 @@ Streamlit Cloud e no painel DIAGNOSTICO DE FONTES (CONFIG)."""
 
 import json
 import re
+import time
 
 import streamlit as st
 from curl_cffi import requests as cffi_requests
@@ -43,13 +44,25 @@ _TENTATIVAS = [
     {"impersonate": "safari17_0", "http_version": CurlHttpVersion.V1_1},
 ]
 
+# orcamento total pra TODAS as tentativas juntas - sem isso, se o dominio
+# nao responder nada (timeout puro, nao um erro rapido), as 4 tentativas
+# podiam somar bem mais que TIMEOUT*4 (achado na auditoria de
+# performance: um teste real bateu no timeout do proprio AppTest por
+# causa disso). Uma vez estourado, para na tentativa atual e desiste.
+_ORCAMENTO_TOTAL_S = 20
+
 
 def _tentar_buscar(url: str):
     """Tenta baixar `url` com cada combinacao de _TENTATIVAS ate uma dar
-    certo (200 com corpo). Retorna (Response, rotulo) ou (None, None) se
-    todas falharem. print() de cada tentativa - visivel nos Logs do
-    Streamlit Cloud."""
+    certo (200 com corpo) ou o orcamento total (_ORCAMENTO_TOTAL_S)
+    estourar. Retorna (Response, rotulo) ou (None, None) se todas
+    falharem/o tempo acabar. print() de cada tentativa - visivel nos Logs
+    do Streamlit Cloud."""
+    limite = time.monotonic() + _ORCAMENTO_TOTAL_S
     for tentativa in _TENTATIVAS:
+        if time.monotonic() > limite:
+            print("[genial] orçamento de tempo esgotado, parando tentativas")
+            break
         rotulo = f"impersonate={tentativa.get('impersonate')} http={tentativa.get('http_version', 'auto')}"
         try:
             r = cffi_requests.get(url, headers=HEADERS, timeout=TIMEOUT, **tentativa)
@@ -83,7 +96,12 @@ _TIPO_SECAO_NEWSLETTER = "CARROSSEL_NEWSLETTER"
 _TICKER_NO_LINK = re.compile(r"^/acoes/([A-Z0-9]{4,6})(?:/|$)")
 
 
+@st.cache_data(ttl=TTL_COLETA, show_spinner=False)
 def _buscar_next_data() -> dict | None:
+    """Cacheado (nao so as 3 funcoes publicas que consomem isso): sem
+    isso, obter_relatorios/obter_recomendacoes/obter_swing_trade batiam
+    na home da Genial 3x separadas a cada render da aba RESEARCH, mesmo
+    sendo a mesma pagina - achado na auditoria de performance."""
     if not permitido(BASE_URL):
         return None
     r, _ = _tentar_buscar(BASE_URL)
