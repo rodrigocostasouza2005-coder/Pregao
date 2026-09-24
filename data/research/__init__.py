@@ -50,6 +50,11 @@ CASAS = [
         "disponivel": True,
         "obter_relatorios": genial.obter_relatorios,
         "extrator_texto": None,  # generico (baixa a pagina publica do relatorio)
+        # diagnostico de producao (2026-09-24): bloqueada no Streamlit
+        # Cloud (~20s pra desistir, orcamento de _tentar_buscar). O app
+        # nao tenta mais coletar essa casa - so le o que o
+        # coletor_local.py (fora do Cloud) ja tiver salvo no Supabase.
+        "tentar_coleta_automatica": False,
     },
     {
         "id": "xp",
@@ -58,6 +63,7 @@ CASAS = [
         "disponivel": True,
         "obter_relatorios": xp.obter_relatorios,
         "extrator_texto": xp.obter_texto_aberto,  # nunca baixa a pagina publica (paywall)
+        "tentar_coleta_automatica": False,  # idem Genial - bloqueada no Cloud (403), ver coletor_local.py
     },
     {
         "id": "btg",
@@ -136,6 +142,8 @@ def preparar_leitura(casas_ativas=None):
             falhas.append(f"{casa['nome']} ({casa.get('motivo_indisponivel', 'indisponível')})")
             continue
         nomes_para_ler.append(casa["nome"])
+        if not casa.get("tentar_coleta_automatica", True):
+            continue
         if store.precisa_recoletar(casa["nome"]):
             casas_para_coletar.append(casa)
 
