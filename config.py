@@ -60,6 +60,55 @@ INDICES_TICKER_TAPE = {
 }
 SIMBOLO_IBOVESPA = "^BVSP"  # usado na comparacao de desempenho no grafico
 
+# --- Composicao aproximada do Ibovespa, por setor (aba MERCADO) --------
+# Lista curada manualmente com blue chips de alta liquidez - NAO e' a
+# composicao oficial completa (~86 papeis, rebalanceada trimestralmente
+# pela B3) nem se pretende substituir a fonte oficial. Existe pra dar uma
+# visao setorial/de mercado ampla sem depender de scraping do site da B3.
+# Atualize esta lista conforme rebalanceamentos (https://www.b3.com.br,
+# composicao da carteira teorica do IBOV) - e' so' um dict, adicionar ou
+# remover ticker/setor nao exige mexer em nenhum outro arquivo.
+IBOVESPA_COMPOSICAO = {
+    "PETR4": "Petróleo e Gás", "PETR3": "Petróleo e Gás", "PRIO3": "Petróleo e Gás",
+    "RRRP3": "Petróleo e Gás", "UGPA3": "Petróleo e Gás", "CSAN3": "Petróleo e Gás",
+    "VALE3": "Mineração e Siderurgia", "GGBR4": "Mineração e Siderurgia",
+    "CSNA3": "Mineração e Siderurgia", "USIM5": "Mineração e Siderurgia",
+    "GOAU4": "Mineração e Siderurgia",
+    "ITUB4": "Bancos", "BBDC4": "Bancos", "BBAS3": "Bancos", "SANB11": "Bancos",
+    "BPAC11": "Bancos", "B3SA3": "Bancos e Serviços Financeiros",
+    "MGLU3": "Varejo", "LREN3": "Varejo", "RENT3": "Varejo", "ASAI3": "Varejo",
+    "CRFB3": "Varejo", "ARZZ3": "Varejo", "PCAR3": "Varejo",
+    "ELET3": "Energia Elétrica", "ELET6": "Energia Elétrica", "EQTL3": "Energia Elétrica",
+    "CMIG4": "Energia Elétrica", "CPLE6": "Energia Elétrica", "ENEV3": "Energia Elétrica",
+    "SBSP3": "Saneamento", "CPFE3": "Energia Elétrica", "AURE3": "Energia Elétrica",
+    "VIVT3": "Telecomunicações", "TIMS3": "Telecomunicações",
+    "JBSS3": "Agro e Alimentos", "MRFG3": "Agro e Alimentos", "BRFS3": "Agro e Alimentos",
+    "SMTO3": "Agro e Alimentos", "BEEF3": "Agro e Alimentos",
+    "SUZB3": "Papel e Celulose", "KLBN11": "Papel e Celulose",
+    "WEGE3": "Bens de Capital e Industrial", "EMBR3": "Bens de Capital e Industrial",
+    "RAIL3": "Transporte e Logística", "CCRO3": "Transporte e Logística",
+    "ECOR3": "Transporte e Logística", "AZUL4": "Transporte e Logística",
+    "ABEV3": "Bebidas",
+    "HAPV3": "Saúde", "RDOR3": "Saúde", "RADL3": "Saúde", "FLRY3": "Saúde", "HYPE3": "Saúde",
+    "NTCO3": "Higiene e Beleza",
+    "TOTS3": "Tecnologia", "LWSA3": "Tecnologia", "POSI3": "Tecnologia",
+    "CYRE3": "Construção Civil", "EZTC3": "Construção Civil", "MRVE3": "Construção Civil",
+    "MULT3": "Shoppings e Imóveis", "IGTI11": "Shoppings e Imóveis",
+    "CVCB3": "Turismo e Lazer",
+}
+
+# --- Principais indices globais (aba MERCADO, painel MERCADOS GLOBAIS) --
+INDICES_GLOBAIS = {
+    "S&P 500": "^GSPC",
+    "Nasdaq": "^IXIC",
+    "Dow Jones": "^DJI",
+    "FTSE 100 (Londres)": "^FTSE",
+    "DAX (Frankfurt)": "^GDAXI",
+    "Nikkei 225 (Tóquio)": "^N225",
+    "Hang Seng (Hong Kong)": "^HSI",
+    "Xangai (SSE)": "000001.SS",
+}
+
 # --- Velocidade do letreiro animado da ticker tape (pixels por segundo) --
 VELOCIDADES_TICKER_TAPE = {"LENTA": 25, "NORMAL": 50, "RAPIDA": 80}
 
@@ -67,7 +116,7 @@ VELOCIDADES_TICKER_TAPE = {"LENTA": 25, "NORMAL": 50, "RAPIDA": 80}
 JANELAS_RETORNO = ["1D", "1S", "1M", "3M", "6M", "12M", "ANO"]
 
 # --- Abas do app (chave interna = titulo exibido na navegacao) ----------
-ABAS_DISPONIVEIS = ["EQUITY", "MACRO", "RESEARCH", "NEWS", "TOP MERCADO", "CVM"]
+ABAS_DISPONIVEIS = ["EQUITY", "MACRO", "RESEARCH", "NEWS", "TOP MERCADO", "MERCADO", "CVM"]
 
 # --- E-mails com acesso a paineis de admin (DIAGNOSTICO DE FONTES, SISTEMA) --
 # repo publico: nao deixar e-mail pessoal fixo no codigo. Le

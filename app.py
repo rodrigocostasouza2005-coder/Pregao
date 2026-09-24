@@ -27,6 +27,7 @@ from data.prices import (
 from data.research import CASAS as CASAS_RESEARCH
 from data.user_prefs import obter_prefs, salvar_prefs
 from ui.macro_tab import render_macro
+from ui.mercado_tab import render_mercado
 from ui.news_tab import render_news, render_news_ticker
 from ui.research_tab import render_research
 from ui.sistema_tab import render_sistema
@@ -604,6 +605,12 @@ if secao_atual == "NEWS":
 if secao_atual == "TOP MERCADO":
     with st.container():
         render_top_mercado(prefs)
+
+
+# --- aba MERCADO (visao ampla do pregao: altas/baixas, setorial, treemap) ---
+if secao_atual == "MERCADO":
+    with st.container():
+        render_mercado(prefs)
 
 
 # --- aba SISTEMA (so admin) -------------------------------------------------
