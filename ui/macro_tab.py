@@ -24,6 +24,22 @@ from data.macro import (
 META_IPCA_CENTRO = 3.0
 META_IPCA_TOLERANCIA = 1.5
 
+_MESES_ABREV = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+
+
+def _eixo_x_mes_ano(fig, datas):
+    """Ticks do eixo X em 'mês/ano' abreviado PT-BR (ex: 'ago/2026') - o
+    Plotly.js nao tem locale PT-BR embutido pro tickformat de datas (so
+    ingles por padrao), entao os rotulos sao montados na mao a partir dos
+    meses distintos da serie. Amostra no maximo ~10 rotulos pra nao lotar
+    o eixo em series longas."""
+    meses_unicos = sorted({d.replace(day=1) for d in datas})
+    passo = max(1, len(meses_unicos) // 10)
+    tickvals = meses_unicos[::passo]
+    ticktext = [f"{_MESES_ABREV[d.month - 1]}/{d.year}" for d in tickvals]
+    fig.update_xaxes(tickvals=tickvals, ticktext=ticktext)
+
+
 _PERIODOS_SELIC_CDI = {
     "3M": 90,
     "6M": 180,
@@ -205,7 +221,7 @@ def _painel_curva_pre(prefs):
         ticktext=["1A", "2A", "5A", "10A"],
     )
     fig.update_yaxes(title="% a.a.")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
     if curva_mes is None:
         st.warning(
@@ -260,7 +276,8 @@ def _painel_ipca(prefs):
         fillcolor=tema["ciano"], opacity=0.08, line_width=0, layer="below",
     )
 
-    st.plotly_chart(fig, width="stretch")
+    _eixo_x_mes_ano(fig, df["data"])
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
     st.markdown(
         f"<div class='cinza' style='font-size:0.62rem;'>Faixa sombreada: meta de inflação "
         f"{_fmt(META_IPCA_CENTRO, 1, prefs)}% ± {_fmt(META_IPCA_TOLERANCIA, 1, prefs)} p.p. (Banco Central/CMN)</div>",
@@ -299,7 +316,7 @@ def _painel_selic_cdi(prefs):
 
     _layout_grafico_escuro(fig, tema)
     fig.update_yaxes(title="% a.a.")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
     faltando = []
     if selic_df is None:

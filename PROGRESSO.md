@@ -100,6 +100,44 @@ AÇÕES MANUAIS PENDENTES pro bloco a colar.
   direto.
 - Commit: (ver abaixo)
 
+### FILA1-T6/T7 — Resumos e densidade visual (já estavam completos)
+T6: verificado — RESEARCH já só resume automático pra watchlist
+(`_painel_watchlist` com `permitir_resumo_auto=True`; o feed geral usa
+botão). `_linha_relatorio` já confere `rel.get("resumo")` (já veio do
+`listar_itens`) antes de chamar `obter_resumo`, sem consulta redundante
+ao Supabase no mesmo rerun. NEWS/TOP MERCADO: resumo só dentro do
+`@st.dialog` do card (clique), nunca automático na lista.
+T7: layout já denso (linha wire de uma linha por notícia, card compacto
+com veículos confiáveis primeiro + "e mais N"). Nenhuma mudança de
+código nas duas.
+
+### FILA1-T8 — BACKLOG (itens que não dependiam do Rodrigo)
+- `ui/macro_tab.py`: barra de ferramentas do Plotly escondida nos 3
+  gráficos (faltava `config={"displayModeBar": False}`, só existia em
+  app.py).
+- `ui/macro_tab.py`: eixo X do IPCA 12 meses em "mês/ano" abreviado
+  PT-BR (ex: "ago/2026") — Plotly.js não tem locale PT-BR pro
+  tickformat de data, rótulos montados na mão (`_eixo_x_mes_ano`).
+- `app.py`: gráfico LINHA/AREA — MM20 saía com a mesma cor
+  (`tema["destaque"]`) da linha de preço, ficavam indistinguíveis; MM20
+  usa `tema["neutro"]` nesses dois modos (CANDLE continua com
+  `destaque`, onde não colide).
+- `data/prices.py`: beta recalculado localmente (cov/var de retornos
+  semanais, 2 anos, contra `^BVSP`) em vez do campo `info['beta']` do
+  yfinance (não confiável pra B3) — coluna BETA volta a aparecer em
+  INDICADORES (tooltip explica o cálculo). Testado com dados reais:
+  PETR4≈0.60, VALE3≈0.79, ITUB4≈1.25 (plausíveis).
+- Avisos em estilo fino: já cobertos globalmente por
+  `[data-testid="stAlert"]` em style.css, nenhuma mudança necessária.
+- **Não resolvidos** (precisam de inspeção visual real, não dá pra
+  confirmar só com AppTest que não renderiza CSS): título INDICADORES
+  sumindo, título RESEARCH espremido, legenda da curva pré sobreposta,
+  DY 12m duplicando JCP. Deixados no BACKLOG.md.
+- Arquivos: app.py, data/prices.py, ui/macro_tab.py
+- Testes: `compileall` limpo; `_calcular_beta` com dados reais (valores
+  plausíveis); AppTest EQUITY/MACRO sem exceção.
+- Commit: (ver abaixo)
+
 ## Tarefas bloqueadas
 
 (preenchido se alguma falhar 2x)

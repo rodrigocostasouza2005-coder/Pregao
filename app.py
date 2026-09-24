@@ -394,15 +394,15 @@ if secao_atual == "EQUITY":
                         <th class="cinza">P/L</th>
                         <th class="cinza">P/VP</th>
                         <th class="cinza">DIV. YIELD (12M)</th>
+                        <th class="cinza" title="cov(retornos semanais do papel, retornos semanais do Ibovespa) / var(retornos semanais do Ibovespa), 2 anos - calculado localmente, nao vem do yfinance">BETA (2A)</th>
                     </tr></thead>
                     <tbody><tr>
                         <td class="neutro">{config.formatar_valor_mercado(ind['valor_mercado'], fmt)}</td>
                         <td class="neutro">{config.formatar_numero(ind['pl'], 2, fmt) if ind['pl'] is not None else '—'}</td>
                         <td class="neutro">{config.formatar_numero(ind['pvp'], 2, fmt) if ind['pvp'] is not None else '—'}</td>
                         <td class="neutro">{config.formatar_numero(dy, 2, fmt) + '%' if dy is not None else '—'}</td>
+                        <td class="neutro">{config.formatar_numero(ind['beta'], 2, fmt) if ind['beta'] is not None else '—'}</td>
                     </tr></tbody>
-                    <!-- BETA escondido de proposito: o campo do yfinance nao e confiavel
-                         pra B3, ver BACKLOG.md. Volta quando for calculado localmente. -->
                     </table>
                     </div>
                     """,
@@ -519,10 +519,15 @@ if secao_atual == "EQUITY":
                     if eh_intraday:
                         sufixo_mm = " (5 min)" if periodo == "1D" else " (30 min)"
 
+                    # em CANDLE o preco vira barras alta/baixa (sem cor propria) - MM20
+                    # pode usar --destaque sem colidir. Em LINHA/AREA o preco JA usa
+                    # --destaque, entao MM20 precisa de outra cor pra nao ficar
+                    # indistinguivel da linha de preco (ver BACKLOG.md)
+                    cor_mm20 = tema["neutro"] if tipo_grafico in ("LINHA", "AREA") else tema["destaque"]
                     if prefs["mm20"] and df["MM20"].notna().any():
                         fig.add_trace(
                             go.Scatter(x=df["Data"], y=df["MM20"], name=f"MM20{sufixo_mm}",
-                                       line=dict(color=tema["destaque"], width=1)),
+                                       line=dict(color=cor_mm20, width=1)),
                             row=1, col=1,
                         )
                     if prefs["mm50"] and df["MM50"].notna().any():

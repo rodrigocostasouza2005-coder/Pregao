@@ -155,6 +155,46 @@ def _dividend_yield_12m(ticker_obj, preco_atual: float):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def _historico_semanal_ibov():
+    """Fechamentos semanais do Ibovespa, 2 anos - base pro calculo local
+    de beta (_calcular_beta). Cacheado separado do beta em si: varios
+    tickers da watchlist reusam o mesmo historico do indice dentro do
+    TTL, em vez de cada um buscar de novo."""
+    try:
+        hist = yf.Ticker("^BVSP").history(period="2y", interval="1wk")["Close"]
+        return hist if not hist.empty else None
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _calcular_beta(ticker: str) -> float | None:
+    """Beta calculado localmente: cov(retornos semanais do ticker,
+    retornos semanais do Ibovespa) / var(retornos semanais do Ibovespa),
+    2 anos de historico. O campo 'beta' do yfinance costuma vir mal
+    calculado pra acoes da B3 (referencia de mercado errada, periodo
+    curto etc - ver BACKLOG.md) - por isso recalculado aqui em vez de
+    usar info['beta']. None se nao houver historico suficiente."""
+    symbol = _para_symbol_yf(ticker)
+    try:
+        hist_ticker = yf.Ticker(symbol).history(period="2y", interval="1wk")["Close"]
+    except Exception:
+        return None
+    hist_ibov = _historico_semanal_ibov()
+    if hist_ibov is None or len(hist_ticker) < 20 or len(hist_ibov) < 20:
+        return None
+    ret_ticker = hist_ticker.pct_change().dropna()
+    ret_ibov = hist_ibov.pct_change().dropna()
+    df = pd.DataFrame({"ticker": ret_ticker, "ibov": ret_ibov}).dropna()
+    if len(df) < 20:
+        return None
+    variancia_ibov = df["ibov"].var()
+    if not variancia_ibov:
+        return None
+    return float(df["ticker"].cov(df["ibov"]) / variancia_ibov)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def obter_indicadores(ticker: str) -> dict:
     """Indicadores fundamentalistas via yfinance. Campos ausentes viram None
     (a interface mostra '-' em vez de inventar)."""
@@ -170,7 +210,7 @@ def obter_indicadores(ticker: str) -> dict:
         "pl": info.get("trailingPE"),
         "pvp": info.get("priceToBook"),
         "dividend_yield": _dividend_yield_12m(tk, preco_atual),
-        "beta": info.get("beta"),
+        "beta": _calcular_beta(ticker),
     }
 
 
