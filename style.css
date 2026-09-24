@@ -45,9 +45,10 @@ header[data-testid="stHeader"] {
 
 /* padding-top cobre a faixa fixa do topo inteira: header nativo do
    Streamlit (3rem, onde mora a barra de Share/estrela/GitHub do Cloud)
-   + a ticker tape (ver .pregao-topo-fixo) */
+   + a ticker tape + a barra de status (relogio/pregao aberto-fechado) -
+   ver .pregao-topo-fixo */
 .block-container {
-    padding-top: 5.65rem;
+    padding-top: 7rem;
     padding-bottom: 0.6rem;
     padding-left: 1rem;
     padding-right: 1rem;

@@ -40,6 +40,19 @@ with open(config.BASE_DIR / "style.css", encoding="utf-8") as f:
 
 FUSO_BR = ZoneInfo("America/Sao_Paulo")
 
+# horario regular de negociacao da B3 (nao inclui leilao de abertura antes
+# das 10h nem after-market apos as 18h - simplificado de proposito, e' so'
+# um indicador visual, nao uma fonte oficial de horario de pregao)
+_PREGAO_ABRE_HM = (10, 0)
+_PREGAO_FECHA_HM = (17, 0)
+
+
+def _pregao_esta_aberto(agora: datetime) -> bool:
+    if agora.weekday() >= 5:  # 5=sabado, 6=domingo
+        return False
+    hm_atual = (agora.hour, agora.minute)
+    return _PREGAO_ABRE_HM <= hm_atual <= _PREGAO_FECHA_HM
+
 
 # --- login obrigatorio: sem login, so a tela de apresentacao -------------
 if not auth.logado():
@@ -150,10 +163,30 @@ def _ticker_tape():
     conteudo = " &nbsp;·&nbsp; ".join(itens)
     animado = prefs["ticker_tape_modo"] == "ANIMADO"
 
+    # barra de status: relogio de Brasilia + indicador aberto/fechado do
+    # pregao + nota de atraso da cotacao - faz parte do mesmo fragment do
+    # letreiro (mesmo run_every) de proposito: um fragment separado so pro
+    # relogio ficaria "tique-taqueando" a 1x/segundo, gerando muito mais
+    # rerun do que o necessario so pra atualizar um relogio (contraria o
+    # trabalho de performance da auditoria da FILA1) - atualizar no mesmo
+    # ritmo das cotacoes (prefs["atualizacao_intervalo"]) e' suficiente.
+    agora = datetime.now(FUSO_BR)
+    aberto = _pregao_esta_aberto(agora)
+    classe_status = "alta" if aberto else "baixa"
+    rotulo_status = "PREGÃO ABERTO" if aberto else "PREGÃO FECHADO"
+    status_html = (
+        f"<div style='display:flex; justify-content:space-between; align-items:center; "
+        f"flex-wrap:wrap; gap:0.5rem; font-size:0.68rem; padding:0.15rem 1rem 0.3rem 1rem;' class='cinza'>"
+        f"<span>{agora.strftime('%d/%m/%Y %H:%M:%S')} (Brasília)</span>"
+        f"<span class='{classe_status}' style='font-weight:600;'>● {rotulo_status}</span>"
+        f"<span>cotações com atraso de ~15 min (fonte: Yahoo Finance)</span>"
+        f"</div>"
+    )
+
     if not animado:
         st.markdown(
             f"<div class='pregao-topo-fixo'><div class='ticker-tape-wrap fixo'><div class='ticker-tape-track'>"
-            f"<span class='ticker-tape-set'>{conteudo}</span></div></div></div>",
+            f"<span class='ticker-tape-set'>{conteudo}</span></div></div>{status_html}</div>",
             unsafe_allow_html=True,
         )
         return
@@ -176,7 +209,7 @@ def _ticker_tape():
         f"<div class='ticker-tape-track' style='animation-duration:{duracao_s:.1f}s; animation-delay:{atraso_s:.1f}s;'>"
         f"<span class='ticker-tape-set'>{conteudo}</span>"
         f"<span class='ticker-tape-set'>{conteudo}</span>"
-        f"</div></div></div>",
+        f"</div></div>{status_html}</div>",
         unsafe_allow_html=True,
     )
 
