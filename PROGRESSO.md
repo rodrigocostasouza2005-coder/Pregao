@@ -825,6 +825,63 @@ proporcional ao volume).
   MERCADO/TOP MERCADO/CONFIG sem exceção.
 - Commit: enviado.
 
+### P4 — CVM ativada (outra sessão encerrada, assumida)
+`data/cvm.py`/`ui/cvm_tab.py` (450+238 linhas, já prontos de outra
+sessão) estavam sem commit. Confirmado que a outra sessão encerrou -
+assumido, testado com dado real e commitado.
+
+**Adaptação pra "sem tabela nova no Supabase"**: o código original criava
+`cvm_documentos` (ver `sql/cvm.sql`, agora marcado como não usado).
+Redirecionado pra reusar `research_itens` (mesma tabela do research
+geral) - o schema já cobre tudo que um documento CVM precisa
+(link/título/data/tipo/tickers/resumo), só `casa="CVM"` marca a origem.
+`apagar_documentos_antigos` agora delega pro mecanismo throttled já
+existente em `data/research/__init__.py` (1x/hora) em vez de rodar um
+DELETE sem gate a cada render da EQUITY.
+
+**Categoria nova, "Dados Econômico-Financeiros" (resultados
+trimestrais/anuais)**: verificado contra o CSV real do IPE 2026 que essa
+categoria da CVM mistura resultado financeiro de verdade
+("Demonstrações Financeiras Intermediárias/Anuais/Adicionais",
+"Press-release") com outras coisas (relatório de agente fiduciário,
+relatório de agência de rating, laudo de avaliação) - filtrado só pelos
+`Tipo` que são resultado de verdade, pra não poluir o painel RESULTADOS
+com documento que não é sobre desempenho da empresa. Testado com dado
+real: VALE3 trouxe "Desempenho da Vale no 2T26"/"1T26" corretamente.
+
+**Selo CONFIRMADA em NEWS**: `SELO_CONFIRMADA` já existia como constante
+reservada em `data/news.py` (nunca atribuída - claramente preparada de
+antemão pra esta integração). `obter_noticias` agora chama
+`cvm.documento_confirmador(ticker, titulo, data)` pra cada grupo -
+se houver Fato Relevante/Comunicado ao Mercado da CVM com assunto
+parecido (sobreposição de palavras ≥40%) e data a até 2 dias, o selo vira
+CONFIRMADA (sobrescreve o score heurístico - uma confirmação oficial da
+CVM é mais forte que qualquer regra de veículo/linguagem) e o card ganha
+um link direto pro documento oficial. Só implementado no fluxo de
+`obter_noticias` (NEWS + painel de EQUITY) - TOP MERCADO/`_processar_pool`
+fica de fora por enquanto (grupos lá podem ter múltiplos tickers ou
+nenhum, não é um encaixe natural pra "confirmar contra UM ticker").
+Testado com mock (fonte da CVM não garante ter um match real disponível
+na hora do teste) - selo/regra/link aplicados corretamente nos 3 grupos
+de teste do PETR4.
+
+**Painel CVM na EQUITY**: `render_cvm_ticker` (já existia, pronto) ligado
+logo abaixo do painel de notícias.
+
+**DIAGNÓSTICO DE FONTES**: nova entrada testando o download do IPE.
+
+- Arquivos: `data/cvm.py`, `ui/cvm_tab.py`, `sql/cvm.sql` (marcado como
+  não usado), `app.py`, `data/news.py`, `ui/news_tab.py`,
+  `data/diagnostico.py`.
+- Testes: `compileall` limpo; `obter_documentos_cvm` testado com dado
+  real (PETR4: 271 docs, VALE3: 251 docs incluindo 23 de RESULTADOS,
+  MELI34: 0 - correto, é BDR de empresa estrangeira sem registro CVM
+  direto); `salvar_documentos`/`store.listar_itens(["CVM"])` testados
+  end-to-end (grava e lê de volta de `research_itens` sem erro); selo
+  CONFIRMADA testado com mock; AppTest EQUITY/NEWS/TOP MERCADO/CVM/
+  CONFIG sem exceção.
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

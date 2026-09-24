@@ -41,6 +41,13 @@ Mais recente primeiro.
   manual — cada nó com cor/texto/hover 100% explícitos, sem nada
   automático do Plotly. Adicionada legenda de cor.
 
+- **P4 — aba CVM ativada:** trabalho pronto de outra sessão (encerrada),
+  assumido e testado. Documentos oficiais (fato relevante, comunicado,
+  resultados trimestrais/anuais, proventos, calendário) da watchlist,
+  resumo sob demanda, selo CONFIRMADA em notícias quando bate com um
+  filing oficial da CVM, painel na EQUITY. Adaptado pra reusar
+  `research_itens` em vez de criar tabela nova no Supabase.
+
 ## 2026-09-24 (sessão anterior)
 
 - **Letreiro (ticker tape) maior:** fonte de ~12px pra ~14px, mais espaço
