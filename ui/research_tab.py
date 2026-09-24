@@ -14,6 +14,7 @@ _TIPO_LABEL = {
     "MACRO": "MACRO",
     "NEWSLETTER": "NEWSLETTER",
     "ANALISE_TECNICA": "ANÁLISE TÉCNICA",
+    "LIVE": "LIVE/VÍDEO",
 }
 
 _AVISO_COTA = "Cota gratuita de resumo por IA esgotada por enquanto — os links continuam disponíveis normalmente."

@@ -29,7 +29,7 @@ import time
 
 import streamlit as st
 
-from . import genial, store, xp
+from . import genial, genial_lives, store, xp
 from .base import TEMPO_MAX_COLETA_S
 
 # nao tenta recoletar a mesma casa antes desse tempo desde a ULTIMA
@@ -64,6 +64,24 @@ CASAS = [
         "obter_relatorios": xp.obter_relatorios,
         "extrator_texto": xp.obter_texto_aberto,  # nunca baixa a pagina publica (paywall)
         "tentar_coleta_automatica": False,  # idem Genial - bloqueada no Cloud (403), ver coletor_local.py
+    },
+    {
+        "id": "genial_lives",
+        "nome": "Genial (Lives)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "obter_relatorios": genial_lives.obter_relatorios,
+        "extrator_texto": genial_lives.obter_texto_transcricao,
+        "motivo_indisponivel": (
+            "robots.txt do YouTube proíbe /feeds/videos.xml e /api/ pra bots genéricos "
+            "(User-agent: *) - o mecanismo funciona de verdade (testado com vídeos reais: "
+            "feed lista os programas certos, legenda automática em pt existe e é extraível), "
+            "mas fica desligado por respeitar o robots.txt (mesma política usada em toda "
+            "coleta do projeto - ver permitido() em data/research/base.py). Caminho limpo "
+            "seria a API oficial do YouTube Data v3 (precisa de API key nova, ver AÇÕES "
+            "MANUAIS PENDENTES em PROGRESSO.md) - a de legendas dessa API exige OAuth do "
+            "dono do canal, então nem ela cobre transcrição de vídeo de terceiros."
+        ),
     },
     {
         "id": "btg",
