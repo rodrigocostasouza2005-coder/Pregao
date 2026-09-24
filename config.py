@@ -189,6 +189,10 @@ PREFS_PADRAO = {
     "ticker_tape_modo": "ANIMADO",
     "ticker_tape_velocidade": "NORMAL",
     "research_casas_ativas": ["genial"],
+    # ordem dos paineis dentro de cada aba que adota o sistema de paineis
+    # registrados (ver ui/paineis.py) - {aba_id: [painel_id, ...]}. Vazio
+    # (ou aba ausente) = usa a ordem padrao de registro daquela aba.
+    "ordem_paineis": {},
 }
 
 # --- Periodos intradiarios (candles de minutos, tratados a parte em

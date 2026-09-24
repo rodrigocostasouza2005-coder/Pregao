@@ -16,6 +16,7 @@ from data.mercado import (
     obter_altas_baixas, obter_dados_treemap, obter_desempenho_setorial,
     obter_mais_negociados, obter_mercados_globais, obter_panorama_ibovespa, obter_termometro,
 )
+from ui import paineis
 
 
 def _tema_atual(prefs):
@@ -196,6 +197,20 @@ def _painel_globais(prefs):
     )
 
 
+# TERMOMETRO fica de fora do registro reordenavel de proposito: alem de
+# ser o painel de abertura da aba, ele tambem funciona como "gate" (se
+# nao tem dado nenhum, os outros 5 nem tentam renderizar - ver
+# render_mercado). Os outros 5 sao os que fazem sentido reordenar (ver
+# ui/paineis.py, adotado pela primeira vez aqui).
+REGISTRO_PAINEIS = [
+    ("altas_baixas", "Maiores altas/baixas", _painel_altas_baixas),
+    ("mais_negociados", "Mais negociados", _painel_mais_negociados),
+    ("setorial", "Desempenho setorial", _painel_setorial),
+    ("treemap", "Mapa do mercado", _painel_treemap),
+    ("globais", "Mercados globais", _painel_globais),
+]
+
+
 def render_mercado(prefs: dict):
     """Ponto de entrada da aba MERCADO, chamado pelo app.py."""
     with st.container(border=True):
@@ -204,17 +219,7 @@ def render_mercado(prefs: dict):
     if not tem_dados:
         return
 
-    with st.container(border=True):
-        _painel_altas_baixas(prefs)
-
-    with st.container(border=True):
-        _painel_mais_negociados(prefs)
-
-    with st.container(border=True):
-        _painel_setorial(prefs)
-
-    with st.container(border=True):
-        _painel_treemap(prefs)
-
-    with st.container(border=True):
-        _painel_globais(prefs)
+    # 1o prefs: pra paineis.renderizar calcular a ordem salva do usuario.
+    # 2o prefs: repassado como argumento pra cada _painel_*(prefs) do
+    # registro acima (todos tem essa mesma assinatura de 1 argumento).
+    paineis.renderizar("MERCADO", REGISTRO_PAINEIS, prefs, prefs)

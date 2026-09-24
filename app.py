@@ -26,7 +26,9 @@ from data.prices import (
 )
 from data.research import CASAS as CASAS_RESEARCH
 from data.user_prefs import obter_prefs, salvar_prefs
+from ui import paineis
 from ui.macro_tab import render_macro
+from ui.mercado_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MERCADO
 from ui.mercado_tab import render_mercado
 from ui.news_tab import render_news, render_news_ticker
 from ui.research_tab import render_research
@@ -766,6 +768,13 @@ if secao_atual == "CONFIG":
                 config.ABAS_DISPONIVEIS, default=abas_visiveis,
             )
 
+            # ordem dos paineis dentro de cada aba que ja adota o sistema
+            # de paineis registrados (ver ui/paineis.py) - por enquanto so
+            # MERCADO; outras abas podem adotar o mesmo padrao depois
+            nova_ordem_mercado = paineis.controle_ordem_config(
+                "MERCADO", "MERCADO", _REGISTRO_PAINEIS_MERCADO, prefs,
+            )
+
             ids_casas_research = [c["id"] for c in CASAS_RESEARCH]
             nomes_casas_research = {c["id"]: c["nome"] for c in CASAS_RESEARCH}
             padrao_casas_research = [c for c in prefs.get("research_casas_ativas", []) if c in ids_casas_research]
@@ -792,6 +801,7 @@ if secao_atual == "CONFIG":
                     "atualizacao_intervalo": config.INTERVALOS_ATUALIZACAO[novo_rotulo_intervalo],
                     "ticker_tape_modo": novo_tape_modo,
                     "ticker_tape_velocidade": novo_tape_velocidade,
+                    "ordem_paineis": {**(prefs.get("ordem_paineis") or {}), "MERCADO": nova_ordem_mercado},
                 })
                 if _persistir_prefs():
                     st.success("Preferências salvas.")
