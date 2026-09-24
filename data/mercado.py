@@ -135,21 +135,6 @@ def obter_desempenho_setorial() -> list:
     return resultado
 
 
-def obter_dados_treemap() -> pd.DataFrame:
-    """DataFrame pronto pro px.treemap do mapa de mercado: colunas
-    ticker/setor/variacao_pct/tamanho. 'tamanho' usa volume_financeiro
-    (proxy de relevancia do papel no pregao de hoje, ja que valor de
-    mercado nao e buscado em lote) - papel sem negocio no dia (tamanho 0)
-    e excluido, senao o treemap reserva area pra um retangulo invisivel."""
-    papeis = obter_panorama_ibovespa()
-    linhas = [p for p in papeis if p["volume_financeiro"] > 0]
-    if not linhas:
-        return pd.DataFrame(columns=["ticker", "setor", "variacao_pct", "tamanho"])
-    return pd.DataFrame([
-        {"ticker": p["ticker"], "setor": p["setor"], "variacao_pct": p["variacao_pct"], "tamanho": p["volume_financeiro"]}
-        for p in linhas
-    ])
-
 
 @st.cache_data(ttl=_TTL_LOTE, show_spinner=False)
 def _baixar_lote_bruto(symbols: tuple) -> pd.DataFrame | None:

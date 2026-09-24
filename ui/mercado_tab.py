@@ -6,14 +6,15 @@ data/mercado.py, sobre a lista curada de config.IBOVESPA_COMPOSICAO (não
 é a composição oficial completa do índice - ver aviso fixo no topo da
 aba e o comentário em config.py)."""
 
+import html
+
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 import config
 from data.mercado import (
-    obter_altas_baixas, obter_dados_treemap, obter_desempenho_setorial,
+    obter_altas_baixas, obter_desempenho_setorial,
     obter_mais_negociados, obter_mercados_globais, obter_panorama_ibovespa, obter_termometro,
 )
 from ui import paineis
@@ -154,27 +155,112 @@ def _painel_setorial(prefs):
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
+def _cor_treemap(variacao_pct: float, limite: float, tema: dict) -> str:
+    """Interpola linearmente entre baixa/cinza/alta (mesma logica de 3
+    pontas de _painel_setorial, so' que devolve a cor HEX final em vez de
+    deixar o Plotly interpolar - necessario pra colorir os nos manualmente
+    (ver _painel_treemap: go.Treemap direto, nao px.treemap - ver
+    comentario la' do motivo)."""
+    def _hex_pra_rgb(h):
+        h = h.lstrip("#")
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+    def _rgb_pra_hex(rgb):
+        return "#{:02x}{:02x}{:02x}".format(*(max(0, min(255, round(c))) for c in rgb))
+
+    t = max(-1.0, min(1.0, variacao_pct / limite)) if limite else 0.0
+    c_baixa, c_cinza, c_alta = (_hex_pra_rgb(tema[k]) for k in ("baixa", "cinza", "alta"))
+    if t >= 0:
+        a, b, f = c_cinza, c_alta, t
+    else:
+        a, b, f = c_cinza, c_baixa, -t
+    return _rgb_pra_hex(tuple(a[i] + (b[i] - a[i]) * f for i in range(3)))
+
+
 def _painel_treemap(prefs):
     st.markdown('<div class="painel-titulo">MAPA DO MERCADO</div>', unsafe_allow_html=True)
     st.caption("Tamanho do retângulo = volume financeiro no dia · cor = variação % no dia.")
-    df = obter_dados_treemap()
-    if df.empty:
+    papeis = [p for p in obter_panorama_ibovespa() if p["volume_financeiro"] > 0]
+    if not papeis:
         st.markdown("<div class='cinza' style='font-size:0.78rem;'>—</div>", unsafe_allow_html=True)
         return
+
     tema = _tema_atual(prefs)
-    limite = max(df["variacao_pct"].abs().max(), 0.5)
-    fig = px.treemap(
-        df, path=[px.Constant("IBOVESPA"), "setor", "ticker"], values="tamanho",
-        color="variacao_pct", color_continuous_scale=[tema["baixa"], tema["cinza"], tema["alta"]],
-        range_color=[-limite, limite],
-    )
-    fig.update_traces(texttemplate="%{label}<br>%{color:+.2f}%")
+    fmt = prefs["formato_numerico"]
+    limite = max(max(abs(p["variacao_pct"]) for p in papeis), 0.5)
+
+    # go.Treemap DIRETO (nao px.treemap): px.treemap gera automaticamente
+    # os nos agregados de setor/raiz calculando sozinho um "color" pra
+    # eles (media dos filhos) - em alguns casos essa agregacao automatica
+    # vem NaN, e o texttemplate aplicado a TODO no (raiz/setor/ticker)
+    # entao mostrava "+NaN%" nos blocos de setor/raiz (bug real relatado).
+    # Construindo cada no a mao (ids/parents/values/colors/hovertext
+    # explicitos, sem nada "automatico" do Plotly) elimina essa classe de
+    # bug de vez, alem de dar controle total sobre o hover (o hover
+    # padrao do px.treemap mostra os nomes tecnicos das colunas, tipo
+    # "labels=MGLU3, tamanho=204910656.2, parent=Varejo" - tambem
+    # reportado como problema).
+    por_setor: dict = {}
+    for p in papeis:
+        por_setor.setdefault(p["setor"], []).append(p)
+
+    ids, labels, parents, values, colors, textos, hovertextos = [], [], [], [], [], [], []
+
+    ids.append("IBOVESPA"); labels.append("IBOVESPA"); parents.append("")
+    values.append(sum(p["volume_financeiro"] for p in papeis))
+    colors.append(tema["cinza"]); textos.append("")
+    hovertextos.append(f"<b>IBOVESPA</b><br>{len(papeis)} papéis no mapa")
+
+    for setor, papeis_setor in por_setor.items():
+        id_setor = f"IBOVESPA/{setor}"
+        volume_setor = sum(p["volume_financeiro"] for p in papeis_setor)
+        variacao_media_setor = sum(p["variacao_pct"] for p in papeis_setor) / len(papeis_setor)
+        ids.append(id_setor); labels.append(setor); parents.append("IBOVESPA")
+        values.append(volume_setor)
+        colors.append(_cor_treemap(variacao_media_setor, limite, tema))
+        textos.append(setor)
+        hovertextos.append(
+            f"<b>{html.escape(setor)}</b><br>{len(papeis_setor)} papel(éis)<br>"
+            f"Variação média: {config.formatar_numero(variacao_media_setor, 2, fmt)}%"
+        )
+        for p in papeis_setor:
+            ids.append(f"{id_setor}/{p['ticker']}")
+            labels.append(p["ticker"])
+            parents.append(id_setor)
+            values.append(p["volume_financeiro"])
+            colors.append(_cor_treemap(p["variacao_pct"], limite, tema))
+            textos.append(f"{p['ticker']}<br>{_fmt_pct(p['variacao_pct'], prefs)}")
+            hovertextos.append(
+                f"<b>{p['ticker']}</b><br>{html.escape(setor)}<br><br>"
+                f"Variação: {_fmt_pct(p['variacao_pct'], prefs)}<br>"
+                f"Preço: R$ {config.formatar_numero(p['preco'], 2, fmt)}<br>"
+                f"Volume financeiro: R$ {config.formatar_numero(p['volume_financeiro'] / 1_000_000, 1, fmt)} mi"
+            )
+
+    fig = go.Figure(go.Treemap(
+        ids=ids, labels=labels, parents=parents, values=values,
+        branchvalues="total",
+        marker=dict(colors=colors, line=dict(width=1, color=tema["fundo"])),
+        text=textos, textinfo="text", textposition="middle center",
+        hovertext=hovertextos, hoverinfo="text",
+        hovertemplate="%{hovertext}<extra></extra>",
+        root_color=tema["fundo"],
+    ))
     fig.update_layout(
         paper_bgcolor=tema["fundo"], plot_bgcolor=tema["fundo"],
         font=dict(color=tema["neutro"], family="IBM Plex Mono", size=11),
-        height=420, margin=dict(l=4, r=4, t=4, b=4), coloraxis_showscale=False,
+        height=420, margin=dict(l=4, r=4, t=4, b=4),
     )
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+    st.markdown(
+        f"<div style='display:flex; align-items:center; gap:0.4rem; margin-top:0.3rem; font-size:0.68rem;' class='cinza'>"
+        f"<span>{config.formatar_numero(-limite, 1, fmt)}%</span>"
+        f"<div style='flex:1; height:6px; background:linear-gradient(90deg, {tema['baixa']}, {tema['cinza']}, {tema['alta']});'></div>"
+        f"<span>+{config.formatar_numero(limite, 1, fmt)}%</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def _painel_globais(prefs):
