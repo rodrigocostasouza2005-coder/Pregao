@@ -20,7 +20,17 @@ _SUFIXO_CLASSE_ACAO = re.compile(r"\s+(ON|PN[ABC]?|UNT)(\s+(N[1-3]|NM|MA|MB))?\s
 # sufixo juridico no final do longName, ex: "Vale S.A." -> "Vale",
 # "BB Seguridade Participacoes S.A." -> remove "S.A." e depois
 # "Participacoes" (aplicado em loop, ja que pode ter mais de um no final)
-_SUFIXO_JURIDICO = re.compile(r"\s*(S\.A\.?|S/A|Participações|Holding)\s*$", re.IGNORECASE)
+# o "," opcional antes do grupo cobre nomes no formato ingles "Empresa,
+# Inc." (BDRs de empresa estrangeira, ex: MELI34 -> "MercadoLibre, Inc."
+# do longName do yfinance) - sem isso, so' os sufixos "S.A."/"Participações"
+# (formato BR) eram removidos, e o nome usado pra buscar noticia ficava
+# com a virgula/sufixo juridico ingles grudado (nunca aparece assim no
+# noticiario de verdade, quebrando a busca e o filtro de relevancia)
+_SUFIXO_JURIDICO = re.compile(
+    r"\s*,?\s*\b(S\.A\.?|S/A|Participações|Holding|Inc\.?|Incorporated|Corp\.?|Corporation|"
+    r"Ltd\.?|Limited|LLC|N\.V\.?|PLC|Co\.?|AG|SE)\s*$",
+    re.IGNORECASE,
+)
 
 # dias corridos aproximados de cada periodo de exibicao, usados pra recortar
 # o historico depois de calcular as medias moveis sobre o buffer maior

@@ -22,6 +22,30 @@ TICKER_NOME = {
     "B3SA3": "B3",
 }
 
+# --- Termos extras pra busca de noticias (data/news.py:obter_noticias) --
+# SO pra tickers onde o nome/ticker que a fonte de noticias usa e'
+# DIFERENTE do que o yfinance/B3 usam - o caso mais comum e' BDR de
+# empresa estrangeira: o ticker local (ex: MELI34) so' existe na B3, a
+# cobertura de imprensa (BR ou internacional) nunca menciona "MELI34" -
+# ela fala do ticker/nome originais (MELI, MercadoLibre, Mercado Livre).
+# Generico por design: qualquer ticker pode ganhar aliases aqui sem
+# mexer em nenhuma logica de busca/relevancia (data/news.py so' consulta
+# esse dict, nao tem "if ticker == X" em lugar nenhum) - ausente = sem
+# aliases extras, comportamento igual a antes (so' nome do yfinance +
+# ticker local).
+TICKER_ALIASES = {
+    "MELI34": ["MELI", "Mercado Livre", "MercadoLibre"],
+    "NFLX34": ["NFLX", "Netflix"],
+    "AAPL34": ["AAPL", "Apple"],
+    "GOGL34": ["GOOGL", "Alphabet", "Google"],
+    "AMZO34": ["AMZN", "Amazon"],
+    "MSFT34": ["MSFT", "Microsoft"],
+    "TSLA34": ["TSLA", "Tesla"],
+    "NVDC34": ["NVDA", "Nvidia"],
+    "DISB34": ["DIS", "Disney"],
+    "COCA34": ["KO", "Coca-Cola"],
+}
+
 # --- Temas visuais (estetica terminal financeiro) -----------------------
 # cada tema define as mesmas chaves; viram variaveis CSS (:root) em runtime
 TEMAS = {

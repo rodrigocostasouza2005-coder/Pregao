@@ -125,12 +125,26 @@ _PADROES_PAGINA_NAO_NOTICIA = [
     re.compile(r"^[a-z]{4}\d{1,2}\s*[-–:]\s*.+\s*[-–:]\s*cotacao\b"),  # "TICKER - Nome - Cotação..."
 ]
 
+# titulo que e' SO' "Nome da Empresa (TICKER)" - pagina de perfil/cotacao
+# do ativo, nunca uma materia de verdade (achado real testando ALPA4: o
+# Google News as vezes indexa a propria pagina de cotacao de um agregador
+# como se fosse uma "noticia"). O nome antes do ticker precisa ser CURTO
+# (ate 4 palavras) pra nao filtrar por engano uma manchete de verdade que
+# so' comece com o nome da empresa e va bem mais longe (ex: "Mercado
+# Livre (MELI34) vai vender remedios..." tem muito mais texto depois -
+# nao bate nesse padrao, que exige o titulo TERMINAR logo apos o ticker).
+_PADRAO_SO_NOME_E_TICKER = re.compile(r"^([a-zà-ÿ&.,\s-]{2,40})\s*\([a-z]{4}\d{1,2}\)\s*$")
+
 
 def _e_pagina_de_cotacao(titulo: str) -> bool:
     """True se o titulo bate com o padrao de pagina fixa de cotacao/perfil
-    de ativo (nao e' materia jornalistica) - ver _PADROES_PAGINA_NAO_NOTICIA."""
+    de ativo (nao e' materia jornalistica) - ver _PADROES_PAGINA_NAO_NOTICIA
+    e _PADRAO_SO_NOME_E_TICKER."""
     t = _sem_acento(titulo)
-    return any(p.search(t) for p in _PADROES_PAGINA_NAO_NOTICIA)
+    if any(p.search(t) for p in _PADROES_PAGINA_NAO_NOTICIA):
+        return True
+    m = _PADRAO_SO_NOME_E_TICKER.match(t)
+    return bool(m) and len(m.group(1).split()) <= 4
 
 
 # --- Paginas "ao vivo" / live blog -----------------------------------------
@@ -263,26 +277,52 @@ def _similaridade(a: set, b: set) -> float:
 
 
 def _nome_curto(ticker: str, nome_empresa: str) -> str:
-    """Primeira palavra do nome COMUM da empresa (sem acento) - prioriza
-    config.TICKER_NOME (excecoes cadastradas pro app inteiro, ex:
+    """Primeira palavra do nome COMUM da empresa (sem acento/pontuacao) -
+    prioriza config.TICKER_NOME (excecoes cadastradas pro app inteiro, ex:
     'PETR4'->'Petrobras') sobre o longName do yfinance: pra' alguns
     papeis (Petrobras e' o caso confirmado) o longName e' o nome legal
     completo ('Petróleo Brasileiro S.A. - Petrobras'), cuja primeira
     palavra ('Petróleo') nunca aparece no noticiario, que sempre usa o
-    nome comum. So cai pro longName quando nao ha excecao cadastrada."""
+    nome comum. So cai pro longName quando nao ha excecao cadastrada.
+
+    Usa a MESMA extracao de tokens de _tokenizar (regex [a-z0-9]+, nao
+    so' .split() por espaco) - sem isso, um nome com pontuacao colada na
+    primeira palavra (ex: longName 'MercadoLibre, Inc.' vindo do yfinance
+    pra' BDR de empresa estrangeira - ver MELI34) gerava 'mercadolibre,'
+    COM a virgula, que nunca bate com nenhum token de titulo de noticia
+    de verdade (a regex do tokenizer separa a virgula) - _relevante()
+    sempre retornava False pra esses casos, por mais que a empresa
+    estivesse claramente no titulo."""
     nome = config.TICKER_NOME.get(ticker) or nome_empresa or ""
-    return _sem_acento(nome).split()[0] if nome else ""
+    tokens = _tokenizar(nome)
+    return tokens[0] if tokens else ""
 
 
-def _relevante(ticker: str, nome_empresa: str, titulo: str) -> bool:
+def _relevante(ticker: str, nome_empresa: str, titulo: str, aliases: tuple = ()) -> bool:
     """A empresa precisa aparecer pelo nome ou pelo ticker no TITULO (nao
     so em algum lugar da materia) pra contar como noticia dela - senao e'
-    so uma mencao de passagem (ex: citada numa lista de altas do dia)."""
+    so uma mencao de passagem (ex: citada numa lista de altas do dia).
+
+    aliases (config.TICKER_ALIASES): nomes/tickers extras que contam como
+    a mesma empresa - existe pra BDR de empresa estrangeira (ex: MELI34),
+    onde a cobertura de imprensa nunca usa o nome legal do yfinance nem o
+    ticker local, e sim o ticker/nome originais (MELI, MercadoLibre) OU o
+    nome em portugues do mercado local (Mercado Livre - 2 palavras, que
+    NUNCA bate com o nome_curto de 1 palavra so' derivado do yfinance).
+    Cada alias precisa ter TODAS as suas palavras no titulo pra contar
+    (nao so' uma palavra solta) - evita alias curto demais virar falso
+    positivo."""
     tokens = set(_tokenizar(titulo))
     if ticker.lower() in tokens:
         return True
     primeiro_nome = _nome_curto(ticker, nome_empresa)
-    return bool(primeiro_nome) and primeiro_nome in tokens
+    if primeiro_nome and primeiro_nome in tokens:
+        return True
+    for alias in aliases:
+        tokens_alias = set(_tokenizar(alias))
+        if tokens_alias and tokens_alias.issubset(tokens):
+            return True
+    return False
 
 
 def _dominio_raiz(url: str) -> str:
@@ -409,7 +449,7 @@ def _extrair_data(entry):
     return datetime(*bruto[:6], tzinfo=timezone.utc).astimezone(_TZ_SP)
 
 
-def _montar_item(entry, ticker: str, nome_empresa: str):
+def _montar_item(entry, ticker: str, nome_empresa: str, aliases: tuple = ()):
     titulo, veiculo = _extrair_veiculo_e_titulo(entry)
     data = _extrair_data(entry)
     link = entry.get("link") or ""
@@ -420,7 +460,7 @@ def _montar_item(entry, ticker: str, nome_empresa: str):
         "veiculo": veiculo,
         "link": link,
         "data": data,
-        "relevante": _relevante(ticker, nome_empresa, titulo),
+        "relevante": _relevante(ticker, nome_empresa, titulo, aliases),
         "_tokens_sim": _tokens_similaridade(titulo, ticker),
     }
 
@@ -570,15 +610,38 @@ def obter_noticias(ticker: str):
     "fontes" carrega (veiculo, link) de cada materia do grupo - usado pra
     tentar resumir (ver obter_resumo_grupo), o "link" solto no topo e' so
     o da materia mais recente (o que a manchete do grupo mostra e abre).
-    Filtra tambem noticias com mais de _RETENCAO_DIAS dias."""
-    nome = obter_nome_yf(ticker)
-    termo = f'"{nome}" {ticker}' if nome else ticker
+    Filtra tambem noticias com mais de _RETENCAO_DIAS dias.
 
-    entries = _buscar_feed(termo)
-    if entries is None:
+    Busca por MULTIPLOS termos quando o ticker tem aliases cadastrados
+    (config.TICKER_ALIASES - BDR de empresa estrangeira, ver MELI34): uma
+    busca por termo (nome do yfinance+ticker, e' o padrao de sempre, MAIS
+    uma por alias), os resultados sao consolidados (deduplicados por
+    link) antes de seguir pro agrupamento/filtro de relevancia normais -
+    sem isso, cobertura que so' usa o ticker/nome originais (ex: "MELI"
+    ou "Mercado Livre" pra' MELI34) nunca aparecia, porque a busca so'
+    tentava o nome legal em ingles do yfinance + o ticker da B3, que quase
+    nunca aparecem assim no noticiario de verdade."""
+    nome = obter_nome_yf(ticker)
+    aliases = tuple(config.TICKER_ALIASES.get(ticker, []))
+    termos = [f'"{nome}" {ticker}' if nome else ticker]
+    termos += [f'{alias} {ticker}' for alias in aliases]
+
+    entries_por_link = {}
+    alguma_busca_respondeu = False
+    for termo in termos:
+        entries = _buscar_feed(termo)
+        if entries is None:
+            continue
+        alguma_busca_respondeu = True
+        for e in entries:
+            link = e.get("link") or ""
+            if link and link not in entries_por_link:
+                entries_por_link[link] = e
+
+    if not alguma_busca_respondeu:
         return None
 
-    itens = [i for i in (_montar_item(e, ticker, nome) for e in entries) if i]
+    itens = [i for i in (_montar_item(e, ticker, nome, aliases) for e in entries_por_link.values()) if i]
     if not itens:
         return []
 

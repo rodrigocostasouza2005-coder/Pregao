@@ -264,8 +264,17 @@ def _prefixo_tickers(n: dict) -> str:
     """Tickers como prefixo de TEXTO PURO pra colar na frente da manchete
     (o label de st.button nao aceita HTML/markdown, entao nao da pra
     colorir so' o ticker) - string vazia se nao houver ticker nenhum, pra
-    nao sobrar coluna/espaco vazio (era a coluna TICKER com "—" antes)."""
+    nao sobrar coluna/espaco vazio (era a coluna TICKER com "—" antes).
+
+    Pula ticker que ja aparece logo no comeco do proprio titulo (pratica
+    comum do noticiario BR: "PETR4 sobe..." ou "Petrobras (PETR4)...") -
+    sem isso o prefixo duplicava o ticker de forma redundante e feia
+    ("PETR4 · PETR4 vê...")."""
     tickers = _tickers_do_item(n)
+    if not tickers:
+        return ""
+    inicio_titulo = (n.get("titulo") or "")[:40].upper()
+    tickers = [t for t in tickers if t.upper() not in inicio_titulo]
     if not tickers:
         return ""
     texto = " ".join(tickers[:2])
@@ -436,9 +445,20 @@ def render_news(prefs: dict):
             st.info("Nenhuma notícia encontrada para os tickers da sua watchlist no momento.")
             return
 
-        st.caption("Selo de confiabilidade calculado por regras simples (fonte, nº de veículos, linguagem) — não é uma verificação factual definitiva. Clique numa manchete para ver os detalhes.")
+        st.caption(
+            f"Mostrando notícias das últimas {_JANELA_PADRAO_HORAS}h por padrão (clique em VER MAIS pra ver até "
+            f"5 dias) — selo de confiabilidade calculado por regras simples (fonte, nº de veículos, linguagem), "
+            f"não é uma verificação factual definitiva. Clique numa manchete para ver os detalhes."
+        )
 
-        tickers_no_feed = ["TODOS"] + sorted({t for n in noticias for t in _tickers_do_item(n)})
+        # so' tickers da watchlist do usuario - _tickers_do_item(n) ja deveria
+        # trazer so' isso na pratica (obter_noticias_watchlist so' busca por
+        # tickers da watchlist), mas o filtro exige a intersecao explicita
+        # como garantia (achado real: o filtro chegou a mostrar codigo de
+        # contrato futuro tipo WDOV26/WINV26, que nao e' um ticker de acao
+        # nem o que o usuario espera ver aqui)
+        watchlist_set = set(watchlist)
+        tickers_no_feed = ["TODOS"] + sorted({t for n in noticias for t in _tickers_do_item(n) if t in watchlist_set})
         selos_no_feed = ["TODOS"] + [s for s in _ORDEM_SELOS if s in {n["selo"] for n in noticias}]
 
         filtro_ticker = st.pills(
