@@ -332,6 +332,66 @@ if secao_atual == "EQUITY":
             ticker_selecionado = sel or padrao_ticker
             st.session_state[mem_ticker] = ticker_selecionado
 
+            if len(prefs["watchlist"]) > 1:
+                @st.fragment(run_every=prefs["atualizacao_intervalo"])
+                def _painel_comparativo_watchlist():
+                    fmt = prefs["formato_numerico"]
+                    linhas_dados = []
+                    for t in prefs["watchlist"]:
+                        cot = obter_cotacao(t)
+                        if cot.get("erro"):
+                            continue
+                        ind = obter_indicadores(t)
+                        linhas_dados.append({"ticker": t, "cot": cot, "ind": ind})
+
+                    with st.container(border=True):
+                        st.markdown('<div class="painel-titulo">COMPARATIVO DA WATCHLIST</div>', unsafe_allow_html=True)
+                        if not linhas_dados:
+                            st.markdown("<div class='cinza' style='font-size:0.78rem;'>Sem cotações disponíveis agora.</div>", unsafe_allow_html=True)
+                        else:
+                            melhor = max(linhas_dados, key=lambda d: d["cot"]["variacao_pct"])
+                            pior = min(linhas_dados, key=lambda d: d["cot"]["variacao_pct"])
+                            # "melhor/pior desempenho" em vez de "maior alta/baixa": se a
+                            # watchlist inteira estiver no vermelho hoje, o "melhor" ainda
+                            # e' negativo - chamar isso de "alta" seria enganoso
+                            cls_melhor = "alta" if melhor["cot"]["variacao_pct"] >= 0 else "baixa"
+                            cls_pior = "alta" if pior["cot"]["variacao_pct"] >= 0 else "baixa"
+                            st.markdown(
+                                f"<div class='cinza' style='font-size:0.7rem; margin-bottom:0.3rem;'>"
+                                f"melhor desempenho do dia: <span class='{cls_melhor}' style='font-weight:600;'>{melhor['ticker']} "
+                                f"{'+' if melhor['cot']['variacao_pct'] >= 0 else ''}{config.formatar_numero(melhor['cot']['variacao_pct'], 2, fmt)}%</span>"
+                                f" · pior desempenho do dia: <span class='{cls_pior}' style='font-weight:600;'>{pior['ticker']} "
+                                f"{'+' if pior['cot']['variacao_pct'] >= 0 else ''}{config.formatar_numero(pior['cot']['variacao_pct'], 2, fmt)}%</span></div>",
+                                unsafe_allow_html=True,
+                            )
+                            linhas_html = "".join(
+                                f"<tr>"
+                                f"<td style='padding:0.2rem 0.4rem 0.2rem 0;'><span style='color:var(--destaque); font-weight:600;'>{d['ticker']}</span></td>"
+                                f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>R$ {config.formatar_numero(d['cot']['preco'], 2, fmt)}</td>"
+                                f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='{"alta" if d["cot"]["variacao_pct"] >= 0 else "baixa"}'>"
+                                f"{'+' if d['cot']['variacao_pct'] >= 0 else ''}{config.formatar_numero(d['cot']['variacao_pct'], 2, fmt)}%</td>"
+                                f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>{config.formatar_numero(d['ind']['pl'], 2, fmt) if d['ind']['pl'] is not None else '—'}</td>"
+                                f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>{config.formatar_numero(d['ind']['pvp'], 2, fmt) if d['ind']['pvp'] is not None else '—'}</td>"
+                                f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='neutro'>{config.formatar_numero(d['ind']['dividend_yield'], 2, fmt) + '%' if d['ind']['dividend_yield'] is not None else '—'}</td>"
+                                f"</tr>"
+                                for d in linhas_dados
+                            )
+                            st.markdown(
+                                f"<div style='overflow-x:auto; overflow-y:hidden;'>"
+                                f"<table style='width:100%; font-size:0.8rem; border-collapse:collapse;'>"
+                                f"<thead><tr class='cinza' style='font-size:0.68rem;'>"
+                                f"<th style='text-align:left; font-weight:400; padding:0 0.4rem 0.2rem 0;'>TICKER</th>"
+                                f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>PREÇO</th>"
+                                f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>VAR. DIA</th>"
+                                f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>P/L</th>"
+                                f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>P/VP</th>"
+                                f"<th style='text-align:right; font-weight:400; padding:0 0 0.2rem 0.4rem;'>DY</th>"
+                                f"</tr></thead><tbody>{linhas_html}</tbody></table></div>",
+                                unsafe_allow_html=True,
+                            )
+
+                _painel_comparativo_watchlist()
+
             @st.fragment(run_every=prefs["atualizacao_intervalo"])
             def _painel_precos(ticker_sel):
                 cotacao = obter_cotacao(ticker_sel)
