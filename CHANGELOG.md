@@ -17,6 +17,12 @@ Mais recente primeiro.
   do `st.columns()`), coluna de ticker vazia removida (vira prefixo
   inline), tooltip nativo da manchete removido (cobria o `st.dialog`
   aberto por cima de qualquer coisa da página — mantido só no selo).
+- **T6 (modo autônomo 2):** NÃO implementado — `data/cvm.py`/
+  `ui/cvm_tab.py` parecem prontos, mas estão sem commit (trabalho em
+  andamento de outra sessão); integrar agora dependeria de uma interface
+  que ainda pode mudar, e ativaria em produção uma aba que a outra sessão
+  deixou de propósito atrás de um placeholder. Retomar quando ela
+  commitar. Ver decisão registrada em PROGRESSO.md.
 - **T4 (modo autônomo 2):** barra de status fixa com relógio de Brasília,
   indicador de pregão aberto/fechado e nota de atraso de cotação — dentro
   do mesmo fragment do letreiro, sem rerun extra.

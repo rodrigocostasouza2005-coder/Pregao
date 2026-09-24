@@ -516,6 +516,36 @@ ordem por aba em `user_prefs` (reaproveitando a tabela que já existe,
 sem tabela nova) - cobre a parte mais pedida ("quero ver X antes de Y")
 sem entrar no redimensionamento livre, que é o pedaço realmente caro.
 
+### FILA2-T6 — Integração CVM (NÃO implementado por enquanto)
+Verifiquei (só leitura, sem editar nada) que `data/cvm.py` (450 linhas) e
+`ui/cvm_tab.py` (238 linhas, `render_cvm` importa e expõe normal) já
+parecem funcionalmente completos — têm `obter_documentos_watchlist`,
+`documento_confirmador` (pra badge "CONFIRMADA" cruzando notícia com
+filing da CVM) e `obter_resumo_documento`, exatamente os pontos que o T6
+pedia pra integrar. MAS os dois arquivos (+ `sql/cvm.sql` +
+`preview_cvm.py`) estão **sem commit nenhum** (`git status` mostra `??` -
+untracked), ou seja, é trabalho em andamento de outra sessão que ainda
+não foi para o controle de versão.
+
+**Decisão**: não fiz a integração (badge CONFIRMADA em NEWS, painel
+RESULTADOS em EQUITY, entrada em DIAGNÓSTICO DE FONTES) nem removi o
+placeholder "Fase 5" que esconde a aba CVM da navegação em `app.py`.
+Mesmo sem editar os arquivos proibidos diretamente, construir essa
+integração agora significa: (a) depender de uma interface que a outra
+sessão ainda pode estar mudando (nada commitado = nenhuma garantia de
+estabilidade), e (b) ativar em produção uma aba que a própria outra
+sessão claramente decidiu manter atrás de um placeholder de proposito -
+não é meu lugar destravar isso por ela. Regra de ouro da fila
+("nunca edite data/cvm.py, ui/cvm_tab.py, sql/cvm.sql, preview_cvm.py")
+existe justamente pra não colidir com esse trabalho paralelo; tratei o
+espírito da regra como cobrindo também "não ativar/depender dele em
+produção antes da hora", não só "não editar o arquivo literalmente".
+
+**Retomar quando**: a outra sessão commitar esses arquivos (ou o Rodrigo
+confirmar que já pode integrar) - aí sim dá pra fazer o badge/painel/
+diagnóstico sem risco de trabalhar em cima de areia movediça.
+- Commit: nenhum (nada mudou nos arquivos do projeto pra este item).
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas
