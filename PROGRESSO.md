@@ -194,6 +194,92 @@ indefinido). Nenhuma mudança necessária.
   (nem o texto "SISTEMA" aparece) pra outro e-mail.
 - Commit: (ver abaixo)
 
+### Correção urgente — NEWS/TOP MERCADO lentos, matéria não abria, formatação regredida
+Pausou a FILA 2 a pedido direto do Rodrigo (produção com problema visível).
+Quatro problemas relatados, todos confirmados e corrigidos:
+- **Lentidão em toda interação:** `_renderizar_lista` (usada por NEWS e TOP
+  MERCADO) rodava o script inteiro a cada clique/expand. Envolvida em
+  `@st.fragment` — reruns ficam isolados à lista, sem recarregar a aba
+  inteira. Validado com AppTest que `st.dialog` ainda abre certo disparado
+  de dentro de um fragment nesta versão do Streamlit (é um gotcha
+  conhecido em outras versões).
+- **Matéria não abria:** causa real era outra (ver "Complemento" abaixo) —
+  o `st.dialog` sempre abriu; o que cobria o conteúdo era o tooltip.
+  Mesmo assim, foi adicionado um ícone `↗` por linha
+  (`<a href=... target='_blank'>`) como acesso direto à matéria, sem
+  depender do dialog.
+- **Agrupamento de notícias:** o algoritmo antigo (`_agrupar`) comparava
+  cada notícia nova só contra o ÚLTIMO grupo aberto (single-representative
+  greedy) — manchetes sobre o mesmo fato com redação diferente ficavam em
+  grupos separados. Reescrito: `_extrair_entidades` pega substantivos
+  próprios (sequências de palavras capitalizadas, sub-janelas de 2
+  palavras + a run inteira se >2), com lista de exclusão
+  (`_ENTIDADE_IGNORAR`) pra termos genéricos (dias da semana, "governo",
+  "operação/caso/processo" etc.); `_mesmo_grupo` funde se o título é
+  idêntico, OU se há entidade em comum dentro de 24h
+  (`_JANELA_HORAS_ENTIDADE`), OU se a similaridade textual já usada antes
+  bate dentro da janela de dias antiga. Testado com script sintético
+  reproduzindo o caso real relatado (5 manchetes variando a redação sobre
+  "Banco Genial" → 1 grupo só; manchete de controle sobre "Ibovespa"
+  permanece separada) — sem esse teste, uma primeira versão da extração de
+  entidades colava "Ex-Banco"/"Caso Banco Genial" como uma entidade
+  indivisível (hífen tratado como parte da palavra) e não mesclava com
+  "Banco Genial" puro; corrigido tratando qualquer caractere não-palavra
+  como separador.
+- **Formatação (scroll horizontal, coluna vazia, tooltip):** causa raiz do
+  corte/scroll horizontal era o `min-width: auto` padrão do flexbox nas
+  colunas do `st.columns()` recusando encolher abaixo do texto
+  `white-space: nowrap` — `min-width: 0 !important` nas colunas +
+  `overflow-x: hidden` na linha resolveu. Coluna de ticker vazia (era só
+  "—" quando a notícia não tinha ticker) removida; ticker agora é prefixo
+  inline no próprio texto da manchete (`_prefixo_tickers`). Contagem de
+  fontes compactada pra "NF" (`_plural_fontes`). Botões de setor com
+  `flex-wrap` pra não estourar largura.
+- **Complemento (tooltip cobrindo o card aberto):** `help=` do botão de
+  manchete usa o `title=`/tooltip nativo do browser, que renderiza acima
+  de QUALQUER conteúdo da página — inclusive um `st.dialog` aberto (não é
+  parte do stacking context normal da página). Removido o `help=` da
+  manchete; tooltip explicativo mantido só no selo de relevância.
+- Arquivos: `data/news.py` (`_extrair_entidades`, `_mesmo_grupo`,
+  `_agrupar`, `_ENTIDADE_IGNORAR`), `ui/news_tab.py` (`_renderizar_lista`
+  com `@st.fragment`, `_linha_noticia`, `_prefixo_tickers`,
+  `_plural_fontes`, CSS de colunas/botões), `ui/top_mercado_tab.py`
+  (nenhuma mudança direta — reusa as funções de `news_tab.py`).
+- Testes: `compileall` limpo; AppTest em EQUITY/NEWS/TOP MERCADO sem
+  exceção; teste dirigido clicando um botão de manchete real (prefixo de
+  key `news-manchete-`, usado tanto em NEWS quanto em TOP MERCADO) e
+  confirmando que o dialog abre com resumo; script sintético de
+  agrupamento (fora do repo, scratchpad da sessão).
+- Commit: correção enviada e registrada no `CHANGELOG.md`.
+
+### Letreiro (ticker tape) — tamanho maior
+Fonte de 0.75rem (~12px) pra 0.875rem (~14px) em `.ticker-tape-set`
+(`style.css`); padding vertical da faixa de 0.35rem pra 0.4rem e espaço
+entre itens (`padding-right`) de 2.5rem pra 3rem; símbolo da watchlist no
+letreiro agora em negrito (`font-weight:600`, igual já era na sidebar) em
+`_ticker_tape()` (`app.py`). `padding-top` do `.block-container` ajustado
+de 5.4rem pra 5.65rem pra compensar a faixa fixa mais alta (senão o topo
+do conteúdo ficaria coberto). Estimativa de largura em px/caractere usada
+pro cálculo de velocidade do modo ANIMADO também ajustada (7.5 → 8.75,
+proporcional ao aumento da fonte), senão a duração da animação ficaria
+calculada pra um texto mais estreito do que o real.
+Opcional (tamanho P/M/G configurável em CONFIG) não implementado — pedido
+explicitamente como opcional pelo Rodrigo; fica registrado em MELHORIAS
+FUTURAS se ele quiser depois.
+- Arquivos: `style.css`, `app.py`.
+- Testes: `compileall` limpo; AppTest em EQUITY/NEWS/TOP MERCADO sem
+  exceção.
+- Commit: enviado.
+
+## Nota: decisão FILA1-T9 (abaixo) superada
+A decisão "não desativar coleta automática de Genial/XP no Cloud" (ver
+"Decisões registradas" abaixo) foi **revertida** depois do diagnóstico real
+de produção confirmar que ambas ficam bloqueadas no Cloud também (não só
+no sandbox). `data/research/__init__.py`: `CASAS["genial"|"xp"]` agora tem
+`"tentar_coleta_automatica": False` — a aba RESEARCH só lê do Supabase
+pra essas duas, sem tentar coletar (e sem os ~20s de espera). Coleta real
+dessas casas fica só com `coletor_local.py` rodando fora do Cloud.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

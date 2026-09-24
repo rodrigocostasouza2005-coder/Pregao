@@ -3,6 +3,26 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-24
+
+- **Letreiro (ticker tape) maior:** fonte de ~12px pra ~14px, mais espaço
+  entre itens, ticker da watchlist em negrito, `padding-top` do conteúdo
+  ajustado pra faixa fixa (agora mais alta) não cobrir nada.
+- **Correção urgente — NEWS/TOP MERCADO:** lentidão (lista envolvida em
+  `st.fragment`, reruns não recarregam mais a aba inteira), agrupamento de
+  notícias reescrito (funde manchetes sobre o mesmo fato mesmo com redação
+  diferente, via entidades em comum + janela de 24h — antes só comparava
+  contra o último grupo aberto), ícone `↗` de abertura direta por linha,
+  scroll horizontal/corte de conteúdo corrigido (`min-width:0` nas colunas
+  do `st.columns()`), coluna de ticker vazia removida (vira prefixo
+  inline), tooltip nativo da manchete removido (cobria o `st.dialog`
+  aberto por cima de qualquer coisa da página — mantido só no selo).
+- **Genial/XP no Cloud:** confirmado por diagnóstico real de produção que
+  ambas ficam bloqueadas também no Streamlit Cloud (não só no sandbox de
+  dev) — `tentar_coleta_automatica: False` pras duas; a aba RESEARCH só lê
+  do Supabase pra elas, sem esperar tentativa de coleta. Coleta real fica
+  a cargo do `coletor_local.py` rodando fora do Cloud.
+
 ## 2026-09-23
 
 - **T10 (modo autônomo 2):** e-mails com acesso a painéis de admin
