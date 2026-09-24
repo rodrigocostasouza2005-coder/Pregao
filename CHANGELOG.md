@@ -17,6 +17,12 @@ Mais recente primeiro.
   do `st.columns()`), coluna de ticker vazia removida (vira prefixo
   inline), tooltip nativo da manchete removido (cobria o `st.dialog`
   aberto por cima de qualquer coisa da página — mantido só no selo).
+- **`coletor_local.py` grava log em arquivo:** rodando sem janela pelo
+  Agendador de Tarefas, o stdout não fica visível em lugar nenhum — agora
+  grava também em `coletor_local.log` (raiz do projeto, rotativo: 1MB x 3
+  arquivos), além do stdout de sempre. Testado rodando o script de
+  verdade (Genial/XP continuam bloqueadas neste sandbox, como esperado —
+  o log registrou a falha corretamente).
 - **Diagnóstico Genial/XP mais rápido:** `testar_conexao()` de ambas
   (usada só pelo painel DIAGNÓSTICO DE FONTES, aba CONFIG) agora usa
   orçamento/timeout ≤5s por padrão, em vez do orçamento de 20s da coleta

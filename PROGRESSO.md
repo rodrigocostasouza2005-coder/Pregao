@@ -271,6 +271,28 @@ FUTURAS se ele quiser depois.
   exceção.
 - Commit: enviado.
 
+### coletor_local.py — log em arquivo
+Pendência do item 3 do "Diagnóstico no Cloud" (24/09): rodando via
+Agendador de Tarefas "sem abrir janela", o stdout do script não fica
+visível em lugar nenhum depois — só o exit code aparece no Histórico da
+tarefa. Adicionado `logging` com dois handlers (console, igual antes +
+`RotatingFileHandler` gravando em `coletor_local.log` na raiz do
+projeto, 1MB x 3 arquivos pra não crescer sem limite com execuções a
+cada 30min). Escopo: só as linhas de resumo do próprio
+`coletor_local.py` (status por casa, contagem de itens, limpeza) vão pro
+arquivo — os `print()` internos de `data/research/__init__.py`/
+`genial.py`/`xp.py` (detalhe de cada tentativa de conexão) continuam só
+no stdout; decisão conservadora pra não reescrever o logging desses
+módulos, e o resumo já é o que importa pra saber se a coleta funcionou.
+`coletor_local.log` adicionado ao `.gitignore` (artefato de execução,
+não versionado).
+- Arquivos: `coletor_local.py`, `.gitignore`.
+- Testes: `compileall` limpo; rodei o script de verdade
+  (`.venv/Scripts/python.exe coletor_local.py`) — Genial/XP falharam como
+  esperado (mesmo bloqueio de sempre neste sandbox), e o arquivo
+  `coletor_local.log` foi criado com as linhas de resumo corretas.
+- Commit: enviado.
+
 ### Timeout curto no diagnóstico + bug real corrigido na watchlist do RESEARCH
 Pendências do item 2/3 do "Diagnóstico no Cloud" (24/09), fechadas agora:
 - `data/research/genial.py`/`xp.py`: `testar_conexao()` ganhou um
