@@ -779,6 +779,52 @@ recente - não há cobertura de Netflix nos últimos 5 dias agora mesmo).
 - Testes: incluído no mesmo teste/commit da correção de MELI34 acima.
 - Commit: enviado (junto com PRIORIDADE 1/2).
 
+### P0.2/PRIORIDADE 3 — Mapa do Mercado: +NaN% e tooltip técnico
+**Causa raiz do "+NaN%"**: `px.treemap` gera automaticamente os nós
+agregados de setor/raiz (acima dos tickers individuais) calculando
+sozinho um valor de "color" pra eles (média dos filhos) - em alguns
+casos essa agregação automática vem indefinida, e o `texttemplate`
+aplicado a TODO nó (raiz/setor/ticker) então mostrava "+NaN%" nos blocos
+de setor/raiz especificamente (não nos tickers individuais, que sempre
+tiveram valor real).
+
+**Causa raiz do tooltip técnico**: o hover padrão do `px.treemap` mostra
+os nomes das colunas do DataFrame literalmente (`labels=`, `tamanho=`,
+`parent=`, `id=`, `variacao_pct=`) - não tinha `hovertemplate` customizado.
+
+**Correção**: reescrito com `go.Treemap` direto (não `px.treemap`) -
+cada nó (raiz "IBOVESPA", cada setor, cada ticker) é construído A MÃO
+com id/label/parent/value/cor/texto/hovertext explícitos, sem nada
+"automático" do Plotly. Isso elimina as duas causas de raiz ao mesmo
+tempo: não há mais agregação automática indefinida (a cor de cada nó de
+setor é calculada por mim, média simples da variação dos papéis do
+setor, sempre um número real) nem hover automático (hovertext 100%
+customizado, só com rótulos em português: "Variação", "Preço", "Volume
+financeiro").
+
+Também adicionado: legenda de cor (gradiente vermelho→cinza→verde com
+os valores mín/máx do dia) abaixo do gráfico.
+
+**Tamanho dos blocos**: mantido proporcional ao volume financeiro (sem
+transformação/distorção) por decisão explícita - a dominância visual de
+papéis como PETR4/VALE3 reflete concentração real de volume no
+Ibovespa (fato do mercado, não bug de configuração do treemap). Se
+quiser suavizar isso no futuro (ex: escala raiz quadrada), é uma
+mudança de uma linha (`values=`) - não apliquei sem confirmação porque
+alteraria o SIGNIFICADO do tamanho (deixaria de ser estritamente
+proporcional ao volume).
+
+- Arquivos: `ui/mercado_tab.py` (`_cor_treemap` novo, `_painel_treemap`
+  reescrito), `data/mercado.py` (removida `obter_dados_treemap`, ficou
+  órfã depois da reescrita - `ui/mercado_tab.py` agora usa
+  `obter_panorama_ibovespa()` direto pra ter acesso a todos os campos).
+- Testes: `compileall` limpo; script dedicado verificando que nenhum
+  texto/hovertext gerado contém `NaN`/`None`/`Infinity`/nome técnico de
+  campo (`labels=`, `parent=`, `id=`, `tamanho=`) nem cor hex inválida,
+  rodado contra dado real (51 papéis, 18 setores); AppTest EQUITY/
+  MERCADO/TOP MERCADO/CONFIG sem exceção.
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

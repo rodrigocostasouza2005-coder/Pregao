@@ -34,6 +34,13 @@ Mais recente primeiro.
 - **P0.5 — curva pré:** rótulo "Última (dd/mm)" em vez de "Hoje" quando
   a publicação da ANBIMA não é do dia atual.
 
+- **P0.2/PRIORIDADE 3 — mapa do mercado sem +NaN% e sem tooltip
+  técnico:** causa raiz era a agregação automática do `px.treemap` pros
+  nós de setor/raiz (às vezes indefinida) + hover padrão mostrando nomes
+  de coluna (`labels=`, `parent=` etc). Reescrito com `go.Treemap`
+  manual — cada nó com cor/texto/hover 100% explícitos, sem nada
+  automático do Plotly. Adicionada legenda de cor.
+
 ## 2026-09-24 (sessão anterior)
 
 - **Letreiro (ticker tape) maior:** fonte de ~12px pra ~14px, mais espaço
