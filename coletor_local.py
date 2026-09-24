@@ -11,18 +11,35 @@ mais de 5 dias (data.research.store.apagar_itens_antigos). Nao depende
 do app rodando - so precisa do .streamlit/secrets.toml (Supabase) no
 mesmo diretorio, igual o app usa.
 
-Uso: python coletor_local.py (rodar com o python do .venv do projeto).
-Saida: exit code 0 se todas as casas disponiveis coletaram OK, 1 se
-alguma falhou (util pro Agendador de Tarefas registrar erro no historico
-da tarefa sem precisar ler o log). Log tambem gravado em
-coletor_local.log (raiz do projeto, ao lado deste arquivo) - roda "sem
-abrir janela" no Agendador de Tarefas, entao stdout nao fica visivel em
-lugar nenhum; o arquivo e' o unico jeito de conferir depois o que
-aconteceu numa execucao passada. Rotaciona sozinho (1MB x 3 arquivos)
-pra nao crescer sem limite com execucoes a cada 30min."""
+Uso: python coletor_local.py (rodar com o python do .venv do projeto) ou
+pythonw coletor_local.py (mesma coisa, sem abrir janela de console - e' o
+que o Agendador de Tarefas usa, ver PROGRESSO.md). Saida: exit code 0 se
+todas as casas disponiveis coletaram OK, 1 se alguma falhou (util pro
+Agendador de Tarefas registrar erro no historico da tarefa sem precisar
+ler o log). Log gravado em coletor_local.log (raiz do projeto, ao lado
+deste arquivo) - com pythonw nao tem console nenhum, entao o arquivo e' o
+UNICO jeito de conferir depois o que aconteceu numa execucao passada.
+Rotaciona sozinho (1MB x 3 arquivos) pra nao crescer sem limite com
+execucoes a cada 30min.
+
+Importante sobre pythonw: sem console, sys.stdout/sys.stderr podem vir
+None (em vez de so' "sem terminal visivel") - um print() bater nisso
+lança AttributeError e derruba o processo antes de chegar no log. Os
+modulos de coleta (data/research/*.py) usam print() de proposito (pra
+aparecer nos Logs do Streamlit Cloud quando rodam de la) - aqui, rodando
+via pythonw, esses mesmos print()s precisam de um stdout/stderr que pelo
+menos nao quebre. As duas linhas abaixo garantem isso ANTES de importar
+qualquer coisa que possa chamar print()."""
+
+import os
+import sys
+
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = sys.stdout
 
 import logging
-import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -42,6 +59,15 @@ logger.addHandler(_handler_arquivo)
 _handler_console = logging.StreamHandler(sys.stdout)
 _handler_console.setFormatter(_formato)
 logger.addHandler(_handler_console)
+
+# streamlit e' importado indiretamente (varios modulos usam
+# st.cache_data/st.cache_resource como decorator, mesmo fora de uma
+# sessao Streamlit de verdade) e loga WARNING tipo "No runtime found,
+# using MemoryCacheStorageManager" toda vez - inofensivo (e' exatamente
+# o esperado rodando fora do app), mas polui o log/console a toa. Sobe o
+# nivel minimo pra ERROR so' pro logger do streamlit, sem mexer no logger
+# proprio deste script (logger acima continua em INFO).
+logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 
 def main() -> int:
