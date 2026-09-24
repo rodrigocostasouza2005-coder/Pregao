@@ -1,3 +1,10 @@
+-- NAO USADO / NAO EXECUTAR: por decisao explicita (sem tabela nova no
+-- Supabase pra fase CVM), data/cvm.py foi adaptado pra reusar a tabela
+-- research_itens que ja existe (ver sql/research.sql e
+-- data/research/store.py) em vez de criar a tabela abaixo. Este arquivo
+-- fica so' de historico/referencia de como a fase CVM foi desenhada
+-- originalmente - nao rode isso.
+--
 -- PREGAO — documentos oficiais da CVM (fato relevante, comunicado ao
 -- mercado, avisos aos acionistas/proventos, calendário de eventos)
 -- Rode isso uma vez em: Supabase > SQL Editor > New query
