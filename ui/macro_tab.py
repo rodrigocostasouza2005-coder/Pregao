@@ -16,6 +16,7 @@ from data.macro import (
     obter_ipca,
     obter_selic_meta,
 )
+from ui import paineis
 
 # Meta de inflacao vigente (Banco Central / CMN): centro 3,0% a.a.,
 # tolerancia +-1,5 p.p. (banda 1,5% a 4,5%). Nao da pra importar de
@@ -327,16 +328,20 @@ def _painel_selic_cdi(prefs):
         st.warning("Indisponível no momento: " + ", ".join(faltando) + ".")
 
 
+# paineis registrados (ver ui/paineis.py) - ordem reorganizavel por
+# usuario em CONFIG. RESUMO fica de fora do registro de proposito:
+# funciona como abertura fixa da aba, sempre em primeiro (mesmo padrao
+# do TERMOMETRO em ui/mercado_tab.py).
+REGISTRO_PAINEIS = [
+    ("curva_pre", "Curva pré (ETTJ ANBIMA)", _painel_curva_pre),
+    ("ipca", "IPCA", _painel_ipca),
+    ("selic_cdi", "Selic x CDI", _painel_selic_cdi),
+]
+
+
 def render_macro(prefs):
     """Ponto de entrada da aba MACRO. Chamar dentro de `with aba_macro:`."""
     with st.container(border=True):
         _painel_resumo(prefs)
 
-    with st.container(border=True):
-        _painel_curva_pre(prefs)
-
-    with st.container(border=True):
-        _painel_ipca(prefs)
-
-    with st.container(border=True):
-        _painel_selic_cdi(prefs)
+    paineis.renderizar("MACRO", REGISTRO_PAINEIS, prefs, prefs)
