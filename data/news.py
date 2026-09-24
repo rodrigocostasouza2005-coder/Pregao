@@ -425,28 +425,120 @@ def _montar_item(entry, ticker: str, nome_empresa: str):
     }
 
 
+# nomes proprios candidatos (heuristica sem NER) sao usados so' pra UNIR
+# grupos que citam a mesma entidade mesmo com titulos bem diferentes no
+# resto (ver _mesmo_grupo) - termos genericos que aparecem em quase toda
+# manchete de mercado (Ibovespa, Selic, Brasil...) tem que ficar de fora,
+# senao viram falso-link entre materias sem relacao nenhuma
+_ENTIDADE_IGNORAR = _PALAVRAS_MERCADO_SCORE | {
+    "brasil", "brasileiro", "brasileira", "governo", "ministerio", "justica",
+    "policia", "federal", "segunda", "terca", "quarta", "quinta", "sexta",
+    "sabado", "domingo", "janeiro", "fevereiro", "marco", "abril", "maio",
+    "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+    "operacao", "operacoes", "caso", "processo", "investigacao",
+}
+
+# janela curta pra unir grupos so' por entidade em comum (nome proprio) -
+# mais apertada que _JANELA_DIAS_GRUPO de proposito: entidade em comum
+# sozinha e' um sinal mais fraco que similaridade de texto, entao so vale
+# a pena confiar nele pra materias bem recentes uma da outra (mesmo caso
+# sendo atualizado ao longo do dia, nao uma coincidencia de nome ao longo
+# de semanas)
+_JANELA_HORAS_ENTIDADE = 24
+
+
+def _extrair_entidades(titulo: str) -> set:
+    """Nomes proprios candidatos no titulo: sequencias de 2+ palavras
+    capitalizadas consecutivas (ex: "Banco Genial", "Carbono Oculto") ou
+    uma palavra capitalizada isolada com 5+ letras que nao seja um termo
+    generico (ex: "Master") - separadores de palavra incluem pontuacao E
+    hifen ("Ex-Banco" vira "Ex"+"Banco" duas palavras, nao um token colado
+    - senao "Ex-Banco Genial" nunca bateria com "Banco Genial" sozinho).
+    Pra sequencias de 3+ palavras, tambem gera as sub-janelas de 2 palavras
+    (ex: "Caso Banco Genial" gera "banco genial" alem do trio inteiro) -
+    senao um prefixo generico tipo "Caso"/"Processo" impede o match com
+    outra materia que citou so' "Banco Genial". Sem acento pra comparar
+    igual a resto do modulo. So' serve pra UNIR grupos (ver _mesmo_grupo)
+    - nunca mostrado pro usuario."""
+    palavras = [p for p in re.split(r"[^\wÀ-ÿ]+", titulo) if p]
+    entidades = set()
+    buffer = []
+
+    def _fechar_buffer():
+        if len(buffer) >= 2:
+            for i in range(len(buffer) - 1):
+                candidato = _sem_acento(" ".join(buffer[i:i + 2]))
+                if candidato not in _ENTIDADE_IGNORAR:
+                    entidades.add(candidato)
+            if len(buffer) > 2:
+                candidato = _sem_acento(" ".join(buffer))
+                if candidato not in _ENTIDADE_IGNORAR:
+                    entidades.add(candidato)
+        elif len(buffer) == 1 and len(buffer[0]) >= 5:
+            candidato = _sem_acento(buffer[0])
+            if candidato not in _ENTIDADE_IGNORAR:
+                entidades.add(candidato)
+
+    for p in palavras:
+        if p[0].isupper() and len(p) >= 3:
+            buffer.append(p)
+        else:
+            _fechar_buffer()
+            buffer = []
+    _fechar_buffer()
+    return entidades
+
+
+def _mesmo_grupo(g: dict, item: dict, entidades_item: set) -> bool:
+    """Decide se `item` entra no grupo `g` - 3 regras, na ordem:
+    1. titulo identico (sem acento) SEMPRE junta, mesmo fora da janela de
+       dias normal (a mesma manchete republicada semanas depois ainda e'
+       a mesma materia).
+    2. entidade principal (nome proprio) em comum dentro de
+       _JANELA_HORAS_ENTIDADE - pega o mesmo caso sendo reportado com
+       angulos/palavras bem diferentes (ex: "Banco Genial" e "Carbono
+       Oculto" na mesma investigacao).
+    3. regra padrao: similaridade de tokens dentro de _JANELA_DIAS_GRUPO,
+       comparando contra TODOS os itens ja no grupo (nao so' o que abriu
+       o grupo) - corrige grupos que iam se fragmentando conforme o
+       titulo ia mudando aos poucos ao longo do dia (cada novo item so
+       precisava bater com QUALQUER membro existente, nao com o
+       original)."""
+    if _sem_acento(g["titulo"]) == _sem_acento(item["titulo"]):
+        return True
+
+    dias_diff = abs((g["_data"] - item["data"]).days)
+    horas_diff = abs((g["_data"] - item["data"]).total_seconds()) / 3600
+    if horas_diff <= _JANELA_HORAS_ENTIDADE and g["_entidades"] & entidades_item:
+        return True
+
+    if dias_diff <= _JANELA_DIAS_GRUPO and any(
+        _similaridade(tokens, item["_tokens_sim"]) >= _LIMIAR_SIMILARIDADE
+        for tokens in g["_tokens_sim_todos"]
+    ):
+        return True
+
+    return False
+
+
 def _agrupar(itens: list) -> list:
     """Agrupa noticias que sao o mesmo fato reportado por veiculos
     diferentes ("reportada por N fontes"), mesmo com manchetes escritas
-    de jeitos bem diferentes (ver _tokens_similaridade/_similaridade).
-    Titulo/link do grupo = o item mais recente que abriu o grupo. Janela
-    de dias entre datas evita juntar materias antigas parecidas (ex:
-    resultado trimestral do ano passado) com a atual so por coincidencia
-    de palavras. relevante do grupo = relevante de QUALQUER item nele."""
+    de jeitos bem diferentes (ver _mesmo_grupo). Titulo/link do grupo =
+    o item mais recente que abriu o grupo. relevante do grupo = relevante
+    de QUALQUER item nele."""
     itens = sorted(itens, key=lambda i: i["data"], reverse=True)
     grupos = []
     for item in itens:
-        grupo = next(
-            (g for g in grupos
-             if abs((g["_data"] - item["data"]).days) <= _JANELA_DIAS_GRUPO
-             and _similaridade(g["_tokens_sim"], item["_tokens_sim"]) >= _LIMIAR_SIMILARIDADE),
-            None,
-        )
+        entidades_item = _extrair_entidades(item["titulo"])
+        grupo = next((g for g in grupos if _mesmo_grupo(g, item, entidades_item)), None)
         if grupo:
             grupo["fontes"].append({"veiculo": item["veiculo"], "link": item["link"]})
             grupo["titulos"].append(item["titulo"])
             grupo["relevante"] = grupo["relevante"] or item["relevante"]
             grupo["ao_vivo"] = grupo["ao_vivo"] or item.get("ao_vivo", False)
+            grupo["_tokens_sim_todos"].append(item["_tokens_sim"])
+            grupo["_entidades"] |= entidades_item
         else:
             grupos.append({
                 "titulo": item["titulo"],
@@ -456,7 +548,8 @@ def _agrupar(itens: list) -> list:
                 "link": item["link"],
                 "relevante": item["relevante"],
                 "ao_vivo": item.get("ao_vivo", False),
-                "_tokens_sim": item["_tokens_sim"],
+                "_tokens_sim_todos": [item["_tokens_sim"]],
+                "_entidades": entidades_item,
                 "_data": item["data"],
             })
     return grupos
@@ -500,6 +593,7 @@ def obter_noticias(ticker: str):
         resultado.append({
             "ticker": ticker,
             "titulo": grupo["titulo"],
+            "titulos": grupo["titulos"],
             "veiculos": sorted(set(veiculos)),
             "fontes": grupo["fontes"],
             "fontes_count": len(set(veiculos)),
@@ -546,6 +640,10 @@ def _mesclar_entre_tickers(noticias: list) -> list:
                     veiculos_vistos.add(f2["veiculo"])
             alvo["veiculos"] = sorted(veiculos_vistos)
             alvo["fontes_count"] = len(veiculos_vistos)
+            titulos_vistos = set(alvo.get("titulos") or [alvo["titulo"]])
+            for t in (n.get("titulos") or [n["titulo"]]):
+                titulos_vistos.add(t)
+            alvo["titulos"] = sorted(titulos_vistos)
         else:
             item = dict(n)
             item["_tokens_sim"] = tokens_n
@@ -730,6 +828,7 @@ def _processar_pool(entries_por_link: dict, setor: str, regiao: str) -> list:
         importancia, criterio_ranking = _calcular_importancia(grupo["titulos"], veiculos, grupo["data"])
         resultado.append({
             "titulo": grupo["titulo"],
+            "titulos": grupo["titulos"],
             "veiculos": sorted(set(veiculos)),
             "fontes": grupo["fontes"],
             "fontes_count": len(set(veiculos)),
@@ -817,15 +916,44 @@ _TTL_RESUMO = 24 * 60 * 60  # 24h - "por enquanto" em memoria (st.cache_data);
 # tentamos essas por ultimo dentro do grupo, ja que costumam falhar
 _VEICULOS_PROVAVEL_PAYWALL = {"valor", "estadao", "folha", "bloomberg", "wall street journal", "wsj", "financial times"}
 
+# 5-8 linhas estruturadas precisam de mais espaco que o formato antigo
+# (2-3 linhas livres) - budget proprio, maior que config.GROQ_MAX_TOKENS
+# (compartilhado com o research, que usa um formato mais enxuto)
+_MAX_TOKENS_RESUMO_NEWS = 700
+
 _PROMPT_SISTEMA_RESUMO = (
-    "Voce resume noticias do mercado financeiro brasileiro em portugues, em no "
-    "maximo 3 linhas curtas, SEMPRE com suas proprias palavras - nunca copie "
-    "frases literais do texto original. Va direto ao fato noticiado, sem "
-    "introducoes como 'a noticia trata de'. O texto fornecido foi extraido "
-    "automaticamente de uma pagina web e pode conter trechos de menu, anuncio "
-    "ou navegacao misturados - ignore esse ruido e resuma so o conteudo "
-    "jornalistico. Se nao houver conteudo jornalistico suficiente pra resumir, "
-    "responda exatamente: SEM_CONTEUDO"
+    "Você resume notícias do mercado financeiro brasileiro em português, em "
+    "5 a 8 linhas curtas, SEMPRE com suas próprias palavras - nunca copie "
+    "frases literais do texto original. O texto fornecido foi extraído "
+    "automaticamente de uma página web e pode conter trechos de menu, anúncio "
+    "ou navegação misturados - ignore esse ruído e resuma só o conteúdo "
+    "jornalístico. Formato fixo, uma linha por item, começando exatamente "
+    "assim:\n"
+    "O QUE ACONTECEU: ...\n"
+    "NÚMEROS: ...\n"
+    "IMPACTO: ...\n"
+    "PRÓXIMOS PASSOS: ...\n"
+    "Se algum campo não tiver informação no texto, escreva 'não informado' "
+    "nesse campo - nunca invente números, datas ou fatos que não estejam no "
+    "texto fornecido. Se não houver conteúdo jornalístico suficiente pra "
+    "resumir, responda exatamente: SEM_CONTEUDO"
+)
+
+_PROMPT_SISTEMA_RESUMO_MANCHETES = (
+    "Você resume um fato do mercado financeiro brasileiro a partir SÓ das "
+    "manchetes de várias fontes sobre o mesmo fato - não teve acesso ao "
+    "texto completo de nenhuma matéria (todas bloquearam o download). Use as "
+    "manchetes fornecidas pra montar um resumo curto (3 a 5 linhas), SEMPRE "
+    "com suas próprias palavras, mesmo formato fixo:\n"
+    "O QUE ACONTECEU: ...\n"
+    "NÚMEROS: ...\n"
+    "IMPACTO: ...\n"
+    "PRÓXIMOS PASSOS: ...\n"
+    "Como só tem as manchetes (não o texto completo), vá direto ao que elas "
+    "revelam - escreva 'não informado' em qualquer campo sem base nas "
+    "manchetes, nunca invente número ou fato que não esteja nelas. Se as "
+    "manchetes não derem pra montar nem isso, responda exatamente: "
+    "SEM_CONTEUDO"
 )
 
 

@@ -1,10 +1,17 @@
 # -*- coding: utf-8 -*-
 """Interface da fase NOTICIAS, estilo "wire" de terminal financeiro: uma
-linha densa por noticia (HORA | TICKER | SELO | MANCHETE | Nº FONTES).
-Clique na manchete abre um card (st.dialog) com selo+score explicado,
-veiculos com link, tickers citados, resumo sob demanda e botao pra abrir
-a materia. render_news(prefs) pra aba NEWS (feed da watchlist) e
+linha densa por noticia (HORA | SELO | MANCHETE | Nº FONTES | ↗). Ticker
+nao tem coluna propria - entra como texto inline no comeco da manchete,
+so' quando existe. Clique na manchete abre um card (st.dialog) com
+selo+score explicado, veiculos com link, tickers citados e resumo sob
+demanda; o icone ↗ abre a materia direto em nova aba, sem passar pelo
+card. render_news(prefs) pra aba NEWS (feed da watchlist) e
 render_news_ticker(ticker, prefs) pro bloco compacto na aba EQUITY.
+
+A lista (_renderizar_lista) roda dentro de um st.fragment - clicar numa
+manchete so' reroda o fragmento, nao a pagina inteira (era a causa real
+da lentidao: cada clique reconstruia todos os widgets da lista do zero,
+mesmo com os dados ja vindo de cache).
 
 Modulo tambem exporta o renderizador de lista/card (_renderizar_lista,
 _abrir_card) pra reuso da aba TOP MERCADO (ui/top_mercado_tab.py)."""
@@ -39,16 +46,13 @@ _JANELA_PADRAO_HORAS = 48
 _LIMITE_PADRAO = 50
 _TRUNCA_MANCHETE = 92
 
-# larguras relativas das colunas (nao sao px exatos - st.columns usa peso
-# relativo -, mas na mesma proporcao pedida: HORA~95/TICKER~60/SELO~78/
-# MANCHETE~resto/FONTES~90 - o suficiente pra nada colidir ou cortar).
-# Nas linhas do TOP MERCADO (identificadas por n['importancia'] existir)
-# entra mais uma coluna estreita pro numero do ranking, separada da hora
-# (as duas juntas numa coluna so cortavam a data - "#1 · 21/09 2...").
-_COLS_COM_TICKER = [95, 60, 78, 560, 90]
-_COLS_SEM_TICKER = [95, 78, 560, 90]
-_COLS_RANK_COM_TICKER = [55, 90, 70, 78, 480, 90]
-_COLS_RANK_SEM_TICKER = [55, 90, 78, 480, 90]
+# larguras relativas das colunas (nao sao px exatos, st.columns usa peso
+# relativo). Ticker NAO tem mais coluna propria - entra como tag inline
+# dentro do texto da manchete, so' quando existe (ver _texto_manchete) -
+# tirar essa coluna elimina a coluna vazia "—" de quando nao ha ticker e
+# devolve a largura pra manchete. "N fontes" virou "NF" compacto.
+_COLS_PADRAO = [70, 60, 440, 45, 35]  # HORA, SELO, MANCHETE, FONTES, ABRIR(↗)
+_COLS_RANK = [60, 70, 60, 380, 45, 35]  # RANK+BR/INT, HORA, SELO, MANCHETE, FONTES, ABRIR(↗)
 
 # CSS proprio do layout wire, injetado via st.markdown (nao mexe em
 # style.css, que e' de outra sessao) - reaproveita as variaveis de tema
@@ -67,7 +71,6 @@ _COLS_RANK_SEM_TICKER = [55, 90, 78, 480, 90]
 # esse prefixo, mesmo com o sufixo variando por linha/hash.
 _CSS_WIRE = """
 .w-hora, .w-fontes { color:var(--cinza); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.w-ticker { color:var(--destaque); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .selo-tag {
     display:inline-block;
     padding:0.04rem 0.32rem;
@@ -137,11 +140,12 @@ div[class*="st-key-top-manchete-"] button p {
     font-size:0.55rem; color:var(--cinza); border:1px solid var(--borda);
     border-radius:2px; padding:0 0.18rem; margin-left:0.25rem; vertical-align:middle;
 }
-.w-ticker-tag-mini {
-    display:inline-block; margin-right:0.2rem; padding:0.01rem 0.28rem;
-    border:1px solid var(--borda); border-radius:2px; font-size:0.62rem;
-    color:var(--cinza);
+
+.w-abrir-link {
+    color:var(--cinza) !important; text-decoration:none !important;
+    font-size:0.85rem; display:block; text-align:center;
 }
+.w-abrir-link:hover { color:var(--destaque) !important; }
 
 .w-resumo-dialogo { color:var(--neutro); font-size:0.85rem; line-height:1.5; margin-bottom:1.1rem; }
 .w-card-divisor { border-top:1px solid var(--borda); margin:0.55rem 0; }
@@ -169,6 +173,17 @@ div[class*="st-key-top-manchete-"] button p {
     color: #000000 !important;
     font-weight: 600;
 }
+/* pills de setor (varias opcoes) quebram linha em vez de forcar rolagem
+   horizontal - sem isso o grupo de botoes vira uma faixa so' que estoura
+   a largura da tela em telas estreitas */
+[data-testid="stButtonGroup"] { flex-wrap: wrap !important; row-gap: 0.3rem; }
+
+/* linha wire (colunas de HORA/SELO/MANCHETE/FONTES etc): sem min-width:0
+   nos filhos flex, o texto com white-space:nowrap dentro de uma coluna
+   recusa a encolher e forca rolagem horizontal na pagina inteira (voltou
+   a cortar "ranking"/"top 20" pela esquerda - ver PROGRESSO.md) */
+[data-testid="stHorizontalBlock"] { overflow-x: hidden; }
+[data-testid="stHorizontalBlock"] > div { min-width: 0 !important; }
 """
 
 
@@ -209,7 +224,9 @@ def _truncar(texto: str, limite: int = _TRUNCA_MANCHETE) -> str:
 
 
 def _plural_fontes(qtd: int) -> str:
-    return f"{qtd} fonte{'s' if qtd != 1 else ''}"
+    """Compacto de proposito ("14F") - a versao "14 fontes" nao cabia na
+    coluna estreita sem cortar (ver BACKLOG.md/PROGRESSO.md)."""
+    return f"{qtd}F"
 
 
 def _bloco_hora_coluna(n: dict) -> str:
@@ -236,30 +253,25 @@ def _tickers_do_item(n: dict) -> list:
     """Itens fundidos entre tickers (data/news.py:_mesclar_entre_tickers)
     perdem 'ticker' (singular) e ganham 'tickers' (lista, quando o fato
     envolve mais de uma empresa da watchlist) - usado onde precisamos do
-    conjunto de tickers de UM item (filtro por ticker), nao so pra
-    desenhar a coluna (ver _bloco_ticker_coluna)."""
+    conjunto de tickers de UM item (filtro por ticker; ver tambem
+    _prefixo_tickers, que usa isso pro texto inline da manchete)."""
     if n.get("ticker"):
         return [n["ticker"]]
     return n.get("tickers") or []
 
 
-def _bloco_ticker_coluna(n: dict, watchlist: list) -> str:
-    """Noticia de empresa (obter_noticias) tem n['ticker'] (um so, ja
-    sabido de antemao); noticia do TOP MERCADO tem n['tickers'] (varios,
-    extraidos do titulo) - essa funcao decide o que mostrar na coluna
-    TICKER conforme o que existir."""
-    if n.get("ticker"):
-        return f"<div class='w-ticker'>{n['ticker']}</div>"
-    tickers = n.get("tickers") or []
+def _prefixo_tickers(n: dict) -> str:
+    """Tickers como prefixo de TEXTO PURO pra colar na frente da manchete
+    (o label de st.button nao aceita HTML/markdown, entao nao da pra
+    colorir so' o ticker) - string vazia se nao houver ticker nenhum, pra
+    nao sobrar coluna/espaco vazio (era a coluna TICKER com "—" antes)."""
+    tickers = _tickers_do_item(n)
     if not tickers:
-        return "<div class='w-ticker' style='color:var(--cinza);'>—</div>"
-    partes = []
-    for t in tickers[:2]:
-        classe_extra = " w-ticker-tag-watch" if t in watchlist else ""
-        partes.append(f"<span class='w-ticker-tag-mini{classe_extra}'>{t}</span>")
+        return ""
+    texto = " ".join(tickers[:2])
     if len(tickers) > 2:
-        partes.append(f"<span class='cinza' style='font-size:0.65rem;'>+{len(tickers) - 2}</span>")
-    return "<div style='white-space:nowrap; overflow:hidden;'>" + "".join(partes) + "</div>"
+        texto += f" +{len(tickers) - 2}"
+    return texto + "  ·  "
 
 
 _MAX_VEICULOS_VISIVEIS = 6
@@ -343,10 +355,7 @@ def _abrir_card(n: dict, watchlist: list):
 
 def _linha_noticia(n: dict, idx: int, mostrar_ticker: bool, prefixo: str, watchlist: list):
     eh_ranking = "importancia" in n
-    if eh_ranking:
-        cols_pesos = _COLS_RANK_COM_TICKER if mostrar_ticker else _COLS_RANK_SEM_TICKER
-    else:
-        cols_pesos = _COLS_COM_TICKER if mostrar_ticker else _COLS_SEM_TICKER
+    cols_pesos = _COLS_RANK if eh_ranking else _COLS_PADRAO
     colunas = st.columns(cols_pesos, gap="xsmall", vertical_alignment="center")
     i = 0
 
@@ -359,32 +368,44 @@ def _linha_noticia(n: dict, idx: int, mostrar_ticker: bool, prefixo: str, watchl
         st.markdown(_bloco_hora_coluna(n), unsafe_allow_html=True)
     i += 1
 
-    if mostrar_ticker:
-        with colunas[i]:
-            st.markdown(_bloco_ticker_coluna(n, watchlist), unsafe_allow_html=True)
-        i += 1
-
     with colunas[i]:
+        # tooltip so' aqui (no selo) - o help= da manchete foi removido de
+        # proposito: um tooltip nativo (title=) sobre a lista renderiza
+        # POR CIMA de qualquer coisa, inclusive um st.dialog aberto, se o
+        # mouse ainda estiver sobre a linha quando o card abre
         classe_selo = _CLASSE_SELO.get(n["selo"], "selo-naoconfirmada")
         tooltip = html.escape(_tooltip_regras(n))
         st.markdown(f"<span class='selo-tag {classe_selo}' title='{tooltip}'>{_texto_tag(n)}</span>", unsafe_allow_html=True)
     i += 1
 
     with colunas[i]:
+        prefixo_ticker = _prefixo_tickers(n) if mostrar_ticker else ""
+        texto_manchete = _truncar(prefixo_ticker + n["titulo"])
         chave_botao = f"news-manchete-{prefixo}-{idx}-{abs(hash(n['link']))}"
-        if st.button(_truncar(n["titulo"]), key=chave_botao, help=n["titulo"]):
+        if st.button(texto_manchete, key=chave_botao):
             _abrir_card(n, watchlist)
     i += 1
 
     with colunas[i]:
         st.markdown(f"<div class='w-fontes'>{_plural_fontes(n['fontes_count'])}</div>", unsafe_allow_html=True)
+    i += 1
+
+    with colunas[i]:
+        # link direto pra materia, sem passar pelo card - <a> puro (nao e'
+        # widget do Streamlit), abre em nova aba sem disparar rerun nenhum
+        st.markdown(f"<a class='w-abrir-link' href='{n['link']}' target='_blank' title='Abrir matéria'>↗</a>", unsafe_allow_html=True)
 
     st.markdown("<div class='w-divider'></div>", unsafe_allow_html=True)
 
 
+@st.fragment
 def _renderizar_lista(itens: list, mostrar_ticker: bool, prefixo: str, watchlist: list):
     """Reusado pela aba TOP MERCADO - lista + card, sem nenhum resumo
-    automatico (so sob demanda, dentro do card)."""
+    automatico (so sob demanda, dentro do card). @st.fragment: clicar
+    numa manchete (pra abrir o card) so' reroda ISSO aqui, nao a pagina
+    inteira - antes, cada clique refazia render_news/render_top_mercado
+    do zero (embora os DADOS ja viessem de cache, reconstruir todos os
+    widgets da lista inteira a cada clique era a lentidao real)."""
     for idx, n in enumerate(itens):
         _linha_noticia(n, idx, mostrar_ticker, prefixo, watchlist)
 
