@@ -147,7 +147,7 @@ div[class*="st-key-top-manchete-"] button p {
 }
 .w-abrir-link:hover { color:var(--destaque) !important; }
 
-.w-resumo-dialogo { color:var(--neutro); font-size:0.85rem; line-height:1.5; margin-bottom:1.1rem; }
+.w-resumo-dialogo { color:var(--neutro); font-size:0.85rem; line-height:1.5; margin-bottom:1.1rem; white-space:pre-line; }
 .w-card-divisor { border-top:1px solid var(--borda); margin:0.55rem 0; }
 
 /* pills de filtro: retas e compactas, no padrao dos botoes do terminal.
@@ -339,7 +339,8 @@ def _abrir_card(n: dict, watchlist: list):
     st.markdown("<div class='cinza' style='font-size:0.72rem; text-transform:uppercase; margin-bottom:0.2rem;'>Resumo</div>", unsafe_allow_html=True)
     with st.spinner("Gerando resumo..."):
         fontes_ordenadas = ordenar_fontes_para_resumo(n["fontes"])
-        resultado = obter_resumo_grupo(n["titulo"], fontes_ordenadas)
+        titulos_grupo = tuple(n.get("titulos") or [n["titulo"]])
+        resultado = obter_resumo_grupo(n["titulo"], fontes_ordenadas, titulos_grupo)
 
     link_final = n["link"]
     if resultado["resumo"]:

@@ -1005,10 +1005,9 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
     return texto, link_real, None
 
 
-def _resumir_com_groq(texto: str, titulo: str) -> tuple:
-    """Resume via Groq (free tier, mesma API usada no research - ver
-    data/research/resumir.py - mas com prompt proprio: aqui e' noticia
-    curta em 2-3 linhas, la e' relatorio de research em topicos fixos).
+def _chamar_groq(prompt_sistema: str, prompt_usuario: str) -> tuple:
+    """Chamada generica ao Groq (free tier, mesma API usada no research -
+    ver data/research/resumir.py, mas com prompts proprios do NEWS).
     Chave/modelo vem de config.obter_credenciais_groq() (lugar unico,
     compartilhado com research). Retorna (resumo, motivo_falha);
     motivo_falha='cota' em 429."""
@@ -1016,7 +1015,6 @@ def _resumir_com_groq(texto: str, titulo: str) -> tuple:
     if not chave:
         return None, "GROQ_API_KEY não configurada em st.secrets"
 
-    texto_truncado = texto[:6000]
     try:
         r = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -1024,11 +1022,11 @@ def _resumir_com_groq(texto: str, titulo: str) -> tuple:
             json={
                 "model": modelo,
                 "messages": [
-                    {"role": "system", "content": _PROMPT_SISTEMA_RESUMO},
-                    {"role": "user", "content": f"Título: {titulo}\n\nTexto extraído da página:\n{texto_truncado}"},
+                    {"role": "system", "content": prompt_sistema},
+                    {"role": "user", "content": prompt_usuario},
                 ],
                 "temperature": 0.3,
-                "max_tokens": config.GROQ_MAX_TOKENS,
+                "max_tokens": _MAX_TOKENS_RESUMO_NEWS,
                 # gpt-oss e' modelo de raciocinio: sem isso ele gasta boa parte
                 # do max_tokens "pensando" (campo message.reasoning) antes de
                 # responder, e o resumo sai cortado no meio - visto na pratica
@@ -1048,16 +1046,43 @@ def _resumir_com_groq(texto: str, titulo: str) -> tuple:
         return None, str(e)
 
 
+def _resumir_com_groq(texto: str, titulo: str) -> tuple:
+    """Resume o TEXTO COMPLETO extraído de uma matéria (formato
+    estruturado O QUE ACONTECEU/NÚMEROS/IMPACTO/PRÓXIMOS PASSOS)."""
+    texto_truncado = texto[:6000]
+    prompt_usuario = f"Título: {titulo}\n\nTexto extraído da página:\n{texto_truncado}"
+    return _chamar_groq(_PROMPT_SISTEMA_RESUMO, prompt_usuario)
+
+
+def _resumir_das_manchetes(titulo: str, titulos: tuple) -> tuple:
+    """Fallback quando NENHUMA fonte do grupo deu pra baixar/extrair
+    (todas bloquearam/paywall): resume só com base nas manchetes das
+    várias fontes que cobriram o mesmo fato (grupo já mesclado por
+    _agrupar - ver data/news.py). Mesma assinatura de retorno de
+    _resumir_com_groq: (resumo, motivo_falha)."""
+    manchetes = "\n".join(f"- {t}" for t in dict.fromkeys(titulos))  # remove duplicatas, preserva ordem
+    prompt_usuario = f"Manchetes sobre o mesmo fato (fontes diferentes):\n{manchetes}"
+    resumo, motivo = _chamar_groq(_PROMPT_SISTEMA_RESUMO_MANCHETES, prompt_usuario)
+    if resumo:
+        resumo += "\n\n(resumo baseado nas manchetes)"
+    return resumo, motivo
+
+
 @st.cache_data(ttl=_TTL_RESUMO, show_spinner=False)
-def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple) -> dict:
+def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()) -> dict:
     """Resumo de um GRUPO de noticias (mesmo fato, possivelmente varias
     fontes) - tenta cada fonte do grupo, na ordem recebida (ver
     ordenar_fontes_para_resumo), ate uma dar certo: resolve o link real,
     extrai o texto com trafilatura e resume com Groq, sempre em palavras
     proprias. Se TODAS as fontes falharem (paywall, bloqueio, sem
-    conteudo), retorna resumo=None - a interface mostra so "resumo
-    indisponível" e o link da materia continua disponivel normalmente
-    (e' o link que a manchete do grupo ja usa).
+    conteudo) mas houver mais de uma manchete no grupo (`titulos`), tenta
+    um resumo so' com as manchetes (_resumir_das_manchetes) antes de
+    desistir - pior que o resumo com texto completo, mas melhor que nada
+    quando o grupo tem varias fontes concordando no fato. Se isso tambem
+    falhar (ou so' tiver 1 titulo, sem info extra pra sintetizar), retorna
+    resumo=None - a interface mostra so "resumo indisponível" e o link da
+    materia continua disponivel normalmente (e' o link que a manchete do
+    grupo ja usa).
 
     Cache em memoria por 24h (cache_data padrao do Streamlit) - "por
     enquanto", ver nota de _TTL_RESUMO sobre migrar pra Supabase depois.
@@ -1080,4 +1105,14 @@ def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple) -> dict:
             # proximas fontes do grupo so repetiria o mesmo erro a toa
             return {"resumo": None, "link_original": link_real, "motivo_indisponivel": motivo_groq}
         ultimo_motivo = motivo_groq or ultimo_motivo
+
+    titulos_unicos = tuple(dict.fromkeys(titulos))
+    if len(titulos_unicos) >= 2:
+        resumo, motivo_groq = _resumir_das_manchetes(titulo, titulos_unicos)
+        if resumo:
+            return {"resumo": resumo, "link_original": None, "motivo_indisponivel": None}
+        if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
+            return {"resumo": None, "link_original": None, "motivo_indisponivel": motivo_groq}
+        ultimo_motivo = motivo_groq or ultimo_motivo
+
     return {"resumo": None, "link_original": None, "motivo_indisponivel": ultimo_motivo}
