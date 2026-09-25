@@ -302,7 +302,7 @@ def _linha_veiculos(fontes: list) -> str:
     unicos.sort(key=lambda f: not eh_fonte_confiavel(f["veiculo"]))
 
     def _link(f):
-        return f"<a class='w-veic-link' href='{f['link']}' target='_blank'>{html.escape(f['veiculo'])}</a>"
+        return f"<a class='w-veic-link' href='{f['link']}' target='_blank'>{html.escape(f['veiculo'])} ↗</a>"
 
     visiveis, resto = unicos[:_MAX_VEICULOS_VISIVEIS], unicos[_MAX_VEICULOS_VISIVEIS:]
     linha = " · ".join(_link(f) for f in visiveis)
@@ -323,6 +323,8 @@ def _abrir_card(n: dict, watchlist: list):
     na hora do clique (nunca antes), com cache de obter_resumo_grupo."""
     st.markdown(f"**{html.escape(n['titulo'])}**")
     st.caption(_fmt_hora(n["data"]))
+
+    st.link_button("ABRIR MATÉRIA ↗", n["link"], use_container_width=True)
 
     classe_selo = _CLASSE_SELO.get(n["selo"], "selo-naoconfirmada")
     sufixo_score = "" if n["selo"] in (SELO_MENCAO, SELO_CONFIRMADA) else f" · {n['score']}"
@@ -364,16 +366,11 @@ def _abrir_card(n: dict, watchlist: list):
         titulos_grupo = tuple(n.get("titulos") or [n["titulo"]])
         resultado = obter_resumo_grupo(n["titulo"], fontes_ordenadas, titulos_grupo)
 
-    link_final = n["link"]
     if resultado["resumo"]:
         st.markdown(f"<div class='w-resumo-dialogo'>{html.escape(resultado['resumo'])}</div>", unsafe_allow_html=True)
-        link_final = resultado["link_original"] or n["link"]
     else:
         motivo = resultado.get("motivo_indisponivel") or "motivo desconhecido"
         st.caption(f"resumo indisponível ({motivo})")
-
-    st.markdown("<div style='height:0.6rem;'></div>", unsafe_allow_html=True)
-    st.link_button("ABRIR MATÉRIA ↗", link_final, use_container_width=True)
 
 
 def _linha_noticia(n: dict, idx: int, mostrar_ticker: bool, prefixo: str, watchlist: list):

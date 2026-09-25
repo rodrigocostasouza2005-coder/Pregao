@@ -1003,21 +1003,26 @@ _VEICULOS_PROVAVEL_PAYWALL = {"valor", "estadao", "folha", "bloomberg", "wall st
 _MAX_TOKENS_RESUMO_NEWS = 700
 
 _PROMPT_SISTEMA_RESUMO = (
-    "Você resume notícias do mercado financeiro brasileiro em português, em "
-    "5 a 8 linhas curtas, SEMPRE com suas próprias palavras - nunca copie "
-    "frases literais do texto original. O texto fornecido foi extraído "
-    "automaticamente de uma página web e pode conter trechos de menu, anúncio "
-    "ou navegação misturados - ignore esse ruído e resuma só o conteúdo "
-    "jornalístico. Formato fixo, uma linha por item, começando exatamente "
-    "assim:\n"
+    "Você resume notícias do mercado financeiro brasileiro em português, "
+    "SEMPRE com suas próprias palavras - nunca copie frases literais do "
+    "texto original, nem reproduza parágrafos inteiros do texto fornecido. "
+    "O texto fornecido foi extraído automaticamente de uma página web e pode "
+    "conter trechos de menu, anúncio ou navegação misturados - ignore esse "
+    "ruído e resuma só o conteúdo jornalístico. Formato fixo, uma linha por "
+    "item, começando exatamente assim:\n"
     "O QUE ACONTECEU: ...\n"
     "NÚMEROS: ...\n"
     "IMPACTO: ...\n"
     "PRÓXIMOS PASSOS: ...\n"
-    "Se algum campo não tiver informação no texto, escreva 'não informado' "
-    "nesse campo - nunca invente números, datas ou fatos que não estejam no "
-    "texto fornecido. Se não houver conteúdo jornalístico suficiente pra "
-    "resumir, responda exatamente: SEM_CONTEUDO"
+    "O TAMANHO do resumo deve ser PROPORCIONAL à quantidade de informação no "
+    "texto: se o texto fornecido for curto (uma nota rápida, 1-2 parágrafos), "
+    "o resumo também deve ser curto (2-3 linhas no total, pode combinar "
+    "campos numa frase só se não houver informação pra separar) - NUNCA "
+    "invente conteúdo extra só pra preencher todos os 4 campos. Se algum "
+    "campo não tiver informação no texto, escreva 'não informado' nesse "
+    "campo - nunca invente números, datas ou fatos que não estejam no texto "
+    "fornecido. Se não houver conteúdo jornalístico aproveitável nenhum, "
+    "responda exatamente: SEM_CONTEUDO"
 )
 
 _PROMPT_SISTEMA_RESUMO_MANCHETES = (
@@ -1066,11 +1071,26 @@ def _resolver_link_real(link_google_news: str):
     return resultado.get("decoded_url") or None
 
 
+# limiar bem mais baixo que o antigo (200 chars): materia curta de
+# verdade (ex: nota rapida de mercado) costuma ter 1-2 paragrafos reais
+# com bem menos que 200 chars e ainda assim da' pra resumir em 2-3 linhas
+# proporcionais - o limiar antigo tratava isso como "curto demais" e
+# jogava fora um conteudo perfeitamente aproveitavel
+_MIN_CHARS_TEXTO = 60
+# abaixo disso nem sozinho nem combinado com outro fragmento pequeno vale
+# a pena tentar - normalmente e' so' o "menu"/rodape sobrando do
+# trafilatura numa pagina que bloqueou o conteudo de verdade
+_MIN_CHARS_FRAGMENTO = 15
+
+
 def _extrair_texto_artigo(link_google_news: str) -> tuple:
     """Resolve o link real e extrai o texto com trafilatura. Retorna
     (texto, link_real, motivo_falha) - texto=None se o link nao resolveu,
-    o download falhou ou o conteudo veio curto demais (paywall/bloqueio -
-    mesmo limiar de 200 chars usado no resumo do research)."""
+    o download falhou ou nao sobrou nem um fragmento minimo aproveitavel
+    (ver _MIN_CHARS_FRAGMENTO). Um texto entre _MIN_CHARS_FRAGMENTO e
+    _MIN_CHARS_TEXTO ainda volta aqui (nao e' None) - quem chama
+    (obter_resumo_grupo) decide se resume sozinho ou combina com outras
+    fontes do grupo antes de desistir."""
     link_real = _resolver_link_real(link_google_news)
     if not link_real:
         return None, None, "não foi possível resolver o link original"
@@ -1081,7 +1101,7 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
     if not baixado:
         return None, link_real, "erro ao baixar a página"
     texto = trafilatura.extract(baixado, include_comments=False, include_tables=False)
-    if not texto or len(texto) < 200:
+    if not texto or len(texto) < _MIN_CHARS_FRAGMENTO:
         return None, link_real, "conteúdo muito curto (provável paywall/bloqueio)"
     return texto, link_real, None
 
@@ -1135,6 +1155,18 @@ def _resumir_com_groq(texto: str, titulo: str) -> tuple:
     return _chamar_groq(_PROMPT_SISTEMA_RESUMO, prompt_usuario)
 
 
+def _combinar_fragmentos(fragmentos: list, titulos_unicos: tuple) -> str:
+    """Junta pedaços curtos de texto de fontes diferentes do grupo (cada
+    um curto demais sozinho pra resumir, ver _MIN_CHARS_TEXTO) com as
+    manchetes das fontes - ultimo recurso antes do fallback so'-manchete
+    (_resumir_das_manchetes), usado quando pelo menos 1 fragmento de
+    texto de verdade foi extraído (por curto que seja)."""
+    partes = [f"Trechos extraídos de {len(fragmentos)} fonte(s) diferente(s) sobre o mesmo fato:\n" + "\n---\n".join(fragmentos)]
+    if titulos_unicos:
+        partes.append("Manchetes das fontes:\n" + "\n".join(f"- {t}" for t in titulos_unicos))
+    return "\n\n".join(partes)
+
+
 def _resumir_das_manchetes(titulo: str, titulos: tuple) -> tuple:
     """Fallback quando NENHUMA fonte do grupo deu pra baixar/extrair
     (todas bloquearam/paywall): resume só com base nas manchetes das
@@ -1173,10 +1205,17 @@ def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()
     IA) - a interface mostra isso em vez de um "indisponível" generico,
     ajuda a diferenciar bloqueio do servidor de paywall de verdade."""
     ultimo_motivo = "nenhuma fonte disponível no grupo"
+    fragmentos_curtos = []
     for veiculo, link in fontes_ordenadas:
         texto, link_real, motivo_extracao = _extrair_texto_artigo(link)
         if texto is None:
             ultimo_motivo = motivo_extracao or ultimo_motivo
+            continue
+        if len(texto) < _MIN_CHARS_TEXTO:
+            # curto demais pra resumir sozinho (nota rapida/paywall agressivo
+            # deixando so' um fragmento) - guarda pra tentar combinar com
+            # outras fontes do grupo antes de desistir (ver abaixo)
+            fragmentos_curtos.append(texto)
             continue
         resumo, motivo_groq = _resumir_com_groq(texto, titulo)
         if resumo:
@@ -1188,6 +1227,19 @@ def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()
         ultimo_motivo = motivo_groq or ultimo_motivo
 
     titulos_unicos = tuple(dict.fromkeys(titulos))
+
+    # nenhuma fonte teve texto longo o bastante sozinha, mas pelo menos 1
+    # fragmento curto foi extraido de verdade - combina fragmento(s) +
+    # manchetes antes de cair pro fallback so'-manchete (sinal mais fraco)
+    if fragmentos_curtos:
+        texto_combinado = _combinar_fragmentos(fragmentos_curtos, titulos_unicos)
+        resumo, motivo_groq = _resumir_com_groq(texto_combinado, titulo)
+        if resumo:
+            return {"resumo": resumo, "link_original": None, "motivo_indisponivel": None}
+        if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
+            return {"resumo": None, "link_original": None, "motivo_indisponivel": motivo_groq}
+        ultimo_motivo = motivo_groq or ultimo_motivo
+
     if len(titulos_unicos) >= 2:
         resumo, motivo_groq = _resumir_das_manchetes(titulo, titulos_unicos)
         if resumo:
