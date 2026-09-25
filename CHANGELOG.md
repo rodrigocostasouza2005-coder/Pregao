@@ -3,6 +3,31 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-25 (redesign — ETAPA 4: EQUITY)
+
+- **Painel FUNDAMENTOS (novo, dentro de INDICADORES):** ROE, margem
+  líquida, margem operacional, margem EBITDA e dívida líquida (com
+  múltiplo DL/EBITDA) — tudo via `tk.info` do yfinance, mesmo mecanismo
+  de fallback/cache já usado pelos indicadores existentes.
+- **ROIC ficou de fora:** testado contra dado real (PETR4/VALE3/ITUB4/
+  MELI34) e o `tk.info` não tem campo equivalente — calcular na mão
+  exigiria estimar capital investido e taxa efetiva de imposto a partir
+  de outros relatórios, virando aproximação em vez de dado reportado.
+  Mesmo princípio de nunca inventar dado já aplicado no resto do
+  projeto.
+- **Bug real pego no teste:** `ebitdaMargins`/margens baseadas em custo
+  de produtos vendidos vêm `0.0` (não `None`) do yfinance pra bancos
+  (ITUB4) — não é margem zero de verdade, é ausência de dado pro modelo
+  contábil de instituição financeira (sem EBITDA/COGS tradicional).
+  Mostrar "0,00%" seria enganoso. Corrigido tratando `0.0` como ausente
+  nesses campos.
+- Arquivos: `data/prices.py` (`obter_indicadores`, `_pct_ou_none`),
+  `app.py` (painel INDICADORES).
+- Testes: `compileall` limpo; `obter_indicadores` rodado contra dado
+  real pros 4 tickers de teste, confirmando valores corretos e o `None`
+  do bug do ITUB4; AppTest em todas as 9 seções sem exceção; conferido
+  via `at.markdown` que a tabela FUNDAMENTOS renderiza de verdade.
+
 ## 2026-09-25 (redesign — ETAPA 3: MACRO)
 
 - **Focus multi-ano:** tabela FOCUS IPCA/SELIC na aba MACRO passou de

@@ -243,6 +243,19 @@ def _tk_info_com_retry(symbol: str) -> dict:
 _TTL_INDICADORES = 12 * 60 * 60  # 12h
 
 
+def _pct_ou_none(valor):
+    """Converte fracao (0.30274) pra pontos percentuais (30.274). Trata
+    exatamente 0.0 como ausencia de dado, nao como "margem zero": achado
+    real testando bancos (ITUB4) - o yfinance retorna 0.0 (nao None) pra
+    'ebitdaMargins'/margens baseadas em custo de produtos vendidos, que
+    nao fazem sentido pro modelo contabil de banco (sem COGS/EBITDA
+    tradicional) - mostrar '0,00%' seria enganoso (parece margem zero de
+    verdade, quando na real o dado nao existe pra esse tipo de empresa)."""
+    if valor is None or valor == 0.0:
+        return None
+    return valor * 100
+
+
 @st.cache_data(ttl=_TTL_INDICADORES, show_spinner=False)
 def obter_indicadores(ticker: str) -> dict:
     """Indicadores fundamentalistas via yfinance. Campos ausentes viram
@@ -250,10 +263,23 @@ def obter_indicadores(ticker: str) -> dict:
     um valor valido guardado de uma coleta anterior bem-sucedida
     (_ultimo_indicadores_valido), caso em que ele e' usado como fallback
     em vez de "-" (mais util que apagar um dado real por causa de um
-    bloqueio temporario do Yahoo)."""
+    bloqueio temporario do Yahoo).
+
+    ROIC fica de fora de proposito: testado contra dado real (PETR4,
+    VALE3, ITUB4, MELI34) e o tk.info do yfinance nao tem nenhum campo
+    equivalente (so' returnOnEquity/returnOnAssets) - calcular na mao
+    exigiria montar capital investido + taxa efetiva de imposto a partir
+    de outros relatorios (balanco/DRE), o que vira estimativa, nao dado
+    reportado - decidido nao aproximar (mesmo principio de nunca inventar
+    dado ja aplicado em toda fonte do projeto)."""
     symbol = _para_symbol_yf(ticker)
     info = _tk_info_com_retry(symbol)
     preco_atual = info.get("currentPrice") or info.get("regularMarketPrice")
+
+    total_debt = info.get("totalDebt")
+    total_cash = info.get("totalCash")
+    divida_liquida = total_debt - total_cash if total_debt is not None and total_cash is not None else None
+    ebitda = info.get("ebitda")
 
     resultado = {
         "valor_mercado": info.get("marketCap"),
@@ -261,6 +287,12 @@ def obter_indicadores(ticker: str) -> dict:
         "pvp": info.get("priceToBook"),
         "dividend_yield": _dividend_yield_12m(yf.Ticker(symbol), preco_atual) if info else None,
         "beta": _calcular_beta(ticker),
+        "roe": _pct_ou_none(info.get("returnOnEquity")),
+        "margem_liquida": _pct_ou_none(info.get("profitMargins")),
+        "margem_operacional": _pct_ou_none(info.get("operatingMargins")),
+        "margem_ebitda": _pct_ou_none(info.get("ebitdaMargins")),
+        "divida_liquida": divida_liquida,
+        "divida_liquida_ebitda": divida_liquida / ebitda if divida_liquida is not None and ebitda else None,
     }
 
     cache_fallback = _ultimo_indicadores_valido()

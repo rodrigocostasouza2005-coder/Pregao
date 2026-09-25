@@ -1080,6 +1080,61 @@ aba MERCADO), registrado em `REGISTRO_PAINEIS` (reordenável em CONFIG).
   só "sem exceção").
 - Commit: enviado.
 
+## REDESIGN DO TERMINAL — ETAPA 4 (EQUITY)
+Plano completo em `C:\Users\Dell\.claude\plans\mutable-meandering-peacock.md`.
+Escopo da etapa: fundamentos (ROE/ROIC/margens/dívida líquida) na medida
+em que `tk.info` do yfinance cobrir de verdade — campo a campo, o que
+não existir fica de fora em vez de inventado (regra já seguida em toda
+outra fonte do projeto).
+
+**Auditoria de campos** (testado contra dado real: PETR4, VALE3, ITUB4,
+MELI34, cobrindo blue chip, mineradora, banco e BDR — perfis bem
+diferentes de propósito): `returnOnEquity` disponível pros 4;
+`profitMargins`/`operatingMargins` disponíveis pros 4; `ebitdaMargins`
+disponível pra 3/4 (bancos não têm); `totalDebt`/`totalCash` disponíveis
+pros 4; nenhum campo equivalente a ROIC em lugar nenhum do `.info`
+(conferido também buscando por "capital"/"invest"/"roic" em todas as
+~165 chaves retornadas).
+
+**Decisão — ROIC fica de fora**: sem campo direto no `tk.info`,
+calculá-lo exigiria montar capital investido (dívida + patrimônio -
+caixa) e taxa efetiva de imposto a partir de outros relatórios
+(balanço/DRE) - isso é estimativa, não dado reportado. Mesmo princípio
+de "nunca inventar dado" já aplicado em toda outra fonte do projeto
+(agenda econômica, lives da Genial etc.) - decidido não implementar em
+vez de aproximar.
+
+**Bug real pego no teste**: `ebitdaMargins` (e outras margens baseadas
+em custo de produtos vendidos) vêm `0.0` do yfinance pra ITUB4 (banco) -
+não é `None`, é `0.0` literal. Não é margem zero de verdade: bancos não
+têm o conceito contábil de EBITDA/COGS que essas margens pressupõem.
+Mostrar "0,00%" seria enganoso (parece que a margem é zero, quando na
+real o dado simplesmente não existe pra esse tipo de empresa).
+Corrigido com `_pct_ou_none()` (`data/prices.py`), que trata `None` E
+`0.0` como ausência de dado nesses campos específicos.
+
+**Implementação**: `data/prices.py:obter_indicadores()` ganhou 6 campos
+novos (`roe`, `margem_liquida`, `margem_operacional`, `margem_ebitda`,
+`divida_liquida`, `divida_liquida_ebitda`) - reusa o mesmo `info` já
+buscado (sem chamada extra ao Yahoo) e o mesmo mecanismo de fallback
+pro último valor válido (`_ultimo_indicadores_valido`) já existente.
+Dívida líquida = `totalDebt - totalCash` (cálculo direto de dois campos
+reais, mesmo padrão do juro real em `data/macro.py`). Dívida
+líquida/EBITDA só calculado quando ambos existem e EBITDA > 0.
+`app.py`: segunda tabela dentro do painel INDICADORES (mesmo
+container/estilo, sem painel novo), com tooltips explicando cada campo
+e a ressalva de bancos/seguradoras sem margem EBITDA.
+
+- Arquivos: `data/prices.py` (`obter_indicadores`, `_pct_ou_none` novo),
+  `app.py` (painel INDICADORES, segunda tabela FUNDAMENTOS).
+- Testes: `compileall` limpo; `obter_indicadores()` rodado contra dado
+  real pros 4 tickers de teste, valores conferidos um a um (incluindo o
+  `None` correto pra margem EBITDA do ITUB4); AppTest em todas as 9
+  seções (instância nova por aba, sem exceção); conferido via
+  `at.markdown` que ROE/MARGEM LÍQUIDA/MARGEM OPERACIONAL/MARGEM EBITDA/
+  DÍVIDA LÍQUIDA aparecem de verdade no HTML da aba EQUITY.
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

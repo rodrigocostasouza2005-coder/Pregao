@@ -527,6 +527,24 @@ if secao_atual == "EQUITY":
                     </tr></tbody>
                     </table>
                     </div>
+                    <div style="overflow-x:auto; overflow-y:hidden; margin-top:0.5rem;">
+                    <table style="width:100%; border-collapse:collapse;">
+                    <thead><tr>
+                        <th class="cinza" title="Lucro liquido dividido pelo patrimonio liquido dos ultimos 12 meses - quanto a empresa gera de retorno sobre o capital dos acionistas">ROE</th>
+                        <th class="cinza" title="Lucro liquido dividido pela receita liquida - quanto sobra de cada R$ 1 vendido, ja descontado tudo">MARGEM LÍQUIDA</th>
+                        <th class="cinza" title="Lucro operacional dividido pela receita liquida - rentabilidade da operacao, antes de juros e impostos">MARGEM OPERACIONAL</th>
+                        <th class="cinza" title="EBITDA dividido pela receita liquida - geracao de caixa operacional antes de juros, impostos, depreciacao e amortizacao. Nao se aplica a bancos/seguradoras (sem EBITDA tradicional)">MARGEM EBITDA</th>
+                        <th class="cinza" title="Divida total menos caixa disponivel. Entre parenteses: quantos anos de EBITDA seriam necessarios pra quitar a divida liquida (quanto menor, melhor)">DÍVIDA LÍQUIDA</th>
+                    </tr></thead>
+                    <tbody><tr>
+                        <td class="neutro">{config.formatar_numero(ind['roe'], 2, fmt) + '%' if ind['roe'] is not None else '—'}</td>
+                        <td class="neutro">{config.formatar_numero(ind['margem_liquida'], 2, fmt) + '%' if ind['margem_liquida'] is not None else '—'}</td>
+                        <td class="neutro">{config.formatar_numero(ind['margem_operacional'], 2, fmt) + '%' if ind['margem_operacional'] is not None else '—'}</td>
+                        <td class="neutro">{config.formatar_numero(ind['margem_ebitda'], 2, fmt) + '%' if ind['margem_ebitda'] is not None else '—'}</td>
+                        <td class="neutro">{config.formatar_valor_mercado(ind['divida_liquida'], fmt)}{f" ({config.formatar_numero(ind['divida_liquida_ebitda'], 1, fmt)}x EBITDA)" if ind['divida_liquida_ebitda'] is not None else ""}</td>
+                    </tr></tbody>
+                    </table>
+                    </div>
                     """,
                     unsafe_allow_html=True,
                 )

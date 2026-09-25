@@ -28,6 +28,14 @@ por um seletor no topo da aba).
   (cov/var de retornos semanais dos últimos 2 anos contra o Ibovespa
   `^BVSP`) — o campo `beta` do próprio yfinance não é confiável pra
   ações da B3.
+- **FUNDAMENTOS** (segunda tabela do painel INDICADORES): ROE, margem
+  líquida, margem operacional, margem EBITDA e dívida líquida (com
+  múltiplo dívida líquida/EBITDA, quando o EBITDA está disponível).
+  Fonte: `tk.info` do yfinance. Bancos/seguradoras não têm margem EBITDA
+  (sem conceito de EBITDA tradicional) — aparece como "—", não "0,00%".
+  **ROIC não está disponível**: o yfinance não tem esse campo pronto, e
+  calculá-lo na mão exigiria estimar capital investido e taxa efetiva de
+  imposto a partir de outros relatórios — decidido não aproximar.
 - **GRÁFICO**: candlestick, linha ou área (escolha em CONFIG), com
   médias móveis 20/50/200 (cada uma opcional) e opção de comparar com o
   Ibovespa (base 100). Períodos diários (1M a 5A) e intradiários (1D=5min,
