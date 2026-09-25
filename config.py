@@ -183,7 +183,7 @@ VELOCIDADES_TICKER_TAPE = {"LENTA": 25, "NORMAL": 50, "RAPIDA": 80}
 JANELAS_RETORNO = ["1D", "1S", "1M", "3M", "6M", "12M", "ANO"]
 
 # --- Abas do app (chave interna = titulo exibido na navegacao) ----------
-ABAS_DISPONIVEIS = ["EQUITY", "MACRO", "RESEARCH", "NEWS", "TOP MERCADO", "MERCADO", "CVM"]
+ABAS_DISPONIVEIS = ["VISÃO GERAL", "EQUITY", "MACRO", "RESEARCH", "NEWS", "CVM", "TOP MERCADO", "MERCADO"]
 
 # --- E-mails com acesso a paineis de admin (DIAGNOSTICO DE FONTES, SISTEMA) --
 # repo publico: nao deixar e-mail pessoal fixo no codigo. Le

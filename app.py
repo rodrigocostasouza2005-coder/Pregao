@@ -36,6 +36,7 @@ from ui.news_tab import render_news, render_news_ticker
 from ui.research_tab import render_research
 from ui.sistema_tab import render_sistema
 from ui.top_mercado_tab import render_top_mercado
+from ui.visao_geral import render_visao_geral
 
 st.set_page_config(page_title="PREGÃO", layout="wide", initial_sidebar_state="expanded")
 
@@ -253,7 +254,7 @@ secoes = abas_visiveis + ["CONFIG"]
 _eh_admin = usuario["email"] in config.obter_emails_admin()
 if _eh_admin:
     secoes = secoes + ["SISTEMA"]
-rotulos_secao = [f"{i + 1} {chave}" for i, chave in enumerate(secoes)]
+rotulos_secao = [f"{i} {chave}" for i, chave in enumerate(secoes)]
 mapa_rotulo_secao = dict(zip(rotulos_secao, secoes))
 
 padrao_rotulo_secao, mem_secao = _escolha_estavel("secao_ativa", rotulos_secao, rotulos_secao[0])
@@ -330,6 +331,12 @@ with st.sidebar:
                 st.rerun()
 
     _fragmento_watchlist()
+
+
+# --- aba VISÃO GERAL (home - resumo do mercado, ver ui/visao_geral.py) -----
+if secao_atual == "VISÃO GERAL":
+    with st.container():
+        render_visao_geral(prefs)
 
 
 # --- aba EQUITY --------------------------------------------------------------
