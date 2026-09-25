@@ -882,6 +882,46 @@ logo abaixo do painel de notícias.
   CONFIG sem exceção.
 - Commit: enviado.
 
+### Resumos e acesso às matérias (NEWS/TOP MERCADO) — melhoria pedida
+1. **Matéria curta ganhava "conteúdo muito curto" mesmo tendo texto
+   real**: limiar mínimo de extração caiu de 200 pra 60 caracteres
+   (`_MIN_CHARS_TEXTO`) — uma nota rápida de 1-2 parágrafos reais quase
+   sempre passa disso. Prompt do resumo reescrito pra ser PROPORCIONAL
+   ao tamanho do texto (2-3 linhas pra texto curto, até 8 pra texto
+   longo) em vez de forçar sempre os 4 campos completos — testado com
+   texto curto real: resultado saiu em 4 linhas, "não informado" nos
+   campos sem base no texto, sem inventar conteúdo pra preencher.
+2. **Combinação de fragmentos antes de desistir**: texto entre 15 e 60
+   caracteres (curto demais sozinho, mas não vazio) agora é guardado
+   como fragmento (`_MIN_CHARS_FRAGMENTO=15`) em vez de descartado; se
+   NENHUMA fonte tiver texto longo o bastante sozinha mas houver 1+
+   fragmento, combina todos os fragmentos + as manchetes do grupo
+   (`_combinar_fragmentos`) numa única tentativa de resumo antes de cair
+   pro fallback só-manchetes (já existente) — testado com 2 fragmentos
+   curtos de fontes diferentes ("Ibovespa sobe 0,3%..." + "Dólar cai
+   0,5%..."): combinou e gerou resumo correto num só resumo coerente.
+3. **Acesso à matéria original**: botão "ABRIR MATÉRIA ↗" movido pro
+   TOPO do card (antes só aparecia embaixo, depois do resumo carregar -
+   agora aparece imediatamente, sem esperar o resumo); links por veículo
+   («Veículos (N)») ganharam o ícone ↗ (já abriam em nova aba, só
+   faltava o sinal visual). Ícone ↗ por linha na lista já existia (feito
+   na correção urgente anterior desta sessão).
+4. **Medição real (20 itens, amostra do TOP MERCADO)**: 15/20 (75%) de
+   sucesso na medição - MAS as 5 falhas foram TODAS por `motivo=cota`
+   (limite de taxa do Groq free-tier, batido por rodar 20 resumos em
+   sequência rápida num script de teste - não acontece no uso real,
+   onde o usuário pede resumo um de cada vez ao clicar) - **nenhuma
+   falha foi por conteúdo curto/indisponível**, que era o problema que
+   esta melhoria visava resolver. Ou seja: 100% das falhas restantes
+   são de cota da API, não de extração de conteúdo.
+- Arquivos: `data/news.py`, `ui/news_tab.py`.
+- Testes: `compileall` limpo; testes diretos do caso de fragmento
+  combinado e do caso de texto curto proporcional (scratchpad, com
+  mock); AppTest EQUITY/NEWS/TOP MERCADO sem exceção; teste dirigido
+  clicando manchete real e confirmando que "ABRIR MATÉRIA" aparece no
+  topo do card; medição de 20 itens contra dado real.
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

@@ -48,6 +48,15 @@ Mais recente primeiro.
   filing oficial da CVM, painel na EQUITY. Adaptado pra reusar
   `research_itens` em vez de criar tabela nova no Supabase.
 
+- **Resumos e acesso às matérias (NEWS/TOP MERCADO):** matéria curta
+  ganha resumo proporcional em vez de "conteúdo muito curto" (limiar
+  200→60 chars); fragmentos curtos de fontes diferentes são combinados
+  + manchetes antes de desistir de vez; botão "ABRIR MATÉRIA ↗" agora
+  no topo do card (não precisa esperar o resumo); links por veículo com
+  ícone ↗. Medição em 20 itens: 15/20 (75%), mas as 5 falhas foram
+  todas por limite de cota do Groq (rodando em sequência rápida no
+  teste) — zero falhas por conteúdo curto/indisponível.
+
 ## 2026-09-24 (sessão anterior)
 
 - **Letreiro (ticker tape) maior:** fonte de ~12px pra ~14px, mais espaço
