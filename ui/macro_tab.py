@@ -16,7 +16,7 @@ from data.macro import (
     obter_ipca,
     obter_selic_meta,
 )
-from ui import paineis
+from ui import graficos, paineis
 
 # Meta de inflacao vigente (Banco Central / CMN): centro 3,0% a.a.,
 # tolerancia +-1,5 p.p. (banda 1,5% a 4,5%). Nao da pra importar de
@@ -231,7 +231,8 @@ def _painel_curva_pre(prefs):
         ticktext=["1A", "2A", "5A", "10A"],
     )
     fig.update_yaxes(title="% a.a.")
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    chave = graficos.zoom_key("macro_curva_pre", data_ref_hoje)
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave)
 
     if curva_mes is None:
         st.warning(
@@ -287,7 +288,8 @@ def _painel_ipca(prefs):
     )
 
     _eixo_x_mes_ano(fig, df["data"])
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    chave = graficos.zoom_key("macro_ipca", df["data"].iloc[-1] if not df.empty else "")
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave)
     st.markdown(
         f"<div class='cinza' style='font-size:0.62rem;'>Faixa sombreada: meta de inflação "
         f"{_fmt(META_IPCA_CENTRO, 1, prefs)}% ± {_fmt(META_IPCA_TOLERANCIA, 1, prefs)} p.p. (Banco Central/CMN)</div>",
@@ -326,7 +328,8 @@ def _painel_selic_cdi(prefs):
 
     _layout_grafico_escuro(fig, tema)
     fig.update_yaxes(title="% a.a.")
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    chave = graficos.zoom_key("macro_selic_cdi", periodo)
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave)
 
     faltando = []
     if selic_df is None:

@@ -26,7 +26,7 @@ from data.prices import (
 )
 from data.research import CASAS as CASAS_RESEARCH
 from data.user_prefs import obter_prefs, salvar_prefs
-from ui import paineis
+from ui import graficos, paineis
 from ui.cvm_tab import render_cvm, render_cvm_ticker
 from ui.macro_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MACRO
 from ui.macro_tab import render_macro
@@ -583,7 +583,8 @@ if secao_atual == "EQUITY":
                     if intervalo_periodo == "1d":
                         fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=dias_sem_pregao(df))])
 
-                    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+                    chave_zoom = graficos.zoom_key("equity_comparativo_ibov", ticker_selecionado, periodo)
+                    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave_zoom)
                 else:
                     if comparar_ibov and eh_intraday:
                         st.info("Comparação com Ibovespa não disponível para períodos intradiários (1D/1S).")
@@ -674,7 +675,11 @@ if secao_atual == "EQUITY":
                             feriados = dias_sem_pregao(df)
                             fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=feriados)])
 
-                    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+                    chave_zoom = graficos.zoom_key(
+                        "equity_grafico", ticker_selecionado, periodo, tipo_grafico,
+                        prefs["mm20"], prefs["mm50"], prefs["mm200"],
+                    )
+                    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave_zoom)
 
             with st.container(border=True):
                 render_news_ticker(ticker_selecionado, prefs)

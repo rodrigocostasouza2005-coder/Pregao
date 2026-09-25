@@ -17,7 +17,7 @@ from data.mercado import (
     obter_altas_baixas, obter_desempenho_setorial,
     obter_mais_negociados, obter_mercados_globais, obter_panorama_ibovespa, obter_termometro,
 )
-from ui import paineis
+from ui import graficos, paineis
 
 
 def _tema_atual(prefs):
@@ -152,7 +152,8 @@ def _painel_setorial(prefs):
     ))
     fig.update_yaxes(autorange="reversed")
     _layout_grafico_escuro(fig, tema, altura=max(240, 28 * len(setores)))
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    chave = graficos.zoom_key("mercado_setorial")
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave)
 
 
 def _cor_treemap(variacao_pct: float, limite: float, tema: dict) -> str:
@@ -251,7 +252,8 @@ def _painel_treemap(prefs):
         font=dict(color=tema["neutro"], family="IBM Plex Mono", size=11),
         height=420, margin=dict(l=4, r=4, t=4, b=4),
     )
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    chave = graficos.zoom_key("mercado_treemap")
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave)
 
     st.markdown(
         f"<div style='display:flex; align-items:center; gap:0.4rem; margin-top:0.3rem; font-size:0.68rem;' class='cinza'>"
