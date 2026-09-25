@@ -26,7 +26,7 @@ from data.prices import (
 )
 from data.research import CASAS as CASAS_RESEARCH
 from data.user_prefs import obter_prefs, salvar_prefs
-from ui import graficos, paineis
+from ui import busca, graficos, paineis
 from ui.cvm_tab import render_cvm, render_cvm_ticker
 from ui.macro_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MACRO
 from ui.macro_tab import render_macro
@@ -274,24 +274,34 @@ with st.sidebar:
     if "contador_input_ticker" not in st.session_state:
         st.session_state.contador_input_ticker = 0
 
-    novo_ticker = st.text_input(
-        "Adicionar ticker (ex: PETR4)",
-        key=f"input_novo_ticker_{st.session_state.contador_input_ticker}",
-        label_visibility="collapsed", placeholder="ADICIONAR TICKER (EX: PETR4)",
-    ).strip().upper()
-
-    if st.button("ADICIONAR", width="stretch"):
-        if not novo_ticker:
-            st.warning("Digite um ticker.")
-        elif novo_ticker in prefs["watchlist"]:
-            st.warning(f"{novo_ticker} já está na lista.")
-        elif validar_ticker(novo_ticker):
-            prefs["watchlist"].append(novo_ticker)
+    def _adicionar_ticker(ticker: str):
+        if not ticker:
+            st.warning("Digite ou escolha um ticker.")
+        elif ticker in prefs["watchlist"]:
+            st.warning(f"{ticker} já está na lista.")
+        elif validar_ticker(ticker):
+            prefs["watchlist"].append(ticker)
             _persistir_prefs()
-            st.session_state.contador_input_ticker += 1  # forca campo vazio no rerun
+            st.session_state.contador_input_ticker += 1  # forca campo/busca vazios no rerun
             st.rerun()
         else:
-            st.error(f"Ticker '{novo_ticker}' não encontrado no yfinance.")
+            st.error(f"Ticker '{ticker}' não encontrado no yfinance.")
+
+    ticker_buscado = busca.buscar_ativo(
+        "Buscar ativo", chave=f"busca_ativo_{st.session_state.contador_input_ticker}",
+        extras=prefs["watchlist"],
+    )
+    if st.button("ADICIONAR", width="stretch"):
+        _adicionar_ticker((ticker_buscado or "").strip().upper())
+
+    with st.expander("Ticker não está na lista? digite manualmente"):
+        novo_ticker = st.text_input(
+            "Adicionar ticker (ex: PETR4)",
+            key=f"input_novo_ticker_{st.session_state.contador_input_ticker}",
+            label_visibility="collapsed", placeholder="TICKER EXATO (EX: PETR4)",
+        ).strip().upper()
+        if st.button("ADICIONAR MANUALMENTE", width="stretch"):
+            _adicionar_ticker(novo_ticker)
 
     @st.fragment(run_every=prefs["atualizacao_intervalo"])
     def _fragmento_watchlist():

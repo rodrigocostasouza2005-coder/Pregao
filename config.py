@@ -121,6 +121,49 @@ IBOVESPA_COMPOSICAO = {
     "CVCB3": "Turismo e Lazer",
 }
 
+# --- Nomes curtos pros tickers de IBOVESPA_COMPOSICAO + TICKER_ALIASES,
+# pra busca/autocomplete de ativo (ui/busca.py) -----------------------
+# ESTATICO de proposito: a busca precisa montar a lista de opcoes na
+# hora (sem esperar rede) - buscar isso via obter_nome_yf() (data/
+# prices.py, 1 chamada de yfinance por ticker) pra' ~70 tickers de uma
+# vez levaria dezenas de segundos no primeiro carregamento (confirmado
+# na pratica: ~74 tickers, mais de 30s) e violaria a regra de nao bater
+# em API repetidamente so' pra montar uma lista de busca. Nomes comuns
+# (nao o razao social completo) das empresas mais conhecidas do
+# Ibovespa + BDRs cadastrados - ticker fora daqui ainda funciona
+# normalmente na busca (aparece so' o ticker, sem nome).
+NOMES_ATIVOS_BUSCA = {
+    "PETR4": "Petrobras", "PETR3": "Petrobras", "PRIO3": "PRIO",
+    "RRRP3": "3R Petroleum", "UGPA3": "Ultrapar", "CSAN3": "Cosan",
+    "VALE3": "Vale", "GGBR4": "Gerdau", "CSNA3": "CSN", "USIM5": "Usiminas",
+    "GOAU4": "Metalúrgica Gerdau",
+    "ITUB4": "Itaú Unibanco", "BBDC4": "Bradesco", "BBAS3": "Banco do Brasil",
+    "SANB11": "Santander Brasil", "BPAC11": "BTG Pactual", "B3SA3": "B3",
+    "MGLU3": "Magazine Luiza", "LREN3": "Lojas Renner", "RENT3": "Localiza",
+    "ASAI3": "Assaí", "CRFB3": "Carrefour Brasil", "ARZZ3": "Arezzo",
+    "PCAR3": "Grupo Pão de Açúcar",
+    "ELET3": "Eletrobras", "ELET6": "Eletrobras", "EQTL3": "Equatorial Energia",
+    "CMIG4": "Cemig", "CPLE6": "Copel", "ENEV3": "Eneva",
+    "SBSP3": "Sabesp", "CPFE3": "CPFL Energia", "AURE3": "Auren Energia",
+    "VIVT3": "Telefônica Brasil (Vivo)", "TIMS3": "TIM",
+    "JBSS3": "JBS", "MRFG3": "Marfrig", "BRFS3": "BRF",
+    "SMTO3": "São Martinho", "BEEF3": "Minerva",
+    "SUZB3": "Suzano", "KLBN11": "Klabin",
+    "WEGE3": "WEG", "EMBR3": "Embraer",
+    "RAIL3": "Rumo", "CCRO3": "CCR", "ECOR3": "EcoRodovias", "AZUL4": "Azul",
+    "ABEV3": "Ambev",
+    "HAPV3": "Hapvida", "RDOR3": "Rede D'Or", "RADL3": "Raia Drogasil",
+    "FLRY3": "Fleury", "HYPE3": "Hypera",
+    "NTCO3": "Natura &Co",
+    "TOTS3": "Totvs", "LWSA3": "Locaweb", "POSI3": "Positivo",
+    "CYRE3": "Cyrela", "EZTC3": "Eztec", "MRVE3": "MRV",
+    "MULT3": "Multiplan", "IGTI11": "Iguatemi",
+    "CVCB3": "CVC",
+    "MELI34": "MercadoLibre", "NFLX34": "Netflix", "AAPL34": "Apple",
+    "GOGL34": "Alphabet (Google)", "AMZO34": "Amazon", "MSFT34": "Microsoft",
+    "TSLA34": "Tesla", "NVDC34": "Nvidia", "DISB34": "Disney", "COCA34": "Coca-Cola",
+}
+
 # --- Principais indices globais (aba MERCADO, painel MERCADOS GLOBAIS) --
 INDICES_GLOBAIS = {
     "S&P 500": "^GSPC",
