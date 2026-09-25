@@ -68,6 +68,13 @@ Mais recente primeiro.
   com uma tabela estática de nomes. Plano completo das próximas etapas
   em `.claude/plans/`.
 
+- **REDESIGN DO TERMINAL — ETAPA 2 (VISÃO GERAL):** nova aba "0 VISÃO
+  GERAL", agora a home padrão do app — mercado agora (cards), gráfico
+  do IBOV, altas/baixas, mais negociados, setorial, notícias, mercados
+  globais, watchlist. Zero coleta nova — reaproveita funções já
+  existentes de MERCADO/NEWS/MACRO direto. Navegação renumerada pra
+  0-9 (VISÃO GERAL=0), abas reordenadas pra bater com o pedido.
+
 ## 2026-09-24 (sessão anterior)
 
 - **Letreiro (ticker tape) maior:** fonte de ~12px pra ~14px, mais espaço

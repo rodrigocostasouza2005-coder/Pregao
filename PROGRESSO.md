@@ -993,6 +993,46 @@ na próxima vez que abrir o app.
   reset e de seleção+adição via a busca.
 - Commits: enviados (3 - zoom, busca, e este registro).
 
+## REDESIGN DO TERMINAL — ETAPA 2 (VISÃO GERAL)
+Nova aba "0 VISÃO GERAL" (`ui/visao_geral.py`, novo), agora a home/
+landing padrão do app. **Zero coleta de dado nova** - cada bloco chama
+direto uma função já existente (mesmo cache):
+- MERCADO AGORA: cards IBOV/DÓLAR/DI(CDI anualizado)/S&P 500/NASDAQ/
+  PETR4/VALE3 (`obter_cotacao_indice`, `obter_cdi`, `obter_mercados_globais`,
+  `obter_cotacao` - todas já usadas em outras abas).
+- Gráfico do IBOV com seletor de período e reset de zoom
+  (`obter_historico` + `ui/graficos.py`, mesmo mecanismo da ETAPA 1).
+- Altas/baixas, mais negociados, desempenho setorial: reaproveita
+  `_painel_altas_baixas`/`_painel_mais_negociados`/`_painel_setorial`
+  de `ui/mercado_tab.py` DIRETO (mesmas funções, sem cópia de lógica).
+- Notícias: `obter_top_mercado_tudo()` + `_renderizar_lista()` de
+  `ui/news_tab.py` (mesmo componente do TOP MERCADO), limitado a 8 itens.
+- Mercados globais: reaproveita `_painel_globais` de `ui/mercado_tab.py`.
+- Watchlist compacta: nova (tabela simples ticker/preço/variação).
+
+**Renumeração da navegação**: pedido explícito foi "0 VISÃO GERAL, 1
+EQUITY, 2 MACRO, 3 RESEARCH, 4 NEWS, 5 CVM, 6 TOP MERCADO, 7 MERCADO, 8
+CONFIG, 9 SISTEMA" - `app.py` mudou de `enumerate(secoes)` com `+1`
+pra sem offset (0-based), e `config.ABAS_DISPONIVEIS` foi reordenado
+(CVM antes de TOP MERCADO/MERCADO) pra bater exatamente com essa ordem.
+VISÃO GERAL como primeiro item também a torna a aba padrão ao abrir o
+app (usa o mecanismo de `_escolha_estavel` que já pega `rotulos_secao[0]`
+como padrão - sem código novo pra isso).
+
+**Achado do teste**: meu próprio harness de AppTest (scratchpad, fora
+do repo) tinha uma suposição implícita de que EQUITY sempre era a aba
+padrão (pulava re-testar "1 EQUITY" assumindo que a primeira renderização
+já cobria isso) - corrigido o script de teste antes de confiar no
+resultado, porque com VISÃO GERAL virando a nova padrão essa suposição
+ficou errada e mascarava EQUITY não sendo testado de verdade.
+
+- Arquivos: `ui/visao_geral.py` (novo), `app.py`, `config.py`.
+- Testes: `compileall` limpo; AppTest em TODAS as 9 seções (0-8, mais
+  CONFIG) sem exceção, incluindo a landing padrão; conferido via
+  `at.markdown` que os 7 painéis da VISÃO GERAL renderizam de verdade
+  (não só "sem exceção").
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas
