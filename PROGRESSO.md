@@ -922,6 +922,77 @@ logo abaixo do painel de notícias.
   topo do card; medição de 20 itens contra dado real.
 - Commit: enviado.
 
+## REDESIGN DO TERMINAL — ETAPA 1 (fundação)
+Plano completo em `C:\Users\Dell\.claude\plans\mutable-meandering-peacock.md`
+(auditoria + roadmap das etapas 2-8). Etapa 1 concluída:
+
+### 1. Reset de zoom universal
+`ui/graficos.py` (novo): `zoom_key(chave_base, *partes_estado)` renderiza
+um botão "↺" pequeno e retorna uma `key=` pro `st.plotly_chart` — a key
+muda tanto quando o usuário clica no botão quanto quando qualquer
+`partes_estado` passado muda (ticker, período, tipo de gráfico etc),
+forçando o Streamlit a remontar o componente do zero (= reset de zoom)
+nos dois casos, sem coleta de dado nova. Aplicado nos 7 gráficos Plotly
+existentes: EQUITY (preço/candlestick + comparação com IBOV, em
+`app.py`), MACRO (curva pré, IPCA, Selic×CDI, em `ui/macro_tab.py`),
+MERCADO (setorial, treemap, em `ui/mercado_tab.py`).
+
+**Achado da auditoria**: nenhum desses gráficos passava `key=` antes -
+é por isso que trocar de ticker/período não resetava o zoom (Streamlit
+mantém o estado do componente, incluindo zoom, quando a key não muda,
+mesmo com dado novo por baixo). Duplo clique pra reset é comportamento
+nativo do Plotly (não depende de `displayModeBar`, que continua
+desligado de propósito) - não precisou de código extra.
+
+### 2. Busca/autocomplete de ativo (TickerAutocomplete)
+`ui/busca.py` (novo): `buscar_ativo()` usa `st.selectbox` com busca
+nativa (filtra por substring ao digitar, ↑/↓/Enter/Esc de graça, zero
+chamada de rede por tecla) sobre um universo curado
+(`config.IBOVESPA_COMPOSICAO` + `config.TICKER_ALIASES` + watchlist
+atual). Substitui o `st.text_input` cru (exigia ticker exato) na
+sidebar "adicionar ticker" - mantém um `st.expander` com o fluxo manual
+antigo pra ticker fora da lista curada (nunca perde a capacidade de
+adicionar qualquer ticker válido, só fica mais rápido pros mais
+comuns).
+
+**Bug de performance pego ANTES de commitar** (rodei a função isolada
+antes de integrar): a primeira versão buscava o nome de cada ticker via
+`obter_nome_yf` (1 chamada de yfinance por ticker) pra montar a lista -
+pros ~74 tickers do universo, isso levou mais de 30 segundos só pra
+montar as opções, violando a própria regra do pedido ("não fazer
+request a cada tecla... usar lote"). Corrigido com
+`config.NOMES_ATIVOS_BUSCA` (novo, estático - nomes comuns das empresas
+mais conhecidas do Ibovespa + BDRs, curados manualmente, zero chamada
+de rede). Depois da correção: função roda em memória, praticamente
+instantânea (testado).
+
+### 3. Sweep de NaN/None residual
+Verificação (sem mudança de código - já estava tudo coberto pelos
+ajustes desta sessão: P0.1 indicadores, T7 comparativo, correção do
+treemap): toda formatação numérica em `app.py`, `ui/macro_tab.py`,
+`ui/mercado_tab.py`, `ui/research_tab.py` passa por um helper
+None-safe (`_fmt`, `_num_ou_traco`, ternário explícito) ou opera sobre
+um valor estruturalmente garantido não-None (filtrado antes). `ui/cvm_tab.py`/
+`ui/top_mercado_tab.py`/`data/mercado.py` não fazem formatação numérica
+direta nenhuma. Nenhum ponto residual encontrado.
+
+**Limitação conhecida**: interação de mouse/teclado (zoom real, duplo
+clique, digitar na busca) não é verificável só por AppTest - e o
+PREGÃO usa login Google real (`st.login()`), que eu não consigo
+completar sem as credenciais do Rodrigo, então não dá pra testar isso
+num browser de verdade a partir daqui. Verificado por AppTest: botão de
+reset existe e não quebra ao clicar; busca tem as 74 opções esperadas;
+selecionar + adicionar um ticker funciona ponta a ponta. **Pendente**:
+Rodrigo conferir visualmente (zoom, duplo clique, digitação na busca)
+na próxima vez que abrir o app.
+
+- Arquivos: `ui/graficos.py` (novo), `ui/busca.py` (novo), `config.py`
+  (`NOMES_ATIVOS_BUSCA`), `app.py`, `ui/macro_tab.py`, `ui/mercado_tab.py`.
+- Testes: `compileall` limpo a cada commit; AppTest EQUITY/MACRO/
+  MERCADO/CONFIG sem exceção; teste dirigido de clique no botão de
+  reset e de seleção+adição via a busca.
+- Commits: enviados (3 - zoom, busca, e este registro).
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

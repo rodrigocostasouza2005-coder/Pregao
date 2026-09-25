@@ -57,6 +57,17 @@ Mais recente primeiro.
   todas por limite de cota do Groq (rodando em sequência rápida no
   teste) — zero falhas por conteúdo curto/indisponível.
 
+- **REDESIGN DO TERMINAL — ETAPA 1 (fundação):** reset de zoom
+  universal em todos os gráficos Plotly (`ui/graficos.py` — troca de
+  ticker/período já reseta sozinha, mais um botão manual; achado real:
+  nenhum gráfico tinha `key=`, por isso o zoom "grudava" ao trocar de
+  filtro); busca/autocomplete de ativo (`ui/busca.py`, por ticker ou
+  nome, sem chamada de rede por tecla) substituindo o campo que exigia
+  ticker exato na sidebar. Bug de performance pego antes de commitar
+  (nomes buscados ao vivo levavam 30s+ pra montar a lista) e corrigido
+  com uma tabela estática de nomes. Plano completo das próximas etapas
+  em `.claude/plans/`.
+
 ## 2026-09-24 (sessão anterior)
 
 - **Letreiro (ticker tape) maior:** fonte de ~12px pra ~14px, mais espaço
