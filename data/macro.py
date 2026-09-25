@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Indicadores macro: IPCA/Selic/CDI (SGS do BC), expectativas Focus (Olinda)
-e curva de juros prefixada (ANBIMA ETTJ). Nunca inventa dados: se uma fonte
-falhar, a funcao retorna None e quem chama deve avisar o usuario."""
+"""Indicadores macro: IPCA/Selic/CDI (SGS do BC), expectativas Focus (Olinda),
+curva de juros prefixada (ANBIMA ETTJ) e cenario global (ouro/Brent/WTI/
+minerio de ferro/Treasuries 10A/VIX via yfinance). Nunca inventa dados: se
+uma fonte falhar, a funcao retorna None (ou [], pro cenario global) e quem
+chama deve avisar o usuario."""
 
 from datetime import date, datetime, timedelta
 from urllib.parse import quote
@@ -10,6 +12,9 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
 import streamlit as st
+
+from config import CENARIO_GLOBAL
+from data.mercado import _baixar_lote_bruto, _linha_papel
 
 TZ = ZoneInfo("America/Sao_Paulo")
 _HEADERS = {"User-Agent": "PregaoApp/0.1 (uso pessoal, nao comercial)"}
@@ -125,11 +130,11 @@ def _focus_anual(indicador: str, ano: int, base_calculo: int = 0) -> dict | None
     }
 
 
-def _focus_ano_atual_e_seguinte(indicador: str) -> pd.DataFrame | None:
+def _focus_multi_ano(indicador: str, quantidade_anos: int = 3) -> pd.DataFrame | None:
     ano_atual = datetime.now(TZ).year
     try:
         linhas = []
-        for ano in (ano_atual, ano_atual + 1):
+        for ano in range(ano_atual, ano_atual + quantidade_anos):
             linha = _focus_anual(indicador, ano)
             if linha is not None:
                 linhas.append(linha)
@@ -142,17 +147,18 @@ def _focus_ano_atual_e_seguinte(indicador: str) -> pd.DataFrame | None:
 
 @st.cache_data(ttl=_TTL_SERIES, show_spinner=False)
 def obter_focus_ipca() -> pd.DataFrame | None:
-    """Expectativa de mercado (Focus/BC) pra IPCA do ano corrente e do
-    proximo: mediana, media e numero de respondentes. None se a consulta
-    falhar ou nao vier nenhum dado."""
-    return _focus_ano_atual_e_seguinte("IPCA")
+    """Expectativa de mercado (Focus/BC) pra IPCA do ano corrente e dos
+    dois seguintes: mediana, media e numero de respondentes. None se a
+    consulta falhar ou nao vier nenhum dado."""
+    return _focus_multi_ano("IPCA")
 
 
 @st.cache_data(ttl=_TTL_SERIES, show_spinner=False)
 def obter_focus_selic() -> pd.DataFrame | None:
     """Expectativa de mercado (Focus/BC) pra Selic (fim de periodo) do ano
-    corrente e do proximo. None se a consulta falhar ou nao vier dado."""
-    return _focus_ano_atual_e_seguinte("Selic")
+    corrente e dos dois seguintes. None se a consulta falhar ou nao vier
+    dado."""
+    return _focus_multi_ano("Selic")
 
 
 def _numero_br(txt: str) -> float:
@@ -241,3 +247,22 @@ def obter_curva_pre(data_referencia: date | None = None) -> pd.DataFrame | None:
         raise ValueError(f"sem publicacao da ANBIMA nos 7 dias antes de {data_referencia}")
     except Exception:
         return None
+
+
+def obter_cenario_global() -> list:
+    """Cenario global (ouro, petroleo Brent/WTI, minerio de ferro,
+    Treasuries 10 anos, VIX) - config.CENARIO_GLOBAL, reusando o mesmo
+    mecanismo de lote de data/mercado.py:obter_mercados_globais (todos os
+    symbols ja vem no formato exato que o yfinance espera, sem sufixo
+    '.SA'). [] se o lote falhar."""
+    nomes = list(CENARIO_GLOBAL.keys())
+    symbols = tuple(CENARIO_GLOBAL.values())
+    df = _baixar_lote_bruto(symbols)
+    if df is None:
+        return []
+    resultado = []
+    for nome, symbol in zip(nomes, symbols):
+        linha = _linha_papel(df, nome, symbol)
+        if linha:
+            resultado.append({"nome": nome, "preco": linha["preco"], "variacao_pct": linha["variacao_pct"]})
+    return resultado

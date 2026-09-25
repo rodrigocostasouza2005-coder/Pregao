@@ -3,6 +3,25 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-25 (redesign — ETAPA 3: MACRO)
+
+- **Focus multi-ano:** tabela FOCUS IPCA/SELIC na aba MACRO passou de
+  2 colunas (ano atual + seguinte) pra 3 (ano atual + dois seguintes),
+  mesma fonte (Olinda/BC), sem chamada extra por ano (já buscava um
+  request por ano/indicador).
+- **Painel CENÁRIO GLOBAL (novo):** ouro, petróleo Brent/WTI, minério de
+  ferro (SGX TSI CFR China), Treasuries 10 anos e VIX — preço + variação
+  do dia, via yfinance (mesmo mecanismo de lote já usado pros mercados
+  globais da aba MERCADO). Agenda econômica/próxima reunião do Copom
+  ficam de fora por enquanto: exigiria uma fonte de calendário confiável
+  que o projeto não tem hoje (não inventamos datas).
+- Arquivos: `config.py` (`CENARIO_GLOBAL`), `data/macro.py`
+  (`obter_cenario_global`, `_focus_multi_ano`), `ui/macro_tab.py`.
+- Testes: `compileall` limpo; `obter_cenario_global`/`obter_focus_ipca`/
+  `obter_focus_selic` rodados contra dado real (6/6 itens do cenário
+  global, 3 anos em ambos os Focus); AppTest em todas as 9 seções
+  (instância nova por aba, sem exceção).
+
 ## 2026-09-24 (modo autônomo 3 — bugs P0/P1)
 
 - **P0.1 — indicadores (P/L, P/VP, DY, valor de mercado) voltaram a

@@ -1033,6 +1033,53 @@ ficou errada e mascarava EQUITY não sendo testado de verdade.
   (não só "sem exceção").
 - Commit: enviado.
 
+## REDESIGN DO TERMINAL — ETAPA 3 (MACRO)
+Plano completo em `C:\Users\Dell\.claude\plans\mutable-meandering-peacock.md`.
+Escopo da etapa: expectativas Focus em tabela multi-ano, cenário global.
+Agenda econômica/próxima reunião do Copom ficam de fora (sem fonte de
+calendário confiável — mesmo princípio já aplicado nas lives da Genial e
+no resto do projeto: não inventar dado).
+
+### 1. Focus multi-ano
+`data/macro.py`: `_focus_ano_atual_e_seguinte` generalizada pra
+`_focus_multi_ano(indicador, quantidade_anos=3)` — mesmo request por ano
+de antes (1 por indicador/ano), só passou a pedir 3 anos em vez de 2.
+`obter_focus_ipca`/`obter_focus_selic` (mesma assinatura, sem breaking
+change pros chamadores) agora retornam ano atual + dois seguintes.
+`ui/macro_tab.py`: `_linha_focus` e o `colspan` da tabela generalizados
+pra `QUANTIDADE_ANOS_FOCUS=3` em vez de hardcoded 2.
+
+### 2. Painel CENÁRIO GLOBAL (novo)
+`config.CENARIO_GLOBAL` (novo, mesmo padrão de `INDICES_GLOBAIS`): ouro
+(`GC=F`), Brent (`BZ=F`), WTI (`CL=F`), minério de ferro (`TIO=F` —
+futuro SGX TSI CFR China), Treasuries 10 anos (`^TNX`) e VIX (`^VIX`).
+
+**Verificação antes de codar** (a preocupação do plano original era se o
+yfinance cobria minério de ferro): testado os 6 tickers contra dado real
+— todos retornaram preço válido, inclusive `TIO=F`. `^TNX` confirmado
+como já vindo em % a.a. direto (histórico de 1 mês variando 4.6-5.2, sem
+precisar dividir por 10 como o índice CBOE tradicional sugeriria).
+
+`data/macro.py:obter_cenario_global()` reusa `_baixar_lote_bruto`/
+`_linha_papel` de `data/mercado.py` (import direto dos helpers privados,
+mesmo padrão já usado em `data/diagnostico.py` pra `data/news.py`) — sem
+duplicar a lógica de lote/cálculo de variação. `ui/macro_tab.py`:
+`_painel_cenario_global` (mesmo layout de cards do `_painel_globais` da
+aba MERCADO), registrado em `REGISTRO_PAINEIS` (reordenável em CONFIG).
+
+- Arquivos: `config.py` (`CENARIO_GLOBAL`), `data/macro.py`
+  (`obter_cenario_global`, `_focus_multi_ano`), `ui/macro_tab.py`
+  (`_painel_cenario_global`, `_linha_focus` generalizada).
+- Testes: `compileall` limpo; `obter_cenario_global`/`obter_focus_ipca`/
+  `obter_focus_selic` rodados contra dado real (6/6 itens do cenário
+  global com preço+variação válidos; Focus IPCA/Selic com 3 anos cada,
+  2026/2027/2028); AppTest em todas as 9 seções (VISÃO GERAL, EQUITY,
+  MACRO, RESEARCH, NEWS, CVM, TOP MERCADO, MERCADO, CONFIG — instância
+  nova por aba, sem exceção); conferido via `at.markdown` que "CENÁRIO
+  GLOBAL" e "FOCUS IPCA" aparecem de verdade no HTML da aba MACRO (não
+  só "sem exceção").
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

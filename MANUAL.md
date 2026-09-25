@@ -48,14 +48,21 @@ Indicadores macroeconômicos brasileiros.
   (Banco Central/CMN). Fonte: SGS do Banco Central (`api.bcb.gov.br`).
 - **SELIC/CDI**: taxa meta e CDI, histórico configurável. Fonte: SGS.
 - **FOCUS**: expectativas de mercado (mediana) pro IPCA e Selic, ano
-  atual e seguinte. Fonte: Olinda/BC (`olinda.bcb.gov.br`).
+  atual e os dois seguintes. Fonte: Olinda/BC (`olinda.bcb.gov.br`).
 - **CURVA PRÉ (ETTJ)**: estrutura a termo da taxa de juros prefixada.
   Fonte: ANBIMA (scraping de uma página pública, não é API oficial —
   mais frágil que as fontes do BC).
+- **CENÁRIO GLOBAL**: ouro, petróleo (Brent/WTI), minério de ferro
+  (futuro SGX TSI CFR China), Treasuries 10 anos e VIX — preço e
+  variação do dia. Fonte: Yahoo Finance (yfinance), mesmo mecanismo de
+  lote usado pelos mercados globais da aba MERCADO.
 
 **Limitações conhecidas:** curva ANBIMA só guarda ~5-6 pregões de
 histórico rolante (comparações "1 mês atrás" não funcionam de verdade —
 ver BACKLOG.md). Legenda da curva pode sobrepor em telas estreitas.
+Agenda econômica (próxima reunião do Copom, calendário de indicadores)
+não está implementada: exigiria uma fonte de calendário confiável que o
+projeto ainda não integra — não inventamos datas.
 
 ## RESEARCH
 

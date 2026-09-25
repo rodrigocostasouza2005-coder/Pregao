@@ -10,6 +10,7 @@ from plotly.subplots import make_subplots
 import config
 from data.macro import (
     obter_cdi,
+    obter_cenario_global,
     obter_curva_pre,
     obter_focus_ipca,
     obter_focus_selic,
@@ -143,17 +144,19 @@ def _painel_resumo(prefs):
         unsafe_allow_html=True,
     )
 
+    QUANTIDADE_ANOS_FOCUS = 3
+
     def _linha_focus(nome, df):
         if df is None or df.empty:
             faltando.append(f"Focus {nome}")
-            return "<td class='cinza'>—</td><td class='cinza'>—</td>"
+            return "<td class='cinza'>—</td>" * QUANTIDADE_ANOS_FOCUS
         celulas = ""
         for _, linha in df.iterrows():
             celulas += (
                 f"<td class='neutro'>{int(linha['ano_referencia'])}: "
                 f"<span style='font-weight:600;'>{_fmt(linha['mediana_pct'], 2, prefs)}%</span></td>"
             )
-        celulas += "<td class='cinza'>—</td>" * (2 - df.shape[0])
+        celulas += "<td class='cinza'>—</td>" * (QUANTIDADE_ANOS_FOCUS - df.shape[0])
         return celulas
 
     data_calculo_focus = None
@@ -166,8 +169,8 @@ def _painel_resumo(prefs):
         f"""
         <table style="width:100%; border-collapse:collapse; margin-top:0.3rem;">
         <thead><tr>
-            <th colspan="2" style="text-align:left; font-weight:400;" class="cinza">FOCUS IPCA (mediana)</th>
-            <th colspan="2" style="text-align:left; font-weight:400;" class="cinza">FOCUS SELIC (mediana)</th>
+            <th colspan="{QUANTIDADE_ANOS_FOCUS}" style="text-align:left; font-weight:400;" class="cinza">FOCUS IPCA (mediana)</th>
+            <th colspan="{QUANTIDADE_ANOS_FOCUS}" style="text-align:left; font-weight:400;" class="cinza">FOCUS SELIC (mediana)</th>
         </tr></thead>
         <tbody><tr>
             {_linha_focus("IPCA", focus_ipca_df)}
@@ -340,6 +343,46 @@ def _painel_selic_cdi(prefs):
         st.warning("Indisponível no momento: " + ", ".join(faltando) + ".")
 
 
+_UNIDADES_CENARIO_GLOBAL = {
+    "Ouro": "US$/oz t",
+    "Brent": "US$/barril",
+    "WTI": "US$/barril",
+    "Minério de Ferro": "US$/ton",
+    "Treasuries 10A": "% a.a.",
+    "VIX": "pts",
+}
+
+
+def _fmt_pct(valor, prefs):
+    sinal = "+" if valor >= 0 else ""
+    return f"{sinal}{config.formatar_numero(valor, 2, prefs['formato_numerico'])}%"
+
+
+def _painel_cenario_global(prefs):
+    st.markdown('<div class="painel-titulo">CENÁRIO GLOBAL</div>', unsafe_allow_html=True)
+    dados = obter_cenario_global()
+    if not dados:
+        st.markdown("<div class='cinza' style='font-size:0.78rem;'>—</div>", unsafe_allow_html=True)
+        return
+    partes = []
+    for d in dados:
+        cls = "alta" if d["variacao_pct"] >= 0 else "baixa"
+        unidade = _UNIDADES_CENARIO_GLOBAL.get(d["nome"], "")
+        partes.append(
+            f"<div style='min-width:9rem;'><span class='cinza' style='font-size:0.7rem;'>{d['nome']}</span><br>"
+            f"<span class='neutro' style='font-size:0.85rem;'>{config.formatar_numero(d['preco'], 2, prefs['formato_numerico'])}</span> "
+            f"<span class='cinza' style='font-size:0.62rem;'>{unidade}</span><br>"
+            f"<span class='{cls}' style='font-size:0.78rem;'>{_fmt_pct(d['variacao_pct'], prefs)}</span></div>"
+        )
+    st.markdown(
+        "<div style='display:flex; flex-wrap:wrap; gap:1rem;'>" + "".join(partes) + "</div>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Fonte: Yahoo Finance (futuros/índices) — cotação com atraso típico de mercado, uso informativo."
+    )
+
+
 # paineis registrados (ver ui/paineis.py) - ordem reorganizavel por
 # usuario em CONFIG. RESUMO fica de fora do registro de proposito:
 # funciona como abertura fixa da aba, sempre em primeiro (mesmo padrao
@@ -348,6 +391,7 @@ REGISTRO_PAINEIS = [
     ("curva_pre", "Curva pré (ETTJ ANBIMA)", _painel_curva_pre),
     ("ipca", "IPCA", _painel_ipca),
     ("selic_cdi", "Selic x CDI", _painel_selic_cdi),
+    ("cenario_global", "Cenário global", _painel_cenario_global),
 ]
 
 

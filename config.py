@@ -176,6 +176,21 @@ INDICES_GLOBAIS = {
     "Xangai (SSE)": "000001.SS",
 }
 
+# --- Cenario global (aba MACRO, painel CENARIO GLOBAL) - todos os symbols
+# ja vem no formato exato que o yfinance espera (sem sufixo .SA), mesmo
+# padrao de INDICES_GLOBAIS. Minerio de ferro (TIO=F, futuro SGX TSI CFR
+# China) e Treasuries 10 anos (^TNX, ja em % a.a. direto - confirmado
+# testando o historico real, sem precisar dividir por 10) testados e
+# confirmados disponiveis no yfinance.
+CENARIO_GLOBAL = {
+    "Ouro": "GC=F",
+    "Brent": "BZ=F",
+    "WTI": "CL=F",
+    "Minério de Ferro": "TIO=F",
+    "Treasuries 10A": "^TNX",
+    "VIX": "^VIX",
+}
+
 # --- Velocidade do letreiro animado da ticker tape (pixels por segundo) --
 VELOCIDADES_TICKER_TAPE = {"LENTA": 25, "NORMAL": 50, "RAPIDA": 80}
 
