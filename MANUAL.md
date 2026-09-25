@@ -190,6 +190,33 @@ reaparecer o que foi escondido de propósito.
 
 ## CVM
 
-Em desenvolvimento por outra sessão de trabalho — ver `data/cvm.py`,
-`ui/cvm_tab.py`. Não documentado aqui ainda (evitar descrever algo que
-pode mudar antes de terminar).
+Documentos oficiais (fato relevante, comunicado ao mercado, resultados,
+proventos, calendário de eventos) das empresas da sua watchlist. Fonte:
+dados abertos da CVM (`dados.cvm.gov.br`, dataset IPE) — atualização
+diária/semanal da fonte, não é tempo real (para o texto oficial
+imediato, consulte o RAD/ENET da própria CVM).
+
+- **Busca**: campo de texto acima dos filtros, procura em ticker/
+  assunto/tipo/categoria original — combina com os filtros de ticker e
+  tipo abaixo (ex: ticker=PETR4 + tipo=FATO RELEVANTE + busca
+  "dividendos"). Tudo em memória sobre os documentos já coletados, não
+  dispara nova consulta à CVM.
+- **Filtros**: ticker (pills) e tipo de documento (pills) — os mesmos
+  cinco tipos oficiais (FATO RELEVANTE, COMUNICADO, RESULTADOS,
+  PROVENTOS, CALENDÁRIO).
+- **Tabela**: DATA / TICKER / TIPO / DOCUMENTO-ASSUNTO, assunto ocupando
+  a maior parte da largura, com ellipsis + tooltip pro título completo
+  quando não cabe. Clique no assunto abre um card com resumo por IA
+  (Groq, sob demanda, nunca automático) e link pro documento original.
+- **Paginação**: 50 documentos por página, reseta pra página 1 quando
+  filtro/busca muda.
+- **Selo CONFIRMADA em NEWS**: quando uma notícia bate com um Fato
+  Relevante/Comunicado da CVM do mesmo ticker (sobreposição de
+  assunto ≥40%, até 2 dias de diferença), o card da notícia ganha esse
+  selo e um link direto pro documento oficial.
+
+**Limitações conhecidas:** cobre só as ~64 empresas de
+`config.IBOVESPA_COMPOSICAO` presentes na sua watchlist (mapa
+ticker→CNPJ vem do FCA da própria CVM); BDRs de empresa estrangeira
+(MELI34 etc.) não têm registro direto na CVM brasileira, então não
+aparecem aqui.

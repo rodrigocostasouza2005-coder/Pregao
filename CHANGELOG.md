@@ -3,6 +3,48 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-25 (upgrade aba CVM — pedido explícito, fora da ordem do redesign)
+
+- **Bug real de raiz corrigido:** a tabela da aba CVM usava
+  `st.columns([88, 62, 118, 1])` pra DATA/TICKER/TIPO/ASSUNTO — esses
+  números são pesos RELATIVOS (não pixels), então a coluna de assunto
+  recebia 1/269 da largura (~0,4%), não "o resto da tela" como o
+  comentário antigo sugeria. Era a causa raiz do conteúdo cortado à
+  direita, não a truncagem em si. Corrigido pra `[9, 8, 16, 55]`
+  (assunto ~62% da largura) + cabeçalho de coluna novo (a tabela não
+  tinha nenhum antes).
+- **Busca textual (nova):** campo "Buscar documentos..." acima dos
+  filtros, procura em ticker/assunto/tipo/categoria original
+  (normalizado, sem acento/maiúscula), combinável com os filtros de
+  ticker/tipo já existentes — tudo em memória sobre os documentos já
+  coletados, nenhuma consulta nova à CVM.
+- **Paginação real (nova):** substituiu o "VER MAIS" incremental por
+  navegação por página (‹ Anterior / números / Próxima ›), 50 documentos
+  por página, reseta pra página 1 quando filtro/busca muda. Removida a
+  janela automática de 30 dias (a ordenação por data mais recente
+  primeiro já resolve isso naturalmente com paginação de verdade).
+- **Hover de linha + badges mais compactos:** cada linha agora é um
+  `st.container(key=...)` de verdade (antes as colunas eram soltas),
+  permitindo highlight de fundo ao passar o mouse; badges de tipo com
+  padding/alinhamento mais consistentes.
+- **Contador reformatado:** "N resultados · M documentos" quando há
+  filtro ativo, só "M documentos" quando não há.
+- **Descrição da aba compactada:** de um parágrafo longo pra duas linhas
+  curtas (principal + secundária).
+- Arquivos: `ui/cvm_tab.py` (reescrito). `data/cvm.py` não mudou — a
+  pipeline coleta→cache→filtro já era 100% em memória, sem nova consulta
+  por filtro (confirmado antes de mexer, não precisou de mudança).
+- Testes: `compileall` limpo; AppTest em todas as 9 seções sem exceção;
+  teste dirigido da CVM cobrindo carga inicial (653 docs reais),
+  filtro ticker (PETR4: 271), filtro ticker+tipo (37), busca combinada
+  com os dois filtros (8), reset pra TODOS (volta a 653, página volta a
+  1), paginação (avança pra página 2), e abertura de documento (dialog
+  abre) — todos passando contra dado real. **Validação visual em
+  navegador pendente**: a extensão Chrome não conectou nesta sessão,
+  então não deu pra confirmar visualmente (layout/cores/responsividade)
+  antes do commit, a pedido do Rodrigo. Fica pendente conferir na
+  prática.
+
 ## 2026-09-25 (redesign — ETAPA 4: EQUITY)
 
 - **Painel FUNDAMENTOS (novo, dentro de INDICADORES):** ROE, margem

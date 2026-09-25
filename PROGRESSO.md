@@ -1135,6 +1135,98 @@ e a ressalva de bancos/seguradoras sem margem EBITDA.
   DÍVIDA LÍQUIDA aparecem de verdade no HTML da aba EQUITY.
 - Commit: enviado.
 
+## UPGRADE ABA CVM (pedido explícito do Rodrigo, 2026-09-25)
+Pedido pontual e detalhado do Rodrigo, fora da ordem do roadmap de
+redesign (ETAPA 5 seria a próxima, mas este pedido tem prioridade
+explícita e escopo isolado). Escopo: só a aba CVM do Pregão - não
+confundir com o TVB Radar (problema de rerender/scroll de filtros
+mencionado no pedido é de outro projeto, não tratado aqui).
+
+**Investigação antes de mexer** (pedida explicitamente no prompt):
+- Coleta: `data/cvm.py` já baixa o IPE (CSV da CVM) 1x por ano,
+  cacheado 6h (`_ipe_ano`, `st.cache_data`), filtra em memória por CNPJ.
+- Armazenamento: reusa `research_itens` no Supabase (mesma tabela do
+  research geral, `casa="CVM"`).
+- Filtros: já operavam 100% em memória sobre `documentos` (lista já
+  coletada) - trocar ticker/tipo NUNCA disparava nova consulta à CVM.
+  Confirmado que a arquitetura pedida no item 10 do prompt ("nunca
+  reconsultar a CVM ao filtrar") já existia - não precisou de mudança
+  em `data/cvm.py`.
+- Renderização: `ui/cvm_tab.py`, uma linha por documento via
+  `st.columns()`, sem cabeçalho de coluna.
+- Cache: confirmado acima (`_TTL_DOCUMENTOS=6h`, `_TTL_MAPA_TICKER=24h`).
+- Abertura de documento: `st.dialog` com resumo sob demanda (Groq) + link
+  pro documento original - já funcionava, preservado sem mudança de
+  fluxo.
+
+**Achado real (causa raiz do "conteúdo cortado à direita")**:
+`_COLS = [88, 62, 118, 1]` em `st.columns()` - esses números são PESOS
+RELATIVOS entre si, não pixels. A coluna de assunto recebia 1/269 da
+largura total (~0,4%), o oposto do que o comentário antigo dizia
+("peso relativo, cresce pra preencher"). Corrigido pra `[9, 8, 16, 55]`
+(assunto ≈62% da largura útil).
+
+**Implementado** (`ui/cvm_tab.py`, reescrito):
+1. Colunas redistribuídas (ver achado acima) + cabeçalho de tabela novo
+   (DATA/TICKER/TIPO/DOCUMENTO-ASSUNTO com divisor), que não existia.
+2. Busca textual (`st.text_input`, placeholder "Buscar documentos..."),
+   normalizada (sem acento/caixa), procura em ticker+assunto+tipo_label+
+   categoria_original, combinada via AND com os pills de ticker/tipo.
+3. Paginação real substituindo o "VER MAIS" incremental: 50/página,
+   `‹ Anterior` / janela de números ao redor da página atual (±2) +
+   primeira/última sempre visíveis com "…" nos buracos / `Próxima ›`.
+   Página reseta pra 1 quando o fingerprint do filtro (ticker, tipo,
+   busca) muda - sem isso, trocar de filtro com a página 3 selecionada
+   podia renderizar uma página vazia.
+4. Removida a janela automática de 30 dias + "ver mais pra expandir":
+   com paginação de verdade e ordenação por data desc, os documentos
+   mais recentes já aparecem primeiro na página 1 sem precisar de uma
+   heurística de janela escondida - simplifica o modelo mental (o
+   contador mostra o total real, não "total dentro de 30 dias").
+5. Hover de linha: cada linha virou um `st.container(key=f"cvm-row-...")`
+   de verdade (antes eram só `st.columns()` soltas, sem contêiner
+   compartilhado) - permite `div[class*="st-key-cvm-row-"]:hover` com
+   highlight de fundo sutil, indicando que a linha é clicável.
+6. Badges (`_CLASSE_TIPO`) com padding/alinhamento mais consistentes,
+   mesmas duas classes de antes (destaque laranja pra FATO RELEVANTE,
+   outline cinza pro resto) - só polimento visual, sem mudar a lógica.
+7. Contador reformatado: "N resultados · M documentos" quando há
+   filtro/busca ativo, só "M documentos" quando não há (evita
+   redundância tipo "653 resultados · 653 documentos").
+8. Descrição da aba compactada: parágrafo longo (4 linhas) virou duas
+   linhas curtas (principal + secundária "Atualização periódica · dados
+   públicos da CVM").
+
+**Bug de implementação pego e corrigido antes de testar**: a primeira
+versão tentava envolver a paginação num `<div class="cvm-paginacao">`
+aberto num `st.markdown()` e fechado em outro `st.markdown()` separado,
+esperando que o flexbox se aplicasse aos `st.columns()`/botões
+renderizados no meio - não funciona (cada `st.markdown` isola seu HTML
+num container próprio; uma tag aberta num não "vaza" pro próximo). Não
+chegou a ser commitado - corrigido antes do primeiro teste, trocando
+pelo padrão correto (`st.container(key=...)`, que de fato agrupa os
+elementos renderizados dentro do `with` num container real do DOM).
+
+- Arquivos: `ui/cvm_tab.py` (reescrito). `data/cvm.py` sem mudanças.
+- Testes: `compileall` limpo; AppTest em todas as 9 seções (instância
+  nova por aba) sem exceção; teste dirigido da CVM (scratchpad) cobrindo
+  contra dado real (653 documentos de PETR4+VALE3+ITUB4, mesmo número
+  citado no pedido original do Rodrigo como exemplo, coincidência
+  confirmada): carga inicial (653), filtro ticker=PETR4 (271), +
+  tipo=FATO_RELEVANTE (37), + busca "acionista" (8), reset pra TODOS
+  (volta a 653, página volta a 1), paginação (Próxima avança pra página
+  2), abertura de documento (dialog abre e carrega resumo).
+- **Validação visual pendente**: a extensão Chrome não conectou nesta
+  sessão (`tabs_context_mcp` retornou "extension not connected" duas
+  vezes) - não deu pra confirmar visualmente layout/cores/responsividade
+  num navegador de verdade. Rodrigo pediu pra commitar sem esperar por
+  isso; ficou um preview isolado testado localmente
+  (`streamlit run` apontando direto pra `render_cvm()`, fora do repo,
+  sem tocar em `auth.py`/login) que confirmou o servidor sobe e responde
+  HTTP 200, mas sem inspeção visual de verdade. Conferir na prática
+  (1366px, 1920px, tela menor) na próxima vez que abrir o app.
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas
