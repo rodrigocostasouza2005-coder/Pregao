@@ -3,6 +3,28 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-25 (ETAPA 6 — RESEARCH: filtros consistentes com o resto do app)
+
+- **Filtros de Casa/Tipo/Ticker (aba RESEARCH)** trocados de
+  `st.multiselect`/`st.selectbox` (chips genéricos do Streamlit) para
+  `st.pills` (mesmo componente visual usado em CVM/NEWS/TOP MERCADO/
+  MERCADO) — Casa e Tipo em modo multi-seleção (mesmo comportamento de
+  antes, tudo selecionado por padrão), Ticker em seleção única com
+  "Todos". Zero mudança na lógica de filtro em si (mesma comparação
+  `in`/`==` sobre as mesmas listas) — só o widget mudou.
+- Adicionado `flex-wrap` nos grupos de pills da aba (mesma regra já
+  usada em NEWS/CVM) — sem isso, Tipo (até 6 opções) podia estourar a
+  largura de uma coluna de 1/3.
+- Auditoria do resto da aba (feed de relatórios, painel watchlist,
+  cabeçalho): sem achados adicionais — já bem polido de sessões
+  anteriores, nenhuma mudança fora dos filtros.
+- Arquivos: `ui/research_tab.py`.
+- Testes: `compileall` limpo; teste dirigido com dados mockados (Genial/
+  XP bloqueadas neste sandbox, não dá pra testar com dado real de
+  research aqui) confirmando as pills vêm com tudo selecionado por
+  padrão e o filtro por casa/ticker funciona (3→2→1 relatórios); AppTest
+  nas 9 seções sem exceção.
+
 ## 2026-09-25 (ETAPA 5 — CVM: bloco de destaques)
 
 - **Painel DESTAQUES (novo)** no topo da aba CVM, antes da busca/filtros:

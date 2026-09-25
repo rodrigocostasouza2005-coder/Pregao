@@ -1327,6 +1327,45 @@ Três campos, layout de linha única (flex, sem cards):
   regressão; AppTest nas 9 seções sem exceção.
 - Commit: enviado.
 
+## ETAPA 6 (NEWS/RESEARCH/TOP MERCADO) — filtros do RESEARCH (2026-09-25)
+Continuação do roadmap ("continua, oq você acha que podemos melhorar" -
+Rodrigo delegou a escolha). Auditoria das 3 abas do escopo:
+
+- **NEWS/TOP MERCADO**: já muito polidas (várias rodadas de correção em
+  sessões anteriores - performance com `@st.fragment`, agrupamento por
+  entidade, formatação, tooltip cobrindo dialog, BDR). Nenhum achado
+  novo que justifique mudança agora - `_COLS_PADRAO`/`_COLS_RANK` já têm
+  pesos corretos (manchete domina a largura), diferente do bug real que
+  a CVM tinha.
+- **RESEARCH**: único achado real - filtros de Casa/Tipo (`st.multiselect`)
+  e Ticker (`st.selectbox`) usam os componentes genéricos do Streamlit,
+  visualmente destoando do padrão de pills (`st.pills`) usado em TODAS
+  as outras abas com filtro (CVM, NEWS, TOP MERCADO, MERCADO).
+
+**Implementado** (`ui/research_tab.py`):
+- Casa/Tipo: `st.multiselect` → `st.pills(selection_mode="multi")`,
+  mesmo `default=`(lista completa, tudo selecionado) de antes.
+- Ticker: `st.selectbox` → `st.pills(selection_mode="single")` com
+  "Todos" como opção, mesmo padrão de CVM/NEWS.
+- Lógica de filtro (`r["casa"] in filtro_casa`, etc.) **intocada** - só
+  o widget mudou, o formato do valor retornado (lista pra multi, string
+  pra single) é o mesmo dos widgets antigos.
+- `_injetar_css()` novo (módulo não tinha CSS próprio antes) só com a
+  regra de `flex-wrap` nos grupos de pills - mesma regra já usada em
+  `ui/news_tab.py`/`ui/cvm_tab.py`, preventiva contra estouro de largura
+  com Tipo (até 6 opções) numa coluna de 1/3.
+
+- Arquivos: `ui/research_tab.py`.
+- Testes: `compileall` limpo; **Genial e XP bloqueadas neste sandbox**
+  (mesma limitação de sempre, documentada em várias sessões) - feed real
+  vem vazio aqui, então testei com `preparar_leitura` mockado
+  (`unittest.mock.patch.object`, 3 relatórios sintéticos, 2 casas, 2
+  tipos, 2 tickers): confirmado que Casa/Tipo vêm com tudo pré-selecionado
+  (mesmo comportamento do multiselect antigo), filtro por casa
+  (3→2 relatórios) e por ticker (→1 relatório) funcionam corretamente;
+  AppTest nas 9 seções sem exceção.
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

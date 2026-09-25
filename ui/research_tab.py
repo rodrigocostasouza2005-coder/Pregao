@@ -24,6 +24,20 @@ _AVISO_COTA = "Cota gratuita de resumo por IA esgotada por enquanto — os links
 # data/research/__init__.py
 _EXTRATOR_POR_CASA = {c["nome"]: c["extrator_texto"] for c in CASAS}
 
+# pills de filtro (Casa/Tipo/Ticker) quebram linha em vez de forcar
+# rolagem horizontal - sem isso, Tipo (ate 6 opcoes) ou Casa (varia com
+# quantas fontes estao ativas) podem estourar a largura da coluna de
+# 1/3 (st.columns(3)); mesma regra ja usada em ui/news_tab.py/ui/cvm_tab.py,
+# repetida aqui porque este modulo nao importava CSS de nenhum dos dois.
+_CSS_RESEARCH = """
+[data-testid="stButtonGroup"] { flex-wrap: wrap !important; row-gap: 0.3rem; }
+"""
+
+
+def _injetar_css():
+    st.markdown(f"<style>{_CSS_RESEARCH}</style>", unsafe_allow_html=True)
+
+
 # recomendacoes/swing trade da Genial sao SEMPRE ao vivo (obter_recomendacoes/
 # obter_swing_trade so' tem cache em memoria de processo, TTL_COLETA - nunca
 # passam pelo Supabase nem pelo gate tentar_coleta_automatica de
@@ -195,14 +209,19 @@ def _painel_feed(prefs: dict, relatorios: list, falhas: list):
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        filtro_casa = st.multiselect("Casa", casas_no_feed, default=casas_no_feed, key="research_filtro_casa")
+        filtro_casa = st.pills(
+            "Casa", casas_no_feed, default=casas_no_feed, selection_mode="multi", key="research_filtro_casa",
+        ) or []
     with col2:
-        filtro_tipo = st.multiselect(
-            "Tipo", tipos_no_feed, default=tipos_no_feed,
+        filtro_tipo = st.pills(
+            "Tipo", tipos_no_feed, default=tipos_no_feed, selection_mode="multi",
             format_func=lambda t: _TIPO_LABEL.get(t, t), key="research_filtro_tipo",
-        )
+        ) or []
     with col3:
-        filtro_ticker = st.selectbox("Ticker", ["Todos"] + tickers_no_feed, key="research_filtro_ticker")
+        filtro_ticker = st.pills(
+            "Ticker", ["Todos"] + tickers_no_feed, default="Todos", selection_mode="single",
+            key="research_filtro_ticker",
+        ) or "Todos"
 
     filtrados = [
         r for r in relatorios
@@ -230,6 +249,7 @@ def render_research(prefs: dict):
     data/research/base.py). Se a coleta atualizar algo, um st.rerun()
     reexibe a tela com os dados novos; se falhar, fica com o que ja tinha
     mostrado + um aviso de uma linha - nunca trava a tela."""
+    _injetar_css()
     st.markdown('<div class="painel-titulo">RESEARCH</div>', unsafe_allow_html=True)
 
     casas_ativas = _casas_ativas(prefs)
