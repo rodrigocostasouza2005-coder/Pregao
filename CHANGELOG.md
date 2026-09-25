@@ -3,6 +3,35 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-25 (upgrade tela inicial/login — pedido explícito)
+
+- **Tela de apresentação (sem login) redesenhada** de ponta a ponta:
+  título forte ("SEU TERMINAL DE MERCADO." com cursor piscando), subtítulo
+  e microcopy curtos (substituem o parágrafo longo anterior), linha de
+  tags (B3 · MACRO · JUROS · NEWS · RESEARCH · CVM), prévia ilustrativa
+  do terminal (IBOVESPA/DÓLAR + mini watchlist + notícias mock,
+  claramente rotulada "PRÉVIA ILUSTRATIVA" — não são dados reais) e botão
+  "ENTRAR COM GOOGLE" com ícone oficial do Google (SVG embutido, sem
+  request externo) e hover discreto.
+- **Zero mudança em autenticação**: `st.login()`/`st.user`/sessão/rotas
+  intocados — só a apresentação (`auth.tela_apresentacao()`) mudou.
+- **Decisão**: prévia do terminal usa dados estáticos/ilustrativos, não
+  busca cotação real — evita adicionar chamada de rede numa tela que
+  qualquer visitante anônimo carrega (antes de qualquer login/cache por
+  usuário), e o rótulo "PRÉVIA ILUSTRATIVA" deixa claro que não é dado ao
+  vivo (consistente com o princípio do projeto de nunca fazer dado
+  passar por real quando não é).
+- Arquivos: `auth.py` (reescrito).
+- Testes: `compileall` limpo; AppTest da tela sem login (sem mock de
+  autenticação — testa o caminho real de visitante anônimo) confirma
+  render sem exceção e todos os elementos (hero/tags/prévia/botão)
+  presentes no HTML; AppTest nas 9 seções autenticadas sem exceção
+  (confirma que nada fora da tela de login quebrou). **Validação visual
+  em navegador não foi possível** (extensão Chrome não conectou nesta
+  sessão, confirmado pelo Rodrigo) — commitado sem essa confirmação, a
+  pedido dele; fica pendente conferir visualmente (hero/prévia/botão/
+  responsividade) na próxima vez que abrir o app.
+
 ## 2026-09-25 (upgrade aba CVM — pedido explícito, fora da ordem do redesign)
 
 - **Bug real de raiz corrigido:** a tabela da aba CVM usava

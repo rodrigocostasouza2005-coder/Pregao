@@ -1227,6 +1227,78 @@ elementos renderizados dentro do `with` num container real do DOM).
   (1366px, 1920px, tela menor) na próxima vez que abrir o app.
 - Commit: enviado.
 
+## UPGRADE TELA INICIAL/LOGIN (pedido explícito do Rodrigo, 2026-09-25)
+Pedido pontual, escopo isolado na tela de apresentação (sem login) -
+`auth.py:tela_apresentacao()`. Explicitamente proibido mexer em
+OAuth/sessão/permissões/banco/rotas/outras abas - só a apresentação
+visual dessa tela.
+
+**Diagnóstico do estado anterior**: `tela_apresentacao()` tinha só logo
++ um parágrafo longo (4 linhas, texto corrido) + botão - o "bloco
+central parecia um placeholder" (queixa literal do Rodrigo), com bastante
+área preta vazia embaixo sem uso.
+
+**Implementado** (`auth.py`, reescrito):
+1. Hero: título "SEU TERMINAL DE MERCADO." (com cursor piscando via CSS
+   `@keyframes`, efeito bem sutil) + subtítulo curto + microcopy
+   ("DADOS PÚBLICOS · ATUALIZAÇÃO PERIÓDICA · 100% GRATUITO") -
+   substitui o parágrafo longo anterior.
+2. Linha de tags minimalista (bullet laranja + label cinza uppercase):
+   B3 · MACRO · JUROS · NEWS · RESEARCH · CVM.
+3. Prévia ilustrativa do terminal: caixa com borda (mesmo padrão visual
+   dos painéis do resto do app) mostrando IBOVESPA/DÓLAR no topo, mini
+   grid PETR4/VALE3/ITUB4/JUROS, e "ÚLTIMAS NOTÍCIAS" com 2 manchetes
+   mock. Rotulada "PRÉVIA ILUSTRATIVA" no canto superior da caixa -
+   **decisão deliberada de não buscar dado real aqui** (ver abaixo).
+4. Botão "ENTRAR COM GOOGLE" com ícone "G" oficial (SVG 4 cores,
+   embutido como data URI base64 direto no CSS via `::before` no botão -
+   `st.button` só aceita texto simples no label, não HTML/ícone, então o
+   ícone entra via CSS puro, sem depender de request externo/CDN numa
+   tela que roda antes de qualquer coisa carregar), largura máxima
+   320px (não "gigante"), hover discreto (borda muda pra laranja).
+   Microcopy abaixo: "Acesso gratuito · Entre com sua conta Google para
+   acessar o terminal."
+5. Fade-in sutil (`@keyframes`, opacity+translateY, 0.45s) no painel
+   inteiro ao carregar - única animação, sem partículas/efeitos.
+
+**Decisão — prévia com dado ilustrativo, não real**: o pedido permitia
+explicitamente ("não precisa ser dado real, se for simples reusar
+melhor ainda"). Decidido NÃO buscar cotação real aqui porque essa tela
+carrega ANTES de qualquer login - toda visita anônima (incl. bots/
+crawlers) dispararia uma chamada de rede ao Yahoo Finance sem nenhum
+gate de usuário/cache por sessão, o oposto do princípio de "evitar
+request desnecessária" já seguido no resto do projeto (ver decisão
+equivalente na aba CVM). Resolvido com dado estático rotulado
+"PRÉVIA ILUSTRATIVA" - explícito que não é live, sem fingir ser dado
+real (mesmo princípio de nunca inventar dado, aplicado aqui como "nunca
+disfarçar ilustração de dado real").
+
+**Bug pego e corrigido ANTES de testar** (mesma classe de erro já visto
+no upgrade da aba CVM nesta mesma sessão): a primeira versão tentava
+abrir `<div class="login-wrap">` num `st.markdown()` e fechar em outro
+mais adiante (depois do botão nativo) - não funciona, cada `st.markdown`
+isola seu HTML. Corrigido usando `st.container(border=True,
+key="login-panel")` (que já existia pro painel, só faltava o `key=`) pra
+aplicar a animação de fade-in via CSS no container real, e removendo os
+dois `<div>` órfãos de abertura/fechamento em vez de tentar consertá-los
+- o texto "Acesso gratuito..." abaixo do botão já centraliza sozinho
+via `text-align:center` na própria classe, sem precisar de wrapper.
+
+- Arquivos: `auth.py` (reescrito).
+- Testes: `compileall` limpo; AppTest da tela SEM mock de autenticação
+  (testa o caminho real de visitante anônimo, não o de usuário logado)
+  confirma render sem exceção e presença de hero/tags/prévia/botão no
+  HTML; AppTest nas 9 seções autenticadas (instância nova por aba) sem
+  exceção, confirmando que nada fora do escopo quebrou.
+- **Validação visual pendente**: extensão Chrome não conectou nesta
+  sessão (confirmado pelo Rodrigo: "a extensão do chrome n funciona") -
+  não deu pra confirmar visualmente hero/prévia/botão/responsividade
+  num navegador de verdade. Commitado sem essa confirmação, a pedido
+  dele (mesmo padrão já aceito no upgrade da aba CVM, mesma sessão).
+  Conferir na prática (1366px, 1920px, tela menor) na próxima vez que
+  abrir o app deslogado.
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas
