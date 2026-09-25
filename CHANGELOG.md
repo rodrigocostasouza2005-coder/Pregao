@@ -3,6 +3,32 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-25 (correção urgente — KeyError em produção na aba EQUITY)
+
+- **Bug real relatado pelo Rodrigo em produção**: `KeyError: 'roe'` ao
+  abrir EQUITY, traceback apontando pra tabela FUNDAMENTOS (ETAPA 4).
+- **Causa raiz**: `data/prices.py:obter_indicadores()` usa
+  `_ultimo_indicadores_valido()` (`st.cache_resource`, sobrevive entre
+  deploys no mesmo processo do Streamlit Cloud) como fallback quando a
+  coleta do momento falha. Um valor cacheado ANTES da ETAPA 4 (sem
+  `roe`/`margem_*`/`divida_liquida`, campos adicionados só depois)
+  ficava vivo na memória do processo; quando esse fallback era usado, o
+  dict retornado não tinha as chaves novas — `ind['roe']` em `app.py`
+  quebrava com `KeyError`.
+- **Correção**: a mesclagem do fallback agora começa do schema ATUAL
+  (`resultado`, todas as chaves de hoje presentes) e só sobrescreve com
+  o que `anterior` realmente tiver — garante todas as chaves sempre
+  presentes, mesmo com um cache mais antigo. Reproduzido com um cache
+  falso no formato antigo antes de corrigir, confirmado que o bug some
+  depois.
+- Arquivos: `data/prices.py` (`obter_indicadores`).
+- Testes: `compileall` limpo; reprodução direta do bug (cache simulado
+  no formato pré-ETAPA-4) confirmando `KeyError` ANTES da correção e
+  ausência dele DEPOIS, com os valores antigos preservados e os campos
+  novos virando `None` (não quebra, não inventa dado); `obter_indicadores`
+  com dado real (PETR4) continua retornando todos os campos certos;
+  AppTest nas 9 seções sem exceção.
+
 ## 2026-09-25 (ETAPA 7 — layout configurável: visibilidade + tamanho de painel)
 
 - **Visibilidade e tamanho por painel (MACRO e MERCADO)**: além de

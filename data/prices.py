@@ -303,9 +303,22 @@ def obter_indicadores(ticker: str) -> dict:
 
     anterior = cache_fallback.get(ticker)
     if anterior:
+        # comeca do schema ATUAL (resultado, todos os campos de hoje
+        # presentes, so' com valor None) e so' sobrescreve com o que
+        # 'anterior' realmente tiver - ao contrario de comecar do
+        # 'anterior' e completar por cima, isso garante que a resposta
+        # sempre tem TODAS as chaves do schema atual, mesmo se 'anterior'
+        # foi gravado por uma versao mais antiga do codigo (com menos
+        # campos). Bug real (2026-09-25): _ultimo_indicadores_valido() e'
+        # st.cache_resource, sobrevive entre deploys no mesmo processo do
+        # Streamlit Cloud - um cache antigo (de antes da ETAPA 4 adicionar
+        # roe/margens/divida_liquida) causava KeyError('roe') na UI
+        # quando a coleta do momento falhava e caia nesse fallback.
         # beta e' recalculado sempre (cache proprio de 1h, nao depende
-        # do tk.info) - so os campos vindos do tk.info usam o fallback
-        return {**anterior, "beta": resultado["beta"]}
+        # do tk.info) - so os campos vindos do tk.info usam o fallback.
+        mesclado = {**resultado, **anterior}
+        mesclado["beta"] = resultado["beta"]
+        return mesclado
     return resultado
 
 

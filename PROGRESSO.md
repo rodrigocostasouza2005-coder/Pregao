@@ -1425,6 +1425,55 @@ vez de tela em branco silenciosa nesse caso.
   continuam idênticas).
 - Commit: enviado.
 
+## Correção urgente — KeyError('roe') em produção (2026-09-25)
+Rodrigo reportou erro ao vivo em produção: `KeyError: 'roe'`, traceback
+apontando `app.py` linha 540 (tabela FUNDAMENTOS, ETAPA 4). Pausou a
+ETAPA 8 (busca global) pra investigar na hora.
+
+**Causa raiz**: `data/prices.py:_ultimo_indicadores_valido()` é
+`@st.cache_resource` - o objeto (dict) sobrevive entre deploys DENTRO
+do mesmo processo do Streamlit Cloud (cache de recurso, não de sessão -
+não é limpo a cada `git push`, só quando o processo reinicia de
+verdade). Um valor gravado nesse cache ANTES da ETAPA 4 (schema antigo:
+só `valor_mercado`/`pl`/`pvp`/`dividend_yield`/`beta`) continuou vivo na
+memória; quando a coleta do momento falhava (Yahoo bloqueado/lento) e
+`obter_indicadores()` caía no fallback (`{**anterior, "beta":
+resultado["beta"]}`), o dict retornado tinha o formato ANTIGO - sem
+`roe`/`margem_liquida`/`margem_operacional`/`margem_ebitda`/
+`divida_liquida`/`divida_liquida_ebitda`. `app.py` acessa esses campos
+com colchete (`ind['roe']`, não `.get()`) - quebrou com `KeyError`.
+
+**Reproduzido antes de corrigir**: script direto simulando um cache
+`_ultimo_indicadores_valido()['FAKE9']` no formato antigo (5 campos) +
+`_tk_info_com_retry` forçado a retornar vazio (simula coleta falhando) -
+confirmado `KeyError: 'roe'` batendo exatamente como no traceback do
+Rodrigo.
+
+**Correção**: a mesclagem do fallback inverteu a ordem - antes começava
+de `anterior` e só sobrescrevia `beta`; agora começa de `resultado`
+(schema ATUAL, todas as chaves de hoje, valores `None`) e sobrescreve
+com o que `anterior` realmente tiver, então `beta` de novo por cima.
+Resultado: todas as chaves do schema atual SEMPRE presentes, não importa
+de que versão do código o cache é - campo que o `anterior` não tem vira
+`None` (mostra "—" na UI, não quebra, não inventa dado).
+
+**Nota geral pro projeto**: esse é um risco de classe que existe em
+qualquer `st.cache_resource` usado como "último valor bom conhecido" -
+toda vez que o schema do dict cacheado mudar (campo novo adicionado),
+o fallback precisa ser resiliente a cache antigo. Vale revisar se
+`_ultima_cotacao_indice_valida` (mesmo padrão, `data/prices.py`) tem o
+mesmo risco se o formato da cotação de índice mudar um dia - não
+verificado agora (fora do escopo desta correção pontual), mas é o tipo
+de coisa a lembrar se aparecer outro `KeyError` parecido.
+
+- Arquivos: `data/prices.py` (`obter_indicadores`).
+- Testes: `compileall` limpo; reprodução direta do bug ANTES da
+  correção (confirmado `KeyError`) e confirmação de que sumiu DEPOIS
+  (valores antigos preservados, campos novos viram `None`); dado real
+  (PETR4) continua retornando todos os campos corretos; AppTest nas 9
+  seções sem exceção.
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas
