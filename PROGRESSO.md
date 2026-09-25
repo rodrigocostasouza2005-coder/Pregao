@@ -1299,6 +1299,34 @@ via `text-align:center` na própria classe, sem precisar de wrapper.
   abrir o app deslogado.
 - Commit: enviado.
 
+## ETAPA 5 (CVM) — bloco de destaques (2026-09-25)
+Fecha o item que restava da ETAPA 5 do roadmap ("CVM: filtros mais
+granulares, bloco de destaques") — filtros/busca já tinham sido cobertos
+no upgrade pontual anterior da aba CVM (mesma sessão). Continuação
+natural pedida pelo próprio Rodrigo ("continua, oq você acha que
+podemos melhorar").
+
+**Implementado** (`ui/cvm_tab.py`): `_painel_destaques(documentos)`,
+chamado logo após a descrição da aba, antes da busca/filtros - roda
+sobre a lista COMPLETA de documentos (não filtrada), então sempre mostra
+o pulso real da watchlist, independente do que o usuário filtrar depois.
+Três campos, layout de linha única (flex, sem cards):
+1. Fatos relevantes nos últimos 30 dias (`_JANELA_DESTAQUES_DIAS`).
+2. Ticker mais ativo no mesmo período (`collections.Counter` sobre
+   `d["ticker"]`) - com fallback pro conjunto completo se não houver
+   nenhum documento dentro da janela (evita `Counter` vazio).
+3. Último documento recebido (`documentos[0]` - já vem ordenado por
+   data desc de `obter_documentos_watchlist`, sem novo sort).
+
+- Arquivos: `ui/cvm_tab.py`.
+- Testes: `compileall` limpo; teste dirigido (scratchpad) confirmando
+  contra dado real: 1 fato relevante/30 dias, PETR4 mais ativo (6 docs),
+  último documento 19/09/2026 (PETR4, COMUNICADO); reteste completo dos
+  7 cenários da CVM (carga inicial, filtro ticker, filtro ticker+tipo,
+  busca combinada, reset, paginação, abertura de documento) sem
+  regressão; AppTest nas 9 seções sem exceção.
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

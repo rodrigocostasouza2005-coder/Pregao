@@ -3,6 +3,23 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-25 (ETAPA 5 — CVM: bloco de destaques)
+
+- **Painel DESTAQUES (novo)** no topo da aba CVM, antes da busca/filtros:
+  fatos relevantes nos últimos 30 dias, ticker mais ativo (mais
+  documentos no período) e último documento recebido — pulso rápido da
+  atividade da watchlist antes de filtrar/buscar. Calculado sobre TODOS
+  os documentos (não filtrados), em memória, sem consulta nova à CVM.
+- Fecha o item pendente da ETAPA 5 do redesign ("filtros mais
+  granulares, bloco de destaques") — os filtros/busca já tinham sido
+  cobertos no upgrade anterior da aba CVM.
+- Arquivos: `ui/cvm_tab.py` (`_painel_destaques`, `_dentro_de_dias`).
+- Testes: `compileall` limpo; teste dirigido confirmando os 3 campos
+  com valor real (1 fato relevante, PETR4 como mais ativo com 6
+  documentos, último documento 19/09/2026); reteste completo da CVM
+  (filtro/busca/paginação/reset/abertura de documento) sem regressão;
+  AppTest nas 9 seções sem exceção.
+
 ## 2026-09-25 (upgrade tela inicial/login — pedido explícito)
 
 - **Tela de apresentação (sem login) redesenhada** de ponta a ponta:

@@ -196,6 +196,10 @@ dados abertos da CVM (`dados.cvm.gov.br`, dataset IPE) — atualização
 diária/semanal da fonte, não é tempo real (para o texto oficial
 imediato, consulte o RAD/ENET da própria CVM).
 
+- **Destaques**: linha logo abaixo da descrição, calculada sobre todos
+  os documentos (não filtrados) — fatos relevantes nos últimos 30 dias,
+  ticker mais ativo no período e último documento recebido. Pulso rápido
+  antes de filtrar/buscar.
 - **Busca**: campo de texto acima dos filtros, procura em ticker/
   assunto/tipo/categoria original — combina com os filtros de ticker e
   tipo abaixo (ex: ticker=PETR4 + tipo=FATO RELEVANTE + busca

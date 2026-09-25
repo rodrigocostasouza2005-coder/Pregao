@@ -19,7 +19,8 @@ do conteúdo cortado à direita (não a truncagem em si, que já existia e
 funcionava, mas a coluna que a continha era minúscula)."""
 
 import html
-from datetime import datetime
+from collections import Counter
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import streamlit as st
@@ -44,6 +45,7 @@ _TRUNCA_ASSUNTO = 200  # so' rede de seguranca - a CSS ellipsis (largura real
 # caracteres, entao 200 praticamente nunca aciona.
 _TAMANHO_PAGINA = 50
 _JANELA_PAGINACAO = 2  # paginas visiveis pra cada lado da atual, ver _paginacao
+_JANELA_DESTAQUES_DIAS = 30  # janela pra "fatos relevantes recentes" e "ticker mais ativo"
 
 # pesos relativos (nao pixels - ver st.columns) pra DATA/TICKER/TIPO/ASSUNTO.
 # ASSUNTO domina a largura de proposito (pedido explicito: "deve ocupar a
@@ -53,6 +55,16 @@ _COLS = [9, 8, 16, 55]
 _CSS_CVM = """
 .cvm-desc-principal { color:var(--neutro); font-size:0.82rem; margin-bottom:0.15rem; }
 .cvm-desc-secundaria { color:var(--cinza); font-size:0.65rem; margin-bottom:0.7rem; }
+
+.cvm-destaques {
+    display:flex; flex-wrap:wrap; gap:0.4rem 1.6rem; align-items:baseline;
+    padding:0.5rem 0.7rem; margin-bottom:0.8rem;
+    border-top:1px solid var(--borda); border-bottom:1px solid var(--borda);
+    background:var(--painel-bg);
+}
+.cvm-destaque-item { font-size:0.74rem; color:var(--cinza); white-space:nowrap; }
+.cvm-destaque-valor { color:var(--destaque); font-weight:700; }
+.cvm-destaque-label { color:var(--cinza); font-size:0.62rem; letter-spacing:0.03em; text-transform:uppercase; }
 
 .cvm-cabecalho { color:var(--cinza); font-size:10.5px; font-weight:600; letter-spacing:0.04em;
     text-transform:uppercase; padding-bottom:0.3rem; }
@@ -270,6 +282,52 @@ def _paginacao(total_itens: int, chave_pagina: str) -> int:
     return pagina
 
 
+def _dentro_de_dias(data_iso: str, dias: int) -> bool:
+    try:
+        dt = datetime.fromisoformat(data_iso)
+    except Exception:
+        return False
+    return (datetime.now(_TZ_SP) - dt) <= timedelta(days=dias)
+
+
+def _painel_destaques(documentos: list):
+    """Pulso rapido de atividade sobre TODOS os documentos da watchlist
+    (antes de qualquer filtro/busca) - pensado pra responder "o que
+    aconteceu de mais relevante recentemente" antes do usuario ter que
+    filtrar/procurar. Nunca dispara consulta nova - roda em memoria
+    sobre a mesma lista ja coletada."""
+    recentes = [d for d in documentos if _dentro_de_dias(d["data"], _JANELA_DESTAQUES_DIAS)]
+    base_ativo = recentes or documentos
+
+    fatos_relevantes = sum(1 for d in recentes if d["tipo"] == "FATO_RELEVANTE")
+
+    contagem = Counter(d["ticker"] for d in base_ativo)
+    ticker_ativo, n_ativo = contagem.most_common(1)[0]
+
+    ultimo = documentos[0]  # ja vem ordenado por data desc (ver obter_documentos_watchlist)
+
+    st.markdown(
+        f"""
+        <div class="cvm-destaques">
+            <div class="cvm-destaque-item">
+                <span class="cvm-destaque-valor">{fatos_relevantes}</span> fato(s) relevante(s)
+                <span class="cvm-destaque-label">· últimos {_JANELA_DESTAQUES_DIAS} dias</span>
+            </div>
+            <div class="cvm-destaque-item">
+                <span class="cvm-destaque-label">ticker mais ativo</span>
+                <span class="cvm-destaque-valor">{ticker_ativo}</span> ({n_ativo} doc.)
+            </div>
+            <div class="cvm-destaque-item">
+                <span class="cvm-destaque-label">último documento</span>
+                {_fmt_data(ultimo['data'])} · <span class="cvm-destaque-valor">{ultimo['ticker']}</span>
+                {TIPO_LABEL.get(ultimo['tipo'], ultimo['tipo'])}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_cvm(prefs: dict):
     """Ponto de entrada da aba CVM, chamado pelo app.py."""
     _injetar_css()
@@ -298,6 +356,8 @@ def render_cvm(prefs: dict):
             "documento para ver o resumo</div>",
             unsafe_allow_html=True,
         )
+
+        _painel_destaques(documentos)
 
         busca = st.text_input(
             "Buscar", placeholder="Buscar documentos...", label_visibility="collapsed", key="cvm_busca",
