@@ -3,6 +3,37 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-25 (ETAPA 7 — layout configurável: visibilidade + tamanho de painel)
+
+- **Visibilidade e tamanho por painel (MACRO e MERCADO)**: além de
+  reordenar (já existia), agora dá pra esconder um painel e escolher a
+  largura dele (1/4, 1/2, 3/4, FULL) em CONFIG. Painéis na mesma linha
+  com largura somando até 1.0 ficam lado a lado (`st.columns`); um
+  painel FULL sempre fica sozinho na própria linha.
+- **Sem redimensionamento livre com o mouse**: decisão já registrada
+  antes (FILA2-T5) e mantida — Streamlit não tem drag-resize nativo, e
+  introduzir um componente de terceiros seria uma dependência nova. As
+  4 larguras fixas cobrem o pedido comum ("quero X e Y lado a lado,
+  menores") só com `st.columns()`.
+- **Escopo**: só MACRO e MERCADO, as únicas abas que já usavam o sistema
+  de painéis registrados (`ui/paineis.py`). Migrar EQUITY/CVM/NEWS/
+  RESEARCH/TOP MERCADO/VISÃO GERAL pra esse sistema é um trabalho bem
+  maior (redesenhar cada painel pra funcionar numa coluna mais estreita)
+  — fora do escopo desta rodada.
+- **Zero mudança de comportamento pra quem nunca configurar nada**: sem
+  config salva, cada painel continua FULL width, um por linha, exatamente
+  como antes (`st.container(border=True)` direto, sem `st.columns`
+  desnecessário).
+- Arquivos: `ui/paineis.py` (`controle_layout_config`, empacotamento em
+  linhas), `config.py` (`paineis_visiveis`/`tamanho_paineis` em
+  `PREFS_PADRAO`), `app.py` (integração no formulário de CONFIG).
+- Testes: `compileall` limpo; testes unitários do empacotamento em
+  linhas e da resolução de tamanho/visibilidade (com e sem config
+  salva); teste dirigido end-to-end (AppTest) esconder um painel +
+  redimensionar outro via CONFIG, salvar, reabrir MACRO e confirmar que
+  renderiza sem exceção com o layout novo; AppTest nas 9 seções sem
+  exceção.
+
 ## 2026-09-25 (ETAPA 6 — RESEARCH: filtros consistentes com o resto do app)
 
 - **Filtros de Casa/Tipo/Ticker (aba RESEARCH)** trocados de

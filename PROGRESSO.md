@@ -1366,6 +1366,65 @@ Rodrigo delegou a escolha). Auditoria das 3 abas do escopo:
   AppTest nas 9 seções sem exceção.
 - Commit: enviado.
 
+## ETAPA 7 — layout configurável: visibilidade + tamanho (2026-09-25)
+Continuação do roadmap ("bora"). Reautoriza e estende o T5 original
+(FILA2-T5, que só cobria reordenar) com visibilidade + tamanho por
+painel, escopo já reduzido no próprio plano do redesign pra evitar
+drag-and-resize de verdade (sem componente de terceiros).
+
+**Achado da auditoria antes de implementar**: o plano original assumia
+"páginas novas (Etapas 2-6) já estarem com seus painéis registrados no
+mesmo sistema" - **isso não é verdade**. Só MACRO e MERCADO usam
+`ui/paineis.py` (`REGISTRO_PAINEIS` + `paineis.renderizar`); EQUITY,
+CVM, NEWS, RESEARCH, TOP MERCADO e VISÃO GERAL renderizam do jeito
+monolítico de sempre. Migrar todas pra esse sistema é um refactor bem
+maior (cada painel precisaria funcionar dentro de uma coluna mais
+estreita, ex: gráficos Plotly com largura menor) - decidido NÃO fazer
+isso nesta rodada (risco alto de regredir abas já estáveis, fora do
+espírito "ajuste pontual"). Escopo final: MACRO e MERCADO, as duas que
+já tinham a base pronta.
+
+**Implementado** (`ui/paineis.py`):
+- `TAMANHOS = ["1/4", "1/2", "3/4", "FULL"]` + `_FRACOES` (mapa pra
+  peso de `st.columns`).
+- `_pid_visivel_salvo`/`_tamanho_efetivo`: mesma convenção já usada em
+  `ordem_efetiva` (nada salvo = comportamento padrão, ou seja, tudo
+  visível/FULL - zero mudança pra quem nunca mexeu em CONFIG).
+- `_empacotar_linhas`: greedy, soma frações na ordem escolhida até
+  estourar 1.0, aí começa linha nova. Painel FULL (1.0) sempre sozinho
+  na própria linha (a soma já estoura com ele sozinho).
+- `renderizar()` reescrito pra usar o empacotamento - caso especial
+  (1 painel, FULL): continua usando `st.container(border=True)` direto,
+  SEM envolver num `st.columns([1.0])` desnecessário - garante que quem
+  nunca configurou nada tem o DOM idêntico a antes (zero risco visual).
+- `controle_layout_config` (novo): uma linha por painel (checkbox de
+  visibilidade + pills de tamanho), pra usar em CONFIG logo após
+  `controle_ordem_config`. `st.pills` dentro de `st.form` testado e
+  confirmado funcionando nesta versão do Streamlit antes de usar (não é
+  óbvio - `st.button` normal é proibido dentro de forms, então testei
+  `st.pills` isolado antes de depender disso).
+
+**Decisão - esconder tudo é permitido**: diferente do `ordem_paineis`
+(seleção vazia = acidente, volta pro padrão), uma lista de painéis
+visíveis vazia é tratada como escolha deliberada (exigiria desmarcar
+várias checkboxes uma a uma, não é um "limpar sem querer" como o
+multiselect de ordem) - `renderizar()` mostra um aviso de uma linha em
+vez de tela em branco silenciosa nesse caso.
+
+- Arquivos: `ui/paineis.py`, `config.py` (`PREFS_PADRAO`), `app.py`
+  (formulário de CONFIG).
+- Testes: `compileall` limpo; testes unitários diretos de
+  `_empacotar_linhas` (mix de frações, inclusive FULL forçando linha
+  nova) e de `_pid_visivel_salvo`/`_tamanho_efetivo` (com e sem config
+  salva); teste end-to-end via AppTest: achou os 4 checkboxes+pills de
+  MACRO em CONFIG, desmarcou 1 painel e mudou outro pra 1/2, salvou o
+  formulário, confirmou `prefs["paineis_visiveis"]["MACRO"]` e
+  `prefs["tamanho_paineis"]["MACRO"]` gravados corretos, reabriu MACRO e
+  confirmou que renderiza sem exceção com o layout customizado; AppTest
+  nas 9 seções sem exceção (garantindo que MACRO/MERCADO sem config
+  continuam idênticas).
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

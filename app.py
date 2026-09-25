@@ -813,13 +813,20 @@ if secao_atual == "CONFIG":
                 config.ABAS_DISPONIVEIS, default=abas_visiveis,
             )
 
-            # ordem dos paineis dentro de cada aba que ja adota o sistema
-            # de paineis registrados (ver ui/paineis.py) - por enquanto
-            # MERCADO e MACRO; outras abas podem adotar o mesmo padrao depois
+            # ordem/visibilidade/tamanho dos paineis dentro de cada aba que
+            # ja adota o sistema de paineis registrados (ver ui/paineis.py)
+            # - por enquanto MERCADO e MACRO; outras abas podem adotar o
+            # mesmo padrao depois
             nova_ordem_mercado = paineis.controle_ordem_config(
                 "MERCADO", "MERCADO", _REGISTRO_PAINEIS_MERCADO, prefs,
             )
+            novos_visiveis_mercado, novos_tamanhos_mercado = paineis.controle_layout_config(
+                "MERCADO", "MERCADO", _REGISTRO_PAINEIS_MERCADO, prefs,
+            )
             nova_ordem_macro = paineis.controle_ordem_config(
+                "MACRO", "MACRO", _REGISTRO_PAINEIS_MACRO, prefs,
+            )
+            novos_visiveis_macro, novos_tamanhos_macro = paineis.controle_layout_config(
                 "MACRO", "MACRO", _REGISTRO_PAINEIS_MACRO, prefs,
             )
 
@@ -853,6 +860,16 @@ if secao_atual == "CONFIG":
                         **(prefs.get("ordem_paineis") or {}),
                         "MERCADO": nova_ordem_mercado,
                         "MACRO": nova_ordem_macro,
+                    },
+                    "paineis_visiveis": {
+                        **(prefs.get("paineis_visiveis") or {}),
+                        "MERCADO": novos_visiveis_mercado,
+                        "MACRO": novos_visiveis_macro,
+                    },
+                    "tamanho_paineis": {
+                        **(prefs.get("tamanho_paineis") or {}),
+                        "MERCADO": novos_tamanhos_mercado,
+                        "MACRO": novos_tamanhos_macro,
                     },
                 })
                 if _persistir_prefs():
