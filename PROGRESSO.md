@@ -1474,6 +1474,75 @@ de coisa a lembrar se aparecer outro `KeyError` parecido.
   seções sem exceção.
 - Commit: enviado.
 
+## Revisão da ETAPA 7 — tamanho do painel direto na aba (2026-09-26)
+Feedback direto do Rodrigo sobre a primeira versão da ETAPA 7: "não era
+assim que eu podia escolher o layout, queria escolher na aba mesmo
+sabe?... eu escolher o tamanho mesmo". A versão anterior só deixava
+ajustar tamanho/visibilidade dentro do formulário de CONFIG, sem
+feedback visual imediato no painel sendo ajustado. Perguntei como ele
+imaginava o controle "na aba mesmo" - escolheu "botões no cabeçalho de
+cada painel".
+
+**Redesenho** (`ui/paineis.py`):
+- Cada painel (dentro do `st.container(border=True, key=...)` que já
+  existia) ganhou um popover "⚙" no canto (posicionado via CSS
+  `position:absolute` sobre o container, que agora tem `key=` e
+  `position:relative` de propósito) - dentro do popover: pills de
+  tamanho (1/4/1/2/3/4/FULL, efeito imediato ao clicar - `st.rerun()`
+  direto, sem esperar formulário nenhum) + botão "ESCONDER ESTE
+  PAINEL".
+- `_salvar_tamanho`/`_esconder_painel` (novos): mutam `prefs` em memória
+  (efeito instantâneo na mesma sessão, já que toda render_fn lê a MESMA
+  referência de `prefs`) e chamam `persistir_fn()` se foi passado -
+  grava de verdade no Supabase, não só na sessão atual.
+- `renderizar()` ganhou o parâmetro `persistir_fn` (keyword-only, depois
+  de `*args` - threading até `app.py` via `ui/macro_tab.py:render_macro`/
+  `ui/mercado_tab.py:render_mercado`, que agora aceitam e repassam esse
+  parâmetro pros dois call sites em `app.py`, passando
+  `_persistir_prefs`).
+- `controle_layout_config` (CONFIG) virou `controle_visibilidade_config`
+  - só checkboxes agora, tamanho saiu de lá. Motivo: com o popover
+    fazendo o resize direto na aba com efeito imediato, manter também no
+    formulário seria duas UIs pra mesma coisa (redundante, potencial
+    fonte de confusão sobre "qual vale"). CONFIG continua sendo o único
+    lugar pra REEXIBIR um painel escondido (só isso realmente precisa
+    vir de fora - um painel escondido não renderiza, então não tem
+    popover pra clicar nele de volta).
+- `app.py`: removida a escrita de `tamanho_paineis` do submit do
+  formulário de CONFIG (a chave nem entra mais no dict do
+  `st.session_state.prefs.update({...})` - omitir a chave deixa o valor
+  atual intocado, já que o popover grava direto).
+
+**Verificação de "st.pills dentro de st.form"** (herdada da versão
+anterior) não se aplica mais aqui - o popover roda FORA de qualquer
+`st.form`, então usa `st.button`/`st.rerun()` normal (mais simples e com
+efeito imediato, que é justamente o que faltava antes).
+
+**Achado real durante o teste (não é bug da aplicação)**: a primeira
+tentativa de validar via AppTest reportou um botão "1/2" desabilitado
+onde eu esperava ele habilitado - investigado a fundo antes de assumir
+bug: confirmado que era CONTAMINAÇÃO DO PRÓPRIO TESTE, não da aplicação
+- reusei o mesmo `sub` fake ("teste-sub-123") em várias rodadas de teste
+ao longo da sessão (ETAPA 7 v1 incluída), e como o Supabase deste
+ambiente está de fato acessível (`banco_ok: True`), uma gravação bem-
+sucedida de um teste ANTERIOR persistiu de verdade e "sobrou" pras
+rodadas seguintes - o botão estava desabilitado CORRETAMENTE (o
+tamanho salvo de verdade era mesmo aquele). Corrigido usando um `sub`
+único por execução de teste (`f"teste-layout-{int(time.time())}"`) -
+lição: testes que usam um usuário fake fixo contra um Supabase de
+verdade acumulam estado entre rodadas, não são idempotentes por padrão.
+
+- Arquivos: `ui/paineis.py`, `ui/macro_tab.py`, `ui/mercado_tab.py`,
+  `app.py`.
+- Testes: `compileall` limpo; teste dirigido (usuário novo por
+  execução): popover mostra os 4 painéis de MACRO com os botões certos
+  (tamanho atual desabilitado, resto clicável); clique num tamanho não-
+  atual persiste imediatamente em `prefs["tamanho_paineis"]` sem passar
+  por CONFIG; esconder um painel direto no popover persiste em
+  `prefs["paineis_visiveis"]`; reexibir esse painel via CONFIG funciona;
+  AppTest nas 9 seções sem exceção.
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

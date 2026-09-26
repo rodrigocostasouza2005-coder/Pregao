@@ -726,7 +726,7 @@ if secao_atual == "EQUITY":
 # --- aba MACRO -----------------------------------------------------------
 if secao_atual == "MACRO":
     with st.container():
-        render_macro(prefs)
+        render_macro(prefs, persistir_fn=_persistir_prefs)
 
 
 # --- aba RESEARCH ---------------------------------------------------------
@@ -750,7 +750,7 @@ if secao_atual == "TOP MERCADO":
 # --- aba MERCADO (visao ampla do pregao: altas/baixas, setorial, treemap) ---
 if secao_atual == "MERCADO":
     with st.container():
-        render_mercado(prefs)
+        render_mercado(prefs, persistir_fn=_persistir_prefs)
 
 
 # --- aba SISTEMA (so admin) -------------------------------------------------
@@ -813,20 +813,24 @@ if secao_atual == "CONFIG":
                 config.ABAS_DISPONIVEIS, default=abas_visiveis,
             )
 
-            # ordem/visibilidade/tamanho dos paineis dentro de cada aba que
-            # ja adota o sistema de paineis registrados (ver ui/paineis.py)
-            # - por enquanto MERCADO e MACRO; outras abas podem adotar o
-            # mesmo padrao depois
+            # ordem/visibilidade dos paineis dentro de cada aba que ja adota
+            # o sistema de paineis registrados (ver ui/paineis.py) - por
+            # enquanto MERCADO e MACRO; outras abas podem adotar o mesmo
+            # padrao depois. TAMANHO nao entra aqui de proposito: e' um
+            # popover "⚙" direto em cada painel, na propria aba, com efeito
+            # imediato (pedido do Rodrigo, 2026-09-26) - CONFIG so' cuida de
+            # reexibir um painel escondido, unico ajuste que exige vir de
+            # fora (um painel escondido nao tem cabecalho pra clicar).
             nova_ordem_mercado = paineis.controle_ordem_config(
                 "MERCADO", "MERCADO", _REGISTRO_PAINEIS_MERCADO, prefs,
             )
-            novos_visiveis_mercado, novos_tamanhos_mercado = paineis.controle_layout_config(
+            novos_visiveis_mercado = paineis.controle_visibilidade_config(
                 "MERCADO", "MERCADO", _REGISTRO_PAINEIS_MERCADO, prefs,
             )
             nova_ordem_macro = paineis.controle_ordem_config(
                 "MACRO", "MACRO", _REGISTRO_PAINEIS_MACRO, prefs,
             )
-            novos_visiveis_macro, novos_tamanhos_macro = paineis.controle_layout_config(
+            novos_visiveis_macro = paineis.controle_visibilidade_config(
                 "MACRO", "MACRO", _REGISTRO_PAINEIS_MACRO, prefs,
             )
 
@@ -866,11 +870,11 @@ if secao_atual == "CONFIG":
                         "MERCADO": novos_visiveis_mercado,
                         "MACRO": novos_visiveis_macro,
                     },
-                    "tamanho_paineis": {
-                        **(prefs.get("tamanho_paineis") or {}),
-                        "MERCADO": novos_tamanhos_mercado,
-                        "MACRO": novos_tamanhos_macro,
-                    },
+                    # tamanho_paineis NAO entra aqui: e' salvo direto pelo
+                    # popover "⚙" de cada painel (ver ui/paineis.py), com
+                    # persistir_fn=_persistir_prefs - omitir a chave aqui
+                    # deixa o valor atual intocado (st.session_state.prefs.update
+                    # so' sobrescreve o que estiver no dict passado).
                 })
                 if _persistir_prefs():
                     st.success("Preferências salvas.")

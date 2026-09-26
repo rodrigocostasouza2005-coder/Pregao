@@ -395,9 +395,12 @@ REGISTRO_PAINEIS = [
 ]
 
 
-def render_macro(prefs):
-    """Ponto de entrada da aba MACRO. Chamar dentro de `with aba_macro:`."""
+def render_macro(prefs, persistir_fn=None):
+    """Ponto de entrada da aba MACRO. Chamar dentro de `with aba_macro:`.
+    `persistir_fn` (opcional): repassado pro popover de tamanho/
+    visibilidade de cada painel (ver ui/paineis.py) - chamado quando o
+    usuário ajusta algo, pra salvar de verdade (não só na sessão)."""
     with st.container(border=True):
         _painel_resumo(prefs)
 
-    paineis.renderizar("MACRO", REGISTRO_PAINEIS, prefs, prefs)
+    paineis.renderizar("MACRO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn)

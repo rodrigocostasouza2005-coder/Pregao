@@ -299,8 +299,9 @@ REGISTRO_PAINEIS = [
 ]
 
 
-def render_mercado(prefs: dict):
-    """Ponto de entrada da aba MERCADO, chamado pelo app.py."""
+def render_mercado(prefs: dict, persistir_fn=None):
+    """Ponto de entrada da aba MERCADO, chamado pelo app.py.
+    `persistir_fn` (opcional): ver ui/paineis.py:renderizar."""
     with st.container(border=True):
         tem_dados = _painel_termometro(prefs)
 
@@ -310,4 +311,4 @@ def render_mercado(prefs: dict):
     # 1o prefs: pra paineis.renderizar calcular a ordem salva do usuario.
     # 2o prefs: repassado como argumento pra cada _painel_*(prefs) do
     # registro acima (todos tem essa mesma assinatura de 1 argumento).
-    paineis.renderizar("MERCADO", REGISTRO_PAINEIS, prefs, prefs)
+    paineis.renderizar("MERCADO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn)

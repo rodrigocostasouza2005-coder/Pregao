@@ -179,13 +179,15 @@ visíveis, casas de research ativas), salvas no Supabase
 lançada) são adicionadas automaticamente pra usuários existentes, sem
 reaparecer o que foi escondido de propósito.
 
-- **LAYOUT — MACRO/MERCADO**: além de reordenar os painéis, dá pra
-  esconder um painel e escolher a largura dele (1/4, 1/2, 3/4 ou FULL).
-  Painéis numa mesma linha com largura somando até 100% ficam lado a
-  lado. Só nessas duas abas por enquanto — as outras (EQUITY, CVM, NEWS,
-  RESEARCH, TOP MERCADO, VISÃO GERAL) não usam esse sistema de painéis.
-  Sem redimensionamento livre com o mouse (Streamlit não tem isso
-  nativo).
+- **LAYOUT — MACRO/MERCADO**: cada painel tem um "⚙" no canto — clique
+  pra escolher a largura (1/4, 1/2, 3/4 ou FULL), com efeito imediato,
+  ou esconder o painel. Painéis numa mesma linha com largura somando até
+  100% ficam lado a lado. Pra reexibir um painel escondido: CONFIG →
+  seção LAYOUT (único ajuste que precisa vir de lá — reordenar também
+  fica em CONFIG). Só nessas duas abas por enquanto — as outras (EQUITY,
+  CVM, NEWS, RESEARCH, TOP MERCADO, VISÃO GERAL) não usam esse sistema
+  de painéis. Sem redimensionamento livre com o mouse (Streamlit não
+  tem isso nativo).
 - **DIAGNÓSTICO DE FONTES** (só pros e-mails em
   `config.obter_emails_admin()`): testa, rodando de verdade no servidor,
   cada fonte de dados do app — útil pra saber o que funciona em produção

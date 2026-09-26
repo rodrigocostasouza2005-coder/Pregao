@@ -3,6 +3,29 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-26 (revisão da ETAPA 7 — tamanho do painel direto na aba)
+
+- **Feedback do Rodrigo**: a primeira versão da ETAPA 7 só deixava
+  escolher tamanho/visibilidade dentro do formulário de CONFIG, longe
+  do painel — sem ver o resultado na hora. Pedido explícito: "queria
+  escolher na aba mesmo".
+- **Popover "⚙" em cada painel** (MACRO/MERCADO): tamanho (1/4, 1/2,
+  3/4, FULL) muda com efeito imediato, sem formulário — clica, o painel
+  já muda de largura na hora. Também dá pra esconder o painel direto
+  dali. Persiste de verdade (Supabase), não só na sessão.
+- **CONFIG agora só cuida de reexibir** um painel escondido (única coisa
+  que precisa vir de fora — um painel escondido não tem cabeçalho pra
+  clicar). Tamanho saiu do formulário de CONFIG de propósito, pra não
+  ter duas UIs fazendo a mesma coisa.
+- Arquivos: `ui/paineis.py` (popover novo, `controle_layout_config` →
+  `controle_visibilidade_config`, sem tamanho), `ui/macro_tab.py`/
+  `ui/mercado_tab.py` (`persistir_fn` repassado), `app.py` (integração).
+- Testes: `compileall` limpo; teste dirigido com usuário novo por
+  execução (evita contaminar com estado de testes antigos — achado
+  real do próprio processo de teste, não da aplicação): resize
+  imediato persistindo sem CONFIG, esconder painel direto na aba,
+  reexibir via CONFIG; AppTest nas 9 seções sem exceção.
+
 ## 2026-09-25 (correção urgente — KeyError em produção na aba EQUITY)
 
 - **Bug real relatado pelo Rodrigo em produção**: `KeyError: 'roe'` ao
