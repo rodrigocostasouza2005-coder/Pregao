@@ -44,9 +44,8 @@ header[data-testid="stHeader"] {
 }
 
 /* padding-top cobre a faixa fixa do topo inteira: header nativo do
-   Streamlit (3rem) + camada 1 (.st-key-camada1_header, ~2.6rem) + camada 2
-   ticker/status (.pregao-topo-fixo, ~3.3rem) - ver as duas classes abaixo.
-   Em telas estreitas as duas camadas fixas viram position:static (ver
+   Streamlit (3rem) + .st-key-header_fixo (camada 1 + camada 2, ~6.4rem) -
+   ver essa classe abaixo. Em telas estreitas ela vira position:static (ver
    media query no fim do arquivo) e este padding cai pra so' o header
    nativo do Streamlit. */
 .block-container {
@@ -58,15 +57,16 @@ header[data-testid="stHeader"] {
     overflow-x: hidden;
 }
 
-/* camada 1 do header (redesign 2026-09-28): logo+AO VIVO / busca global
-   unica / usuario, numa faixa fixa propria logo abaixo do header nativo
-   do Streamlit (3rem) - fica ACIMA da camada 2 (ticker de mercado,
-   .pregao-topo-fixo, top calculado pra comecar onde esta termina). As
-   duas sao fixas e EMPILHADAS so' via `top` de cada uma (a ordem visual
-   nao depende da ordem de chamada no Python - ver comentario em
-   camada1_header no app.py sobre por que os botoes de busca nao podem
-   viver dentro do fragment da camada 2). */
-.st-key-camada1_header {
+/* header fixo (redesign 2026-09-28, ordem corrigida): UM SO' wrapper fixed
+   logo abaixo do header nativo do Streamlit (3rem), contendo camada 1
+   (logo+busca+acoes+usuario) e camada 2 (ticker de mercado) como filhos
+   NORMAIS, nessa ordem - a ordem visual (PREGAO sempre primeiro, ticker
+   sempre depois) vem do fluxo normal do HTML dentro deste wrapper, nao de
+   dois `top` fixos calculados separadamente (era assim antes: um bug de
+   estimativa de altura podia fazer as camadas sobrepor ou inverter
+   visualmente). Ver app.py: camada1_header e' um st.container comum,
+   _ticker_tape() e' um fragment, os dois moram DENTRO deste container. */
+.st-key-header_fixo {
     position: fixed;
     top: 3rem;
     left: 0;
@@ -74,30 +74,20 @@ header[data-testid="stHeader"] {
     width: 100vw;
     max-width: 100vw;
     background-color: var(--bg);
+    z-index: 56;
+}
+.st-key-camada1_header {
     border-bottom: 1px solid var(--borda);
     /* padding-left maior que o resto: espaco pro botao de abrir a sidebar
        quando ela esta recolhida ([data-testid="collapsedControl"], fixo no
        canto superior esquerdo com z-index 999, ACIMA desta faixa) - sem
        essa folga ele sobrepoe o logo/primeiro item */
     padding: 0.65rem 1rem 0.6rem 2.75rem;
-    z-index: 56;
 }
-
-/* faixa fixa da camada 2 (ticker de mercado + status): fundo preto solido,
-   empilhada logo abaixo da camada 1. padding-top aqui NAO e' mais pro
-   header nativo do Streamlit (isso e' papel do `top`) - e' so' o valor que
-   sobra pra fechar a largura total certinha sem espaco vazio */
 .pregao-topo-fixo {
-    position: fixed;
-    top: 6.25rem;
-    left: 0;
-    right: 0;
-    width: 100vw;
-    max-width: 100vw;
     background-color: var(--bg);
     border-bottom: 1px solid var(--borda);
     overflow: hidden;
-    z-index: 50;
 }
 
 /* botao de abrir a sidebar quando ela esta recolhida fica fora do header,
@@ -454,16 +444,14 @@ table tr:last-child td { border-bottom: none; }
     .block-container { padding-left: 0.5rem; padding-right: 0.5rem; }
     .pregao-logo { font-size: 1.05rem; }
 
-    /* telas estreitas: o Streamlit empilha as colunas de .st-key-camada1_header
-       verticalmente (logo/busca/botoes/usuario, um embaixo do outro) - a
-       altura real da faixa deixa de bater com o `top` fixo calculado pra
-       desktop (uma linha so), o que sobreporia a camada 2 (ticker) por
-       cima dela. Mais simples e robusto que tentar recalcular offsets:
-       as duas camadas fixas viram fluxo normal (empilhadas na mesma ordem
-       em que aparecem no codigo - header primeiro, ticker depois, que e'
-       exatamente a ordem visual pedida), e o padding do block-container
+    /* telas estreitas: o Streamlit empilha as colunas de camada1_header
+       verticalmente (logo/busca/botoes/usuario, um embaixo do outro), o que
+       faria o wrapper fixo (.st-key-header_fixo) ficar mais alto do que a
+       tela toda. Mais simples e robusto que recalcular altura: o wrapper
+       vira fluxo normal (a ordem interna - header primeiro, ticker depois -
+       e' garantida pelo HTML, nao muda), e o padding do block-container
        volta a reservar so' o header nativo do Streamlit. */
-    .st-key-camada1_header, .pregao-topo-fixo {
+    .st-key-header_fixo {
         position: static;
         width: 100%;
         top: auto;

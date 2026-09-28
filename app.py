@@ -302,61 +302,65 @@ def _ir_com_ticker(chave_secao_destino: str, ticker: str, chave_pill_ticker: str
         st.session_state[chave_pill_ticker] = ticker
 
 
-# --- camada 1 do header: identidade + busca global (UNICA) + usuario -----
-# Fica FORA de qualquer @st.fragment de proposito: os botoes "EQUITY ↗" /
-# "NOTÍCIAS ↗" escrevem em st.session_state['secao_ativa'] esperando que a
-# proxima execucao seja um rerun DA PAGINA INTEIRA (pra secao_atual, mais
-# abaixo, pegar o valor novo) - dentro de um fragment com run_every, um
-# clique so' dispara rerun do fragment, e a pagina nunca chegaria a trocar
-# de aba. Por isso o header/busca continuam como script de topo (igual
-# antes do redesign), so' que agora numa unica linha visual (posicionada
-# via CSS .st-key-camada1_header, ver style.css) em vez de duas linhas
-# separadas (cabecalho + busca global).
-with st.container(key="camada1_header"):
-    col_logo, col_busca, col_ctrlk, col_eq, col_news, col_add, col_user = st.columns(
-        [1.1, 3.9, 0.55, 0.5, 0.5, 0.5, 1.35], gap="small", vertical_alignment="center",
-    )
-    with col_logo:
-        st.markdown('<div class="pregao-logo-compacto">PREGÃO</div>', unsafe_allow_html=True)
-    with col_busca:
-        ticker_busca_global = busca.buscar_ativo(
-            "Busca global", chave="busca_global_ticker", extras=prefs["watchlist"],
-            ajuda="Busca por ticker ou nome — abre direto na EQUITY ou NOTÍCIAS desse ativo",
+# --- header fixo: camada 1 (identidade+busca+acoes+usuario) seguida da
+# camada 2 (ticker de mercado), NUM UNICO wrapper fixed (.st-key-header_fixo,
+# ver style.css) - as duas camadas sao filhos NORMAIS desse wrapper, entao a
+# ordem visual (header sempre acima do ticker) vem do fluxo normal do HTML,
+# nao de dois `top` fixos calculados separadamente (isso e' o que causava
+# risco de ordem errada/sobreposicao se a altura real de uma camada
+# divergisse da estimativa em CSS). O fragment do ticker (_ticker_tape, com
+# seu run_every) pode morar dentro deste container normal sem problema - so'
+# os BOTOES da camada 1 e' que precisam ficar FORA de qualquer fragment:
+# "EQUITY ↗"/"NOTÍCIAS ↗" escrevem em st.session_state['secao_ativa']
+# esperando um rerun DA PAGINA INTEIRA (pra secao_atual, mais abaixo, pegar
+# o valor novo) - dentro de um fragment, um clique so' dispara rerun do
+# fragment, e a pagina nunca trocaria de aba.
+with st.container(key="header_fixo"):
+    with st.container(key="camada1_header"):
+        col_logo, col_busca, col_ctrlk, col_eq, col_news, col_add, col_user = st.columns(
+            [1.1, 3.9, 0.55, 0.5, 0.5, 0.5, 1.35], gap="small", vertical_alignment="center",
         )
-    with col_ctrlk:
-        st.markdown('<div class="pregao-ctrlk">CTRL K</div>', unsafe_allow_html=True)
-    ja_na_watchlist = bool(ticker_busca_global) and ticker_busca_global in prefs["watchlist"]
-    with col_eq:
-        if st.button("↗", key="busca_global_eq", width="stretch", disabled=not ticker_busca_global, help="Abrir na EQUITY"):
-            _ir_com_ticker("EQUITY", ticker_busca_global, None)
-    with col_news:
-        if st.button("▣", key="busca_global_news", width="stretch", disabled=not ticker_busca_global, help="Abrir nas NOTÍCIAS"):
-            _ir_com_ticker("NEWS", ticker_busca_global, "news_pill_ticker")
-    with col_add:
-        if st.button(
-            "✓" if ja_na_watchlist else "+",
-            key="busca_global_add", width="stretch",
-            disabled=not ticker_busca_global or ja_na_watchlist,
-            help="Na watchlist" if ja_na_watchlist else "Adicionar à watchlist",
-        ):
-            if validar_ticker(ticker_busca_global):
-                prefs["watchlist"].append(ticker_busca_global)
-                _persistir_prefs()
-                st.rerun()
-            else:
-                st.error(f"Ticker '{ticker_busca_global}' não encontrado no yfinance.")
-    with col_user:
-        sub_email, sub_sair = st.columns([3, 1], gap="small")
-        with sub_email:
-            st.markdown(
-                f"<div class='cinza pregao-user-chip' title='{usuario['email']}'>{usuario['email']}</div>",
-                unsafe_allow_html=True,
+        with col_logo:
+            st.markdown('<div class="pregao-logo-compacto">PREGÃO</div>', unsafe_allow_html=True)
+        with col_busca:
+            ticker_busca_global = busca.buscar_ativo(
+                "Busca global", chave="busca_global_ticker", extras=prefs["watchlist"],
+                ajuda="Busca por ticker ou nome — abre direto na EQUITY ou NOTÍCIAS desse ativo",
             )
-        with sub_sair:
-            if st.button("SAIR", key="sair_btn", width="stretch"):
-                st.logout()
+        with col_ctrlk:
+            st.markdown('<div class="pregao-ctrlk">CTRL K</div>', unsafe_allow_html=True)
+        ja_na_watchlist = bool(ticker_busca_global) and ticker_busca_global in prefs["watchlist"]
+        with col_eq:
+            if st.button("↗", key="busca_global_eq", width="stretch", disabled=not ticker_busca_global, help="Abrir na EQUITY"):
+                _ir_com_ticker("EQUITY", ticker_busca_global, None)
+        with col_news:
+            if st.button("▣", key="busca_global_news", width="stretch", disabled=not ticker_busca_global, help="Abrir nas NOTÍCIAS"):
+                _ir_com_ticker("NEWS", ticker_busca_global, "news_pill_ticker")
+        with col_add:
+            if st.button(
+                "✓" if ja_na_watchlist else "+",
+                key="busca_global_add", width="stretch",
+                disabled=not ticker_busca_global or ja_na_watchlist,
+                help="Na watchlist" if ja_na_watchlist else "Adicionar à watchlist",
+            ):
+                if validar_ticker(ticker_busca_global):
+                    prefs["watchlist"].append(ticker_busca_global)
+                    _persistir_prefs()
+                    st.rerun()
+                else:
+                    st.error(f"Ticker '{ticker_busca_global}' não encontrado no yfinance.")
+        with col_user:
+            sub_email, sub_sair = st.columns([3, 1], gap="small")
+            with sub_email:
+                st.markdown(
+                    f"<div class='cinza pregao-user-chip' title='{usuario['email']}'>{usuario['email']}</div>",
+                    unsafe_allow_html=True,
+                )
+            with sub_sair:
+                if st.button("SAIR", key="sair_btn", width="stretch"):
+                    st.logout()
 
-_ticker_tape()
+    _ticker_tape()
 
 
 with st.container(key="nav_secao"):
