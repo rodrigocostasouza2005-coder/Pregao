@@ -114,7 +114,7 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
 
     if permitir_resumo_auto:
         with st.spinner("Resumindo..."):
-            resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator)
+            resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator, casa=rel["casa"], tipo=rel["tipo"])
         if resultado["resumo"]:
             _bloco_resumo(resultado["resumo"])
         elif resultado["motivo_indisponivel"] == "cota":
@@ -125,7 +125,7 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
     chave_botao = f"research_resumir_{abs(hash(rel['link']))}"
     if st.button("RESUMIR", key=chave_botao):
         with st.spinner("Resumindo..."):
-            resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator)
+            resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator, casa=rel["casa"], tipo=rel["tipo"])
         if resultado["resumo"]:
             _bloco_resumo(resultado["resumo"])
         elif resultado["motivo_indisponivel"] == "cota":

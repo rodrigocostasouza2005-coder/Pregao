@@ -252,7 +252,14 @@ def obter_emails_admin() -> list:
 # cortado no meio (visto na pratica no resumo de noticias).
 GROQ_MODELO_PADRAO = "openai/gpt-oss-20b"
 GROQ_REASONING_EFFORT = "low"
-GROQ_MAX_TOKENS = 400
+# 900, nao 400: o resumo do research virou um briefing de varias secoes
+# (CONTEXTO/MERCADO/DRIVERS/IMPACTOS/ATENCAO, ate ~250 palavras no caso de
+# Morning Call/research completo - ver data/research/resumir.py), nao
+# cabe mais no orcamento antigo de 4 linhas; a folga extra (alem do texto
+# em si) evita cortar a resposta no meio quando o modelo "pensa" antes de
+# responder. data/news.py tem orcamento proprio (_MAX_TOKENS_RESUMO_NEWS),
+# nao le esta constante.
+GROQ_MAX_TOKENS = 900
 
 
 def obter_modelo_groq() -> str:
