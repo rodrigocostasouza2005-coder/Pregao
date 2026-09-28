@@ -81,6 +81,7 @@ INTERVALOS_ATUALIZACAO = {"30S": 30, "1MIN": 60, "5MIN": 300}
 INDICES_TICKER_TAPE = {
     "IBOVESPA": "^BVSP",
     "DOLAR": "USDBRL=X",
+    "EURO": "EURBRL=X",
 }
 SIMBOLO_IBOVESPA = "^BVSP"  # usado na comparacao de desempenho no grafico
 
