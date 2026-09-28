@@ -368,9 +368,24 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
     line-height: 1.3 !important;
 }
 
-/* tabelas --------------------------------------------------------------------------- */
-table { font-size: 0.78rem; border-collapse: collapse; }
-table td, table th { padding: 0.15rem 0.5rem; }
+/* tabelas -------------------------------------------------------------------
+   ajuste rapido de CSS (2026-09-28): linha mais respirada + divisoria sutil
+   entre linhas (em vez de borda pesada na caixa toda), cabecalho (th)
+   diferenciado do dado (td) - sem tocar em nenhuma tabela/dado/coluna em
+   Python, so' o estilo generico que todas ja usam */
+table { font-size: 0.78rem; border-collapse: collapse; width: 100%; }
+table td, table th { padding: 0.4rem 0.5rem; }
+table th {
+    color: var(--cinza);
+    text-transform: uppercase;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-align: left;
+    border-bottom: 1px solid var(--borda);
+}
+table td { border-bottom: 1px solid color-mix(in srgb, var(--borda) 45%, transparent); }
+table tr:last-child td { border-bottom: none; }
 
 /* remove qualquer espaco fantasma que o wrapper nativo do st.fragment
    adicione por conta propria - o espacamento entre paineis ja vem do
