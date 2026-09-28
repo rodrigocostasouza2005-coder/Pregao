@@ -1595,6 +1595,128 @@ garantida) no teste pra não confundir isso com bug de verdade.
 **Roadmap de redesign completo** (ETAPAS 1-8, iniciado 2026-09-23,
 concluído 2026-09-28).
 
+## Bug real: tickers desatualizados na lista curada (2026-09-28)
+Rodrigo reportou: buscou "JBSS3" na busca global (ETAPA 8, recém
+enviada) e nada funcionou - nem EQUITY, nem NOTÍCIAS, nem +WATCHLIST.
+
+**Investigação** (não assumi que era bug da busca global - testei a
+fundo antes de concluir):
+1. `validar_ticker("JBSS3")` → `yf.Ticker("JBSS3.SA").history()` vazio,
+   confirmado com teste direto. Testado também com `curl_cffi`
+   (impersonate="chrome", a mesma técnica que já resolve bloqueio de
+   Yahoo em outros lugares do projeto) - continuou vazio. Não é
+   bloqueio de IP, é o símbolo mesmo que não existe mais.
+2. Testei PETR4.SA como controle no mesmo run - funcionou normal,
+   confirmando que não é uma falha geral de rede/yfinance.
+3. Achei na PROGRESSO.md de uma sessão anterior (ETAPA 3/4) uma nota
+   nunca resolvida: "13 dos 64 tickers curados falharam... não
+   investiguei se é delisting real, instabilidade do yfinance ou
+   bloqueio de IP do sandbox". Testei os 13 individualmente - todos
+   vazios de verdade, incluindo ELET3/EMBR3 (blue chips enormes, sem
+   motivo nenhum pra estarem delistados de verdade) - isso indicava
+   RENOMEAÇÃO de ticker, não empresa suspensa/falida.
+4. `WebSearch` pra cada caso (3 buscas, cobrindo os 13 tickers) -
+   confirmado que são eventos corporativos reais de 2025/2026:
+   fusões, trocas de nome/ticker, uma deslistagem de verdade
+   (Carrefour Brasil, comprada pelo controlador francês).
+5. Testei CADA ticker novo individualmente contra yfinance antes de
+   editar `config.py` - só entrou no código o que respondeu com dado
+   real.
+
+**Correção** (`config.py`, `data/news_setores.py`):
+- ELET3/ELET6 → AXIA3 (Eletrobras virou Axia Energia, 10/11/2025 -
+  AXIA6 testado e não respondeu no yfinance, só entrou AXIA3)
+- EMBR3 → EMBJ3 (Embraer, 03/11/2025)
+- JBSS3 → JBSS32 (JBS: listagem principal virou NYSE via holding
+  JBS N.V.; ação local virou BDR - CVM ainda analisando pedido de
+  cancelamento de registro, protocolado 21/09/2026)
+- MRFG3 + BRFS3 → MBRF3 (fusão Marfrig+BRF, debut 23/09/2025 - troca
+  de 0,8521 ação Marfrig por ação BRF; entrada duplicada virou uma só)
+- NTCO3 → NATU3 (Natura&Co incorporada pela Natura Cosméticos,
+  01/07/2025, ticker voltou ao de antes de 2019)
+- CCRO3 → MOTV3 (CCR virou Motiva Infraestrutura de Mobilidade,
+  02/05/2025)
+- RRRP3 → BRAV3 (fusão 3R Petroleum + Enauta, virou Brava Energia,
+  09/2024)
+- ARZZ3 → AZZA3 (fusão Arezzo + Grupo Soma, virou Azzas 2154,
+  01/08/2024 - SOMA3 também removido do classificador de setor, mesma
+  empresa agora)
+- CPLE6 → CPLE3 (Copel: mesma empresa, PNB parou de responder no
+  yfinance, ON funciona - troca de classe de ação, não de empresa)
+- **AZUL4 removido sem substituto**: virou AZUL54 (23/12/2025), mas
+  AZUL54 também não respondeu no yfinance - nenhuma opção funcional
+  encontrada, melhor não oferecer nada a inventar/manter algo quebrado
+- **CRFB3 removido sem substituto**: Carrefour Brasil deslistada de
+  verdade em 30/05/2025 (controlador francês CSA fechou capital) - não
+  existe mais como ação negociada, ponto final
+
+`data/news_setores.py` (classificador de setor do TOP MERCADO/NEWS por
+palavra-chave + ticker) recebeu os mesmos ajustes - é um dict de puro
+texto pra matching (não busca preço), então incluí mesmo AZUL54 e
+AXIA6 ali (podem aparecer como MENÇÃO em notícia mesmo sem cotação
+funcionando).
+
+**Verificação final**: `obter_panorama_ibovespa()` (a função que
+alimenta MERCADO/VISÃO GERAL/TOP MERCADO/treemap) confirmada 60/60
+papéis da lista curada com dado válido - antes eram 47/60 (13
+falhando silenciosamente, sem warning nenhum pro usuário, só sumindo
+do panorama).
+
+- Arquivos: `config.py`, `data/news_setores.py`.
+- Testes: `compileall` limpo; teste individual de cada ticker novo
+  contra yfinance real ANTES de entrar no config; `obter_panorama_ibovespa()`
+  confirmado 60/60 depois da correção; AppTest nas 9 seções sem
+  exceção.
+- Commit: enviado (junto com o pedido de desempenho semana/mês abaixo,
+  mesma sessão de investigação).
+
+## Pedido: desempenho da semana e do mês (VISÃO GERAL/MERCADO), 2026-09-28
+Pedido direto do Rodrigo, veio no meio da investigação do bug acima:
+"na visão geral e mercado queria um desempenho da semana e do mês além
+do desempenho do dia tb".
+
+**Implementado**:
+- `data/mercado.py`: `_baixar_lote()` foi de `period="5d"` pra
+  `period="2mo"` (histórico suficiente pra calcular janela de 30 dias
+  corridos com folga). `_linha_papel()` ganhou
+  `variacao_semana_pct`/`variacao_mes_pct` - mesma técnica de
+  `data/prices.py:_precos_base_retornos` (acha o fechamento no ou
+  antes de "hoje - N dias corridos", calcula % contra o preço atual) -
+  mesma convenção de dias já usada nos retornos do EQUITY (1S=7,
+  1M=30), pra bater com o que o resto do app já chama de
+  "semana"/"mês". Campo vira `None` (não inventa dado) se o papel não
+  tiver histórico suficiente na janela (ex: IPO recente).
+- `obter_altas_baixas`/`obter_termometro`/`obter_desempenho_setorial`
+  ganharam parâmetro `janela` ("dia"/"semana"/"mes", padrão "dia") -
+  filtram por `CAMPO_VARIACAO_POR_JANELA[janela]`, papel sem dado
+  válido na janela fica de fora (não aparece com número errado).
+- `ui/mercado_tab.py`: `_seletor_janela()` (segmented_control DIA/
+  SEMANA/MÊS, efeito imediato) chamado dentro de `_painel_termometro`,
+  `_painel_altas_baixas` e `_painel_setorial` - cada painel tem sua
+  PRÓPRIA escolha independente (`_escolha_estavel_mercado`, chave por
+  painel), pra poder ver ex. "altas/baixas da semana" com "setorial"
+  ainda no dia. `_tabela_papeis` ganhou parâmetro `campo` (qual chave
+  do dict mostrar) em vez de sempre `variacao_pct`.
+- VISÃO GERAL (`ui/visao_geral.py`) reusa `_painel_altas_baixas`/
+  `_painel_setorial` DIRETO de `ui/mercado_tab.py` (já documentado
+  assim desde a ETAPA 2) - ganhou o seletor de janela automaticamente,
+  zero mudança de código lá.
+- Escopo: só os 3 painéis "de desempenho" (altas/baixas, termômetro,
+  setorial). Mais Negociados (é sobre volume, não retorno), Mapa do
+  Mercado (visual do dia especificamente) e Mercados Globais (fonte de
+  dado diferente, `_baixar_lote_bruto`) ficaram de fora - não é o que
+  foi pedido, e mexer nesses três seria escopo maior sem necessidade.
+
+- Arquivos: `data/mercado.py`, `ui/mercado_tab.py`.
+- Testes: `compileall` limpo; `obter_altas_baixas`/`obter_termometro`/
+  `obter_desempenho_setorial` testados com dado real nas 3 janelas
+  (líderes diferentes por janela, ex: MGLU3 +43,9% no mês vs CVCB3
+  +2,8% no dia - números plausíveis, sem inventar); teste dirigido
+  (AppTest) confirmando que trocar o seletor de ALTAS/BAIXAS muda o
+  conteúdo renderizado E não afeta o seletor independente do SETORIAL;
+  AppTest nas 9 seções sem exceção.
+- Commit: enviado.
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

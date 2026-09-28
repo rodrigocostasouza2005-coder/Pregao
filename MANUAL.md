@@ -162,11 +162,17 @@ mapa de calor e mercados globais.
   mais nada. Alguns papéis podem falhar no lote em determinados momentos
   (bloqueio/instabilidade do yfinance) — nesse caso saem do cálculo em
   vez de aparecer com dado errado (nunca inventa número).
-- **Termômetro**: quantos papéis da lista estão em alta/baixa/estáveis.
-- **Maiores altas/baixas** e **mais negociados**: por variação % e por
-  volume financeiro estimado (preço × volume em ações) no dia.
+- **Termômetro**, **maiores altas/baixas** e **desempenho setorial**:
+  cada um com seletor DIA/SEMANA/MÊS (efeito imediato, independente
+  entre os três painéis — trocar um não afeta os outros). Semana/mês =
+  7/30 dias corridos, mesma convenção já usada nos retornos da aba
+  EQUITY. Papel sem histórico suficiente na janela (ex: IPO recente)
+  fica de fora do cálculo daquela janela específica.
+- **Mais negociados**: por volume financeiro estimado (preço × volume
+  em ações) no dia — só dia, é sobre liquidez/atenção do momento, não
+  retorno.
 - **Desempenho setorial**: variação média simples (não ponderada por
-  valor de mercado) dos papéis de cada setor.
+  valor de mercado) dos papéis de cada setor, na janela escolhida.
 - **Mapa do mercado**: treemap (tamanho = volume financeiro, cor =
   variação % no dia).
 - **Mercados globais**: S&P 500, Nasdaq, Dow Jones, FTSE 100, DAX, Nikkei

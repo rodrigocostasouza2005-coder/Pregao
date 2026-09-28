@@ -25,17 +25,29 @@ from data.prices import _para_symbol_yf
 
 _TTL_LOTE = 90  # segundos - batch pesado, nao vale reconsultar a cada poucos segundos
 
+# janelas de desempenho alem do dia (pedido do Rodrigo, 2026-09-28) - dias
+# CORRIDOS, mesma convencao ja usada em data/prices.py:_JANELAS_RETORNO_DIAS
+# (1S=7/1M=30) pra bater com o que o resto do app ja chama de "semana"/"mes".
+_JANELAS_DESEMPENHO_DIAS = {"variacao_semana_pct": 7, "variacao_mes_pct": 30}
+
+# campo do dict de cada papel (ver _linha_papel) por janela de exibicao -
+# usado pelas funcoes obter_* que aceitam `janela` (dia/semana/mes)
+CAMPO_VARIACAO_POR_JANELA = {
+    "dia": "variacao_pct", "semana": "variacao_semana_pct", "mes": "variacao_mes_pct",
+}
+
 
 @st.cache_data(ttl=_TTL_LOTE, show_spinner=False)
 def _baixar_lote(tickers: tuple) -> pd.DataFrame | None:
     """yf.download em lote pros tickers dados (tupla, hashable p/ cache).
     Retorna DataFrame multi-nivel (colunas: (campo, symbol)) ou None se a
-    chamada falhar por completo. Usa period='5d' (nao '1d'): garante pelo
-    menos 2 candles pra calcular variacao mesmo se o pregao de hoje ainda
-    nao fechou ou tiver 1 dia sem negociacao pra algum papel."""
+    chamada falhar por completo. Usa period='2mo' (nao '5d'): garante
+    historico suficiente pra calcular desempenho de semana/mes (7/30 dias
+    corridos), alem de continuar garantindo pelo menos 2 candles pra
+    variacao do dia mesmo se o pregao de hoje ainda nao fechou."""
     symbols = [_para_symbol_yf(t) for t in tickers]
     try:
-        df = yf.download(symbols, period="5d", group_by="ticker", threads=True, progress=False, auto_adjust=False)
+        df = yf.download(symbols, period="2mo", group_by="ticker", threads=True, progress=False, auto_adjust=False)
         return df if not df.empty else None
     except Exception:
         return None
@@ -44,7 +56,10 @@ def _baixar_lote(tickers: tuple) -> pd.DataFrame | None:
 def _linha_papel(df: pd.DataFrame, ticker: str, symbol: str) -> dict | None:
     """Extrai preco/variacao/volume do papel a partir do DataFrame em lote
     (_baixar_lote). None se o papel nao tiver pelo menos 2 candles validos
-    (recem-listado, sem negocio, ou o yfinance nao retornou esse symbol)."""
+    (recem-listado, sem negocio, ou o yfinance nao retornou esse symbol).
+    variacao_semana_pct/variacao_mes_pct ficam None (nao inventa dado) se
+    nao houver candle disponivel na janela pedida (ex: papel listado ha
+    menos de 30 dias)."""
     try:
         sub = df[symbol] if isinstance(df.columns, pd.MultiIndex) else df
         fechamentos = sub["Close"].dropna()
@@ -57,24 +72,37 @@ def _linha_papel(df: pd.DataFrame, ticker: str, symbol: str) -> dict | None:
         volume = sub["Volume"].dropna()
         volume_hoje = float(volume.iloc[-1]) if len(volume) else 0.0
         variacao_pct = (preco - fechamento_anterior) / fechamento_anterior * 100
-        return {
+
+        data_atual = fechamentos.index[-1]
+        resultado = {
             "ticker": ticker,
             "preco": preco,
             "variacao_pct": variacao_pct,
             "volume": volume_hoje,
             "volume_financeiro": preco * volume_hoje,
         }
+        for campo, dias in _JANELAS_DESEMPENHO_DIAS.items():
+            alvo = data_atual - pd.Timedelta(days=dias)
+            anteriores = fechamentos[fechamentos.index <= alvo]
+            if anteriores.empty:
+                resultado[campo] = None
+                continue
+            base = float(anteriores.iloc[-1])
+            resultado[campo] = ((preco - base) / base * 100) if base else None
+        return resultado
     except Exception:
         return None
 
 
 @st.cache_data(ttl=_TTL_LOTE, show_spinner=False)
 def obter_panorama_ibovespa() -> list:
-    """Lista de dicts {ticker, setor, preco, variacao_pct, volume,
-    volume_financeiro} pra cada papel de IBOVESPA_COMPOSICAO que
-    respondeu com dado valido. [] se o lote inteiro falhar (yfinance fora
-    do ar/bloqueado) - quem chama trata como "sem dados agora", nunca
-    mostra numero inventado."""
+    """Lista de dicts {ticker, setor, preco, variacao_pct,
+    variacao_semana_pct, variacao_mes_pct, volume, volume_financeiro}
+    pra cada papel de IBOVESPA_COMPOSICAO que respondeu com dado valido
+    (as duas variacoes extras podem vir None individualmente - ver
+    _linha_papel). [] se o lote inteiro falhar (yfinance fora do ar/
+    bloqueado) - quem chama trata como "sem dados agora", nunca mostra
+    numero inventado."""
     tickers = tuple(IBOVESPA_COMPOSICAO.keys())
     df = _baixar_lote(tickers)
     if df is None:
@@ -89,13 +117,17 @@ def obter_panorama_ibovespa() -> list:
     return resultado
 
 
-def obter_altas_baixas(n: int = 10) -> tuple:
-    """(maiores_altas, maiores_baixas) por variacao_pct, ambas ordenadas
-    da mais extrema pra menos extrema, ate n itens cada."""
-    papeis = obter_panorama_ibovespa()
-    ordenado = sorted(papeis, key=lambda p: p["variacao_pct"], reverse=True)
-    altas = [p for p in ordenado if p["variacao_pct"] > 0][:n]
-    baixas = sorted([p for p in ordenado if p["variacao_pct"] < 0], key=lambda p: p["variacao_pct"])[:n]
+def obter_altas_baixas(n: int = 10, janela: str = "dia") -> tuple:
+    """(maiores_altas, maiores_baixas) por variacao na janela pedida
+    (dia/semana/mes - ver CAMPO_VARIACAO_POR_JANELA), ambas ordenadas da
+    mais extrema pra menos extrema, ate n itens cada. Papel sem dado
+    valido na janela (ex: listado ha menos de 30 dias) fica de fora, nao
+    aparece com numero inventado."""
+    campo = CAMPO_VARIACAO_POR_JANELA[janela]
+    papeis = [p for p in obter_panorama_ibovespa() if p.get(campo) is not None]
+    ordenado = sorted(papeis, key=lambda p: p[campo], reverse=True)
+    altas = [p for p in ordenado if p[campo] > 0][:n]
+    baixas = sorted([p for p in ordenado if p[campo] < 0], key=lambda p: p[campo])[:n]
     return altas, baixas
 
 
@@ -107,29 +139,35 @@ def obter_mais_negociados(n: int = 10) -> list:
     return sorted(papeis, key=lambda p: p["volume_financeiro"], reverse=True)[:n]
 
 
-def obter_termometro() -> dict:
+def obter_termometro(janela: str = "dia") -> dict:
     """Contagem simples de papeis em alta / baixa / estaveis (variacao
-    exatamente 0, raro mas possivel) no panorama do dia."""
-    papeis = obter_panorama_ibovespa()
-    alta = sum(1 for p in papeis if p["variacao_pct"] > 0)
-    baixa = sum(1 for p in papeis if p["variacao_pct"] < 0)
+    exatamente 0, raro mas possivel) na janela pedida (dia/semana/mes).
+    Papel sem dado valido na janela fica fora de 'total' (nao conta nem
+    como alta/baixa/estavel - contagem so' sobre quem respondeu)."""
+    campo = CAMPO_VARIACAO_POR_JANELA[janela]
+    papeis = [p for p in obter_panorama_ibovespa() if p.get(campo) is not None]
+    alta = sum(1 for p in papeis if p[campo] > 0)
+    baixa = sum(1 for p in papeis if p[campo] < 0)
     estavel = len(papeis) - alta - baixa
     return {"alta": alta, "baixa": baixa, "estavel": estavel, "total": len(papeis)}
 
 
-def obter_desempenho_setorial() -> list:
-    """Variacao media (%) por setor (media simples entre os papeis do
-    setor no panorama do dia, sem ponderar por valor de mercado - o
-    projeto nao busca valor de mercado em lote, so' por papel individual
-    sob demanda em data/prices.py). Ordenado do melhor pro pior
-    desempenho. [] se nao houver panorama disponivel."""
+def obter_desempenho_setorial(janela: str = "dia") -> list:
+    """Variacao media (%) por setor na janela pedida (dia/semana/mes -
+    media simples entre os papeis do setor com dado valido nessa janela,
+    sem ponderar por valor de mercado - o projeto nao busca valor de
+    mercado em lote, so' por papel individual sob demanda em
+    data/prices.py). Ordenado do melhor pro pior desempenho. [] se nao
+    houver panorama disponivel."""
+    campo = CAMPO_VARIACAO_POR_JANELA[janela]
     papeis = obter_panorama_ibovespa()
     por_setor: dict = {}
     for p in papeis:
-        por_setor.setdefault(p["setor"], []).append(p["variacao_pct"])
+        if p.get(campo) is not None:
+            por_setor.setdefault(p["setor"], []).append(p[campo])
     resultado = [
         {"setor": setor, "variacao_media_pct": sum(vals) / len(vals), "n_papeis": len(vals)}
-        for setor, vals in por_setor.items()
+        for setor, vals in por_setor.items() if vals
     ]
     resultado.sort(key=lambda s: s["variacao_media_pct"], reverse=True)
     return resultado

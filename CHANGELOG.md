@@ -3,6 +3,46 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-28 (bug real + pedido: tickers desatualizados + desempenho semana/mês)
+
+- **Bug real relatado pelo Rodrigo**: buscou "JBSS3" na busca global e o
+  ticker não foi reconhecido nem adicionado à watchlist. Investigado a
+  fundo (não presumido): confirmado via yfinance + pesquisa que **13
+  tickers da lista curada (`config.IBOVESPA_COMPOSICAO`) estavam
+  desatualizados** por eventos corporativos reais entre 2025 e 2026 —
+  fusões, mudanças de nome/ticker e uma deslistagem:
+  - ELET3/ELET6 → **AXIA3** (Eletrobras virou Axia Energia, nov/2025)
+  - EMBR3 → **EMBJ3** (Embraer, nov/2025)
+  - JBSS3 → **JBSS32** (JBS migrou pra NYSE, ação local virou BDR)
+  - MRFG3 + BRFS3 → **MBRF3** (fusão Marfrig+BRF, set/2025)
+  - NTCO3 → **NATU3** (Natura&Co incorporada pela Natura Cosméticos)
+  - CCRO3 → **MOTV3** (CCR virou Motiva, mai/2025)
+  - RRRP3 → **BRAV3** (fusão 3R+Enauta, virou Brava Energia)
+  - ARZZ3 → **AZZA3** (fusão Arezzo+Grupo Soma, virou Azzas 2154)
+  - CPLE6 → **CPLE3** (mesma empresa, classe de ação diferente — CPLE6
+    parou de responder no yfinance)
+  - AZUL4 e CRFB3: **removidos sem substituto** (AZUL4 virou AZUL54, que
+    também não responde no yfinance; CRFB3/Carrefour Brasil foi
+    deslistada de verdade em 30/05/2025, fechou capital).
+  - Todos os 12 tickers novos testados individualmente contra dado real
+    antes de entrar no config — confirmado 60/60 papéis da lista
+    curada com dado válido agora (antes: 47/60, 13 falhando).
+- **Pedido do Rodrigo**: desempenho da semana e do mês, além do dia, em
+  VISÃO GERAL e MERCADO. Adicionado seletor DIA/SEMANA/MÊS (efeito
+  imediato) nos painéis Maiores Altas/Baixas, Termômetro e Desempenho
+  Setorial — VISÃO GERAL reusa essas mesmas funções, ganha o recurso de
+  graça. Cada painel tem sua janela independente (mudar um não afeta os
+  outros). Janelas: 7/30 dias corridos, mesma convenção já usada nos
+  retornos da aba EQUITY (1S/1M).
+- Arquivos: `config.py` (tickers corrigidos), `data/news_setores.py`
+  (mesmos tickers no classificador de setor do TOP MERCADO/NEWS),
+  `data/mercado.py` (`variacao_semana_pct`/`variacao_mes_pct`, período
+  do lote 5d→2mo), `ui/mercado_tab.py` (seletor de janela).
+- Testes: `compileall` limpo; `obter_panorama_ibovespa()` confirmado
+  60/60 com dado válido (era 47/60); teste dirigido do seletor de
+  janela (mudança de conteúdo ao trocar DIA→SEMANA→MÊS, painéis
+  independentes entre si); AppTest nas 9 seções sem exceção.
+
 ## 2026-09-28 (ETAPA 8 — busca global no header)
 
 - **Busca global (nova)**: campo de busca acima da navegação principal,

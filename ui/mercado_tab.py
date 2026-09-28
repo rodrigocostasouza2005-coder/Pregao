@@ -14,10 +14,13 @@ import streamlit as st
 
 import config
 from data.mercado import (
-    obter_altas_baixas, obter_desempenho_setorial,
+    CAMPO_VARIACAO_POR_JANELA, obter_altas_baixas, obter_desempenho_setorial,
     obter_mais_negociados, obter_mercados_globais, obter_panorama_ibovespa, obter_termometro,
 )
 from ui import graficos, paineis
+
+_JANELAS_DESEMPENHO = ["DIA", "SEMANA", "MÊS"]
+_JANELA_ROTULO_PARA_CHAVE = {"DIA": "dia", "SEMANA": "semana", "MÊS": "mes"}
 
 
 def _tema_atual(prefs):
@@ -27,6 +30,33 @@ def _tema_atual(prefs):
 def _fmt_pct(valor, prefs):
     sinal = "+" if valor >= 0 else ""
     return f"{sinal}{config.formatar_numero(valor, 2, prefs['formato_numerico'])}%"
+
+
+def _escolha_estavel_mercado(chave_widget, opcoes, padrao):
+    """Igual ao helper de app.py/ui/macro_tab.py (nao importavel de la) -
+    guarda a ultima escolha valida de um segmented_control entre reruns."""
+    chave_memoria = "mercado_" + chave_widget + "_valido"
+    ultimo_valido = st.session_state.get(chave_memoria, padrao)
+    if ultimo_valido not in opcoes:
+        ultimo_valido = padrao
+    return ultimo_valido, chave_memoria
+
+
+def _seletor_janela(chave_widget: str) -> str:
+    """Segmented control DIA/SEMANA/MÊS reutilizado pelos paineis que
+    aceitam `janela` (altas/baixas, termometro, setorial) - cada painel
+    tem sua PROPRIA escolha independente (chave_widget diferencia), pra
+    poder ver ex. "altas/baixas da semana" com "setorial" ainda no dia,
+    sem um selecionar afetar o outro. Retorna a chave interna
+    (dia/semana/mes - ver CAMPO_VARIACAO_POR_JANELA), nao o rotulo."""
+    padrao, mem = _escolha_estavel_mercado(chave_widget, _JANELAS_DESEMPENHO, "DIA")
+    sel = st.segmented_control(
+        "Período", _JANELAS_DESEMPENHO, default=padrao,
+        label_visibility="collapsed", key=f"mercado_{chave_widget}",
+    )
+    rotulo = sel or padrao
+    st.session_state[mem] = rotulo
+    return _JANELA_ROTULO_PARA_CHAVE[rotulo]
 
 
 def _layout_grafico_escuro(fig, tema, altura=340):
@@ -51,7 +81,8 @@ def _painel_termometro(prefs):
         "oficial completa do índice (~86 papéis, rebalanceada trimestralmente pela B3). "
         "Ver MANUAL.md."
     )
-    term = obter_termometro()
+    janela = _seletor_janela("termometro")
+    term = obter_termometro(janela)
     if term["total"] == 0:
         st.warning("Dados de mercado indisponíveis no momento (fonte fora do ar ou bloqueada).")
         return False
@@ -91,7 +122,7 @@ def _painel_termometro(prefs):
     return True
 
 
-def _tabela_papeis(papeis, prefs, titulo):
+def _tabela_papeis(papeis, prefs, titulo, campo="variacao_pct"):
     st.markdown(f"<div class='cinza' style='font-size:0.72rem; text-transform:uppercase; margin-bottom:0.2rem;'>{titulo}</div>", unsafe_allow_html=True)
     if not papeis:
         st.markdown("<div class='cinza' style='font-size:0.78rem;'>—</div>", unsafe_allow_html=True)
@@ -99,7 +130,7 @@ def _tabela_papeis(papeis, prefs, titulo):
     linhas = "".join(
         f"<tr><td style='padding:0.15rem 0.4rem 0.15rem 0;'>{p['ticker']}</td>"
         f"<td style='padding:0.15rem 0.4rem; text-align:right;' class='neutro'>R$ {config.formatar_numero(p['preco'], 2, prefs['formato_numerico'])}</td>"
-        f"<td style='padding:0.15rem 0 0.15rem 0.4rem; text-align:right;' class='{"alta" if p["variacao_pct"] >= 0 else "baixa"}'>{_fmt_pct(p['variacao_pct'], prefs)}</td></tr>"
+        f"<td style='padding:0.15rem 0 0.15rem 0.4rem; text-align:right;' class='{"alta" if p[campo] >= 0 else "baixa"}'>{_fmt_pct(p[campo], prefs)}</td></tr>"
         for p in papeis
     )
     st.markdown(
@@ -109,12 +140,15 @@ def _tabela_papeis(papeis, prefs, titulo):
 
 
 def _painel_altas_baixas(prefs):
-    altas, baixas = obter_altas_baixas(10)
+    st.markdown('<div class="painel-titulo">MAIORES ALTAS/BAIXAS</div>', unsafe_allow_html=True)
+    janela = _seletor_janela("altas_baixas")
+    campo = CAMPO_VARIACAO_POR_JANELA[janela]
+    altas, baixas = obter_altas_baixas(10, janela)
     c1, c2 = st.columns(2)
     with c1:
-        _tabela_papeis(altas, prefs, "Maiores altas")
+        _tabela_papeis(altas, prefs, "Maiores altas", campo)
     with c2:
-        _tabela_papeis(baixas, prefs, "Maiores baixas")
+        _tabela_papeis(baixas, prefs, "Maiores baixas", campo)
 
 
 def _painel_mais_negociados(prefs):
@@ -138,7 +172,8 @@ def _painel_mais_negociados(prefs):
 
 def _painel_setorial(prefs):
     st.markdown('<div class="painel-titulo">DESEMPENHO SETORIAL</div>', unsafe_allow_html=True)
-    setores = obter_desempenho_setorial()
+    janela = _seletor_janela("setorial")
+    setores = obter_desempenho_setorial(janela)
     if not setores:
         st.markdown("<div class='cinza' style='font-size:0.78rem;'>—</div>", unsafe_allow_html=True)
         return
@@ -152,7 +187,7 @@ def _painel_setorial(prefs):
     ))
     fig.update_yaxes(autorange="reversed")
     _layout_grafico_escuro(fig, tema, altura=max(240, 28 * len(setores)))
-    chave = graficos.zoom_key("mercado_setorial")
+    chave = graficos.zoom_key("mercado_setorial", janela)
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave)
 
 

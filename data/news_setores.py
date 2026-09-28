@@ -28,7 +28,7 @@ SETORES = {
             "barril", "combustivel", "refino", "pre-sal", "diesel",
             "gasolina", "upstream", "downstream",
         ],
-        "tickers": ["PETR4", "PETR3", "PRIO3", "RRRP3", "RECV3", "VBBR3", "UGPA3", "CSAN3", "ENAT3"],
+        "tickers": ["PETR4", "PETR3", "PRIO3", "BRAV3", "RECV3", "VBBR3", "UGPA3", "CSAN3", "ENAT3"],
     },
     "MINERAÇÃO & SIDERURGIA": {
         "palavras": [
@@ -42,14 +42,14 @@ SETORES = {
             "varejo", "varejista", "retail", "loja", "lojas", "e-commerce",
             "ecommerce", "consumo", "shopping",
         ],
-        "tickers": ["MGLU3", "LREN3", "AMER3", "PCAR3", "ARZZ3", "CEAB3", "ALPA4", "GUAR3", "SOMA3", "VIVA3", "PETZ3"],
+        "tickers": ["MGLU3", "LREN3", "AMER3", "PCAR3", "AZZA3", "CEAB3", "ALPA4", "GUAR3", "VIVA3", "PETZ3"],
     },
     "ENERGIA ELÉTRICA": {
         "palavras": [
             "energia eletrica", "eletrica", "eletricidade", "power",
             "transmissao de energia", "geracao de energia", "distribuidora de energia",
         ],
-        "tickers": ["ELET3", "ELET6", "CMIG4", "CPFE3", "EQTL3", "ENGI11", "TAEE11", "CPLE6", "AURE3", "NEOE3", "EGIE3"],
+        "tickers": ["AXIA3", "AXIA6", "CMIG4", "CPFE3", "EQTL3", "ENGI11", "TAEE11", "CPLE3", "AURE3", "NEOE3", "EGIE3"],
     },
     "SANEAMENTO": {
         "palavras": [
@@ -64,7 +64,7 @@ SETORES = {
             "grain", "soja", "milho", "carne", "frigorifico", "acucar",
             "etanol", "fertilizante",
         ],
-        "tickers": ["JBSS3", "MRFG3", "BRFS3", "SLCE3", "AGRO3", "SMTO3", "BEEF3", "RAIZ4", "CAML3"],
+        "tickers": ["JBSS32", "MBRF3", "SLCE3", "AGRO3", "SMTO3", "BEEF3", "RAIZ4", "CAML3"],
     },
     "IMOBILIÁRIO": {
         "palavras": [
@@ -92,7 +92,7 @@ SETORES = {
             "transporte", "logistica", "logistics", "aviacao", "rodovia",
             "ferrovia", "porto", "aeroporto", "concessionaria de rodovias",
         ],
-        "tickers": ["RAIL3", "CCRO3", "AZUL4", "GOLL4", "STBP3", "RENT3", "MOVI3", "ECOR3", "JSLG3"],
+        "tickers": ["RAIL3", "MOTV3", "AZUL54", "GOLL4", "STBP3", "RENT3", "MOVI3", "ECOR3", "JSLG3"],
     },
 }
 
