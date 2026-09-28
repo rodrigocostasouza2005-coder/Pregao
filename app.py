@@ -127,14 +127,23 @@ _css_vars = (
 st.markdown(f"<style>{_css_vars}</style>", unsafe_allow_html=True)
 
 
-# --- ticker tape: Ibovespa, dolar e a watchlist, atualiza no mesmo ritmo dos
-# precos. Renderizada ANTES do cabecalho de proposito: fica dentro de uma
-# faixa position:fixed no topo (ver .pregao-topo-fixo no style.css), que
-# reserva o espaco de cima pro header nativo do Streamlit (onde mora a barra
-# de Share/estrela/GitHub do Community Cloud - essa barra tem z-index muito
-# maior que o nosso e sempre aparece por cima, nunca escondida). O resto do
-# conteudo (cabecalho PREGAO, abas etc.) vem depois, em fluxo normal, com
-# espaco reservado no padding-top do block-container.
+# --- ticker tape: SO indices de mercado (Ibovespa, dolar - ver
+# config.INDICES_TICKER_TAPE), atualiza no mesmo ritmo dos precos. A
+# watchlist do usuario NAO entra mais aqui (ver _watchlist_chips logo
+# abaixo) - camada separada por pedido explicito do Rodrigo (redesign do
+# header, 2026-09-28): mercado e watchlist pessoal sao informacoes de
+# natureza diferente, misturadas na mesma faixa ficava confuso.
+#
+# Renderizada ANTES do cabecalho (camada 1) de proposito: fica dentro de
+# uma faixa position:fixed no topo (ver .pregao-topo-fixo no style.css),
+# empilhada logo abaixo da faixa fixa da camada 1 (.st-key-camada1_header)
+# - a ordem de EXIBICAO das duas (header por cima, ticker embaixo) vem so'
+# do `top` de cada uma no CSS, nao da ordem de chamada aqui no Python; a
+# camada 1 continua tendo que ficar FORA deste fragment (ver comentario em
+# camada1_header mais abaixo, sobre por que os botoes de busca não podem
+# viver dentro de um fragment). O resto do conteudo (abas etc.) vem
+# depois, em fluxo normal, com espaco reservado no padding-top do
+# block-container.
 @st.fragment(run_every=prefs["atualizacao_intervalo"])
 def _ticker_tape():
     fmt = prefs["formato_numerico"]
@@ -151,18 +160,6 @@ def _ticker_tape():
                 f"<span class='cinza'>{nome_idx}</span> "
                 f"<span class='{cls}'>{config.formatar_numero(cot['preco'], 2, fmt)} "
                 f"({sinal}{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%)</span>"
-            )
-
-    for t in prefs["watchlist"]:
-        cot = obter_cotacao(t)
-        if cot.get("erro"):
-            itens.append(f"<span style='color:var(--destaque); font-weight:600;'>{t}</span> <span class='cinza'>--</span>")
-        else:
-            cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
-            sinal = "+" if cot["variacao_pct"] >= 0 else ""
-            itens.append(
-                f"<span style='color:var(--destaque); font-weight:600;'>{t}</span> "
-                f"<span class='{cls}'>{sinal}{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%</span>"
             )
 
     conteudo = " &nbsp;·&nbsp; ".join(itens)
@@ -197,8 +194,9 @@ def _ticker_tape():
         return
 
     # velocidade constante: duracao da animacao escala com o tamanho do
-    # conteudo (estimado pelo numero de caracteres visiveis, fonte mono),
-    # senao a rolagem acelera visualmente quando a watchlist cresce
+    # conteudo (estimado pelo numero de caracteres visiveis, fonte mono) -
+    # so' os indices de config.INDICES_TICKER_TAPE entram aqui agora, mas o
+    # calculo continua generico pra nao quebrar se a lista de indices crescer
     velocidade_px_s = config.VELOCIDADES_TICKER_TAPE[prefs["ticker_tape_velocidade"]]
     texto_visivel = re.sub(r"<[^>]+>", "", conteudo)
     largura_estimada_px = len(texto_visivel) * 8.75  # px/char pra fonte 0.875rem (ver ticker-tape-set no style.css)
@@ -219,22 +217,31 @@ def _ticker_tape():
     )
 
 
-_ticker_tape()
+# --- watchlist ticker (camada 4 do header): tickers da watchlist do
+# usuario, separados do ticker de mercado (indices, camada 2 acima) -
+# fragment proprio (mesmo ritmo de atualizacao) pra nao acoplar ao rerun
+# do resto da pagina, exatamente como o ticker de indices. Renderizada em
+# FLUXO NORMAL (nao fixa) logo apos a navegacao principal - ver chamada
+# mais abaixo, depois do st.segmented_control da secao.
+@st.fragment(run_every=prefs["atualizacao_intervalo"])
+def _watchlist_chips():
+    if not prefs["watchlist"]:
+        return
+    fmt = prefs["formato_numerico"]
+    chips = []
+    for t in prefs["watchlist"]:
+        cot = obter_cotacao(t)
+        if cot.get("erro"):
+            chips.append(f"<span class='wchip'><span class='wchip-ticker'>{t}</span> <span class='cinza'>--</span></span>")
+        else:
+            cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
+            sinal = "+" if cot["variacao_pct"] >= 0 else ""
+            chips.append(
+                f"<span class='wchip'><span class='wchip-ticker'>{t}</span> "
+                f"<span class='{cls}'>{sinal}{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%</span></span>"
+            )
+    st.markdown("<div class='wchip-row'>" + "".join(chips) + "</div>", unsafe_allow_html=True)
 
-# --- cabecalho ------------------------------------------------------------
-col_logo, col_email, col_sair = st.columns([6, 2, 1])
-with col_logo:
-    st.markdown('<div class="pregao-logo">PREGÃO</div>', unsafe_allow_html=True)
-with col_email:
-    st.markdown(
-        f"<div class='cinza' style='text-align:right; padding-top:0.65rem; font-size:0.7rem; "
-        f"white-space:nowrap; overflow:hidden; text-overflow:ellipsis;' title='{usuario['email']}'>"
-        f"{usuario['email']}</div>",
-        unsafe_allow_html=True,
-    )
-with col_sair:
-    if st.button("SAIR", width="stretch"):
-        st.logout()
 
 if not st.session_state.banco_ok:
     st.warning("Sem conexão com o Supabase — preferências e watchlist valem só para esta sessão.")
@@ -254,7 +261,7 @@ secoes = abas_visiveis + ["CONFIG"]
 _eh_admin = usuario["email"] in config.obter_emails_admin()
 if _eh_admin:
     secoes = secoes + ["SISTEMA"]
-rotulos_secao = [f"{i} {chave}" for i, chave in enumerate(secoes)]
+rotulos_secao = [f"{config.ICONES_SECAO.get(chave, '')} {chave}".strip() for chave in secoes]
 mapa_rotulo_secao = dict(zip(rotulos_secao, secoes))
 padrao_rotulo_secao, mem_secao = _escolha_estavel("secao_ativa", rotulos_secao, rotulos_secao[0])
 
@@ -295,12 +302,29 @@ def _ir_com_ticker(chave_secao_destino: str, ticker: str, chave_pill_ticker: str
         st.session_state[chave_pill_ticker] = ticker
 
 
-with st.container(key="busca_global"):
-    col_busca, col_eq, col_news, col_add = st.columns([4, 1.3, 1.3, 1.6], vertical_alignment="bottom")
+# --- camada 1 do header: identidade + busca global (UNICA) + usuario -----
+# Fica FORA de qualquer @st.fragment de proposito: os botoes "EQUITY ↗" /
+# "NOTÍCIAS ↗" escrevem em st.session_state['secao_ativa'] esperando que a
+# proxima execucao seja um rerun DA PAGINA INTEIRA (pra secao_atual, mais
+# abaixo, pegar o valor novo) - dentro de um fragment com run_every, um
+# clique so' dispara rerun do fragment, e a pagina nunca chegaria a trocar
+# de aba. Por isso o header/busca continuam como script de topo (igual
+# antes do redesign), so' que agora numa unica linha visual (posicionada
+# via CSS .st-key-camada1_header, ver style.css) em vez de duas linhas
+# separadas (cabecalho + busca global).
+with st.container(key="camada1_header"):
+    col_logo, col_busca, col_eq, col_news, col_add, col_user = st.columns(
+        [1.5, 3.4, 0.95, 1.15, 1.35, 1.6], gap="small", vertical_alignment="center",
+    )
+    with col_logo:
+        st.markdown(
+            '<div class="pregao-logo-compacto">PREGÃO <span class="pregao-ao-vivo">● AO VIVO</span></div>',
+            unsafe_allow_html=True,
+        )
     with col_busca:
         ticker_busca_global = busca.buscar_ativo(
             "Busca global", chave="busca_global_ticker", extras=prefs["watchlist"],
-            ajuda="Busca por ticker ou nome — abre direto na EQUITY ou NOTÍCIAS desse ativo",
+            ajuda="Busca por ticker ou nome — abre direto na EQUITY ou NOTÍCIAS desse ativo (atalho: Ctrl+K)",
         )
     ja_na_watchlist = bool(ticker_busca_global) and ticker_busca_global in prefs["watchlist"]
     with col_eq:
@@ -321,6 +345,18 @@ with st.container(key="busca_global"):
                 st.rerun()
             else:
                 st.error(f"Ticker '{ticker_busca_global}' não encontrado no yfinance.")
+    with col_user:
+        sub_email, sub_sair = st.columns([3, 1], gap="small")
+        with sub_email:
+            st.markdown(
+                f"<div class='cinza pregao-user-chip' title='{usuario['email']}'>{usuario['email']}</div>",
+                unsafe_allow_html=True,
+            )
+        with sub_sair:
+            if st.button("SAIR", key="sair_btn", width="stretch"):
+                st.logout()
+
+_ticker_tape()
 
 
 with st.container(key="nav_secao"):
@@ -331,6 +367,8 @@ with st.container(key="nav_secao"):
 rotulo_secao_atual = sel_secao or padrao_rotulo_secao
 st.session_state[mem_secao] = rotulo_secao_atual
 secao_atual = mapa_rotulo_secao[rotulo_secao_atual]
+
+_watchlist_chips()
 
 
 # --- sidebar: gestao da watchlist ------------------------------------------

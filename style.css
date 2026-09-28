@@ -44,11 +44,13 @@ header[data-testid="stHeader"] {
 }
 
 /* padding-top cobre a faixa fixa do topo inteira: header nativo do
-   Streamlit (3rem, onde mora a barra de Share/estrela/GitHub do Cloud)
-   + a ticker tape + a barra de status (relogio/pregao aberto-fechado) -
-   ver .pregao-topo-fixo */
+   Streamlit (3rem) + camada 1 (.st-key-camada1_header, ~2.6rem) + camada 2
+   ticker/status (.pregao-topo-fixo, ~3.3rem) - ver as duas classes abaixo.
+   Em telas estreitas as duas camadas fixas viram position:static (ver
+   media query no fim do arquivo) e este padding cai pra so' o header
+   nativo do Streamlit. */
 .block-container {
-    padding-top: 7rem;
+    padding-top: 9rem;
     padding-bottom: 0.6rem;
     padding-left: 1rem;
     padding-right: 1rem;
@@ -56,20 +58,39 @@ header[data-testid="stHeader"] {
     overflow-x: hidden;
 }
 
-/* faixa fixa no topo: fundo preto solido cobrindo do topo da tela ate o
-   fim do letreiro. padding-top reserva o espaco do header nativo do
-   Streamlit (que tem z-index muito maior e sempre renderiza por cima,
-   entao nunca fica escondido atras dessa faixa) - so DEPOIS desse espaco
-   e' que o letreiro em si (filho normal aqui dentro) comeca a aparecer */
-.pregao-topo-fixo {
+/* camada 1 do header (redesign 2026-09-28): logo+AO VIVO / busca global
+   unica / usuario, numa faixa fixa propria logo abaixo do header nativo
+   do Streamlit (3rem) - fica ACIMA da camada 2 (ticker de mercado,
+   .pregao-topo-fixo, top calculado pra comecar onde esta termina). As
+   duas sao fixas e EMPILHADAS so' via `top` de cada uma (a ordem visual
+   nao depende da ordem de chamada no Python - ver comentario em
+   camada1_header no app.py sobre por que os botoes de busca nao podem
+   viver dentro do fragment da camada 2). */
+.st-key-camada1_header {
     position: fixed;
-    top: 0;
+    top: 3rem;
     left: 0;
     right: 0;
     width: 100vw;
     max-width: 100vw;
     background-color: var(--bg);
-    padding-top: 3rem;
+    border-bottom: 1px solid var(--borda);
+    padding: 0.3rem 1rem;
+    z-index: 56;
+}
+
+/* faixa fixa da camada 2 (ticker de mercado + status): fundo preto solido,
+   empilhada logo abaixo da camada 1. padding-top aqui NAO e' mais pro
+   header nativo do Streamlit (isso e' papel do `top`) - e' so' o valor que
+   sobra pra fechar a largura total certinha sem espaco vazio */
+.pregao-topo-fixo {
+    position: fixed;
+    top: 5.6rem;
+    left: 0;
+    right: 0;
+    width: 100vw;
+    max-width: 100vw;
+    background-color: var(--bg);
     border-bottom: 1px solid var(--borda);
     overflow: hidden;
     z-index: 50;
@@ -93,6 +114,67 @@ div[data-testid="stElementContainer"] { margin-bottom: 0; }
     border-bottom: 1px solid var(--borda);
     padding-bottom: 0.25rem;
     margin-bottom: 0.4rem;
+}
+
+/* variante compacta do logo pra camada 1 do header (redesign 2026-09-28):
+   inline, sem borda/margem propria - a faixa inteira (.st-key-camada1_header)
+   ja tem a borda/fundo, o logo aqui e' so' mais um item na mesma linha */
+.pregao-logo-compacto {
+    color: var(--destaque);
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    padding-top: 0.3rem;
+}
+.pregao-ao-vivo {
+    display: inline-block;
+    color: var(--alta);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
+
+/* e-mail do usuario logado, na camada 1 do header - trunca com reticencias
+   em vez de estourar a coluna (a mesma regra ja existe pra colunas
+   genericas mais abaixo, aqui e' so' o alinhamento vertical certo ao lado
+   do botao SAIR) */
+.pregao-user-chip {
+    text-align: right;
+    padding-top: 0.5rem;
+    font-size: 0.68rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* camada 4 do header: chips da watchlist pessoal, separados do ticker de
+   mercado (camada 2) - faixa fina com scroll horizontal proprio, cada
+   ticker num pill discreto (nunca um botao grande) */
+.wchip-row {
+    display: flex;
+    gap: 0.4rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.2rem 0.1rem 0.3rem 0.1rem;
+    white-space: nowrap;
+}
+.wchip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: 1px solid var(--borda);
+    background-color: var(--painel-bg);
+    padding: 0.1rem 0.55rem;
+    font-size: 0.72rem;
+    flex: 0 0 auto;
+}
+.wchip-ticker {
+    color: var(--destaque);
+    font-weight: 600;
 }
 
 /* painel = container com borda nativo do Streamlit (st.container(border=True)) */
@@ -212,6 +294,40 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
     font-weight: 600;
 }
 
+/* navegacao principal (camada 3 do header, redesign 2026-09-28): visual
+   proprio, DIFERENTE do estilo generico de pills acima (que continua
+   valendo pros filtros Casa/Tipo/Ticker do RESEARCH/CVM/NEWS - por isso
+   as regras abaixo sao escopadas a .st-key-nav_secao, nunca o seletor
+   generico). Objetivo: parecer navegacao de verdade (aba selecionada =
+   texto + sublinhado ambar), nao uma sequencia de botoes/tickers. */
+.st-key-nav_secao [data-testid="stButtonGroup"] {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+.st-key-nav_secao [data-testid="stButtonGroup"] button {
+    background-color: transparent !important;
+    border: none !important;
+    border-bottom: 2px solid transparent !important;
+    color: var(--cinza) !important;
+    border-radius: 0 !important;
+    font-size: 0.8rem !important;
+    padding: 0.3rem 0.85rem !important;
+    min-height: 30px !important;
+}
+.st-key-nav_secao [data-testid="stButtonGroup"] button:hover {
+    color: var(--neutro) !important;
+}
+.st-key-nav_secao [data-testid="stButtonGroup"] button[aria-checked="true"],
+.st-key-nav_secao [data-testid="stButtonGroup"] button[aria-pressed="true"] {
+    /* color-mix (nao rgba fixo) pra acompanhar --destaque em qualquer tema
+       (AMBAR/FOSFORO/AZUL/CLARO - ver config.TEMAS), nao so' o ambar padrao */
+    background-color: color-mix(in srgb, var(--destaque) 10%, transparent) !important;
+    border-bottom: 2px solid var(--destaque) !important;
+    color: var(--destaque) !important;
+    font-weight: 600;
+}
+
 /* alertas (avisos) - barra fina de uma linha, sem bloco colorido alto ------------- */
 [data-testid="stAlert"] {
     background-color: var(--bg) !important;
@@ -299,4 +415,20 @@ table td, table th { padding: 0.15rem 0.5rem; }
 @media (max-width: 640px) {
     .block-container { padding-left: 0.5rem; padding-right: 0.5rem; }
     .pregao-logo { font-size: 1.05rem; }
+
+    /* telas estreitas: o Streamlit empilha as colunas de .st-key-camada1_header
+       verticalmente (logo/busca/botoes/usuario, um embaixo do outro) - a
+       altura real da faixa deixa de bater com o `top` fixo calculado pra
+       desktop (uma linha so), o que sobreporia a camada 2 (ticker) por
+       cima dela. Mais simples e robusto que tentar recalcular offsets:
+       as duas camadas fixas viram fluxo normal (empilhadas na mesma ordem
+       em que aparecem no codigo - header primeiro, ticker depois, que e'
+       exatamente a ordem visual pedida), e o padding do block-container
+       volta a reservar so' o header nativo do Streamlit. */
+    .st-key-camada1_header, .pregao-topo-fixo {
+        position: static;
+        width: 100%;
+        top: auto;
+    }
+    .block-container { padding-top: 3.2rem; }
 }

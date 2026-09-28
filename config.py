@@ -223,6 +223,33 @@ JANELAS_RETORNO = ["1D", "1S", "1M", "3M", "6M", "12M", "ANO"]
 # --- Abas do app (chave interna = titulo exibido na navegacao) ----------
 ABAS_DISPONIVEIS = ["VISÃO GERAL", "EQUITY", "MACRO", "RESEARCH", "NEWS", "CVM", "TOP MERCADO", "MERCADO"]
 
+# icone (so decorativo, sem nenhum significado funcional) por aba, usado
+# no rotulo da navegacao principal (app.py) - CONFIG/SISTEMA nao entram em
+# ABAS_DISPONIVEIS (ver comentario la em cima), por isso ficam aqui soltos.
+#
+# Sintaxe ":material/nome:" (nativa do st.segmented_control desde varias
+# versoes atras) em vez de emoji/simbolo unicode solto: testado na pratica
+# (2026-09-28) que o widget SO reconhece um emoji "de verdade" (ex: 🏛, ⚙)
+# como icone de verdade (campo `content_icon` separado do texto) - simbolos
+# geometricos obscuros (ex: ⊞, ▤) ficam colados no texto em vez de virar
+# icone, o que dava um visual inconsistente (3 abas com icone "de verdade",
+# 6 com simbolo grudado no rotulo). Icones Material sao SEMPRE tratados
+# como content_icon de verdade (uniforme pra todas as abas) e vem
+# monocromaticos (herdam a cor do texto via currentColor), o que combina
+# muito mais com o terminal ambar/preto do que emoji colorido do sistema.
+ICONES_SECAO = {
+    "VISÃO GERAL": ":material/dashboard:",
+    "EQUITY": ":material/trending_up:",
+    "MACRO": ":material/public:",
+    "RESEARCH": ":material/description:",
+    "NEWS": ":material/feed:",
+    "CVM": ":material/account_balance:",
+    "TOP MERCADO": ":material/star:",
+    "MERCADO": ":material/bar_chart:",
+    "CONFIG": ":material/settings:",
+    "SISTEMA": ":material/bolt:",
+}
+
 # --- E-mails com acesso a paineis de admin (DIAGNOSTICO DE FONTES, SISTEMA) --
 # repo publico: nao deixar e-mail pessoal fixo no codigo. Le
 # st.secrets["admin"]["emails"] (lista); enquanto esse secret nao for
