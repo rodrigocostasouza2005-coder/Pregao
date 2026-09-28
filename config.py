@@ -293,7 +293,7 @@ PREFS_PADRAO = {
     "atualizacao_intervalo": 60,
     "ticker_tape_modo": "ANIMADO",
     "ticker_tape_velocidade": "NORMAL",
-    "research_casas_ativas": ["genial"],
+    "research_casas_ativas": ["genial", "genial_lives"],
     # ordem/visibilidade/tamanho dos paineis dentro de cada aba que adota
     # o sistema de paineis registrados (ver ui/paineis.py) -
     # {aba_id: [painel_id, ...]} pra ordem e tamanho, {aba_id: [painel_id

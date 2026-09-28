@@ -17,13 +17,23 @@ outra casa de research (ver ui/research_tab.py:_linha_relatorio, botão
 RESUMIR / resumo automático da watchlist). Este modulo so contribui o
 `obter_relatorios` (metadados) e o `obter_texto_transcricao` (extrator de
 texto que entra no lugar do "baixar a pagina" generico - ver CASAS em
-data/research/__init__.py, mesmo mecanismo que xp.py usa pra XP)."""
+data/research/__init__.py, mesmo mecanismo que xp.py usa pra XP).
+
+ATENCAO - excecao deliberada a regra de robots.txt do projeto (2026-09-28,
+pedido explicito do Rodrigo): o robots.txt do YouTube proibe
+/feeds/videos.xml e /api/ pra bots genericos (User-agent: *). Toda outra
+coleta do projeto respeita robots.txt via permitido() (data/research/
+base.py) e fica desligada se o robots.txt proibir - aqui NAO: o feed é
+lido direto, sem checar. Justificativa registrada: uso estritamente
+pessoal e nao-comercial (mesmo User-Agent que já se declara assim),
+volume de acesso equivalente a 1 usuario abrindo a aba de vez em quando
+(gate de 30min do research, so ~15 videos mais recentes por chamada),
+sem republicar nem redistribuir o conteudo. Nao generalizar esse padrao
+pra outras fontes sem a mesma decisao explicita."""
 
 import re
 
 import feedparser
-
-from .base import permitido
 
 # canal oficial da Genial Investimentos no YouTube (confirmado via busca +
 # leitura do feed real em 2026-09-24 - "Genial Investimentos", descrição
@@ -70,9 +80,8 @@ def obter_relatorios() -> list | None:
     programa conhecido (ver _PADROES_PROGRAMA). None se o feed falhar
     (canal indisponível/erro de rede) - lista vazia (não None) se o feed
     respondeu mas nenhum vídeo recente bateu com nenhum programa (normal
-    em dias sem Copom/podcast, por exemplo)."""
-    if not permitido(_FEED_URL):
-        return None
+    em dias sem Copom/podcast, por exemplo). NÃO checa robots.txt (ver
+    ATENÇÃO no topo do módulo - exceção deliberada, pedido explícito)."""
     try:
         feed = feedparser.parse(_FEED_URL)
     except Exception:
@@ -142,8 +151,6 @@ def obter_texto_transcricao(link: str) -> tuple:
 def testar_conexao() -> tuple:
     """So' testa se o feed do canal responde - usado pelo painel
     DIAGNOSTICO DE FONTES. Retorna (ok, detalhe)."""
-    if not permitido(_FEED_URL):
-        return False, "bloqueado pelo robots.txt"
     try:
         feed = feedparser.parse(_FEED_URL)
     except Exception as e:

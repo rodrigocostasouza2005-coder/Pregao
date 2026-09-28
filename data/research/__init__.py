@@ -66,22 +66,19 @@ CASAS = [
         "tentar_coleta_automatica": False,  # idem Genial - bloqueada no Cloud (403), ver coletor_local.py
     },
     {
+        # Ligada em 2026-09-28 a pedido explicito do Rodrigo ("quero a
+        # transcricao das lives da Genial") - ver ATENCAO no topo de
+        # genial_lives.py: ignora deliberadamente o robots.txt do
+        # YouTube (que proibe /feeds/videos.xml pra bots genericos),
+        # excecao unica no projeto, justificada por uso pessoal/nao
+        # comercial e volume baixo. Nao copiar esse padrao pra outra
+        # fonte sem a mesma decisao explicita.
         "id": "genial_lives",
         "nome": "Genial (Lives)",
-        "ativa_por_padrao": False,
-        "disponivel": False,
+        "ativa_por_padrao": True,
+        "disponivel": True,
         "obter_relatorios": genial_lives.obter_relatorios,
         "extrator_texto": genial_lives.obter_texto_transcricao,
-        "motivo_indisponivel": (
-            "robots.txt do YouTube proíbe /feeds/videos.xml e /api/ pra bots genéricos "
-            "(User-agent: *) - o mecanismo funciona de verdade (testado com vídeos reais: "
-            "feed lista os programas certos, legenda automática em pt existe e é extraível), "
-            "mas fica desligado por respeitar o robots.txt (mesma política usada em toda "
-            "coleta do projeto - ver permitido() em data/research/base.py). Caminho limpo "
-            "seria a API oficial do YouTube Data v3 (precisa de API key nova, ver AÇÕES "
-            "MANUAIS PENDENTES em PROGRESSO.md) - a de legendas dessa API exige OAuth do "
-            "dono do canal, então nem ela cobre transcrição de vídeo de terceiros."
-        ),
     },
     {
         "id": "btg",
