@@ -256,8 +256,73 @@ if _eh_admin:
     secoes = secoes + ["SISTEMA"]
 rotulos_secao = [f"{i} {chave}" for i, chave in enumerate(secoes)]
 mapa_rotulo_secao = dict(zip(rotulos_secao, secoes))
-
 padrao_rotulo_secao, mem_secao = _escolha_estavel("secao_ativa", rotulos_secao, rotulos_secao[0])
+
+
+# --- busca global (ETAPA 8): ativo qualquer, atalhos pra abrir em EQUITY/
+# NOTICIAS ja com o ticker escolhido, ou so adicionar na watchlist sem
+# sair da aba atual. Renderizada ANTES do nav (rotulos_secao/mapa_rotulo_secao
+# ja calculados acima, mas o WIDGET do nav em si so' instancia depois -
+# ver comentario em _ir_com_ticker sobre por que essa ordem importa) -
+# funciona em qualquer aba (nao so nas que mostram ticker). EQUITY
+# (seletor de ticker) e NEWS (obter_noticias_watchlist) so mostram dado
+# de tickers da watchlist - por isso "abrir em X" adiciona o ticker na
+# watchlist primeiro se ele ainda nao estiver la (mesma validacao ja
+# usada no fluxo da sidebar).
+def _ir_com_ticker(chave_secao_destino: str, ticker: str, chave_pill_ticker: str | None):
+    """Muda de secao + preseleciona o ticker, com efeito no MESMO rerun
+    (sem chamar st.rerun()) - escrever em st.session_state['secao_ativa']
+    (a key do proprio widget do nav) só é permitido ANTES desse widget
+    ser instanciado nesse rerun; por isso esta funcao roda (e e' chamada)
+    ANTES do st.segmented_control do nav mais abaixo. Descoberto na
+    pratica: tentar escrever DEPOIS derruba com
+    StreamlitWidgetAlreadyInstantiatedError."""
+    rotulo_alvo = next((r for r, c in mapa_rotulo_secao.items() if c == chave_secao_destino), None)
+    if rotulo_alvo is None:
+        st.warning(f"A aba {chave_secao_destino} está escondida nas suas preferências (CONFIG).")
+        return
+    if ticker not in prefs["watchlist"]:
+        if not validar_ticker(ticker):
+            st.error(f"Ticker '{ticker}' não encontrado no yfinance.")
+            return
+        prefs["watchlist"].append(ticker)
+        _persistir_prefs()
+    st.session_state["secao_ativa"] = rotulo_alvo
+    st.session_state[mem_secao] = rotulo_alvo
+    st.session_state["ticker_selecionado"] = ticker
+    st.session_state["ticker_selecionado_valido"] = ticker
+    if chave_pill_ticker:
+        st.session_state[chave_pill_ticker] = ticker
+
+
+with st.container(key="busca_global"):
+    col_busca, col_eq, col_news, col_add = st.columns([4, 1.3, 1.3, 1.6], vertical_alignment="bottom")
+    with col_busca:
+        ticker_busca_global = busca.buscar_ativo(
+            "Busca global", chave="busca_global_ticker", extras=prefs["watchlist"],
+            ajuda="Busca por ticker ou nome — abre direto na EQUITY ou NOTÍCIAS desse ativo",
+        )
+    ja_na_watchlist = bool(ticker_busca_global) and ticker_busca_global in prefs["watchlist"]
+    with col_eq:
+        if st.button("EQUITY ↗", key="busca_global_eq", width="stretch", disabled=not ticker_busca_global):
+            _ir_com_ticker("EQUITY", ticker_busca_global, None)
+    with col_news:
+        if st.button("NOTÍCIAS ↗", key="busca_global_news", width="stretch", disabled=not ticker_busca_global):
+            _ir_com_ticker("NEWS", ticker_busca_global, "news_pill_ticker")
+    with col_add:
+        if st.button(
+            "NA WATCHLIST" if ja_na_watchlist else "+ WATCHLIST",
+            key="busca_global_add", width="stretch",
+            disabled=not ticker_busca_global or ja_na_watchlist,
+        ):
+            if validar_ticker(ticker_busca_global):
+                prefs["watchlist"].append(ticker_busca_global)
+                _persistir_prefs()
+                st.rerun()
+            else:
+                st.error(f"Ticker '{ticker_busca_global}' não encontrado no yfinance.")
+
+
 with st.container(key="nav_secao"):
     sel_secao = st.segmented_control(
         "Seção", rotulos_secao, default=padrao_rotulo_secao,

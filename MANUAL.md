@@ -12,6 +12,13 @@ abas em toda execução do script. Isso importa pra quem for mexer no
 código: um erro numa seção não derruba as outras, e cada seção só busca
 dados quando está de fato selecionada.
 
+**Busca global**: campo acima do menu, visível em qualquer aba — busca
+por ticker ou nome. Três atalhos: **EQUITY ↗** (abre a cotação completa),
+**NOTÍCIAS ↗** (abre NEWS já filtrado por esse ticker), **+ WATCHLIST**
+(só adiciona, sem sair da aba atual). Os dois primeiros adicionam o
+ticker à watchlist automaticamente se ele ainda não estiver lá (EQUITY e
+NEWS só mostram dado de ticker rastreado).
+
 ## EQUITY
 
 Cotação, indicadores e gráfico de UM ticker da sua watchlist (escolhido

@@ -1543,6 +1543,58 @@ verdade acumulam estado entre rodadas, não são idempotentes por padrão.
   AppTest nas 9 seções sem exceção.
 - Commit: enviado.
 
+## ETAPA 8 — busca global no header (2026-09-28)
+Última etapa do roadmap de redesign (`C:\Users\Dell\.claude\plans\mutable-meandering-peacock.md`).
+Reusa o `TickerAutocomplete` da ETAPA 1 (`ui/busca.py:buscar_ativo`, já
+usado na sidebar) - dropdown com atalhos, exatamente como o plano
+descrevia.
+
+**Implementado** (`app.py`): campo de busca + 3 botões (EQUITY ↗,
+NOTÍCIAS ↗, + WATCHLIST) acima da navegação principal, visível em
+qualquer aba. `_ir_com_ticker(chave_secao_destino, ticker,
+chave_pill_ticker)`: adiciona o ticker na watchlist se ainda não estiver
+lá (EQUITY e NEWS só mostram dado de ticker da watchlist - função
+`obter_noticias_watchlist`/seletor de ticker do EQUITY já eram assim),
+muda de seção e preseleciona o ticker (`ticker_selecionado` pra EQUITY,
+`news_pill_ticker` pra NEWS).
+
+**Bug real pego no teste, corrigido antes de qualquer coisa ir pra
+produção**: primeira tentativa escrevia
+`st.session_state["secao_ativa"] = rotulo_alvo` DEPOIS do
+`st.segmented_control(key="secao_ativa")` do nav já ter instanciado no
+mesmo rerun (a busca global tinha sido colocada FISICAMENTE depois do
+nav no código) - `StreamlitWidgetAlreadyInstantiatedError` (Streamlit
+não deixa escrever na session_state de um widget depois dele já ter
+sido criado nesse mesmo rerun). Corrigido reordenando: o cálculo de
+`secoes`/`rotulos_secao`/`mapa_rotulo_secao` (puro, sem widget) subiu
+pra antes da busca global; a busca global (com os botões que escrevem
+em `secao_ativa`) ficou entre esse cálculo e a instanciação de verdade
+do `st.segmented_control` do nav, que desceu pra depois. Zero mudança
+na lógica do nav em si, só reposicionamento. Sem `st.rerun()` explícito
+em `_ir_com_ticker`: como a escrita acontece ANTES do widget do nav
+instanciar nesse MESMO rerun, o resto do script já usa o valor novo sem
+precisar de um rerun extra.
+
+**Achado menor, não é bug**: pré-aplicar o filtro de ticker do NEWS
+(`news_pill_ticker`) só funciona de verdade se aquele ticker tiver
+notícia na janela de 48h - testado com NFLX34 (BDR de cobertura fina)
+e o filtro voltou vazio silenciosamente (mesmo fallback `or "TODOS"` já
+usado no resto do NEWS). Não é regressão, é limitação real de
+disponibilidade de notícia - trocado por BBAS3 (papel grande, cobertura
+garantida) no teste pra não confundir isso com bug de verdade.
+
+- Arquivos: `app.py`.
+- Testes: `compileall` limpo; teste dirigido (usuário novo por
+  execução, evita a mesma contaminação de Supabase já documentada na
+  revisão da ETAPA 7): EQUITY auto-adiciona MELI34 e navega com o
+  ticker certo selecionado; NOTÍCIAS auto-adiciona BBAS3 e navega com o
+  filtro pré-aplicado; +WATCHLIST adiciona AAPL34 sem sair da aba
+  atual; AppTest nas 9 seções sem exceção.
+- Commit: enviado.
+
+**Roadmap de redesign completo** (ETAPAS 1-8, iniciado 2026-09-23,
+concluído 2026-09-28).
+
 ## FILA 2 — em andamento (ver seção própria abaixo)
 
 ## Tarefas bloqueadas

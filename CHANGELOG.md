@@ -3,6 +3,30 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-28 (ETAPA 8 — busca global no header)
+
+- **Busca global (nova)**: campo de busca acima da navegação principal,
+  visível em qualquer aba — busca por ticker ou nome (mesmo autocomplete
+  da ETAPA 1). Três atalhos: **EQUITY ↗** (abre a cotação completa do
+  ativo), **NOTÍCIAS ↗** (abre NEWS já filtrado por esse ticker), **+
+  WATCHLIST** (só adiciona, sem sair da aba atual).
+- **Auto-adiciona à watchlist quando necessário**: EQUITY e NEWS só
+  mostram dado de tickers da watchlist (é assim que já funcionavam) —
+  os atalhos "↗" adicionam o ticker primeiro (com a mesma validação já
+  usada na barra lateral) se ele ainda não estiver lá.
+- **Bug real pego no teste**: `st.session_state["secao_ativa"]` (a key
+  do próprio widget de navegação) só pode ser escrita ANTES desse
+  widget instanciar no mesmo rerun — escrever depois derruba com
+  `StreamlitWidgetAlreadyInstantiatedError`. Corrigido reordenando o
+  código: o cálculo das seções e a busca global agora vêm ANTES do
+  widget de navegação em si (puro reposicionamento, lógica do nav
+  intocada).
+- Arquivos: `app.py`.
+- Testes: `compileall` limpo; teste dirigido (usuário novo por
+  execução) cobrindo os 3 atalhos com tickers reais fora da watchlist
+  (MELI34 → EQUITY, BBAS3 → NOTÍCIAS com filtro pré-aplicado, AAPL34 →
+  só adicionar sem navegar); AppTest nas 9 seções sem exceção.
+
 ## 2026-09-26 (revisão da ETAPA 7 — tamanho do painel direto na aba)
 
 - **Feedback do Rodrigo**: a primeira versão da ETAPA 7 só deixava
