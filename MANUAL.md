@@ -154,14 +154,19 @@ Visão ampla do pregão (não é sobre um papel específico, ao contrário de
 EQUITY): termômetro, altas/baixas, mais negociados, desempenho setorial,
 mapa de calor e mercados globais.
 
-- **Fonte de dados**: lote único via `yf.download` sobre uma lista curada
-  de blue chips do Ibovespa (`config.IBOVESPA_COMPOSICAO`, ~60 papéis com
-  setor) — **não é a composição oficial completa do índice** (~86 papéis,
-  rebalanceada trimestralmente pela B3). Atualize esse dict conforme
-  rebalanceamentos; é só um dicionário ticker→setor, não exige mexer em
-  mais nada. Alguns papéis podem falhar no lote em determinados momentos
-  (bloqueio/instabilidade do yfinance) — nesse caso saem do cálculo em
-  vez de aparecer com dado errado (nunca inventa número).
+- **Fonte de dados**: lote único via `yf.download` sobre a **composição
+  oficial do Ibovespa**, direto da API pública da B3
+  (`data/ibovespa.py:obter_composicao_oficial`, ~76 papéis, cache de
+  24h). Setor de cada papel continua vindo de uma curadoria manual
+  (`config.IBOVESPA_SETORES` — a B3 não classifica por setor nesse
+  endpoint); ticker novo sem setor mapeado aparece em "Outros". Se a B3
+  falhar, cai pro fallback estático (mesmo dict, lista curada de blue
+  chips). Atualize `IBOVESPA_SETORES` conforme rebalanceamentos pra
+  cobrir setor dos papéis novos; é só um dicionário ticker→setor, não
+  exige mexer em mais nada. Alguns papéis podem falhar no lote em
+  determinados momentos (bloqueio/instabilidade do yfinance) — nesse
+  caso saem do cálculo em vez de aparecer com dado errado (nunca
+  inventa número).
 - **Termômetro**, **maiores altas/baixas** e **desempenho setorial**:
   cada um com seletor DIA/SEMANA/MÊS (efeito imediato, independente
   entre os três painéis — trocar um não afeta os outros). Semana/mês =
@@ -241,8 +246,7 @@ imediato, consulte o RAD/ENET da própria CVM).
   assunto ≥40%, até 2 dias de diferença), o card da notícia ganha esse
   selo e um link direto pro documento oficial.
 
-**Limitações conhecidas:** cobre só as ~64 empresas de
-`config.IBOVESPA_COMPOSICAO` presentes na sua watchlist (mapa
-ticker→CNPJ vem do FCA da própria CVM); BDRs de empresa estrangeira
-(MELI34 etc.) não têm registro direto na CVM brasileira, então não
-aparecem aqui.
+**Limitações conhecidas:** cobre as empresas da sua watchlist que
+tiverem CNPJ mapeado no FCA da própria CVM (`data/cvm.py:_mapa_ticker_cnpj`);
+BDRs de empresa estrangeira (MELI34 etc.) não têm registro direto na CVM
+brasileira, então não aparecem aqui.

@@ -12,6 +12,7 @@ import time
 from curl_cffi import requests as cffi_requests
 
 from .cvm import testar_conexao as testar_conexao_cvm
+from .ibovespa import _montar_url as _url_b3_ibov
 from .prices import testar_conexao_indicadores
 from .research import genial, genial_lives, xp
 
@@ -84,6 +85,7 @@ FONTES = [
     {"nome": "Genial (Lives)", "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCYSOMA4Yx1CJvrdI8epLfnA"},
     {"nome": "Yahoo Finance (indicadores)", "url": "https://query1.finance.yahoo.com/v10/finance/quoteSummary/PETR4.SA"},
     {"nome": "CVM (dados abertos)", "url": "https://dados.cvm.gov.br/dataset/cia_aberta-doc-ipe"},
+    {"nome": "B3 (composição Ibovespa)", "url": _url_b3_ibov()},
     {"nome": "BTG Research", "url": "https://content.btgpactual.com/api/research/public-router/media-research/api/media-research/public/v1/medias/lives?status=LIVE&pageNumber=1&pageSize=1"},
     {"nome": "Itaú BBA", "url": "https://www.itau.com.br/itaubba-pt/analises-economicas"},
     {"nome": "Santander", "url": "https://www.santandercorretora.com.br/corretora/home/nossos-servicos/relatorios.html"},

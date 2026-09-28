@@ -2,9 +2,9 @@
 """Interface da aba MERCADO: visão ampla do pregão (não é sobre um papel
 específico, ao contrário de EQUITY) - altas/baixas, mais negociados,
 termômetro, mapa de calor setorial e mercados globais. Dados vêm de
-data/mercado.py, sobre a lista curada de config.IBOVESPA_COMPOSICAO (não
-é a composição oficial completa do índice - ver aviso fixo no topo da
-aba e o comentário em config.py)."""
+data/mercado.py, sobre a composição oficial do Ibovespa direto da B3
+(com fallback pra lista curada estática se a B3 falhar - ver aviso fixo
+no topo da aba e o comentário em data/ibovespa.py)."""
 
 import html
 
@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import config
+from data.ibovespa import obter_composicao_oficial
 from data.mercado import (
     CAMPO_VARIACAO_POR_JANELA, obter_altas_baixas, obter_desempenho_setorial,
     obter_mais_negociados, obter_mercados_globais, obter_panorama_ibovespa, obter_termometro,
@@ -75,12 +76,14 @@ def _layout_grafico_escuro(fig, tema, altura=340):
 
 def _painel_termometro(prefs):
     st.markdown('<div class="painel-titulo">MERCADO</div>', unsafe_allow_html=True)
-    st.caption(
-        "Baseado numa lista curada de blue chips de alta liquidez do Ibovespa "
-        f"({len(config.IBOVESPA_COMPOSICAO)} papéis configurados) - não é a composição "
-        "oficial completa do índice (~86 papéis, rebalanceada trimestralmente pela B3). "
-        "Ver MANUAL.md."
-    )
+    composicao = obter_composicao_oficial()
+    if composicao:
+        st.caption(f"Composição oficial do Ibovespa, direto da B3 ({len(composicao)} papéis). Ver MANUAL.md.")
+    else:
+        st.caption(
+            "B3 indisponível no momento - usando lista curada de fallback "
+            f"({len(config.IBOVESPA_SETORES)} papéis). Ver MANUAL.md."
+        )
     janela = _seletor_janela("termometro")
     term = obter_termometro(janela)
     if term["total"] == 0:

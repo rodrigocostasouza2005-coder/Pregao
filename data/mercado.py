@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """Visão de mercado amplo (aba MERCADO): altas/baixas, mais negociados,
 termômetro, desempenho setorial, mapa de calor (treemap) e mercados
-globais - tudo sobre a composição aproximada do Ibovespa em
-config.IBOVESPA_COMPOSICAO (lista curada, ver comentário lá).
+globais - universo de tickers vem da composição oficial da B3
+(data/ibovespa.py:obter_composicao_oficial), com fallback pra lista
+curada estática (config.IBOVESPA_SETORES) se a B3 falhar. Setor de cada
+papel sempre vem da curadoria manual (a B3 não classifica por setor
+nesse endpoint) - ver comentário em config.py.
 
 Busca em LOTE (yf.download com vários tickers de uma vez) em vez de um
 yf.Ticker().fast_info por papel: com ~60 tickers, uma requisição em lote
@@ -20,7 +23,8 @@ import pandas as pd
 import streamlit as st
 import yfinance as yf
 
-from config import IBOVESPA_COMPOSICAO, INDICES_GLOBAIS
+from config import IBOVESPA_SETORES, INDICES_GLOBAIS
+from data.ibovespa import obter_composicao_oficial
 from data.prices import _para_symbol_yf
 
 _TTL_LOTE = 90  # segundos - batch pesado, nao vale reconsultar a cada poucos segundos
@@ -98,12 +102,15 @@ def _linha_papel(df: pd.DataFrame, ticker: str, symbol: str) -> dict | None:
 def obter_panorama_ibovespa() -> list:
     """Lista de dicts {ticker, setor, preco, variacao_pct,
     variacao_semana_pct, variacao_mes_pct, volume, volume_financeiro}
-    pra cada papel de IBOVESPA_COMPOSICAO que respondeu com dado valido
-    (as duas variacoes extras podem vir None individualmente - ver
-    _linha_papel). [] se o lote inteiro falhar (yfinance fora do ar/
+    pra cada papel da composição oficial do Ibovespa (B3) que respondeu
+    com dado valido (as duas variacoes extras podem vir None
+    individualmente - ver _linha_papel). Setor sempre vem da curadoria
+    manual (IBOVESPA_SETORES); ticker sem entrada la cai em "Outros" -
+    nao inventa setor. [] se o lote inteiro falhar (yfinance fora do ar/
     bloqueado) - quem chama trata como "sem dados agora", nunca mostra
     numero inventado."""
-    tickers = tuple(IBOVESPA_COMPOSICAO.keys())
+    composicao = obter_composicao_oficial()
+    tickers = tuple(composicao.keys()) if composicao else tuple(IBOVESPA_SETORES.keys())
     df = _baixar_lote(tickers)
     if df is None:
         return []
@@ -112,7 +119,7 @@ def obter_panorama_ibovespa() -> list:
         symbol = _para_symbol_yf(ticker)
         linha = _linha_papel(df, ticker, symbol)
         if linha:
-            linha["setor"] = IBOVESPA_COMPOSICAO[ticker]
+            linha["setor"] = IBOVESPA_SETORES.get(ticker, "Outros")
             resultado.append(linha)
     return resultado
 

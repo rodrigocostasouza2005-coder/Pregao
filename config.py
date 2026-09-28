@@ -84,41 +84,54 @@ INDICES_TICKER_TAPE = {
 }
 SIMBOLO_IBOVESPA = "^BVSP"  # usado na comparacao de desempenho no grafico
 
-# --- Composicao aproximada do Ibovespa, por setor (aba MERCADO) --------
-# Lista curada manualmente com blue chips de alta liquidez - NAO e' a
-# composicao oficial completa (~86 papeis, rebalanceada trimestralmente
-# pela B3) nem se pretende substituir a fonte oficial. Existe pra dar uma
-# visao setorial/de mercado ampla sem depender de scraping do site da B3.
-# Atualize esta lista conforme rebalanceamentos (https://www.b3.com.br,
-# composicao da carteira teorica do IBOV) - e' so' um dict, adicionar ou
-# remover ticker/setor nao exige mexer em nenhum outro arquivo.
-IBOVESPA_COMPOSICAO = {
+# --- Classificacao setorial + fallback do Ibovespa (aba MERCADO) -------
+# A partir de 2026-09-28 (ver data/ibovespa.py), a LISTA de tickers real
+# vem direto da API oficial da B3 (composicao verdadeira, ~76 papeis,
+# atualizada automaticamente) - este dict nao e' mais "a composicao".
+# Ele agora serve dois papeis: (1) mapa ticker->setor pra aba MERCADO
+# (a B3 nao retorna classificacao setorial nesse endpoint, entao setor
+# continua sendo curadoria manual - ticker novo sem entrada aqui cai em
+# "Outros", nao inventa setor); (2) fallback de universo de tickers se a
+# B3 estiver fora do ar (ver data/ibovespa.py:obter_composicao_oficial).
+# Atualize conforme rebalanceamentos (https://www.b3.com.br, composicao
+# da carteira teorica do IBOV) - e' so' um dict.
+IBOVESPA_SETORES = {
     "PETR4": "Petróleo e Gás", "PETR3": "Petróleo e Gás", "PRIO3": "Petróleo e Gás",
     "BRAV3": "Petróleo e Gás", "UGPA3": "Petróleo e Gás", "CSAN3": "Petróleo e Gás",
+    "VBBR3": "Petróleo e Gás",
     "VALE3": "Mineração e Siderurgia", "GGBR4": "Mineração e Siderurgia",
     "CSNA3": "Mineração e Siderurgia", "USIM5": "Mineração e Siderurgia",
-    "GOAU4": "Mineração e Siderurgia",
-    "ITUB4": "Bancos", "BBDC4": "Bancos", "BBAS3": "Bancos", "SANB11": "Bancos",
-    "BPAC11": "Bancos", "B3SA3": "Bancos e Serviços Financeiros",
+    "GOAU4": "Mineração e Siderurgia", "BRAP4": "Mineração e Siderurgia",
+    "CMIN3": "Mineração e Siderurgia",
+    "ITUB4": "Bancos", "BBDC4": "Bancos", "BBDC3": "Bancos", "BBAS3": "Bancos",
+    "SANB11": "Bancos", "BPAC11": "Bancos",
+    "B3SA3": "Bancos e Serviços Financeiros", "ITSA4": "Bancos e Serviços Financeiros",
+    "BBSE3": "Seguros", "PSSA3": "Seguros", "CXSE3": "Seguros",
     "MGLU3": "Varejo", "LREN3": "Varejo", "RENT3": "Varejo", "ASAI3": "Varejo",
-    "AZZA3": "Varejo", "PCAR3": "Varejo",
+    "AZZA3": "Varejo", "PCAR3": "Varejo", "CEAB3": "Varejo", "VIVA3": "Varejo",
     "AXIA3": "Energia Elétrica", "EQTL3": "Energia Elétrica",
     "CMIG4": "Energia Elétrica", "CPLE3": "Energia Elétrica", "ENEV3": "Energia Elétrica",
     "SBSP3": "Saneamento", "CPFE3": "Energia Elétrica", "AURE3": "Energia Elétrica",
+    "ENGI11": "Energia Elétrica", "EGIE3": "Energia Elétrica", "ISAE4": "Energia Elétrica",
+    "TAEE11": "Energia Elétrica", "CSMG3": "Saneamento",
     "VIVT3": "Telecomunicações", "TIMS3": "Telecomunicações",
     "JBSS32": "Agro e Alimentos", "MBRF3": "Agro e Alimentos",
     "SMTO3": "Agro e Alimentos", "BEEF3": "Agro e Alimentos",
     "SUZB3": "Papel e Celulose", "KLBN11": "Papel e Celulose",
     "WEGE3": "Bens de Capital e Industrial", "EMBJ3": "Bens de Capital e Industrial",
+    "POMO4": "Bens de Capital e Industrial",
     "RAIL3": "Transporte e Logística", "MOTV3": "Transporte e Logística",
-    "ECOR3": "Transporte e Logística",
+    "ECOR3": "Transporte e Logística", "VAMO3": "Transporte e Logística",
     "ABEV3": "Bebidas",
-    "HAPV3": "Saúde", "RDOR3": "Saúde", "RADL3": "Saúde", "FLRY3": "Saúde", "HYPE3": "Saúde",
+    "HAPV3": "Saúde", "RDOR3": "Saúde", "RADL3": "Saúde", "FLRY3": "Saúde",
+    "HYPE3": "Saúde", "SMFT3": "Saúde",
     "NATU3": "Higiene e Beleza",
     "TOTS3": "Tecnologia", "LWSA3": "Tecnologia", "POSI3": "Tecnologia",
     "CYRE3": "Construção Civil", "EZTC3": "Construção Civil", "MRVE3": "Construção Civil",
-    "MULT3": "Shoppings e Imóveis", "IGTI11": "Shoppings e Imóveis",
+    "CURY3": "Construção Civil", "DIRR3": "Construção Civil", "TEND3": "Construção Civil",
+    "MULT3": "Shoppings e Imóveis", "IGTI11": "Shoppings e Imóveis", "ALOS3": "Shoppings e Imóveis",
     "CVCB3": "Turismo e Lazer",
+    "COGN3": "Educação", "YDUQ3": "Educação",
 }
 # Tickers removidos por delisting/deslistagem sem substituto real
 # (confirmado via WebSearch + yfinance, 2026-09-28 - achado a partir de
@@ -128,12 +141,15 @@ IBOVESPA_COMPOSICAO = {
 # resolve no yfinance - nenhum substituto funcional encontrado). Ver
 # CHANGELOG.md pra lista completa de renomeacoes (ELET3->AXIA3 etc.).
 
-# --- Nomes curtos pros tickers de IBOVESPA_COMPOSICAO + TICKER_ALIASES,
-# pra busca/autocomplete de ativo (ui/busca.py) -----------------------
-# ESTATICO de proposito: a busca precisa montar a lista de opcoes na
-# hora (sem esperar rede) - buscar isso via obter_nome_yf() (data/
-# prices.py, 1 chamada de yfinance por ticker) pra' ~70 tickers de uma
-# vez levaria dezenas de segundos no primeiro carregamento (confirmado
+# --- Nomes curtos pros tickers mais comuns (IBOVESPA_SETORES +
+# TICKER_ALIASES), pra busca/autocomplete de ativo (ui/busca.py) ------
+# ESTATICO de proposito, como curadoria de nome "limpo" (a lista de
+# TICKERS em si agora vem da B3 - ver data/ibovespa.py - mas o NOME
+# oficial da B3 pode vir mais verboso, ex "PETROBRAS PN N2"; este dict
+# da prioridade a um nome mais curto pros tickers mais conhecidos).
+# Buscar nome via obter_nome_yf() (data/prices.py, 1 chamada de
+# yfinance por ticker) pra' ~70 tickers de uma vez levaria dezenas de
+# segundos no primeiro carregamento (confirmado
 # na pratica: ~74 tickers, mais de 30s) e violaria a regra de nao bater
 # em API repetidamente so' pra montar uma lista de busca. Nomes comuns
 # (nao o razao social completo) das empresas mais conhecidas do

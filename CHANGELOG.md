@@ -3,6 +3,38 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-28 (feature: composição oficial do Ibovespa via B3)
+
+- **Universo de tickers da aba MERCADO (e da busca global) deixa de ser
+  uma lista curada à mão e passa a vir da API oficial e pública da B3**
+  (`data/ibovespa.py`, novo — mesmo endpoint usado pelo site oficial de
+  composição do índice, sem autenticação). Retorna a carteira teórica
+  real do Ibovespa (76 papéis hoje, contra ~64 aproximados antes) com
+  peso de cada papel; cache de 24h (a carteira só muda em rebalanceamento
+  trimestral). Descoberto e confirmado funcionando neste sandbox — item
+  novo no DIAGNÓSTICO DE FONTES ("B3 (composição Ibovespa)") pra
+  confirmar também em produção.
+- **`config.IBOVESPA_COMPOSICAO` renomeado pra `IBOVESPA_SETORES`**: a B3
+  não classifica por setor econômico nesse endpoint, então a curadoria
+  manual continua existindo, mas só como mapa ticker→setor (+ fallback
+  de universo de tickers se a B3 falhar). Ticker real sem setor curado
+  cai em "Outros" em vez de inventar classificação.
+- **24 papéis novos que a composição oficial trouxe e não estavam na
+  lista antiga ganharam setor curado** (ex: ALOS3→Shoppings e Imóveis,
+  ITSA4/BBDC3→Bancos, BBSE3/PSSA3/CXSE3→Seguros [categoria nova],
+  COGN3/YDUQ3→Educação [categoria nova], VBBR3→Petróleo e Gás,
+  TAEE11/EGIE3/ENGI11/ISAE4→Energia Elétrica, CSMG3→Saneamento, entre
+  outros) — sem isso, ~1/3 dos papéis reais apareceria sem setor no
+  painel SETORIAL.
+- **JBSS32 confirmado fora do índice oficial** (não é mais membro do
+  Ibovespa desde a migração pra BDR/NYSE) — continua funcionando
+  normalmente na busca/watchlist (não depende de estar no índice), só
+  não entra mais nos painéis de visão de mercado (termômetro, altas/
+  baixas, setorial), que são especificamente sobre o índice.
+- Testado via `streamlit.testing.v1.AppTest` (VISÃO GERAL, MERCADO,
+  EQUITY, sem exceção) e chamada real contra a B3 (76/76 papéis com
+  dado válido, 0 em "Outros" depois da curadoria). `compileall` limpo.
+
 ## 2026-09-28 (bug real + pedido: tickers desatualizados + desempenho semana/mês)
 
 - **Bug real relatado pelo Rodrigo**: buscou "JBSS3" na busca global e o
