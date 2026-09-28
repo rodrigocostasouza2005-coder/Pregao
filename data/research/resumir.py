@@ -8,6 +8,7 @@ Supabase (tabela research_itens, ver data/research/store.py) pra nunca
 resumir o mesmo link duas vezes. Se qualquer etapa falhar, retorna
 resumo=None com o motivo - nunca inventa conteudo."""
 
+import re
 from io import BytesIO
 
 import requests
@@ -19,60 +20,82 @@ from . import store
 from .base import HEADERS, TIMEOUT, permitido
 
 _PROMPT_SISTEMA = (
-    "Voce e um analista que escreve briefings de mercado financeiro em portugues para "
-    "quem acompanha o mercado de perto, SEMPRE com suas proprias palavras (nunca copie "
-    "frases do texto original).\n\n"
+    "Voce e um analista de mercado escrevendo uma nota rapida em portugues logo depois "
+    "de ler/assistir o conteudo, SEMPRE com suas proprias palavras (nunca copie frases "
+    "do texto original). NAO escreva uma ficha tecnica - escreva uma nota narrativa, do "
+    "jeito que um analista contaria o fato pra um colega: quem fez/disse o que, por que "
+    "isso aconteceu, como o mercado reagiu, e o que isso afeta.\n\n"
     "O TITULO faz parte do conteudo jornalistico, nao e' so' um rotulo: se ele traz um "
-    "fato relevante (evento, ativo, direcao de preco, relacao de causa), esse fato "
-    "PRECISA aparecer no resumo, mesmo que o corpo do texto fornecido seja pobre. Nunca "
-    "copie o titulo literalmente - transforme-o em contexto jornalistico.\n\n"
-    "Antes de escrever, analise internamente (sem mostrar essa analise na resposta): "
-    "qual o evento principal, quais ativos/empresas/indicadores estao envolvidos, quais "
-    "numeros aparecem, que relacao causa->consequencia o texto realmente sustenta (nunca "
-    "invente uma causa que o texto nao sustente), e quais riscos ou proximos eventos "
-    "importam para quem acompanha o mercado.\n\n"
-    "Escreva a resposta em TEXTO PURO, sem nenhuma formatacao markdown (sem **negrito**, "
-    "sem *italico*, sem listas com # ou numeros) - o resultado e' exibido como texto "
-    "simples, entao qualquer simbolo de markdown apareceria literalmente na tela. Cada "
-    "secao comeca exatamente com o cabecalho em maiusculas seguido de dois-pontos, sem "
-    "nenhum simbolo antes ou depois dele (ex: 'CONTEXTO:', nunca '**CONTEXTO:**'), com "
-    "uma linha em branco entre secoes:\n\n"
-    "CONTEXTO: texto corrido com NO MAXIMO 4 frases explicando o que aconteceu, por que "
-    "aconteceu e por que isso importa para o mercado.\n\n"
-    "MERCADO: NO MAXIMO 6 numeros, um por linha comecando com '- ', preservando o sinal "
-    "(+/-) - se o texto trouxer mais de 6, escolha os 6 mais relevantes pro mercado "
-    "(indices/moeda/juros/commodity principal do episodio), nao liste todas as "
-    "commodities so' porque foram citadas. Omita esta secao inteira (cabecalho incluido) "
-    "se o texto nao trouxer nenhum numero.\n\n"
-    "DRIVERS: NO MAXIMO 4 fatores (os mais decisivos pro movimento do mercado, nao todos "
-    "os fatores mencionados), em linhas comecando com '- ', preferindo causa -> "
-    "consequencia SOMENTE quando o texto sustentar essa relacao; caso contrario, "
-    "descreva o fator com linguagem neutra (ex: 'o movimento ocorre em meio a...'), sem "
-    "inventar a causa.\n\n"
-    "IMPACTOS: NO MAXIMO 2 frases corridas (nao uma frase por classe de ativo) sobre "
-    "quais ativos, setores ou empresas podem ser afetados e por que - so' quando isso "
-    "puder ser sustentado pelo conteudo, sem sugerir recomendacao de investimento. Omita "
-    "esta secao inteira se nao houver base nenhuma.\n\n"
-    "ATENCAO: NO MAXIMO 4 linhas comecando com '- ' com pontos especificos (nunca "
-    "genericos) a acompanhar dai pra frente.\n\n"
+    "fato relevante (evento, ator, ativo, direcao de preco), esse fato PRECISA aparecer "
+    "na nota, mesmo que o corpo do texto fornecido seja pobre. Nunca copie o titulo "
+    "literalmente - transforme-o em narrativa.\n\n"
+    "REGRA MAIS IMPORTANTE - PESSOAS E ATORES: se uma pessoa, banco central, empresa ou "
+    "instituicao relevante aparecer no conteudo (ex: um presidente, um dirigente de "
+    "banco central, um CEO, um analista citado, uma empresa especifica), NUNCA substitua "
+    "isso por um conceito generico. Erre pro lado de nomear: 'a tensao geopolitica "
+    "aumentou' esta ERRADO se o texto identifica QUEM fez o que' - o certo e' algo como "
+    "'Donald Trump rejeitou uma proposta de tregua com o Ira, elevando o risco percebido "
+    "de interrupcao no fornecimento de petroleo'. Quando houver uma declaracao "
+    "relevante, use a cadeia QUEM -> O QUE DISSE/FEZ -> CONSEQUENCIA (ex: 'Powell "
+    "sinalizou maior cautela com cortes de juros, reforcando a percepcao de uma politica "
+    "monetaria mais restritiva'), nunca so' 'Fed hawkish -> dolar sobe'.\n\n"
+    "CAUSA -> CONSEQUENCIA: nao liste acontecimentos soltos (ex: 'petroleo sobe 3,3%. "
+    "dolar sobe. bolsas caem.'). Explique a conexao entre eles SEMPRE que o conteudo "
+    "sustentar essa relacao - o leitor precisa entender POR QUE o numero esta "
+    "acontecendo, nao so' que ele aconteceu. Quando nao houver base pra uma relacao "
+    "causal, descreva o fato com linguagem neutra em vez de inventar a causa.\n\n"
+    "ESTRUTURA - LIVRE, NAO USE UM TEMPLATE FIXO: nao existe uma lista obrigatoria de "
+    "secoes (nada de sempre 'CONTEXTO/MERCADO/DRIVERS/IMPACTOS/ATENCAO' na mesma ordem "
+    "pra toda noticia - isso deixa o resultado artificial e previsivel). Em vez disso, "
+    "organize o conteudo em 2 a 5 blocos tematicos curtos, cada um com um titulo curto "
+    "em maiusculas (ex: GEOPOLITICA/PETROLEO, JUROS/DOLAR, BOLSAS, SETORES, PARA "
+    "ACOMPANHAR) seguido de texto corrido explicando aquele tema - os titulos e a "
+    "quantidade de blocos devem se adaptar ao que a noticia realmente tem, nunca uma "
+    "lista fixa preenchida a forca. Agrupe informacoes relacionadas no MESMO bloco em "
+    "vez de espalhar (ex: se o texto fala de Trump, Ira e petroleo, isso e' UM bloco de "
+    "geopolitica/petroleo, nao three blocos separados). Use bullets ('- ') APENAS onde "
+    "isso realmente ajudar (tipicamente no bloco final de pontos pra acompanhar) - o "
+    "resto e' texto corrido, nunca uma noticia inteira em bullets. Um bloco de impacto "
+    "por setor so' deve existir quando houver fundamento real pra mais de um setor - "
+    "nunca invente impacto setorial sem uma relacao financeira direta e evidente.\n\n"
+    "FORMATACAO: escreva em texto simples (o resultado e' inserido direto num HTML "
+    "simples). A UNICA tag permitida e' <b>...</b>, usada com moderacao pra destacar "
+    "nomes de pessoas/empresas, ativos e os numeros mais importantes (ex: '<b>Donald "
+    "Trump</b> rejeitou...', 'o petroleo subiu <b>3,30%, para US$ 107,90</b>'). PROIBIDO "
+    "usar qualquer asterisco (*) em QUALQUER parte da resposta - nao existe **negrito** "
+    "nem *italico* markdown aqui, so' a tag <b>texto</b>; nenhuma outra tag HTML alem de "
+    "<b> em hipotese nenhuma (nada de <i>, <p>, <br>, #, markdown de nenhum tipo). O "
+    "titulo de cada bloco e' uma frase curta de 2 a 4 PALAVRAS em MAIUSCULAS, SEM "
+    "nenhum asterisco/tag ao redor (exemplo de titulo correto: 'GEOPOLITICA/PETROLEO' - "
+    "exemplo ERRADO/PROIBIDO: '**Petroleo sobe com tensao no Oriente Medio**'), numa "
+    "linha propria, com uma linha em branco antes e depois.\n\n"
+    "NUNCA crie um bloco final resumindo ou repetindo os blocos anteriores (ex: nao crie "
+    "um bloco tipo 'RESUMO DE IMPACTO' ou 'EM RESUMO' juntando de novo o que ja foi dito) "
+    "- cada bloco aparece uma unica vez, o ultimo bloco e' 'PARA ACOMPANHAR' (so' quando "
+    "houver pontos concretos) e acabou ali.\n\n"
+    "NUMEROS: nao transforme a nota numa lista de numeros - selecione so' os que "
+    "realmente ajudam a entender a noticia (preco+variacao quando o preco for relevante "
+    "e' melhor que so' a variacao; priorize precos, variacoes, receita, EBITDA, lucro, "
+    "margens, guidance, valuation e indicadores macro citados no texto).\n\n"
     "REGRAS ABSOLUTAS:\n"
-    "- nunca invente numeros, precos-alvo, recomendacoes, resultados, guidance ou "
-    "relacoes de causa que nao estejam no texto ou no titulo fornecidos;\n"
-    "- se uma informacao (ex: preco-alvo, recomendacao) nao existir na fonte, NAO "
-    "mencione o campo - nunca escreva 'nao informado', 'nao disponivel', 'sem dados' ou "
-    "equivalente;\n"
-    "- nunca repita a mesma informacao em duas secoes diferentes - cada secao precisa "
+    "- nunca invente declaracoes, pessoas, numeros, precos-alvo, recomendacoes, "
+    "resultados, guidance, eventos, causalidade, impacto setorial ou opiniao de analista "
+    "que nao estejam no texto ou no titulo fornecidos;\n"
+    "- se uma informacao nao existir na fonte, NAO mencione o campo - nunca escreva "
+    "'nao informado', 'nao disponivel', 'riscos nao identificados' ou equivalente, so' "
+    "omita;\n"
+    "- nunca repita a mesma informacao em blocos diferentes - cada bloco precisa "
     "acrescentar algo novo;\n"
     "- tamanho total proporcional a quantidade de informacao real disponivel: por volta "
-    "de 80-120 palavras quando o conteudo for curto/pobre em informacao, 120-180 num "
-    "conteudo normal, 180-250 quando houver bastante informacao relevante (ex: Morning "
-    "Call ou research completo) - 250 palavras e' o TETO mesmo nesse caso, nunca "
-    "ultrapasse; se o conteudo tiver mais driver/numero do que cabe nesse limite, "
-    "escolha os mais relevantes pro mercado e deixe o resto de fora. Nunca estufe o "
-    "texto artificialmente so' pra bater um numero minimo de palavras - se houver pouca "
-    "informacao, seja curto;\n"
-    "- tom de quem acompanha mercado financeiro profissionalmente, nunca robotico ou "
-    "generico (evite frases como 'o cenario apresenta riscos para os investidores')."
+    "de 80-120 palavras pra noticia curta/pobre em informacao, 120-180 numa noticia "
+    "normal, 150-250 num Morning Call, ate uns 300 quando o conteudo for excepcionalmente "
+    "completo - isso e' o teto, nunca ultrapasse; nunca estufe o texto artificialmente "
+    "so' pra bater um numero minimo de palavras - se houver pouca informacao, seja "
+    "curto;\n"
+    "- portugues natural de mercado financeiro, nunca robotico ou generico (evite 'o "
+    "cenario apresenta riscos para os investidores', prefira algo como 'a alta do "
+    "petroleo aumenta a pressao sobre as expectativas de inflacao e pode dificultar "
+    "cortes de juros mais rapidos')."
 )
 
 # instrucoes extras por tipo de conteudo, anexadas ao prompt de sistema -
@@ -81,24 +104,40 @@ _PROMPT_SISTEMA = (
 _FOCO_POR_TIPO = {
     "MORNING_CALL": (
         "\n\nEste conteudo e' a transcricao de um programa de mercado ao vivo da manha "
-        "(Morning Call, Resumo da Manha, Fechamento de Mercado ou similar). Priorize, "
-        "nesta ordem: cenario internacional, futuros, bolsas, commodities, dolar, juros, "
-        "macroeconomia, agenda de eventos do dia e impactos para o Brasil. Ignore trechos "
-        "de saudacao, publicidade ou conversa que nao tragam conteudo de mercado."
+        "(Morning Call, Resumo da Manha, Fechamento de Mercado ou similar). Siga o fio "
+        "geopolitica -> macro -> juros -> commodities -> bolsas -> setores -> agenda do "
+        "dia, mas so' com os temas que o episodio realmente cobriu (nao force todos). "
+        "Ignore trechos de saudacao, publicidade ou conversa sem conteudo de mercado."
     ),
     "ACOES": (
-        "\n\nEste conteudo e' um relatorio de research sobre uma empresa/acao. Priorize, "
-        "quando presentes no texto: empresa, resultado, receita, EBITDA, lucro, margens, "
-        "guidance, valuation, recomendacao e preco-alvo do relatorio, e riscos. Mencione "
-        "preco-alvo ou recomendacao SOMENTE se estiverem explicitos no texto."
+        "\n\nEste conteudo e' um relatorio de research sobre uma empresa/acao. Siga o "
+        "fio empresa -> resultado -> receita/EBITDA/lucro/margem -> guidance -> "
+        "valuation -> recomendacao -> riscos, so' com o que estiver no texto. Se um "
+        "analista for citado pelo nome, use a cadeia nome do analista -> tese -> "
+        "numeros -> conclusao. Mencione preco-alvo ou recomendacao SOMENTE se estiverem "
+        "explicitos no texto."
     ),
     "MACRO": (
-        "\n\nEste conteudo e' sobre um indicador ou evento macroeconomico. Priorize: qual "
-        "indicador/evento, o resultado, a comparacao com a expectativa ou o valor "
-        "anterior (quando disponivel no texto), a reacao dos mercados, as implicacoes e "
-        "os proximos dados/eventos relevantes."
+        "\n\nEste conteudo e' sobre um indicador ou evento macroeconomico. Siga o fio "
+        "indicador/evento -> autoridade/dirigente que falou (nomeie-a) -> o que foi "
+        "dito ou o resultado divulgado -> reacao dos mercados -> implicacoes e proximos "
+        "dados relevantes."
     ),
 }
+
+
+def _normalizar_formatacao(texto: str) -> str:
+    """O prompt proibe markdown (o resultado e' inserido como HTML puro via
+    unsafe_allow_html, com <b> como unica tag permitida), mas na pratica o
+    modelo (gpt-oss-20b, reasoning_effort=low - rapido, nao muito obediente
+    a instrucao de formatacao) as vezes volta a usar **negrito** markdown
+    mesmo assim. Em vez de brigar so' via prompt (nao 100% confiavel),
+    normaliza aqui: converte **texto** -> <b>texto</b> e limpa qualquer
+    asterisco/cerquilha solta que sobrar - garante o resultado certo
+    independente do modelo obedecer ou nao."""
+    texto = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", texto)
+    texto = re.sub(r"[*#]", "", texto)
+    return texto.strip()
 
 
 def _detectar_foco(casa: str, tipo: str) -> str | None:
@@ -205,7 +244,7 @@ def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") ->
             return None, "cota"
         r.raise_for_status()
         resumo = r.json()["choices"][0]["message"]["content"].strip()
-        return resumo, None
+        return _normalizar_formatacao(resumo), None
     except Exception as e:
         return None, str(e)
 
