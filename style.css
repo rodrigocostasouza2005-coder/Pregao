@@ -50,7 +50,7 @@ header[data-testid="stHeader"] {
    media query no fim do arquivo) e este padding cai pra so' o header
    nativo do Streamlit. */
 .block-container {
-    padding-top: 9rem;
+    padding-top: 9.4rem;
     padding-bottom: 0.6rem;
     padding-left: 1rem;
     padding-right: 1rem;
@@ -75,7 +75,11 @@ header[data-testid="stHeader"] {
     max-width: 100vw;
     background-color: var(--bg);
     border-bottom: 1px solid var(--borda);
-    padding: 0.3rem 1rem;
+    /* padding-left maior que o resto: espaco pro botao de abrir a sidebar
+       quando ela esta recolhida ([data-testid="collapsedControl"], fixo no
+       canto superior esquerdo com z-index 999, ACIMA desta faixa) - sem
+       essa folga ele sobrepoe o logo/primeiro item */
+    padding: 0.65rem 1rem 0.6rem 2.75rem;
     z-index: 56;
 }
 
@@ -85,7 +89,7 @@ header[data-testid="stHeader"] {
    sobra pra fechar a largura total certinha sem espaco vazio */
 .pregao-topo-fixo {
     position: fixed;
-    top: 5.6rem;
+    top: 6.25rem;
     left: 0;
     right: 0;
     width: 100vw;
@@ -128,14 +132,15 @@ div[data-testid="stElementContainer"] { margin-bottom: 0; }
     white-space: nowrap;
     padding-top: 0.3rem;
 }
-.pregao-ao-vivo {
-    display: inline-block;
-    color: var(--alta);
+/* hint visual de atalho (sem bind de teclado de verdade), ao lado da busca */
+.pregao-ctrlk {
+    color: var(--cinza);
     font-size: 0.62rem;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    margin-left: 0.5rem;
-    vertical-align: middle;
+    letter-spacing: 0.06em;
+    text-align: center;
+    border: 1px solid var(--borda);
+    padding: 0.2rem 0.1rem;
+    margin-top: 0.05rem;
 }
 
 /* e-mail do usuario logado, na camada 1 do header - trunca com reticencias
@@ -151,26 +156,34 @@ div[data-testid="stElementContainer"] { margin-bottom: 0; }
     text-overflow: ellipsis;
 }
 
-/* camada 4 do header: chips da watchlist pessoal, separados do ticker de
-   mercado (camada 2) - faixa fina com scroll horizontal proprio, cada
-   ticker num pill discreto (nunca um botao grande) */
+/* camada 4 do header: "fita" da watchlist pessoal, separada do ticker de
+   mercado (camada 2) - SEM caixa/borda por item (redesign 2026-09-28: a
+   versao anterior com chip em caixinha parecia uma segunda barra de abas;
+   o pedido explicito agora e' parecer fita de mercado, nao botao) */
 .wchip-row {
     display: flex;
-    gap: 0.4rem;
+    align-items: center;
+    gap: 0.55rem;
     overflow-x: auto;
     overflow-y: hidden;
-    padding: 0.2rem 0.1rem 0.3rem 0.1rem;
+    padding: 0.35rem 0.1rem;
     white-space: nowrap;
+    min-height: 32px;
+    box-sizing: border-box;
+    /* respiro antes do conteudo da aba (16-20px pedido no redesign) */
+    margin-bottom: 1rem;
 }
 .wchip {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    border: 1px solid var(--borda);
-    background-color: var(--painel-bg);
-    padding: 0.1rem 0.55rem;
-    font-size: 0.72rem;
+    font-size: 0.74rem;
     flex: 0 0 auto;
+}
+.wchip:not(:last-child)::after {
+    content: "·";
+    color: var(--borda);
+    margin-left: 0.55rem;
 }
 .wchip-ticker {
     color: var(--destaque);
@@ -218,6 +231,11 @@ section[data-testid="stSidebar"] {
        cobriria o topo da sidebar aberta em vez de ficar atras dela */
     position: relative;
     z-index: 1100;
+    /* compacta (210-220px) - sem isso o sidebar nativo do Streamlit fica
+       largo demais e disputa espaco com o conteudo principal */
+    min-width: 210px !important;
+    max-width: 220px !important;
+    width: 210px !important;
 }
 section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
 
@@ -304,19 +322,21 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
     flex-wrap: nowrap !important;
     overflow-x: auto;
     overflow-y: hidden;
+    gap: 0.2rem !important;
 }
 .st-key-nav_secao [data-testid="stButtonGroup"] button {
     background-color: transparent !important;
     border: none !important;
     border-bottom: 2px solid transparent !important;
+    box-shadow: none !important;
     color: var(--cinza) !important;
     border-radius: 0 !important;
     font-size: 0.8rem !important;
-    padding: 0.3rem 0.85rem !important;
-    min-height: 30px !important;
+    padding: 0.55rem 1rem !important;
+    min-height: 46px !important;
 }
 .st-key-nav_secao [data-testid="stButtonGroup"] button:hover {
-    color: var(--neutro) !important;
+    color: var(--destaque) !important;
 }
 .st-key-nav_secao [data-testid="stButtonGroup"] button[aria-checked="true"],
 .st-key-nav_secao [data-testid="stButtonGroup"] button[aria-pressed="true"] {
@@ -369,7 +389,10 @@ table td, table th { padding: 0.15rem 0.5rem; }
 .ticker-tape-wrap {
     overflow: hidden;
     white-space: nowrap;
-    padding: 0.4rem 1rem;
+    /* padding-left maior: mesmo motivo do .st-key-camada1_header (folga pro
+       botao de abrir a sidebar quando recolhida, fixo por cima com
+       z-index 999) - sem isso o primeiro item da fita comecava coberto */
+    padding: 0.28rem 1rem 0.28rem 2.75rem;
     max-width: 100%;
 }
 .ticker-tape-wrap.fixo { overflow-x: auto; }

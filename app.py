@@ -313,31 +313,31 @@ def _ir_com_ticker(chave_secao_destino: str, ticker: str, chave_pill_ticker: str
 # via CSS .st-key-camada1_header, ver style.css) em vez de duas linhas
 # separadas (cabecalho + busca global).
 with st.container(key="camada1_header"):
-    col_logo, col_busca, col_eq, col_news, col_add, col_user = st.columns(
-        [1.5, 3.4, 0.95, 1.15, 1.35, 1.6], gap="small", vertical_alignment="center",
+    col_logo, col_busca, col_ctrlk, col_eq, col_news, col_add, col_user = st.columns(
+        [1.1, 3.9, 0.55, 0.5, 0.5, 0.5, 1.35], gap="small", vertical_alignment="center",
     )
     with col_logo:
-        st.markdown(
-            '<div class="pregao-logo-compacto">PREGÃO <span class="pregao-ao-vivo">● AO VIVO</span></div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div class="pregao-logo-compacto">PREGÃO</div>', unsafe_allow_html=True)
     with col_busca:
         ticker_busca_global = busca.buscar_ativo(
             "Busca global", chave="busca_global_ticker", extras=prefs["watchlist"],
-            ajuda="Busca por ticker ou nome — abre direto na EQUITY ou NOTÍCIAS desse ativo (atalho: Ctrl+K)",
+            ajuda="Busca por ticker ou nome — abre direto na EQUITY ou NOTÍCIAS desse ativo",
         )
+    with col_ctrlk:
+        st.markdown('<div class="pregao-ctrlk">CTRL K</div>', unsafe_allow_html=True)
     ja_na_watchlist = bool(ticker_busca_global) and ticker_busca_global in prefs["watchlist"]
     with col_eq:
-        if st.button("EQUITY ↗", key="busca_global_eq", width="stretch", disabled=not ticker_busca_global):
+        if st.button("↗", key="busca_global_eq", width="stretch", disabled=not ticker_busca_global, help="Abrir na EQUITY"):
             _ir_com_ticker("EQUITY", ticker_busca_global, None)
     with col_news:
-        if st.button("NOTÍCIAS ↗", key="busca_global_news", width="stretch", disabled=not ticker_busca_global):
+        if st.button("▣", key="busca_global_news", width="stretch", disabled=not ticker_busca_global, help="Abrir nas NOTÍCIAS"):
             _ir_com_ticker("NEWS", ticker_busca_global, "news_pill_ticker")
     with col_add:
         if st.button(
-            "NA WATCHLIST" if ja_na_watchlist else "+ WATCHLIST",
+            "✓" if ja_na_watchlist else "+",
             key="busca_global_add", width="stretch",
             disabled=not ticker_busca_global or ja_na_watchlist,
+            help="Na watchlist" if ja_na_watchlist else "Adicionar à watchlist",
         ):
             if validar_ticker(ticker_busca_global):
                 prefs["watchlist"].append(ticker_busca_global)
