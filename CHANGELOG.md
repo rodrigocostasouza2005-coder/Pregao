@@ -3,6 +3,29 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-09-28 (feature: transcrição das lives da Genial)
+
+- **`data/research/genial_lives.py` passa a coletar de verdade**: pedido
+  explícito do Rodrigo. O mecanismo (feed RSS do canal no YouTube +
+  legenda automática via `youtube_transcript_api`) já estava pronto e
+  testado há dias, mas ficava desligado porque o robots.txt do YouTube
+  proíbe `/feeds/videos.xml` pra bots genéricos — mesma política de
+  respeitar robots.txt usada em toda coleta do projeto. Removida a
+  checagem de robots.txt SÓ nesse módulo, com justificativa documentada
+  no próprio arquivo (uso pessoal/não-comercial, volume baixo,
+  exceção única — não generalizar sem decisão explícita igual).
+- `CASAS["genial_lives"]` (`data/research/__init__.py`):
+  `disponivel`/`ativa_por_padrao` viram `True`.
+  `config.PREFS_PADRAO["research_casas_ativas"]` ganha "genial_lives"
+  pra usuário novo. **Usuário existente (Rodrigo) precisa marcar
+  manualmente** "Genial (Lives)" em CONFIG → CASAS DE RESEARCH (prefs
+  já salvas não migram sozinhas, mesma limitação que já existia pra
+  esse seletor).
+- Testado com chamada real: feed retornou 9 vídeos (Morning Call,
+  Fechamento de Mercado, Podcast Genial Analisa), transcrição extraída
+  com sucesso de um deles (35.994 caracteres). AppTest na aba RESEARCH
+  sem exceção.
+
 ## 2026-09-28 (feature: composição oficial do Ibovespa via B3)
 
 - **Universo de tickers da aba MERCADO (e da busca global) deixa de ser
