@@ -84,19 +84,34 @@ def _bloco_resumo(resumo: str):
     )
 
 
+def _resumo_formato_antigo(resumo: str) -> bool:
+    """Resumos salvos no Supabase ANTES da reescrita do prompt (ficha
+    tecnica TESE/NUMEROS-CHAVE/RECOMENDACAO/RISCOS, com 'nao informado')
+    ficam presos em cache pra sempre se a gente so' checar "ja tem
+    resumo?" - preciso detectar o formato velho e forcar regeracao."""
+    cabeca = resumo.strip()[:30].upper()
+    if cabeca.startswith("TESE"):
+        return True
+    alvo = resumo.upper()
+    return "NAO INFORMADO" in alvo or "NÃO INFORMADO" in alvo or "NUMEROS-CHAVE" in alvo or "NÚMEROS-CHAVE" in alvo
+
+
 @st.dialog("RESUMO", width="large")
 def _abrir_resumo_live(rel: dict, extrator):
     """Card/modal do resumo de uma Live (Morning Call/Resumo da Manha/
-    Fechamento etc) - reusa rel['resumo'] se ja carregado (nunca gera de
-    novo so' por abrir o card); so' chama obter_resumo aqui dentro se o
-    item ainda nao tinha resumo salvo, exatamente como o botao RESUMIR
-    de antes fazia."""
+    Fechamento etc) - reusa rel['resumo'] se ja carregado E no formato
+    novo (nunca gera de novo so' por abrir o card); regenera se o item
+    ainda nao tinha resumo salvo OU se o resumo salvo e' do formato antigo
+    (ficha tecnica, de antes da reescrita do prompt - ver
+    _resumo_formato_antigo)."""
     st.markdown(f"**{rel['titulo']}**")
     meta = " · ".join(filter(None, [rel["casa"], rel.get("autor") or "", _fmt_data(rel["data"])]))
     st.caption(meta)
     st.markdown("<div style='border-bottom:1px solid var(--borda); margin:0.4rem 0 0.6rem 0;'></div>", unsafe_allow_html=True)
 
     resumo = rel.get("resumo")
+    if resumo and _resumo_formato_antigo(resumo):
+        resumo = None
     motivo = None
     if not resumo:
         extrator_item = extrator or _EXTRATOR_POR_CASA.get(rel["casa"])
