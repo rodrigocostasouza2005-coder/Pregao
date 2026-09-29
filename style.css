@@ -43,13 +43,16 @@ header[data-testid="stHeader"] {
     height: 3rem;
 }
 
-/* padding-top cobre a faixa fixa do topo inteira: header nativo do
-   Streamlit (3rem) + .st-key-header_fixo (camada 1 + camada 2, ~6.4rem) -
-   ver essa classe abaixo. Em telas estreitas ela vira position:static (ver
-   media query no fim do arquivo) e este padding cai pra so' o header
-   nativo do Streamlit. */
+/* padding-top cobre so' o header nativo do Streamlit (3rem, onde mora a
+   barra de Share/estrela/GitHub do Community Cloud - tem z-index muito
+   maior e sempre renderiza por cima, entao nunca fica escondido atras
+   dele) - NAO precisa mais reservar espaco pro nosso proprio header
+   (.st-key-header_fixo, ver abaixo): ele virou position:sticky, que ocupa
+   espaco de verdade no fluxo normal (como qualquer <div>) em vez de sair
+   do fluxo feito o `position:fixed` antigo - a altura dele empurra o
+   resto do conteudo sozinha, sem a gente ter que adivinhar/medir em rem. */
 .block-container {
-    padding-top: 9.4rem;
+    padding-top: 3.2rem;
     padding-bottom: 0.6rem;
     padding-left: 1rem;
     padding-right: 1rem;
@@ -57,32 +60,29 @@ header[data-testid="stHeader"] {
     overflow-x: hidden;
 }
 
-/* header fixo (redesign 2026-09-28, ordem corrigida): UM SO' wrapper fixed
-   logo abaixo do header nativo do Streamlit (3rem), contendo camada 1
-   (logo+busca+acoes+usuario) e camada 2 (ticker de mercado) como filhos
-   NORMAIS, nessa ordem - a ordem visual (PREGAO sempre primeiro, ticker
-   sempre depois) vem do fluxo normal do HTML dentro deste wrapper, nao de
-   dois `top` fixos calculados separadamente (era assim antes: um bug de
-   estimativa de altura podia fazer as camadas sobrepor ou inverter
-   visualmente). Ver app.py: camada1_header e' um st.container comum,
-   _ticker_tape() e' um fragment, os dois moram DENTRO deste container. */
+/* header fixo (redesign 2026-09-28, position:fixed -> sticky): contem
+   camada 1 (logo+busca+acoes+usuario) e camada 2 (ticker de mercado) como
+   filhos NORMAIS, nessa ordem - a ordem visual (PREGAO sempre primeiro,
+   ticker sempre depois) vem do fluxo normal do HTML dentro deste wrapper.
+   position:sticky (em vez do position:fixed usado antes) resolve de raiz
+   o bug recorrente de "nav escondida atras do header": um elemento fixed
+   sai do fluxo e exige que a gente reserve o espaco certo via padding-top
+   adivinhado em rem (errava toda vez que a altura real do header
+   divergia da estimativa) - sticky continua ocupando espaco de verdade no
+   fluxo (como um <div> normal) ate' o scroll passar do seu `top`, entao o
+   conteudo abaixo (nav/watchlist/paginas) e' empurrado pela ALTURA REAL,
+   automaticamente, sem estimativa nenhuma. Bonus: por estar no fluxo
+   normal (nao mais width:100vw full-bleed), agora comeca exatamente no
+   mesmo eixo esquerdo do resto do conteudo (nav, watchlist, paginas). */
 .st-key-header_fixo {
-    position: fixed;
+    position: sticky;
     top: 3rem;
-    left: 0;
-    right: 0;
-    width: 100vw;
-    max-width: 100vw;
-    background-color: var(--bg);
     z-index: 56;
+    background-color: var(--bg);
 }
 .st-key-camada1_header {
     border-bottom: 1px solid var(--borda);
-    /* padding-left maior que o resto: espaco pro botao de abrir a sidebar
-       quando ela esta recolhida ([data-testid="collapsedControl"], fixo no
-       canto superior esquerdo com z-index 999, ACIMA desta faixa) - sem
-       essa folga ele sobrepoe o logo/primeiro item */
-    padding: 0.65rem 1rem 0.6rem 2.75rem;
+    padding: 0.65rem 0 0.6rem 0;
 }
 .pregao-topo-fixo {
     background-color: var(--bg);
@@ -396,10 +396,7 @@ table tr:last-child td { border-bottom: none; }
 .ticker-tape-wrap {
     overflow: hidden;
     white-space: nowrap;
-    /* padding-left maior: mesmo motivo do .st-key-camada1_header (folga pro
-       botao de abrir a sidebar quando recolhida, fixo por cima com
-       z-index 999) - sem isso o primeiro item da fita comecava coberto */
-    padding: 0.28rem 1rem 0.28rem 2.75rem;
+    padding: 0.28rem 1rem;
     max-width: 100%;
 }
 .ticker-tape-wrap.fixo { overflow-x: auto; }
@@ -445,18 +442,8 @@ table tr:last-child td { border-bottom: none; }
 @media (max-width: 640px) {
     .block-container { padding-left: 0.5rem; padding-right: 0.5rem; }
     .pregao-logo { font-size: 1.05rem; }
-
-    /* telas estreitas: o Streamlit empilha as colunas de camada1_header
-       verticalmente (logo/busca/botoes/usuario, um embaixo do outro), o que
-       faria o wrapper fixo (.st-key-header_fixo) ficar mais alto do que a
-       tela toda. Mais simples e robusto que recalcular altura: o wrapper
-       vira fluxo normal (a ordem interna - header primeiro, ticker depois -
-       e' garantida pelo HTML, nao muda), e o padding do block-container
-       volta a reservar so' o header nativo do Streamlit. */
-    .st-key-header_fixo {
-        position: static;
-        width: 100%;
-        top: auto;
-    }
-    .block-container { padding-top: 3.2rem; }
+    /* .st-key-header_fixo (position:sticky) nao precisa de excecao aqui -
+       diferente do position:fixed antigo, sticky ja se adapta sozinho a
+       qualquer altura (inclusive as colunas empilhando verticalmente em
+       tela estreita), sem sobrepor nem esconder o conteudo abaixo. */
 }
