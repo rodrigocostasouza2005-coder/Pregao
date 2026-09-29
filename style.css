@@ -221,11 +221,13 @@ section[data-testid="stSidebar"] {
        cobriria o topo da sidebar aberta em vez de ficar atras dela */
     position: relative;
     z-index: 1100;
-    /* compacta (210-220px) - sem isso o sidebar nativo do Streamlit fica
-       largo demais e disputa espaco com o conteudo principal */
-    min-width: 210px !important;
-    max-width: 220px !important;
-    width: 210px !important;
+    /* NAO forcar largura aqui (ja tentado e revertido, 2026-09-28): o
+       Streamlit calcula a largura do CONTEUDO PRINCIPAL com base na largura
+       real/arrastavel da sidebar via JS - sobrescrever so' a largura da
+       sidebar via CSS deixa os dois dessincronizados (sobra um vao vazio,
+       o conteudo principal encolhe e fica centralizado numa coluna
+       estreita). Largura da sidebar fica 100% no controle nativo do
+       Streamlit (arrastavel pelo usuario), como sempre foi. */
 }
 section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
 
