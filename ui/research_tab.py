@@ -84,6 +84,35 @@ def _bloco_resumo(resumo: str):
     )
 
 
+@st.dialog("RESUMO", width="large")
+def _abrir_resumo_live(rel: dict, extrator):
+    """Card/modal do resumo de uma Live (Morning Call/Resumo da Manha/
+    Fechamento etc) - reusa rel['resumo'] se ja carregado (nunca gera de
+    novo so' por abrir o card); so' chama obter_resumo aqui dentro se o
+    item ainda nao tinha resumo salvo, exatamente como o botao RESUMIR
+    de antes fazia."""
+    st.markdown(f"**{rel['titulo']}**")
+    meta = " · ".join(filter(None, [rel["casa"], rel.get("autor") or "", _fmt_data(rel["data"])]))
+    st.caption(meta)
+    st.markdown("<div style='border-bottom:1px solid var(--borda); margin:0.4rem 0 0.6rem 0;'></div>", unsafe_allow_html=True)
+
+    resumo = rel.get("resumo")
+    motivo = None
+    if not resumo:
+        extrator_item = extrator or _EXTRATOR_POR_CASA.get(rel["casa"])
+        with st.spinner("Resumindo..."):
+            resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator_item, casa=rel["casa"], tipo=rel["tipo"])
+        resumo = resultado["resumo"]
+        motivo = resultado["motivo_indisponivel"]
+
+    if resumo:
+        _bloco_resumo(resumo)
+    elif motivo == "cota":
+        st.warning(_AVISO_COTA)
+    else:
+        st.caption(f"Resumo indisponível ({motivo}).")
+
+
 def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
     tickers_html = " ".join(
         f"<span style='color:var(--destaque);'>{t}</span>" for t in rel.get("tickers", [])
@@ -106,11 +135,22 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
         unsafe_allow_html=True,
     )
 
+    extrator = _EXTRATOR_POR_CASA.get(rel["casa"])
+
+    # Lives (Morning Call/Resumo da Manha/Fechamento/etc - tipo "LIVE") vao
+    # pra um card/modal em vez de mostrar o resumo inteiro direto na lista
+    # (pedido explicito do Rodrigo, 2026-09-28: a lista ficava "espalhada"
+    # com resumo de 150-250 palavras embaixo de cada item). So' esse tipo -
+    # research normal (ACOES/MACRO/etc) continua com o comportamento de antes.
+    if rel["tipo"] == "LIVE":
+        chave_botao = f"research_ver_resumo_{abs(hash(rel['link']))}"
+        if st.button("VER RESUMO", key=chave_botao):
+            _abrir_resumo_live(rel, extrator)
+        return
+
     if rel.get("resumo"):
         _bloco_resumo(rel["resumo"])
         return
-
-    extrator = _EXTRATOR_POR_CASA.get(rel["casa"])
 
     if permitir_resumo_auto:
         with st.spinner("Resumindo..."):
