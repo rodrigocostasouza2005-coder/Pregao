@@ -23,8 +23,11 @@ html, body, [class*="css"] {
 
 /* trava rolagem horizontal da pagina inteira - rede de seguranca contra
    qualquer elemento interno (tabela larga, trilho do letreiro) que force
-   a pagina toda pra lado, o que desalinha os elementos fixos do topo */
-html, body { overflow-x: hidden; max-width: 100vw; }
+   a pagina toda pra lado, o que desalinha os elementos fixos do topo.
+   overflow-x:clip (nao hidden) + overflow-y:visible: hidden criaria um
+   "container de rolagem" proprio no html/body, o que quebra o
+   position:sticky do header (ver .block-container mais abaixo) */
+html, body { overflow-x: clip; overflow-y: visible; max-width: 100vw; }
 
 /* fundo geral e densidade -------------------------------------------- */
 .stApp {
@@ -57,7 +60,14 @@ header[data-testid="stHeader"] {
     padding-left: 1rem;
     padding-right: 1rem;
     max-width: 100%;
-    overflow-x: hidden;
+    /* overflow-x:clip (NAO hidden) + overflow-y:visible explicito: hidden
+       (em qualquer eixo) faz o navegador tratar este elemento como
+       "container de rolagem" proprio - e' exatamente isso que quebrava o
+       position:sticky do header (ele colava dentro deste container, que
+       nunca rola de verdade, em vez de colar na pagina real). clip trava
+       o overflow horizontal sem criar esse container de rolagem. */
+    overflow-x: clip;
+    overflow-y: visible;
 }
 
 /* header fixo (redesign 2026-09-28, position:fixed -> sticky): contem
