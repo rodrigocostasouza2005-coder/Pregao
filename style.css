@@ -46,53 +46,44 @@ header[data-testid="stHeader"] {
     height: 3rem;
 }
 
-/* padding-top cobre so' o header nativo do Streamlit (3rem, onde mora a
-   barra de Share/estrela/GitHub do Community Cloud - tem z-index muito
-   maior e sempre renderiza por cima, entao nunca fica escondido atras
-   dele) - NAO precisa mais reservar espaco pro nosso proprio header
-   (.st-key-header_fixo, ver abaixo): ele virou position:sticky, que ocupa
-   espaco de verdade no fluxo normal (como qualquer <div>) em vez de sair
-   do fluxo feito o `position:fixed` antigo - a altura dele empurra o
-   resto do conteudo sozinha, sem a gente ter que adivinhar/medir em rem. */
+/* padding-top cobre a faixa fixa do topo inteira: header nativo do
+   Streamlit (3rem) + .st-key-header_fixo (camada 1+2+3, ver abaixo) - o
+   valor tem FOLGA GENEROSA de proposito (2026-09-28: position:sticky foi
+   tentado aqui e nao colou em producao - provavel container de rolagem
+   proprio criado por algum wrapper nativo do Streamlit que a gente nao
+   controla via CSS: overflow-x:clip no .block-container/html/body nao foi
+   suficiente. Voltou pra position:fixed, que e' confiavelmente fixo
+   independente disso, ao custo de precisar reservar o espaco certo aqui -
+   por isso a folga extra, pra sobrar gap em vez de cobrir conteudo). */
 .block-container {
-    padding-top: 3.2rem;
+    padding-top: 11rem;
     padding-bottom: 0.6rem;
     padding-left: 1rem;
     padding-right: 1rem;
     max-width: 100%;
-    /* overflow-x:clip (NAO hidden) + overflow-y:visible explicito: hidden
-       (em qualquer eixo) faz o navegador tratar este elemento como
-       "container de rolagem" proprio - e' exatamente isso que quebrava o
-       position:sticky do header (ele colava dentro deste container, que
-       nunca rola de verdade, em vez de colar na pagina real). clip trava
-       o overflow horizontal sem criar esse container de rolagem. */
     overflow-x: clip;
     overflow-y: visible;
 }
 
-/* header fixo (redesign 2026-09-28, position:fixed -> sticky): contem
-   camada 1 (logo+busca+acoes+usuario) e camada 2 (ticker de mercado) como
-   filhos NORMAIS, nessa ordem - a ordem visual (PREGAO sempre primeiro,
-   ticker sempre depois) vem do fluxo normal do HTML dentro deste wrapper.
-   position:sticky (em vez do position:fixed usado antes) resolve de raiz
-   o bug recorrente de "nav escondida atras do header": um elemento fixed
-   sai do fluxo e exige que a gente reserve o espaco certo via padding-top
-   adivinhado em rem (errava toda vez que a altura real do header
-   divergia da estimativa) - sticky continua ocupando espaco de verdade no
-   fluxo (como um <div> normal) ate' o scroll passar do seu `top`, entao o
-   conteudo abaixo (nav/watchlist/paginas) e' empurrado pela ALTURA REAL,
-   automaticamente, sem estimativa nenhuma. Bonus: por estar no fluxo
-   normal (nao mais width:100vw full-bleed), agora comeca exatamente no
-   mesmo eixo esquerdo do resto do conteudo (nav, watchlist, paginas). */
+/* header fixo: contem camada 1 (logo+busca+acoes+usuario), camada 2
+   (ticker de mercado) e camada 3 (navegacao) como filhos NORMAIS, nessa
+   ordem - garante a ordem visual (PREGAO sempre primeiro) via fluxo HTML
+   normal DENTRO do wrapper, independente do `position` usado no wrapper
+   em si. position:fixed (nao sticky - ver comentario em .block-container
+   acima) fica sempre visivel ao rolar a pagina. */
 .st-key-header_fixo {
-    position: sticky;
+    position: fixed;
     top: 3rem;
-    z-index: 56;
+    left: 0;
+    right: 0;
+    width: 100vw;
+    max-width: 100vw;
     background-color: var(--bg);
+    z-index: 56;
 }
 .st-key-camada1_header {
     border-bottom: 1px solid var(--borda);
-    padding: 0.65rem 0 0.6rem 0;
+    padding: 0.65rem 1rem 0.6rem 2.75rem;
 }
 .pregao-topo-fixo {
     background-color: var(--bg);
@@ -406,7 +397,9 @@ table tr:last-child td { border-bottom: none; }
 .ticker-tape-wrap {
     overflow: hidden;
     white-space: nowrap;
-    padding: 0.28rem 1rem;
+    /* padding-left maior: folga pro botao de abrir a sidebar quando
+       recolhida (fixo, z-index 999) - sem isso o primeiro item cobria */
+    padding: 0.28rem 1rem 0.28rem 2.75rem;
     max-width: 100%;
 }
 .ticker-tape-wrap.fixo { overflow-x: auto; }
@@ -452,8 +445,17 @@ table tr:last-child td { border-bottom: none; }
 @media (max-width: 640px) {
     .block-container { padding-left: 0.5rem; padding-right: 0.5rem; }
     .pregao-logo { font-size: 1.05rem; }
-    /* .st-key-header_fixo (position:sticky) nao precisa de excecao aqui -
-       diferente do position:fixed antigo, sticky ja se adapta sozinho a
-       qualquer altura (inclusive as colunas empilhando verticalmente em
-       tela estreita), sem sobrepor nem esconder o conteudo abaixo. */
+
+    /* telas estreitas: o Streamlit empilha as colunas de camada1_header
+       verticalmente (logo/busca/botoes/usuario, um embaixo do outro), o
+       que faria o wrapper fixed ficar mais alto do que a folga reservada
+       (ou que a tela toda). Mais simples e robusto que recalcular altura
+       pro mobile: o wrapper vira fluxo normal (a ordem interna - header,
+       ticker, nav, nessa ordem - e' garantida pelo HTML, nao muda). */
+    .st-key-header_fixo {
+        position: static;
+        width: 100%;
+        top: auto;
+    }
+    .block-container { padding-top: 3.2rem; }
 }
