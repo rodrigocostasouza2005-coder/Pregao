@@ -362,12 +362,15 @@ with st.container(key="header_fixo"):
 
     _ticker_tape()
 
-
-with st.container(key="nav_secao"):
-    sel_secao = st.segmented_control(
-        "Seção", rotulos_secao, default=padrao_rotulo_secao,
-        label_visibility="collapsed", key="secao_ativa",
-    )
+    # navegacao (camada 3) tambem dentro do wrapper sticky (pedido do
+    # Rodrigo, 2026-09-28: "cabecalho ate as abas" fixo ao rolar a pagina,
+    # nao so' o header+ticker) - watchlist (camada 4) e conteudo continuam
+    # FORA, em fluxo normal (rolam com a pagina).
+    with st.container(key="nav_secao"):
+        sel_secao = st.segmented_control(
+            "Seção", rotulos_secao, default=padrao_rotulo_secao,
+            label_visibility="collapsed", key="secao_ativa",
+        )
 rotulo_secao_atual = sel_secao or padrao_rotulo_secao
 st.session_state[mem_secao] = rotulo_secao_atual
 secao_atual = mapa_rotulo_secao[rotulo_secao_atual]
