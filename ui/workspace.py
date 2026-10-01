@@ -478,9 +478,14 @@ def renderizar_workspace(aba_id: str, registro: list, prefs: dict, *args, persis
     """Ponto de entrada do workspace modular (equivalente a
     ui/paineis.py:renderizar, mesma assinatura/convenção de args/kwargs
     repassados a cada render_fn) - posição/tamanho livres em vez de
-    frações fixas. Hoje só MERCADO usa isso (ETAPA 1/MVP); as outras
-    abas que adotam REGISTRO_PAINEIS continuam no ui/paineis.py antigo
-    até a ETAPA 2 (expansão, só depois de validado)."""
+    frações fixas. ETAPA 1 (MERCADO, 2026-10-01) validada em produção
+    depois de corrigidos 3 bugs reais (especificidade CSS, ponte JS/
+    Python, listener morto pós-rerun - ver PROGRESSO.md). ETAPA 2
+    (MACRO, 2026-10-01) migrou em seguida - mesma REGISTRO_PAINEIS de
+    antes, só troca o renderizador (`aba_id` é só uma string, sem
+    nenhum caso especial pra MERCADO vs MACRO aqui dentro). VISÃO GERAL
+    ainda não adota REGISTRO_PAINEIS (renderiza monolítico) - precisa
+    ser refeita pra esse formato antes de poder migrar."""
     _injetar_css_base()
     ids_validos = [pid for pid, _, _ in registro]
     mapa = {pid: fn for pid, _, fn in registro}

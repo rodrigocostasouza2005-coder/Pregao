@@ -17,7 +17,7 @@ from data.macro import (
     obter_ipca,
     obter_selic_meta,
 )
-from ui import graficos, paineis
+from ui import graficos, workspace
 
 # Meta de inflacao vigente (Banco Central / CMN): centro 3,0% a.a.,
 # tolerancia +-1,5 p.p. (banda 1,5% a 4,5%). Nao da pra importar de
@@ -397,10 +397,13 @@ REGISTRO_PAINEIS = [
 
 def render_macro(prefs, persistir_fn=None):
     """Ponto de entrada da aba MACRO. Chamar dentro de `with aba_macro:`.
-    `persistir_fn` (opcional): repassado pro popover de tamanho/
-    visibilidade de cada painel (ver ui/paineis.py) - chamado quando o
-    usuário ajusta algo, pra salvar de verdade (não só na sessão)."""
+    `persistir_fn` (opcional): ver ui/workspace.py:renderizar_workspace.
+
+    MACRO migra pro workspace modular (ETAPA 2, 2026-10-01) depois da
+    ETAPA 1 (MERCADO) validada em produção - mesmo REGISTRO_PAINEIS de
+    antes, só troca `ui.paineis.renderizar` por
+    `ui.workspace.renderizar_workspace` (API idêntica)."""
     with st.container(border=True):
         _painel_resumo(prefs)
 
-    paineis.renderizar("MACRO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn)
+    workspace.renderizar_workspace("MACRO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn)
