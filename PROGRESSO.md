@@ -2099,3 +2099,27 @@ renderizado. Guardar esse padrão de teste pra qualquer auditoria futura
 de z-index/overlap.
 
 **Arquivo alterado**: `style.css` (1 linha, comentário).
+
+### FASE 3 — Auditoria final do workspace MERCADO
+
+Já tinha sido corrigido e validado em produção mais cedo nesta mesma
+sessão (3 bugs reais: especificidade CSS, ponte JS/Python, listener
+morto pós-rerun - ver seção "Workspace modular — 3 bugs reais
+corrigidos" acima). Reconfirmado depois das mudanças de Fase 1/2 (que
+não tocam `ui/workspace.py`): bateria dirigida (8/8), harness Playwright
+completo (23/23 - drag, resize nos 3 modos, interação com gráfico
+Plotly real, persistência rerun/reload, restore) e AppTest da aba
+MERCADO contra o `app.py` real, todos sem regressão. Nenhuma mudança de
+código necessária nesta fase - só confirmação.
+
+### FASE 4 — Expandir workspace pra MACRO
+
+Também já concluída mais cedo nesta sessão (commit `e5d55e1`, antes do
+roadmap de 16 fases ter sido formalizado): `ui/macro_tab.py` trocou
+`ui.paineis.renderizar` por `ui.workspace.renderizar_workspace` - mesmo
+`REGISTRO_PAINEIS` de sempre (RESUMO fixo + CURVA PRÉ/IPCA/SELIC x
+CDI/CENÁRIO GLOBAL arrastáveis), nenhum conteúdo reescrito. `aba_id` em
+`ui/workspace.py` já era 100% genérico (nenhum caso especial pra
+MERCADO), confirmado por grep antes da migração. AppTest da aba MACRO
+sem exceção (~85s - lento por causa das chamadas reais a ANBIMA/BCB/
+yfinance nesta sandbox, não é regressão).
