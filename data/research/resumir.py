@@ -126,6 +126,25 @@ _PROMPT_SISTEMA = (
     "contradicao? nao inventei nada? da pra entender a noticia so' lendo a nota?"
 )
 
+# limite de caracteres pra mandar o texto DIRETO pro resumo narrativo (ver
+# resumir_com_groq) - acima disso, condensa por partes antes (ver
+# _condensar_texto_longo) em vez de truncar cru (bug real ate 2026-09-30:
+# texto[:12000] cortava relatorio/Morning Call longo no meio, podia perder
+# numero/guidance/preco-alvo que estava so' depois do corte)
+_LIMITE_TEXTO_DIRETO = 12000
+_TAMANHO_CHUNK = 10000
+
+_PROMPT_EXTRACAO_CHUNK = (
+    "Voce esta vendo so' UM PEDACO de um conteudo maior (nao o documento "
+    "inteiro). Extraia em topicos curtos e objetivos todo fato, numero, "
+    "nome (pessoa/empresa/indicador), data, guidance, preco-alvo, "
+    "recomendacao e citacao relevante que aparecer NESTE PEDACO - sem "
+    "narrativa, sem introducao, sem comentario seu, so' os pontos. Nunca "
+    "invente nada que nao esteja no texto. Se este pedaco nao tiver "
+    "nenhuma informacao de mercado relevante (saudacao, publicidade, "
+    "repeticao, transicao), responda exatamente: SEM_CONTEUDO_RELEVANTE"
+)
+
 # instrucoes extras por tipo de conteudo, anexadas ao prompt de sistema -
 # ajustam so' a PRIORIZACAO do que entra no resumo (o formato de secoes
 # acima e' sempre o mesmo). Chave = resultado de _detectar_foco().
@@ -238,6 +257,63 @@ def obter_texto_relatorio(link: str) -> tuple:
     return texto, None
 
 
+def _chamar_groq(chave: str, modelo: str, mensagens: list, max_tokens: int) -> tuple:
+    """POST generico pro endpoint de chat completions da Groq. Retorna
+    (conteudo, motivo_falha) - motivo_falha='cota' especificamente em erro
+    429 (rate limit/cota esgotada), pra UI mostrar um aviso diferenciado.
+    Usado tanto pelo resumo narrativo final quanto pela extracao por
+    pedaco de texto longo (ver _condensar_texto_longo)."""
+    try:
+        r = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {chave}", "Content-Type": "application/json"},
+            json={
+                "model": modelo,
+                "messages": mensagens,
+                "temperature": 0.2,
+                "max_tokens": max_tokens,
+                "reasoning_effort": config.GROQ_REASONING_EFFORT,
+            },
+            timeout=30,
+        )
+        if r.status_code == 429:
+            return None, "cota"
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"].strip(), None
+    except Exception as e:
+        return None, str(e)
+
+
+def _condensar_texto_longo(texto: str, chave: str, modelo: str) -> tuple:
+    """Documento acima de _LIMITE_TEXTO_DIRETO: divide em pedacos de
+    _TAMANHO_CHUNK chars, extrai so' os fatos/numeros/nomes de CADA pedaco
+    (chamada leve, _PROMPT_EXTRACAO_CHUNK) e junta os extratos num texto
+    condensado - isso vira o 'texto' que alimenta o resumo narrativo de
+    verdade (resumir_com_groq), preservando informacao que estaria depois
+    do corte de um truncamento cru. Retorna (texto_condensado, motivo) -
+    None se QUALQUER pedaco falhar de verdade (erro/cota) - melhor avisar
+    que o resumo nao pode ser gerado do que resumir so' metade do conteudo
+    sem avisar."""
+    pedacos = [texto[i:i + _TAMANHO_CHUNK] for i in range(0, len(texto), _TAMANHO_CHUNK)]
+    extratos = []
+    for pedaco in pedacos:
+        conteudo, motivo = _chamar_groq(
+            chave, modelo,
+            [
+                {"role": "system", "content": _PROMPT_EXTRACAO_CHUNK},
+                {"role": "user", "content": pedaco},
+            ],
+            max_tokens=800,
+        )
+        if conteudo is None:
+            return None, motivo
+        if "SEM_CONTEUDO_RELEVANTE" not in conteudo:
+            extratos.append(conteudo.strip())
+    if not extratos:
+        return None, "conteúdo sem informação de mercado relevante (após leitura por partes)"
+    return "\n\n".join(extratos), None
+
+
 def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") -> tuple:
     """Resume via Groq (free tier). Retorna (resumo, motivo_falha).
     motivo_falha='cota' especificamente em erro 429 (rate limit/cota
@@ -246,38 +322,36 @@ def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") ->
     casa/tipo (opcionais, vem do item de research - ver CASAS em
     data/research/__init__.py) so' ajustam a PRIORIZACAO do prompt via
     _detectar_foco/_FOCO_POR_TIPO - nunca mudam o formato de secoes nem
-    liberam o modelo a inventar informacao."""
+    liberam o modelo a inventar informacao.
+
+    Texto acima de _LIMITE_TEXTO_DIRETO passa primeiro por
+    _condensar_texto_longo (resumo por partes) em vez de ser truncado cru -
+    uma transcricao de Morning Call de 30min (~36 mil chars) nao cabia
+    inteira antes; agora o conteudo depois do caractere 12000 nao e' mais
+    simplesmente descartado."""
     chave, modelo = config.obter_credenciais_groq()
     if not chave:
         return None, "GROQ_API_KEY não configurada em st.secrets"
 
+    if len(texto) > _LIMITE_TEXTO_DIRETO:
+        texto, motivo = _condensar_texto_longo(texto, chave, modelo)
+        if texto is None:
+            return None, motivo
+
     foco = _detectar_foco(casa, tipo)
     prompt_sistema = _PROMPT_SISTEMA + _FOCO_POR_TIPO.get(foco, "")
 
-    texto_truncado = texto[:12000]
-    try:
-        r = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {chave}", "Content-Type": "application/json"},
-            json={
-                "model": modelo,
-                "messages": [
-                    {"role": "system", "content": prompt_sistema},
-                    {"role": "user", "content": f"Titulo: {titulo}\n\nTexto do relatorio:\n{texto_truncado}"},
-                ],
-                "temperature": 0.2,
-                "max_tokens": config.GROQ_MAX_TOKENS,
-                "reasoning_effort": config.GROQ_REASONING_EFFORT,
-            },
-            timeout=30,
-        )
-        if r.status_code == 429:
-            return None, "cota"
-        r.raise_for_status()
-        resumo = r.json()["choices"][0]["message"]["content"].strip()
-        return _normalizar_formatacao(resumo), None
-    except Exception as e:
-        return None, str(e)
+    conteudo, motivo = _chamar_groq(
+        chave, modelo,
+        [
+            {"role": "system", "content": prompt_sistema},
+            {"role": "user", "content": f"Titulo: {titulo}\n\nTexto do relatorio:\n{texto}"},
+        ],
+        max_tokens=config.GROQ_MAX_TOKENS,
+    )
+    if conteudo is None:
+        return None, motivo
+    return _normalizar_formatacao(conteudo), None
 
 
 def obter_resumo(link: str, titulo: str, extrator_texto=None, casa: str = "", tipo: str = "") -> dict:

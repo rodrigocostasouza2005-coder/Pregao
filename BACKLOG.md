@@ -3,22 +3,51 @@
 Pendências conhecidas, para resolver depois (ajustes visuais adiados
 enquanto avançamos nas próximas fases).
 
+## Auditoria 2026-09-30 — itens revistos (releitura do código real)
+
+Vários itens abaixo listados em sessões anteriores já tinham sido
+corrigidos como efeito colateral de outras tarefas, mas o BACKLOG não
+tinha sido limpo. Confirmado lendo o código atual (não só memória):
+
+- **Beta** já é calculado localmente desde a correção registrada em
+  MANUAL.md (`data/prices.py:_calcular_beta`, cov/var 2 anos vs
+  `^BVSP`) — item antigo removido daqui.
+- **MM20 na mesma cor da linha de preço (modo LINHA)**: já corrigido —
+  `app.py` usa `tema["neutro"]` pra MM20 em LINHA/AREA e só
+  `tema["destaque"]` em CANDLE (onde não colide, preço vira barra sem
+  cor própria). Candle confirmado com `increasing_line_color`/
+  `decreasing_line_color` corretos.
+- **Barra de ferramentas do Plotly em MACRO**: já está com
+  `config={"displayModeBar": False}` em todos os `st.plotly_chart` de
+  `ui/macro_tab.py` — item resolvido.
+- **Eixo X do IPCA em mês/ano**: já implementado
+  (`ui/macro_tab.py:_eixo_x_mes_ano`, ex: "ago/2026").
+- **Cabeçalho de tabela cortado (PREÇOS/RESUMO) + espaço vazio
+  embaixo** e **título "INDICADORES" sumindo + scrollbar interna**:
+  mesma causa raiz provável — a regra
+  `[data-testid="stMarkdown"]:has(table) { overflow-x: auto;
+  overflow-y: hidden; }` em `style.css` foi adicionada depois (o
+  comentário no próprio CSS já cita "RESUMO e INDICADORES" como motivo)
+  especificamente pra evitar que `overflow-x:auto` sozinho virasse scroll
+  vertical indevido — mecanismo idêntico ao que cortava o cabeçalho da
+  PREÇOS, já que ambas são tabela dentro de `st.markdown`. **Ainda
+  pendente confirmação visual** (sem acesso à extensão do Chrome nesta
+  sessão) — se reaparecer, é outra causa, não essa.
+
 ## Visual / layout
 - E-mail do usuário sumiu do header (só aparece o botão SAIR). Causa
-  provável identificada e corrigida uma vez (`.block-container{overflow-x:hidden}`
-  cortando a coluna), mas o problema voltou — investigar de novo com
-  mais cuidado, idealmente com print/inspeção real da página.
-- Cabeçalho da tabela PREÇOS (linha com o nome da empresa) aparece
-  cortado ao meio, e sobra um espaço vazio logo abaixo da tabela.
-  Ajustes já tentados (wrapper com `overflow-x:auto`, reset no
-  `st.fragment`) não resolveram por completo — investigar a causa real,
-  de preferência com inspeção visual. Mesmo sintoma confirmado também no
-  cabeçalho da tabela do painel RESUMO (aba MACRO) — provavelmente a
-  mesma causa raiz, ainda não identificada; corrigir os dois juntos.
-- Título "INDICADORES" sumiu do painel (o painel em si continua
-  aparecendo, só o cabeçalho com o nome não).
-- Painel INDICADORES ficou com barra de rolagem interna (altura fixa)
-  em vez de crescer conforme o conteúdo.
+  mais provável (2026-09-30): o botão SAIR usava `width="stretch"` e
+  texto que não quebra linha, brigando por espaço com o chip de e-mail
+  dentro de uma coluna estreita — a disputa deixava quase nada pro
+  `pregao-user-chip`, que então cortava quase tudo via ellipsis
+  (parecendo "sumido"). **Correção aplicada**: `col_user` ganhou mais
+  largura relativa (1.35→1.7, `col_busca` cedeu um pouco), proporção
+  interna foi de `[3,1]` pra `[4,1]`, e o botão SAIR perdeu o
+  `width="stretch"` (fica do tamanho do próprio texto). Pendente
+  confirmação visual real (print/inspeção) — se persistir, próximo
+  passo é investigar `.block-container{overflow-x:clip}` recortando o
+  header fixo quando a sidebar está expandida (ver comentário em
+  `style.css` sobre `.block-container`).
 - Limpeza de nome de empresa parece remover acentos em produção (ex:
   "Ginástica e Dança" → "Ginástica e Danca"). Testado localmente
   (`obter_nome_yf('SMFT3')`) e o resultado veio com acento correto —
@@ -28,40 +57,27 @@ enquanto avançamos nas próximas fases).
   o container do Streamlit Cloud, não bug na lógica em si — investigar
   direto em produção (não reproduz local).
 
-## Gráfico
-- Modo LINHA: a linha de preço e a MM20 saem na mesma cor (ambas usam
-  `tema["destaque"]`), ficam indistinguíveis. Trocar a cor de uma das
-  duas.
-- Confirmar se o modo CANDLE (padrão) está com as cores corretas de
-  alta/baixa e sem o mesmo problema de sobreposição de cor.
-
 ## Indicadores
-- Beta: hoje vem direto do campo `beta` do yfinance, que para ações da
-  B3 costuma estar mal calculado (referência de mercado errada, período
-  curto etc.). Recalcular localmente: retornos semanais de 2 anos do
-  ticker vs. `^BVSP` (Ibovespa), beta = cov(ret_ticker, ret_ibov) /
-  var(ret_ibov). Até lá, a coluna BETA fica escondida no painel
-  INDICADORES (não mostrar número que pode estar errado).
-- Dividend yield: conferir se o histórico de dividendos do yfinance
-  (`Ticker.dividends`) não duplica pagamentos de JCP (juros sobre
-  capital próprio) com o dividendo declarado — se duplicar, o DY
-  calculado (soma 12m / preço atual) fica inflado.
+- Dividend yield: investigado em 2026-09-30 — não há evidência de bug.
+  `Ticker.dividends` do yfinance registra cada evento de distribuição
+  (dividendo OU JCP) como uma linha própria por data-ex; o cálculo atual
+  (`data/prices.py:_dividend_yield_12m`) só soma essas linhas na janela
+  de 12 meses, sem nenhum ponto óbvio de dupla contagem. Não dá pra
+  confirmar com 100% de certeza sem comparar contra a relação oficial de
+  proventos de um ticker específico (CVM não traz valor pago, só
+  metadado do documento) — manter como item de baixa prioridade, não
+  reabrir sem um caso concreto de DY visivelmente inflado.
 
 ## Macro
 - Curva pré (ETTJ ANBIMA): a fonte só guarda ~5-6 pregões de histórico
   rolante — comparação de "1 mês atrás" não funciona (testado, confirma
   o limite). Para viabilizar essa comparação, salvar um snapshot diário
   da curva no Supabase via GitHub Actions (Fase 7 do roadmap original,
-  coleta automática).
+  coleta automática). Já degrada graciosamente (aviso explícito na UI
+  quando a comparação de 1 mês não está disponível).
 - Curva pré: legenda (Hoje / 1 semana atrás / 1 mês atrás) aparece
-  sobreposta/cortada no gráfico.
-- Barra de ferramentas do Plotly não está escondida nos gráficos da aba
-  MACRO (`displayModeBar: False` já existe em app.py, faltou aplicar em
-  `ui/macro_tab.py`).
-- IPCA: eixo X do gráfico 12 meses deveria mostrar mês/ano (ex:
-  "ago/2026") em vez do formato padrão do Plotly.
-- Conferir se os avisos (fonte indisponível etc.) na aba MACRO estão
-  usando o mesmo estilo fino/compacto do resto do app.
+  sobreposta/cortada no gráfico — ainda não investigado a fundo, precisa
+  de inspeção visual real.
 
 ## Research
 - BTG Research: API pública em

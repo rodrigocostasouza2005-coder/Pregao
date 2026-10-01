@@ -317,8 +317,14 @@ def _ir_com_ticker(chave_secao_destino: str, ticker: str, chave_pill_ticker: str
 # fragment, e a pagina nunca trocaria de aba.
 with st.container(key="header_fixo"):
     with st.container(key="camada1_header"):
+        # col_user ganhou mais espaco (1.35->1.7) e col_busca cedeu um pouco
+        # (3.9->3.55) - achado real (BACKLOG.md): o e-mail do usuario
+        # "sumia" do header em telas mais estreitas porque o botao SAIR
+        # (width="stretch" + texto que nao quebra linha) brigava por
+        # espaco com o chip de e-mail dentro da mesma coluna apertada;
+        # ver tambem sub_email/sub_sair logo abaixo.
         col_logo, col_busca, col_ctrlk, col_eq, col_news, col_add, col_user = st.columns(
-            [1.1, 3.9, 0.55, 0.5, 0.5, 0.5, 1.35], gap="small", vertical_alignment="center",
+            [1.1, 3.55, 0.55, 0.5, 0.5, 0.5, 1.7], gap="small", vertical_alignment="center",
         )
         with col_logo:
             st.markdown('<div class="pregao-logo-compacto">PREGÃO</div>', unsafe_allow_html=True)
@@ -350,14 +356,19 @@ with st.container(key="header_fixo"):
                 else:
                     st.error(f"Ticker '{ticker_busca_global}' não encontrado no yfinance.")
         with col_user:
-            sub_email, sub_sair = st.columns([3, 1], gap="small")
+            # sub_sair SEM width="stretch" (fica do tamanho do proprio
+            # texto/padding, nao estica) - antes, os dois esticando dentro
+            # de colunas estreitas faziam o SAIR "ganhar" a disputa por
+            # espaco (texto nao quebra linha) e sobrava quase nada pro
+            # chip de e-mail, que entao cortava quase tudo via ellipsis
+            sub_email, sub_sair = st.columns([4, 1], gap="small")
             with sub_email:
                 st.markdown(
                     f"<div class='cinza pregao-user-chip' title='{usuario['email']}'>{usuario['email']}</div>",
                     unsafe_allow_html=True,
                 )
             with sub_sair:
-                if st.button("SAIR", key="sair_btn", width="stretch"):
+                if st.button("SAIR", key="sair_btn"):
                     st.logout()
 
     _ticker_tape()
@@ -501,8 +512,8 @@ if secao_atual == "EQUITY":
                                 f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>R$ {config.formatar_numero(d['cot']['preco'], 2, fmt)}</td>"
                                 f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='{"alta" if d["cot"]["variacao_pct"] >= 0 else "baixa"}'>"
                                 f"{'+' if d['cot']['variacao_pct'] >= 0 else ''}{config.formatar_numero(d['cot']['variacao_pct'], 2, fmt)}%</td>"
-                                f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>{config.formatar_numero(d['ind']['pl'], 2, fmt) if d['ind']['pl'] is not None else '—'}</td>"
-                                f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>{config.formatar_numero(d['ind']['pvp'], 2, fmt) if d['ind']['pvp'] is not None else '—'}</td>"
+                                f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>{config.formatar_multiplo(d['ind']['pl'], 2, fmt)}</td>"
+                                f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>{config.formatar_multiplo(d['ind']['pvp'], 2, fmt)}</td>"
                                 f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='neutro'>{config.formatar_numero(d['ind']['dividend_yield'], 2, fmt) + '%' if d['ind']['dividend_yield'] is not None else '—'}</td>"
                                 f"</tr>"
                                 for d in linhas_dados
@@ -623,15 +634,15 @@ if secao_atual == "EQUITY":
                     <table style="width:100%; border-collapse:collapse;">
                     <thead><tr>
                         <th class="cinza" title="Preço da ação x número total de ações em circulação - o que o mercado paga pela empresa inteira hoje">VALOR DE MERCADO</th>
-                        <th class="cinza" title="Preço/Lucro: preço da ação dividido pelo lucro por ação nos últimos 12 meses - quantos anos de lucro atual pagariam o preço de hoje (menor = mais barato, na média do setor)">P/L</th>
-                        <th class="cinza" title="Preço/Valor Patrimonial: preço da ação dividido pelo patrimônio líquido por ação - acima de 1 significa que o mercado paga mais que o valor contábil da empresa">P/VP</th>
+                        <th class="cinza" title="Preço/Lucro: preço da ação dividido pelo lucro por ação nos últimos 12 meses - quantos anos de lucro atual pagariam o preço de hoje (menor = mais barato, na média do setor). N.M. = lucro negativo (prejuízo), o múltiplo perde sentido">P/L</th>
+                        <th class="cinza" title="Preço/Valor Patrimonial: preço da ação dividido pelo patrimônio líquido por ação - acima de 1 significa que o mercado paga mais que o valor contábil da empresa. N.M. = patrimônio líquido negativo, o múltiplo perde sentido">P/VP</th>
                         <th class="cinza" title="Dividend Yield: total pago em dividendos/JCP nos últimos 12 meses dividido pelo preço da ação - retorno percentual só de proventos, sem contar valorização">DIV. YIELD (12M)</th>
                         <th class="cinza" title="cov(retornos semanais do papel, retornos semanais do Ibovespa) / var(retornos semanais do Ibovespa), 2 anos - calculado localmente, nao vem do yfinance">BETA (2A)</th>
                     </tr></thead>
                     <tbody><tr>
                         <td class="neutro">{config.formatar_valor_mercado(ind['valor_mercado'], fmt)}</td>
-                        <td class="neutro">{config.formatar_numero(ind['pl'], 2, fmt) if ind['pl'] is not None else '—'}</td>
-                        <td class="neutro">{config.formatar_numero(ind['pvp'], 2, fmt) if ind['pvp'] is not None else '—'}</td>
+                        <td class="neutro">{config.formatar_multiplo(ind['pl'], 2, fmt)}</td>
+                        <td class="neutro">{config.formatar_multiplo(ind['pvp'], 2, fmt)}</td>
                         <td class="neutro">{config.formatar_numero(dy, 2, fmt) + '%' if dy is not None else '—'}</td>
                         <td class="neutro">{config.formatar_numero(ind['beta'], 2, fmt) if ind['beta'] is not None else '—'}</td>
                     </tr></tbody>

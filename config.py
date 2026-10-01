@@ -382,3 +382,17 @@ def formatar_valor_mercado(valor, formato: str = "BR") -> str:
     if valor >= 1_000_000:
         return f"R$ {formatar_numero(valor / 1_000_000, 1, formato)} mi"
     return f"R$ {formatar_numero(valor, 0, formato)}"
+
+
+def formatar_multiplo(valor, casas: int = 2, formato: str = "BR") -> str:
+    """Formata um multiplo de valuation (P/L, P/VP): None vira '—' (dado
+    ausente); valor <= 0 vira 'N.M.' (not meaningful) em vez do numero
+    negativo cru - lucro ou patrimonio liquido negativo faz o multiplo
+    perder sentido como medida de preco (nao e' "mais barato", e' so'
+    nao comparavel), entao nao deve aparecer como se fosse um indicador
+    normal (achado da auditoria de data sanity, 2026-09-30)."""
+    if valor is None:
+        return "—"
+    if valor <= 0:
+        return "N.M."
+    return formatar_numero(valor, casas, formato)
