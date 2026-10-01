@@ -2438,3 +2438,26 @@ Research Radar, refino do foco de Morning Call, testes de UI/Playwright.
   `coletado_em` (já existia na tabela, só não chegava até a UI).
 
 **Testes**: `compileall` limpo; AppTest das 9 seções sem exceção.
+
+### Parte 3: refino FATO vs VISÃO DA CASA + foco Morning Call
+
+Adicionado ao `_PROMPT_SISTEMA` (não substituiu nada - acrescentou um
+parágrafo novo de regra): quando o texto traz uma OPINIÃO/expectativa da
+casa/analista (não um fato reportado), a atribuição precisa continuar
+explícita dentro da narrativa ("Segundo a X...", "o analista espera...")
+- nunca apresentar a tese de uma casa como fato do mercado; e se o
+próprio sistema precisar conectar pontos que a fonte não conecta
+explicitamente, isso precisa vir sinalizado como leitura própria ("o que
+sugere...", "isso pode indicar..."), nunca como afirmação direta da
+fonte. Foco de MORNING_CALL reforçado pra sempre nomear quem falou
+(várias vozes num programa) e quais ativos/tickers específicos foram
+citados, em vez de generalizar como "o mercado"/"as ações".
+
+**Testado com chamadas reais à Groq** (2 cenários, 7 checks): documento
+com fato (lucro divulgado) + visão de analista nomeado - resumo atribuiu
+corretamente ("segundo Pedro Santos... que prevê...", nunca apresentou
+como fato de mercado); Morning Call com 2 vozes e 3 tickers específicos
+(AZUL4/PETR4/VALE3) - todos nomeados explicitamente no resumo, nenhum
+generalizado. Preço-alvo/recomendação continuaram extraídos certo. Zero
+regressão na qualidade do texto (ainda narrativo, ainda sem template
+fixo).

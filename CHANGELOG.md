@@ -3,6 +3,16 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-01 (feat: Research - separação FATO/visão da casa no prompt)
+
+- Prompt narrativo ganha uma regra nova (não substitui nada): opinião/
+  expectativa de casa/analista precisa continuar atribuída
+  explicitamente dentro do texto ("Segundo a X...") - nunca vira fato de
+  mercado. Leitura própria do sistema (quando conecta pontos que a fonte
+  não conecta) também precisa vir sinalizada como tal. Foco de Morning
+  Call reforçado pra sempre nomear quem falou e quais ativos foram
+  citados. Validado com chamadas reais à Groq.
+
 ## 2026-10-01 (feat: Research - "O que mudou" + Research Radar)
 
 - Novo painel "O QUE MUDOU" na watchlist do RESEARCH - só aparece quando
