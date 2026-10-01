@@ -7,9 +7,12 @@ bloqueada la mas funcionar daqui.
 Chama data.research.coletar_todas_disponiveis() (mesma logica de coleta
 do app, sem o gate de 30min - faz sentido aqui porque quem decide a
 frequencia e' o agendamento, nao o app) e roda a limpeza de itens com
-mais de 5 dias (data.research.store.apagar_itens_antigos). Nao depende
-do app rodando - so precisa do .streamlit/secrets.toml (Supabase) no
-mesmo diretorio, igual o app usa.
+mais de 5 dias (data.research.store.apagar_itens_antigos). Tambem
+coleta o snapshot de recomendacoes/preco-alvo da Genial pro historico
+nao-perecivel (data.research.historico.coletar_snapshot_genial,
+2026-10-01) - mesma logica/motivo: bloqueado por WAF no Cloud, so'
+funciona rodando daqui. Nao depende do app rodando - so precisa do
+.streamlit/secrets.toml (Supabase) no mesmo diretorio, igual o app usa.
 
 Uso: python coletor_local.py (rodar com o python do .venv do projeto) ou
 pythonw coletor_local.py (mesma coisa, sem abrir janela de console - e' o
@@ -44,6 +47,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from data.research import coletar_todas_disponiveis
+from data.research.historico import coletar_snapshot_genial
 from data.research.store import apagar_itens_antigos
 
 _LOG_PATH = Path(__file__).parent / "coletor_local.log"
@@ -86,6 +90,20 @@ def main() -> int:
         logger.info(f"  limpeza: {removidos} item(ns) com mais de 5 dias removido(s)")
     else:
         logger.info("  limpeza: Supabase fora do ar, pulou")
+
+    # historico de recomendacoes/preco-alvo da Genial (2026-10-01, ver
+    # data/research/historico.py) - diferente de coletar_todas_disponiveis
+    # (relatorios), isso busca obter_recomendacoes() da Genial e so' grava
+    # um snapshot novo quando recomendacao/preco-alvo mudam de verdade.
+    # Precisa rodar daqui (e nao so' no app ao vivo) pelo mesmo motivo que
+    # a coleta de relatorios da Genial ja precisava: bloqueada por WAF no
+    # Streamlit Cloud, so' funciona de uma maquina real (ver CASAS em
+    # data/research/__init__.py, tentar_coleta_automatica=False).
+    n_comparados, n_mudancas = coletar_snapshot_genial()
+    if n_comparados == 0:
+        logger.info("  historico de recomendacoes: fonte indisponivel (WAF/rede) ou nenhuma recomendacao retornada")
+    else:
+        logger.info(f"  historico de recomendacoes: {n_comparados} ticker(s) comparado(s), {n_mudancas} mudanca(s) real(is) registrada(s)")
 
     return 1 if any(not info["ok"] for info in resultado.values()) else 0
 

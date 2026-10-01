@@ -22,6 +22,7 @@ def _linha_para_item(linha: dict) -> dict:
         "tickers": linha.get("tickers") or [], "link": linha["link"],
         "resumo": linha.get("resumo"), "modelo_resumo": linha.get("modelo_resumo"),
         "preco_alvo": linha.get("preco_alvo"), "recomendacao": linha.get("recomendacao"),
+        "coletado_em": linha.get("coletado_em"),
     }
 
 

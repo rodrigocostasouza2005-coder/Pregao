@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 """Interface da aba RESEARCH: chamada de render_research(prefs) pelo app.py."""
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import streamlit as st
 
 import config
 from data.research import CASAS, coletar_pendentes, preparar_leitura, ultimas_coletas_formatadas
 from data.research.genial import obter_recomendacoes, obter_swing_trade
+from data.research.historico import processar_recomendacoes
 from data.research.resumir import obter_resumo
 
 _TIPO_LABEL = {
@@ -189,19 +193,61 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
             st.caption(f"Resumo indisponível ({resultado['motivo_indisponivel']}).")
 
 
-def _painel_watchlist(prefs: dict, relatorios: list):
+def _formatar_valor_mudanca(campo: str, valor, fmt: str) -> str:
+    if valor is None:
+        return "—"
+    if campo == "preco_alvo":
+        return f"R$ {config.formatar_numero(valor, 2, fmt)}"
+    return str(valor)
+
+
+def _bloco_o_que_mudou(mudancas: list, fmt: str):
+    """'O QUE MUDOU' (Rodrigo, fase RESEARCH 2026-10-01): so' aparece
+    quando historico.processar_recomendacoes detectou uma mudanca REAL
+    (preco-alvo e/ou recomendacao diferentes do ultimo snapshot salvo) -
+    nunca um "resumo do dia" generico. Cada linha cita a CASA
+    explicitamente (nunca vira "o mercado mudou") - ver
+    data/research/historico.py pra garantia de que isso e' sempre
+    comparacao com um valor real anterior, nunca inventado."""
+    if not mudancas:
+        return
+    st.markdown(
+        "<div style='font-size:0.7rem; color:var(--destaque); font-weight:600; "
+        "letter-spacing:0.04em; margin:0.3rem 0 0.4rem 0;'>O QUE MUDOU</div>",
+        unsafe_allow_html=True,
+    )
+    for m in mudancas:
+        linhas_campo = []
+        for campo, rotulo in (("recomendacao", "Recomendação"), ("preco_alvo", "Preço-alvo")):
+            de = m["de"].get(campo)
+            para = m["para"].get(campo)
+            if de == para:
+                continue
+            linhas_campo.append(
+                f"{rotulo}: {_formatar_valor_mudanca(campo, de, fmt)} → "
+                f"<b>{_formatar_valor_mudanca(campo, para, fmt)}</b>"
+            )
+        if not linhas_campo:
+            continue
+        st.markdown(
+            f"<div style='font-size:0.78rem; padding:0.3rem 0.5rem; margin-bottom:0.3rem; "
+            f"border-left:2px solid var(--destaque);'>"
+            f"<span style='color:var(--destaque); font-weight:600;'>{m['ticker']}</span>"
+            f" · {m['casa']} · " + " · ".join(linhas_campo) + "</div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _painel_watchlist(prefs: dict, relatorios: list, recomendacoes: list, swing: list, mudancas_todas: list):
     st.markdown('<div class="painel-titulo">NA SUA WATCHLIST</div>', unsafe_allow_html=True)
     watchlist = prefs.get("watchlist") or []
     if not watchlist:
         st.info("Adicione tickers na barra lateral para ver research direcionado.")
         return
 
-    if _GENIAL_COLETA_AUTOMATICA:
-        recomendacoes = obter_recomendacoes() or []
-        swing = obter_swing_trade() or []
-    else:
-        recomendacoes, swing = [], []
     fmt = prefs["formato_numerico"]
+    mudancas_watchlist = [m for m in mudancas_todas if m["ticker"] in watchlist]
+    _bloco_o_que_mudou(mudancas_watchlist, fmt)
 
     mostrou_algo = False
     for ticker in watchlist:
@@ -294,6 +340,66 @@ def _painel_feed(prefs: dict, relatorios: list, falhas: list):
         _linha_relatorio(rel, permitir_resumo_auto=False)
 
 
+def _status_mudanca(mudanca: dict) -> str:
+    if mudanca["de"].get("recomendacao") != mudanca["para"].get("recomendacao"):
+        return "MUDANÇA DE RECOMENDAÇÃO"
+    return "MUDANÇA DE TARGET"
+
+
+def _painel_radar(relatorios: list, mudancas_todas: list):
+    """Research Radar (Rodrigo, fase RESEARCH 2026-10-01): visão
+    compacta CASA|TICKER|TIPO|DATA|STATUS. So' usa 2 sinais REAIS já
+    existentes no sistema - nunca inventa um "resumo do dia":
+    - NOVO: relatório cuja DATA DE PUBLICAÇÃO (não coletado_em, que muda
+      toda vez que a fonte é re-raspada mesmo pra um relatório antigo
+      que continua listado - usaria "novo" errado) é hoje;
+    - MUDANÇA DE TARGET / MUDANÇA DE RECOMENDAÇÃO: vem de
+      historico.processar_recomendacoes (comparação real com snapshot
+      salvo anteriormente, nunca inventada - ver data/research/historico.py)."""
+    st.markdown('<div class="painel-titulo">RESEARCH RADAR</div>', unsafe_allow_html=True)
+
+    hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%Y-%m-%d")
+    linhas = [
+        {"casa": m["casa"], "ticker": m["ticker"], "tipo": "RECOMENDAÇÃO", "data": "hoje", "status": _status_mudanca(m)}
+        for m in mudancas_todas
+    ]
+    for r in relatorios:
+        if r.get("data") != hoje:
+            continue
+        for ticker in (r.get("tickers") or []):
+            linhas.append({
+                "casa": r["casa"], "ticker": ticker, "tipo": _TIPO_LABEL.get(r["tipo"], r["tipo"]),
+                "data": _fmt_data(r["data"]), "status": "NOVO",
+            })
+
+    if not linhas:
+        st.markdown(
+            "<div class='cinza' style='font-size:0.78rem;'>Nenhuma mudança de recomendação/preço-alvo nem "
+            "relatório novo hoje.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    linhas_html = "".join(
+        f"<tr style='border-bottom:1px solid var(--borda);'>"
+        f"<td style='padding:0.25rem 0.4rem 0.25rem 0;'>{l['casa']}</td>"
+        f"<td style='padding:0.25rem 0.4rem; color:var(--destaque); font-weight:600;'>{l['ticker']}</td>"
+        f"<td style='padding:0.25rem 0.4rem;'>{l['tipo']}</td>"
+        f"<td style='padding:0.25rem 0.4rem;'>{l['data']}</td>"
+        f"<td style='padding:0.25rem 0 0.25rem 0.4rem;'>{l['status']}</td></tr>"
+        for l in linhas[:30]
+    )
+    st.markdown(
+        "<table style='width:100%; font-size:0.78rem; border-collapse:collapse;'>"
+        "<thead><tr class='cinza' style='text-align:left; font-size:0.65rem; letter-spacing:0.04em;'>"
+        "<th style='padding:0 0.4rem 0.3rem 0;'>CASA</th><th style='padding:0 0.4rem 0.3rem;'>TICKER</th>"
+        "<th style='padding:0 0.4rem 0.3rem;'>TIPO</th><th style='padding:0 0.4rem 0.3rem;'>DATA</th>"
+        "<th style='padding:0 0.4rem 0.3rem;'>STATUS</th></tr></thead>"
+        f"<tbody>{linhas_html}</tbody></table>",
+        unsafe_allow_html=True,
+    )
+
+
 @st.fragment
 def render_research(prefs: dict):
     """Ponto de entrada da aba RESEARCH, chamado pelo app.py.
@@ -325,8 +431,23 @@ def render_research(prefs: dict):
             unsafe_allow_html=True,
         )
 
+    if _GENIAL_COLETA_AUTOMATICA:
+        recomendacoes = obter_recomendacoes() or []
+        swing = obter_swing_trade() or []
+    else:
+        recomendacoes, swing = [], []
+    # processar_recomendacoes e' cacheado (ttl=TTL_COLETA) - so' bate no
+    # Supabase de verdade 1x por janela de atualizacao, nao a cada rerun
+    # da aba (ver data/research/historico.py). Calculado 1x aqui e
+    # reaproveitado pelo watchlist (filtrado) e pelo radar (completo) -
+    # evita processar a mesma lista duas vezes com escopos diferentes.
+    mudancas_todas = processar_recomendacoes("Genial Analisa", recomendacoes) if recomendacoes else []
+
     with st.container(border=True):
-        _painel_watchlist(prefs, relatorios)
+        _painel_watchlist(prefs, relatorios, recomendacoes, swing, mudancas_todas)
+
+    with st.container(border=True):
+        _painel_radar(relatorios, mudancas_todas)
 
     with st.container(border=True):
         _painel_feed(prefs, relatorios, falhas)

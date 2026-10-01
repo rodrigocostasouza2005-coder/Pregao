@@ -124,3 +124,28 @@ def processar_recomendacoes(casa: str, recomendacoes: list) -> list:
                 "para": {"recomendacao": rec.get("recomendacao"), "preco_alvo": rec.get("preco_alvo")},
             })
     return mudancas
+
+
+def coletar_snapshot_genial() -> tuple[int, int]:
+    """Busca obter_recomendacoes() da Genial AGORA (sem cache, chamada
+    direta - pensada pra rodar fora de uma sessao Streamlit, ex:
+    coletor_local.py) e registra no historico so' o que mudou de
+    verdade. Retorna (n_comparados, n_mudancas). (0, 0) se a fonte
+    falhar (WAF/rede) - nunca lança excecao pra quem chama.
+
+    Nao usa processar_recomendacoes (decorado com st.cache_data) de
+    proposito: um script standalone roda uma vez só e encerra, cache de
+    sessao nao faz sentido aqui - chama registrar_se_mudou direto por
+    item."""
+    from . import genial
+
+    recomendacoes = genial.obter_recomendacoes() or []
+    n_mudancas = 0
+    for rec in recomendacoes:
+        anterior = registrar_se_mudou(
+            "Genial Analisa", rec["ticker"], rec.get("recomendacao"), rec.get("preco_alvo"),
+            potencial_pct=rec.get("potencial_pct"),
+        )
+        if anterior is not None:
+            n_mudancas += 1
+    return len(recomendacoes), n_mudancas

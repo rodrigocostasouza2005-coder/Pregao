@@ -2413,3 +2413,28 @@ fase funcionarem de ponta a ponta em produção.
 wiring do histórico na UI (watchlist + "O QUE MUDOU"), coleta de
 recomendações no `coletor_local.py` (hoje só coleta relatórios),
 Research Radar, refino do foco de Morning Call, testes de UI/Playwright.
+
+### Parte 2: histórico+radar na UI, coleta local
+
+- `coletor_local.py`: além de `coletar_todas_disponiveis()` (relatórios),
+  agora também chama `historico.coletar_snapshot_genial()` - mesmo
+  motivo arquitetural (Genial bloqueada por WAF no Streamlit Cloud, só
+  funciona rodando da máquina do Rodrigo). Sem isso, a tabela de
+  histórico nunca seria populada em produção de verdade.
+- `ui/research_tab.py`: `_painel_watchlist` ganhou um bloco "O QUE
+  MUDOU" no topo (só aparece quando existe mudança REAL - nunca um
+  resumo genérico do dia), citando a casa explicitamente ("Genial:
+  Recomendação: COMPRA → MANTER", nunca "o mercado mudou"). Novo painel
+  **Research Radar** (CASA | TICKER | TIPO | DATA | STATUS) com só 2
+  sinais reais: "NOVO" (data de PUBLICAÇÃO do relatório é hoje - não
+  `coletado_em`, que mudaria toda vez que uma fonte é re-raspada mesmo
+  pra relatório antigo, dando falso "novo") e "MUDANÇA DE
+  RECOMENDAÇÃO"/"MUDANÇA DE TARGET" (do histórico comparado de verdade).
+  `processar_recomendacoes` calculado 1x em `render_research` e
+  reaproveitado pelos dois painéis (watchlist filtra pra só os tickers
+  do usuário; radar mostra tudo) - evita processar a mesma lista duas
+  vezes/bater no Supabase em dobro.
+- `data/research/store.py`: `_linha_para_item` passou a expor
+  `coletado_em` (já existia na tabela, só não chegava até a UI).
+
+**Testes**: `compileall` limpo; AppTest das 9 seções sem exceção.

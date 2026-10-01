@@ -3,6 +3,17 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-01 (feat: Research - "O que mudou" + Research Radar)
+
+- Novo painel "O QUE MUDOU" na watchlist do RESEARCH - só aparece quando
+  há mudança real de recomendação/preço-alvo (sempre citando a casa,
+  nunca "consenso de mercado"). Novo painel **Research Radar** (CASA |
+  TICKER | TIPO | DATA | STATUS) com sinais reais (NOVO = relatório
+  publicado hoje; MUDANÇA DE TARGET/RECOMENDAÇÃO = histórico comparado).
+- `coletor_local.py` agora também coleta snapshot de recomendações da
+  Genial (necessário pra popular o histórico em produção - mesma
+  limitação de WAF que já afetava a coleta de relatórios).
+
 ## 2026-10-01 (feat: Research - extração estruturada + histórico não-perecível)
 
 - `resumir_com_groq` agora também extrai preço-alvo/recomendação (só
