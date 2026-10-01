@@ -2163,3 +2163,106 @@ MACRO no código).
 **Arquivos alterados**: `ui/visao_geral.py` (REGISTRO_PAINEIS novo,
 render_visao_geral migrada), `app.py` (import do registro, persistir_fn
 no call site, controles de ordem/visibilidade no CONFIG).
+
+### FASE 6 — Auditoria de padrão estrutural dos painéis
+
+**Achado**: a arquitetura PANEL → HEADER/TITLE → ACTIONS → CONTENT já é
+o padrão de facto, idêntico nos dois sistemas que existem
+(`ui/paineis.py` sistema antigo de larguras fixas, `ui/workspace.py`
+novo de layout livre): PANEL = `st.container(border=True, key="painel-outer-...")`;
+HEADER/TITLE = a div `.painel-titulo` que cada `render_fn` desenha
+primeiro; ACTIONS = popover "⚙" no canto (tamanho+esconder no sistema
+antigo, restaurar+ocultar no novo) injetado por fora da `render_fn`,
+sempre com a mesma linguagem visual (confirmado no próprio código-fonte:
+o popover do workspace foi escrito "duplicado de propósito... mesma
+linguagem visual" do antigo). Nenhuma mudança de código necessária -
+já está padronizado onde existe o conceito de "múltiplos painéis numa
+aba" (MERCADO/MACRO/VISÃO GERAL).
+
+**Fora de escopo nesta fase, de propósito**: EQUITY/CVM/NEWS/RESEARCH/
+TOP MERCADO não usam o conceito de "painéis múltiplos" - são blocos
+monolíticos únicos por aba. Transformá-los em painéis registrados seria
+uma decisão de PRODUTO (quais blocos viram painéis separados, em que
+ordem), não uma padronização estrutural - fica reservado pras fases
+dedicadas de cada aba (8/9/10), evitando mudança fora do escopo "só
+estrutura, sem redesign" desta fase.
+
+### FASE 7 — Produto da VISÃO GERAL (entender o mercado em ~10s)
+
+**Achado**: a ordem de prioridade pedida (1 mercado agora, 2 IBOV, 3
+altas/baixas, 4 negociados, 5 setores, 6 notícias, 7 globais, 8
+watchlist) já é EXATAMENTE a ordem que `ui/visao_geral.py` já tinha
+antes de qualquer mudança desta sessão (preservada 1:1 no
+`REGISTRO_PAINEIS` da Fase 5) - nenhuma reordenação necessária. O
+problema de "página vertical gigantesca" que a Fase 7 queria resolver
+já foi endereçado estruturalmente pela Fase 5: agora os painéis são
+arrastáveis/redimensionáveis livremente (o usuário pode pôr lado a
+lado, encolher o que não interessa) em vez de forçosamente empilhados
+um embaixo do outro. Nenhum conteúdo cortado ou dado novo inventado.
+Nenhuma mudança de código necessária nesta fase além do que a Fase 5 já
+entregou.
+
+### FASE 8/9 — Auditoria de NEWS e CVM
+
+**Achado**: ambas já foram estruturalmente redesenhadas em sessões
+anteriores (ver histórico mais acima neste arquivo - "fase 3 NEWS" e
+"P4/CVM" concluídas há várias sessões, bem antes deste roadmap de 16
+fases existir). Confirmado lendo o código-fonte atual:
+- **NEWS** (`ui/news_tab.py`): já é uma linha densa por notícia (HORA |
+  SELO | MANCHETE | Nº FONTES | ↗), com tickers citados destacados
+  (watchlist em cor de destaque), card expansível com resumo sob
+  demanda, veículos com link, filtros por pill - bate ponto a ponto com
+  o pedido da Fase 8.
+- **CVM** (`ui/cvm_tab.py`): já é DATA | TICKER | TIPO | ASSUNTO com
+  busca textual, filtro por ticker/tipo, paginação real, painel de
+  destaques (fatos relevantes recentes + ticker mais ativo), card
+  expansível - bate ponto a ponto com o pedido da Fase 9.
+
+Nenhuma mudança de código feita - a auditoria confirmou que o trabalho
+já existe e está à altura do pedido. Forçar uma reescrita aqui violaria
+a regra de segurança do próprio roadmap ("não sobrescreva trabalho
+existente sem entender o que é").
+
+### FASE 13 — Auditoria de performance (fora de ordem - ver nota abaixo)
+
+Feita antes das Fases 10-12 porque não dependem delas e porque
+"filtros causando scroll pra cima" era um problema CONCRETO e
+nomeado explicitamente, resolvível com um padrão já comprovado no
+próprio projeto.
+
+**"Analytics ficando pesado"**: não existe nenhuma feature/aba chamada
+"Analytics" neste projeto (`grep` vazio) - item não se aplica ao
+PREGÃO, provavelmente veio de um checklist genérico. Não inventei nada
+pra "corrigir" algo que não existe.
+
+**"Filtros causando comportamento de scroll pra cima" - achado real e
+corrigido**: RESEARCH, CVM e TOP MERCADO disparavam rerun da PÁGINA
+INTEIRA a cada clique num pill de filtro (ticker/tipo/casa/região/setor/
+busca/paginação) - um rerun completo do Streamlit reresetava a posição
+de scroll, exatamente o sintoma relatado. NEWS já tinha resolvido isso
+pra sua lista com `@st.fragment` (achado lendo o próprio código-fonte).
+Apliquei o MESMO padrão já comprovado (não é gambiarra nova, é o
+mecanismo oficial do Streamlit pra isso) nas 3 funções de entrada:
+`render_cvm`, `render_top_mercado`, `render_research` - cada uma
+decorada com `@st.fragment`, isolando o rerun de clique-em-filtro só
+àquele bloco. Zero mudança de dado/lógica/resultado financeiro - só
+escopo de rerun. `coletar_pendentes`/`st.rerun()` internos do
+RESEARCH continuam funcionando normalmente dentro do fragment (rerun
+passa a ser escopado ao fragment, que é o comportamento desejado).
+
+**Demais itens da lista** (rerenders desnecessários, consultas
+repetidas, dados cacheáveis): auditoria do código de dados
+(`data/mercado.py`, `data/prices.py`) mostra que o projeto já usa
+`@st.cache_data` com TTL consistente (90s pro lote pesado da B3/
+Ibovespa) em todos os pontos de coleta em lote revisados - não achei
+chamada óbvia sem cache nem consulta duplicada nova. Auditoria mais
+profunda (profiling real) fica pro próximo ciclo dedicado a
+performance, se o Rodrigo achar que ainda vale depois de sentir o
+efeito do fix de scroll.
+
+**Testes**: `compileall` limpo; AppTest das 9 seções sem exceção
+(RESEARCH/CVM/TOP MERCADO incluídos, agora como fragments).
+
+**Arquivos alterados**: `ui/cvm_tab.py`, `ui/top_mercado_tab.py`,
+`ui/research_tab.py` (um decorator `@st.fragment` + comentário em cada
+função de entrada - nenhuma outra linha mudou).

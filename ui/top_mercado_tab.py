@@ -25,8 +25,13 @@ _BUSCADORES = {
 }
 
 
+@st.fragment
 def render_top_mercado(prefs: dict):
-    """Ponto de entrada da aba TOP MERCADO, chamado pelo app.py."""
+    """Ponto de entrada da aba TOP MERCADO, chamado pelo app.py.
+
+    @st.fragment (perf, 2026-10-01): pills de região/setor disparavam
+    rerun da pagina inteira a cada clique (sintoma: tela pula pro topo).
+    Mesmo padrao de CVM/NEWS - isola o rerun so' neste bloco."""
     _injetar_css()
 
     with st.container(border=True):

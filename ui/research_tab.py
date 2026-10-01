@@ -294,8 +294,16 @@ def _painel_feed(prefs: dict, relatorios: list, falhas: list):
         _linha_relatorio(rel, permitir_resumo_auto=False)
 
 
+@st.fragment
 def render_research(prefs: dict):
     """Ponto de entrada da aba RESEARCH, chamado pelo app.py.
+
+    @st.fragment (perf, 2026-10-01): pills de casa/tipo/ticker em
+    _painel_feed disparavam rerun da pagina inteira a cada clique
+    (sintoma: tela pula pro topo). Mesmo padrao de CVM/NEWS/TOP MERCADO.
+    coletar_pendentes/st.rerun() internos continuam funcionando igual
+    dentro do fragment (rerun fica escopado ao fragment, que e' o
+    comportamento certo aqui tambem).
 
     Mostra o cabecalho e o que ja esta salvo no Supabase imediatamente
     (leitura rapida, preparar_leitura) - so DEPOIS, se alguma casa estiver

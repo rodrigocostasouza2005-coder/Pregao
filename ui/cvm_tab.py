@@ -328,8 +328,18 @@ def _painel_destaques(documentos: list):
     )
 
 
+@st.fragment
 def render_cvm(prefs: dict):
-    """Ponto de entrada da aba CVM, chamado pelo app.py."""
+    """Ponto de entrada da aba CVM, chamado pelo app.py.
+
+    @st.fragment (perf, 2026-10-01): os filtros (pills de ticker/tipo,
+    busca, paginação) disparavam rerun da PÁGINA INTEIRA a cada clique -
+    sintoma relatado: a tela "pula" pro topo a cada filtro, porque um
+    rerun completo do Streamlit rereseta a posição de scroll. Igual ao
+    padrão já usado em NEWS (`ui/news_tab.py:_renderizar_lista`), o
+    fragment isola o rerun só neste bloco - clicar num filtro não
+    recarrega o resto da página nem perde a posição de scroll. Não muda
+    nenhum dado/filtro/resultado, só o ESCOPO do rerun."""
     _injetar_css()
 
     with st.container(border=True):

@@ -3,6 +3,15 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-01 (perf: corrige scroll pulando pro topo ao filtrar)
+
+- **RESEARCH, CVM e TOP MERCADO**: clicar num filtro (pill de ticker/
+  tipo/casa/região/setor, busca, paginação) disparava rerun da página
+  inteira, resetando a posição de scroll. Corrigido com `@st.fragment`
+  nas 3 funções de entrada (`render_research`, `render_cvm`,
+  `render_top_mercado`) - mesmo padrão já usado em NEWS. Zero mudança
+  de dado/lógica.
+
 ## 2026-10-01 (feat: workspace modular em VISÃO GERAL + MACRO)
 
 - **VISÃO GERAL e MACRO ganham layout livre** (drag/resize), mesma
