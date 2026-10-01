@@ -1949,3 +1949,71 @@ ser exercitada por AppTest (não há mouse real no DOM do navegador
 dentro do teste). Validar com o Rodrigo rodando local antes de
 considerar a ETAPA 1 fechada; ETAPA 2 (expandir pra outras abas) só
 depois disso.
+
+## Workspace modular — 3 bugs reais corrigidos, validado em produção (commit bf023c2, 2026-10-01)
+
+A validação visual do MVP acima (primeiro deploy) falhou: Rodrigo não
+conseguiu arrastar nem redimensionar nada em `pregao.streamlit.app`.
+Investigação a fundo (harness Playwright dedicado, fora do app real —
+ver abaixo) achou **3 bugs independentes em `ui/workspace.py`**, cada
+um suficiente sozinho pra quebrar a experiência:
+
+**Bug A (CSS)**: uma regra decorativa do handle de resize em `_CSS_BASE`
+usava um seletor com 2 atributos (especificidade 0,2,0) setando
+`position: relative` em todo painel. A regra que deveria valer —
+`position: absolute` por painel, gerada em `_gerar_css()` — tem só 1
+atributo + 1 elemento (especificidade 0,1,1), **menor**. CSS resolve
+conflito por especificidade, não por ordem no documento, então
+`relative` sempre vencia, mesmo vindo antes no HTML — nenhum painel
+chegava a ser de fato posicionado livremente; cada um ficava deslocado
+por `left/top` só que *em cima* do fluxo normal do documento, causando
+sobreposição e tamanhos estranhos visíveis desde o load inicial, sem
+precisar nem arrastar nada. Corrigido removendo a declaração de
+`position` da regra genérica (não precisava dela - o `::after`
+decorativo só precisa de QUALQUER containing block não-estático, e o
+`position:absolute` por painel já fornece isso).
+
+**Bug B (ponte JS→Python)**: a ponte escreve o layout num
+`st.text_input` oculto via `dispatchEvent(new Event('input'))` (truque
+padrão pra inputs React). Mas `st.text_input` só manda o valor pro
+backend (dispara `on_change`/rerun) no **blur ou Enter** — debounced de
+propósito pra não re-rodar o script a cada tecla. Um `input` isolado
+nunca chegava no servidor: dava pra *ver* o painel se mexer, mas nada
+era persistido, e o próximo rerun real (qualquer um) descartava a
+mudança. Corrigido com `input.focus(); input.blur();` depois do
+`dispatchEvent` - simula a saída do campo, gatilho real de commit do
+Streamlit.
+
+**Bug C (listener morto)**: `ligarPainel()` marcava cada painel com
+`dataset.workspaceLigado = '1'` pra não duplicar listener. Mas o
+Streamlit recria o iframe do script a cada rerun (nunca reaproveita),
+enquanto o elemento do painel é preservado pelo React (mesma key). Na
+segunda montagem do iframe (disparada pelo primeiro gesto, via Bug B
+corrigido), o script via `'1'` já presente e desistia de anexar
+listener novo - os antigos pertenciam a um iframe já destruído.
+Resultado: só o PRIMEIRO gesto da sessão inteira funcionava; qualquer
+coisa depois disso (ou depois de qualquer rerun, por qualquer motivo)
+ficava surda a mouse até recarregar a página. Corrigido trocando a flag
+fixa `'1'` por um `MOUNT_ID` único por montagem (`Date.now()+Math.random()`).
+
+**Metodologia de teste**: AppTest não executa JS/mouse real, então as
+rodadas anteriores não tinham como pegar nenhum desses 3 bugs (todos só
+aparecem com interação de navegador de verdade). Construído um harness
+Playwright dedicado (`streamlit run` isolado, fora do app real — bypassa
+login Google via `auth.py`, impossível de automatizar, e Supabase real,
+substituído por JSON local) que monta `ui.workspace.renderizar_workspace`
+sem modificação nenhuma pro teste. 23 checks cobrindo: `position`
+computado via `getComputedStyle`, drag pelo header, resize horizontal/
+vertical/diagonal com valores intermediários reais (não presos a
+25/50/75/100%), clique em botão E interação com gráfico Plotly real
+dentro do painel sem disparar drag/resize acidental, persistência via
+bridge, rerun, reload de página (sessão nova), restaurar layout sem
+apagar outras preferências do usuário (watchlist etc.), zero erros de
+JS no console. Esse harness não faz parte do repo (scratchpad de
+sessão) - só o fix em si foi commitado.
+
+**Confirmado por Rodrigo rodando de verdade em `pregao.streamlit.app`**:
+arrastar, redimensionar nos 3 modos, persistência tudo funcionando.
+ETAPA 1 agora fechada de verdade. Único arquivo alterado:
+`ui/workspace.py` (42 inserções, 13 remoções) - nada de design/CSS
+visual/outras abas tocado.

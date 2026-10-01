@@ -3,6 +3,25 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-01 (fix: workspace modular - 3 bugs reais corrigidos, validado em producao)
+
+- **Drag/resize do workspace modular (MERCADO) não funcionava de verdade
+  em produção** (feature abaixo tinha ido ao ar quebrada). 3 causas
+  independentes em `ui/workspace.py`: (1) conflito de especificidade CSS
+  fazia `position:absolute` nunca ser aplicado nos painéis; (2) a ponte
+  JS→Python só disparava `input`, que o `st.text_input` do Streamlit não
+  comita pro backend (precisa de blur/Enter) - nada era persistido; (3)
+  a flag anti-duplicação de listener (`dataset.workspaceLigado`)
+  sobrevivia entre reruns num elemento preservado pelo React, enquanto o
+  Streamlit recria o iframe do script a cada rerun - só o primeiro gesto
+  da sessão funcionava. Detalhes completos (causa, por que quebrava,
+  correção) no PROGRESSO.md.
+- Achados e corrigidos só com um harness Playwright dedicado (mouse real
+  no DOM) - AppTest não executa JS/interação de navegador, por isso
+  nenhum desses 3 bugs tinha aparecido nos testes anteriores.
+- **Confirmado por Rodrigo rodando de verdade em pregao.streamlit.app.**
+- Commit `bf023c2`. Único arquivo alterado: `ui/workspace.py`.
+
 ## 2026-10-01 (feature: workspace modular/layout livre em MERCADO)
 
 - **MERCADO ganha layout livre** (`ui/workspace.py`, novo): arraste pelo
