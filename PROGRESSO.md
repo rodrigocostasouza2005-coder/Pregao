@@ -2461,3 +2461,29 @@ como fato de mercado); Morning Call com 2 vozes e 3 tickers específicos
 generalizado. Preço-alvo/recomendação continuaram extraídos certo. Zero
 regressão na qualidade do texto (ainda narrativo, ainda sem template
 fixo).
+
+### Parte 4: validação visual (Playwright) + suíte de testes commitada
+
+**Validação visual**: harness isolado (CSS real do projeto, dados
+mockados representando uma mudança de preço-alvo detectada + 1
+relatório novo) via Playwright - confirmado sem erro de console, "O QUE
+MUDOU" aparece com formatação clara ("ABCD4 · Genial Analisa ·
+Preço-alvo: R$ 42,00 → R$ 48,00"), Research Radar mostra as 2 linhas
+esperadas (MUDANÇA DE TARGET + NOVO) na mesma linguagem visual densa/
+sem cards do resto do terminal. Screenshot confirma visualmente.
+
+**Suíte de testes commitada** (`tests/test_research.py`, primeira vez
+que o projeto commita um arquivo de teste - até aqui todo teste era
+ad-hoc/documentado, nunca versionado): cobre só a parte 100%
+determinística (parsing da extração estruturada + comparação de
+histórico) com Groq e Supabase mockados - roda em qualquer máquina sem
+`.streamlit/secrets.toml` nem custo de API. Os 9 cenários de qualidade
+de texto pedidos (documento curto/longo, com/sem preço-alvo, Morning
+Call, múltiplos tickers etc.) foram validados com chamadas REAIS à Groq
+durante o desenvolvimento (ver Partes 1 e 3 acima) - esse tipo de
+validação (qualidade de texto gerado por LLM, não-determinística) não
+cabe numa suíte commitada que precisa rodar sempre igual; documentado
+aqui em vez disso. 19 checks no arquivo commitado, todos passando.
+
+**Testes finais**: `compileall` do projeto inteiro limpo; AppTest das 9
+seções sem exceção.

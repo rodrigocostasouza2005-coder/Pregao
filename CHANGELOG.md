@@ -3,6 +3,16 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-01 (test: Research - primeira suíte de testes commitada)
+
+- `tests/test_research.py` (novo diretório `tests/`, primeiro arquivo de
+  teste do projeto a ser commitado) - 19 checks determinísticos
+  (histórico de mudanças + parsing da extração estruturada), Groq e
+  Supabase mockados, roda sem secrets nem custo de API.
+- Validação visual da aba RESEARCH via Playwright (harness isolado) -
+  "O QUE MUDOU" e Research Radar renderizando corretamente, sem erro de
+  console.
+
 ## 2026-10-01 (feat: Research - separação FATO/visão da casa no prompt)
 
 - Prompt narrativo ganha uma regra nova (não substitui nada): opinião/
