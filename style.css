@@ -15,6 +15,31 @@
     --ciano: #3FC1FF;
     --padding-painel: 0.5rem;
     --fonte-base: 13px;
+
+    /* ALTURA DO HEADER = OFFSET DO CONTEUDO (correcao 2026-10-01): cada
+       camada do header fixo declara aqui a altura MINIMA que ela propria
+       respeita via min-height (ver .st-key-camada1_header/.pregao-topo-fixo/
+       .st-key-nav_secao mais abaixo) - .block-container usa a MESMA soma
+       pra calcular o padding-top. Antes eram dois numeros desconectados
+       (padding-top:11rem "no olho" vs a altura real das 3 camadas, que soma
+       mais que isso) - bug real: o padding-top ficava MENOR que a altura
+       de verdade do header, entao o topo do conteudo nascia por baixo do
+       header e aparecia "vazando" atras dele ao rolar. Agora e' uma conta
+       so', sem numero magico solto: mude uma altura aqui, as duas pontas
+       (header e offset do conteudo) se ajustam juntas.*/
+    --altura-header-nativo: 3rem;   /* header[data-testid="stHeader"] do proprio Streamlit, nao mexemos aqui */
+    --altura-camada1: 3.4rem;       /* logo + busca + acoes + usuario */
+    --altura-ticker: 3.1rem;        /* letreiro de indices + linha de status (relogio/pregao aberto) */
+    --altura-nav: 3.3rem;           /* navegacao principal (EQUITY/MACRO/...) */
+    --altura-header-custom: calc(var(--altura-camada1) + var(--altura-ticker) + var(--altura-nav));
+    /* folga de seguranca pequena e deliberada (nao e' "aumentar o
+       padding-top no olho" de novo): as alturas acima batem exatamente
+       com o conteudo real de cada camada, zero sobra - qualquer diferenca
+       de meio pixel (antialiasing, fonte de fallback se o Google Fonts
+       falhar) encostaria o conteudo direto na borda do header sem
+       margem de erro nenhuma. So' entra no padding do conteudo, nunca na
+       altura do proprio header. */
+    --folga-seguranca: 0.3rem;
 }
 
 html, body, [class*="css"] {
@@ -24,10 +49,21 @@ html, body, [class*="css"] {
 /* trava rolagem horizontal da pagina inteira - rede de seguranca contra
    qualquer elemento interno (tabela larga, trilho do letreiro) que force
    a pagina toda pra lado, o que desalinha os elementos fixos do topo.
-   overflow-x:clip (nao hidden) + overflow-y:visible: hidden criaria um
-   "container de rolagem" proprio no html/body, o que quebra o
-   position:sticky do header (ver .block-container mais abaixo) */
-html, body { overflow-x: clip; overflow-y: visible; max-width: 100vw; }
+   CORRIGIDO 2026-10-01: a combinacao anterior (overflow-x:clip +
+   overflow-y:visible) e' invalida pela spec de CSS - quando um eixo nao e'
+   visible, o OUTRO eixo deixado como visible e' silenciosamente trocado
+   pelo navegador pra "auto" (nunca fica visible de verdade). Ou seja,
+   html/body viravam um CONTAINER DE ROLAGEM PROPRIO sem a gente perceber
+   (o comentario antigo achava que tinha evitado isso, mas o "visible"
+   nunca colava). Esse container de rolagem extra, duplicado com o scroll
+   real do Streamlit, e' a causa mais provavel de o header fixo (posicionado
+   em relacao a VIEWPORT) e o conteudo rolado (dentro desse container extra)
+   perderem sincronia visual durante o scroll. Fix: overflow-y:clip em vez
+   de visible - mesmo efeito pratico (sem conteudo cortado, ja que
+   html/body nao tem altura propria limitada), sem criar scrollport
+   proprio. Quem rola a pagina de verdade continua sendo o wrapper interno
+   do proprio Streamlit, como sempre deveria ter sido. */
+html, body { overflow-x: clip; overflow-y: clip; max-width: 100vw; }
 
 /* fundo geral e densidade -------------------------------------------- */
 .stApp {
@@ -41,28 +77,51 @@ html, body { overflow-x: clip; overflow-y: visible; max-width: 100vw; }
    remove esse botao e trava o usuario fora da sidebar sem jeito de
    reabrir) */
 #MainMenu, footer { visibility: hidden; height: 0; }
+/* CAUSA REAL do bug de "conteudo aparecendo atras do header" (achado e
+   confirmado em harness isolado com Playwright, 2026-10-01): este header
+   nativo do Streamlit e' position:fixed (imposto pelo proprio Streamlit,
+   fora do nosso controle) e ocupa os primeiros 3rem do topo da tela -
+   nosso header customizado (.st-key-header_fixo, logo abaixo) so' comeca
+   a cobrir a partir DAI (top:3rem). Com background:transparent aqui, essa
+   faixa de 3rem no topo ficava sem NENHUM fundo opaco - uma janela de
+   verdade por onde o conteudo normal da pagina (tabelas, paineis), ao
+   rolar e passar por tras do header fixo, ficava visivel atraves dela.
+   Nao era z-index nem stacking context - era literalmente um buraco sem
+   fundo. Fundo solido (mesma cor do app) fecha esse buraco; o botao de
+   abrir a sidebar continua visivel normalmente por cima (elemento
+   separado, [data-testid="collapsedControl"], nao afetado por isso). */
 header[data-testid="stHeader"] {
-    background: transparent;
-    height: 3rem;
+    background: var(--bg);
+    height: var(--altura-header-nativo);
 }
 
 /* padding-top cobre a faixa fixa do topo inteira: header nativo do
-   Streamlit (3rem) + .st-key-header_fixo (camada 1+2+3, ver abaixo) - o
-   valor tem FOLGA GENEROSA de proposito (2026-09-28: position:sticky foi
-   tentado aqui e nao colou em producao - provavel container de rolagem
-   proprio criado por algum wrapper nativo do Streamlit que a gente nao
-   controla via CSS: overflow-x:clip no .block-container/html/body nao foi
-   suficiente. Voltou pra position:fixed, que e' confiavelmente fixo
-   independente disso, ao custo de precisar reservar o espaco certo aqui -
-   por isso a folga extra, pra sobrar gap em vez de cobrir conteudo). */
+   Streamlit + .st-key-header_fixo (camada 1+2+3) - CALCULADO a partir das
+   mesmas variaveis de altura usadas pelas proprias camadas (ver :root no
+   topo do arquivo), nao mais um numero fixo "no olho". Bug real corrigido
+   2026-10-01: o valor antigo (11rem) ficava MENOR que a soma real das 3
+   camadas do header (~12.8rem com os min-height declarados agora) - o
+   topo do conteudo nascia alguns pixels ANTES do header fixo terminar,
+   entao as primeiras linhas de tabela/painel apareciam "vazando" atras do
+   header durante o scroll (o header fica parado na tela, o conteudo rola
+   por baixo dele, e a faixa de poucos pixels sem padding suficiente
+   deixava ver conteudo passando ali). Mudar qualquer --altura-* no :root
+   agora ajusta header E offset do conteudo juntos, sem precisar lembrar
+   de tocar nos dois lugares.
+   overflow-y:clip (nao mais "visible", que nunca funcionava de verdade -
+   ver comentario em html,body acima) pela mesma razao: impedir que este
+   elemento vire um container de rolagem proprio por engano. Nao corta
+   nada na pratica (.block-container nao tem altura propria limitada,
+   cresce com o conteudo - "clip" so' importa quando o conteudo
+   ultrapassa uma altura fixa, o que nao e' o caso aqui). */
 .block-container {
-    padding-top: 11rem;
+    padding-top: calc(var(--altura-header-nativo) + var(--altura-header-custom) + var(--folga-seguranca));
     padding-bottom: 0.6rem;
     padding-left: 1rem;
     padding-right: 1rem;
     max-width: 100%;
     overflow-x: clip;
-    overflow-y: visible;
+    overflow-y: clip;
 }
 
 /* header fixo: contem camada 1 (logo+busca+acoes+usuario), camada 2
@@ -73,7 +132,7 @@ header[data-testid="stHeader"] {
    acima) fica sempre visivel ao rolar a pagina. */
 .st-key-header_fixo {
     position: fixed;
-    top: 3rem;
+    top: var(--altura-header-nativo);
     left: 0;
     right: 0;
     width: 100vw;
@@ -84,11 +143,15 @@ header[data-testid="stHeader"] {
 .st-key-camada1_header {
     border-bottom: 1px solid var(--borda);
     padding: 0.65rem 1rem 0.6rem 2.75rem;
+    min-height: var(--altura-camada1);
+    box-sizing: border-box;
 }
 .pregao-topo-fixo {
     background-color: var(--bg);
     border-bottom: 1px solid var(--borda);
     overflow: hidden;
+    min-height: var(--altura-ticker);
+    box-sizing: border-box;
 }
 
 /* botao de abrir a sidebar quando ela esta recolhida fica fora do header,
@@ -427,8 +490,15 @@ table tr:last-child td { border-bottom: none; }
     .ticker-tape-wrap { overflow-x: auto; }
 }
 
-/* garante respiro entre o letreiro e o seletor de secao, mesmo com margens colapsando */
-.st-key-nav_secao { margin-top: 0.3rem; }
+/* garante respiro entre o letreiro e o seletor de secao, mesmo com margens colapsando.
+   --altura-nav (:root) e' o espaco TOTAL desta camada, margin-top incluido -
+   o min-height do proprio elemento desconta a margem pra nao contar ela
+   duas vezes na soma de --altura-header-custom. */
+.st-key-nav_secao {
+    margin-top: 0.3rem;
+    min-height: calc(var(--altura-nav) - 0.3rem);
+    box-sizing: border-box;
+}
 
 /* responsividade: tabela/markdown que estourar a largura vira scroll
    horizontal dentro do proprio bloco em vez de cortar conteudo */
