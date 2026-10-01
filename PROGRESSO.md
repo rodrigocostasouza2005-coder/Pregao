@@ -2066,3 +2066,36 @@ preservada (preto/âmbar/verde/vermelho, mono, sem caixas).
 **Arquivos alterados**: `app.py` (`_ticker_tape` estendida,
 `_watchlist_chips` removida), `style.css` (`.wchip*` removido,
 `--folga-seguranca` ajustada).
+
+### FASE 2 — Auditoria de geometria do shell (header/ticker/nav/conteúdo)
+
+Auditoria completa do CSS do shell fixo (`.st-key-header_fixo`,
+`.block-container`, z-index, overflow, scroll). **Achado**: o próprio
+`style.css` já documenta, em comentários extensos, pelo menos 3 bugs
+reais de geometria corrigidos em sessões anteriores no mesmo dia
+(buraco sem fundo no header nativo, `overflow-x/y` inválido duplicando
+scroll container, `padding-top` desalinhado da altura real das
+camadas) - ou seja, essa auditoria já tinha sido feita a fundo antes
+desta sessão. Correção pontual: comentário desatualizado citava
+"z-index 50" pro header fixo, valor real é 56 (`.st-key-header_fixo`).
+
+**Validação**: harness Playwright com scroll real (80 linhas de
+conteúdo, `mouse.wheel`) + 3 metodologias de teste até chegar numa
+prova real de "sem vazamento visual" - as duas primeiras tentativas
+deram falso-positivo (comparar bounding boxes geometricamente conta
+sobreposição normal de `position:fixed` como se fosse bug;
+`elementFromPoint` é enganado por `pointer-events:none` no header
+nativo do Streamlit, que é um elemento decorativo vazio existindo só
+pra reservar espaço - hit-test "atravessa" ele mas o PAINT continua
+normal por cima). A prova real: amostragem de cor de pixel na
+screenshot renderizada de verdade (nenhum pixel com a cor de texto de
+conteúdo aparece dentro da faixa do header) - zero vazamento
+confirmado. Header não se move ao rolar, fundo sólido confirmado.
+
+**Lição de metodologia** (vale pra futuras auditorias de layout):
+geometria de bounding box e hit-testing (`elementFromPoint`) NÃO
+provam vazamento visual sozinhos - a prova real é a cor do pixel
+renderizado. Guardar esse padrão de teste pra qualquer auditoria futura
+de z-index/overlap.
+
+**Arquivo alterado**: `style.css` (1 linha, comentário).

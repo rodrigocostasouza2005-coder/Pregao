@@ -250,7 +250,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 section[data-testid="stSidebar"] {
     background-color: var(--painel-bg);
     border-right: 1px solid var(--borda);
-    /* fica ACIMA da faixa fixa do topo (.pregao-topo-fixo, z-index 50):
+    /* fica ACIMA da faixa fixa do topo (.st-key-header_fixo, z-index 56):
        como essa faixa e' fixed de ponta a ponta da tela, sem isso ela
        cobriria o topo da sidebar aberta em vez de ficar atras dela */
     position: relative;
