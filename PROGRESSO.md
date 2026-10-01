@@ -1810,3 +1810,78 @@ Nada disso é bloqueante — o app funciona normalmente sem essa tarefa
 configurada, só não atualiza Genial/XP enquanto o Cloud estiver
 bloqueado. A aba RESEARCH agora mostra "última coleta: hh:mm" por casa,
 então dá pra ver quando os dados foram atualizados de verdade.
+
+## Ciclo novo: auditoria real + quick wins de data sanity (2026-09-30/10-01)
+
+Pedido do Rodrigo veio como um super-prompt de redesign bem amplo
+(terminal + Research Intelligence Layer: Company 360, Earnings Bot,
+AI Research Assistant multifonte, Research Radar, FACTO/VISÃO DA
+CASA/INFERÊNCIA separados, etc. — escopo de meses). Antes de tocar em
+qualquer código, fiz a auditoria real do repositório (app.py, style.css,
+ui/research_tab.py, data/research/resumir.py, data/research/__init__.py,
+ui/visao_geral.py, MANUAL.md, BACKLOG.md) pra separar o que o prompt
+supõe (genérico) do que o projeto já tem de verdade.
+
+**Achados da auditoria que corrigem a premissa do prompt**: NEWS e CVM
+não são placeholder (já têm agrupamento, score, selo CONFIRMADA, busca+
+paginação); o resumo de research já NÃO usa template
+TESE/NÚMEROS/RISCOS (prompt de `resumir.py` já é narrativo, causa→
+consequência, blocos adaptativos); o shell/header já foi redesenhado há
+poucos dias (ticker tape sem duplicidade, nav com sublinhado, busca
+compacta); Beta e DY já não vêm cru do yfinance. Gaps reais confirmados:
+truncamento cru de 12k em `resumir.py`, sem múltiplos por setor, sem
+"o que mudou desde ontem", EQUITY não é um Company 360 (RESEARCH não
+aparece dentro do ticker), sem Research Radar/comparação entre casas,
+sem separação visual FATO/VISÃO DA CASA/INFERÊNCIA, versionamento de
+resumo é um hack de heurística de texto (`_resumo_formato_antigo`), e
+vários itens do BACKLOG.md já estavam resolvidos sem o arquivo ser
+limpo.
+
+Perguntei ao Rodrigo por onde começar (escopo grande demais pra decidir
+sozinho) — escolheu **"Quick wins + data sanity"** como primeiro
+incremento, deixando Company 360/"o que mudou"/Research Intelligence
+Layer pra ciclos seguintes.
+
+**Implementado neste ciclo** (commit 2433b24):
+- `config.formatar_multiplo`: P/L e P/VP ≤ 0 viram "N.M." em vez do
+  número negativo cru (lucro/patrimônio líquido negativo faz o múltiplo
+  perder sentido como medida de preço) — aplicado em INDICADORES e no
+  painel comparativo da watchlist (`app.py`).
+- `data/research/resumir.py`: fim do `texto[:12000]` cru. Texto acima do
+  limite passa por `_condensar_texto_longo` (divide em pedaços de 10k,
+  extrai fatos/números/nomes de cada um com uma chamada leve e barata —
+  `_PROMPT_EXTRACAO_CHUNK`, max_tokens=800) antes do resumo narrativo de
+  verdade rodar sobre o texto condensado. Texto curto (maioria dos
+  relatórios) continua em 1 chamada só, comportamento idêntico a antes.
+  HTTP da Groq extraído pra `_chamar_groq` (reusado pelas duas etapas).
+- `app.py`: tentativa de correção do bug real "e-mail do usuário some do
+  header" — hipótese (BACKLOG.md): botão SAIR com `width="stretch"` +
+  texto que não quebra linha brigava por espaço com o chip de e-mail
+  numa coluna estreita. Removido o `width="stretch"` do SAIR e realocada
+  a proporção das colunas (`col_user` 1.35→1.7, email/sair 3:1→4:1).
+  **Pendente confirmação visual** — não tive acesso à extensão do Chrome
+  nesta sessão (mesma instabilidade de sessões anteriores).
+- `BACKLOG.md`: limpeza — removidos 5 itens já resolvidos como efeito
+  colateral de outras tarefas (beta, cor da MM20 em modo LINHA, toolbar
+  do Plotly em MACRO, eixo X do IPCA, scrollbar/título sumido do
+  INDICADORES — essa última com hipótese de causa raiz documentada, a
+  mesma regra CSS `:has(table)` que já resolve RESUMO); documentada
+  investigação de DY/JCP (sem evidência de bug real, yfinance já separa
+  cada evento de distribuição por data-ex).
+
+**Testes**: `compileall` limpo; teste dirigido isolado do chunking
+(mock de `_chamar_groq` — texto curto = 1 chamada, texto longo de 25k
+chars = 3 pedaços + 1 chamada final = 4, falha de cota num pedaço
+intermediário propaga sem gerar resumo parcial); `formatar_multiplo`
+testado com None/negativo/zero/positivo; AppTest nas 9 seções
+(VISÃO GERAL/EQUITY/MACRO/RESEARCH/NEWS/TOP MERCADO/MERCADO/CVM/CONFIG)
+sem exceção, rodando contra o Supabase real deste sandbox (`sub` de
+teste único por execução, ver lição de teste mais acima neste arquivo).
+
+**Pendências que ficaram pro próximo ciclo** (ordem sugerida, Rodrigo
+decide): Company 360 (EQUITY em abas + múltiplos por setor), "O que
+mudou desde ontem" por ativo, Research Intelligence Layer (Radar,
+comparação entre casas, separação FATO/VISÃO/INFERÊNCIA, versionamento
+real de resumo). Confirmação visual do bug do e-mail no header e da
+legenda sobreposta na Curva Pré (MACRO) seguem pendentes de inspeção
+real (print ou extensão do Chrome funcionando).
