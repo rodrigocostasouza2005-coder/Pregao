@@ -88,10 +88,17 @@ div[class*="st-key-painel-ctrl-"] button:hover { border-color: var(--destaque) !
 
 /* handle de resize: praticamente invisível parado, so' um cantinho
    sutil que acende no hover - decorativo (::after, nunca um nó de DOM
-   novo - evita mexer na árvore que o React do Streamlit controla) */
-[class*="st-key-workspace_livre_"] [class*="st-key-painel-outer-"] {
-    position: relative; /* garante containing block mesmo antes do CSS por-painel carregar */
-}
+   novo - evita mexer na árvore que o React do Streamlit controla).
+   NAO declarar position aqui pro painel-outer: _gerar_css() ja define
+   position:absolute por painel, e esse seletor (2 seletores de atributo
+   = especificidade 0,2,0) teria precedencia sobre o de _gerar_css (1
+   atributo + 1 elemento = 0,1,1) mesmo vindo DEPOIS no HTML - resultado
+   real (bug encontrado em producao 2026-10-01): todo painel ficava
+   position:relative (nunca absolute), cada um ainda ocupando espaco no
+   fluxo normal ALEM de ser deslocado por left/top - sobreposicao e
+   drag/resize calculando a partir de um retangulo errado. position:
+   absolute do painel ja' da' um containing block valido pro ::after
+   abaixo, entao essa regra nem fazia falta. */
 [class*="st-key-workspace_livre_"] [class*="st-key-painel-outer-"]::after {
     content: "";
     position: absolute; right: 2px; bottom: 2px; width: 9px; height: 9px;
@@ -264,13 +271,24 @@ def _script_js(aba_id: str, ordem: list, layout: dict) -> str:
     "remover filho que o React não esperava" que acontece quando script
     externo insere elementos dentro de um container React administra.
 
-    Limitação conhecida (documentada, aceitável pro MVP): se o Streamlit
-    recriar este iframe (em vez de reaproveitar) entre reruns, os
-    listeners anexados pela instância anterior podem ficar "mortos"
-    (realm do iframe anterior destruído) - na prática, listeners novos
-    de cada montagem continuam funcionando normalmente (múltiplos
-    listeners no mesmo evento não se atrapalham; um morto no máximo gera
-    um erro silencioso no console, não quebra o gesto atual)."""
+    Bug real encontrado em producao (2026-10-01): o Streamlit SEMPRE
+    recria este iframe a cada rerun (nunca reaproveita). `ligarPainel`
+    marcava cada painel com `dataset.workspaceLigado = '1'` pra nao
+    anexar listener duplicado - mas essa flag fica gravada no elemento
+    REAL do painel, que o React preserva entre reruns (mesma key). Entao
+    a PROXIMA montagem do iframe (depois do primeiro gesto, que dispara
+    rerun via enviarLayout/blur) via esse '1' ja' presente e desistia de
+    anexar listener novo - o painel ficava SEM NENHUM listener vivo
+    (os antigos pertenciam ao iframe anterior, ja destruido). Resultado:
+    o primeiro arrastar/redimensionar da sessao funcionava, qualquer
+    gesto depois disso (ou depois de QUALQUER rerun, por qualquer motivo)
+    nao reagia mais a mouse nenhum ate recarregar a pagina inteira.
+    Corrigido com um ID por montagem (MOUNT_ID) em vez de '1' fixo: cada
+    rerun tem um ID diferente, entao a proxima montagem sempre re-anexa.
+    Scripts "mortos" de montagens antigas podem, na pior hipotese, disparar
+    em paralelo com os novos - inofensivo (cada handler recalcula a
+    posicao final a partir do evento atual, nao acumula delta, entao
+    disparos redundantes convergem pro mesmo resultado)."""
     payload_layout = json.dumps(layout)
     payload_paineis = json.dumps(ordem)
     bridge_classe = f"st-key-workspace_bridge_wrap_{aba_id}"
@@ -286,6 +304,7 @@ def _script_js(aba_id: str, ordem: list, layout: dict) -> str:
     const MIN_W_PCT = {_LARGURA_MINIMA_PCT};
     const MIN_H_REM = {_ALTURA_MINIMA_REM};
     const RESIZE_MARGEM_PX = 10;
+    const MOUNT_ID = Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
     const doc = window.parent.document;
 
     function remPx() {{
@@ -307,6 +326,16 @@ def _script_js(aba_id: str, ordem: list, layout: dict) -> str:
         const setter = Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype, 'value').set;
         setter.call(input, JSON.stringify(layoutAtual));
         input.dispatchEvent(new Event('input', {{bubbles: true}}));
+        // st.text_input so' manda o valor pro Python (e dispara on_change)
+        // no BLUR ou Enter - e' debounced de proposito pra nao re-rodar o
+        // script a cada tecla. O evento 'input' sozinho so' atualiza o
+        // estado interno do React do campo, nunca chega no backend (bug
+        // real encontrado em producao 2026-10-01: drag/resize pareciam
+        // funcionar na tela, mas nada era persistido - qualquer rerun
+        // real descartava a mudanca). focus()+blur() simula a saida do
+        // campo, que e' o gatilho de commit do Streamlit.
+        input.focus();
+        input.blur();
     }}
 
     let layoutAtual = JSON.parse({json.dumps(payload_layout)});
@@ -394,8 +423,8 @@ def _script_js(aba_id: str, ordem: list, layout: dict) -> str:
 
     function ligarPainel(pid) {{
         const el = getEl(pid);
-        if (!el || el.dataset.workspaceLigado === '1') return;
-        el.dataset.workspaceLigado = '1';
+        if (!el || el.dataset.workspaceLigado === MOUNT_ID) return;
+        el.dataset.workspaceLigado = MOUNT_ID;
         el.style.left = ''; el.style.top = ''; el.style.width = ''; el.style.height = '';
 
         el.addEventListener('pointerdown', function (evt) {{
