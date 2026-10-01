@@ -337,6 +337,15 @@ PREFS_PADRAO = {
     "ordem_paineis": {},
     "paineis_visiveis": {},
     "tamanho_paineis": {},
+    # workspace modular (ui/workspace.py, MVP 2026-10-01, so' MERCADO por
+    # enquanto): {aba_id: {painel_id: {"x":pct, "y":rem, "w":pct, "h":rem}}} -
+    # x/w em % da largura do workspace (responsivo a redimensionar a
+    # janela/sidebar), y/h em rem (ritmo vertical consistente com o resto
+    # do app, escala com a preferencia de FONTE). Painel sem entrada aqui
+    # usa o layout padrao empilhado (ver workspace.layout_efetivo) -
+    # reaproveita ordem_paineis/paineis_visiveis de cima pra ordem e
+    # visibilidade, so' posicao/tamanho livre e' novo.
+    "layout_paineis_livre": {},
 }
 
 # --- Periodos intradiarios (candles de minutos, tratados a parte em

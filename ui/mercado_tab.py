@@ -18,7 +18,7 @@ from data.mercado import (
     CAMPO_VARIACAO_POR_JANELA, obter_altas_baixas, obter_desempenho_setorial,
     obter_mais_negociados, obter_mercados_globais, obter_panorama_ibovespa, obter_termometro,
 )
-from ui import graficos, paineis
+from ui import graficos, workspace
 
 _JANELAS_DESEMPENHO = ["DIA", "SEMANA", "MÊS"]
 _JANELA_ROTULO_PARA_CHAVE = {"DIA": "dia", "SEMANA": "semana", "MÊS": "mes"}
@@ -339,14 +339,20 @@ REGISTRO_PAINEIS = [
 
 def render_mercado(prefs: dict, persistir_fn=None):
     """Ponto de entrada da aba MERCADO, chamado pelo app.py.
-    `persistir_fn` (opcional): ver ui/paineis.py:renderizar."""
+    `persistir_fn` (opcional): ver ui/workspace.py:renderizar_workspace.
+
+    MERCADO é a aba piloto (MVP, 2026-10-01) do workspace modular com
+    drag & drop + resize livre (ui/workspace.py) - antes usava
+    ui/paineis.py (larguras fixas 1/4-1/2-3/4-FULL). MACRO continua no
+    sistema antigo até essa ETAPA 1 ser validada (ver PROGRESSO.md)."""
     with st.container(border=True):
         tem_dados = _painel_termometro(prefs)
 
     if not tem_dados:
         return
 
-    # 1o prefs: pra paineis.renderizar calcular a ordem salva do usuario.
-    # 2o prefs: repassado como argumento pra cada _painel_*(prefs) do
-    # registro acima (todos tem essa mesma assinatura de 1 argumento).
-    paineis.renderizar("MERCADO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn)
+    # 1o prefs: pra workspace.renderizar_workspace calcular ordem/
+    # visibilidade/layout salvos do usuario. 2o prefs: repassado como
+    # argumento pra cada _painel_*(prefs) do registro acima (todos tem
+    # essa mesma assinatura de 1 argumento).
+    workspace.renderizar_workspace("MERCADO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn)

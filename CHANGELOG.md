@@ -3,6 +3,24 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-01 (feature: workspace modular/layout livre em MERCADO)
+
+- **MERCADO ganha layout livre** (`ui/workspace.py`, novo): arraste pelo
+  título do painel pra mover, pela borda/canto inferior-direito pra
+  redimensionar — sem lib de grid de terceiro (CSS posiciona os mesmos
+  `st.container` de sempre; JS via `st.iframe` manipula o DOM real do
+  app, mesma origem; resultado final volta pro Python por um
+  `st.text_input` oculto, só ao soltar o mouse). Popover "⚙" por painel
+  (restaurar tamanho/posição, ocultar) e botão pra restaurar a aba
+  inteira. Nova prefs `layout_paineis_livre`. MERCADO é a aba piloto;
+  as demais continuam no sistema antigo de tamanhos fixos.
+- **Corrigido antes de ir pro ar**: o script usava
+  `st.components.v1.html` (API deprecada desde 01/06/2026); trocado por
+  `st.iframe`, que por sua vez rejeita `height=0` — ajustado pra
+  `height=1`.
+- Detalhes completos (arquitetura, decisões de unidade x/y/w/h, testes)
+  no PROGRESSO.md.
+
 ## 2026-09-28 (feature: transcrição das lives da Genial)
 
 - **`data/research/genial_lives.py` passa a coletar de verdade**: pedido

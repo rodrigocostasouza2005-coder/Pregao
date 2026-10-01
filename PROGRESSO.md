@@ -1885,3 +1885,67 @@ comparação entre casas, separação FATO/VISÃO/INFERÊNCIA, versionamento
 real de resumo). Confirmação visual do bug do e-mail no header e da
 legenda sobreposta na Curva Pré (MACRO) seguem pendentes de inspeção
 real (print ou extensão do Chrome funcionando).
+
+## Workspace modular — layout livre na aba MERCADO (MVP, 2026-10-01)
+
+Trabalho retomado de uma sessão anterior que tinha deixado o código
+pronto mas não commitado (sem passar por teste/documentação). Antes de
+continuar, auditei o que já existia: `ui/workspace.py` (arquitetura
+Workspace → Layout Manager → Panel Container → Panel Content, decidida
+numa auditoria prévia com o Rodrigo antes de implementar — ver
+docstring do módulo) e a troca de `ui/paineis.py` por `ui/workspace.py`
+em `ui/mercado_tab.py:render_mercado` (MERCADO é a aba piloto; MACRO e
+as demais continuam no sistema antigo de larguras fixas 1/4-1/2-3/4-FULL
+até essa ETAPA 1 ser validada).
+
+**Mecânica**: sem lib de grid de terceiro (streamlit-elements etc. —
+exigiria reescrever o conteúdo dos painéis na árvore de elementos dela).
+Em vez disso: CSS posiciona cada `st.container(border=True, key=...)`
+de forma absoluta dentro do workspace (x/w em % da largura — responsivo
+ao redimensionar a janela/sidebar; y/h em rem — acompanha a densidade de
+fonte do usuário, não a largura da tela); um script (`st.iframe` com
+HTML/JS inline, mesma origem via `window.parent.document`) dá vida ao
+drag (pelo título do painel) e resize (canto inferior-direito) sem criar
+nenhum nó de DOM dentro da árvore que o React do Streamlit controla; o
+resultado final (só ao SOLTAR o mouse, nunca durante o gesto) volta pro
+Python por uma ponte: `st.text_input` oculto cujo valor é setado via JS
+(native setter + dispatchEvent). Popover "⚙" por painel (RESTAURAR
+TAMANHO/POSIÇÃO, OCULTAR) e botão "↺ RESTAURAR LAYOUT" da aba inteira.
+Nova prefs `layout_paineis_livre` (`config.PREFS_PADRAO`): painel sem
+entrada aí cai no layout padrão empilhado calculado pela ordem no
+registro — nunca colide, mesmo misturando painel já personalizado com
+painel novo que o usuário nunca tocou.
+
+**Achado real durante a revisão**: o script de drag/resize estava indo
+pra produção com `st.components.v1.html(..., height=0)` — API marcada
+para remoção em 2026-06-01 (já vencida na data de hoje) e, pior,
+`st.iframe` (substituto natural na mesma versão instalada, Streamlit
+1.64) rejeita `height=0` (`StreamlitInvalidHeightError` — exige inteiro
+positivo, `"stretch"` ou `"content"`). Trocado por `st.iframe(html,
+height=1)`, confirmado sem exceção via AppTest. Sem essa troca o deploy
+ia funcionar hoje mas quebrar na primeira limpeza de API deprecada do
+Streamlit Cloud.
+
+**Testes**: `compileall` limpo; bateria dirigida isolada (sem rede/sem
+Streamlit rodando) de `ui/workspace.py` — `layout_efetivo` (padrão
+empilhado sem prefs; painel customizado + painel novo misturados sem
+colidir), `_layout_valido` (rejeita shape incompleto/tipo errado),
+`_aplicar_bridge` (JSON válido grava e chama `persistir_fn`; JSON
+quebrado não derruba nem persiste; pid fora do registro é descartado;
+clamp de x/y/w/h nos limites mínimos/máximos), `_restaurar_layout_aba`/
+`_restaurar_layout_painel` (cada um limpa só o que deve). AppTest da
+aba MERCADO com `obter_termometro` mockado (dado de mercado ao vivo é
+lento/instável neste sandbox — mock isola o teste do workspace da
+disponibilidade de rede) confirma a UI do workspace renderizando de
+verdade (aviso de arrastar/redimensionar, botão RESTAURAR LAYOUT) sem
+exceção; smoke test das 9 seções (login mockado, `sub` único por
+execução) sem regressão nas demais abas.
+
+**Pendente**: confirmação visual real do drag/resize (extensão do
+Chrome instável neste ambiente, mesmo padrão de sessões anteriores) —
+a mecânica de gesto em si (pointerdown/pointermove/pointerup, cálculo
+de %/rem, MutationObserver pra painéis que entram depois) não tem como
+ser exercitada por AppTest (não há mouse real no DOM do navegador
+dentro do teste). Validar com o Rodrigo rodando local antes de
+considerar a ETAPA 1 fechada; ETAPA 2 (expandir pra outras abas) só
+depois disso.
