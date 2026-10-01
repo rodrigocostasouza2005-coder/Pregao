@@ -2017,3 +2017,52 @@ arrastar, redimensionar nos 3 modos, persistência tudo funcionando.
 ETAPA 1 agora fechada de verdade. Único arquivo alterado:
 `ui/workspace.py` (42 inserções, 13 remoções) - nada de design/CSS
 visual/outras abas tocado.
+
+## Modo autônomo (2026-10-01) — roadmap de 16 fases pra transformar o PREGÃO num terminal mais utilizável
+
+Rodrigo autorizou trabalho autônomo (~2h, sem pausar pra perguntar) com
+um roadmap de 16 fases, prioridade ESTRUTURA > FUNCIONALIDADE >
+PERFORMANCE > CONSISTÊNCIA > VISUAL. Registro de cada fase abaixo
+conforme avança. Regra: nunca destruir funcionalidade existente,
+nunca inventar dado financeiro, commit+push ao fechar cada fase, nunca
+acumular fases num commit só.
+
+### FASE 1 — Market ticker unificado (commit pendente nesta sessão)
+
+**Problema**: duas faixas diferentes de "ticker" coexistiam. Camada 2
+(`_ticker_tape`, dentro do header fixo) mostrava só os índices
+(IBOVESPA/DÓLAR/EURO) com animação CSS contínua de verdade (marquee,
+`@keyframes pregao-marquee` em `style.css`, conteúdo duplicado +
+`translateX(-50%)`, sem rerun do Streamlit pra animar). Camada 4
+(`_watchlist_chips`, fora do header fixo, logo após a NAV) mostrava os
+tickers da watchlist pessoal numa fita ESTÁTICA (`overflow-x:auto` sem
+animação) - essa que Rodrigo descreveu como "mal posicionada/cortada".
+
+**Correção**: removida `_watchlist_chips()` inteira (função + CSS
+`.wchip*` + chamada) - a aba watchlist deixou de existir como faixa
+separada. `_ticker_tape()` (única faixa restante, dentro do header
+fixo) passou a incluir os tickers da watchlist na MESMA lista `itens`
+que já alimentava o loop dos índices - zero mecanismo novo, só mais
+conteúdo no que já existia e já funcionava. Fonte de dados: a própria
+`prefs["watchlist"]` + `obter_cotacao` (mesma função que a faixa
+removida já usava, mesmo cache) - nenhuma fonte nova, nenhum ticker
+inventado. `--folga-seguranca` (style.css) subiu de 0.3rem pra 0.8rem
+pra repor o respiro visual que a faixa antiga dava via seu próprio
+`margin-bottom` (perdido com a remoção dela).
+
+**Validação**: AppTest das 9 seções sem exceção. Harness Playwright
+dedicado (`style.css` real + estrutura DOM idêntica ao header de
+produção, sem precisar de login Google) confirmou: exatamente 1 faixa
+de ticker no DOM, índices E ações na mesma faixa, animação
+`pregao-marquee` aplicada e o trilho realmente se move sozinho ao
+longo do tempo (medido via `getComputedStyle().transform` em 2
+instantes), nenhuma faixa antiga (`.wchip-row`) sobrou, sem vazamento
+de texto (`overflow:hidden` confirmado), geometria das camadas correta
+(HEADER.bottom ≤ TICKER.top ≤ NAV.top ≤ CONTEUDO.top, sem sobreposição
+em nenhum ponto), espaçamento NAV→conteúdo razoável (35px), zero erros
+de JS. Screenshot confirma visual: uma fita só, estética de terminal
+preservada (preto/âmbar/verde/vermelho, mono, sem caixas).
+
+**Arquivos alterados**: `app.py` (`_ticker_tape` estendida,
+`_watchlist_chips` removida), `style.css` (`.wchip*` removido,
+`--folga-seguranca` ajustada).

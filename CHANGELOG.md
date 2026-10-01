@@ -3,6 +3,21 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-01 (feat: ticker de mercado unificado)
+
+- **Duas faixas de ticker viram uma só.** A faixa de índices (IBOVESPA/
+  DÓLAR/EURO, animação contínua em CSS puro) e a faixa da watchlist
+  pessoal (estática, cortava com `overflow-x:auto`, posicionada logo
+  após a NAV) se fundem numa única fita dentro do header fixo - a
+  watchlist entra na mesma lista de itens que já alimentava o loop dos
+  índices, mesma fonte de dados (`obter_cotacao`, já em uso), zero
+  ticker inventado.
+- `_watchlist_chips()` e seu CSS (`.wchip*`) removidos - deixaram de
+  existir como faixa separada.
+- Validado com Playwright (harness com CSS/DOM reais, sem login): 1
+  faixa só, animação de movimento confirmada em tempo real, geometria
+  HEADER→TICKER→NAV→CONTEÚDO sem sobreposição, zero erro de JS.
+
 ## 2026-10-01 (fix: workspace modular - 3 bugs reais corrigidos, validado em producao)
 
 - **Drag/resize do workspace modular (MERCADO) não funcionava de verdade

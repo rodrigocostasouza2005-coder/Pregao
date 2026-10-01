@@ -127,12 +127,14 @@ _css_vars = (
 st.markdown(f"<style>{_css_vars}</style>", unsafe_allow_html=True)
 
 
-# --- ticker tape: SO indices de mercado (Ibovespa, dolar - ver
-# config.INDICES_TICKER_TAPE), atualiza no mesmo ritmo dos precos. A
-# watchlist do usuario NAO entra mais aqui (ver _watchlist_chips logo
-# abaixo) - camada separada por pedido explicito do Rodrigo (redesign do
-# header, 2026-09-28): mercado e watchlist pessoal sao informacoes de
-# natureza diferente, misturadas na mesma faixa ficava confuso.
+# --- ticker tape unico (camada 2): indices de mercado
+# (config.INDICES_TICKER_TAPE) + tickers da watchlist pessoal, na MESMA
+# fita. Ate 2026-10-01 a watchlist vivia numa "camada 4" separada
+# (_watchlist_chips, removida) em fluxo normal apos a NAV - sem animacao,
+# so' scroll horizontal manual (overflow-x:auto), cortava visualmente.
+# Unificado numa fita so' (pedido explicito do Rodrigo): reaproveita o
+# MESMO mecanismo de loop continuo em CSS puro (ver pregao-marquee em
+# style.css) que ja existia aqui so' pros indices.
 #
 # Renderizada ANTES do cabecalho (camada 1) de proposito: fica dentro de
 # uma faixa position:fixed no topo (ver .pregao-topo-fixo no style.css),
@@ -158,6 +160,25 @@ def _ticker_tape():
             sinal = "+" if cot["variacao_pct"] >= 0 else ""
             itens.append(
                 f"<span class='cinza'>{nome_idx}</span> "
+                f"<span class='{cls}'>{config.formatar_numero(cot['preco'], 2, fmt)} "
+                f"({sinal}{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%)</span>"
+            )
+
+    # tickers da watchlist pessoal entram na MESMA fita (redesign
+    # 2026-10-01: antes viviam numa segunda faixa separada - _watchlist_chips,
+    # removida - sem animacao, cortava com overflow-x:auto manual em vez de
+    # rodar feito a de indices acima). Mesmo formato dos indices acima
+    # (ticker + preco + variacao), fonte de dados identica a' que a faixa
+    # antiga ja usava (obter_cotacao, mesmo cache).
+    for t in prefs["watchlist"]:
+        cot = obter_cotacao(t)
+        if cot.get("erro"):
+            itens.append(f"<span class='cinza'>{t} --</span>")
+        else:
+            cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
+            sinal = "+" if cot["variacao_pct"] >= 0 else ""
+            itens.append(
+                f"<span class='cinza'>{t}</span> "
                 f"<span class='{cls}'>{config.formatar_numero(cot['preco'], 2, fmt)} "
                 f"({sinal}{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%)</span>"
             )
@@ -215,32 +236,6 @@ def _ticker_tape():
         f"</div></div>{status_html}</div>",
         unsafe_allow_html=True,
     )
-
-
-# --- watchlist ticker (camada 4 do header): tickers da watchlist do
-# usuario, separados do ticker de mercado (indices, camada 2 acima) -
-# fragment proprio (mesmo ritmo de atualizacao) pra nao acoplar ao rerun
-# do resto da pagina, exatamente como o ticker de indices. Renderizada em
-# FLUXO NORMAL (nao fixa) logo apos a navegacao principal - ver chamada
-# mais abaixo, depois do st.segmented_control da secao.
-@st.fragment(run_every=prefs["atualizacao_intervalo"])
-def _watchlist_chips():
-    if not prefs["watchlist"]:
-        return
-    fmt = prefs["formato_numerico"]
-    chips = []
-    for t in prefs["watchlist"]:
-        cot = obter_cotacao(t)
-        if cot.get("erro"):
-            chips.append(f"<span class='wchip'><span class='wchip-ticker'>{t}</span> <span class='cinza'>--</span></span>")
-        else:
-            cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
-            sinal = "+" if cot["variacao_pct"] >= 0 else ""
-            chips.append(
-                f"<span class='wchip'><span class='wchip-ticker'>{t}</span> "
-                f"<span class='{cls}'>{sinal}{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%</span></span>"
-            )
-    st.markdown("<div class='wchip-row'>" + "".join(chips) + "</div>", unsafe_allow_html=True)
 
 
 if not st.session_state.banco_ok:
@@ -385,8 +380,6 @@ with st.container(key="header_fixo"):
 rotulo_secao_atual = sel_secao or padrao_rotulo_secao
 st.session_state[mem_secao] = rotulo_secao_atual
 secao_atual = mapa_rotulo_secao[rotulo_secao_atual]
-
-_watchlist_chips()
 
 
 # --- sidebar: gestao da watchlist ------------------------------------------

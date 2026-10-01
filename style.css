@@ -39,7 +39,11 @@
        falhar) encostaria o conteudo direto na borda do header sem
        margem de erro nenhuma. So' entra no padding do conteudo, nunca na
        altura do proprio header. */
-    --folga-seguranca: 0.3rem;
+    /* 0.3rem -> 0.8rem (2026-10-01): a faixa da watchlist antiga (removida,
+       ver _watchlist_chips/.wchip-row no historico) tinha margin-bottom:1rem
+       proprio que servia de respiro antes do conteudo da aba - sem ela,
+       conteudo colava direto na NAV com só 0.3rem. */
+    --folga-seguranca: 0.8rem;
 }
 
 html, body, [class*="css"] {
@@ -208,40 +212,6 @@ div[data-testid="stElementContainer"] { margin-bottom: 0; }
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-/* camada 4 do header: "fita" da watchlist pessoal, separada do ticker de
-   mercado (camada 2) - SEM caixa/borda por item (redesign 2026-09-28: a
-   versao anterior com chip em caixinha parecia uma segunda barra de abas;
-   o pedido explicito agora e' parecer fita de mercado, nao botao) */
-.wchip-row {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 0.35rem 0.1rem;
-    white-space: nowrap;
-    min-height: 32px;
-    box-sizing: border-box;
-    /* respiro antes do conteudo da aba (16-20px pedido no redesign) */
-    margin-bottom: 1rem;
-}
-.wchip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: 0.74rem;
-    flex: 0 0 auto;
-}
-.wchip:not(:last-child)::after {
-    content: "·";
-    color: var(--borda);
-    margin-left: 0.55rem;
-}
-.wchip-ticker {
-    color: var(--destaque);
-    font-weight: 600;
 }
 
 /* painel = container com borda nativo do Streamlit (st.container(border=True)) */
