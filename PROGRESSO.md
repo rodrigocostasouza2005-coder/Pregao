@@ -2266,3 +2266,74 @@ efeito do fix de scroll.
 **Arquivos alterados**: `ui/cvm_tab.py`, `ui/top_mercado_tab.py`,
 `ui/research_tab.py` (um decorator `@st.fragment` + comentário em cada
 função de entrada - nenhuma outra linha mudou).
+
+### FASE 14 — Auditoria de consistência de UX (parcial)
+
+Auditoria rápida e focada: mensagens de "empty state" (`st.info("Nenhum
+X encontrado...")`) em CVM/NEWS/RESEARCH/paineis já seguem o MESMO
+padrão de frase ("Nenhum [tipo] [encontrado/disponível] ... no
+momento"), escopado corretamente por contexto (watchlist vazia vs
+filtro sem resultado vs feed geral sem dado). Não achei inconsistência
+real que valesse mudar - mais um caso de trabalho de sessões anteriores
+já ter cuidado disso. Não fiz auditoria exaustiva de TODOS os padrões
+pedidos (tabelas/badges/status/loading/erros/modais/botões/títulos) por
+tempo - ver "não iniciado" abaixo.
+
+## RELATÓRIO FINAL DO MODO AUTÔNOMO (2026-10-01)
+
+### FASES CONCLUÍDAS
+1. Market ticker unificado (commit `ed15135`)
+2. Shell/geometria do terminal auditada e 1 bug de comentário corrigido (commit `77a40e9`)
+3. Workspace MERCADO reconfirmado sem regressão (commit `e8c15e1`)
+4. Workspace expandido pra MACRO (commit `e5d55e1`, antes do roadmap formal)
+5. Workspace expandido pra VISÃO GERAL (commit `021f1fa`)
+6. Padrão estrutural de painéis auditado - já consistente, sem mudança necessária
+7. Produto da VISÃO GERAL auditado - ordem já era a pedida, resolvido pela Fase 5
+8. NEWS auditada - já satisfaz a estrutura pedida (trabalho de sessão anterior)
+9. CVM auditada - já satisfaz a estrutura pedida (trabalho de sessão anterior)
+13. Performance: corrigido bug real de scroll pulando ao filtrar (RESEARCH/CVM/TOP MERCADO), commit `b316e83`
+
+### FASES PARCIAIS
+14. Consistência de UX: só um recorte (empty states) auditado e confirmado consistente; os demais padrões (tabelas/badges/loading/modais/botões/títulos) não foram revisados
+
+### FASES NÃO INICIADAS (com motivo)
+10. Research Intelligence (FATO/VISÃO DA CASA/INFERÊNCIA, nunca inventar consenso/preço-alvo): escopo grande e sensível a dado financeiro - já tinha sido explicitamente adiado pelo próprio Rodrigo numa sessão anterior ("Research Intelligence Layer pra ciclos seguintes"); não tentei nesta sessão pra não arriscar uma implementação rasa numa área onde "inventar" é o pior erro possível
+11. "O que mudou?": depende conceitualmente da Fase 10 (separação FATO/VISÃO/INFERÊNCIA) pra fazer sentido de verdade
+12. Integração entre fontes (NEWS↔RESEARCH↔CVM↔ASSET↔PRICE): depende das Fases 10/11 estarem prontas primeiro
+15. Formatação visual: propositalmente NÃO tentada - é a prioridade mais baixa (ESTRUTURA > FUNCIONALIDADE > PERFORMANCE > CONSISTÊNCIA > VISUAL) e o projeto historicamente depende muito de confirmação visual direta do Rodrigo antes/depois de qualquer ajuste estético (extensa documentação de sessões anteriores sobre isso) - fazer sem esse ciclo de feedback é mais risco que ganho
+16. Auditoria final: feita PARCIALMENTE (compileall + AppTest das 9 seções + testes dirigidos do workspace, todos verdes) - faltou screenshot real de cada aba (bloqueado por login Google, mesma limitação de sempre) e profiling real de performance
+
+### BUGS ENCONTRADOS E CORRIGIDOS NESTA SESSÃO
+- Especificidade CSS impedia `position:absolute` nos painéis do workspace (Fase anterior ao roadmap formal)
+- Ponte JS→Python nunca comitava (faltava blur) - nada persistia de verdade
+- Listener morto após rerun - só o primeiro gesto da sessão funcionava
+- Duas faixas de ticker concorrentes, uma delas cortando visualmente
+- Scroll pulando pro topo ao usar filtros em RESEARCH/CVM/TOP MERCADO
+- Comentário desatualizado (z-index 50→56) no CSS do shell
+
+### TESTES
+`compileall` limpo em todo o projeto; AppTest das 9 seções sem exceção
+(rodado múltiplas vezes ao longo da sessão); bateria dirigida isolada
+do workspace (8/8); harness Playwright dedicado pro workspace (23/23 -
+drag, resize nos 3 modos, interação com gráfico Plotly real,
+persistência rerun/reload, restore); harness Playwright dedicado pro
+ticker (14/14 - faixa única, animação real medida, geometria sem
+sobreposição); harness Playwright pra scroll/vazamento visual (3/3,
+usando amostragem de pixel real depois de descartar 2 metodologias que
+davam falso-positivo).
+
+### COMMITS DESTA SESSÃO (mais recentes primeiro)
+`b316e83` perf, `021f1fa` feat workspace VISÃO GERAL, `e8c15e1` fix
+docs workspace, `77a40e9` fix shell, `ed15135` feat ticker, `e5d55e1`
+feat workspace MACRO (+ os commits anteriores da correção dos 3 bugs
+reais do workspace MERCADO, já documentados acima no arquivo).
+
+### LIMITAÇÕES
+- Extensão do Chrome instável neste ambiente (padrão recorrente, documentado em sessões anteriores) - toda validação visual real dependeu de harnesses Playwright isolados (fora do app.py, sem login Google) em vez do app publicado diretamente
+- Login Google impossível de automatizar - nenhum teste rodou contra `pregao.streamlit.app` de verdade nesta sessão; tudo foi validado em harnesses que reproduzem o mecanismo/CSS real, mas a confirmação final na URL publicada ainda depende do Rodrigo
+- Fases 10-12 e 15 não iniciadas (motivos acima) - roadmap longe de "completo", mas o que foi feito é real, testado e já está em produção
+
+### PRÓXIMOS PASSOS (sugestão, não determinado por mim)
+1. Rodrigo validar visualmente o ticker novo + workspace em MACRO/VISÃO GERAL na URL publicada
+2. Decidir se entra Fase 10 (Research Intelligence) como próximo ciclo grande, ou mais itens pontuais primeiro
+3. Fase 15 (visual) só depois de tudo acima confirmado, com ciclo de feedback visual direto
