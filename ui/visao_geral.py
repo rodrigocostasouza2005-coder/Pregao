@@ -16,7 +16,7 @@ from data.macro import obter_cdi
 from data.mercado import obter_mercados_globais
 from data.news import obter_top_mercado_tudo
 from data.prices import obter_cotacao, obter_cotacao_indice, obter_historico
-from ui import graficos
+from ui import graficos, workspace
 from ui.mercado_tab import _painel_altas_baixas, _painel_globais, _painel_mais_negociados, _painel_setorial
 from ui.news_tab import _injetar_css, _renderizar_lista
 
@@ -147,32 +147,26 @@ def _painel_watchlist_compacta(prefs):
     st.markdown(f"<table style='width:100%; font-size:0.8rem; border-collapse:collapse;'>{''.join(linhas)}</table>", unsafe_allow_html=True)
 
 
-def render_visao_geral(prefs: dict):
-    """Ponto de entrada da aba VISÃO GERAL, chamado pelo app.py."""
-    with st.container(border=True):
-        _painel_mercado_agora(prefs)
+# paineis registrados (ver ui/paineis.py/ui/workspace.py) - ETAPA 5
+# (2026-10-01): VISÃO GERAL migra pro workspace modular, mesma mecanica
+# ja' validada em MERCADO/MACRO. Conteúdo de cada painel intocado (3
+# reaproveitados direto de ui/mercado_tab.py, já registrados lá também -
+# pid local aqui não colide, cada aba_id tem sua própria tabela de
+# ordem/visibilidade/layout em prefs). Ordem abaixo = ordem padrão atual
+# (mesma sequência que render_visao_geral já tinha antes da migração).
+REGISTRO_PAINEIS = [
+    ("mercado_agora", "Mercado agora", _painel_mercado_agora),
+    ("ibov_grafico", "Ibovespa", _painel_ibov_grafico),
+    ("altas_baixas", "Maiores altas/baixas", _painel_altas_baixas),
+    ("mais_negociados", "Mais negociados", _painel_mais_negociados),
+    ("setorial", "Desempenho setorial", _painel_setorial),
+    ("noticias_resumo", "Market news", _painel_noticias_resumo),
+    ("globais", "Mercados globais", _painel_globais),
+    ("watchlist_compacta", "Minha watchlist", _painel_watchlist_compacta),
+]
 
-    with st.container(border=True):
-        _painel_ibov_grafico(prefs)
 
-    col_esq, col_dir = st.columns(2)
-    with col_esq:
-        with st.container(border=True):
-            _painel_altas_baixas(prefs)
-    with col_dir:
-        with st.container(border=True):
-            _painel_mais_negociados(prefs)
-
-    with st.container(border=True):
-        _painel_setorial(prefs)
-
-    with st.container(border=True):
-        _painel_noticias_resumo(prefs)
-
-    col_esq2, col_dir2 = st.columns(2)
-    with col_esq2:
-        with st.container(border=True):
-            _painel_globais(prefs)
-    with col_dir2:
-        with st.container(border=True):
-            _painel_watchlist_compacta(prefs)
+def render_visao_geral(prefs: dict, persistir_fn=None):
+    """Ponto de entrada da aba VISÃO GERAL, chamado pelo app.py.
+    `persistir_fn` (opcional): ver ui/workspace.py:renderizar_workspace."""
+    workspace.renderizar_workspace("VISÃO GERAL", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn)

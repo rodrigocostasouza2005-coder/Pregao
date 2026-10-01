@@ -3,6 +3,19 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-01 (feat: workspace modular em VISÃO GERAL + MACRO)
+
+- **VISÃO GERAL e MACRO ganham layout livre** (drag/resize), mesma
+  mecânica já validada em produção na aba MERCADO. VISÃO GERAL já
+  estava estruturada em funções de painel discretas - só precisou
+  registrar (`REGISTRO_PAINEIS`) e trocar o renderizador, zero
+  reescrita de conteúdo. Adicionados controles de ordem/visibilidade no
+  CONFIG pra VISÃO GERAL (faltavam - sem eles, um painel oculto lá
+  ficaria preso sem jeito de reexibir).
+- `ui/workspace.py` continua sem nenhum caso especial por aba
+  (`aba_id` é só uma string) - mesma correção de 3 bugs reais já
+  aplicada vale pra todas as abas que adotam o sistema.
+
 ## 2026-10-01 (feat: ticker de mercado unificado)
 
 - **Duas faixas de ticker viram uma só.** A faixa de índices (IBOVESPA/

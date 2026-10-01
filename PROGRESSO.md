@@ -2123,3 +2123,43 @@ CDI/CENÁRIO GLOBAL arrastáveis), nenhum conteúdo reescrito. `aba_id` em
 MERCADO), confirmado por grep antes da migração. AppTest da aba MACRO
 sem exceção (~85s - lento por causa das chamadas reais a ANBIMA/BCB/
 yfinance nesta sandbox, não é regressão).
+
+### FASE 5 — Expandir workspace pra VISÃO GERAL
+
+**Achado real que simplificou a fase inteira**: `ui/visao_geral.py` JÁ
+estava estruturada como funções de painel discretas (`_painel_mercado_agora`,
+`_painel_ibov_grafico`, `_painel_noticias_resumo`,
+`_painel_watchlist_compacta`, + 4 reaproveitadas direto de
+`ui/mercado_tab.py`: altas_baixas/mais_negociados/setorial/globais),
+cada uma já com `painel-titulo` - só não estava registrada no sistema
+de `REGISTRO_PAINEIS`, era chamada em sequência direta dentro de
+`render_visao_geral`. Não precisou nenhuma reestruturação de conteúdo
+(exatamente como pedido: "apenas separar corretamente os blocos
+existentes em painéis").
+
+**Implementado**: novo `REGISTRO_PAINEIS` em `ui/visao_geral.py` (8
+painéis, mesma ordem que já existia), `render_visao_geral` passa a
+chamar `workspace.renderizar_workspace("VISÃO GERAL", ...)` em vez de
+empilhar os `st.container(border=True)` manualmente. **Achado durante a
+implementação** (evitou um bug de UX real antes de ir pro ar): o
+popover "⚙ OCULTAR ESTE PAINEL" do workspace só tem um jeito de
+REEXIBIR depois - o formulário de CONFIG
+(`paineis.controle_visibilidade_config`) - e esse controle só existia
+pra MERCADO/MACRO. Sem adicionar o mesmo controle pra VISÃO GERAL, um
+painel escondido lá ficaria preso pra sempre, sem nenhum jeito de
+trazer de volta (nem o "RESTAURAR LAYOUT" do workspace resolve isso -
+ele só reseta posição/tamanho, não visibilidade). Adicionado
+`controle_ordem_config`/`controle_visibilidade_config` pra "VISÃO
+GERAL" no formulário de CONFIG, espelhando MERCADO/MACRO exatamente.
+
+**Testes**: `compileall` limpo; AppTest das 9 seções sem exceção
+(CONFIG incluso, com os 2 novos controles); AppTest focado em VISÃO
+GERAL confirma UI do workspace presente (aviso de arrastar, botão
+RESTAURAR LAYOUT) sem exceção. Mecânica de drag/resize em si não
+precisou de nova bateria Playwright - já provada 100% genérica por
+`aba_id` nas Fases 1-4 (23/23 checks, nenhum caso especial pra MERCADO/
+MACRO no código).
+
+**Arquivos alterados**: `ui/visao_geral.py` (REGISTRO_PAINEIS novo,
+render_visao_geral migrada), `app.py` (import do registro, persistir_fn
+no call site, controles de ordem/visibilidade no CONFIG).

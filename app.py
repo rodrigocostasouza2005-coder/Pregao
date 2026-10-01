@@ -36,6 +36,7 @@ from ui.news_tab import render_news, render_news_ticker
 from ui.research_tab import render_research
 from ui.sistema_tab import render_sistema
 from ui.top_mercado_tab import render_top_mercado
+from ui.visao_geral import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_VISAO_GERAL
 from ui.visao_geral import render_visao_geral
 
 st.set_page_config(page_title="PREGÃO", layout="wide", initial_sidebar_state="expanded")
@@ -450,7 +451,7 @@ with st.sidebar:
 # --- aba VISÃO GERAL (home - resumo do mercado, ver ui/visao_geral.py) -----
 if secao_atual == "VISÃO GERAL":
     with st.container():
-        render_visao_geral(prefs)
+        render_visao_geral(prefs, persistir_fn=_persistir_prefs)
 
 
 # --- aba EQUITY --------------------------------------------------------------
@@ -947,6 +948,12 @@ if secao_atual == "CONFIG":
             novos_visiveis_macro = paineis.controle_visibilidade_config(
                 "MACRO", "MACRO", _REGISTRO_PAINEIS_MACRO, prefs,
             )
+            nova_ordem_visao_geral = paineis.controle_ordem_config(
+                "VISÃO GERAL", "VISÃO GERAL", _REGISTRO_PAINEIS_VISAO_GERAL, prefs,
+            )
+            novos_visiveis_visao_geral = paineis.controle_visibilidade_config(
+                "VISÃO GERAL", "VISÃO GERAL", _REGISTRO_PAINEIS_VISAO_GERAL, prefs,
+            )
 
             ids_casas_research = [c["id"] for c in CASAS_RESEARCH]
             nomes_casas_research = {c["id"]: c["nome"] for c in CASAS_RESEARCH}
@@ -978,11 +985,13 @@ if secao_atual == "CONFIG":
                         **(prefs.get("ordem_paineis") or {}),
                         "MERCADO": nova_ordem_mercado,
                         "MACRO": nova_ordem_macro,
+                        "VISÃO GERAL": nova_ordem_visao_geral,
                     },
                     "paineis_visiveis": {
                         **(prefs.get("paineis_visiveis") or {}),
                         "MERCADO": novos_visiveis_mercado,
                         "MACRO": novos_visiveis_macro,
+                        "VISÃO GERAL": novos_visiveis_visao_geral,
                     },
                     # tamanho_paineis NAO entra aqui: e' salvo direto pelo
                     # popover "⚙" de cada painel (ver ui/paineis.py), com
