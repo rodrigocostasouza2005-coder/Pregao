@@ -3,6 +3,22 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-01 (feat: Research - extração estruturada + histórico não-perecível)
+
+- `resumir_com_groq` agora também extrai preço-alvo/recomendação (só
+  documentos tipo AÇÕES, chamada extra pequena reaproveitando o texto
+  já carregado) - regra explícita: nunca estimar, só reportar o que
+  estiver literalmente no texto. Prompt narrativo principal **intocado**.
+- 2 colunas novas em `research_itens` (`preco_alvo`, `recomendacao`) e
+  nova tabela `research_recomendacoes_historico` (não-perecível, ao
+  contrário de `research_itens` que apaga após 5 dias) - base real pra
+  "O que mudou" em partes futuras desta fase.
+- **Ação necessária**: rodar `sql/research.sql` atualizado no Supabase
+  (idempotente, seguro re-rodar).
+- Testado com 9 cenários reais via Groq (preço-alvo/recomendação certos
+  quando existem, `None` quando não existem - nunca inventado) + 12
+  testes de histórico com Supabase mockado.
+
 ## 2026-10-01 (perf: corrige scroll pulando pro topo ao filtrar)
 
 - **RESEARCH, CVM e TOP MERCADO**: clicar num filtro (pill de ticker/

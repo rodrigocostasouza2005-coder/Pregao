@@ -134,6 +134,73 @@ _PROMPT_SISTEMA = (
 _LIMITE_TEXTO_DIRETO = 12000
 _TAMANHO_CHUNK = 10000
 
+_PROMPT_DADOS_ESTRUTURADOS = (
+    "Leia o texto do relatorio e responda EXATAMENTE neste formato, "
+    "2 linhas, nada mais, sem nenhum comentario antes ou depois:\n"
+    "PRECO_ALVO: <numero, so' digitos e separador decimal, sem 'R$' "
+    "nem texto - ex: 48.50> ou NAO_IDENTIFICADO\n"
+    "RECOMENDACAO: <a palavra/expressao EXATA usada no texto, ex: "
+    "COMPRA, MANTER, NEUTRO, VENDA, OUTPERFORM> ou NAO_IDENTIFICADO\n\n"
+    "Regras obrigatorias, sem excecao:\n"
+    "- preco-alvo e recomendacao SO contam se estiverem EXPLICITAMENTE "
+    "escritos no texto - nunca estime, calcule, deduza ou arredonde um "
+    "valor que nao esteja literalmente ali;\n"
+    "- se o documento mencionar mais de um preco-alvo (ex: cenario base "
+    "e otimista, ou precos-alvo de varios tickers diferentes), use o "
+    "preco-alvo PRINCIPAL/BASE do ticker que da' titulo ao relatorio;\n"
+    "- se nao houver preco-alvo OU recomendacao explicitos no texto, "
+    "responda NAO_IDENTIFICADO pro campo correspondente - no caso de "
+    "duvida, SEMPRE prefira NAO_IDENTIFICADO a arriscar um valor errado."
+)
+
+# tipos de documento onde faz sentido PROCURAR preco-alvo/recomendacao -
+# nao vale gastar uma chamada de IA a mais em MACRO/NEWSLETTER/LIVE, que
+# na pratica nunca tem isso (ver _FOCO_POR_TIPO: so' ACOES segue o fio
+# resultado->valuation->recomendacao)
+_TIPOS_COM_DADOS_ESTRUTURADOS = {"ACOES"}
+
+
+def _extrair_dados_estruturados(texto: str, titulo: str, chave: str, modelo: str) -> tuple:
+    """Chamada adicional pequena e barata (max_tokens=60, mesmo texto ja'
+    carregado - NENHUMA nova requisicao de rede) pra extrair preco-alvo/
+    recomendacao de forma estruturada, SEM tocar no resumo narrativo
+    (resumir_com_groq) - documentos sofisticados continuam com a mesma
+    nota em prosa de sempre; isso so' alimenta campos extras (ver
+    store.salvar_resumo) usados por 'O QUE MUDOU'/Research Radar.
+    Retorna (preco_alvo: float|None, recomendacao: str|None) - None pros
+    dois se a chamada falhar ou nada for identificado (nunca inventa)."""
+    conteudo, motivo = _chamar_groq(
+        chave, modelo,
+        [
+            {"role": "system", "content": _PROMPT_DADOS_ESTRUTURADOS},
+            {"role": "user", "content": f"Titulo: {titulo}\n\nTexto:\n{texto[:_LIMITE_TEXTO_DIRETO]}"},
+        ],
+        max_tokens=60,
+    )
+    if conteudo is None:
+        return None, None
+
+    preco_alvo = None
+    m_preco = re.search(r"PRECO_ALVO:\s*([^\n]+)", conteudo, re.IGNORECASE)
+    if m_preco:
+        valor = m_preco.group(1).strip()
+        if "NAO_IDENTIFICADO" not in valor.upper() and "NÃO_IDENTIFICADO" not in valor.upper():
+            valor_limpo = re.sub(r"[^\d,.]", "", valor).replace(",", ".")
+            try:
+                preco_alvo = float(valor_limpo) if valor_limpo else None
+            except ValueError:
+                preco_alvo = None
+
+    recomendacao = None
+    m_rec = re.search(r"RECOMENDACAO:\s*([^\n]+)", conteudo, re.IGNORECASE)
+    if m_rec:
+        valor = m_rec.group(1).strip().strip(".")
+        if valor and "NAO_IDENTIFICADO" not in valor.upper() and "NÃO_IDENTIFICADO" not in valor.upper():
+            recomendacao = valor.upper()
+
+    return preco_alvo, recomendacao
+
+
 _PROMPT_EXTRACAO_CHUNK = (
     "Voce esta vendo so' UM PEDACO de um conteudo maior (nao o documento "
     "inteiro). Extraia em topicos curtos e objetivos todo fato, numero, "
@@ -315,9 +382,12 @@ def _condensar_texto_longo(texto: str, chave: str, modelo: str) -> tuple:
 
 
 def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") -> tuple:
-    """Resume via Groq (free tier). Retorna (resumo, motivo_falha).
-    motivo_falha='cota' especificamente em erro 429 (rate limit/cota
-    esgotada), pra UI mostrar um aviso diferenciado.
+    """Resume via Groq (free tier). Retorna (resumo, motivo_falha,
+    dados_estruturados). motivo_falha='cota' especificamente em erro 429
+    (rate limit/cota esgotada), pra UI mostrar um aviso diferenciado.
+    dados_estruturados = {"preco_alvo": float|None, "recomendacao": str|None}
+    - sempre {} (nunca None) quando resumo != None, pra quem chama poder
+    fazer dados_estruturados.get(...) sem checar None antes.
 
     casa/tipo (opcionais, vem do item de research - ver CASAS em
     data/research/__init__.py) so' ajustam a PRIORIZACAO do prompt via
@@ -331,12 +401,12 @@ def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") ->
     simplesmente descartado."""
     chave, modelo = config.obter_credenciais_groq()
     if not chave:
-        return None, "GROQ_API_KEY não configurada em st.secrets"
+        return None, "GROQ_API_KEY não configurada em st.secrets", {}
 
     if len(texto) > _LIMITE_TEXTO_DIRETO:
         texto, motivo = _condensar_texto_longo(texto, chave, modelo)
         if texto is None:
-            return None, motivo
+            return None, motivo, {}
 
     foco = _detectar_foco(casa, tipo)
     prompt_sistema = _PROMPT_SISTEMA + _FOCO_POR_TIPO.get(foco, "")
@@ -350,8 +420,18 @@ def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") ->
         max_tokens=config.GROQ_MAX_TOKENS,
     )
     if conteudo is None:
-        return None, motivo
-    return _normalizar_formatacao(conteudo), None
+        return None, motivo, {}
+
+    dados_estruturados = {}
+    if tipo in _TIPOS_COM_DADOS_ESTRUTURADOS:
+        # mesma chamada/texto ja' carregado - so' mais uma requisicao HTTP
+        # leve (max_tokens=60) pra Groq, nenhum novo download de pagina.
+        # Falha aqui nunca derruba o resumo narrativo (ja pronto acima) -
+        # so' os campos extra ficam None.
+        preco_alvo, recomendacao = _extrair_dados_estruturados(texto, titulo, chave, modelo)
+        dados_estruturados = {"preco_alvo": preco_alvo, "recomendacao": recomendacao}
+
+    return _normalizar_formatacao(conteudo), None, dados_estruturados
 
 
 def obter_resumo(link: str, titulo: str, extrator_texto=None, casa: str = "", tipo: str = "") -> dict:
@@ -370,16 +450,21 @@ def obter_resumo(link: str, titulo: str, extrator_texto=None, casa: str = "", ti
     priorizacao do resumo (ver _detectar_foco) - opcionais, "" usa o
     prompt generico.
 
-    Retorna {resumo, motivo_indisponivel}; resumo=None se qualquer etapa
-    falhar (nao grava nada nesse caso)."""
+    Retorna {resumo, motivo_indisponivel, preco_alvo, recomendacao};
+    resumo=None se qualquer etapa falhar (nao grava nada nesse caso).
+    preco_alvo/recomendacao vem de _extrair_dados_estruturados (so' pra
+    tipo ACOES) - None quando nao se aplica ou nao foi identificado no
+    texto, nunca um valor inventado."""
     extrator = extrator_texto or obter_texto_relatorio
     texto, motivo = extrator(link)
     if texto is None:
-        return {"resumo": None, "motivo_indisponivel": motivo}
+        return {"resumo": None, "motivo_indisponivel": motivo, "preco_alvo": None, "recomendacao": None}
 
-    resumo, motivo = resumir_com_groq(texto, titulo, casa=casa, tipo=tipo)
+    resumo, motivo, dados_estruturados = resumir_com_groq(texto, titulo, casa=casa, tipo=tipo)
     if resumo is None:
-        return {"resumo": None, "motivo_indisponivel": motivo}
+        return {"resumo": None, "motivo_indisponivel": motivo, "preco_alvo": None, "recomendacao": None}
 
-    store.salvar_resumo(link, resumo, config.obter_modelo_groq())
-    return {"resumo": resumo, "motivo_indisponivel": None}
+    preco_alvo = dados_estruturados.get("preco_alvo")
+    recomendacao = dados_estruturados.get("recomendacao")
+    store.salvar_resumo(link, resumo, config.obter_modelo_groq(), preco_alvo=preco_alvo, recomendacao=recomendacao)
+    return {"resumo": resumo, "motivo_indisponivel": None, "preco_alvo": preco_alvo, "recomendacao": recomendacao}

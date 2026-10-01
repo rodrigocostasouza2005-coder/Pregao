@@ -2337,3 +2337,79 @@ reais do workspace MERCADO, já documentados acima no arquivo).
 1. Rodrigo validar visualmente o ticker novo + workspace em MACRO/VISÃO GERAL na URL publicada
 2. Decidir se entra Fase 10 (Research Intelligence) como próximo ciclo grande, ou mais itens pontuais primeiro
 3. Fase 15 (visual) só depois de tudo acima confirmado, com ciclo de feedback visual direto
+
+## FASE RESEARCH — Resumos + inteligência de eventos (2026-10-01)
+
+Rodrigo pediu explicitamente a Fase 10 que eu tinha deixado não-iniciada
+(sensível demais pra arriscar sozinho antes). Auditoria completa antes
+de codar (`ui/research_tab.py` + todo `data/research/*.py`):
+
+**Achados da auditoria:**
+- O prompt narrativo (`_PROMPT_SISTEMA` em `resumir.py`) já é sofisticado
+  de propósito: 2-4 blocos narrativos adaptativos (nunca template fixo),
+  regras fortes anti-invenção já existentes ("nunca invente declarações,
+  números, preços-alvo..."), atribuição de falas a atores nomeados já
+  obrigatória, foco por tipo de documento (MORNING_CALL/AÇÕES/MACRO) já
+  existente. **Preservado integralmente** - só refinado, nunca
+  substituído.
+- `resumo` era só texto opaco - nenhum campo estruturado extraído/salvo.
+  Bloqueava "O QUE MUDOU"/Research Radar de verdade.
+- **Achado crítico de arquitetura**: `research_itens` (documentos/
+  resumos) tem retenção de só 5 dias por design (conteúdo perecível) -
+  impossível construir histórico de verdade em cima dela sozinha.
+- Única fonte de dado estruturado hoje: `obter_recomendacoes()` (Genial,
+  `data/research/genial.py`) - ticker/recomendação/preço-alvo AO VIVO,
+  nunca persistido, e **efetivamente desligada em produção** (mesmo
+  bloqueio de WAF que afeta toda coleta via Genial no Streamlit Cloud -
+  `tentar_coleta_automatica: False`). `coletor_local.py` (roda na
+  máquina do Rodrigo) hoje só coleta relatórios, não recomendações.
+
+**Implementado nesta primeira parte** (`data/research/resumir.py`,
+`data/research/store.py`, novo `data/research/historico.py`,
+`sql/research.sql`):
+
+1. **Extração estruturada de preço-alvo/recomendação**: nova chamada
+   Groq pequena e barata (`_extrair_dados_estruturados`, max_tokens=60,
+   reaproveita o MESMO texto já carregado - zero requisição de rede
+   nova) rodando só pra documentos tipo ACOES (não desperdiça chamada em
+   MACRO/NEWSLETTER/LIVE). Regra explícita: NAO_IDENTIFICADO em vez de
+   estimar, sempre. `resumir_com_groq` agora retorna
+   `(resumo, motivo, dados_estruturados)`; `obter_resumo` repassa pro
+   Supabase (2 colunas novas em `research_itens`: `preco_alvo`,
+   `recomendacao`, nullable).
+2. **Histórico não-perecível** (`data/research/historico.py`, nova
+   tabela `research_recomendacoes_historico`): só grava um snapshot
+   NOVO quando recomendação/preço-alvo mudam de verdade desde o último
+   conhecido daquele casa+ticker (nunca grava redundante). Base honesta
+   pra "O QUE MUDOU" - compara valor de hoje com valor real do passado,
+   nunca inventa um "antes" que não existiu. `processar_recomendacoes`
+   (cache 30min, mesma janela de `obter_recomendacoes`) evita bater no
+   Supabase a cada rerun da aba.
+
+**Testes (todos passaram)**:
+- `compileall` limpo; AppTest das 9 seções sem exceção.
+- `historico.py`: 12 checks com Supabase mockado (primeiro snapshot
+  grava mas não reporta "mudança"; sem mudança real não grava; mudança
+  de preço-alvo/recomendação grava E retorna o valor anterior correto;
+  banco fora do ar nunca quebra nem finge mudança; função `_mudou` nos
+  casos extremos incluindo "preço None nos dois lados" sem falso-positivo).
+- `resumir.py`: **9 cenários pedidos, com chamadas REAIS à Groq** (chave
+  já configurada neste ambiente) - documento curto com preço-alvo e
+  recomendação explícitos (extraídos certo: R$48/COMPRA); documento sem
+  preço-alvo nem recomendação (None/None, não inventou); Morning Call
+  (narrativa preservada, extração estruturada corretamente PULADA -
+  economiza chamada); documento com múltiplos tickers (pegou o
+  preço-alvo do ticker do TÍTULO - R$50 da ABCD4, não R$22 da XYZW3
+  mencionada de passagem); documento vago sem dado financeiro nenhum
+  (resumo gerado sem inventar nada). Nenhum resumo mencionou "não
+  informado" (regra antiga preservada).
+
+**Ação pendente do Rodrigo**: rodar o `sql/research.sql` atualizado no
+SQL Editor do Supabase (idempotente - `if not exists` em tudo, seguro
+re-rodar mesmo já tendo a tabela antiga) antes das próximas partes desta
+fase funcionarem de ponta a ponta em produção.
+
+**Próximas partes desta fase** (commits separados, em andamento):
+wiring do histórico na UI (watchlist + "O QUE MUDOU"), coleta de
+recomendações no `coletor_local.py` (hoje só coleta relatórios),
+Research Radar, refino do foco de Morning Call, testes de UI/Playwright.

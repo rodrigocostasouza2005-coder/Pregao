@@ -21,6 +21,7 @@ def _linha_para_item(linha: dict) -> dict:
         "autor": linha.get("autor") or "", "tipo": linha["tipo"],
         "tickers": linha.get("tickers") or [], "link": linha["link"],
         "resumo": linha.get("resumo"), "modelo_resumo": linha.get("modelo_resumo"),
+        "preco_alvo": linha.get("preco_alvo"), "recomendacao": linha.get("recomendacao"),
     }
 
 
@@ -144,15 +145,19 @@ def apagar_itens_antigos(dias: int = RETENCAO_DIAS) -> int:
     return total
 
 
-def salvar_resumo(link: str, resumo: str, modelo: str) -> bool:
+def salvar_resumo(link: str, resumo: str, modelo: str, preco_alvo: float = None, recomendacao: str = None) -> bool:
     """Grava o resumo (palavras proprias, nunca o texto original) de um
-    item ja existente. True se salvou."""
+    item ja existente, mais preco_alvo/recomendacao quando extraidos
+    (ver data/research/resumir.py:_extrair_dados_estruturados) - None
+    grava None mesmo (nao omite a coluna), pra um resumo regerado sem
+    preco-alvo identificado limpar um valor antigo que porventura exista.
+    True se salvou."""
     cliente = obter_cliente()
     if cliente is None:
         return False
     try:
         cliente.table("research_itens").update(
-            {"resumo": resumo, "modelo_resumo": modelo}
+            {"resumo": resumo, "modelo_resumo": modelo, "preco_alvo": preco_alvo, "recomendacao": recomendacao}
         ).eq("link", link).execute()
         return True
     except Exception:
