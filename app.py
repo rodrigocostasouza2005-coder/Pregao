@@ -27,6 +27,7 @@ from data.prices import (
 from data.research import CASAS as CASAS_RESEARCH
 from data.user_prefs import obter_prefs, salvar_prefs
 from ui import busca, graficos, paineis
+from ui.calendario_tab import render_calendario
 from ui.cvm_tab import render_cvm, render_cvm_ticker
 from ui.macro_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MACRO
 from ui.macro_tab import render_macro
@@ -879,6 +880,13 @@ if secao_atual == "SISTEMA":
 if secao_atual == "CVM":
     with st.container():
         render_cvm(prefs)
+
+
+# --- aba CALENDÁRIO (agenda de resultados corporativos, ver
+# ui/calendario_tab.py) -------------------------------------------------------
+if secao_atual == "CALENDÁRIO":
+    with st.container():
+        render_calendario(prefs)
 
 
 # --- aba CONFIG --------------------------------------------------------------

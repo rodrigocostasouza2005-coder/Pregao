@@ -2613,3 +2613,83 @@ seções, todos sem regressão.
 `data.news.obter_noticias` + nova função + 4 chamadas) e o novo arquivo
 de teste. Nenhuma mudança em `data/news.py`, prompt, histórico ou
 Research Radar.
+
+## FASE — CALENDÁRIO de resultados corporativos (2026-10-01)
+
+Nova aba CALENDÁRIO, focada em resultados (ITR/DFP) - primeira versão.
+
+**Auditoria antes de codar**: `data/cvm.py` já tinha uma categoria
+oficial da CVM chamada literalmente "Calendário de Eventos
+Corporativos" e outra "Dados Econômico-Financeiros" (filtrada por
+`_TIPOS_RESULTADOS` pros tipos que são resultado de verdade - press-
+release, demonstrações financeiras). `_ipe_ano()` baixa o CSV da CVM
+(~30-40 mil linhas, TODAS as empresas) **1 vez por ano, cacheado** -
+filtrar por CNPJ depois é operação em memória, não uma requisição nova
+por ticker. Isso significa que calcular o calendário pra "TODOS" os
+~76 tickers do Ibovespa é barato (1 download cacheado + N filtros em
+memória), não N requisições.
+
+**Decisão de arquitetura mais importante desta fase**: não existe hoje
+nenhuma fonte automática confiável de "data CONFIRMADA pela empresa"
+nem "data ESTIMADA por consenso" integrada ao projeto - extrair isso de
+PDF de "Calendário de Eventos Corporativos" exigiria parsing de texto
+livre sem IA, com risco real de ler a data errada e apresentá-la como
+oficial (indo direto contra "nunca inventar datas"). A única fonte REAL,
+pública e determinística disponível é o **prazo regulatório** da CVM
+(Instrução CVM 480/2009): ITR até 45 dias após o fim do trimestre, DFP
+até ~3 meses após o fim do exercício. Por isso, nesta v1, **todo evento
+calculado tem status PRAZO_CVM** - a camada normalizada (`data/eventos.py`)
+já tem os status CONFIRMADO/ESTIMADO prontos pra quando/se uma fonte
+confiável desses for integrada depois (documentado explicitamente no
+módulo, não escondido).
+
+**Bug real encontrado e corrigido durante o desenvolvimento**: a busca
+pelo "próximo trimestre pendente" começava no trimestre que CONTÉM hoje,
+em vez do trimestre ANTERIOR (que acabou de se encerrar e ainda está
+dentro do prazo de entrega) - em 01/10/2026 (temos o exemplo do próprio
+Rodrigo usando "3T26"), isso pulava direto pro 4T26/DFP, ignorando o 3T26
+que só vence em 14/11. Pego pelos próprios testes (cenário 3c/3d) antes
+de qualquer uso real.
+
+**Implementado**:
+- `data/eventos.py` (novo): `calcular_proximo_resultado(ticker)` /
+  `calcular_calendario(tickers)` - cruza com `obter_documentos_cvm`
+  (mesmo identificador/fonte que CVM já usa) pra NÃO mostrar como
+  "pendente" um trimestre que a empresa já entregou de verdade.
+  Limitação documentada: assume ano fiscal = ano civil (maioria das
+  empresas B3).
+- `ui/calendario_tab.py` (novo): `PRÓXIMOS RESULTADOS DA WATCHLIST`
+  (destaque + contagem "X eventos nos próximos 7 dias") + agenda
+  agrupada por data com filtros [MINHA WATCHLIST/TODOS/SETOR] ×
+  [SEMANA/MÊS] (setor reaproveita `config.IBOVESPA_SETORES`, já
+  existente). Cada evento abre um `st.expander` com ticker/empresa/
+  período/data+horário/status/fonte + contexto **somente se já houver
+  dado no sistema** (CVM/NEWS/RESEARCH - reaproveita
+  `obter_documentos_cvm`/`obter_noticias`/`store.listar_itens`, as
+  MESMAS funções cacheadas que as outras abas já usam) - zero chamada
+  de IA em qualquer ponto desta aba.
+- `config.py`: `"CALENDÁRIO"` adicionado a `ABAS_DISPONIVEIS` (migra
+  automaticamente pra usuários existentes, mesmo mecanismo que já
+  existia) + ícone Material.
+- `app.py`: import + bloco de seção, mesmo padrão de CVM/NEWS.
+
+**Testes** (`tests/test_eventos.py`, novo, 21 checks, tudo mockado/sem
+rede): prazo CVM calculado certo pro trimestre corrente; resultado já
+entregue pula pro próximo trimestre; prazo já vencido também pula;
+evento sem horário (nunca inventado); ausência de documento CVM ainda
+permite calcular o prazo regulatório; data_referencia inválida/ausente
+não quebra nem conta como "já entregue"; ticker duplicado gera 1 evento
+só; fonte CVM indisponível nunca inventa evento (e não derruba o
+cálculo dos outros tickers); só processa os tickers recebidos (nunca
+busca por conta própria); estrutura (status/rótulos) já suporta
+CONFIRMADO/ESTIMADO mesmo sem fonte real ainda. `compileall` do projeto
++ AppTest das 10 seções (nova aba incluída) sem exceção. Validação
+visual via Playwright (harness com eventos sintéticos cobrindo os 3
+status, incluindo clicar e expandir o detalhe de um evento) - zero erro
+de console.
+
+**Limitações**: sem data CONFIRMADA/ESTIMADA de verdade ainda (ver
+decisão de arquitetura acima); assume ano fiscal = ano civil; "horário"
+nunca é preenchido (CVM não informa isso); setor vem de
+`config.IBOVESPA_SETORES` (curado manualmente, pode não cobrir 100% dos
+tickers novos - mesma limitação que MERCADO já tinha).

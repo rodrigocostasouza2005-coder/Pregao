@@ -3,6 +3,23 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-01 (feat: nova aba CALENDÁRIO de resultados corporativos)
+
+- Nova aba CALENDÁRIO (v1): agenda de resultados (ITR/DFP) agrupada por
+  data, com destaque "PRÓXIMOS RESULTADOS DA WATCHLIST" e filtros
+  [MINHA WATCHLIST/TODOS/SETOR] × [SEMANA/MÊS].
+- Única fonte de data real disponível hoje: prazo regulatório da CVM
+  (Instrução 480/2009 - ITR 45 dias, DFP ~3 meses) - todo evento vem
+  como status PRAZO_CVM; CONFIRMADO/ESTIMADO já estão na estrutura,
+  prontos pra quando houver fonte confiável. Cruza com documentos CVM
+  já publicados pra não mostrar como pendente um trimestre já entregue.
+- Detalhe de cada evento mostra contexto de CVM/NEWS/RESEARCH **só se
+  já existir no sistema** - zero chamada de IA.
+- Bug real corrigido durante o desenvolvimento: cálculo pulava o
+  trimestre recém-encerrado (ainda dentro do prazo) direto pro seguinte.
+- `tests/test_eventos.py` (novo, 21 checks) + validação visual via
+  Playwright.
+
 ## 2026-10-01 (feat: Research - contexto de NEWS por ativo)
 
 - Research de um ticker ganha seção "CONTEXTO RECENTE · NEWS" (até 5
