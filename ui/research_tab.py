@@ -22,6 +22,11 @@ _TIPO_LABEL = {
 }
 
 _AVISO_COTA = "Cota gratuita de resumo por IA esgotada por enquanto — os links continuam disponíveis normalmente."
+# motivo="indisponivel" (resiliencia 2026-10-01, ver data/research/resumir.py:
+# _chamar_groq_com_fallback) = principal E fallback falharam por erro
+# tecnico (nao cota) - mensagem curta de proposito, nunca expõe HTTP/
+# excecao/detalhe interno (isso fica so' no log, ver _log_erro_ia).
+_AVISO_IA_INDISPONIVEL = "Resumo por IA temporariamente indisponível — os links continuam disponíveis normalmente."
 
 # casa -> funcao (link)->(texto, motivo_falha) pra gerar resumo; None usa
 # o generico (baixa a pagina publica do relatorio) - ver CASAS em
@@ -128,6 +133,8 @@ def _abrir_resumo_live(rel: dict, extrator):
         _bloco_resumo(resumo)
     elif motivo == "cota":
         st.warning(_AVISO_COTA)
+    elif motivo == "indisponivel":
+        st.warning(_AVISO_IA_INDISPONIVEL)
     else:
         st.caption(f"Resumo indisponível ({motivo}).")
 
@@ -178,6 +185,8 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
             _bloco_resumo(resultado["resumo"])
         elif resultado["motivo_indisponivel"] == "cota":
             st.warning(_AVISO_COTA)
+        elif resultado["motivo_indisponivel"] == "indisponivel":
+            st.warning(_AVISO_IA_INDISPONIVEL)
         # outros motivos (login/PDF ilegivel/conteudo curto): so titulo+link mesmo, sem aviso por item
         return
 
@@ -189,6 +198,8 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
             _bloco_resumo(resultado["resumo"])
         elif resultado["motivo_indisponivel"] == "cota":
             st.warning(_AVISO_COTA)
+        elif resultado["motivo_indisponivel"] == "indisponivel":
+            st.warning(_AVISO_IA_INDISPONIVEL)
         else:
             st.caption(f"Resumo indisponível ({resultado['motivo_indisponivel']}).")
 

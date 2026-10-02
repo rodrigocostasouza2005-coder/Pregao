@@ -279,6 +279,16 @@ def obter_emails_admin() -> list:
 # "pensando" (campo message.reasoning) antes de responder e o resumo sai
 # cortado no meio (visto na pratica no resumo de noticias).
 GROQ_MODELO_PADRAO = "openai/gpt-oss-20b"
+# Fallback (2026-10-01, resiliencia do Research): mesma conta/chave Groq,
+# SEM credencial nova - so' um segundo modelo id. Util porque a Groq
+# aplica rate limit/cota POR MODELO (nao por conta inteira): se o modelo
+# principal esgotar a cota do free tier, o fallback (familia gpt-oss,
+# so' maior - mesmo estilo de resposta) pode ainda ter cota livre.
+# Testado manualmente nesta sessao (chamada real, resposta valida) antes
+# de habilitar - ver data/research/resumir.py:_chamar_groq_com_fallback.
+# Sobrescrevivel via st.secrets["groq"]["modelo_fallback"], mesmo padrao
+# do modelo principal.
+GROQ_MODELO_FALLBACK = "openai/gpt-oss-120b"
 GROQ_REASONING_EFFORT = "low"
 # 900, nao 400: o resumo do research virou um briefing de varias secoes
 # (CONTEXTO/MERCADO/DRIVERS/IMPACTOS/ATENCAO, ate ~250 palavras no caso de
@@ -292,6 +302,19 @@ GROQ_MAX_TOKENS = 900
 
 def obter_modelo_groq() -> str:
     return obter_credenciais_groq()[1]
+
+
+def obter_modelo_groq_fallback() -> str:
+    """Modelo de fallback (ver GROQ_MODELO_FALLBACK) - funcao separada de
+    obter_credenciais_groq() de proposito: data/news.py ja' desempacota
+    obter_credenciais_groq() como tupla de 2 (chave, modelo) - mudar pra
+    3 quebraria essa chamada. st.secrets["groq"]["modelo_fallback"] pra
+    sobrescrever, mesmo padrao do modelo principal."""
+    try:
+        import streamlit as st
+        return st.secrets.get("groq", {}).get("modelo_fallback") or GROQ_MODELO_FALLBACK
+    except Exception:
+        return GROQ_MODELO_FALLBACK
 
 
 def obter_credenciais_groq() -> tuple:

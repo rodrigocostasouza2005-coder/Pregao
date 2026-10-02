@@ -9,6 +9,7 @@ resumir o mesmo link duas vezes. Se qualquer etapa falhar, retorna
 resumo=None com o motivo - nunca inventa conteudo."""
 
 import re
+from datetime import datetime, timezone
 from io import BytesIO
 
 import requests
@@ -371,40 +372,101 @@ def _chamar_groq(chave: str, modelo: str, mensagens: list, max_tokens: int) -> t
         return None, str(e)
 
 
-def _condensar_texto_longo(texto: str, chave: str, modelo: str) -> tuple:
+def _log_erro_ia(modelo: str, tipo_erro: str, detalhe: str):
+    """Diagnostico tecnico (resiliencia do Research, 2026-10-01) - NUNCA
+    mostrado ao usuario (ver _chamar_groq_com_fallback, que so' repassa
+    pra UI um motivo de um conjunto pequeno e seguro: None/'cota'/
+    'indisponivel'). print() de proposito, nao logging - mesmo padrao ja
+    usado em data/research/__init__.py:coletar_casa: Streamlit Cloud
+    captura stdout no painel de Logs, da' pra depurar sem expor nada pro
+    usuario final. provedor e' sempre Groq neste modulo (unico provedor
+    de IA do research hoje)."""
+    agora = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"[research-ia] {agora} provedor=Groq modelo={modelo} tipo_erro={tipo_erro} detalhe={detalhe}")
+
+
+def _chamar_groq_com_fallback(
+    chave: str, modelo_principal: str, modelo_fallback: str, mensagens: list, max_tokens: int,
+    pular_principal: bool = False,
+) -> tuple:
+    """Resiliencia do pipeline de resumo (2026-10-01): tenta modelo_principal;
+    se falhar (cota/rate-limit OU qualquer erro tecnico - timeout, 5xx,
+    conexao - nunca por falta de conteudo, que nem chega aqui), tenta
+    modelo_fallback UMA unica vez - nunca repete indefinidamente nem fica
+    martelando uma fonte ja' sabida esgotada. Mesma chave/conta Groq, SEM
+    credencial nova (ver config.GROQ_MODELO_FALLBACK).
+
+    Retorna (conteudo, motivo_seguro, usou_fallback). motivo_seguro e'
+    SEMPRE None, 'cota' ou 'indisponivel' - NUNCA o texto cru da excecao
+    (HTTP status, stack trace, nome de excecao) - isso so' vai pro log
+    tecnico via _log_erro_ia, nunca pra UI (ver ui/research_tab.py).
+
+    pular_principal=True pula direto pro fallback sem tentar o principal
+    de novo - usado quando o principal ja' confirmou falha NESTA MESMA
+    geracao de resumo (ver _condensar_texto_longo, que processa varios
+    pedacos em sequencia e nao vale a pena retentar um modelo que acabou
+    de falhar ha' poucos segundos, especialmente cota - a janela de rate
+    limit nao reseta nesse intervalo)."""
+    if not pular_principal:
+        conteudo, motivo = _chamar_groq(chave, modelo_principal, mensagens, max_tokens)
+        if conteudo is not None:
+            return conteudo, None, False
+        _log_erro_ia(modelo_principal, "cota" if motivo == "cota" else "erro_tecnico", motivo)
+
+    conteudo, motivo = _chamar_groq(chave, modelo_fallback, mensagens, max_tokens)
+    if conteudo is not None:
+        return conteudo, None, True
+    _log_erro_ia(modelo_fallback, "cota" if motivo == "cota" else "erro_tecnico", motivo)
+    return None, ("cota" if motivo == "cota" else "indisponivel"), True
+
+
+def _condensar_texto_longo(texto: str, chave: str, modelo: str, modelo_fallback: str) -> tuple:
     """Documento acima de _LIMITE_TEXTO_DIRETO: divide em pedacos de
     _TAMANHO_CHUNK chars, extrai so' os fatos/numeros/nomes de CADA pedaco
     (chamada leve, _PROMPT_EXTRACAO_CHUNK) e junta os extratos num texto
     condensado - isso vira o 'texto' que alimenta o resumo narrativo de
     verdade (resumir_com_groq), preservando informacao que estaria depois
-    do corte de um truncamento cru. Retorna (texto_condensado, motivo) -
-    None se QUALQUER pedaco falhar de verdade (erro/cota) - melhor avisar
-    que o resumo nao pode ser gerado do que resumir so' metade do conteudo
-    sem avisar."""
+    do corte de um truncamento cru. Retorna (texto_condensado, motivo,
+    pular_principal) - texto_condensado=None se QUALQUER pedaco falhar de
+    verdade mesmo com fallback - melhor avisar que o resumo nao pode ser
+    gerado do que resumir so' metade do conteudo sem avisar.
+    pular_principal=True quando o modelo principal falhou em algum pedaco
+    (cota ou erro tecnico) - repassado pra resumir_com_groq pular direto
+    pro fallback na chamada narrativa final tambem, em vez de tentar de
+    novo um modelo que acabou de falhar poucos segundos atras."""
     pedacos = [texto[i:i + _TAMANHO_CHUNK] for i in range(0, len(texto), _TAMANHO_CHUNK)]
     extratos = []
+    pular_principal = False
     for pedaco in pedacos:
-        conteudo, motivo = _chamar_groq(
-            chave, modelo,
+        conteudo, motivo, usou_fallback = _chamar_groq_com_fallback(
+            chave, modelo, modelo_fallback,
             [
                 {"role": "system", "content": _PROMPT_EXTRACAO_CHUNK},
                 {"role": "user", "content": pedaco},
             ],
             max_tokens=800,
+            pular_principal=pular_principal,
         )
+        pular_principal = pular_principal or usou_fallback
         if conteudo is None:
-            return None, motivo
+            return None, motivo, pular_principal
         if "SEM_CONTEUDO_RELEVANTE" not in conteudo:
             extratos.append(conteudo.strip())
     if not extratos:
-        return None, "conteúdo sem informação de mercado relevante (após leitura por partes)"
-    return "\n\n".join(extratos), None
+        return None, "conteúdo sem informação de mercado relevante (após leitura por partes)", pular_principal
+    return "\n\n".join(extratos), None, pular_principal
 
 
 def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") -> tuple:
-    """Resume via Groq (free tier). Retorna (resumo, motivo_falha,
-    dados_estruturados). motivo_falha='cota' especificamente em erro 429
-    (rate limit/cota esgotada), pra UI mostrar um aviso diferenciado.
+    """Resume via Groq (free tier), com fallback automatico de modelo
+    (2026-10-01, resiliencia - ver _chamar_groq_com_fallback) se o
+    principal esgotar cota/rate-limit ou falhar por erro tecnico: mesma
+    conta/chave Groq, so' um segundo modelo id
+    (config.GROQ_MODELO_FALLBACK) - sem credencial nova. So' retorna
+    resumo=None (e' quando a UI mostra "Resumo indisponível") se os DOIS
+    modelos falharem. Retorna (resumo, motivo_falha, dados_estruturados).
+    motivo_falha e' sempre None, 'cota' ou 'indisponivel' - nunca o texto
+    cru de uma excecao (isso so' vai pro log tecnico, nunca pra UI).
     dados_estruturados = {"preco_alvo": float|None, "recomendacao": str|None}
     - sempre {} (nunca None) quando resumo != None, pra quem chama poder
     fazer dados_estruturados.get(...) sem checar None antes.
@@ -420,24 +482,27 @@ def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") ->
     inteira antes; agora o conteudo depois do caractere 12000 nao e' mais
     simplesmente descartado."""
     chave, modelo = config.obter_credenciais_groq()
+    modelo_fallback = config.obter_modelo_groq_fallback()
     if not chave:
         return None, "GROQ_API_KEY não configurada em st.secrets", {}
 
+    pular_principal = False
     if len(texto) > _LIMITE_TEXTO_DIRETO:
-        texto, motivo = _condensar_texto_longo(texto, chave, modelo)
+        texto, motivo, pular_principal = _condensar_texto_longo(texto, chave, modelo, modelo_fallback)
         if texto is None:
             return None, motivo, {}
 
     foco = _detectar_foco(casa, tipo)
     prompt_sistema = _PROMPT_SISTEMA + _FOCO_POR_TIPO.get(foco, "")
 
-    conteudo, motivo = _chamar_groq(
-        chave, modelo,
+    conteudo, motivo, _ = _chamar_groq_com_fallback(
+        chave, modelo, modelo_fallback,
         [
             {"role": "system", "content": prompt_sistema},
             {"role": "user", "content": f"Titulo: {titulo}\n\nTexto do relatorio:\n{texto}"},
         ],
         max_tokens=config.GROQ_MAX_TOKENS,
+        pular_principal=pular_principal,
     )
     if conteudo is None:
         return None, motivo, {}

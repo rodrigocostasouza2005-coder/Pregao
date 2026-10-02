@@ -2487,3 +2487,77 @@ aqui em vez disso. 19 checks no arquivo commitado, todos passando.
 
 **Testes finais**: `compileall` do projeto inteiro limpo; AppTest das 9
 seções sem exceção.
+
+## CORREÇÃO — Resiliência do pipeline de resumo (quota de IA, 2026-10-01)
+
+Rodrigo reportou em produção: "Cota gratuita de resumo por IA esgotada
+por enquanto" bloqueando o resumo mesmo com conteúdo disponível. Pedido
+explícito: corrigir resiliência, NÃO mexer no conteúdo/prompt/estrutura
+FATO-VISÃO-LEITURA/histórico/Radar já entregues.
+
+**Causa exata**: `data/research/resumir.py:_chamar_groq` retorna
+`(None, "cota")` em HTTP 429 (Groq, free tier) - `resumir_com_groq`
+propagava isso direto pra UI sem nenhuma segunda tentativa.
+`ui/research_tab.py:_AVISO_COTA` já mostrava mensagem amigável (não
+vazava o 429 em si), mas o `else: st.caption(f"Resumo indisponível
+({motivo}).")` em 2 pontos DO vazava texto cru de exceção pra qualquer
+falha não-cota (ex: `str(e)` de erro de rede/timeout) - achado
+adicional, corrigido junto por estar na mesma função/escopo.
+
+**Fallback utilizado**: nenhum segundo PROVEDOR estava configurado no
+projeto (confirmado por auditoria - só Groq, em `resumir.py`/`news.py`/
+`cvm.py`, cada um com seu próprio client). Mas a MESMA conta Groq
+oferece vários modelos com cota/rate-limit POR MODELO (não por conta) -
+testado manualmente nesta sessão: `openai/gpt-oss-20b` (principal) e
+`openai/gpt-oss-120b` (mesma família, escolhido como fallback) ambos
+respondem normalmente com a chave já configurada. **Fallback habilitado
+SEM nenhuma credencial nova** - só mais um model id na mesma chamada,
+exatamente o que o pedido pedia pra verificar antes de inventar algo.
+
+**Implementado**:
+- `config.py`: `GROQ_MODELO_FALLBACK = "openai/gpt-oss-120b"` +
+  `obter_modelo_groq_fallback()` (nova função, não mexe em
+  `obter_credenciais_groq()` - `data/news.py` já desempacota essa como
+  tupla de 2, mudar pra 3 quebraria NEWS, fora do escopo desta correção).
+- `data/research/resumir.py`: nova `_chamar_groq_com_fallback` - tenta
+  principal, se falhar (cota OU qualquer erro técnico - timeout/5xx/
+  conexão, nunca por falta de conteúdo) tenta o fallback UMA única vez
+  (nunca repete em loop). Retorna sempre um motivo de um conjunto
+  pequeno e seguro (`None`/`"cota"`/`"indisponivel"`) - o texto cru da
+  exceção some pro log (`_log_erro_ia`: provedor, modelo, tipo de erro,
+  timestamp - só no stdout/Logs do Streamlit Cloud, nunca na UI).
+  `_condensar_texto_longo` (documentos longos) usa o mesmo mecanismo,
+  com uma otimização: se o principal falhar num pedaço, os pedaços
+  seguintes (e a chamada narrativa final) pulam direto pro fallback em
+  vez de martelar um modelo recém-falho de novo (nunca chamada extra
+  desnecessária).
+- `ui/research_tab.py`: novo aviso amigável `_AVISO_IA_INDISPONIVEL`
+  pro motivo "indisponivel" (distinto de "cota") - mesma linguagem
+  curta, nunca HTTP/exceção/stack trace.
+
+**Cache confirmado (já existia, nenhuma mudança)**: `rel.get("resumo")`
+é checado ANTES de chamar `obter_resumo` em `_linha_relatorio`/
+`_abrir_resumo_live` - um documento com resumo salvo nunca aciona nova
+chamada de IA. `link` (chave primária de `research_itens`) já é
+identificador suficiente.
+
+**Testes**: `compileall` limpo; AppTest das 9 seções sem exceção;
+chamada real ao modelo principal confirmando que o caminho feliz
+continua intacto; 7 cenários novos em `tests/test_research.py` (modelo
+principal funciona sem tentar fallback; cota aciona fallback com
+sucesso; erro técnico não-cota também aciona fallback; ambos falhando
+retorna motivo seguro sem nenhum detalhe técnico vazado - verificado
+literalmente que "stack trace"/host/porta não aparecem no motivo
+retornado; `pular_principal` evita chamada redundante; resumo já salvo
+nunca chama `obter_resumo` de novo, testado na função REAL da UI; erro
+de extração de texto continua com motivo distinto de erro de IA, nunca
+confundidos). 36 checks no total no arquivo, todos passando.
+
+**Limitação que continua**: se AMBOS os modelos da Groq esgotarem cota
+ao mesmo tempo (ex: free tier inteiro no limite diário), não há
+terceiro fallback - o documento fica preservado (nada é apagado, nenhum
+dado é inventado) e o usuário vê "Resumo por IA temporariamente
+indisponível", podendo tentar de novo mais tarde (cota reseta por
+janela de tempo). Habilitar um provedor de IA diferente (ex: OpenAI,
+Anthropic, Cerebras) exigiria uma credencial nova - não implementado
+intencionalmente (pedido explícito: não inventar credencial/serviço).

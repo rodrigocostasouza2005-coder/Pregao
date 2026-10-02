@@ -3,6 +3,25 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-01 (fix: Research - fallback de modelo quando cota da IA esgota)
+
+- **Causa**: `_chamar_groq` falhava (HTTP 429, free tier Groq) e o
+  resumo ficava direto indisponível, sem segunda tentativa. 2 pontos na
+  UI também vazavam texto cru de exceção pra falhas não-cota (achado
+  junto, corrigido).
+- **Fallback sem credencial nova**: mesma conta/chave Groq, segundo
+  modelo (`openai/gpt-oss-120b`) - cota/rate-limit na Groq é por modelo,
+  não por conta. Testado manualmente antes de habilitar.
+  `_chamar_groq_com_fallback` tenta 1x o principal, 1x o fallback se
+  necessário (nunca loop), nunca expõe detalhe técnico na UI (só no log
+  via `_log_erro_ia`).
+- Cache (resumo já salvo nunca chama IA de novo) e separação entre erro
+  de extração de texto vs erro de IA - confirmados intactos, sem
+  mudança necessária.
+- 7 cenários novos de teste (modelo principal, fallback por cota,
+  fallback por erro técnico, ambos falhando, skip de modelo já sabido
+  esgotado, cache, separação de motivos).
+
 ## 2026-10-01 (test: Research - primeira suíte de testes commitada)
 
 - `tests/test_research.py` (novo diretório `tests/`, primeiro arquivo de

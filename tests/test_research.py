@@ -20,8 +20,9 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import data.research.resumir as resumir_mod
 from data.research import historico
-from data.research.resumir import _extrair_dados_estruturados
+from data.research.resumir import _chamar_groq_com_fallback, _extrair_dados_estruturados, obter_resumo
 
 _FALHAS = []
 
@@ -135,6 +136,140 @@ def test_extracao_estruturada_preco_com_formatacao_brl():
     with _groq_mock("PRECO_ALVO: R$ 48,50\nRECOMENDACAO: MANTER"):
         preco, rec = _extrair_dados_estruturados("texto", "titulo", "chave-fake", "modelo-fake")
     _checar("preco com formatacao BRL (R$/virgula) ainda e' parseado certo", preco == 48.50, f"(preco={preco})")
+
+
+# --- resiliencia do pipeline de resumo (2026-10-01): fallback de modelo
+# quando o principal esgota cota/rate-limit ou falha por erro tecnico ---
+
+_MSGS = [{"role": "user", "content": "teste"}]
+
+
+def test_fallback_1_modelo_principal_funciona_sem_tentar_fallback():
+    chamadas = []
+
+    def _fake_chamar_groq(chave, modelo, mensagens, max_tokens):
+        chamadas.append(modelo)
+        return "resumo do principal", None
+
+    with patch.object(resumir_mod, "_chamar_groq", side_effect=_fake_chamar_groq):
+        conteudo, motivo, usou_fallback = _chamar_groq_com_fallback(
+            "chave", "modelo-principal", "modelo-fallback", _MSGS, 100,
+        )
+    _checar("1 principal funciona: retorna o conteudo do principal", conteudo == "resumo do principal")
+    _checar("1 principal funciona: motivo None", motivo is None)
+    _checar("1 principal funciona: NAO tenta o fallback (so' 1 chamada, ao principal)",
+             chamadas == ["modelo-principal"], f"(chamadas={chamadas})")
+
+
+def test_fallback_2_principal_cota_fallback_funciona():
+    chamadas = []
+
+    def _fake_chamar_groq(chave, modelo, mensagens, max_tokens):
+        chamadas.append(modelo)
+        if modelo == "modelo-principal":
+            return None, "cota"
+        return "resumo do fallback", None
+
+    with patch.object(resumir_mod, "_chamar_groq", side_effect=_fake_chamar_groq):
+        conteudo, motivo, usou_fallback = _chamar_groq_com_fallback(
+            "chave", "modelo-principal", "modelo-fallback", _MSGS, 100,
+        )
+    _checar("2 principal com cota: tenta os DOIS modelos, nessa ordem",
+             chamadas == ["modelo-principal", "modelo-fallback"], f"(chamadas={chamadas})")
+    _checar("2 principal com cota: fallback resolve - retorna o conteudo dele", conteudo == "resumo do fallback")
+    _checar("2 principal com cota: motivo None (sucesso, nao precisa avisar nada)", motivo is None)
+    _checar("2 principal com cota: usou_fallback=True", usou_fallback is True)
+
+
+def test_fallback_3_erro_nao_recuperavel_tenta_fallback_mesmo_assim():
+    # erro tecnico (nao-429) no principal - fluxo pedido diferencia
+    # quota/rate-limit/indisponibilidade (todos tentam fallback), nunca
+    # repete INDEFINIDAMENTE (so' 1 tentativa por modelo)
+    chamadas = []
+
+    def _fake_chamar_groq(chave, modelo, mensagens, max_tokens):
+        chamadas.append(modelo)
+        if modelo == "modelo-principal":
+            return None, "500 Server Error: Internal Server Error"
+        return "resumo do fallback", None
+
+    with patch.object(resumir_mod, "_chamar_groq", side_effect=_fake_chamar_groq):
+        conteudo, motivo, usou_fallback = _chamar_groq_com_fallback(
+            "chave", "modelo-principal", "modelo-fallback", _MSGS, 100,
+        )
+    _checar("3 erro tecnico (nao-cota) no principal tambem aciona o fallback", conteudo == "resumo do fallback")
+    _checar("3 cada modelo e' tentado so' 1 vez (sem retry em loop)",
+             chamadas == ["modelo-principal", "modelo-fallback"], f"(chamadas={chamadas})")
+
+
+def test_fallback_4_ambos_falham_mensagem_segura_sem_detalhe_tecnico():
+    def _fake_chamar_groq(chave, modelo, mensagens, max_tokens):
+        if modelo == "modelo-principal":
+            return None, "cota"
+        return None, "ConnectionError: HTTPSConnectionPool(host='api.groq.com', port=443): stack trace interno aqui"
+
+    with patch.object(resumir_mod, "_chamar_groq", side_effect=_fake_chamar_groq):
+        conteudo, motivo, usou_fallback = _chamar_groq_com_fallback(
+            "chave", "modelo-principal", "modelo-fallback", _MSGS, 100,
+        )
+    _checar("4 ambos falham: conteudo None", conteudo is None)
+    _checar("4 ambos falham: motivo e' um valor SEGURO (cota/indisponivel), nunca o texto cru da excecao",
+             motivo in ("cota", "indisponivel"), f"(motivo={motivo!r})")
+    _checar("4 ambos falham: motivo NAO contem detalhe tecnico (stack trace/host/porta)",
+             "stack trace" not in str(motivo) and "ConnectionError" not in str(motivo) and "HTTPSConnectionPool" not in str(motivo),
+             f"(motivo={motivo!r})")
+
+
+def test_fallback_5_pular_principal_nao_tenta_modelo_ja_sabido_esgotado():
+    chamadas = []
+
+    def _fake_chamar_groq(chave, modelo, mensagens, max_tokens):
+        chamadas.append(modelo)
+        return "resumo do fallback", None
+
+    with patch.object(resumir_mod, "_chamar_groq", side_effect=_fake_chamar_groq):
+        conteudo, motivo, usou_fallback = _chamar_groq_com_fallback(
+            "chave", "modelo-principal", "modelo-fallback", _MSGS, 100, pular_principal=True,
+        )
+    _checar("5 pular_principal=True nunca tenta o modelo principal",
+             chamadas == ["modelo-fallback"], f"(chamadas={chamadas})")
+    _checar("5 pular_principal=True ainda retorna o resultado do fallback normalmente", conteudo == "resumo do fallback")
+
+
+def test_fallback_6_resumo_ja_existente_nao_chama_ia_de_novo():
+    """Cache (ja' existente no projeto - esse teste so' confirma, nao
+    reimplementa): chama ui.research_tab._linha_relatorio DE VERDADE
+    (a funcao real da UI, nao uma reimplementacao da condicao) com um
+    item que ja' tem resumo salvo - o link (PK de research_itens) ja' e'
+    chave suficiente, nao precisa de identificador novo nenhum."""
+    import ui.research_tab as research_tab_mod
+
+    rel = {
+        "link": "https://exemplo.com/1", "resumo": "resumo ja salvo", "titulo": "Titulo teste",
+        "casa": "X", "tipo": "ACOES", "tickers": [], "data": "2026-10-01", "autor": "",
+    }
+    chamadas_ia = []
+    with patch.object(research_tab_mod, "obter_resumo", side_effect=lambda *a, **k: chamadas_ia.append(1)):
+        research_tab_mod._linha_relatorio(rel, permitir_resumo_auto=True)
+    _checar("6 resumo ja existente: _linha_relatorio (funcao real da UI) nao chama obter_resumo",
+             chamadas_ia == [], f"(chamadas_ia={chamadas_ia})")
+
+
+def test_fallback_7_erro_de_transcript_e_erro_de_ia_tem_motivos_diferentes():
+    """Erro de EXTRACAO de texto (obter_texto_relatorio - link bloqueado,
+    PDF ilegivel, exige login) precisa continuar DISTINGUIVEL de erro de
+    IA (cota/indisponivel) - nunca os dois virarem o mesmo motivo
+    generico. obter_resumo nem chega a chamar resumir_com_groq se a
+    extracao falhar primeiro."""
+    chamadas_ia = []
+    with patch.object(resumir_mod, "obter_texto_relatorio", return_value=(None, "conteúdo muito curto (provavelmente exige login)")), \
+         patch.object(resumir_mod, "resumir_com_groq", side_effect=lambda *a, **k: chamadas_ia.append(1)):
+        resultado = obter_resumo("https://exemplo.com/1", "titulo", casa="X", tipo="ACOES")
+    _checar("7 erro de extracao NAO chama a IA (nem chega la')", chamadas_ia == [], f"(chamadas_ia={chamadas_ia})")
+    _checar("7 motivo de extracao e' distinto dos motivos de IA (cota/indisponivel)",
+             resultado["motivo_indisponivel"] not in ("cota", "indisponivel"), f"(motivo={resultado['motivo_indisponivel']!r})")
+    _checar("7 motivo de extracao preservado (nao substituido por generico)",
+             resultado["motivo_indisponivel"] == "conteúdo muito curto (provavelmente exige login)")
 
 
 if __name__ == "__main__":
