@@ -84,8 +84,11 @@ def _filtrar_janela(eventos: list, janela: str, hoje: date) -> list:
     return [e for e in eventos if hoje <= e["data"] <= limite]
 
 
-def _contexto_cvm(ticker: str):
-    documentos = obter_documentos_cvm(ticker)
+def _contexto_cvm(documentos: list):
+    """documentos: ja' buscado 1x por _detalhe_evento (obter_documentos_cvm)
+    e reaproveitado aqui E em _contexto_historico - evita bater 2x na
+    mesma fonte pro mesmo ticker no mesmo render (pedido explicito:
+    evitar N+1)."""
     if not documentos:
         return
     st.markdown("<div style='font-size:0.65rem; color:var(--cinza); margin-top:0.5rem;'>CVM · DOCUMENTOS RECENTES</div>", unsafe_allow_html=True)
@@ -93,6 +96,31 @@ def _contexto_cvm(ticker: str):
         st.markdown(
             f"<div class='cal-linha-evento'>[{d['data'][:10]}] "
             f"<a href='{d['link']}' target='_blank' style='color:var(--neutro); text-decoration:none;'>{(d['assunto'] or '')[:90]}</a></div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _contexto_historico(documentos: list):
+    """HISTÓRICO (hub do evento, 2026-10-02): resultados JA' publicados
+    pelo ticker - mesmo tipo "RESULTADOS" que data/eventos.py usa pra
+    saber se um trimestre ja' foi entregue (ver _ja_entregou), so' que
+    aqui mostrado pro usuario em vez de so' usado internamente pro
+    calculo. Reaproveita os MESMOS documentos ja' buscados pra
+    _contexto_cvm (nenhuma chamada nova a fonte nenhuma) - so' filtra
+    por tipo e muda o rotulo, pra distinguir de "documentos recentes"
+    (generico, qualquer tipo) ali em cima."""
+    resultados = sorted(
+        (d for d in documentos if d["tipo"] == "RESULTADOS"),
+        key=lambda d: d["data"], reverse=True,
+    )
+    if not resultados:
+        return
+    st.markdown("<div style='font-size:0.65rem; color:var(--cinza); margin-top:0.5rem;'>HISTÓRICO · RESULTADOS ANTERIORES</div>", unsafe_allow_html=True)
+    for d in resultados[:4]:
+        ref = f" (ref. {str(d['data_referencia'])[:10]})" if d.get("data_referencia") else ""
+        st.markdown(
+            f"<div class='cal-linha-evento'>[{d['data'][:10]}] "
+            f"<a href='{d['link']}' target='_blank' style='color:var(--neutro); text-decoration:none;'>{d['tipo_label']}{ref}</a></div>",
             unsafe_allow_html=True,
         )
 
@@ -171,12 +199,17 @@ def _detalhe_evento(evento: dict):
             unsafe_allow_html=True,
         )
 
-    # contexto - SOMENTE SE ja' houver dado no sistema (pedido explicito);
-    # nunca gera chamada de IA (so' le titulo/data/link de fontes ja
-    # cacheadas - mesmas funcoes que EQUITY/CVM/NEWS/RESEARCH ja' usam)
-    _contexto_cvm(evento["ticker"])
-    _contexto_news(evento["ticker"])
+    # hub do evento (2026-10-02): RESEARCH / NEWS / CVM / HISTORICO, nessa
+    # ordem (pedido explicito) - SOMENTE SE ja' houver dado no sistema
+    # (secao oculta se vazia); nunca gera chamada de IA (so' le titulo/
+    # data/link de fontes ja cacheadas - mesmas funcoes que EQUITY/CVM/
+    # NEWS/RESEARCH ja' usam). obter_documentos_cvm chamado 1x aqui
+    # (nao 2x) e reaproveitado por CVM e HISTORICO - evita N+1.
+    documentos_cvm = obter_documentos_cvm(evento["ticker"]) or []
     _contexto_research(evento["ticker"])
+    _contexto_news(evento["ticker"])
+    _contexto_cvm(documentos_cvm)
+    _contexto_historico(documentos_cvm)
 
 
 def _painel_proximos_watchlist(prefs: dict):

@@ -3,6 +3,16 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-02 (feat: CALENDÁRIO - Hub do evento)
+
+- Detalhe de um evento vira um hub compacto: RESEARCH, NEWS, CVM e
+  HISTÓRICO (resultados já entregues pelo ticker), nessa ordem. Seção
+  some quando vazia. Todo link abre a fonte original em nova aba.
+- `obter_documentos_cvm` agora é chamado 1x por `_detalhe_evento` e
+  reaproveitado por CVM e HISTÓRICO (evita N+1). Zero fonte nova, zero
+  chamada de IA, `data/eventos.py` intocado.
+- +17 testes novos (`tests/test_calendario_ui.py`, 29 no total).
+
 ## 2026-10-02 (fix: CALENDÁRIO V3 - separa PRÓXIMOS RESULTADOS de PRAZOS CVM)
 
 - PRAZO CVM ≠ data de divulgação. A UI agora separa visualmente em duas

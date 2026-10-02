@@ -2818,3 +2818,47 @@ visual e o aviso no detalhe, zero erro de console.
 
 **Arquivo alterado**: só `ui/calendario_tab.py` + novo
 `tests/test_calendario_ui.py`.
+
+## FASE — CALENDÁRIO: Hub do evento (2026-10-02)
+
+Evoluiu só a interação de detalhe (`_detalhe_evento`) - transformou o
+card simples (ticker/período/data/status/fonte) num hub compacto com 4
+seções: RESEARCH, NEWS, CVM, HISTÓRICO, nessa ordem (pedido explícito).
+
+**Achado real na auditoria antes de codar**: RESEARCH/NEWS/CVM já
+existiam desde a fase anterior do CALENDÁRIO (`_contexto_research`/
+`_contexto_news`/`_contexto_cvm`) - só faltava HISTÓRICO. `_contexto_cvm`
+já chamava `obter_documentos_cvm(ticker)` sozinha; pra adicionar
+HISTÓRICO sem bater 2x na mesma fonte (pedido explícito: evitar N+1),
+`_detalhe_evento` passou a buscar os documentos UMA vez e repassar pra
+`_contexto_cvm` e pra `_contexto_historico` (ambas agora recebem a lista
+pronta, não o ticker) - confirmado com teste que faz asserção sobre
+`call_count == 1`.
+
+**HISTÓRICO** (`_contexto_historico`, novo): filtra os MESMOS documentos
+CVM já buscados por tipo `"RESULTADOS"` (mesmo campo que
+`data/eventos.py:_ja_entregou` já usa internamente pra saber se um
+trimestre foi entregue - aqui só exposto pro usuário em vez de só
+usado no cálculo), ordenado por data desc, até 4 itens, com a data de
+referência do trimestre quando disponível. Zero fonte nova, zero
+chamada de IA.
+
+**Não mexido**: `data/eventos.py` (lógica/fonte dos eventos intocada),
+Research/News/CVM (só consumidas via suas próprias funções já
+cacheadas), header/ticker/workspace.
+
+**Testes** (`tests/test_calendario_ui.py`, +17 checks, 29 no total):
+evento com as 4 fontes disponíveis mostra as 4 seções na ordem certa
+(RESEARCH→NEWS→CVM→HISTÓRICO) e confirma 1 única chamada a
+`obter_documentos_cvm`; evento sem algumas fontes oculta só as vazias
+(documento genérico não-RESULTADOS aparece em CVM mas não em HISTÓRICO);
+ticker sem dado nenhum oculta as 4 seções, inclusive quando a fonte CVM
+retorna `None` (indisponível) em vez de lista vazia - sem quebrar; todos
+os links apontam pra URL original e abrem em nova aba; nenhuma chamada
+a `resumir_com_groq`/`obter_resumo` (funções de IA do projeto)
+acontece ao montar o hub. `tests/test_eventos.py` (33 checks) e
+`tests/test_calendario_ui.py` (12 checks da V3) continuam passando sem
+alteração. `compileall` do projeto + AppTest das 10 seções sem exceção.
+Validação visual via Playwright com as 4 seções populadas (Petrobras:
+research+news+cvm+histórico sintéticos) confirma renderização compacta
+no estilo terminal, link clicável, zero erro de console.

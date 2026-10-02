@@ -144,6 +144,123 @@ def test_7_detalhe_confirmado_nao_mostra_aviso_de_prazo():
              "Não representa necessariamente a data de divulgação do resultado" not in texto)
 
 
+# ============================================================
+# FASE "HUB DO EVENTO" (2026-10-02): RESEARCH/NEWS/CVM/HISTORICO no
+# detalhe de um evento - reaproveita obter_documentos_cvm/obter_noticias/
+# listar_itens (mesmas funcoes cacheadas que EQUITY/CVM/NEWS/RESEARCH ja
+# usam), zero chamada de IA, zero fonte nova.
+# ============================================================
+
+_DOC_CVM_GENERICO = {
+    "ticker": "PETR4", "tipo": "COMUNICADO", "tipo_label": "COMUNICADO",
+    "categoria_original": "Comunicado ao Mercado", "assunto": "Aviso de fato relevante",
+    "data": "2026-09-28", "data_referencia": None, "link": "https://cvm.example/doc1", "destaque": False,
+}
+_DOC_CVM_RESULTADO_ANTIGO = {
+    "ticker": "PETR4", "tipo": "RESULTADOS", "tipo_label": "RESULTADOS",
+    "categoria_original": "Dados Econômico-Financeiros", "assunto": "Press-release",
+    "data": "2026-07-10", "data_referencia": "2026-06-30", "link": "https://cvm.example/doc2", "destaque": False,
+}
+_NOTICIA = {"ticker": "PETR4", "titulo": "Petrobras anuncia investimento", "data": "2026-09-29",
+            "link": "https://news.example/n1", "selo": "MENÇÃO", "score": 1, "veiculos": ["Veículo Teste"], "tickers": ["PETR4"]}
+_RELATORIO = {"casa": "Genial Analisa", "titulo": "PETR4: tese de investimento", "data": "2026-09-27",
+              "autor": "", "tipo": "ACOES", "tickers": ["PETR4"], "link": "https://research.example/r1",
+              "resumo": None, "modelo_resumo": None, "preco_alvo": None, "recomendacao": None}
+
+
+def test_8_evento_com_todas_as_fontes_mostra_as_4_secoes():
+    evento = _evento()
+    with patch.object(calendario_tab_mod, "obter_documentos_cvm", return_value=[_DOC_CVM_GENERICO, _DOC_CVM_RESULTADO_ANTIGO]) as mock_cvm, \
+         patch.object(calendario_tab_mod, "obter_noticias", return_value=[_NOTICIA]), \
+         patch.object(calendario_tab_mod, "listar_itens", return_value=[_RELATORIO]):
+        capturado = _capturar_markdown(calendario_tab_mod._detalhe_evento, evento)
+    texto = " ".join(capturado)
+    _checar("8a seção RESEARCH aparece", "RESEARCH" in texto and "tese de investimento" in texto)
+    _checar("8b seção NEWS aparece", "NEWS" in texto and "Petrobras anuncia investimento" in texto)
+    _checar("8c seção CVM (documentos genéricos) aparece", "CVM" in texto and "Aviso de fato relevante" in texto)
+    _checar("8d seção HISTÓRICO (resultado antigo) aparece", "HISTÓRICO" in texto and "ref. 2026-06-30" in texto)
+    # usa "CVM ·" (com o separador do rotulo da secao), nao so' "CVM" -
+    # o badge de status do evento PRAZO_CVM ja' contem a substring "CVM"
+    # bem antes de qualquer secao (achado real ao rodar este teste)
+    _checar("8e ordem das seções é RESEARCH, NEWS, CVM, HISTÓRICO (pedido explícito)",
+             texto.index("RESEARCH ·") < texto.index("NEWS ·") < texto.index("CVM ·") < texto.index("HISTÓRICO ·"))
+    _checar("8f obter_documentos_cvm chamado so' 1 VEZ (CVM + HISTÓRICO reaproveitam a mesma busca, sem N+1)",
+             mock_cvm.call_count == 1, f"(call_count={mock_cvm.call_count})")
+
+
+def test_9_evento_sem_algumas_fontes_oculta_so_as_vazias():
+    evento = _evento()
+    with patch.object(calendario_tab_mod, "obter_documentos_cvm", return_value=[_DOC_CVM_GENERICO]), \
+         patch.object(calendario_tab_mod, "obter_noticias", return_value=[]), \
+         patch.object(calendario_tab_mod, "listar_itens", return_value=[]):
+        capturado = _capturar_markdown(calendario_tab_mod._detalhe_evento, evento)
+    texto = " ".join(capturado)
+    _checar("9a RESEARCH oculto quando vazio (sem relatório relacionado)", "RESEARCH" not in texto)
+    _checar("9b NEWS oculto quando vazio (sem notícia relacionada)", "NEWS" not in texto)
+    _checar("9c CVM aparece (tem documento genérico)", "CVM" in texto)
+    _checar("9d HISTÓRICO oculto (documento genérico não é tipo RESULTADOS)", "HISTÓRICO" not in texto)
+
+
+def test_10_ticker_sem_dado_nenhum_oculta_todas_as_4_secoes():
+    evento = _evento()
+    with patch.object(calendario_tab_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(calendario_tab_mod, "obter_noticias", return_value=[]), \
+         patch.object(calendario_tab_mod, "listar_itens", return_value=[]):
+        capturado = _capturar_markdown(calendario_tab_mod._detalhe_evento, evento)
+    texto = " ".join(capturado)
+    for secao in ("RESEARCH", "NEWS", "CVM ·", "HISTÓRICO"):
+        _checar(f"10 seção '{secao}' oculta quando ticker nao tem dado nenhum", secao not in texto)
+
+    # fonte CVM indisponivel (None, nao []) tambem precisa ocultar CVM/HISTORICO
+    # sem quebrar (achado real: obter_documentos_cvm pode retornar None)
+    with patch.object(calendario_tab_mod, "obter_documentos_cvm", return_value=None), \
+         patch.object(calendario_tab_mod, "obter_noticias", return_value=[]), \
+         patch.object(calendario_tab_mod, "listar_itens", return_value=[]):
+        try:
+            capturado2 = _capturar_markdown(calendario_tab_mod._detalhe_evento, evento)
+            ok = True
+        except Exception as e:
+            ok = False
+            print("      excecao:", e)
+    _checar("10b fonte CVM indisponível (None) não quebra o detalhe do evento", ok)
+    if ok:
+        texto2 = " ".join(capturado2)
+        _checar("10c fonte CVM indisponível (None) também oculta CVM/HISTÓRICO (nunca mostra seção vazia)",
+                 "CVM ·" not in texto2 and "HISTÓRICO" not in texto2)
+
+
+def test_11_links_sao_clicaveis_apontando_para_a_fonte_original():
+    evento = _evento()
+    with patch.object(calendario_tab_mod, "obter_documentos_cvm", return_value=[_DOC_CVM_GENERICO, _DOC_CVM_RESULTADO_ANTIGO]), \
+         patch.object(calendario_tab_mod, "obter_noticias", return_value=[_NOTICIA]), \
+         patch.object(calendario_tab_mod, "listar_itens", return_value=[_RELATORIO]):
+        capturado = _capturar_markdown(calendario_tab_mod._detalhe_evento, evento)
+    texto = " ".join(capturado)
+    _checar("11a link do RESEARCH aponta pra URL original", "href='https://research.example/r1'" in texto)
+    _checar("11b link do NEWS aponta pra URL original", "href='https://news.example/n1'" in texto)
+    _checar("11c link do CVM aponta pra URL original", "href='https://cvm.example/doc1'" in texto)
+    _checar("11d link do HISTÓRICO aponta pra URL original", "href='https://cvm.example/doc2'" in texto)
+    _checar("11e todos os links abrem em nova aba (target='_blank', nunca navega pra fora do Pregão)",
+             texto.count("target='_blank'") >= 4)
+
+
+def test_12_ausencia_de_chamadas_de_ia():
+    evento = _evento()
+    chamadas_ia = []
+    # research_tab.obter_resumo e resumir_com_groq sao os unicos pontos de
+    # IA do projeto relacionados a ticker/research - garantir que o hub do
+    # calendario nunca os importa/chama, mesmo com RESEARCH relacionado
+    import data.research.resumir as resumir_mod
+    with patch.object(calendario_tab_mod, "obter_documentos_cvm", return_value=[_DOC_CVM_GENERICO]), \
+         patch.object(calendario_tab_mod, "obter_noticias", return_value=[_NOTICIA]), \
+         patch.object(calendario_tab_mod, "listar_itens", return_value=[_RELATORIO]), \
+         patch.object(resumir_mod, "resumir_com_groq", side_effect=lambda *a, **k: chamadas_ia.append(1)), \
+         patch.object(resumir_mod, "obter_resumo", side_effect=lambda *a, **k: chamadas_ia.append(1)):
+        _capturar_markdown(calendario_tab_mod._detalhe_evento, evento)
+    _checar("12 nenhuma chamada de IA (resumir_com_groq/obter_resumo) acontece ao montar o hub do evento",
+             chamadas_ia == [], f"(chamadas_ia={chamadas_ia})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
