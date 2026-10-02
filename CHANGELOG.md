@@ -3,6 +3,18 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-01 (feat: Research - contexto de NEWS por ativo)
+
+- Research de um ticker ganha seção "CONTEXTO RECENTE · NEWS" (até 5
+  notícias, mais recentes primeiro, só título+data+link) - reaproveita
+  `data.news.obter_noticias` (mesma função/cache/identificador que a
+  aba NEWS já usa, nenhum sistema novo). Nunca gera resumo de IA, nunca
+  afirma causalidade.
+- Só é chamado quando um resumo é de fato exibido (não na lista inteira)
+  - sem N+1, sem deixar o Research mais lento.
+- 11 testes novos (`tests/test_research_news_context.py`) + validação
+  visual via Playwright.
+
 ## 2026-10-01 (fix: Research - fallback de modelo quando cota da IA esgota)
 
 - **Causa**: `_chamar_groq` falhava (HTTP 429, free tier Groq) e o

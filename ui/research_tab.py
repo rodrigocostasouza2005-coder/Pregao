@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 import config
+from data.news import obter_noticias
 from data.research import CASAS, coletar_pendentes, preparar_leitura, ultimas_coletas_formatadas
 from data.research.genial import obter_recomendacoes, obter_swing_trade
 from data.research.historico import processar_recomendacoes
@@ -93,6 +94,60 @@ def _bloco_resumo(resumo: str):
     )
 
 
+_LIMITE_CONTEXTO_NEWS = 5
+
+
+def _bloco_contexto_news(tickers: list):
+    """"CONTEXTO RECENTE" (Rodrigo, fase RESEARCH<->NEWS 2026-10-01): so'
+    aparece junto de um resumo JA' ABERTO (chamado logo apos
+    _bloco_resumo, nunca na lista inteira do feed) - por isso nunca gera
+    N+1: no maximo 1 ticker (raramente 2-3) por vez, so' quando o usuario
+    de fato abriu aquele item.
+
+    Reaproveita data.news.obter_noticias(ticker) - MESMA funcao/cache/
+    identificador (ticker) que a aba NEWS ja usa pra tudo; nao cria
+    nenhum sistema de identificacao de ativo novo, nao busca nada que
+    essa funcao (cache de 20min, retencao de 5 dias, ja' filtrada por
+    relevancia) nao buscasse de qualquer forma se o usuario abrisse NEWS.
+    NUNCA chama resumo de IA (so' titulo/data/link, que obter_noticias ja
+    retorna sem precisar resumir nada) e NUNCA afirma causalidade - so'
+    lista os fatos lado a lado, nunca "subiu por causa de"."""
+    if not tickers:
+        return
+
+    itens = []
+    for ticker in tickers:
+        noticias_ticker = obter_noticias(ticker)
+        if noticias_ticker:
+            itens.extend(noticias_ticker)
+    if not itens:
+        return  # fonte indisponivel ou sem noticia - secao nem aparece (pedido explicito)
+
+    vistos = set()
+    unicos = []
+    for n in sorted(itens, key=lambda n: n["data"], reverse=True):
+        if n["link"] in vistos:
+            continue
+        vistos.add(n["link"])
+        unicos.append(n)
+    unicos = unicos[:_LIMITE_CONTEXTO_NEWS]
+
+    st.markdown(
+        "<div style='font-size:0.65rem; color:var(--cinza); letter-spacing:0.05em; "
+        "margin:0.5rem 0 0.3rem 0.6rem; padding-top:0.4rem; border-top:1px solid var(--borda);'>"
+        "CONTEXTO RECENTE · NEWS</div>",
+        unsafe_allow_html=True,
+    )
+    for n in unicos:
+        st.markdown(
+            f"<div style='font-size:0.74rem; padding:0.08rem 0 0.08rem 0.6rem;'>"
+            f"<span class='cinza'>[{_fmt_data(n['data'])}]</span> "
+            f"<a href='{n['link']}' target='_blank' style='color:var(--neutro); text-decoration:none;'>{n['titulo']}</a>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+
 def _resumo_formato_antigo(resumo: str) -> bool:
     """Resumos salvos no Supabase ANTES da reescrita do prompt (ficha
     tecnica TESE/NUMEROS-CHAVE/RECOMENDACAO/RISCOS, com 'nao informado')
@@ -131,6 +186,7 @@ def _abrir_resumo_live(rel: dict, extrator):
 
     if resumo:
         _bloco_resumo(resumo)
+        _bloco_contexto_news(rel.get("tickers") or [])
     elif motivo == "cota":
         st.warning(_AVISO_COTA)
     elif motivo == "indisponivel":
@@ -176,6 +232,7 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
 
     if rel.get("resumo"):
         _bloco_resumo(rel["resumo"])
+        _bloco_contexto_news(rel.get("tickers") or [])
         return
 
     if permitir_resumo_auto:
@@ -183,6 +240,7 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
             resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator, casa=rel["casa"], tipo=rel["tipo"])
         if resultado["resumo"]:
             _bloco_resumo(resultado["resumo"])
+            _bloco_contexto_news(rel.get("tickers") or [])
         elif resultado["motivo_indisponivel"] == "cota":
             st.warning(_AVISO_COTA)
         elif resultado["motivo_indisponivel"] == "indisponivel":
@@ -196,6 +254,7 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
             resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator, casa=rel["casa"], tipo=rel["tipo"])
         if resultado["resumo"]:
             _bloco_resumo(resultado["resumo"])
+            _bloco_contexto_news(rel.get("tickers") or [])
         elif resultado["motivo_indisponivel"] == "cota":
             st.warning(_AVISO_COTA)
         elif resultado["motivo_indisponivel"] == "indisponivel":

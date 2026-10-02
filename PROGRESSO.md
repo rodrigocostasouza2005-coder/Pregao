@@ -2561,3 +2561,55 @@ indisponível", podendo tentar de novo mais tarde (cota reseta por
 janela de tempo). Habilitar um provedor de IA diferente (ex: OpenAI,
 Anthropic, Cerebras) exigiria uma credencial nova - não implementado
 intencionalmente (pedido explícito: não inventar credencial/serviço).
+
+## FASE — RESEARCH ↔ NEWS: contexto por ativo (2026-10-01)
+
+Primeira integração entre fontes do PREGÃO (escopo explicitamente
+limitado a RESEARCH↔NEWS - sem CVM/preço/causalidade nesta fase).
+
+**Auditoria antes de codar**: `data/news.py:obter_noticias(ticker)` já
+existia, cacheada (`@st.cache_data(ttl=20min)`), já filtra por
+relevância (ticker/nome no título), já retorna ordenado por data desc,
+já respeita retenção de 5 dias, já usa o MESMO identificador (`ticker`)
+que Research usa em `tickers: list`. **Nenhum sistema de identificação
+novo foi criado** - reaproveitamento direto, exatamente como pedido.
+
+**Implementado**: `ui/research_tab.py:_bloco_contexto_news(tickers)` -
+chama `obter_noticias(ticker)` pra cada ticker do item (normalmente só
+1), deduplica por link, ordena por data desc, mostra até 5
+(`_LIMITE_CONTEXTO_NEWS`), só título+data+link (nunca gera resumo de
+IA, nunca afirma causalidade - "CONTEXTO RECENTE · NEWS" com itens lado
+a lado, sem nenhuma frase tipo "subiu por causa de"). Se não houver
+notícia ou a fonte falhar, a seção simplesmente não aparece (pedido
+explícito).
+
+**Decisão de performance chave**: a seção só é chamada logo após
+`_bloco_resumo(...)` já ter sido exibido (4 pontos em
+`ui/research_tab.py`) - nunca na lista inteira do feed (que pode ter até
+60 itens). Isso significa, no máximo, 1-3 chamadas a `obter_noticias`
+por vez (quando o usuário de fato abre/expande UM item), nunca N+1 na
+renderização da lista inteira - satisfaz "a integração não pode tornar
+a abertura do Research significativamente mais lenta" sem nenhum
+mecanismo novo de cache (reaproveita o cache de 20min que
+`obter_noticias` já tinha).
+
+**Testes** (`tests/test_research_news_context.py`, novo arquivo, 11
+checks, tudo mockado/sem rede): research com ticker mostra notícias
+relacionadas; sem notícias (lista vazia ou fonte indisponível) não
+quebra, seção some; múltiplas notícias ordenadas por data DESC e
+limitadas a 5; notícia de ticker diferente nunca aparece (confirma que
+nunca mistura tickers); tickers vazio/None nunca chama a fonte; **sem
+N+1** (exatamente 1 chamada por ticker do item, nunca mais, mesmo com 3
+notícias retornadas ou 2 tickers no mesmo item); nenhuma chamada a
+`obter_resumo` (IA) a partir dessa função.
+
+Validação visual via Playwright (harness com dados mockados) - "CONTEXTO
+RECENTE · NEWS" renderiza certo nas 2 posições (watchlist e feed), estilo
+denso/terminal consistente com o resto da aba, zero erro de console.
+`compileall` do projeto + testes anteriores do Research + AppTest das 9
+seções, todos sem regressão.
+
+**Arquivo alterado**: só `ui/research_tab.py` (import de
+`data.news.obter_noticias` + nova função + 4 chamadas) e o novo arquivo
+de teste. Nenhuma mudança em `data/news.py`, prompt, histórico ou
+Research Radar.
