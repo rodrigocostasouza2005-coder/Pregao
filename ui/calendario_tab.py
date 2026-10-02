@@ -16,7 +16,9 @@ import streamlit as st
 
 import config
 from data.cvm import obter_documentos_cvm
-from data.eventos import PRIORIDADE_STATUS, STATUS_LABEL, calcular_calendario
+from data.eventos import (
+    PRIORIDADE_STATUS, STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_LABEL, STATUS_PRAZO_CVM, calcular_calendario,
+)
 from data.news import obter_noticias
 from data.research import CASAS
 from data.research.store import listar_itens
@@ -45,6 +47,27 @@ def _cor_status(status: str) -> str:
 
 def _badge_status(status: str) -> str:
     return f"<span style='color:{_cor_status(status)};'>●</span> {STATUS_LABEL.get(status, status)}"
+
+
+def _subheader(texto: str, primeiro: bool = False):
+    """Subtítulo compacto dentro de um painel (V3, 2026-10-02): separa
+    visualmente PRÓXIMOS RESULTADOS de PRAZOS CVM dentro do mesmo painel
+    - PRAZO CVM != data de divulgação (regra explícita desta fase, ver
+    PROGRESSO.md), então as duas listas nunca podem aparecer misturadas
+    sob o mesmo rótulo."""
+    borda = "" if primeiro else "border-top:1px solid var(--borda); padding-top:0.4rem; margin-top:0.5rem;"
+    st.markdown(
+        f"<div style='font-size:0.68rem; color:var(--cinza); letter-spacing:0.05em; {borda} margin-bottom:0.3rem;'>{texto}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _linha_resumo(e: dict):
+    st.markdown(
+        f"<div class='cal-linha-evento'><span class='cal-ticker'>{e['ticker']}</span> "
+        f"<span class='cinza'>{e['data'].strftime('%d/%m')}</span> · {e['periodo']} · {_badge_status(e['status'])}</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def _universo_tickers(filtro: str, prefs: dict, setor: str = None) -> list:
@@ -112,12 +135,26 @@ def _detalhe_evento(evento: dict):
             "<div class='cinza' style='font-size:0.68rem; margin-top:0.2rem;'>"
             "⚠ não reconfirmado na última atualização - pode estar desatualizado</div>"
         )
+    # aviso explicito obrigatorio (V3, 2026-10-02): PRAZO CVM e' o prazo
+    # REGULATORIO pra entrega do documento, nunca a data em que a empresa
+    # de fato vai divulgar o resultado - as duas coisas sao frequentemente
+    # diferentes na pratica (empresa costuma divulgar bem antes do prazo
+    # maximo legal). Sem esse aviso no detalhe, o usuario podia interpretar
+    # a data mostrada como "quando o resultado sai".
+    aviso_prazo_cvm = ""
+    if evento["status"] == STATUS_PRAZO_CVM:
+        aviso_prazo_cvm = (
+            "<div class='cinza' style='font-size:0.68rem; margin-top:0.3rem;'>"
+            "Prazo regulatório para entrega do documento. Não representa necessariamente "
+            "a data de divulgação do resultado.</div>"
+        )
     st.markdown(
         f"<div style='font-size:0.8rem;'>"
         f"<span class='cal-ticker'>{evento['ticker']}</span> — {evento['empresa']}<br>"
         f"<span class='cinza'>{evento['periodo']} · {evento['data'].strftime('%d/%m/%Y')}{horario_txt}</span><br>"
         f"{_badge_status(evento['status'])}<br>"
         f"<span class='cinza' style='font-size:0.68rem;'>Fonte: {fonte_txt}</span>"
+        f"{aviso_prazo_cvm}"
         f"{aviso_desatualizado}"
         f"</div>",
         unsafe_allow_html=True,
@@ -143,7 +180,13 @@ def _detalhe_evento(evento: dict):
 
 
 def _painel_proximos_watchlist(prefs: dict):
-    st.markdown('<div class="painel-titulo">PRÓXIMOS RESULTADOS DA WATCHLIST</div>', unsafe_allow_html=True)
+    """V3 (2026-10-02): PRÓXIMOS RESULTADOS e PRAZOS CVM aparecem como
+    duas listas SEPARADAS e nunca sob o mesmo rótulo - regra explícita
+    desta fase: PRAZO CVM != data de divulgação. Antes, todo evento
+    (hoje sempre PRAZO_CVM, ver data/eventos.py) entrava direto sob
+    "PRÓXIMOS RESULTADOS DA WATCHLIST", o que podia passar a impressão
+    de que o prazo regulatório É a data em que a empresa vai divulgar."""
+    st.markdown('<div class="painel-titulo">RESULTADOS DA WATCHLIST</div>', unsafe_allow_html=True)
     watchlist = list(prefs.get("watchlist") or [])
     if not watchlist:
         st.info("Adicione tickers na barra lateral para ver os próximos resultados.")
@@ -160,24 +203,40 @@ def _painel_proximos_watchlist(prefs: dict):
 
     hoje = date.today()
     proximos_7d = sum(1 for e in eventos if (e["data"] - hoje).days <= 7)
-    # prioriza confiabilidade (CONFIRMADO > ESTIMADO > PRAZO CVM), data so'
-    # como criterio de desempate dentro do mesmo nivel de confianca -
-    # pedido explicito ("priorizar CONFIRMADO > ESTIMADO > PRAZO CVM")
-    eventos = sorted(eventos, key=lambda e: (-PRIORIDADE_STATUS[e["status"]], e["data"]))
     st.markdown(
         f"<div class='cinza' style='font-size:0.68rem; margin-bottom:0.35rem;'>{proximos_7d} evento(s) nos próximos 7 dias</div>",
         unsafe_allow_html=True,
     )
-    for e in eventos[:10]:
+
+    confirmados_estimados = sorted(
+        (e for e in eventos if e["status"] in (STATUS_CONFIRMADO, STATUS_ESTIMADO)),
+        key=lambda e: (-PRIORIDADE_STATUS[e["status"]], e["data"]),
+    )
+    prazos_cvm = sorted((e for e in eventos if e["status"] == STATUS_PRAZO_CVM), key=lambda e: e["data"])
+
+    _subheader("PRÓXIMOS RESULTADOS", primeiro=True)
+    if not confirmados_estimados:
         st.markdown(
-            f"<div class='cal-linha-evento'><span class='cal-ticker'>{e['ticker']}</span> "
-            f"<span class='cinza'>{e['data'].strftime('%d/%m')}</span> · {e['periodo']} · {_badge_status(e['status'])}</div>",
+            "<div class='cinza' style='font-size:0.78rem;'>Nenhuma data de divulgação confirmada.</div>",
             unsafe_allow_html=True,
         )
+    else:
+        for e in confirmados_estimados[:10]:
+            _linha_resumo(e)
+
+    if prazos_cvm:
+        _subheader("PRAZOS CVM")
+        for e in prazos_cvm[:10]:
+            _linha_resumo(e)
 
 
 def _painel_agenda(prefs: dict):
-    st.markdown('<div class="painel-titulo">CALENDÁRIO DE RESULTADOS</div>', unsafe_allow_html=True)
+    # titulo neutro (V3, 2026-10-02): "CALENDARIO DE RESULTADOS" sugeria
+    # que todo evento listado e' uma data de resultado - hoje a imensa
+    # maioria e' PRAZO CVM (cada linha ja mostra seu status/badge real,
+    # ver _badge_status, so' o titulo do painel que precisava deixar de
+    # prometer algo que a lista nao entrega)
+    st.markdown('<div class="painel-titulo">CALENDÁRIO</div>', unsafe_allow_html=True)
 
     col_universo, col_janela = st.columns(2)
     with col_universo:
@@ -206,8 +265,12 @@ def _painel_agenda(prefs: dict):
     eventos = _filtrar_janela(eventos, janela, hoje)
 
     if not eventos:
+        # mensagem pedida explicitamente (V3): so' quando NAO ha evento
+        # NENHUM (nem PRAZO CVM) no periodo - se so' houver PRAZO CVM,
+        # a lista abaixo mostra eles normalmente (nenhum filtro por
+        # status acontece aqui, so' por janela de tempo)
         st.markdown(
-            "<div class='cinza' style='font-size:0.8rem; margin-top:0.4rem;'>Nenhum evento no período selecionado.</div>",
+            "<div class='cinza' style='font-size:0.8rem; margin-top:0.4rem;'>Nenhum evento no período.</div>",
             unsafe_allow_html=True,
         )
         return

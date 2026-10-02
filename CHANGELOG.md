@@ -3,6 +3,23 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-02 (fix: CALENDÁRIO V3 - separa PRÓXIMOS RESULTADOS de PRAZOS CVM)
+
+- PRAZO CVM ≠ data de divulgação. A UI agora separa visualmente em duas
+  listas: "PRÓXIMOS RESULTADOS" (só CONFIRMADO/ESTIMADO, "Nenhuma data
+  de divulgação confirmada." quando vazio) e "PRAZOS CVM" (ticker, data,
+  período, status). Painel renomeado de "PRÓXIMOS RESULTADOS DA
+  WATCHLIST" pra "RESULTADOS DA WATCHLIST".
+- Detalhe de um evento PRAZO CVM agora mostra aviso explícito: "Prazo
+  regulatório para entrega do documento. Não representa necessariamente
+  a data de divulgação do resultado."
+- Painel principal renomeado de "CALENDÁRIO DE RESULTADOS" pra
+  "CALENDÁRIO"; mensagem de período vazio ajustada pra "Nenhum evento
+  no período."
+- Nenhuma mudança em `data/eventos.py` (lógica/fonte dos eventos
+  intocada) - só semântica da UI. 12 testes novos
+  (`tests/test_calendario_ui.py`).
+
 ## 2026-10-01 (feat: CALENDÁRIO V2 - prioridade/dedup/cache resiliente)
 
 - **Investigação real**: dados ao vivo da CVM confirmam que a categoria

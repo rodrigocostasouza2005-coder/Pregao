@@ -2770,3 +2770,51 @@ desatualizado e fonte alternativa visível, zero erro de console.
 **Arquivos alterados**: `data/eventos.py`, `ui/calendario_tab.py`,
 `tests/test_eventos.py`. Nenhuma mudança em Research/News/header/
 ticker/workspace.
+
+## FASE — CALENDÁRIO V3: corrigir semântica da UI (2026-10-02)
+
+Correção pequena e cirúrgica pedida: hoje os únicos eventos reais são
+PRAZO CVM, mas a UI colocava todos sob o rótulo "PRÓXIMOS RESULTADOS" -
+risco real do usuário interpretar o prazo regulatório como se fosse a
+data em que a empresa vai divulgar o resultado (as duas coisas são
+frequentemente bem diferentes na prática).
+
+**Mudança feita, só em `ui/calendario_tab.py`** (nenhuma linha de
+`data/eventos.py` tocada - lógica/fonte dos eventos intocada):
+- `_painel_proximos_watchlist` (painel da watchlist, renomeado de
+  "PRÓXIMOS RESULTADOS DA WATCHLIST" pra "RESULTADOS DA WATCHLIST")
+  agora separa em DUAS listas sob subtítulos distintos: "PRÓXIMOS
+  RESULTADOS" (só CONFIRMADO/ESTIMADO - com "Nenhuma data de divulgação
+  confirmada." quando vazio, exatamente como pedido) e "PRAZOS CVM" (só
+  PRAZO_CVM, ticker+data+período+badge). As duas nunca aparecem sob o
+  mesmo rótulo - se no futuro existir CONFIRMADO/ESTIMADO de verdade,
+  automaticamente vai pra seção certa (a separação é por `status`, não
+  por posição).
+- `_detalhe_evento`: quando o status é PRAZO_CVM, mostra explicitamente
+  "Prazo regulatório para entrega do documento. Não representa
+  necessariamente a data de divulgação do resultado." - texto exato
+  pedido. CONFIRMADO/ESTIMADO não mostram esse aviso (não se aplica).
+- Painel principal da agenda renomeado de "CALENDÁRIO DE RESULTADOS"
+  pra "CALENDÁRIO" (neutro - cada linha já mostra seu status/badge real,
+  só o título do painel prometia algo que a lista não entrega hoje).
+  Mensagem de período vazio corrigida de "Nenhum evento no período
+  selecionado." pra "Nenhum evento no período." (texto exato pedido) -
+  só aparece quando NÃO há evento nenhum (nem PRAZO_CVM); quando só há
+  PRAZO_CVM, a lista mostra eles normalmente (nenhuma mudança de
+  comportamento aqui, só confirmado que já era assim).
+
+**Testes**: `tests/test_calendario_ui.py` (novo, 12 checks, mocka só
+`calcular_calendario`/contexto - sem rede/IA): só PRAZO_CVM mostra a
+mensagem certa e nunca aparece sob PRÓXIMOS RESULTADOS; CONFIRMADO e
+ESTIMADO aparecem em PRÓXIMOS RESULTADOS, nunca em PRAZOS CVM; mix dos
+dois fica em seções corretas e na ordem certa (resultados antes dos
+prazos); mensagem de período vazio com o texto exato pedido; detalhe de
+PRAZO_CVM mostra o aviso obrigatório; detalhe de CONFIRMADO não mostra
+esse aviso. `tests/test_eventos.py` (33 checks, lógica/fonte intocada)
+continua passando sem nenhuma mudança. `compileall` do projeto +
+AppTest das 10 seções sem exceção. Validação visual via Playwright
+(cenário misto CONFIRMADO+ESTIMADO+PRAZO_CVM) confirma a separação
+visual e o aviso no detalhe, zero erro de console.
+
+**Arquivo alterado**: só `ui/calendario_tab.py` + novo
+`tests/test_calendario_ui.py`.
