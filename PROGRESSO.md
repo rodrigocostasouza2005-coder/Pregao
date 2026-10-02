@@ -2693,3 +2693,80 @@ decisão de arquitetura acima); assume ano fiscal = ano civil; "horário"
 nunca é preenchido (CVM não informa isso); setor vem de
 `config.IBOVESPA_SETORES` (curado manualmente, pode não cobrir 100% dos
 tickers novos - mesma limitação que MERCADO já tinha).
+
+## FASE — CALENDÁRIO V2: datas reais de resultados (2026-10-01)
+
+Rodrigo pediu pra evoluir o calendário pra ter CONFIRMADO/ESTIMADO de
+verdade, com uma investigação explícita antes de implementar.
+
+**Investigação real feita nesta sessão (achado definitivo, verificado
+com dado AO VIVO da CVM, não suposição)**: baixei e inspecionei as
+linhas reais de 2026 da categoria oficial "Calendário de Eventos
+Corporativos" do IPE da CVM (onde a empresa de fato comunica seu
+calendário). Resultado: `Tipo`, `Especie` e `Assunto` vêm todos vazios
+(NaN) pra essa categoria - os ÚNICOS campos estruturados são
+`Data_Entrega` (quando o documento foi protocolado, não quando o
+resultado sai) e `Data_Referencia` (sempre fixo em 31/12, é o fim do
+exercício que o calendário cobre, não uma data de evento). **A data real
+do resultado só existe dentro do PDF** (`Link_Download`) - extrair isso
+seria exatamente o "texto ambíguo" que o pedido proíbe tratar como
+CONFIRMADO. Tentei também achar um endpoint estruturado da B3 (mesmo
+domínio que já funcionou pra composição do Ibovespa,
+`sistemaswebb3-listados.b3.com.br`) - sem a extensão do Chrome
+funcionando (instável de novo nesta sessão, mesmo padrão recorrente) não
+dá pra inspecionar o tráfego de rede real do site da B3 pra confirmar um
+endpoint de agenda, e não inventei um endpoint que não pude verificar.
+
+**Decisão honesta**: não existe hoje fonte automática segura de
+CONFIRMADO (anunciado pela empresa) nem ESTIMADO (fonte externa
+confiável) pra integrar sem violar "nunca inventar data"/"nunca extrair
+de texto ambíguo". O pipeline real (`calcular_calendario`) continua
+produzindo só PRAZO_CVM - **nenhuma mudança de cobertura**, só de
+arquitetura. O que foi entregue: a camada de prioridade/deduplicação e
+resiliência de cache, testada com dados sintéticos, pronta pra quando
+uma fonte confiável existir (manual, verificada pelo próprio Rodrigo no
+RI da empresa, ou um endpoint B3 confirmado numa sessão futura) - zero
+refatoração necessária nesse dia.
+
+**Implementado** (`data/eventos.py`):
+- `PRIORIDADE_STATUS` (CONFIRMADO=3 > ESTIMADO=2 > PRAZO_CVM=1).
+- `mesclar_eventos(*listas)`: deduplica eventos do MESMO (ticker,período)
+  vindos de várias fontes na mesma rodada, mantendo só o de maior
+  confiabilidade - nunca mostra dois eventos pro mesmo resultado. A
+  fonte perdedora fica preservada em `_fontes_alternativas` (nunca
+  escondida, só não vira linha duplicada).
+- `aplicar_cache_resiliente(eventos)`: cache (`st.cache_resource`, mesma
+  técnica já usada em `data/research/__init__.py`) por (ticker,período) -
+  se uma fonte de maior confiabilidade falhar numa consulta pontual,
+  mantém o último dado válido conhecido (nunca regride CONFIRMADO/
+  ESTIMADO de volta pra PRAZO_CVM) e marca `_pode_estar_desatualizado`
+  (nunca escondido). `calcular_calendario` já passa por essa camada -
+  benefício imediato mesmo só com PRAZO_CVM hoje (uma falha pontual da
+  CVM não some mais o evento da tela).
+- Evento ganha `coletado_em`.
+
+**UI** (`ui/calendario_tab.py`): watchlist agora ordena por
+CONFIRMADO > ESTIMADO > PRAZO_CVM (não só por data, pedido explícito);
+detalhe do evento mostra fonte como link clicável quando há URL, aviso
+"⚠ pode estar desatualizado" quando resgatado do cache, e qualquer
+fonte alternativa perdida na deduplicação (nunca escondida).
+
+**Testes** (`tests/test_eventos.py`, +12 checks novos, 33 no total):
+os 11 cenários pedidos, com eventos sintéticos (já que não há fonte real
+de CONFIRMADO/ESTIMADO - documentado em cada teste) provando que a
+CAMADA funciona: data oficial vira CONFIRMADO preservando fonte+URL;
+fonte externa confiável vira ESTIMADO sem esconder a fonte; pipeline
+real sem fonte oficial só produz PRAZO_CVM (nunca inventa); CONFIRMADO
+substitui ESTIMADO e PRAZO_CVM numa mesma rodada (fonte perdedora
+preservada); ausência de fonte nunca inventa evento; dedup nunca funde
+tickers/períodos diferentes; fonte indisponível preserva o último
+CONFIRMADO conhecido (marcado como desatualizado, nunca escondido);
+cache grava a chave corretamente; evento já confirmado não regride numa
+consulta seguinte; watchlist ordena por confiabilidade. `compileall` do
+projeto + AppTest das 10 seções sem exceção (nenhuma regressão).
+Validação visual via Playwright confirmando fonte clicável, aviso de
+desatualizado e fonte alternativa visível, zero erro de console.
+
+**Arquivos alterados**: `data/eventos.py`, `ui/calendario_tab.py`,
+`tests/test_eventos.py`. Nenhuma mudança em Research/News/header/
+ticker/workspace.

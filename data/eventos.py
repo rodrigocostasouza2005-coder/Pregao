@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Camada normalizada de eventos financeiros (CALENDÁRIO, 2026-10-01).
-V1: só resultados corporativos (ITR/DFP trimestral/anual). Pensada pra
-no futuro relacionar CVM <-> Research <-> News <-> Ticker <-> Preço
-(cada evento já carrega 'ticker' - mesmo identificador usado em todo o
-resto do projeto) - mas essa integração completa NÃO é feita nesta fase.
+"""Camada normalizada de eventos financeiros (CALENDÁRIO, 2026-10-01;
+evoluída na V2, mesma data). Só resultados corporativos (ITR/DFP
+trimestral/anual). Pensada pra no futuro relacionar CVM <-> Research <->
+News <-> Ticker <-> Preço (cada evento já carrega 'ticker' - mesmo
+identificador usado em todo o resto do projeto) - mas essa integração
+completa NÃO é feita nesta fase.
 
 Reaproveita data.cvm.obter_documentos_cvm (mesmo identificador/coleta/
 cache que a aba CVM já usa) - nenhum sistema de dado novo, nenhuma
@@ -12,22 +13,48 @@ chamada de IA.
 FONTE REAL DISPONÍVEL HOJE: só o PRAZO REGULATÓRIO da CVM pra entrega
 do ITR/DFP (Instrução CVM 480/2009, Art. 25/29) - prazo MÁXIMO legal,
 não é uma data anunciada pela empresa. É dado público, documentado,
-determinístico - não é um valor inventado. Por isso, nesta primeira
-versão, todo evento calculado tem status PRAZO_CVM: não existe hoje
-nenhuma fonte automática íntegra de data CONFIRMADA (anunciada pela
-própria empresa, ex: um "Calendário de Eventos Corporativos" da CVM
-com data explícita dentro do PDF) nem ESTIMADA (fonte não-oficial) já
-integrada ao projeto. Extrair isso de PDF exigiria parsing de texto
-livre sem IA (risco real de ler a data errada e apresentá-la como se
-fosse oficial) - decisão deliberada de NÃO fazer isso nesta fase (ver
-PROGRESSO.md). O campo `status` já está pronto pra CONFIRMADO/ESTIMADO
-quando/se uma fonte confiável for integrada depois.
+determinístico - não é um valor inventado.
+
+INVESTIGAÇÃO DA V2 (pedido explícito do Rodrigo: "pesquise como as
+companhias divulgam seus calendários de resultados" antes de
+implementar CONFIRMADO/ESTIMADO de verdade) - achado real, verificado
+com dado ao vivo da própria CVM nesta sessão: a categoria oficial da
+CVM "Calendário de Eventos Corporativos" (onde a empresa de fato
+comunica seu calendário) NÃO tem nenhum campo estruturado com a data do
+evento em si - só `Data_Entrega` (quando o documento foi protocolado,
+não quando o resultado sai) e `Data_Referencia` sempre fixa em 31/12
+(fim do exercício que o calendário cobre, não uma data de evento). A
+data real do resultado só existe dentro do PDF (`Link_Download`) -
+extrair isso exigiria parsing de texto livre sem IA, exatamente o
+"texto ambíguo" que o pedido explicitamente proíbe tratar como
+CONFIRMADO. Tentativa de achar um endpoint estruturado da B3 (mesmo
+domínio já usado com sucesso em data/ibovespa.py) também não teve como
+ser confirmada nesta sessão (extensão do Chrome pra inspecionar o
+tráfego de rede real do site da B3 está indisponível, mesma
+instabilidade recorrente documentada nas sessões anteriores) - não
+inventei um endpoint que não pude verificar.
+
+CONCLUSÃO HONESTA: não existe hoje nenhuma fonte automática íntegra de
+data CONFIRMADA (anunciada pela própria empresa) nem ESTIMADA (fonte
+externa confiável) que dê pra integrar com segurança sem violar "nunca
+inventar data"/"nunca extrair de texto ambíguo". Por isso a função que
+roda de verdade (calcular_calendario) continua produzindo só
+PRAZO_CVM. O que ESTA versão entrega: a camada de prioridade/
+deduplicação (mesclar_eventos) e resiliência de cache
+(aplicar_cache_resiliente) ficam prontas e TESTADAS com dados
+sintéticos - no dia em que uma fonte confiável de CONFIRMADO/ESTIMADO
+for identificada (ex: entrada manual do próprio Rodrigo depois de
+checar o RI da empresa, ou um endpoint B3 confirmado numa sessão futura
+com a extensão do Chrome funcionando), basta alimentar essa função,
+zero refatoração.
 
 LIMITAÇÃO DOCUMENTADA: assume ano fiscal = ano civil (padrão da grande
 maioria das empresas B3) - empresas com ano fiscal diferente não têm o
-prazo calculado corretamente nesta v1."""
+prazo calculado corretamente nesta versão."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+
+import streamlit as st
 
 from data.cvm import obter_documentos_cvm
 from data.prices import obter_nome_yf
@@ -41,6 +68,11 @@ STATUS_LABEL = {
     STATUS_ESTIMADO: "ESTIMADO",
     STATUS_PRAZO_CVM: "PRAZO CVM",
 }
+
+# maior = mais confiavel - usado por mesclar_eventos/aplicar_cache_resiliente
+# pra nunca deixar uma fonte fraca (PRAZO_CVM) aparecer como se fosse mais
+# confiavel que um CONFIRMADO/ESTIMADO ja conhecido pro mesmo (ticker,periodo)
+PRIORIDADE_STATUS = {STATUS_CONFIRMADO: 3, STATUS_ESTIMADO: 2, STATUS_PRAZO_CVM: 1}
 
 # Instrucao CVM 480/2009: ITR (trimestral) ate 45 dias apos o fim do
 # trimestre; DFP (anual) ate ~3 meses apos o encerramento do exercicio
@@ -111,9 +143,10 @@ def calcular_proximo_resultado(ticker: str, hoje: date = None) -> dict | None:
     evento quando a fonte esta fora do ar).
 
     {ticker, empresa, periodo, data (date), horario (sempre None nesta
-    v1 - CVM nao informa horario), status, fonte, origem_url (sempre
+    versao - CVM nao informa horario), status, fonte, origem_url (sempre
     None - nao e' um documento especifico, e' uma regra calculada),
-    tipo_evento}."""
+    tipo_evento, coletado_em (quando ESTE calculo rodou - usado por
+    aplicar_cache_resiliente pra saber qual versao e' mais recente)."""
     hoje = hoje or date.today()
     documentos = obter_documentos_cvm(ticker)
     if documentos is None:
@@ -143,13 +176,16 @@ def calcular_proximo_resultado(ticker: str, hoje: date = None) -> dict | None:
         "fonte": "CVM — prazo regulatório (Instrução CVM 480/2009)",
         "origem_url": None,
         "tipo_evento": "RESULTADO",
+        "coletado_em": datetime.now(timezone.utc),
     }
 
 
 def calcular_calendario(tickers: list, hoje: date = None) -> list:
     """Calendario de proximos resultados pra uma lista de tickers,
     ordenado por data - tickers cuja fonte CVM falhar simplesmente nao
-    entram (nunca quebra o calendario inteiro por causa de 1 ticker).
+    entram no resultado IMEDIATO, mas podem ser resgatados do cache de
+    ultimo-dado-valido (ver aplicar_cache_resiliente) se ja tivessemos
+    calculado algo pra eles antes nesta mesma sessao do processo.
     Tickers duplicados na lista de entrada geram so' 1 evento (dedupe
     por ticker, mantem o primeiro)."""
     vistos = set()
@@ -161,5 +197,72 @@ def calcular_calendario(tickers: list, hoje: date = None) -> list:
         evento = calcular_proximo_resultado(ticker, hoje=hoje)
         if evento:
             eventos.append(evento)
-    eventos.sort(key=lambda e: e["data"])
-    return eventos
+    return aplicar_cache_resiliente(eventos)
+
+
+@st.cache_resource(show_spinner=False)
+def _cache_eventos() -> dict:
+    """{(ticker,periodo): evento} - ultimo evento conhecido (qualquer
+    status) por ticker+periodo. st.cache_resource = sobrevive entre
+    reruns/sessoes no MESMO processo do servidor (reseta em redeploy) -
+    mesma tecnica ja usada em data/research/__init__.py:_ultimas_tentativas.
+    Existe pra "preservar ultimo dado valido" (pedido explicito, secao
+    ATUALIZACAO): uma falha pontual na fonte de um evento nunca apaga o
+    que ja sabiamos, nem regride um CONFIRMADO/ESTIMADO de volta pra
+    PRAZO_CVM so' porque a fonte melhor nao respondeu desta vez."""
+    return {}
+
+
+def mesclar_eventos(*listas_de_eventos: list) -> list:
+    """Deduplica eventos do MESMO (ticker,periodo) vindos de VARIAS
+    fontes consultadas na MESMA rodada (ex: PRAZO_CVM calculado +
+    alguma fonte futura de CONFIRMADO/ESTIMADO), mantendo so' o de MAIOR
+    confiabilidade - NUNCA mostra as duas como linhas diferentes da
+    agenda (exigencia explicita de deduplicacao). A fonte de menor
+    confiabilidade pro mesmo (ticker,periodo) fica preservada em
+    '_fontes_alternativas' do evento vencedor - nunca escondida de
+    verdade, so' nao vira duplicata visivel."""
+    melhores = {}
+    for lista in listas_de_eventos:
+        for evento in lista:
+            chave = (evento["ticker"], evento["periodo"])
+            atual = melhores.get(chave)
+            if atual is None:
+                melhores[chave] = evento
+                continue
+            if PRIORIDADE_STATUS[evento["status"]] > PRIORIDADE_STATUS[atual["status"]]:
+                vencedor, perdedor = evento, atual
+            else:
+                vencedor, perdedor = atual, evento
+            vencedor = dict(vencedor)
+            vencedor.setdefault("_fontes_alternativas", []).append(
+                {"status": perdedor["status"], "data": perdedor["data"], "fonte": perdedor["fonte"]}
+            )
+            melhores[chave] = vencedor
+    return sorted(melhores.values(), key=lambda e: e["data"])
+
+
+def aplicar_cache_resiliente(eventos_novos: list) -> list:
+    """Funde eventos_novos com o cache de ultimo-dado-valido (ver
+    _cache_eventos): pra cada (ticker,periodo), mantem o de MAIOR
+    prioridade entre o que acabou de ser calculado/coletado e o que ja
+    estava em cache - nunca regride um CONFIRMADO/ESTIMADO ja conhecido
+    de volta pra PRAZO_CVM so' porque, numa consulta pontual, a fonte
+    melhor nao respondeu. Marca '_pode_estar_desatualizado'=True quando
+    o valor exibido veio do cache (nao foi reconfirmado NESTA consulta)
+    - a UI usa isso pra avisar o usuario, nunca escondido. Sempre
+    atualiza o cache com o resultado final (o novo, quando ele vence)."""
+    cache = _cache_eventos()
+    resultado = []
+    for evento in eventos_novos:
+        chave = (evento["ticker"], evento["periodo"])
+        anterior = cache.get(chave)
+        if anterior and PRIORIDADE_STATUS[anterior["status"]] > PRIORIDADE_STATUS[evento["status"]]:
+            escolhido = dict(anterior)
+            escolhido["_pode_estar_desatualizado"] = True
+        else:
+            escolhido = evento
+            cache[chave] = evento
+        resultado.append(escolhido)
+    resultado.sort(key=lambda e: e["data"])
+    return resultado

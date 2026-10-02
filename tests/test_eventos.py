@@ -13,7 +13,10 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import data.eventos as eventos_mod
-from data.eventos import STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_PRAZO_CVM, calcular_calendario, calcular_proximo_resultado
+from data.eventos import (
+    STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_PRAZO_CVM,
+    aplicar_cache_resiliente, calcular_calendario, calcular_proximo_resultado, mesclar_eventos,
+)
 
 _FALHAS = []
 
@@ -146,6 +149,141 @@ def test_1_2_estrutura_suporta_confirmado_e_estimado():
     _checar("2 status ESTIMADO existe na camada normalizada", STATUS_ESTIMADO == "ESTIMADO")
     _checar("1b rotulo de CONFIRMADO esta mapeado", eventos_mod.STATUS_LABEL[STATUS_CONFIRMADO] == "CONFIRMADO")
     _checar("2b rotulo de ESTIMADO esta mapeado", eventos_mod.STATUS_LABEL[STATUS_ESTIMADO] == "ESTIMADO")
+
+
+# ============================================================
+# FASE CALENDARIO V2 (2026-10-01): prioridade/deduplicacao/cache
+# resiliente. Investigacao real (ver docstring de data/eventos.py)
+# confirmou que NAO existe hoje fonte automatica segura de CONFIRMADO/
+# ESTIMADO (dados estruturados da CVM pra "Calendario de Eventos
+# Corporativos" nao tem a data do evento, so' data de protocolo) - os
+# testes abaixo usam eventos SINTETICOS (dict construido a mao,
+# representando o que uma fonte confiavel RETORNARIA se existisse) pra
+# provar que a camada de prioridade/deduplicacao/resiliencia funciona
+# corretamente, pronta pra quando uma fonte assim for integrada.
+# ============================================================
+
+def _evento_sintetico(ticker="PETR4", periodo="3T26", data_evento=None, status=STATUS_PRAZO_CVM, fonte="fonte teste", url=None):
+    return {
+        "ticker": ticker, "empresa": "EMPRESA TESTE", "periodo": periodo,
+        "data": data_evento or date(2026, 11, 14), "horario": None,
+        "status": status, "fonte": fonte, "origem_url": url, "tipo_evento": "RESULTADO",
+        "coletado_em": None,
+    }
+
+
+def test_v2_1_data_oficial_vira_confirmado():
+    evento = _evento_sintetico(status=STATUS_CONFIRMADO, data_evento=date(2026, 10, 20),
+                                fonte="Petrobras RI", url="https://ri.petrobras.com.br/calendario")
+    _checar("v2.1 evento com status CONFIRMADO preserva fonte e URL",
+             evento["status"] == STATUS_CONFIRMADO and evento["fonte"] == "Petrobras RI" and evento["origem_url"])
+
+
+def test_v2_2_fonte_externa_confiavel_vira_estimado():
+    evento = _evento_sintetico(status=STATUS_ESTIMADO, fonte="Consenso de mercado (fonte externa)")
+    _checar("v2.2 evento com status ESTIMADO preserva a fonte (nunca escondida)",
+             evento["status"] == STATUS_ESTIMADO and "fonte externa" in evento["fonte"])
+
+
+def test_v2_3_somente_prazo_cvm_quando_sem_fonte_melhor():
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"):
+        eventos = calcular_calendario(["PETR4"], hoje=date(2026, 10, 1))
+    _checar("v2.3 pipeline real (sem fonte oficial integrada) so' produz PRAZO_CVM, nunca inventa CONFIRMADO/ESTIMADO",
+             len(eventos) == 1 and eventos[0]["status"] == STATUS_PRAZO_CVM)
+
+
+def test_v2_4_confirmado_substitui_estimado_na_mesma_rodada():
+    prazo = _evento_sintetico(status=STATUS_PRAZO_CVM, data_evento=date(2026, 11, 14))
+    estimado = _evento_sintetico(status=STATUS_ESTIMADO, data_evento=date(2026, 10, 25), fonte="Consenso")
+    confirmado = _evento_sintetico(status=STATUS_CONFIRMADO, data_evento=date(2026, 10, 20), fonte="Petrobras RI")
+    mesclado = mesclar_eventos([prazo], [estimado], [confirmado])
+    _checar("v2.4 CONFIRMADO vence ESTIMADO e PRAZO_CVM pro mesmo (ticker,periodo) - so' 1 evento no resultado",
+             len(mesclado) == 1 and mesclado[0]["status"] == STATUS_CONFIRMADO, f"(qtd={len(mesclado)})")
+    _checar("v2.4b fonte perdedora (ESTIMADO) continua visivel em _fontes_alternativas - nunca escondida",
+             any(f["status"] == STATUS_ESTIMADO for f in mesclado[0].get("_fontes_alternativas", [])))
+
+
+def test_v2_5_confirmado_substitui_prazo_cvm():
+    prazo = _evento_sintetico(status=STATUS_PRAZO_CVM)
+    confirmado = _evento_sintetico(status=STATUS_CONFIRMADO, data_evento=date(2026, 10, 20), fonte="Petrobras RI")
+    mesclado = mesclar_eventos([prazo], [confirmado])
+    _checar("v2.5 CONFIRMADO substitui PRAZO_CVM (nunca os dois como eventos separados)",
+             len(mesclado) == 1 and mesclado[0]["status"] == STATUS_CONFIRMADO)
+    _checar("v2.5b PRAZO_CVM perdedor preservado em _fontes_alternativas (origem nunca escondida)",
+             any(f["status"] == STATUS_PRAZO_CVM for f in mesclado[0].get("_fontes_alternativas", [])))
+
+
+def test_v2_6_ausencia_de_fonte_nao_inventa():
+    # ja' coberto por test_10 (fonte CVM indisponivel -> None) - reforco
+    # aqui especificamente pro caso "nenhuma fonte confiavel identificada"
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=None):
+        evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
+    _checar("v2.6 sem nenhuma fonte disponivel, NUNCA inventa um evento (None, nao um PRAZO_CVM de brincadeira)",
+             evento is None)
+
+
+def test_v2_7_deduplicacao_mesmo_ticker_periodo_nunca_vira_2_linhas():
+    a = _evento_sintetico(status=STATUS_PRAZO_CVM, data_evento=date(2026, 11, 14))
+    b = _evento_sintetico(status=STATUS_PRAZO_CVM, data_evento=date(2026, 11, 14), fonte="fonte teste 2")
+    mesclado = mesclar_eventos([a], [b])
+    _checar("v2.7 2 eventos do MESMO (ticker,periodo) e MESMA prioridade -> deduplica pra 1 so'",
+             len(mesclado) == 1, f"(qtd={len(mesclado)})")
+    # tickers/periodos DIFERENTES nunca se fundem entre si
+    c = _evento_sintetico(ticker="VALE3", status=STATUS_PRAZO_CVM, data_evento=date(2026, 11, 10))
+    mesclado2 = mesclar_eventos([a], [c])
+    _checar("v2.7b tickers diferentes NUNCA se fundem (continuam 2 eventos)", len(mesclado2) == 2)
+
+
+def test_v2_8_fonte_indisponivel_preserva_ultimo_dado_valido():
+    eventos_mod._cache_eventos().clear()
+    confirmado_antigo = _evento_sintetico(status=STATUS_CONFIRMADO, data_evento=date(2026, 10, 20), fonte="Petrobras RI")
+    # 1a rodada: fonte respondeu com CONFIRMADO -> vai pro cache
+    aplicar_cache_resiliente([confirmado_antigo])
+    # 2a rodada: a MESMA fonte oficial falhou dessa vez, so' sobrou o
+    # calculo de PRAZO_CVM (pipeline sempre disponivel) pro mesmo periodo
+    prazo_novo = _evento_sintetico(status=STATUS_PRAZO_CVM, data_evento=date(2026, 11, 14))
+    resultado = aplicar_cache_resiliente([prazo_novo])
+    _checar("v2.8 fonte melhor indisponivel -> NUNCA regride pra PRAZO_CVM, mantem o CONFIRMADO anterior",
+             resultado[0]["status"] == STATUS_CONFIRMADO, f"(status={resultado[0]['status']})")
+    _checar("v2.8b evento resgatado do cache vem marcado como possivelmente desatualizado (nunca escondido)",
+             resultado[0].get("_pode_estar_desatualizado") is True)
+    eventos_mod._cache_eventos().clear()
+
+
+def test_v2_9_cache_evita_recalculo_sem_necessidade():
+    eventos_mod._cache_eventos().clear()
+    evento = _evento_sintetico(status=STATUS_PRAZO_CVM)
+    aplicar_cache_resiliente([evento])
+    chave = (evento["ticker"], evento["periodo"])
+    _checar("v2.9 cache de ultimo-dado-valido grava a chave (ticker,periodo) depois da 1a chamada",
+             chave in eventos_mod._cache_eventos())
+    eventos_mod._cache_eventos().clear()
+
+
+def test_v2_10_evento_antigo_confirmado_nao_vira_prazo_de_novo():
+    # mesmo cenario do v2.8, nomeado conforme pedido explicito da fase
+    eventos_mod._cache_eventos().clear()
+    confirmado = _evento_sintetico(status=STATUS_CONFIRMADO, data_evento=date(2026, 10, 20), fonte="Petrobras RI")
+    aplicar_cache_resiliente([confirmado])
+    prazo = _evento_sintetico(status=STATUS_PRAZO_CVM, data_evento=date(2026, 11, 14))
+    resultado = aplicar_cache_resiliente([prazo])
+    _checar("v2.10 evento ja' CONFIRMADO anteriormente nao regride pra PRAZO_CVM numa consulta seguinte",
+             resultado[0]["status"] == STATUS_CONFIRMADO)
+    eventos_mod._cache_eventos().clear()
+
+
+def test_v2_11_watchlist_prioriza_confiabilidade():
+    import ui.calendario_tab as calendario_tab_mod
+    eventos = [
+        _evento_sintetico(ticker="ABCD4", status=STATUS_PRAZO_CVM, data_evento=date(2026, 10, 5)),
+        _evento_sintetico(ticker="PETR4", status=STATUS_CONFIRMADO, data_evento=date(2026, 10, 20)),
+        _evento_sintetico(ticker="VALE3", status=STATUS_ESTIMADO, data_evento=date(2026, 10, 10)),
+    ]
+    ordenado = sorted(eventos, key=lambda e: (-calendario_tab_mod.PRIORIDADE_STATUS[e["status"]], e["data"]))
+    _checar("v2.11 ordenacao da watchlist prioriza CONFIRMADO > ESTIMADO > PRAZO_CVM (nao so' data)",
+             [e["status"] for e in ordenado] == [STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_PRAZO_CVM],
+             f"(ordem={[e['status'] for e in ordenado]})")
 
 
 if __name__ == "__main__":

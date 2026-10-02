@@ -3,6 +3,25 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-01 (feat: CALENDÁRIO V2 - prioridade/dedup/cache resiliente)
+
+- **Investigação real**: dados ao vivo da CVM confirmam que a categoria
+  "Calendário de Eventos Corporativos" não tem a data do evento em
+  nenhum campo estruturado (só data de protocolo) - a data real só
+  existe dentro do PDF, exatamente o "texto ambíguo" que não deve virar
+  CONFIRMADO. Sem fonte oficial segura identificada, o pipeline real
+  continua só com PRAZO_CVM - decisão deliberada, documentada.
+- Nova camada, testada com dados sintéticos (pronta pra quando uma fonte
+  real existir): `mesclar_eventos` (CONFIRMADO > ESTIMADO > PRAZO_CVM
+  pro mesmo ticker+período, nunca duplicado, fonte perdedora nunca
+  escondida) e `aplicar_cache_resiliente` (nunca regride um
+  CONFIRMADO/ESTIMADO conhecido de volta pra PRAZO_CVM só porque a
+  fonte falhou numa consulta pontual).
+- Watchlist agora ordena por confiabilidade, não só por data. Detalhe
+  do evento mostra fonte como link e aviso quando o dado pode estar
+  desatualizado.
+- +12 testes novos (33 no total em `tests/test_eventos.py`).
+
 ## 2026-10-01 (feat: nova aba CALENDÁRIO de resultados corporativos)
 
 - Nova aba CALENDÁRIO (v1): agenda de resultados (ITR/DFP) agrupada por

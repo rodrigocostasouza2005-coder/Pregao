@@ -16,7 +16,7 @@ import streamlit as st
 
 import config
 from data.cvm import obter_documentos_cvm
-from data.eventos import STATUS_LABEL, calcular_calendario
+from data.eventos import PRIORIDADE_STATUS, STATUS_LABEL, calcular_calendario
 from data.news import obter_noticias
 from data.research import CASAS
 from data.research.store import listar_itens
@@ -103,15 +103,37 @@ def _contexto_research(ticker: str):
 
 def _detalhe_evento(evento: dict):
     horario_txt = f" · {evento['horario']}" if evento.get("horario") else ""
+    fonte_txt = evento["fonte"]
+    if evento.get("origem_url"):
+        fonte_txt = f"<a href='{evento['origem_url']}' target='_blank' style='color:var(--cinza);'>{fonte_txt}</a>"
+    aviso_desatualizado = ""
+    if evento.get("_pode_estar_desatualizado"):
+        aviso_desatualizado = (
+            "<div class='cinza' style='font-size:0.68rem; margin-top:0.2rem;'>"
+            "⚠ não reconfirmado na última atualização - pode estar desatualizado</div>"
+        )
     st.markdown(
         f"<div style='font-size:0.8rem;'>"
         f"<span class='cal-ticker'>{evento['ticker']}</span> — {evento['empresa']}<br>"
         f"<span class='cinza'>{evento['periodo']} · {evento['data'].strftime('%d/%m/%Y')}{horario_txt}</span><br>"
         f"{_badge_status(evento['status'])}<br>"
-        f"<span class='cinza' style='font-size:0.68rem;'>Fonte: {evento['fonte']}</span>"
+        f"<span class='cinza' style='font-size:0.68rem;'>Fonte: {fonte_txt}</span>"
+        f"{aviso_desatualizado}"
         f"</div>",
         unsafe_allow_html=True,
     )
+    # nunca esconder a origem: se havia uma fonte de confiabilidade MENOR
+    # pro mesmo (ticker,periodo) que perdeu a deduplicacao (ver
+    # data/eventos.py:mesclar_eventos), ela continua visivel aqui, so'
+    # nao vira uma linha/evento duplicado na agenda
+    for alt in evento.get("_fontes_alternativas") or []:
+        st.markdown(
+            f"<div class='cinza' style='font-size:0.65rem; margin-top:0.15rem;'>"
+            f"também identificado como {STATUS_LABEL.get(alt['status'], alt['status'])} "
+            f"({alt['data'].strftime('%d/%m/%Y')}) via {alt['fonte']}</div>",
+            unsafe_allow_html=True,
+        )
+
     # contexto - SOMENTE SE ja' houver dado no sistema (pedido explicito);
     # nunca gera chamada de IA (so' le titulo/data/link de fontes ja
     # cacheadas - mesmas funcoes que EQUITY/CVM/NEWS/RESEARCH ja' usam)
@@ -138,6 +160,10 @@ def _painel_proximos_watchlist(prefs: dict):
 
     hoje = date.today()
     proximos_7d = sum(1 for e in eventos if (e["data"] - hoje).days <= 7)
+    # prioriza confiabilidade (CONFIRMADO > ESTIMADO > PRAZO CVM), data so'
+    # como criterio de desempate dentro do mesmo nivel de confianca -
+    # pedido explicito ("priorizar CONFIRMADO > ESTIMADO > PRAZO CVM")
+    eventos = sorted(eventos, key=lambda e: (-PRIORIDADE_STATUS[e["status"]], e["data"]))
     st.markdown(
         f"<div class='cinza' style='font-size:0.68rem; margin-bottom:0.35rem;'>{proximos_7d} evento(s) nos próximos 7 dias</div>",
         unsafe_allow_html=True,
