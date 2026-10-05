@@ -35,7 +35,7 @@ def _doc_resultado(data_referencia):
 # --- 3: PRAZO CVM (caso real/principal desta v1) -------------------------
 def test_3_prazo_cvm_quando_nao_ha_resultado_ainda_entregue():
     with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
-         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_nome_empresa", return_value="PETROBRAS"), \
          patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
         evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
     _checar("3a evento calculado (nao None)", evento is not None)
@@ -45,7 +45,7 @@ def test_3_prazo_cvm_quando_nao_ha_resultado_ainda_entregue():
              evento["data"] == date(2026, 11, 14), f"(data={evento['data']})")
     _checar("3e fonte explicita a regra CVM (nunca afirma ser data oficial da empresa)",
              "CVM" in evento["fonte"] and "prazo" in evento["fonte"].lower())
-    _checar("3f empresa vem de obter_nome_yf (reaproveita identificador existente)", evento["empresa"] == "PETROBRAS")
+    _checar("3f empresa vem de _nome_empresa (cascata barata antes do fallback de rede)", evento["empresa"] == "PETROBRAS")
 
 
 def test_resultado_ja_entregue_pula_pro_proximo_trimestre():
@@ -378,6 +378,80 @@ def test_leitura_6_erro_na_consulta_supabase_nao_quebra():
     with patch.object(eventos_mod, "obter_cliente", return_value=cliente):
         resultado = eventos_mod._buscar_evento_persistido("TESTE-CACHE-6", "3T26")
     _checar("leitura6 excecao na consulta (banco indisponivel/erro de rede) -> None, nunca propaga", resultado is None)
+
+
+# ============================================================
+# PERFORMANCE (2026-10-05): calcular_calendario fazia 1 consulta
+# SEQUENCIAL ao Supabase por ticker (eventos_resultados) e resolvia o
+# nome da empresa via yfinance (rede) pra TODO ticker, mesmo os mais
+# comuns ja curados em config - com 13 tickers isso levava ~17s.
+# Corrigido: 1 UNICA consulta em lote (nao importa quantos tickers) +
+# cascata barata de nome antes do fallback de rede. Testes abaixo
+# confirmam o N->1 na consulta e o 0-rede pra tickers conhecidos.
+# ============================================================
+
+def test_perf_1_calendario_faz_so_1_consulta_ao_supabase_independente_do_numero_de_tickers():
+    chamadas_query = []
+
+    class _ClienteContador:
+        def table(self, nome):
+            chamadas_query.append(nome)
+            return self
+        def select(self, *_a, **_k):
+            return self
+        def in_(self, *_a, **_k):
+            return self
+        def execute(self):
+            resp = MagicMock()
+            resp.data = []
+            return resp
+
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(eventos_mod, "_nome_empresa", return_value="X"), \
+         patch.object(eventos_mod, "obter_cliente", return_value=_ClienteContador()):
+        calcular_calendario(["PETR4", "VALE3", "ITUB4", "BBAS3", "WEGE3"], hoje=date(2026, 10, 1))
+    _checar("perf1 calendario com 5 tickers faz exatamente 1 consulta ao Supabase (nao 5)",
+             chamadas_query.count("eventos_resultados") == 1, f"(chamadas={chamadas_query})")
+
+
+def test_perf_2_nome_empresa_cascata_nao_bate_em_rede_pra_ticker_conhecido():
+    chamadas_rede = []
+    with patch.object(eventos_mod, "obter_nome_yf", side_effect=lambda t: chamadas_rede.append(t) or "NUNCA DEVERIA CHEGAR AQUI"):
+        nome = eventos_mod._nome_empresa("PETR4")
+    _checar("perf2a ticker conhecido (config/B3) resolve nome sem chamar obter_nome_yf", chamadas_rede == [])
+    _checar("perf2b nome resolvido e' o curado (Petrobras), nao o fallback de rede", nome == "Petrobras", f"(nome={nome!r})")
+
+
+def test_perf_3_nome_empresa_cai_pro_fallback_de_rede_so_pra_ticker_desconhecido():
+    chamadas_rede = []
+    with patch.object(eventos_mod, "obter_nome_yf", side_effect=lambda t: chamadas_rede.append(t) or "Empresa Desconhecida Ltda"):
+        nome = eventos_mod._nome_empresa("ZZZZ99")
+    _checar("perf3a ticker fora de config/B3 cai pro fallback de rede (obter_nome_yf chamado)", chamadas_rede == ["ZZZZ99"])
+    _checar("perf3b nome do fallback e' retornado normalmente", nome == "Empresa Desconhecida Ltda")
+
+
+def test_perf_4_resultado_final_identico_com_ou_sem_prebusca_em_lote():
+    """Garante que o CAMINHO RAPIDO (calcular_calendario, com prebusca em
+    lote) e o CAMINHO ISOLADO (calcular_proximo_resultado chamado direto,
+    sem prebusca - uso de data/eventos_coleta.py) produzem o MESMO
+    resultado pro mesmo ticker - a otimizacao nunca muda o dado."""
+    linha = {"ticker": "PETR4", "periodo": "3T26", "data_evento": "2026-10-20",
+             "status": STATUS_CONFIRMADO, "fonte": "Petrobras RI", "url_fonte": "https://ri.petrobras.com.br"}
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(eventos_mod, "_nome_empresa", return_value="Petrobras"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
+        isolado = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(eventos_mod, "_nome_empresa", return_value="Petrobras"):
+        em_lote = calcular_proximo_resultado(
+            "PETR4", hoje=date(2026, 10, 1),
+            _periodo_prebuscado=(2026, 3), _persistidos_prebuscados={("PETR4", "3T26"): linha},
+        )
+    _checar("perf4a caminho em lote com persistido encontrado -> CONFIRMADO", em_lote["status"] == STATUS_CONFIRMADO)
+    _checar("perf4b data/fonte identicas as da linha persistida (mesma regra do caminho isolado)",
+             em_lote["data"] == date(2026, 10, 20) and em_lote["fonte"] == "Petrobras RI")
+    _checar("perf4c caminho isolado (sem prebusca) continua funcionando igual (fallback PRAZO_CVM, nada persistido)",
+             isolado["status"] == STATUS_PRAZO_CVM)
 
 
 if __name__ == "__main__":

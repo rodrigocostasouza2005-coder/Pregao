@@ -79,7 +79,9 @@ from datetime import date, datetime, timedelta, timezone
 
 import streamlit as st
 
+import config
 from data.cvm import obter_documentos_cvm
+from data.ibovespa import obter_composicao_oficial
 from data.prices import obter_nome_yf
 from data.supabase_client import obter_cliente
 
@@ -215,9 +217,11 @@ _TTL_EVENTOS_PERSISTIDOS = 15 * 60  # 15min - menor que o intervalo de 30min do 
 def _buscar_evento_persistido(ticker: str, periodo: str) -> dict | None:
     """Linha crua salva pelo coletor (data/eventos_coleta.py, tabela
     eventos_resultados) pro (ticker,periodo) dado - None se nao houver
-    nada salvo ou o banco estiver fora do ar. Cacheada porque e'
-    consultada 1x por ticker a cada render do CALENDARIO (watchlist +
-    universo, ver ui/calendario_tab.py)."""
+    nada salvo ou o banco estiver fora do ar. Usada so' pra consulta de
+    1 ticker isolado (ex: data/eventos_coleta.py, fluxo de background
+    sem problema de latencia) - o CALENDARIO (varios tickers de uma vez)
+    usa _buscar_eventos_persistidos_lote abaixo, 1 UNICA consulta pro
+    lote inteiro em vez de 1 por ticker (ver calcular_calendario)."""
     cliente = obter_cliente()
     if cliente is None:
         return None
@@ -234,7 +238,60 @@ def _buscar_evento_persistido(ticker: str, periodo: str) -> dict | None:
         return None
 
 
-def calcular_proximo_resultado(ticker: str, hoje: date = None) -> dict | None:
+@st.cache_data(ttl=_TTL_EVENTOS_PERSISTIDOS, show_spinner=False)
+def _buscar_eventos_persistidos_lote(pares: tuple) -> dict:
+    """Bug real de performance corrigido (2026-10-05): calcular_calendario
+    fazia 1 consulta SEQUENCIAL ao Supabase por ticker (cada uma ~100-
+    200ms de ida-e-volta de rede) - com 13 tickers da watchlist isso ja
+    somava +1,5s so' nessa etapa, e o mesmo custo se repetia em TODA
+    troca de filtro/janela que recalculasse o calendario. Agora e' 1
+    UNICA consulta (`ticker IN (...)`) pro lote inteiro de tickers,
+    filtrada em memoria pro (ticker,periodo) exato de cada um (o
+    resultado pode conter periodos antigos do mesmo ticker, que nunca
+    devem ser usados - mesma seguranca da consulta antiga, so' que em
+    lote). Retorna {(ticker,periodo): linha} so' pros pares que
+    realmente tem algo persistido - par ausente = None pra quem chama,
+    cai pro PRAZO_CVM. [] ou Supabase fora do ar -> {} (nunca quebra,
+    todos caem pro fallback)."""
+    if not pares:
+        return {}
+    cliente = obter_cliente()
+    if cliente is None:
+        return {}
+    tickers = sorted({t for t, _ in pares})
+    try:
+        resp = cliente.table("eventos_resultados").select("*").in_("ticker", tickers).execute()
+    except Exception:
+        return {}
+    pares_validos = set(pares)
+    return {
+        (linha["ticker"], linha["periodo"]): linha
+        for linha in resp.data
+        if (linha.get("ticker"), linha.get("periodo")) in pares_validos
+    }
+
+
+def _nome_empresa(ticker: str) -> str:
+    """Nome de exibicao do ticker - cascata BARATA (sem rede) antes do
+    fallback caro: config.TICKER_NOME/NOMES_ATIVOS_BUSCA (curadoria
+    manual) -> nome oficial da composicao do Ibovespa (ja cacheada 24h,
+    mesma fonte que ui/busca.py usa) -> so' em ultimo caso
+    obter_nome_yf (1 chamada de rede ao yfinance por ticker, lenta -
+    confirmado no profiling: ~0,5-0,8s cada, 55% do tempo total do
+    CALENDARIO pra 13 tickers antes desta correcao). Mesma cascata ja
+    estabelecida em ui/busca.py:_universo_ativos - nao e' logica nova,
+    so' reaproveitada aqui."""
+    nome = (
+        config.TICKER_NOME.get(ticker)
+        or config.NOMES_ATIVOS_BUSCA.get(ticker)
+        or (obter_composicao_oficial() or {}).get(ticker, {}).get("nome")
+    )
+    return nome or obter_nome_yf(ticker) or ticker
+
+
+def calcular_proximo_resultado(
+    ticker: str, hoje: date = None, _periodo_prebuscado: tuple = None, _persistidos_prebuscados: dict = None,
+) -> dict | None:
     """Proximo resultado esperado pro ticker - CONFIRMADO/ESTIMADO se o
     coletor (data/eventos_coleta.py) ja tiver achado e persistido uma
     data real pro periodo pendente, senao PRAZO_CVM (prazo regulatorio,
@@ -242,19 +299,31 @@ def calcular_proximo_resultado(ticker: str, hoje: date = None) -> dict | None:
     evento quando a fonte esta fora do ar) - a leitura da tabela
     persistida so' acontece se houver um periodo pendente calculavel.
 
+    _periodo_prebuscado/_persistidos_prebuscados: uso interno de
+    calcular_calendario (ver docstring la) pra reaproveitar o
+    periodo_pendente e a consulta em LOTE ao Supabase ja feitos pra
+    todos os tickers de uma vez, em vez de cada ticker refazer sua
+    propria consulta - chamadores externos (ex: data/eventos_coleta.py,
+    testes) nunca passam esses parametros e o comportamento e'
+    IDENTICO ao de antes (calcula o periodo e busca o persistido deste
+    1 ticker, isolado).
+
     {ticker, empresa, periodo, data (date), horario (sempre None nesta
     versao), status, fonte, origem_url (None quando status e'
     PRAZO_CVM - nao e' um documento especifico, e' uma regra calculada),
     tipo_evento, coletado_em (quando ESTE calculo rodou - usado por
     aplicar_cache_resiliente pra saber qual versao e' mais recente)."""
-    periodo = periodo_pendente(ticker, hoje)
+    periodo = _periodo_prebuscado if _periodo_prebuscado is not None else periodo_pendente(ticker, hoje)
     if periodo is None:
         return None
     ano, trimestre = periodo
     rotulo = _rotulo_periodo(ano, trimestre)
-    empresa = obter_nome_yf(ticker) or ticker
+    empresa = _nome_empresa(ticker)
 
-    persistido = _buscar_evento_persistido(ticker, rotulo)
+    if _persistidos_prebuscados is not None:
+        persistido = _persistidos_prebuscados.get((ticker, rotulo))
+    else:
+        persistido = _buscar_evento_persistido(ticker, rotulo)
     if persistido is not None:
         try:
             return {
@@ -293,14 +362,38 @@ def calcular_calendario(tickers: list, hoje: date = None) -> list:
     ultimo-dado-valido (ver aplicar_cache_resiliente) se ja tivessemos
     calculado algo pra eles antes nesta mesma sessao do processo.
     Tickers duplicados na lista de entrada geram so' 1 evento (dedupe
-    por ticker, mantem o primeiro)."""
+    por ticker, mantem o primeiro).
+
+    Bug real de performance corrigido (2026-10-05, ver profiling):
+    periodo_pendente (CVM, ja' cacheado por ano - barato depois do 1o
+    ticker) e' calculado 1x por ticker aqui e repassado pra
+    calcular_proximo_resultado via _periodo_prebuscado (evita refazer o
+    mesmo filtro em pandas 2x); a consulta ao Supabase de
+    eventos_resultados agora e' 1 UNICA chamada em lote
+    (_buscar_eventos_persistidos_lote) pra TODOS os tickers, em vez de
+    uma consulta sequencial por ticker. O nome da empresa tambem passou
+    a vir de uma cascata barata (ver _nome_empresa) antes do fallback
+    de rede ao yfinance. Nenhuma mudanca nos RESULTADOS (CONFIRMADO/
+    ESTIMADO/PRAZO_CVM e suas datas/fontes continuam exatamente iguais)
+    - so' MENOS chamadas de rede pra chegar no mesmo resultado."""
     vistos = set()
-    eventos = []
+    tickers_unicos = []
+    periodos = {}
     for ticker in tickers:
         if ticker in vistos:
             continue
         vistos.add(ticker)
-        evento = calcular_proximo_resultado(ticker, hoje=hoje)
+        tickers_unicos.append(ticker)
+        periodos[ticker] = periodo_pendente(ticker, hoje)
+
+    pares = [(t, _rotulo_periodo(*periodos[t])) for t in tickers_unicos if periodos[t] is not None]
+    persistidos = _buscar_eventos_persistidos_lote(tuple(pares))
+
+    eventos = []
+    for ticker in tickers_unicos:
+        evento = calcular_proximo_resultado(
+            ticker, hoje=hoje, _periodo_prebuscado=periodos[ticker], _persistidos_prebuscados=persistidos,
+        )
         if evento:
             eventos.append(evento)
     return aplicar_cache_resiliente(eventos)
