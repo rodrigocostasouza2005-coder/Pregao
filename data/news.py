@@ -27,7 +27,15 @@ import feedparser
 import requests
 import streamlit as st
 import trafilatura
-from googlenewsdecoder import gnewsdecoder
+
+try:
+    from googlenewsdecoder import gnewsdecoder
+except Exception:
+    # Dependencia transitiva (selectolax) pode ficar incompativel em
+    # produçao sem aviso previo (ex: API legada removida numa versao
+    # nova) - decoder vira opcional, News cai pro link original do
+    # Google News em vez de derrubar o app inteiro no import.
+    gnewsdecoder = None
 
 import config
 from data import news_setores
@@ -1061,7 +1069,10 @@ def _resolver_link_real(link_google_news: str):
     """O link do RSS do Google News e' um redirect ofuscado (SPA propria
     do Google, sem redirect HTTP de verdade) - gnewsdecoder replica o
     fluxo de decodificacao interno do Google pra achar a URL real do
-    veiculo. None se nao conseguir (formato mudou, timeout etc)."""
+    veiculo. None se nao conseguir (formato mudou, timeout, decoder
+    indisponivel etc)."""
+    if gnewsdecoder is None:
+        return None
     try:
         resultado = gnewsdecoder(link_google_news, interval=1)
     except Exception:
