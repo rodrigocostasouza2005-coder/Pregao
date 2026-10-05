@@ -232,6 +232,29 @@ def coletar_evento(ticker: str, hoje: date = None) -> dict | None:
 # ver sql/eventos.sql; nao e' um banco paralelo, so' uma tabela nova)
 # ---------------------------------------------------------------------
 
+def tabela_eventos_disponivel() -> bool | None:
+    """Diagnostico (2026-10-05, achado real: a tabela eventos_resultados
+    nao existia em producao - sql/eventos.sql nunca tinha sido rodado la
+    - e tanto a leitura (data/eventos.py:_buscar_evento_persistido)
+    quanto a escrita abaixo degradavam em silencio pro mesmo caminho de
+    "nada encontrado", deixando o problema invisivel por dias no log).
+    True se a tabela responde a uma consulta trivial, False se existir
+    o cliente Supabase mas a consulta falhar (schema/tabela ausente,
+    erro de permissao etc), None se o Supabase em si estiver fora do ar
+    (obter_cliente()=None). So' pra diagnostico/log (ver
+    coletor_local.py) - nunca usada pra decidir o pipeline
+    RI->NEWS->PRAZO_CVM em si, que continua degradando com seguranca
+    independente disso."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        cliente.table("eventos_resultados").select("ticker").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+
 def _buscar_evento_salvo(ticker: str, periodo: str) -> dict | None:
     cliente = obter_cliente()
     if cliente is None:
@@ -298,9 +321,13 @@ def coletar_eventos_universo(tickers: list, hoje: date = None) -> dict:
     proximo run do coletor continua de onde parou naturalmente, ja que
     tickers ja' resolvidos como CONFIRMADO nao mudam). Retorna
     {"processados", "confirmados", "estimados", "mantidos_prazo_cvm",
-    "tempo_esgotado"}."""
+    "tempo_esgotado", "tabela_disponivel"} - o ultimo e' so' diagnostico
+    (ver tabela_eventos_disponivel), nunca afeta o pipeline em si."""
     limite = time.monotonic() + _ORCAMENTO_TOTAL_S
-    stats = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0, "tempo_esgotado": False}
+    stats = {
+        "processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
+        "tempo_esgotado": False, "tabela_disponivel": tabela_eventos_disponivel(),
+    }
     for ticker in tickers:
         if time.monotonic() > limite:
             stats["tempo_esgotado"] = True

@@ -125,6 +125,14 @@ def main() -> int:
     # data/eventos_coleta.py. Orcamento proprio de tempo (5min), pode nao
     # cobrir o universo inteiro numa execucao so' (ver docstring do modulo).
     stats_eventos = coletar_eventos_universo(list(config.IBOVESPA_SETORES.keys()))
+    if stats_eventos["tabela_disponivel"] is False:
+        logger.warning(
+            "  eventos de resultado: tabela 'eventos_resultados' nao encontrada/inacessivel no "
+            "Supabase - rode sql/eventos.sql no SQL Editor do projeto. Nenhum CONFIRMADO/ESTIMADO "
+            "pode ser persistido nem lido pelo CALENDARIO ate isso ser feito."
+        )
+    elif stats_eventos["tabela_disponivel"] is None:
+        logger.warning("  eventos de resultado: Supabase fora do ar (nao deu pra checar a tabela nem persistir nada)")
     logger.info(
         f"  eventos de resultado: {stats_eventos['processados']} ticker(s) processado(s), "
         f"{stats_eventos['confirmados']} confirmado(s) novo(s), {stats_eventos['estimados']} estimado(s) novo(s), "

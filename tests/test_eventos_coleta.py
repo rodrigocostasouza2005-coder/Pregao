@@ -237,6 +237,47 @@ def test_8_fonte_indisponivel_na_persistencia_nao_quebra():
     _checar("8 Supabase indisponivel (obter_cliente=None) -> retorna False sem excecao", gravou is False)
 
 
+# ============================================================
+# DIAGNOSTICO (2026-10-05): achado real em producao - a tabela
+# eventos_resultados nao existia no Supabase (sql/eventos.sql nunca
+# tinha sido rodado la), e tanto leitura quanto escrita degradavam em
+# silencio pro mesmo caminho de "nada encontrado", escondendo o
+# problema por dias. tabela_eventos_disponivel existe so' pra tornar
+# esse caso diagnosticavel no log do coletor (coletor_local.py) - nunca
+# decide o pipeline RI->NEWS->PRAZO_CVM em si.
+# ============================================================
+
+def test_9_tabela_disponivel_quando_consulta_trivial_funciona():
+    cliente = MagicMock()
+    with patch.object(coleta_mod, "obter_cliente", return_value=cliente):
+        disponivel = coleta_mod.tabela_eventos_disponivel()
+    _checar("9a tabela responde a consulta trivial -> True", disponivel is True)
+
+
+def test_9b_tabela_indisponivel_quando_consulta_falha():
+    cliente = MagicMock()
+    cliente.table.return_value.select.return_value.limit.return_value.execute.side_effect = Exception(
+        "PGRST205: Could not find the table 'public.eventos_resultados' in the schema cache"
+    )
+    with patch.object(coleta_mod, "obter_cliente", return_value=cliente):
+        disponivel = coleta_mod.tabela_eventos_disponivel()
+    _checar("9b tabela ausente/erro de schema -> False (distinto de 'Supabase fora do ar')", disponivel is False)
+
+
+def test_9c_supabase_fora_do_ar_retorna_none_nao_false():
+    with patch.object(coleta_mod, "obter_cliente", return_value=None):
+        disponivel = coleta_mod.tabela_eventos_disponivel()
+    _checar("9c Supabase em si fora do ar -> None (distinto de 'tabela ausente')", disponivel is None)
+
+
+def test_9d_coletar_eventos_universo_reporta_tabela_disponivel_nas_stats():
+    with patch.object(coleta_mod, "periodo_pendente", return_value=None), \
+         patch.object(coleta_mod, "tabela_eventos_disponivel", return_value=False):
+        stats = coleta_mod.coletar_eventos_universo(["PETR4"])
+    _checar("9d stats de coletar_eventos_universo incluem tabela_disponivel (diagnostico pro log)",
+             stats["tabela_disponivel"] is False)
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
