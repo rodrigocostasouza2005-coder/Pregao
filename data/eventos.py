@@ -50,7 +50,30 @@ zero refatoração.
 
 LIMITAÇÃO DOCUMENTADA: assume ano fiscal = ano civil (padrão da grande
 maioria das empresas B3) - empresas com ano fiscal diferente não têm o
-prazo calculado corretamente nesta versão."""
+prazo calculado corretamente nesta versão.
+
+FASE COLETOR DE DATAS DE RESULTADOS (2026-10-02): a conclusão acima
+("não existe fonte automática íntegra") era sobre o calendário da CVM
+especificamente. Achado novo, real e verificado nesta sessão: o cadastro
+geral do FCA da CVM (sub-arquivo `fca_cia_aberta_geral`) tem o campo
+`Pagina_Web` - o site institucional oficial de cada companhia, registrado
+pela própria empresa (não um PDF, não um texto ambíguo - um campo
+estruturado). Isso NÃO dá a data do resultado diretamente, mas dá a URL
+oficial de onde tentar ler uma data CONFIRMADA (ver
+`data/eventos_coleta.py` e `data/ir_sources.py`) - o pipeline completo
+(RI → NEWS → PRAZO_CVM) continua chamando as funções deste arquivo
+(`periodo_pendente`/`limites_trimestre`/`prazo_cvm`/`rotulo_periodo`),
+nada foi duplicado.
+
+FECHAMENTO DO CICLO (2026-10-05): o coletor (data/eventos_coleta.py,
+rodado por coletor_local.py) já persistia CONFIRMADO/ESTIMADO na tabela
+eventos_resultados (sql/eventos.sql), mas nada lia essa tabela de volta
+- calcular_proximo_resultado continuava sempre devolvendo PRAZO_CVM pra
+qualquer ticker, mesmo depois do coletor achar uma data real. Faltava
+só o lado da LEITURA: calcular_proximo_resultado agora consulta
+_buscar_evento_persistido ANTES de cair no prazo regulatório - mesma
+hierarquia RI>NEWS>PRAZO_CVM, só que na ponta do consumo em vez da
+coleta. Nenhuma lógica de UI/dedup/cache-resiliente mudou."""
 
 from datetime import date, datetime, timedelta, timezone
 
@@ -58,6 +81,7 @@ import streamlit as st
 
 from data.cvm import obter_documentos_cvm
 from data.prices import obter_nome_yf
+from data.supabase_client import obter_cliente
 
 STATUS_CONFIRMADO = "CONFIRMADO"
 STATUS_ESTIMADO = "ESTIMADO"
@@ -117,6 +141,24 @@ def _rotulo_periodo(ano: int, trimestre: int) -> str:
     return f"{trimestre}T{ano % 100}"
 
 
+# wrappers publicos (2026-10-02, fase COLETOR DE DATAS DE RESULTADOS):
+# data/eventos_coleta.py precisa dos MESMOS limites/prazo/rotulo de
+# periodo usados aqui, pra saber ONDE procurar (qual texto buscar na
+# pagina de RI/noticia) e validar se uma data encontrada faz sentido
+# pro periodo certo - reaproveita em vez de duplicar a logica de
+# trimestre em outro arquivo.
+def limites_trimestre(ano: int, trimestre: int) -> tuple:
+    return _limites_trimestre(ano, trimestre)
+
+
+def prazo_cvm(ano: int, trimestre: int) -> date:
+    return _prazo_cvm(ano, trimestre)
+
+
+def rotulo_periodo(ano: int, trimestre: int) -> str:
+    return _rotulo_periodo(ano, trimestre)
+
+
 def _ja_entregou(documentos_resultados: list, ano: int, trimestre: int) -> bool:
     """True se ja' existe um documento tipo RESULTADOS (real, vindo da
     CVM) cuja data_referencia cai DENTRO do trimestre dado - nunca
@@ -137,16 +179,14 @@ def _ja_entregou(documentos_resultados: list, ano: int, trimestre: int) -> bool:
     return False
 
 
-def calcular_proximo_resultado(ticker: str, hoje: date = None) -> dict | None:
-    """Proximo resultado esperado pro ticker (prazo regulatorio da CVM -
-    ver docstring do modulo). None se a fonte CVM falhar (nunca inventa
-    evento quando a fonte esta fora do ar).
-
-    {ticker, empresa, periodo, data (date), horario (sempre None nesta
-    versao - CVM nao informa horario), status, fonte, origem_url (sempre
-    None - nao e' um documento especifico, e' uma regra calculada),
-    tipo_evento, coletado_em (quando ESTE calculo rodou - usado por
-    aplicar_cache_resiliente pra saber qual versao e' mais recente)."""
+def periodo_pendente(ticker: str, hoje: date = None) -> tuple | None:
+    """(ano, trimestre) do proximo periodo (ITR/DFP) ainda pendente de
+    resultado pro ticker - None se a fonte CVM falhar. Extraido de
+    calcular_proximo_resultado (2026-10-02, fase COLETOR DE DATAS DE
+    RESULTADOS) pra ser reaproveitado por data/eventos_coleta.py SEM
+    duplicar a logica de "qual trimestre procurar" - o coletor precisa
+    saber o periodo ANTES de tentar RI/NEWS, pra saber o que buscar na
+    pagina/noticia (ex: "3T26")."""
     hoje = hoje or date.today()
     documentos = obter_documentos_cvm(ticker)
     if documentos is None:
@@ -165,11 +205,77 @@ def calcular_proximo_resultado(ticker: str, hoje: date = None) -> dict | None:
     ano, trimestre = _trimestre_anterior(*_trimestre_de(hoje))
     while _prazo_cvm(ano, trimestre) < hoje or _ja_entregou(documentos_resultados, ano, trimestre):
         ano, trimestre = _proximo_trimestre(ano, trimestre)
+    return ano, trimestre
+
+
+_TTL_EVENTOS_PERSISTIDOS = 15 * 60  # 15min - menor que o intervalo de 30min do coletor agendado (coletor_local.py)
+
+
+@st.cache_data(ttl=_TTL_EVENTOS_PERSISTIDOS, show_spinner=False)
+def _buscar_evento_persistido(ticker: str, periodo: str) -> dict | None:
+    """Linha crua salva pelo coletor (data/eventos_coleta.py, tabela
+    eventos_resultados) pro (ticker,periodo) dado - None se nao houver
+    nada salvo ou o banco estiver fora do ar. Cacheada porque e'
+    consultada 1x por ticker a cada render do CALENDARIO (watchlist +
+    universo, ver ui/calendario_tab.py)."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        resp = (
+            cliente.table("eventos_resultados")
+            .select("*")
+            .eq("ticker", ticker).eq("periodo", periodo)
+            .limit(1)
+            .execute()
+        )
+        return resp.data[0] if resp.data else None
+    except Exception:
+        return None
+
+
+def calcular_proximo_resultado(ticker: str, hoje: date = None) -> dict | None:
+    """Proximo resultado esperado pro ticker - CONFIRMADO/ESTIMADO se o
+    coletor (data/eventos_coleta.py) ja tiver achado e persistido uma
+    data real pro periodo pendente, senao PRAZO_CVM (prazo regulatorio,
+    ver docstring do modulo). None se a fonte CVM falhar (nunca inventa
+    evento quando a fonte esta fora do ar) - a leitura da tabela
+    persistida so' acontece se houver um periodo pendente calculavel.
+
+    {ticker, empresa, periodo, data (date), horario (sempre None nesta
+    versao), status, fonte, origem_url (None quando status e'
+    PRAZO_CVM - nao e' um documento especifico, e' uma regra calculada),
+    tipo_evento, coletado_em (quando ESTE calculo rodou - usado por
+    aplicar_cache_resiliente pra saber qual versao e' mais recente)."""
+    periodo = periodo_pendente(ticker, hoje)
+    if periodo is None:
+        return None
+    ano, trimestre = periodo
+    rotulo = _rotulo_periodo(ano, trimestre)
+    empresa = obter_nome_yf(ticker) or ticker
+
+    persistido = _buscar_evento_persistido(ticker, rotulo)
+    if persistido is not None:
+        try:
+            return {
+                "ticker": ticker,
+                "empresa": empresa,
+                "periodo": rotulo,
+                "data": date.fromisoformat(str(persistido["data_evento"])[:10]),
+                "horario": None,
+                "status": persistido["status"],
+                "fonte": persistido["fonte"],
+                "origem_url": persistido.get("url_fonte"),
+                "tipo_evento": "RESULTADO",
+                "coletado_em": datetime.now(timezone.utc),
+            }
+        except (KeyError, ValueError, TypeError):
+            pass  # linha salva malformada - cai pro PRAZO_CVM, nunca quebra
 
     return {
         "ticker": ticker,
-        "empresa": obter_nome_yf(ticker) or ticker,
-        "periodo": _rotulo_periodo(ano, trimestre),
+        "empresa": empresa,
+        "periodo": rotulo,
         "data": _prazo_cvm(ano, trimestre),
         "horario": None,
         "status": STATUS_PRAZO_CVM,

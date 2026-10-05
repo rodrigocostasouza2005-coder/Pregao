@@ -8,7 +8,7 @@ Uso: python tests/test_eventos.py (python do .venv do projeto)."""
 import sys
 from datetime import date
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -35,7 +35,8 @@ def _doc_resultado(data_referencia):
 # --- 3: PRAZO CVM (caso real/principal desta v1) -------------------------
 def test_3_prazo_cvm_quando_nao_ha_resultado_ainda_entregue():
     with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
-         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"):
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
         evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
     _checar("3a evento calculado (nao None)", evento is not None)
     _checar("3b status e' PRAZO_CVM (unica fonte real disponivel nesta v1)", evento["status"] == STATUS_PRAZO_CVM)
@@ -51,7 +52,8 @@ def test_resultado_ja_entregue_pula_pro_proximo_trimestre():
     # 3T26 (jul-set) ja' foi entregue -> deve pular pro 4T26 (DFP)
     docs = [_doc_resultado("2026-09-30")]
     with patch.object(eventos_mod, "obter_documentos_cvm", return_value=docs), \
-         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"):
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
         evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
     _checar("resultado ja' entregue (data_referencia dentro do trimestre) pula pro proximo",
              evento["periodo"] == "4T26 (DFP)", f"(periodo={evento['periodo']})")
@@ -62,7 +64,8 @@ def test_resultado_ja_entregue_pula_pro_proximo_trimestre():
 def test_prazo_ja_vencido_pula_pro_proximo_trimestre():
     # hoje ja' passou do prazo do 2T26 (14/08) sem nenhum documento - pula pro 3T26
     with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
-         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"):
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
         evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 9, 1))
     _checar("prazo do trimestre atual (2T26) ja' vencido -> mostra o PROXIMO (3T26), nao um vencido",
              evento["periodo"] == "3T26", f"(periodo={evento['periodo']})")
@@ -71,7 +74,8 @@ def test_prazo_ja_vencido_pula_pro_proximo_trimestre():
 # --- 4: evento sem horario (sempre None nesta v1 - CVM nao informa) ------
 def test_4_evento_sem_horario():
     with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
-         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"):
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
         evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
     _checar("4 horario e' None (CVM nao informa isso - nunca inventado)", evento["horario"] is None)
 
@@ -84,7 +88,8 @@ def test_7_ausencia_de_eventos_fonte_sem_cnpj():
     # generica) - o "evento" sempre existe quando a fonte responde (so'
     # fica None se a FONTE falhar de verdade, ver teste 10)
     with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
-         patch.object(eventos_mod, "obter_nome_yf", return_value="EMPRESA TESTE"):
+         patch.object(eventos_mod, "obter_nome_yf", return_value="EMPRESA TESTE"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
         evento = calcular_proximo_resultado("ZZZZ4", hoje=date(2026, 10, 1))
     _checar("7 mesmo sem nenhum documento CVM, o prazo regulatorio ainda e' calculavel", evento is not None)
 
@@ -94,7 +99,8 @@ def test_8_data_referencia_invalida_nao_quebra_nem_conta_como_entregue():
     docs = [{"ticker": "PETR4", "tipo": "RESULTADOS", "data_referencia": "data-invalida-xyz"},
             {"ticker": "PETR4", "tipo": "RESULTADOS", "data_referencia": None}]
     with patch.object(eventos_mod, "obter_documentos_cvm", return_value=docs), \
-         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"):
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
         evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
     _checar("8 data_referencia invalida/ausente nao quebra o calculo", evento is not None)
     _checar("8b documento com data ilegivel NAO conta como 'ja entregue' (continua no 3T26)",
@@ -104,7 +110,8 @@ def test_8_data_referencia_invalida_nao_quebra_nem_conta_como_entregue():
 # --- 9: duplicidade do mesmo evento (ticker repetido na lista) ------------
 def test_9_duplicidade_mesmo_ticker_gera_1_evento_so():
     with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
-         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"):
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
         eventos = calcular_calendario(["PETR4", "PETR4", "PETR4"], hoje=date(2026, 10, 1))
     _checar("9 ticker duplicado na lista de entrada gera so' 1 evento", len(eventos) == 1, f"(qtd={len(eventos)})")
 
@@ -112,13 +119,15 @@ def test_9_duplicidade_mesmo_ticker_gera_1_evento_so():
 # --- 10: fonte CVM indisponivel --------------------------------------------
 def test_10_fonte_cvm_indisponivel_nao_inventa_evento():
     with patch.object(eventos_mod, "obter_documentos_cvm", return_value=None), \
-         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"):
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
         evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
     _checar("10 fonte CVM fora do ar (None) -> evento None, nunca inventa um prazo",
              evento is None)
 
     with patch.object(eventos_mod, "obter_documentos_cvm", side_effect=lambda t: None if t == "PETR4" else []), \
-         patch.object(eventos_mod, "obter_nome_yf", return_value="VALE"):
+         patch.object(eventos_mod, "obter_nome_yf", return_value="VALE"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
         eventos = calcular_calendario(["PETR4", "VALE3"], hoje=date(2026, 10, 1))
     _checar("10b calendario com 1 fonte falhando nao quebra os outros tickers",
              len(eventos) == 1 and eventos[0]["ticker"] == "VALE3", f"(eventos={[e['ticker'] for e in eventos]})")
@@ -135,7 +144,8 @@ def test_5_6_so_processa_os_tickers_recebidos():
         return []
 
     with patch.object(eventos_mod, "obter_documentos_cvm", side_effect=_fake), \
-         patch.object(eventos_mod, "obter_nome_yf", return_value="X"):
+         patch.object(eventos_mod, "obter_nome_yf", return_value="X"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
         calcular_calendario(["PETR4"], hoje=date(2026, 10, 1))
     _checar("5 ticker da watchlist (unico passado) e' processado", chamadas == ["PETR4"])
     _checar("6 nenhum ticker 'fora da lista' e' buscado por conta propria", len(chamadas) == 1)
@@ -187,7 +197,8 @@ def test_v2_2_fonte_externa_confiavel_vira_estimado():
 
 def test_v2_3_somente_prazo_cvm_quando_sem_fonte_melhor():
     with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
-         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"):
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
         eventos = calcular_calendario(["PETR4"], hoje=date(2026, 10, 1))
     _checar("v2.3 pipeline real (sem fonte oficial integrada) so' produz PRAZO_CVM, nunca inventa CONFIRMADO/ESTIMADO",
              len(eventos) == 1 and eventos[0]["status"] == STATUS_PRAZO_CVM)
@@ -284,6 +295,89 @@ def test_v2_11_watchlist_prioriza_confiabilidade():
     _checar("v2.11 ordenacao da watchlist prioriza CONFIRMADO > ESTIMADO > PRAZO_CVM (nao so' data)",
              [e["status"] for e in ordenado] == [STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_PRAZO_CVM],
              f"(ordem={[e['status'] for e in ordenado]})")
+
+
+# ============================================================
+# FECHAMENTO DO CICLO (2026-10-05): calcular_proximo_resultado agora le
+# o que o coletor (data/eventos_coleta.py) ja persistiu em
+# eventos_resultados (sql/eventos.sql) antes de cair pro PRAZO_CVM -
+# fecha o ciclo coleta->consumo que ate aqui so' tinha o lado da escrita
+# testado (ver tests/test_eventos_coleta.py). Mocka
+# _buscar_evento_persistido diretamente (mesmo nivel dos demais testes
+# deste arquivo) - sem chamada de rede/Supabase real.
+# ============================================================
+
+def _linha_persistida(status, data_evento, fonte, url=None):
+    return {"ticker": "PETR4", "periodo": "3T26", "data_evento": data_evento,
+            "status": status, "fonte": fonte, "url_fonte": url,
+            "coletado_em": "2026-10-03T12:00:00+00:00"}
+
+
+def test_leitura_1_confirmado_persistido_e_usado_em_vez_do_prazo_cvm():
+    linha = _linha_persistida(STATUS_CONFIRMADO, "2026-10-20", "Petrobras RI", "https://ri.petrobras.com.br")
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=linha):
+        evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
+    _checar("leitura1a CONFIRMADO persistido pelo coletor e' usado (nao PRAZO_CVM)",
+             evento["status"] == STATUS_CONFIRMADO, f"(status={evento['status']})")
+    _checar("leitura1b data vem da linha persistida (20/10), nao do prazo CVM (14/11)",
+             evento["data"] == date(2026, 10, 20), f"(data={evento['data']})")
+    _checar("leitura1c fonte/origem_url vem da linha persistida (nunca escondida)",
+             evento["fonte"] == "Petrobras RI" and evento["origem_url"] == "https://ri.petrobras.com.br")
+
+
+def test_leitura_2_estimado_persistido_e_usado_em_vez_do_prazo_cvm():
+    linha = _linha_persistida(STATUS_ESTIMADO, "2026-10-25", "Reuters", "https://reuters.example.com/n1")
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=linha):
+        evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
+    _checar("leitura2 ESTIMADO persistido pelo coletor e' usado (nao PRAZO_CVM)",
+             evento["status"] == STATUS_ESTIMADO and evento["data"] == date(2026, 10, 25))
+
+
+def test_leitura_3_nada_persistido_cai_pro_prazo_cvm():
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
+        evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
+    _checar("leitura3 nada persistido ainda -> cai pro PRAZO_CVM (comportamento original preservado)",
+             evento["status"] == STATUS_PRAZO_CVM)
+
+
+def test_leitura_4_linha_persistida_malformada_nao_quebra_cai_pro_prazo_cvm():
+    linha_sem_status = {"ticker": "PETR4", "periodo": "3T26", "data_evento": "2026-10-20", "fonte": "x"}  # falta 'status'
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=linha_sem_status):
+        evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
+    _checar("leitura4a linha persistida malformada (campo ausente) nao quebra", evento is not None)
+    _checar("leitura4b cai pro PRAZO_CVM com seguranca (nunca mostra um status invalido)",
+             evento["status"] == STATUS_PRAZO_CVM)
+
+    linha_data_invalida = _linha_persistida(STATUS_CONFIRMADO, "nao-e-uma-data", "Petrobras RI")
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=linha_data_invalida):
+        evento2 = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
+    _checar("leitura4c data_evento invalida na linha persistida tambem cai pro PRAZO_CVM, nunca quebra",
+             evento2["status"] == STATUS_PRAZO_CVM)
+
+
+def test_leitura_5_supabase_fora_do_ar_na_leitura_cai_pro_prazo_cvm_sem_quebrar():
+    with patch.object(eventos_mod, "obter_cliente", return_value=None):
+        resultado = eventos_mod._buscar_evento_persistido("TESTE-CACHE-5", "3T26")
+    _checar("leitura5 obter_cliente() None -> _buscar_evento_persistido retorna None sem excecao",
+             resultado is None)
+
+
+def test_leitura_6_erro_na_consulta_supabase_nao_quebra():
+    cliente = MagicMock()
+    cliente.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.side_effect = Exception("fora do ar")
+    with patch.object(eventos_mod, "obter_cliente", return_value=cliente):
+        resultado = eventos_mod._buscar_evento_persistido("TESTE-CACHE-6", "3T26")
+    _checar("leitura6 excecao na consulta (banco indisponivel/erro de rede) -> None, nunca propaga", resultado is None)
 
 
 if __name__ == "__main__":

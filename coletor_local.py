@@ -14,6 +14,20 @@ nao-perecivel (data.research.historico.coletar_snapshot_genial,
 funciona rodando daqui. Nao depende do app rodando - so precisa do
 .streamlit/secrets.toml (Supabase) no mesmo diretorio, igual o app usa.
 
+Tambem roda o coletor de datas REAIS de resultado (RI->NEWS->PRAZO_CVM,
+data.eventos_coleta.coletar_eventos_universo, 2026-10-02) pro universo
+de tickers de config.IBOVESPA_SETORES (mesmo universo que MERCADO/TOP
+MERCADO ja usam) - decisao deliberada: este script roda fora de
+qualquer sessao logada, entao nao tem acesso a watchlist de nenhum
+usuario especifico (watchlist e' por usuario, em user_prefs); rodar pro
+universo inteiro da cobertura igual pra qualquer um depois. Tem
+orcamento proprio de tempo (5min, ver
+data.eventos_coleta._ORCAMENTO_TOTAL_S) - como fontes de RI/NEWS sao
+mais lentas que a coleta de research, pode nao terminar o universo
+inteiro numa execucao so'; o proximo run (agendado a cada 30min)
+continua cobrindo gradualmente (tickers ja' CONFIRMADOS nao regridem,
+ver data.eventos_coleta.salvar_evento_se_mais_confiavel).
+
 Uso: python coletor_local.py (rodar com o python do .venv do projeto) ou
 pythonw coletor_local.py (mesma coisa, sem abrir janela de console - e' o
 que o Agendador de Tarefas usa, ver PROGRESSO.md). Saida: exit code 0 se
@@ -46,6 +60,8 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+import config
+from data.eventos_coleta import coletar_eventos_universo
 from data.research import coletar_todas_disponiveis
 from data.research.historico import coletar_snapshot_genial
 from data.research.store import apagar_itens_antigos
@@ -104,6 +120,17 @@ def main() -> int:
         logger.info("  historico de recomendacoes: fonte indisponivel (WAF/rede) ou nenhuma recomendacao retornada")
     else:
         logger.info(f"  historico de recomendacoes: {n_comparados} ticker(s) comparado(s), {n_mudancas} mudanca(s) real(is) registrada(s)")
+
+    # datas reais de resultado (RI->NEWS->PRAZO_CVM, 2026-10-02) - ver
+    # data/eventos_coleta.py. Orcamento proprio de tempo (5min), pode nao
+    # cobrir o universo inteiro numa execucao so' (ver docstring do modulo).
+    stats_eventos = coletar_eventos_universo(list(config.IBOVESPA_SETORES.keys()))
+    logger.info(
+        f"  eventos de resultado: {stats_eventos['processados']} ticker(s) processado(s), "
+        f"{stats_eventos['confirmados']} confirmado(s) novo(s), {stats_eventos['estimados']} estimado(s) novo(s), "
+        f"{stats_eventos['mantidos_prazo_cvm']} sem fonte melhor (prazo CVM)"
+        + (" - tempo esgotado, proximo run continua" if stats_eventos["tempo_esgotado"] else "")
+    )
 
     return 1 if any(not info["ok"] for info in resultado.values()) else 0
 
