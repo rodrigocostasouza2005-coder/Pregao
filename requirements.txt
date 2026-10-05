@@ -1,13 +1,23 @@
-streamlit[auth]>=1.42
-yfinance>=0.2.40
+# Pinadas com == (2026-10-05, bloqueador de auditoria): streamlit,
+# supabase, pandas, yfinance e curl_cffi sao as mais sensiveis a
+# breaking change (streamlit = framework base; supabase/yfinance/
+# curl_cffi ja tiveram API quebrada por uma dependencia transitiva
+# antes - ver googlenewsdecoder/selectolax, hotfix 9f26234; pandas =
+# usado em calculo numerico em todo o projeto). Versoes = as que estao
+# instaladas e testadas neste ambiente agora - NAO sao as mais novas
+# disponiveis de proposito (evita upgrade arbitrario sem validacao).
+# Reinstalar com `pip install -r requirements.txt` deve reproduzir
+# exatamente este ambiente.
+streamlit[auth]==1.64.0
+yfinance==1.7.0
 requests>=2.31
 beautifulsoup4>=4.12
 feedparser>=6.0
 plotly>=5.22
-pandas>=2.2
-supabase>=2.7
+pandas==3.0.6
+supabase==2.31.0
 tzdata>=2024.1
-curl_cffi>=0.7
+curl_cffi==0.16.3
 pypdf>=4.0
 trafilatura>=2.2
 googlenewsdecoder>=0.2

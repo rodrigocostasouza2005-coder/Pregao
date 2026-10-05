@@ -10,6 +10,18 @@ from curl_cffi import requests as cffi_requests
 
 from config import PERIODOS_BUFFER, PERIODOS_GRAFICO
 
+# timeout explicito pra toda chamada yfinance que aceita o parametro
+# (.history()/yf.download() - ambas ja tem default interno de 10s nesta
+# versao da lib, mas deixamos explicito de proposito em vez de depender
+# do default implicito, que pode mudar numa atualizacao futura da lib
+# sem aviso). .info/.fast_info/.dividends (propriedades, sem parametro
+# nenhum pra passar timeout) NAO aceitam esse argumento - ja vem
+# limitadas pelo timeout interno da lib (YfData.get, default=30s,
+# confirmado lendo o source da versao instalada) e nao ha' como
+# sobrescrever isso sem monkeypatch; documentado em cada chamada abaixo
+# em vez de fingir controle que a lib nao oferece.
+_TIMEOUT_YF = 15
+
 # sufixo de classe de acao (ON/PN/PNA/PNB/UNT) + segmento de listagem (N1/N2/NM/MA/MB)
 # no final do nome, ex: "VALE ON NM" -> "VALE". So remove se vier separado
 # por espaco: o yfinance as vezes cola o sufixo no nome (sem espaco), caso
@@ -56,7 +68,7 @@ def validar_ticker(ticker: str) -> bool:
     """Confirma no yfinance se o ticker existe e tem histórico recente."""
     try:
         symbol = _para_symbol_yf(ticker)
-        hist = yf.Ticker(symbol).history(period="5d")
+        hist = yf.Ticker(symbol).history(period="5d", timeout=_TIMEOUT_YF)
         return not hist.empty
     except Exception:
         return False
@@ -67,6 +79,9 @@ def obter_cotacao(ticker: str) -> dict:
     """Preço atual, variação do dia, mín/máx dia, volume e mín/máx 52 semanas."""
     symbol = _para_symbol_yf(ticker)
     try:
+        # fast_info e' propriedade (sem parametro de timeout exposto) -
+        # ja limitada pelo timeout interno da lib (YfData.get, 30s), ver
+        # comentario de _TIMEOUT_YF no topo do arquivo
         fi = yf.Ticker(symbol).fast_info
         preco = fi["lastPrice"]
         fechamento_anterior = fi["previousClose"]
@@ -129,7 +144,7 @@ def obter_cotacao_indice(nome: str, symbol: str) -> dict:
     """
     cache = _ultima_cotacao_indice_valida()
     try:
-        hist = yf.Ticker(symbol).history(period="5d")
+        hist = yf.Ticker(symbol).history(period="5d", timeout=_TIMEOUT_YF)
         if len(hist) < 2:
             raise ValueError("histórico insuficiente retornado pelo yfinance")
         preco = float(hist["Close"].iloc[-1])
@@ -153,6 +168,8 @@ def _dividend_yield_12m(ticker_obj, preco_atual: float):
     que o campo 'dividendYield' do yfinance, que em alguns papeis destoa
     do que realmente foi pago). None se nao houver historico ou preco."""
     try:
+        # dividends e' propriedade (sem parametro de timeout exposto) -
+        # mesma observacao de fast_info acima
         divs = ticker_obj.dividends
         if divs.empty or not preco_atual:
             return None
@@ -172,7 +189,7 @@ def _historico_semanal_ibov():
     tickers da watchlist reusam o mesmo historico do indice dentro do
     TTL, em vez de cada um buscar de novo."""
     try:
-        hist = yf.Ticker("^BVSP").history(period="2y", interval="1wk")["Close"]
+        hist = yf.Ticker("^BVSP").history(period="2y", interval="1wk", timeout=_TIMEOUT_YF)["Close"]
         return hist if not hist.empty else None
     except Exception:
         return None
@@ -188,7 +205,7 @@ def _calcular_beta(ticker: str) -> float | None:
     usar info['beta']. None se nao houver historico suficiente."""
     symbol = _para_symbol_yf(ticker)
     try:
-        hist_ticker = yf.Ticker(symbol).history(period="2y", interval="1wk")["Close"]
+        hist_ticker = yf.Ticker(symbol).history(period="2y", interval="1wk", timeout=_TIMEOUT_YF)["Close"]
     except Exception:
         return None
     hist_ibov = _historico_semanal_ibov()
@@ -228,6 +245,8 @@ def _tk_info_com_retry(symbol: str) -> dict:
     lanca excecao."""
     for sessao in (cffi_requests.Session(impersonate="chrome"), None):
         try:
+            # .info e' propriedade (sem parametro de timeout exposto) -
+            # mesma observacao de fast_info/dividends acima
             info = yf.Ticker(symbol, session=sessao).info
             if info:
                 return info
@@ -346,7 +365,7 @@ def _precos_base_retornos(ticker: str) -> dict:
     historico suficiente."""
     symbol = _para_symbol_yf(ticker)
     try:
-        df = yf.Ticker(symbol).history(period="2y", interval="1d")
+        df = yf.Ticker(symbol).history(period="2y", interval="1d", timeout=_TIMEOUT_YF)
         if df.empty:
             return {}
         df = df.reset_index()
@@ -411,6 +430,8 @@ def obter_nome_yf(ticker: str) -> str:
     """
     symbol = _para_symbol_yf(ticker)
     try:
+        # .info e' propriedade (sem parametro de timeout exposto) -
+        # mesma observacao de fast_info/dividends acima
         info = yf.Ticker(symbol).info
     except Exception:
         return ""
@@ -456,7 +477,7 @@ def obter_historico(ticker: str, periodo_label: str):
     period_exibicao, interval = PERIODOS_GRAFICO[periodo_label]
     period_buffer, _ = PERIODOS_BUFFER[periodo_label]
     try:
-        df = yf.Ticker(symbol).history(period=period_buffer, interval=interval)
+        df = yf.Ticker(symbol).history(period=period_buffer, interval=interval, timeout=_TIMEOUT_YF)
         if df.empty:
             return None
         df = df.reset_index()
@@ -497,7 +518,7 @@ def obter_historico_intraday(ticker: str, periodo_label: str):
     symbol = _para_symbol_yf(ticker)
     period, interval = _PERIODOS_INTRADIARIOS_YF[periodo_label]
     try:
-        df = yf.Ticker(symbol).history(period=period, interval=interval)
+        df = yf.Ticker(symbol).history(period=period, interval=interval, timeout=_TIMEOUT_YF)
         if df.empty:
             return None
         df = df.reset_index()

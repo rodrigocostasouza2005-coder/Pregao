@@ -23,6 +23,11 @@ import pandas as pd
 import streamlit as st
 import yfinance as yf
 
+# timeout explicito (yf.download ja tem default interno de 10s nesta
+# versao da lib, mas deixado explicito de proposito em vez de depender
+# do default implicito - mesmo principio de data/prices.py:_TIMEOUT_YF)
+_TIMEOUT_YF = 15
+
 from config import IBOVESPA_SETORES, INDICES_GLOBAIS
 from data.ibovespa import obter_composicao_oficial
 from data.prices import _para_symbol_yf
@@ -51,7 +56,7 @@ def _baixar_lote(tickers: tuple) -> pd.DataFrame | None:
     variacao do dia mesmo se o pregao de hoje ainda nao fechou."""
     symbols = [_para_symbol_yf(t) for t in tickers]
     try:
-        df = yf.download(symbols, period="2mo", group_by="ticker", threads=True, progress=False, auto_adjust=False)
+        df = yf.download(symbols, period="2mo", group_by="ticker", threads=True, progress=False, auto_adjust=False, timeout=_TIMEOUT_YF)
         return df if not df.empty else None
     except Exception:
         return None
@@ -190,7 +195,7 @@ def _baixar_lote_bruto(symbols: tuple) -> pd.DataFrame | None:
     prefixo/sufixo especial - _para_symbol_yf aplicava ele errado em cima
     de '000001.SS', virando '000001.SS.SA', symbol invalido)."""
     try:
-        df = yf.download(list(symbols), period="5d", group_by="ticker", threads=True, progress=False, auto_adjust=False)
+        df = yf.download(list(symbols), period="5d", group_by="ticker", threads=True, progress=False, auto_adjust=False, timeout=_TIMEOUT_YF)
         return df if not df.empty else None
     except Exception:
         return None
