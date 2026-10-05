@@ -22,14 +22,15 @@ não por célula/clique) - trocar de dia/evento é só re-leitura de um
 dict em memória."""
 
 import calendar
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import streamlit as st
 
 import config
 from data.cvm import obter_documentos_cvm
 from data.eventos import (
-    PRIORIDADE_STATUS, STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_LABEL, STATUS_PRAZO_CVM, calcular_calendario,
+    PRIORIDADE_STATUS, STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_LABEL, STATUS_PRAZO_CVM,
+    calcular_calendario_cacheado, obter_snapshot_calendario,
 )
 from data.news import obter_noticias
 from data.research import CASAS
@@ -43,28 +44,69 @@ _MESES_NOME = [
 _NOMES_CASAS = [c["nome"] for c in CASAS]
 
 _CSS_CALENDARIO = """
-[data-testid="stButtonGroup"] { flex-wrap: wrap !important; row-gap: 0.3rem; }
+/* o elemento com display:flex de verdade e' um DIV filho direto de
+   stButtonGroup (o proprio stButtonGroup e' display:block) - achado
+   real (2026-10-05): as pills de CONTEXTO (rotulos mais longos, ex:
+   "HISTÓRICO (4)") estouravam a largura do painel lateral e ficavam
+   cortadas, porque o flex-wrap de antes mirava o elemento errado (o
+   pai display:block, onde a regra nunca fazia efeito nenhum). */
+[data-testid="stButtonGroup"] { row-gap: 0.3rem; }
+[data-testid="stButtonGroup"] > div { flex-wrap: wrap !important; row-gap: 0.3rem; }
 .cal-data-grupo {
     margin-top: 0.7rem; font-size: 0.68rem; color: var(--cinza);
     letter-spacing: 0.06em; border-bottom: 1px solid var(--borda); padding-bottom: 0.25rem;
 }
 .cal-linha-evento { font-size: 0.8rem; padding: 0.1rem 0; font-family: 'IBM Plex Mono', monospace; }
 .cal-ticker { color: var(--destaque); font-weight: 600; }
-.cal-subtitulo { color: var(--cinza); font-size: 0.7rem; margin: -0.2rem 0 0.5rem 0; }
+.cal-subtitulo { color: var(--cinza); font-size: 0.72rem; margin: 0.1rem 0 0.7rem 0; }
+.cal-atualizado { color: var(--cinza); font-size: 0.62rem; margin: -0.3rem 0 0.6rem 0; letter-spacing: 0.02em; }
+
+/* grade: cabecalho de dias da semana - mais respiro antes da 1a linha */
 .cal-grade-cabecalho {
-    display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; font-size: 0.62rem;
-    color: var(--cinza); letter-spacing: 0.05em; text-align: center; margin-top: 0.3rem; margin-bottom: 0.15rem;
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; font-size: 0.64rem;
+    color: var(--cinza); letter-spacing: 0.07em; text-align: center; margin: 0.6rem 0 0.4rem 0;
 }
-.cal-mes-titulo { text-align: center; font-size: 0.78rem; color: var(--destaque); letter-spacing: 0.05em; padding-top: 0.2rem; }
-.cal-cel-evento { font-size: 0.62rem; line-height: 1.2; margin-top: 0.15rem; font-family: 'IBM Plex Mono', monospace; }
-.cal-dia-selecionado-titulo { font-size: 0.78rem; color: var(--destaque); font-weight: 600; margin: 0.3rem 0 0.4rem 0; }
-.cal-legenda { font-size: 0.65rem; color: var(--cinza); margin-top: 0.5rem; display: flex; gap: 0.9rem; flex-wrap: wrap; }
+
+/* cada celula do dia: borda propria (separa visualmente do fundo, como
+   uma grade/planilha de verdade - nao e' um "card"), padding generoso,
+   altura minima pra nunca parecer espremida mesmo em dias sem evento */
+[class*="st-key-cal_cel_"] {
+    border: 1px solid var(--borda); padding: 0.4rem 0.45rem 0.55rem 0.45rem;
+    margin-bottom: 0.45rem; min-height: 4.6rem;
+}
+/* numero do dia: bem maior e mais legivel que o resto da celula */
+.st-key-cal_grade_area button { padding: 0.1rem 0 !important; min-height: 26px !important; }
+.st-key-cal_grade_area button p { font-size: 1.0rem !important; font-weight: 600 !important; }
+
+.cal-mes-titulo { text-align: center; font-size: 0.85rem; color: var(--destaque); letter-spacing: 0.06em; padding-top: 0.3rem; font-weight: 600; }
+
+/* evento dentro da celula: 3 linhas (ticker / periodo / status), com
+   respiro vertical e separador discreto entre eventos do mesmo dia */
+.cal-cel-evento {
+    font-family: 'IBM Plex Mono', monospace; margin-top: 0.5rem; padding-top: 0.35rem;
+    border-top: 1px solid var(--borda);
+}
+.cal-cel-evento:first-of-type { border-top: none; margin-top: 0.35rem; padding-top: 0; }
+.cal-cel-ticker { font-size: 0.74rem; font-weight: 700; color: var(--destaque); line-height: 1.3; }
+.cal-cel-periodo { font-size: 0.63rem; color: var(--cinza); margin-top: 0.08rem; }
+.cal-cel-status { font-size: 0.6rem; letter-spacing: 0.03em; margin-top: 0.12rem; }
+.cal-cel-mais { font-size: 0.6rem; color: var(--cinza); margin-top: 0.3rem; }
+
+/* painel lateral - mais respiro entre dia selecionado, lista de eventos e detalhe */
+.cal-dia-selecionado-titulo { font-size: 0.88rem; color: var(--destaque); font-weight: 700; margin: 0.1rem 0 0.7rem 0; }
+.cal-evt-status-dot { font-size: 1.15rem; text-align: center; padding-top: 0.35rem; }
+.cal-detalhe-evento { font-size: 0.82rem; line-height: 1.75; padding: 0.3rem 0 0.1rem 0; }
+.cal-detalhe-evento .cal-ticker { font-size: 0.95rem; }
+.cal-detalhe-aviso { color: var(--cinza); font-size: 0.68rem; line-height: 1.5; margin-top: 0.5rem; }
+
+.cal-legenda { font-size: 0.66rem; color: var(--cinza); margin-top: 0.7rem; display: flex; gap: 1.1rem; flex-wrap: wrap; }
+
+/* CONTEXTO: respiro entre o titulo da secao, as abas e o conteudo */
 .cal-contexto-titulo {
-    font-size: 0.65rem; color: var(--cinza); letter-spacing: 0.05em;
-    border-top: 1px solid var(--borda); padding-top: 0.4rem; margin-top: 0.5rem;
+    font-size: 0.66rem; color: var(--cinza); letter-spacing: 0.06em;
+    border-top: 1px solid var(--borda); padding-top: 0.7rem; margin-top: 0.8rem; margin-bottom: 0.5rem;
 }
-/* grade mensal/semanal: botao do dia mais compacto que o padrao do app */
-.st-key-cal_grade_area button { padding: 0.05rem 0.3rem !important; min-height: 22px !important; font-size: 0.72rem !important; }
+.cal-contexto-linha { font-size: 0.78rem; line-height: 1.7; padding: 0.25rem 0; font-family: 'IBM Plex Mono', monospace; }
 """
 
 
@@ -147,7 +189,7 @@ def _dados_contexto(ticker: str) -> dict:
 def _render_contexto_research(itens: list):
     for r in itens:
         st.markdown(
-            f"<div class='cal-linha-evento'>[{r['data'][:10] if r['data'] else '—'}] {r['casa']} · "
+            f"<div class='cal-contexto-linha'>[{r['data'][:10] if r['data'] else '—'}] {r['casa']} · "
             f"<a href='{r['link']}' target='_blank' style='color:var(--neutro); text-decoration:none;'>{r['titulo']}</a></div>",
             unsafe_allow_html=True,
         )
@@ -156,7 +198,7 @@ def _render_contexto_research(itens: list):
 def _render_contexto_news(noticias: list):
     for n in noticias:
         st.markdown(
-            f"<div class='cal-linha-evento'>[{n['data'][:10]}] "
+            f"<div class='cal-contexto-linha'>[{n['data'][:10]}] "
             f"<a href='{n['link']}' target='_blank' style='color:var(--neutro); text-decoration:none;'>{n['titulo']}</a></div>",
             unsafe_allow_html=True,
         )
@@ -165,7 +207,7 @@ def _render_contexto_news(noticias: list):
 def _render_contexto_documentos(documentos: list):
     for d in documentos:
         st.markdown(
-            f"<div class='cal-linha-evento'>[{d['data'][:10]}] "
+            f"<div class='cal-contexto-linha'>[{d['data'][:10]}] "
             f"<a href='{d['link']}' target='_blank' style='color:var(--neutro); text-decoration:none;'>{(d['assunto'] or '')[:90]}</a></div>",
             unsafe_allow_html=True,
         )
@@ -175,7 +217,7 @@ def _render_contexto_historico(historico: list):
     for d in historico:
         ref = f" (ref. {str(d['data_referencia'])[:10]})" if d.get("data_referencia") else ""
         st.markdown(
-            f"<div class='cal-linha-evento'>[{d['data'][:10]}] "
+            f"<div class='cal-contexto-linha'>[{d['data'][:10]}] "
             f"<a href='{d['link']}' target='_blank' style='color:var(--neutro); text-decoration:none;'>{d['tipo_label']}{ref}</a></div>",
             unsafe_allow_html=True,
         )
@@ -231,16 +273,16 @@ def _detalhe_evento(evento: dict):
     aviso_prazo_cvm = ""
     if evento["status"] == STATUS_PRAZO_CVM:
         aviso_prazo_cvm = (
-            "<div class='cinza' style='font-size:0.68rem; margin-top:0.3rem;'>"
+            "<div class='cal-detalhe-aviso'>"
             "Prazo regulatório para entrega do documento. Não representa necessariamente "
             "a data de divulgação do resultado.</div>"
         )
     st.markdown(
-        f"<div style='font-size:0.8rem;'>"
-        f"<span class='cal-ticker'>{evento['ticker']}</span> — {evento['empresa']}<br>"
-        f"<span class='cinza'>{evento['periodo']} · {evento['data'].strftime('%d/%m/%Y')}{horario_txt}</span><br>"
-        f"{_badge_status(evento['status'])}<br>"
-        f"<span class='cinza' style='font-size:0.68rem;'>Fonte: {fonte_txt}</span>"
+        f"<div class='cal-detalhe-evento'>"
+        f"<div><span class='cal-ticker'>{evento['ticker']}</span> — {evento['empresa']}</div>"
+        f"<div class='cinza'>{evento['periodo']} · {evento['data'].strftime('%d/%m/%Y')}{horario_txt}</div>"
+        f"<div>{_badge_status(evento['status'])}</div>"
+        f"<div class='cinza' style='font-size:0.68rem;'>Fonte: {fonte_txt}</div>"
         f"{aviso_prazo_cvm}"
         f"{aviso_desatualizado}"
         f"</div>",
@@ -252,11 +294,36 @@ def _detalhe_evento(evento: dict):
     # nao vira uma linha/evento duplicado na agenda
     for alt in evento.get("_fontes_alternativas") or []:
         st.markdown(
-            f"<div class='cinza' style='font-size:0.65rem; margin-top:0.15rem;'>"
+            f"<div class='cal-detalhe-aviso'>"
             f"também identificado como {STATUS_LABEL.get(alt['status'], alt['status'])} "
             f"({alt['data'].strftime('%d/%m/%Y')}) via {alt['fonte']}</div>",
             unsafe_allow_html=True,
         )
+
+
+def _rotulo_atualizacao() -> str | None:
+    """Indicador discreto de quando o snapshot foi gerado pela ultima
+    vez (ver data/eventos.py:obter_snapshot_calendario) - None se nunca
+    houve snapshot ainda (cai pro calculo em tempo real, sem indicador
+    nenhum pra nao afirmar uma "ultima atualizacao" que nao existe)."""
+    snapshot = obter_snapshot_calendario()
+    if not snapshot or not snapshot.get("atualizado_em"):
+        return None
+    try:
+        atualizado = datetime.fromisoformat(str(snapshot["atualizado_em"]))
+    except ValueError:
+        return None
+    if atualizado.tzinfo is None:
+        atualizado = atualizado.replace(tzinfo=timezone.utc)
+    minutos = (datetime.now(timezone.utc) - atualizado).total_seconds() / 60
+    if minutos < 1:
+        return "atualizado agora"
+    if minutos < 60:
+        return f"atualizado há {int(minutos)} min"
+    horas = minutos / 60
+    if horas < 24:
+        return f"atualizado há {int(horas)}h"
+    return f"atualizado há {int(horas // 24)}d"
 
 
 def _legenda_status():
@@ -278,7 +345,7 @@ def _painel_proximos_watchlist(prefs: dict):
         st.info("Adicione tickers na barra lateral para ver os próximos resultados.")
         return
 
-    eventos = calcular_calendario(watchlist)
+    eventos = calcular_calendario_cacheado(watchlist)
     if not eventos:
         st.markdown(
             "<div class='cinza' style='font-size:0.78rem;'>Nenhum evento calculável no momento "
@@ -333,13 +400,30 @@ def _semana_atual(hoje: date) -> list:
 
 
 def _grade_calendario(semanas: list, eventos_por_data: dict, mes_referencia, dia_selecionado: date):
+    # destaque visual, nessa ordem (a ultima regra que bater "ganha" em
+    # empate de especificidade): dias fora do mes esmaecidos (celula
+    # inteira, nao so' os eventos) -> HOJE com borda ambar discreta ->
+    # dia SELECIONADO com borda+fundo ambar mais forte (se hoje==
+    # selecionado, a regra de selecionado vem depois e prevalece)
+    regras = []
+    if mes_referencia is not None:
+        chaves_fora = [
+            f"cal_cel_{dia.isoformat()}" for semana in semanas for dia in semana if dia.month != mes_referencia
+        ]
+        if chaves_fora:
+            seletor = ", ".join(f".st-key-{c}" for c in chaves_fora)
+            regras.append(f"{seletor} {{ opacity: 0.4; }}")
+    chave_hoje = f"cal_cel_{date.today().isoformat()}"
+    regras.append(f".st-key-{chave_hoje} {{ border-color: var(--destaque) !important; }}")
     if dia_selecionado is not None:
         chave_sel = f"cal_cel_{dia_selecionado.isoformat()}"
-        st.markdown(
-            f"<style>.st-key-{chave_sel} button {{ border-color: var(--destaque) !important; "
-            f"color: var(--destaque) !important; background-color: rgba(255,160,40,0.14) !important; }}</style>",
-            unsafe_allow_html=True,
+        regras.append(
+            f".st-key-{chave_sel} {{ border-color: var(--destaque) !important; "
+            f"background-color: rgba(255,160,40,0.08) !important; }}"
+            f".st-key-{chave_sel} button {{ color: var(--destaque) !important; }}"
         )
+    st.markdown(f"<style>{' '.join(regras)}</style>", unsafe_allow_html=True)
+
     with st.container(key="cal_grade_area"):
         st.markdown(
             "<div class='cal-grade-cabecalho'>" + "".join(f"<div>{d}</div>" for d in _DIAS_SEMANA) + "</div>",
@@ -351,26 +435,28 @@ def _grade_calendario(semanas: list, eventos_por_data: dict, mes_referencia, dia
                 with cols[i]:
                     with st.container(key=f"cal_cel_{dia.isoformat()}"):
                         eventos_dia = eventos_por_data.get(dia, [])
-                        fora_do_mes = mes_referencia is not None and dia.month != mes_referencia
                         if st.button(f"{dia.day:02d}", key=f"cal_grid_dia_{dia.isoformat()}", width="stretch"):
                             st.session_state["cal_dia_selecionado"] = dia
                             st.session_state["cal_evento_selecionado"] = (
                                 (eventos_dia[0]["ticker"], eventos_dia[0]["periodo"]) if eventos_dia else None
                             )
                             st.rerun()
-                        opacidade = "0.35" if fora_do_mes else "1"
+                        # so' 3 eventos por celula (nunca espremer mais pra caber) -
+                        # TICKER / PERÍODO / ●STATUS, cada um na sua linha
                         for e in eventos_dia[:3]:
                             cor = _cor_status(e["status"])
                             horario_txt = f" · {e['horario']}" if e.get("horario") else ""
                             st.markdown(
-                                f"<div class='cal-cel-evento' style='opacity:{opacidade};'>"
-                                f"<span style='color:{cor};'>●</span> <b>{e['ticker']}</b><br>"
-                                f"<span class='cinza'>{e['periodo']}{horario_txt}</span></div>",
+                                f"<div class='cal-cel-evento'>"
+                                f"<div class='cal-cel-ticker'>{e['ticker']}</div>"
+                                f"<div class='cal-cel-periodo'>{e['periodo']}{horario_txt}</div>"
+                                f"<div class='cal-cel-status' style='color:{cor};'>● {STATUS_LABEL.get(e['status'], e['status'])}</div>"
+                                f"</div>",
                                 unsafe_allow_html=True,
                             )
                         if len(eventos_dia) > 3:
                             st.markdown(
-                                f"<div class='cinza' style='font-size:0.58rem;'>+{len(eventos_dia) - 3}</div>",
+                                f"<div class='cal-cel-mais'>+{len(eventos_dia) - 3} evento(s)</div>",
                                 unsafe_allow_html=True,
                             )
 
@@ -389,26 +475,30 @@ def _painel_lateral(eventos_por_data: dict, dia_selecionado: date):
         st.markdown("<div class='cinza' style='font-size:0.78rem;'>Nenhum evento neste dia.</div>", unsafe_allow_html=True)
         return
 
+    # linhas da lista ficam minimas de proposito (so' um ponto colorido
+    # por status + o ticker) - empresa/periodo/status completos so'
+    # aparecem 1x, no detalhe abaixo do evento selecionado (evita
+    # repetir a mesma informacao duas vezes na mesma tela)
     chave_sel = st.session_state.get("cal_evento_selecionado")
     evento_selecionado = None
     for e in eventos_dia:
         chave = (e["ticker"], e["periodo"])
         if chave == chave_sel:
             evento_selecionado = e
-        horario_txt = f"{e['horario']}  " if e.get("horario") else ""
-        rotulo_botao = f"{horario_txt}{e['ticker']}  {e['empresa']}"
-        if st.button(rotulo_botao, key=f"cal_evt_{chave[0]}_{chave[1]}", width="stretch"):
-            st.session_state["cal_evento_selecionado"] = chave
-            st.rerun()
-        st.markdown(
-            f"<div class='cinza' style='font-size:0.68rem; margin:-0.3rem 0 0.3rem 0;'>{e['periodo']} · {_badge_status(e['status'])}</div>",
-            unsafe_allow_html=True,
-        )
+        cor = _cor_status(e["status"])
+        col_dot, col_btn = st.columns([1, 9])
+        with col_dot:
+            st.markdown(f"<div class='cal-evt-status-dot'><span style='color:{cor};'>●</span></div>", unsafe_allow_html=True)
+        with col_btn:
+            horario_txt = f"{e['horario']}  " if e.get("horario") else ""
+            if st.button(f"{horario_txt}{e['ticker']}", key=f"cal_evt_{chave[0]}_{chave[1]}", width="stretch"):
+                st.session_state["cal_evento_selecionado"] = chave
+                st.rerun()
 
     if evento_selecionado is None:
         evento_selecionado = eventos_dia[0]
 
-    st.markdown("<div style='border-top:1px solid var(--borda); margin:0.5rem 0;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='border-top:1px solid var(--borda); margin:0.9rem 0 0.3rem 0;'></div>", unsafe_allow_html=True)
     _detalhe_evento(evento_selecionado)
     _painel_contexto(evento_selecionado)
 
@@ -435,6 +525,9 @@ def _painel_agenda(prefs: dict):
         "<div class='cal-subtitulo'>Eventos de resultados e conferências das empresas</div>",
         unsafe_allow_html=True,
     )
+    rotulo_atualizacao = _rotulo_atualizacao()
+    if rotulo_atualizacao:
+        st.markdown(f"<div class='cal-atualizado'>{rotulo_atualizacao}</div>", unsafe_allow_html=True)
 
     col_universo, col_janela = st.columns(2)
     with col_universo:
@@ -457,7 +550,7 @@ def _painel_agenda(prefs: dict):
         return
 
     with st.spinner("Calculando calendário..."):
-        eventos = calcular_calendario(tickers)
+        eventos = calcular_calendario_cacheado(tickers)
 
     hoje = date.today()
     eventos = _filtrar_janela(eventos, janela, hoje)

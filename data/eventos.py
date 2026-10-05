@@ -399,6 +399,134 @@ def calcular_calendario(tickers: list, hoje: date = None) -> list:
     return aplicar_cache_resiliente(eventos)
 
 
+# ============================================================
+# SNAPSHOT do calendario (2026-10-05): desacopla "quando o usuario abre
+# a aba" de "quando o calculo caro acontece". calcular_calendario em si
+# ja' e' rapido pra uma lista pequena (watchlist) depois do 1o ticker
+# (cache em memoria), mas o CUSTO INICIAL (download do IPE da CVM, ~4-
+# 5s, pago 1x por processo/TTL) ainda cai no 1o usuario a abrir a aba
+# depois de o processo acordar/o cache expirar - "Calculando
+# calendario..." visivel. O coletor (coletor_local.py, ja agendado)
+# agora calcula o universo INTEIRO e grava aqui (tabela
+# calendario_snapshot, ver sql/calendario_snapshot.sql); a UI so' LE
+# essa tabela (1 consulta rapida) e filtra em memoria - nunca recalcula
+# sozinha, exceto se nao houver NENHUM snapshot ainda (projeto novo) ou
+# o Supabase estiver fora do ar.
+# ============================================================
+
+_TABELA_SNAPSHOT = "calendario_snapshot"
+_ID_SNAPSHOT = "latest"
+_TTL_SNAPSHOT = 10 * 60  # so' pra nao bater no Supabase a cada rerun - o dado em si e' atualizado pelo coletor, nao por este TTL
+
+
+def _evento_para_json(evento: dict) -> dict:
+    """date/datetime nao sao JSON-nativos - serializa pra ISO string.
+    _fontes_alternativas (se existir, ver mesclar_eventos) tambem carrega
+    uma 'data' date dentro de cada item - serializada igual."""
+    d = dict(evento)
+    d["data"] = evento["data"].isoformat()
+    if evento.get("coletado_em"):
+        d["coletado_em"] = evento["coletado_em"].isoformat()
+    if evento.get("_fontes_alternativas"):
+        d["_fontes_alternativas"] = [
+            {**alt, "data": alt["data"].isoformat()} for alt in evento["_fontes_alternativas"]
+        ]
+    return d
+
+
+def _evento_de_json(d: dict) -> dict:
+    e = dict(d)
+    e["data"] = date.fromisoformat(d["data"])
+    if d.get("coletado_em"):
+        try:
+            e["coletado_em"] = datetime.fromisoformat(d["coletado_em"])
+        except ValueError:
+            e["coletado_em"] = None
+    if d.get("_fontes_alternativas"):
+        e["_fontes_alternativas"] = [
+            {**alt, "data": date.fromisoformat(alt["data"])} for alt in d["_fontes_alternativas"]
+        ]
+    return e
+
+
+@st.cache_data(ttl=_TTL_SNAPSHOT, show_spinner=False)
+def obter_snapshot_calendario() -> dict | None:
+    """Ultimo snapshot persistido pelo coletor - {eventos: [...],
+    atualizado_em: iso}. None se nunca foi gerado (tabela vazia/
+    ausente) ou o Supabase estiver fora do ar - quem chama
+    (calcular_calendario_cacheado) cai pro calculo em tempo real so'
+    nesse caso, nunca por este TTL expirar com dado ja' existente."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        resp = cliente.table(_TABELA_SNAPSHOT).select("*").eq("id", _ID_SNAPSHOT).limit(1).execute()
+        return resp.data[0] if resp.data else None
+    except Exception:
+        return None
+
+
+def salvar_snapshot_calendario(tickers: list, hoje: date = None) -> bool:
+    """Calcula o calendario pro universo dado (mesma calcular_calendario
+    de sempre, SEM mudanca de logica/fontes) e persiste como snapshot -
+    chamado so' pelo coletor (coletor_local.py), NUNCA pela UI. So'
+    sobrescreve se o calculo produziu pelo menos 1 evento - uma falha
+    pontual (CVM fora do ar, Supabase fora do ar) NUNCA apaga o ultimo
+    snapshot bom, so' deixa de atualizar (preserva o ultimo valido, ver
+    ATUALIZACAO). Retorna True so' se gravou um snapshot NOVO."""
+    eventos = calcular_calendario(tickers, hoje=hoje)
+    if not eventos:
+        return False
+    cliente = obter_cliente()
+    if cliente is None:
+        return False
+    try:
+        cliente.table(_TABELA_SNAPSHOT).upsert({
+            "id": _ID_SNAPSHOT,
+            "eventos": [_evento_para_json(e) for e in eventos],
+            "atualizado_em": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+        return True
+    except Exception:
+        return False
+
+
+def calcular_calendario_cacheado(tickers: list, hoje: date = None) -> list:
+    """Fonte de dados da UI (ui/calendario_tab.py): le o snapshot
+    persistido (ver obter_snapshot_calendario) e filtra em memoria pro
+    universo pedido - SEM recalcular/coletar nada ao renderizar ou
+    navegar (trocar filtro/janela/mes/selecao de evento e' so' filtrar
+    um dict ja' em memoria). Ticker presente na lista pedida mas AUSENTE
+    do snapshot (ex: ticker fora de config.IBOVESPA_SETORES, que e' o
+    universo que o coletor cobre - BDR na watchlist, por exemplo) cai
+    pro calculo em tempo real so' PRA ESSE ticker (calcular_calendario),
+    nunca pro lote inteiro - preserva a cobertura completa da watchlist
+    sem pagar o custo caro pros tickers que ja' estao no snapshot.
+
+    Se NUNCA houve snapshot (projeto novo) ou o Supabase estiver fora
+    do ar, cai pro calculo em tempo real pro lote inteiro (comportamento
+    de calcular_calendario de sempre) - a UI nunca fica sem dado."""
+    snapshot = obter_snapshot_calendario()
+    if snapshot is None or not snapshot.get("eventos"):
+        return calcular_calendario(tickers, hoje=hoje)
+
+    eventos_snapshot = {}
+    for linha in snapshot["eventos"]:
+        try:
+            eventos_snapshot[linha["ticker"]] = _evento_de_json(linha)
+        except (KeyError, ValueError, TypeError):
+            continue  # linha malformada no snapshot - ignora, nunca quebra
+
+    tickers_unicos = list(dict.fromkeys(tickers))
+    cobertos = [t for t in tickers_unicos if t in eventos_snapshot]
+    nao_cobertos = [t for t in tickers_unicos if t not in eventos_snapshot]
+
+    eventos = [eventos_snapshot[t] for t in cobertos]
+    if nao_cobertos:
+        eventos += calcular_calendario(nao_cobertos, hoje=hoje)
+    return sorted(eventos, key=lambda e: e["data"])
+
+
 @st.cache_resource(show_spinner=False)
 def _cache_eventos() -> dict:
     """{(ticker,periodo): evento} - ultimo evento conhecido (qualquer

@@ -61,6 +61,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import config
+from data.eventos import salvar_snapshot_calendario
 from data.eventos_coleta import coletar_eventos_universo
 from data.research import coletar_todas_disponiveis
 from data.research.historico import coletar_snapshot_genial
@@ -139,6 +140,19 @@ def main() -> int:
         f"{stats_eventos['mantidos_prazo_cvm']} sem fonte melhor (prazo CVM)"
         + (" - tempo esgotado, proximo run continua" if stats_eventos["tempo_esgotado"] else "")
     )
+
+    # snapshot do calendario (2026-10-05, ver data/eventos.py): grava o
+    # calendario do universo INTEIRO pra UI so' ler (nunca recalcular ao
+    # abrir/navegar). Reaproveita o MESMO agendamento deste script (ja
+    # roda a cada 30min, seg-sex 07h-20h) - cobre de sobra os ~2x/dia
+    # (08h/18h) pedidos, sem precisar de uma tarefa agendada nova.
+    # Rodado DEPOIS do coletor de eventos acima, pra o snapshot refletir
+    # qualquer CONFIRMADO/ESTIMADO achado agora mesmo nesta execucao.
+    snapshot_ok = salvar_snapshot_calendario(list(config.IBOVESPA_SETORES.keys()))
+    if snapshot_ok:
+        logger.info("  snapshot do calendario: atualizado")
+    else:
+        logger.warning("  snapshot do calendario: mantido o anterior (calculo vazio ou Supabase indisponivel)")
 
     return 1 if any(not info["ok"] for info in resultado.values()) else 0
 

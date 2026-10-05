@@ -15,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import data.eventos as eventos_mod
 from data.eventos import (
     STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_PRAZO_CVM,
-    aplicar_cache_resiliente, calcular_calendario, calcular_proximo_resultado, mesclar_eventos,
+    aplicar_cache_resiliente, calcular_calendario, calcular_calendario_cacheado, calcular_proximo_resultado,
+    mesclar_eventos,
 )
 
 _FALHAS = []
@@ -452,6 +453,123 @@ def test_perf_4_resultado_final_identico_com_ou_sem_prebusca_em_lote():
              em_lote["data"] == date(2026, 10, 20) and em_lote["fonte"] == "Petrobras RI")
     _checar("perf4c caminho isolado (sem prebusca) continua funcionando igual (fallback PRAZO_CVM, nada persistido)",
              isolado["status"] == STATUS_PRAZO_CVM)
+
+
+# ============================================================
+# SNAPSHOT do calendario (2026-10-05): a UI (ui/calendario_tab.py) le
+# so' o snapshot persistido pelo coletor (coletor_local.py) - nunca
+# recalcula/coleta ao renderizar ou navegar. Testes abaixo mockam
+# obter_snapshot_calendario/calcular_calendario/obter_cliente - sem
+# chamada de rede.
+# ============================================================
+
+def _evento_sint(ticker="PETR4", periodo="3T26", status=STATUS_CONFIRMADO, data_evento=None, fonte="fonte teste"):
+    return {
+        "ticker": ticker, "empresa": "EMPRESA TESTE", "periodo": periodo,
+        "data": data_evento or date(2026, 10, 20), "horario": None,
+        "status": status, "fonte": fonte, "origem_url": None, "tipo_evento": "RESULTADO",
+        "coletado_em": None,
+    }
+
+
+def test_snap_1_cacheado_le_do_snapshot_sem_recalcular_quando_tudo_coberto():
+    linha_a = eventos_mod._evento_para_json(_evento_sint(ticker="PETR4", data_evento=date(2026, 10, 20)))
+    linha_b = eventos_mod._evento_para_json(_evento_sint(ticker="VALE3", data_evento=date(2026, 11, 5)))
+    chamadas_live = []
+    with patch.object(eventos_mod, "obter_snapshot_calendario", return_value={"eventos": [linha_a, linha_b]}), \
+         patch.object(eventos_mod, "calcular_calendario", side_effect=lambda *a, **k: chamadas_live.append(a) or []):
+        eventos = calcular_calendario_cacheado(["PETR4", "VALE3"])
+    _checar("snap1a nenhuma chamada ao calculo em tempo real (os 2 tickers estao no snapshot)", chamadas_live == [])
+    _checar("snap1b os 2 eventos do snapshot sao retornados", {e["ticker"] for e in eventos} == {"PETR4", "VALE3"})
+    _checar("snap1c datas desserializadas como date (nao string)", all(isinstance(e["data"], date) for e in eventos))
+
+
+def test_snap_2_ticker_fora_do_snapshot_cai_pro_calculo_isolado_so_pra_ele():
+    linha_a = eventos_mod._evento_para_json(_evento_sint(ticker="PETR4"))
+    evento_xpto = _evento_sint(ticker="XPTO9", status=STATUS_PRAZO_CVM, data_evento=date(2026, 11, 14))
+    chamadas_live = []
+
+    def _calc(tickers, hoje=None):
+        chamadas_live.append(list(tickers))
+        return [evento_xpto]
+
+    with patch.object(eventos_mod, "obter_snapshot_calendario", return_value={"eventos": [linha_a]}), \
+         patch.object(eventos_mod, "calcular_calendario", side_effect=_calc):
+        eventos = calcular_calendario_cacheado(["PETR4", "XPTO9"])
+    _checar("snap2a calculo em tempo real chamado SO' com o ticker fora do snapshot",
+             chamadas_live == [["XPTO9"]], f"(chamadas={chamadas_live})")
+    _checar("snap2b resultado inclui os 2 tickers (snapshot + calculado)",
+             {e["ticker"] for e in eventos} == {"PETR4", "XPTO9"})
+
+
+def test_snap_3_sem_snapshot_cai_pro_calculo_completo_de_sempre():
+    chamadas_live = []
+
+    def _calc(tickers, hoje=None):
+        chamadas_live.append(list(tickers))
+        return []
+
+    with patch.object(eventos_mod, "obter_snapshot_calendario", return_value=None), \
+         patch.object(eventos_mod, "calcular_calendario", side_effect=_calc):
+        calcular_calendario_cacheado(["PETR4", "VALE3", "ITUB4"])
+    _checar("snap3 sem snapshot (projeto novo) -> calcula o LOTE INTEIRO em tempo real, comportamento de sempre",
+             chamadas_live == [["PETR4", "VALE3", "ITUB4"]])
+
+
+def test_snap_4_salvar_nao_sobrescreve_quando_calculo_vazio():
+    cliente = MagicMock()
+    with patch.object(eventos_mod, "calcular_calendario", return_value=[]), \
+         patch.object(eventos_mod, "obter_cliente", return_value=cliente):
+        gravou = eventos_mod.salvar_snapshot_calendario(["PETR4"])
+    _checar("snap4a calculo vazio -> salvar_snapshot_calendario retorna False", gravou is False)
+    _checar("snap4b nenhum upsert e' chamado (preserva o snapshot anterior, nunca apaga com um calculo vazio)",
+             cliente.table.called is False)
+
+
+def test_snap_5_salvar_serializa_datas_antes_de_gravar():
+    upserts = []
+    cliente = MagicMock()
+    cliente.table.return_value.upsert.side_effect = lambda payload, **k: (upserts.append(payload), MagicMock(execute=lambda: None))[1]
+    evento = _evento_sint(data_evento=date(2026, 10, 20))
+    with patch.object(eventos_mod, "calcular_calendario", return_value=[evento]), \
+         patch.object(eventos_mod, "obter_cliente", return_value=cliente):
+        gravou = eventos_mod.salvar_snapshot_calendario(["PETR4"])
+    _checar("snap5a gravou com sucesso", gravou is True)
+    _checar("snap5b payload gravado e' JSON-seguro (data serializada como string ISO, nao date object)",
+             len(upserts) == 1 and isinstance(upserts[0]["eventos"][0]["data"], str))
+    _checar("snap5c string da data e' exatamente 2026-10-20", upserts[0]["eventos"][0]["data"] == "2026-10-20")
+
+
+def test_snap_6_json_roundtrip_preserva_data_e_fontes_alternativas():
+    evento = _evento_sint(data_evento=date(2026, 10, 20))
+    evento["_fontes_alternativas"] = [{"status": STATUS_PRAZO_CVM, "data": date(2026, 11, 14), "fonte": "CVM"}]
+    serializado = eventos_mod._evento_para_json(evento)
+    _checar("snap6a serializado: data e' string", isinstance(serializado["data"], str))
+    _checar("snap6b serializado: data dentro de _fontes_alternativas tambem e' string",
+             isinstance(serializado["_fontes_alternativas"][0]["data"], str))
+    de_volta = eventos_mod._evento_de_json(serializado)
+    _checar("snap6c round-trip: data volta a ser date", de_volta["data"] == date(2026, 10, 20))
+    _checar("snap6d round-trip: data em _fontes_alternativas tambem volta a ser date",
+             de_volta["_fontes_alternativas"][0]["data"] == date(2026, 11, 14))
+
+
+def test_snap_7_obter_snapshot_supabase_fora_do_ar_retorna_none_sem_quebrar():
+    with patch.object(eventos_mod, "obter_cliente", return_value=None):
+        resultado = eventos_mod.obter_snapshot_calendario()
+    _checar("snap7 Supabase fora do ar -> None, sem excecao", resultado is None)
+
+
+def test_snap_8_cacheado_ignora_linha_malformada_no_snapshot_sem_quebrar():
+    linha_boa = eventos_mod._evento_para_json(_evento_sint(ticker="PETR4"))
+    linha_malformada = {"ticker": "VALE3"}  # sem 'data' - KeyError se nao tratado
+    chamadas_live = []
+    with patch.object(eventos_mod, "obter_snapshot_calendario", return_value={"eventos": [linha_boa, linha_malformada]}), \
+         patch.object(eventos_mod, "calcular_calendario", side_effect=lambda tickers, hoje=None: (chamadas_live.append(list(tickers)), [])[1]):
+        eventos = calcular_calendario_cacheado(["PETR4", "VALE3"])
+    _checar("snap8a linha malformada nao quebra a leitura", True)
+    _checar("snap8b PETR4 (linha boa) retornado normalmente", any(e["ticker"] == "PETR4" for e in eventos))
+    _checar("snap8c VALE3 (linha malformada, ignorada) cai pro calculo isolado",
+             chamadas_live == [["VALE3"]], f"(chamadas={chamadas_live})")
 
 
 if __name__ == "__main__":

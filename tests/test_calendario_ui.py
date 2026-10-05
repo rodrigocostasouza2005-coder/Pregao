@@ -44,7 +44,7 @@ def _capturar_markdown(fn, *args, **kwargs):
 
 def test_1_somente_prazo_cvm_mostra_mensagem_de_nenhum_resultado_confirmado():
     prefs = {"watchlist": ["PETR4"]}
-    with patch.object(calendario_tab_mod, "calcular_calendario", return_value=[_evento(status=STATUS_PRAZO_CVM)]):
+    with patch.object(calendario_tab_mod, "calcular_calendario_cacheado", return_value=[_evento(status=STATUS_PRAZO_CVM)]):
         capturado = _capturar_markdown(calendario_tab_mod._painel_proximos_watchlist, prefs)
     texto = " ".join(capturado)
     _checar("1a mensagem 'Nenhuma data de divulgação confirmada.' aparece quando so' ha PRAZO_CVM",
@@ -57,7 +57,7 @@ def test_1_somente_prazo_cvm_mostra_mensagem_de_nenhum_resultado_confirmado():
 def test_2_confirmado_aparece_em_proximos_resultados_nao_em_prazos_cvm():
     prefs = {"watchlist": ["PETR4"]}
     eventos = [_evento(status=STATUS_CONFIRMADO, fonte="Petrobras RI", data_evento=date(2026, 10, 20))]
-    with patch.object(calendario_tab_mod, "calcular_calendario", return_value=eventos):
+    with patch.object(calendario_tab_mod, "calcular_calendario_cacheado", return_value=eventos):
         capturado = _capturar_markdown(calendario_tab_mod._painel_proximos_watchlist, prefs)
     texto = " ".join(capturado)
     _checar("2a CONFIRMADO aparece na lista (nao esconde o evento)", "PETR4" in texto and "CONFIRMADO" in texto)
@@ -68,7 +68,7 @@ def test_2_confirmado_aparece_em_proximos_resultados_nao_em_prazos_cvm():
 def test_3_estimado_tambem_vai_pra_proximos_resultados():
     prefs = {"watchlist": ["VALE3"]}
     eventos = [_evento(ticker="VALE3", status=STATUS_ESTIMADO, fonte="Consenso de mercado")]
-    with patch.object(calendario_tab_mod, "calcular_calendario", return_value=eventos):
+    with patch.object(calendario_tab_mod, "calcular_calendario_cacheado", return_value=eventos):
         capturado = _capturar_markdown(calendario_tab_mod._painel_proximos_watchlist, prefs)
     texto = " ".join(capturado)
     _checar("3 ESTIMADO aparece em PRÓXIMOS RESULTADOS (nao em PRAZOS CVM)",
@@ -81,7 +81,7 @@ def test_4_mix_confirmado_e_prazo_cvm_fica_em_secoes_diferentes():
         _evento(ticker="PETR4", status=STATUS_CONFIRMADO, fonte="Petrobras RI", data_evento=date(2026, 10, 20)),
         _evento(ticker="VALE3", status=STATUS_PRAZO_CVM, data_evento=date(2026, 11, 14)),
     ]
-    with patch.object(calendario_tab_mod, "calcular_calendario", return_value=eventos):
+    with patch.object(calendario_tab_mod, "calcular_calendario_cacheado", return_value=eventos):
         capturado = _capturar_markdown(calendario_tab_mod._painel_proximos_watchlist, prefs)
     texto = " ".join(capturado)
     idx_resultados = texto.index("PRÓXIMOS RESULTADOS")
@@ -96,7 +96,7 @@ def test_4_mix_confirmado_e_prazo_cvm_fica_em_secoes_diferentes():
 
 def test_5_mensagem_de_periodo_vazio_na_agenda():
     prefs = {"watchlist": ["PETR4"]}
-    with patch.object(calendario_tab_mod, "calcular_calendario", return_value=[]), \
+    with patch.object(calendario_tab_mod, "calcular_calendario_cacheado", return_value=[]), \
          patch.object(calendario_tab_mod.st, "columns", return_value=(_FakeCol(), _FakeCol())), \
          patch.object(calendario_tab_mod.st, "pills", return_value=None), \
          patch.object(calendario_tab_mod.st, "spinner", return_value=_FakeCtx()):
