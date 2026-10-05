@@ -145,10 +145,15 @@ def test_7_detalhe_confirmado_nao_mostra_aviso_de_prazo():
 
 
 # ============================================================
-# FASE "HUB DO EVENTO" (2026-10-02): RESEARCH/NEWS/CVM/HISTORICO no
-# detalhe de um evento - reaproveita obter_documentos_cvm/obter_noticias/
-# listar_itens (mesmas funcoes cacheadas que EQUITY/CVM/NEWS/RESEARCH ja
-# usam), zero chamada de IA, zero fonte nova.
+# FASE "HUB DO EVENTO" (2026-10-02; redesign visual 2026-10-05):
+# RESEARCH/NEWS/DOCUMENTOS(CVM)/HISTORICO do ticker - reaproveita
+# obter_documentos_cvm/obter_noticias/listar_itens (mesmas funcoes
+# cacheadas que EQUITY/CVM/NEWS/RESEARCH ja usam), zero chamada de IA,
+# zero fonte nova. Ate 2026-10-05 as 4 secoes ficavam sempre visiveis
+# dentro de _detalhe_evento (dump); agora _detalhe_evento so' mostra o
+# metadado compacto do evento (ver testes 6/7, inalterados) e o
+# conteudo de contexto virou abas em _painel_contexto/_dados_contexto,
+# 1 secao visivel por vez, so' aparecendo quando ha' dado.
 # ============================================================
 
 _DOC_CVM_GENERICO = {
@@ -168,80 +173,93 @@ _RELATORIO = {"casa": "Genial Analisa", "titulo": "PETR4: tese de investimento",
               "resumo": None, "modelo_resumo": None, "preco_alvo": None, "recomendacao": None}
 
 
-def test_8_evento_com_todas_as_fontes_mostra_as_4_secoes():
+def test_8_dados_contexto_busca_as_4_fontes_sem_n_mais_1():
     evento = _evento()
     with patch.object(calendario_tab_mod, "obter_documentos_cvm", return_value=[_DOC_CVM_GENERICO, _DOC_CVM_RESULTADO_ANTIGO]) as mock_cvm, \
          patch.object(calendario_tab_mod, "obter_noticias", return_value=[_NOTICIA]), \
          patch.object(calendario_tab_mod, "listar_itens", return_value=[_RELATORIO]):
-        capturado = _capturar_markdown(calendario_tab_mod._detalhe_evento, evento)
-    texto = " ".join(capturado)
-    _checar("8a seção RESEARCH aparece", "RESEARCH" in texto and "tese de investimento" in texto)
-    _checar("8b seção NEWS aparece", "NEWS" in texto and "Petrobras anuncia investimento" in texto)
-    _checar("8c seção CVM (documentos genéricos) aparece", "CVM" in texto and "Aviso de fato relevante" in texto)
-    _checar("8d seção HISTÓRICO (resultado antigo) aparece", "HISTÓRICO" in texto and "ref. 2026-06-30" in texto)
-    # usa "CVM ·" (com o separador do rotulo da secao), nao so' "CVM" -
-    # o badge de status do evento PRAZO_CVM ja' contem a substring "CVM"
-    # bem antes de qualquer secao (achado real ao rodar este teste)
-    _checar("8e ordem das seções é RESEARCH, NEWS, CVM, HISTÓRICO (pedido explícito)",
-             texto.index("RESEARCH ·") < texto.index("NEWS ·") < texto.index("CVM ·") < texto.index("HISTÓRICO ·"))
-    _checar("8f obter_documentos_cvm chamado so' 1 VEZ (CVM + HISTÓRICO reaproveitam a mesma busca, sem N+1)",
+        dados = calendario_tab_mod._dados_contexto(evento["ticker"])
+    _checar("8a RESEARCH tem o relatorio relacionado", len(dados["RESEARCH"]) == 1 and dados["RESEARCH"][0]["titulo"] == "PETR4: tese de investimento")
+    _checar("8b NEWS tem a noticia relacionada", len(dados["NEWS"]) == 1 and dados["NEWS"][0]["titulo"] == "Petrobras anuncia investimento")
+    _checar("8c DOCUMENTOS tem os 2 documentos CVM (generico + resultado antigo)", len(dados["DOCUMENTOS"]) == 2)
+    _checar("8d HISTÓRICO so' tem o documento tipo RESULTADOS (filtra o generico)",
+             len(dados["HISTÓRICO"]) == 1 and dados["HISTÓRICO"][0]["data_referencia"] == "2026-06-30")
+    _checar("8e ordem das chaves do dict é RESEARCH, NEWS, DOCUMENTOS, HISTÓRICO (pedido explícito)",
+             list(dados.keys()) == ["RESEARCH", "NEWS", "DOCUMENTOS", "HISTÓRICO"])
+    _checar("8f obter_documentos_cvm chamado so' 1 VEZ (DOCUMENTOS + HISTÓRICO reaproveitam a mesma busca, sem N+1)",
              mock_cvm.call_count == 1, f"(call_count={mock_cvm.call_count})")
 
 
-def test_9_evento_sem_algumas_fontes_oculta_so_as_vazias():
+def test_9_dados_contexto_fonte_vazia_fica_lista_vazia_nao_erro():
     evento = _evento()
     with patch.object(calendario_tab_mod, "obter_documentos_cvm", return_value=[_DOC_CVM_GENERICO]), \
          patch.object(calendario_tab_mod, "obter_noticias", return_value=[]), \
          patch.object(calendario_tab_mod, "listar_itens", return_value=[]):
-        capturado = _capturar_markdown(calendario_tab_mod._detalhe_evento, evento)
-    texto = " ".join(capturado)
-    _checar("9a RESEARCH oculto quando vazio (sem relatório relacionado)", "RESEARCH" not in texto)
-    _checar("9b NEWS oculto quando vazio (sem notícia relacionada)", "NEWS" not in texto)
-    _checar("9c CVM aparece (tem documento genérico)", "CVM" in texto)
-    _checar("9d HISTÓRICO oculto (documento genérico não é tipo RESULTADOS)", "HISTÓRICO" not in texto)
+        dados = calendario_tab_mod._dados_contexto(evento["ticker"])
+    _checar("9a RESEARCH vazio (sem relatório relacionado)", dados["RESEARCH"] == [])
+    _checar("9b NEWS vazio (sem notícia relacionada)", dados["NEWS"] == [])
+    _checar("9c DOCUMENTOS tem o documento genérico", len(dados["DOCUMENTOS"]) == 1)
+    _checar("9d HISTÓRICO vazio (documento genérico não é tipo RESULTADOS)", dados["HISTÓRICO"] == [])
 
 
-def test_10_ticker_sem_dado_nenhum_oculta_todas_as_4_secoes():
+def test_10_painel_contexto_nao_mostra_nada_quando_ticker_sem_dado_nenhum():
     evento = _evento()
     with patch.object(calendario_tab_mod, "obter_documentos_cvm", return_value=[]), \
          patch.object(calendario_tab_mod, "obter_noticias", return_value=[]), \
          patch.object(calendario_tab_mod, "listar_itens", return_value=[]):
-        capturado = _capturar_markdown(calendario_tab_mod._detalhe_evento, evento)
-    texto = " ".join(capturado)
-    for secao in ("RESEARCH", "NEWS", "CVM ·", "HISTÓRICO"):
-        _checar(f"10 seção '{secao}' oculta quando ticker nao tem dado nenhum", secao not in texto)
+        capturado = _capturar_markdown(calendario_tab_mod._painel_contexto, evento)
+    _checar("10a nenhum markdown (nem o titulo CONTEXTO) quando as 4 fontes estao vazias", capturado == [])
 
-    # fonte CVM indisponivel (None, nao []) tambem precisa ocultar CVM/HISTORICO
-    # sem quebrar (achado real: obter_documentos_cvm pode retornar None)
+    # fonte CVM indisponivel (None, nao []) tambem precisa degradar pra
+    # "sem dado" sem quebrar (achado real: obter_documentos_cvm pode
+    # retornar None)
     with patch.object(calendario_tab_mod, "obter_documentos_cvm", return_value=None), \
          patch.object(calendario_tab_mod, "obter_noticias", return_value=[]), \
          patch.object(calendario_tab_mod, "listar_itens", return_value=[]):
         try:
-            capturado2 = _capturar_markdown(calendario_tab_mod._detalhe_evento, evento)
+            capturado2 = _capturar_markdown(calendario_tab_mod._painel_contexto, evento)
             ok = True
         except Exception as e:
             ok = False
             print("      excecao:", e)
-    _checar("10b fonte CVM indisponível (None) não quebra o detalhe do evento", ok)
+    _checar("10b fonte CVM indisponível (None) não quebra o painel de contexto", ok)
     if ok:
-        texto2 = " ".join(capturado2)
-        _checar("10c fonte CVM indisponível (None) também oculta CVM/HISTÓRICO (nunca mostra seção vazia)",
-                 "CVM ·" not in texto2 and "HISTÓRICO" not in texto2)
+        _checar("10c fonte CVM indisponível (None) também não mostra CONTEXTO (nunca secao vazia)", capturado2 == [])
 
 
-def test_11_links_sao_clicaveis_apontando_para_a_fonte_original():
+def test_11_painel_contexto_mostra_abas_com_contagem_e_links_clicaveis():
     evento = _evento()
     with patch.object(calendario_tab_mod, "obter_documentos_cvm", return_value=[_DOC_CVM_GENERICO, _DOC_CVM_RESULTADO_ANTIGO]), \
          patch.object(calendario_tab_mod, "obter_noticias", return_value=[_NOTICIA]), \
-         patch.object(calendario_tab_mod, "listar_itens", return_value=[_RELATORIO]):
-        capturado = _capturar_markdown(calendario_tab_mod._detalhe_evento, evento)
+         patch.object(calendario_tab_mod, "listar_itens", return_value=[_RELATORIO]), \
+         patch.object(calendario_tab_mod.st, "pills", return_value="RESEARCH") as mock_pills:
+        capturado = _capturar_markdown(calendario_tab_mod._painel_contexto, evento)
     texto = " ".join(capturado)
-    _checar("11a link do RESEARCH aponta pra URL original", "href='https://research.example/r1'" in texto)
-    _checar("11b link do NEWS aponta pra URL original", "href='https://news.example/n1'" in texto)
-    _checar("11c link do CVM aponta pra URL original", "href='https://cvm.example/doc1'" in texto)
-    _checar("11d link do HISTÓRICO aponta pra URL original", "href='https://cvm.example/doc2'" in texto)
-    _checar("11e todos os links abrem em nova aba (target='_blank', nunca navega pra fora do Pregão)",
-             texto.count("target='_blank'") >= 4)
+    _checar("11a titulo CONTEXTO aparece", "CONTEXTO" in texto)
+    _checar("11b opcoes de aba oferecidas (so' as 4, com contagem) na ordem certa",
+             mock_pills.call_args.args[1] == ["RESEARCH", "NEWS", "DOCUMENTOS", "HISTÓRICO"])
+    _checar("11c aba selecionada (RESEARCH) renderiza seu conteudo com link pra URL original",
+             "tese de investimento" in texto and "href='https://research.example/r1'" in texto)
+    _checar("11d aba NAO selecionada (NEWS) nao renderiza conteudo nesta chamada (so' 1 aba por vez)",
+             "Petrobras anuncia investimento" not in texto)
+    _checar("11e link abre em nova aba (target='_blank', nunca navega pra fora do Pregão)",
+             "target='_blank'" in texto)
+
+    # troca de aba (NEWS) renderiza NEWS, nao RESEARCH - confirma que cada
+    # renderizador individual (_render_contexto_*) funciona com link correto
+    for chave, link_esperado, trecho_esperado in [
+        ("NEWS", "https://news.example/n1", "Petrobras anuncia investimento"),
+        ("DOCUMENTOS", "https://cvm.example/doc1", "Aviso de fato relevante"),
+        ("HISTÓRICO", "https://cvm.example/doc2", "ref. 2026-06-30"),
+    ]:
+        with patch.object(calendario_tab_mod, "obter_documentos_cvm", return_value=[_DOC_CVM_GENERICO, _DOC_CVM_RESULTADO_ANTIGO]), \
+             patch.object(calendario_tab_mod, "obter_noticias", return_value=[_NOTICIA]), \
+             patch.object(calendario_tab_mod, "listar_itens", return_value=[_RELATORIO]), \
+             patch.object(calendario_tab_mod.st, "pills", return_value=chave):
+            capturado_aba = _capturar_markdown(calendario_tab_mod._painel_contexto, evento)
+        texto_aba = " ".join(capturado_aba)
+        _checar(f"11f aba {chave} selecionada renderiza seu conteudo", trecho_esperado in texto_aba)
+        _checar(f"11g aba {chave} link aponta pra URL original", f"href='{link_esperado}'" in texto_aba)
 
 
 def test_12_ausencia_de_chamadas_de_ia():
@@ -256,9 +274,62 @@ def test_12_ausencia_de_chamadas_de_ia():
          patch.object(calendario_tab_mod, "listar_itens", return_value=[_RELATORIO]), \
          patch.object(resumir_mod, "resumir_com_groq", side_effect=lambda *a, **k: chamadas_ia.append(1)), \
          patch.object(resumir_mod, "obter_resumo", side_effect=lambda *a, **k: chamadas_ia.append(1)):
-        _capturar_markdown(calendario_tab_mod._detalhe_evento, evento)
+        _capturar_markdown(calendario_tab_mod._painel_contexto, evento)
     _checar("12 nenhuma chamada de IA (resumir_com_groq/obter_resumo) acontece ao montar o hub do evento",
              chamadas_ia == [], f"(chamadas_ia={chamadas_ia})")
+
+
+# ============================================================
+# REDESIGN VISUAL (2026-10-05): grade mensal/semanal (calendar.py,
+# stdlib - sem dependencia nova) + auto-seleção do dia/evento mais
+# relevante. Funções puras, sem Streamlit - testáveis direto.
+# ============================================================
+
+def test_13_semanas_do_mes_cobre_o_mes_inteiro_em_semanas_de_7_dias_seg_a_dom():
+    semanas = calendario_tab_mod._semanas_do_mes(2026, 10)
+    _checar("13a cada semana tem exatamente 7 dias", all(len(s) == 7 for s in semanas))
+    _checar("13b primeiro dia de cada semana é segunda-feira (weekday()==0)",
+             all(s[0].weekday() == 0 for s in semanas))
+    _checar("13c todos os dias de outubro/2026 estão cobertos por alguma semana",
+             all(any(d.year == 2026 and d.month == 10 and d.day == dia for s in semanas for d in s) for dia in range(1, 32)))
+
+
+def test_14_semana_atual_e_1_semana_seg_a_dom_contendo_hoje():
+    hoje = date(2026, 10, 5)  # segunda-feira
+    semanas = calendario_tab_mod._semana_atual(hoje)
+    _checar("14a retorna exatamente 1 semana", len(semanas) == 1)
+    _checar("14b a semana contém 'hoje'", hoje in semanas[0])
+    _checar("14c a semana começa numa segunda-feira", semanas[0][0].weekday() == 0)
+
+
+def test_15_dia_mais_relevante_prioriza_o_primeiro_futuro_a_partir_de_hoje():
+    hoje = date(2026, 10, 5)
+    datas = [date(2026, 10, 1), date(2026, 10, 29), date(2026, 11, 5)]
+    _checar("15a primeiro dia >= hoje é escolhido (29/10, nao 01/10 que já passou)",
+             calendario_tab_mod._dia_mais_relevante(datas, hoje) == date(2026, 10, 29))
+    _checar("15b sem nenhuma data, retorna None (nunca inventa um dia)",
+             calendario_tab_mod._dia_mais_relevante([], hoje) is None)
+    _checar("15c so' datas passadas -> cai pra mais recente delas (nunca fica sem selecao se ha' evento)",
+             calendario_tab_mod._dia_mais_relevante([date(2026, 9, 1), date(2026, 9, 20)], hoje) == date(2026, 9, 20))
+
+
+def test_16_abev3_suzb3_aparecem_confirmados_na_grade_quando_filtro_permite():
+    """Integracao leve: confirma que os eventos reais ja' validados em
+    sessoes anteriores (ABEV3 29/10/2026 e SUZB3 05/11/2026, ambos
+    CONFIRMADO) continuam chegando corretos ate' a camada que alimenta
+    a grade (agrupamento por data) - mocka so' calcular_calendario
+    (fronteira UI<->dados), sem rede."""
+    eventos = [
+        _evento(ticker="ABEV3", status=STATUS_CONFIRMADO, fonte="Ambev RI", data_evento=date(2026, 10, 29)),
+        _evento(ticker="SUZB3", status=STATUS_CONFIRMADO, fonte="Suzano RI", data_evento=date(2026, 11, 5)),
+    ]
+    eventos_por_data = {}
+    for e in eventos:
+        eventos_por_data.setdefault(e["data"], []).append(e)
+    _checar("16a ABEV3 agrupado em 29/10/2026", eventos_por_data[date(2026, 10, 29)][0]["ticker"] == "ABEV3")
+    _checar("16b SUZB3 agrupado em 05/11/2026", eventos_por_data[date(2026, 11, 5)][0]["ticker"] == "SUZB3")
+    _checar("16c ambos continuam CONFIRMADO (nao regredem pra PRAZO_CVM na camada de UI)",
+             all(e["status"] == STATUS_CONFIRMADO for data in eventos_por_data.values() for e in data))
 
 
 if __name__ == "__main__":

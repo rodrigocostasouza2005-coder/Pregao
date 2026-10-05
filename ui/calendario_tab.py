@@ -3,13 +3,25 @@
 Ponto de entrada: render_calendario(prefs), chamado pelo app.py.
 
 V1 só resultados (ITR/DFP) - ver data/eventos.py pra a lógica de cálculo
-e a explicação de por que todo evento hoje é status PRAZO_CVM (não há
-fonte automática confiável de data CONFIRMADA/ESTIMADA integrada ainda).
+(CONFIRMADO/ESTIMADO/PRAZO_CVM) - nada disso muda aqui, so' a
+APRESENTAÇÃO.
 
 Reaproveita identificadores já existentes (ticker, config.IBOVESPA_SETORES
 pro filtro de setor, data.cvm/data.news/data.research pro contexto do
-evento) - nenhum sistema de dado novo, nenhuma chamada de IA."""
+evento) - nenhum sistema de dado novo, nenhuma chamada de IA.
 
+REDESIGN VISUAL (2026-10-05): calendário mensal em grade (7 colunas,
+SEG-DOM) + painel lateral "EVENTOS DO DIA" + detalhe sob demanda do
+evento selecionado, no lugar da lista plana com `st.expander` que
+despejava RESEARCH/NEWS/DOCUMENTOS/HISTÓRICO direto no corpo de cada
+evento. Esse conteúdo de contexto agora fica atrás de abas compactas
+(ver _painel_contexto) dentro do detalhe, só quando selecionado - nunca
+mais os 4 de uma vez. Nenhuma chamada de rede nova: a grade/painel só
+leem os eventos já calculados por calcular_calendario (1x por render,
+não por célula/clique) - trocar de dia/evento é só re-leitura de um
+dict em memória."""
+
+import calendar
 from datetime import date, timedelta
 
 import streamlit as st
@@ -24,6 +36,10 @@ from data.research import CASAS
 from data.research.store import listar_itens
 
 _DIAS_SEMANA = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"]
+_MESES_NOME = [
+    "", "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO",
+    "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO",
+]
 _NOMES_CASAS = [c["nome"] for c in CASAS]
 
 _CSS_CALENDARIO = """
@@ -34,6 +50,21 @@ _CSS_CALENDARIO = """
 }
 .cal-linha-evento { font-size: 0.8rem; padding: 0.1rem 0; font-family: 'IBM Plex Mono', monospace; }
 .cal-ticker { color: var(--destaque); font-weight: 600; }
+.cal-subtitulo { color: var(--cinza); font-size: 0.7rem; margin: -0.2rem 0 0.5rem 0; }
+.cal-grade-cabecalho {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; font-size: 0.62rem;
+    color: var(--cinza); letter-spacing: 0.05em; text-align: center; margin-top: 0.3rem; margin-bottom: 0.15rem;
+}
+.cal-mes-titulo { text-align: center; font-size: 0.78rem; color: var(--destaque); letter-spacing: 0.05em; padding-top: 0.2rem; }
+.cal-cel-evento { font-size: 0.62rem; line-height: 1.2; margin-top: 0.15rem; font-family: 'IBM Plex Mono', monospace; }
+.cal-dia-selecionado-titulo { font-size: 0.78rem; color: var(--destaque); font-weight: 600; margin: 0.3rem 0 0.4rem 0; }
+.cal-legenda { font-size: 0.65rem; color: var(--cinza); margin-top: 0.5rem; display: flex; gap: 0.9rem; flex-wrap: wrap; }
+.cal-contexto-titulo {
+    font-size: 0.65rem; color: var(--cinza); letter-spacing: 0.05em;
+    border-top: 1px solid var(--borda); padding-top: 0.4rem; margin-top: 0.5rem;
+}
+/* grade mensal/semanal: botao do dia mais compacto que o padrao do app */
+.st-key-cal_grade_area button { padding: 0.05rem 0.3rem !important; min-height: 22px !important; font-size: 0.72rem !important; }
 """
 
 
@@ -84,15 +115,55 @@ def _filtrar_janela(eventos: list, janela: str, hoje: date) -> list:
     return [e for e in eventos if hoje <= e["data"] <= limite]
 
 
-def _contexto_cvm(documentos: list):
-    """documentos: ja' buscado 1x por _detalhe_evento (obter_documentos_cvm)
-    e reaproveitado aqui E em _contexto_historico - evita bater 2x na
-    mesma fonte pro mesmo ticker no mesmo render (pedido explicito:
-    evitar N+1)."""
-    if not documentos:
-        return
-    st.markdown("<div style='font-size:0.65rem; color:var(--cinza); margin-top:0.5rem;'>CVM · DOCUMENTOS RECENTES</div>", unsafe_allow_html=True)
-    for d in documentos[:3]:
+# ============================================================
+# CONTEXTO do evento (RESEARCH/NEWS/DOCUMENTOS/HISTÓRICO) - abas
+# compactas, 1 secao visivel por vez, so' aparecem quando ha' dado
+# (2026-10-05: antes ficavam as 4 sempre despejadas no corpo do evento).
+# ============================================================
+
+def _dados_contexto(ticker: str) -> dict:
+    """Busca (1x cada) os dados de RESEARCH/NEWS/DOCUMENTOS(CVM)/
+    HISTÓRICO do ticker - mesmas fontes/cache de sempre
+    (obter_documentos_cvm/obter_noticias/listar_itens), zero IA, zero
+    fonte nova. obter_documentos_cvm chamado so' 1 vez aqui e
+    reaproveitado por DOCUMENTOS e HISTÓRICO (evita N+1, mesma regra de
+    antes)."""
+    documentos_cvm = obter_documentos_cvm(ticker)
+    documentos_cvm = documentos_cvm if documentos_cvm is not None else []
+    itens_research = [i for i in (listar_itens(_NOMES_CASAS) or []) if ticker in (i.get("tickers") or [])][:3]
+    noticias = (obter_noticias(ticker) or [])[:3]
+    historico = sorted(
+        (d for d in documentos_cvm if d["tipo"] == "RESULTADOS"),
+        key=lambda d: d["data"], reverse=True,
+    )[:4]
+    return {
+        "RESEARCH": itens_research,
+        "NEWS": noticias,
+        "DOCUMENTOS": documentos_cvm[:3],
+        "HISTÓRICO": historico,
+    }
+
+
+def _render_contexto_research(itens: list):
+    for r in itens:
+        st.markdown(
+            f"<div class='cal-linha-evento'>[{r['data'][:10] if r['data'] else '—'}] {r['casa']} · "
+            f"<a href='{r['link']}' target='_blank' style='color:var(--neutro); text-decoration:none;'>{r['titulo']}</a></div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _render_contexto_news(noticias: list):
+    for n in noticias:
+        st.markdown(
+            f"<div class='cal-linha-evento'>[{n['data'][:10]}] "
+            f"<a href='{n['link']}' target='_blank' style='color:var(--neutro); text-decoration:none;'>{n['titulo']}</a></div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _render_contexto_documentos(documentos: list):
+    for d in documentos:
         st.markdown(
             f"<div class='cal-linha-evento'>[{d['data'][:10]}] "
             f"<a href='{d['link']}' target='_blank' style='color:var(--neutro); text-decoration:none;'>{(d['assunto'] or '')[:90]}</a></div>",
@@ -100,23 +171,8 @@ def _contexto_cvm(documentos: list):
         )
 
 
-def _contexto_historico(documentos: list):
-    """HISTÓRICO (hub do evento, 2026-10-02): resultados JA' publicados
-    pelo ticker - mesmo tipo "RESULTADOS" que data/eventos.py usa pra
-    saber se um trimestre ja' foi entregue (ver _ja_entregou), so' que
-    aqui mostrado pro usuario em vez de so' usado internamente pro
-    calculo. Reaproveita os MESMOS documentos ja' buscados pra
-    _contexto_cvm (nenhuma chamada nova a fonte nenhuma) - so' filtra
-    por tipo e muda o rotulo, pra distinguir de "documentos recentes"
-    (generico, qualquer tipo) ali em cima."""
-    resultados = sorted(
-        (d for d in documentos if d["tipo"] == "RESULTADOS"),
-        key=lambda d: d["data"], reverse=True,
-    )
-    if not resultados:
-        return
-    st.markdown("<div style='font-size:0.65rem; color:var(--cinza); margin-top:0.5rem;'>HISTÓRICO · RESULTADOS ANTERIORES</div>", unsafe_allow_html=True)
-    for d in resultados[:4]:
+def _render_contexto_historico(historico: list):
+    for d in historico:
         ref = f" (ref. {str(d['data_referencia'])[:10]})" if d.get("data_referencia") else ""
         st.markdown(
             f"<div class='cal-linha-evento'>[{d['data'][:10]}] "
@@ -125,34 +181,37 @@ def _contexto_historico(documentos: list):
         )
 
 
-def _contexto_news(ticker: str):
-    noticias = obter_noticias(ticker)
-    if not noticias:
-        return
-    st.markdown("<div style='font-size:0.65rem; color:var(--cinza); margin-top:0.5rem;'>NEWS · NOTÍCIAS RECENTES</div>", unsafe_allow_html=True)
-    for n in noticias[:3]:
-        st.markdown(
-            f"<div class='cal-linha-evento'>[{n['data'][:10]}] "
-            f"<a href='{n['link']}' target='_blank' style='color:var(--neutro); text-decoration:none;'>{n['titulo']}</a></div>",
-            unsafe_allow_html=True,
-        )
+_RENDERIZADORES_CONTEXTO = {
+    "RESEARCH": _render_contexto_research, "NEWS": _render_contexto_news,
+    "DOCUMENTOS": _render_contexto_documentos, "HISTÓRICO": _render_contexto_historico,
+}
 
 
-def _contexto_research(ticker: str):
-    itens = listar_itens(_NOMES_CASAS) or []
-    relacionados = [i for i in itens if ticker in (i.get("tickers") or [])][:3]
-    if not relacionados:
+def _painel_contexto(evento: dict):
+    """CONTEXTO do evento selecionado - abas compactas (so' as que tem
+    dado aparecem, com a contagem no rotulo), 1 secao renderizada por
+    vez. Nunca aparece nada se nenhuma das 4 fontes tiver dado pro
+    ticker (sem secao vazia)."""
+    dados = _dados_contexto(evento["ticker"])
+    disponiveis = [chave for chave, itens in dados.items() if itens]
+    if not disponiveis:
         return
-    st.markdown("<div style='font-size:0.65rem; color:var(--cinza); margin-top:0.5rem;'>RESEARCH · RELATÓRIOS RECENTES</div>", unsafe_allow_html=True)
-    for r in relacionados:
-        st.markdown(
-            f"<div class='cal-linha-evento'>[{r['data'][:10] if r['data'] else '—'}] {r['casa']} · "
-            f"<a href='{r['link']}' target='_blank' style='color:var(--neutro); text-decoration:none;'>{r['titulo']}</a></div>",
-            unsafe_allow_html=True,
-        )
+    st.markdown("<div class='cal-contexto-titulo'>CONTEXTO</div>", unsafe_allow_html=True)
+    rotulos = {chave: f"{chave} ({len(dados[chave])})" for chave in disponiveis}
+    escolha = st.pills(
+        "Contexto", disponiveis, default=disponiveis[0], format_func=lambda k: rotulos[k],
+        label_visibility="collapsed", key=f"cal_contexto_{evento['ticker']}_{evento['periodo']}",
+    )
+    escolha = escolha if escolha in disponiveis else disponiveis[0]
+    _RENDERIZADORES_CONTEXTO[escolha](dados[escolha])
 
 
 def _detalhe_evento(evento: dict):
+    """Metadado compacto do evento selecionado - ticker/empresa/
+    periodo/data/status/fonte + avisos obrigatórios. NUNCA inclui
+    RESEARCH/NEWS/DOCUMENTOS/HISTÓRICO (ver _painel_contexto, chamado
+    separadamente por quem usa esta função - mantém este bloco enxuto,
+    sempre visível, sem dump de dados)."""
     horario_txt = f" · {evento['horario']}" if evento.get("horario") else ""
     fonte_txt = evento["fonte"]
     if evento.get("origem_url"):
@@ -199,17 +258,11 @@ def _detalhe_evento(evento: dict):
             unsafe_allow_html=True,
         )
 
-    # hub do evento (2026-10-02): RESEARCH / NEWS / CVM / HISTORICO, nessa
-    # ordem (pedido explicito) - SOMENTE SE ja' houver dado no sistema
-    # (secao oculta se vazia); nunca gera chamada de IA (so' le titulo/
-    # data/link de fontes ja cacheadas - mesmas funcoes que EQUITY/CVM/
-    # NEWS/RESEARCH ja' usam). obter_documentos_cvm chamado 1x aqui
-    # (nao 2x) e reaproveitado por CVM e HISTORICO - evita N+1.
-    documentos_cvm = obter_documentos_cvm(evento["ticker"]) or []
-    _contexto_research(evento["ticker"])
-    _contexto_news(evento["ticker"])
-    _contexto_cvm(documentos_cvm)
-    _contexto_historico(documentos_cvm)
+
+def _legenda_status():
+    itens = [(STATUS_CONFIRMADO, "CONFIRMADO"), (STATUS_ESTIMADO, "ESTIMADO"), (STATUS_PRAZO_CVM, "PRAZO CVM")]
+    html = "".join(f"<span><span style='color:{_cor_status(s)};'>●</span> {rotulo}</span>" for s, rotulo in itens)
+    st.markdown(f"<div class='cal-legenda'>{html}</div>", unsafe_allow_html=True)
 
 
 def _painel_proximos_watchlist(prefs: dict):
@@ -263,6 +316,114 @@ def _painel_proximos_watchlist(prefs: dict):
             _linha_resumo(e)
 
 
+# ============================================================
+# Grade mensal/semanal (2026-10-05) - 7 colunas (SEG-DOM), uma linha por
+# semana. MÊS usa o mês inteiro (calendar.monthdatescalendar, inclui
+# dias de borda do mês anterior/seguinte, esmaecidos); SEMANA usa so' a
+# semana corrente - mesma função de render pras duas (reaproveitada).
+# ============================================================
+
+def _semanas_do_mes(ano: int, mes: int) -> list:
+    return calendar.Calendar(firstweekday=0).monthdatescalendar(ano, mes)
+
+
+def _semana_atual(hoje: date) -> list:
+    inicio = hoje - timedelta(days=hoje.weekday())
+    return [[inicio + timedelta(days=i) for i in range(7)]]
+
+
+def _grade_calendario(semanas: list, eventos_por_data: dict, mes_referencia, dia_selecionado: date):
+    if dia_selecionado is not None:
+        chave_sel = f"cal_cel_{dia_selecionado.isoformat()}"
+        st.markdown(
+            f"<style>.st-key-{chave_sel} button {{ border-color: var(--destaque) !important; "
+            f"color: var(--destaque) !important; background-color: rgba(255,160,40,0.14) !important; }}</style>",
+            unsafe_allow_html=True,
+        )
+    with st.container(key="cal_grade_area"):
+        st.markdown(
+            "<div class='cal-grade-cabecalho'>" + "".join(f"<div>{d}</div>" for d in _DIAS_SEMANA) + "</div>",
+            unsafe_allow_html=True,
+        )
+        for semana in semanas:
+            cols = st.columns(7)
+            for i, dia in enumerate(semana):
+                with cols[i]:
+                    with st.container(key=f"cal_cel_{dia.isoformat()}"):
+                        eventos_dia = eventos_por_data.get(dia, [])
+                        fora_do_mes = mes_referencia is not None and dia.month != mes_referencia
+                        if st.button(f"{dia.day:02d}", key=f"cal_grid_dia_{dia.isoformat()}", width="stretch"):
+                            st.session_state["cal_dia_selecionado"] = dia
+                            st.session_state["cal_evento_selecionado"] = (
+                                (eventos_dia[0]["ticker"], eventos_dia[0]["periodo"]) if eventos_dia else None
+                            )
+                            st.rerun()
+                        opacidade = "0.35" if fora_do_mes else "1"
+                        for e in eventos_dia[:3]:
+                            cor = _cor_status(e["status"])
+                            horario_txt = f" · {e['horario']}" if e.get("horario") else ""
+                            st.markdown(
+                                f"<div class='cal-cel-evento' style='opacity:{opacidade};'>"
+                                f"<span style='color:{cor};'>●</span> <b>{e['ticker']}</b><br>"
+                                f"<span class='cinza'>{e['periodo']}{horario_txt}</span></div>",
+                                unsafe_allow_html=True,
+                            )
+                        if len(eventos_dia) > 3:
+                            st.markdown(
+                                f"<div class='cinza' style='font-size:0.58rem;'>+{len(eventos_dia) - 3}</div>",
+                                unsafe_allow_html=True,
+                            )
+
+
+def _painel_lateral(eventos_por_data: dict, dia_selecionado: date):
+    st.markdown('<div class="painel-titulo">EVENTOS DO DIA</div>', unsafe_allow_html=True)
+    if dia_selecionado is None:
+        st.markdown("<div class='cinza' style='font-size:0.78rem;'>Nenhum dia selecionado.</div>", unsafe_allow_html=True)
+        return
+
+    rotulo_dia = f"{dia_selecionado.day} {dia_selecionado.strftime('%b').upper()} · {_DIAS_SEMANA[dia_selecionado.weekday()]}"
+    st.markdown(f"<div class='cal-dia-selecionado-titulo'>{rotulo_dia}</div>", unsafe_allow_html=True)
+
+    eventos_dia = eventos_por_data.get(dia_selecionado, [])
+    if not eventos_dia:
+        st.markdown("<div class='cinza' style='font-size:0.78rem;'>Nenhum evento neste dia.</div>", unsafe_allow_html=True)
+        return
+
+    chave_sel = st.session_state.get("cal_evento_selecionado")
+    evento_selecionado = None
+    for e in eventos_dia:
+        chave = (e["ticker"], e["periodo"])
+        if chave == chave_sel:
+            evento_selecionado = e
+        horario_txt = f"{e['horario']}  " if e.get("horario") else ""
+        rotulo_botao = f"{horario_txt}{e['ticker']}  {e['empresa']}"
+        if st.button(rotulo_botao, key=f"cal_evt_{chave[0]}_{chave[1]}", width="stretch"):
+            st.session_state["cal_evento_selecionado"] = chave
+            st.rerun()
+        st.markdown(
+            f"<div class='cinza' style='font-size:0.68rem; margin:-0.3rem 0 0.3rem 0;'>{e['periodo']} · {_badge_status(e['status'])}</div>",
+            unsafe_allow_html=True,
+        )
+
+    if evento_selecionado is None:
+        evento_selecionado = eventos_dia[0]
+
+    st.markdown("<div style='border-top:1px solid var(--borda); margin:0.5rem 0;'></div>", unsafe_allow_html=True)
+    _detalhe_evento(evento_selecionado)
+    _painel_contexto(evento_selecionado)
+
+
+def _dia_mais_relevante(datas_com_evento: list, hoje: date):
+    """Pro auto-select ao abrir o mês/semana: prioriza o primeiro dia
+    com evento a partir de hoje (inclusive); se so' houver eventos no
+    passado dentro da janela visível, cai pro mais recente deles -
+    nunca deixa sem seleção se houver pelo menos 1 evento visível."""
+    futuros = sorted(d for d in datas_com_evento if d >= hoje)
+    if futuros:
+        return futuros[0]
+    return max(datas_com_evento) if datas_com_evento else None
+
+
 def _painel_agenda(prefs: dict):
     # titulo neutro (V3, 2026-10-02): "CALENDARIO DE RESULTADOS" sugeria
     # que todo evento listado e' uma data de resultado - hoje a imensa
@@ -270,6 +431,10 @@ def _painel_agenda(prefs: dict):
     # ver _badge_status, so' o titulo do painel que precisava deixar de
     # prometer algo que a lista nao entrega)
     st.markdown('<div class="painel-titulo">CALENDÁRIO</div>', unsafe_allow_html=True)
+    st.markdown(
+        "<div class='cal-subtitulo'>Eventos de resultados e conferências das empresas</div>",
+        unsafe_allow_html=True,
+    )
 
     col_universo, col_janela = st.columns(2)
     with col_universo:
@@ -300,7 +465,7 @@ def _painel_agenda(prefs: dict):
     if not eventos:
         # mensagem pedida explicitamente (V3): so' quando NAO ha evento
         # NENHUM (nem PRAZO CVM) no periodo - se so' houver PRAZO CVM,
-        # a lista abaixo mostra eles normalmente (nenhum filtro por
+        # a grade abaixo mostra eles normalmente (nenhum filtro por
         # status acontece aqui, so' por janela de tempo)
         st.markdown(
             "<div class='cinza' style='font-size:0.8rem; margin-top:0.4rem;'>Nenhum evento no período.</div>",
@@ -308,16 +473,67 @@ def _painel_agenda(prefs: dict):
         )
         return
 
-    por_data = {}
+    eventos_por_data = {}
     for e in eventos:
-        por_data.setdefault(e["data"], []).append(e)
+        eventos_por_data.setdefault(e["data"], []).append(e)
+    for lista in eventos_por_data.values():
+        lista.sort(key=lambda e: -PRIORIDADE_STATUS[e["status"]])
 
-    for data_evento in sorted(por_data.keys()):
-        rotulo = f"{data_evento.strftime('%d %b').upper()} — {_DIAS_SEMANA[data_evento.weekday()]}"
-        st.markdown(f"<div class='cal-data-grupo'>{rotulo}</div>", unsafe_allow_html=True)
-        for e in por_data[data_evento]:
-            with st.expander(f"{e['ticker']}  ·  {e['empresa']}  ·  {e['periodo']}  ·  {STATUS_LABEL.get(e['status'], e['status'])}"):
-                _detalhe_evento(e)
+    if janela == "MÊS":
+        ano_mes = st.session_state.get("cal_mes_ano")
+        if ano_mes is None:
+            primeiro_dia_relevante = _dia_mais_relevante(list(eventos_por_data.keys()), hoje) or hoje
+            ano_mes = (primeiro_dia_relevante.year, primeiro_dia_relevante.month)
+        ano_ref, mes_ref = ano_mes
+
+        col_prev, col_titulo, col_next = st.columns([1, 4, 1])
+        with col_prev:
+            if st.button("←", key="cal_mes_anterior", width="stretch"):
+                mes_ref -= 1
+                if mes_ref == 0:
+                    mes_ref, ano_ref = 12, ano_ref - 1
+                st.session_state["cal_mes_ano"] = (ano_ref, mes_ref)
+                st.session_state.pop("cal_dia_selecionado", None)
+                st.rerun()
+        with col_titulo:
+            st.markdown(f"<div class='cal-mes-titulo'>{_MESES_NOME[mes_ref]} {ano_ref}</div>", unsafe_allow_html=True)
+        with col_next:
+            if st.button("→", key="cal_mes_proximo", width="stretch"):
+                mes_ref += 1
+                if mes_ref == 13:
+                    mes_ref, ano_ref = 1, ano_ref + 1
+                st.session_state["cal_mes_ano"] = (ano_ref, mes_ref)
+                st.session_state.pop("cal_dia_selecionado", None)
+                st.rerun()
+
+        st.session_state["cal_mes_ano"] = (ano_ref, mes_ref)
+        semanas = _semanas_do_mes(ano_ref, mes_ref)
+        mes_referencia = mes_ref
+    else:
+        semanas = _semana_atual(hoje)
+        mes_referencia = None
+
+    datas_visiveis = [d for semana in semanas for d in semana]
+    dia_selecionado = st.session_state.get("cal_dia_selecionado")
+    if dia_selecionado not in datas_visiveis:
+        # abriu o mes/semana agora (ou navegou pra um mes sem selecao
+        # ainda) - seleciona automaticamente o 1o dia relevante com
+        # evento, se existir (pedido explicito: nunca abrir "vazio" se
+        # houver algo pra mostrar)
+        datas_com_evento_visiveis = [d for d in datas_visiveis if d in eventos_por_data]
+        dia_selecionado = _dia_mais_relevante(datas_com_evento_visiveis, hoje) or datas_visiveis[0]
+        st.session_state["cal_dia_selecionado"] = dia_selecionado
+        eventos_do_dia_inicial = eventos_por_data.get(dia_selecionado, [])
+        st.session_state["cal_evento_selecionado"] = (
+            (eventos_do_dia_inicial[0]["ticker"], eventos_do_dia_inicial[0]["periodo"]) if eventos_do_dia_inicial else None
+        )
+
+    col_grade, col_lateral = st.columns([3, 1])
+    with col_grade:
+        _grade_calendario(semanas, eventos_por_data, mes_referencia, dia_selecionado)
+        _legenda_status()
+    with col_lateral:
+        _painel_lateral(eventos_por_data, dia_selecionado)
 
 
 def render_calendario(prefs: dict):
