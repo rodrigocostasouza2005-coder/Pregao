@@ -263,7 +263,8 @@ def test_fallback_7_erro_de_transcript_e_erro_de_ia_tem_motivos_diferentes():
     extracao falhar primeiro."""
     chamadas_ia = []
     with patch.object(resumir_mod, "obter_texto_relatorio", return_value=(None, "conteúdo muito curto (provavelmente exige login)")), \
-         patch.object(resumir_mod, "resumir_com_groq", side_effect=lambda *a, **k: chamadas_ia.append(1)):
+         patch.object(resumir_mod, "resumir_com_groq", side_effect=lambda *a, **k: chamadas_ia.append(1)), \
+         patch.object(resumir_mod.ia_cache, "obter_cliente", return_value=None):
         resultado = obter_resumo("https://exemplo.com/1", "titulo", casa="X", tipo="ACOES")
     _checar("7 erro de extracao NAO chama a IA (nem chega la')", chamadas_ia == [], f"(chamadas_ia={chamadas_ia})")
     _checar("7 motivo de extracao e' distinto dos motivos de IA (cota/indisponivel)",

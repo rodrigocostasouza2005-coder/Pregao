@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi_requests
 
 import config
+from data import ia_cache
 from . import store
 from .base import HEADERS, TIMEOUT, permitido
 
@@ -519,11 +520,36 @@ def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") ->
     return _normalizar_formatacao(conteudo), None, dados_estruturados
 
 
+def _gerar_resumo(link: str, titulo: str, extrator_texto, casa: str, tipo: str) -> dict:
+    """Fluxo de geracao de verdade (extrai texto -> Groq -> grava em
+    research_itens) - EXATAMENTE o que obter_resumo fazia antes do cache
+    global existir (ver obter_resumo). Chamado por
+    ia_cache.obter_resumo_com_cache so' em cache miss."""
+    extrator = extrator_texto or obter_texto_relatorio
+    texto, motivo = extrator(link)
+    if texto is None:
+        return {"resumo": None, "motivo_indisponivel": motivo, "preco_alvo": None, "recomendacao": None}
+
+    resumo, motivo, dados_estruturados = resumir_com_groq(texto, titulo, casa=casa, tipo=tipo)
+    if resumo is None:
+        return {"resumo": None, "motivo_indisponivel": motivo, "preco_alvo": None, "recomendacao": None}
+
+    preco_alvo = dados_estruturados.get("preco_alvo")
+    recomendacao = dados_estruturados.get("recomendacao")
+    store.salvar_resumo(link, resumo, config.obter_modelo_groq(), preco_alvo=preco_alvo, recomendacao=recomendacao)
+    return {"resumo": resumo, "motivo_indisponivel": None, "preco_alvo": preco_alvo, "recomendacao": recomendacao}
+
+
 def obter_resumo(link: str, titulo: str, extrator_texto=None, casa: str = "", tipo: str = "") -> dict:
     """Resumo de um relatorio: extrai texto+resume via Groq e grava no
     Supabase (upsert pelo link, ja existente na tabela - ver
     store.salvar_resumo). Quem chama deve conferir antes se o item ja tem
-    resumo salvo (rel.get('resumo')) pra nao gastar cota de IA a toa.
+    resumo salvo (rel.get('resumo')) pra nao gastar cota de IA a toa -
+    isso cobre o caso normal (item ja' coletado ha' um tempo); o cache
+    GLOBAL abaixo (ver data/ia_cache.py) cobre a janela estreita onde
+    dois usuarios abrem o MESMO item NOVO (ainda sem resumo salvo) quase
+    ao mesmo tempo - sem isso, os dois gerariam (e gastariam cota) em
+    paralelo.
 
     extrator_texto: funcao (link)->(texto, motivo_falha) pra casas que nao
     podem usar o download generico da pagina publica (ex: XP, onde o
@@ -540,16 +566,7 @@ def obter_resumo(link: str, titulo: str, extrator_texto=None, casa: str = "", ti
     preco_alvo/recomendacao vem de _extrair_dados_estruturados (so' pra
     tipo ACOES) - None quando nao se aplica ou nao foi identificado no
     texto, nunca um valor inventado."""
-    extrator = extrator_texto or obter_texto_relatorio
-    texto, motivo = extrator(link)
-    if texto is None:
-        return {"resumo": None, "motivo_indisponivel": motivo, "preco_alvo": None, "recomendacao": None}
-
-    resumo, motivo, dados_estruturados = resumir_com_groq(texto, titulo, casa=casa, tipo=tipo)
-    if resumo is None:
-        return {"resumo": None, "motivo_indisponivel": motivo, "preco_alvo": None, "recomendacao": None}
-
-    preco_alvo = dados_estruturados.get("preco_alvo")
-    recomendacao = dados_estruturados.get("recomendacao")
-    store.salvar_resumo(link, resumo, config.obter_modelo_groq(), preco_alvo=preco_alvo, recomendacao=recomendacao)
-    return {"resumo": resumo, "motivo_indisponivel": None, "preco_alvo": preco_alvo, "recomendacao": recomendacao}
+    return ia_cache.obter_resumo_com_cache(
+        ia_cache.chave_research(link), link, "research",
+        lambda: _gerar_resumo(link, titulo, extrator_texto, casa, tipo),
+    )

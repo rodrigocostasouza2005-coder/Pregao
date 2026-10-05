@@ -38,7 +38,7 @@ except Exception:
     gnewsdecoder = None
 
 import config
-from data import news_setores
+from data import ia_cache, news_setores
 from data.cvm import documento_confirmador
 from data.prices import obter_nome_yf
 
@@ -994,12 +994,13 @@ def obter_top_mercado_tudo(setor: str = "TODOS"):
 
 
 # --- Resumo por grupo (sob demanda / automatico p/ watchlist nas ultimas 24h) --
-
-_TTL_RESUMO = 24 * 60 * 60  # 24h - "por enquanto" em memoria (st.cache_data);
-# quando gravarmos no Supabase (junto com o research, ver data/research/store.py),
-# obter_resumo_grupo() e' o unico ponto que precisa trocar (checar a tabela antes
-# de chamar Groq, salvar o resultado no lugar do cache) - a assinatura ja e'
-# pura (titulo + fontes -> resultado), da pra embrulhar sem mexer em quem chama.
+#
+# 2026-10-05: migrado do cache em memoria (st.cache_data, por processo)
+# pro cache GLOBAL no Supabase (data/ia_cache.py, tabela
+# resumos_ia_cache) - exatamente o plano ja' anotado aqui antes: a
+# funcao de geracao (_gerar_resumo_grupo) ficou pura (titulo+fontes ->
+# resultado), so' embrulhada por obter_resumo_grupo sem mudar quem
+# chama (ui/news_tab.py).
 
 # veiculos com paywall conhecido pra materia comum (nao institucional) -
 # tentamos essas por ultimo dentro do grupo, ja que costumam falhar
@@ -1192,8 +1193,7 @@ def _resumir_das_manchetes(titulo: str, titulos: tuple) -> tuple:
     return resumo, motivo
 
 
-@st.cache_data(ttl=_TTL_RESUMO, show_spinner=False)
-def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()) -> dict:
+def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()) -> dict:
     """Resumo de um GRUPO de noticias (mesmo fato, possivelmente varias
     fontes) - tenta cada fonte do grupo, na ordem recebida (ver
     ordenar_fontes_para_resumo), ate uma dar certo: resolve o link real,
@@ -1208,8 +1208,8 @@ def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()
     materia continua disponivel normalmente (e' o link que a manchete do
     grupo ja usa).
 
-    Cache em memoria por 24h (cache_data padrao do Streamlit) - "por
-    enquanto", ver nota de _TTL_RESUMO sobre migrar pra Supabase depois.
+    Fluxo de geracao de verdade - chamado por obter_resumo_grupo so' em
+    cache miss (ver data/ia_cache.py).
 
     motivo_indisponivel guarda o motivo ESPECIFICO da ULTIMA fonte
     tentada (decode falhou / erro ao baixar / conteúdo curto / cota da
@@ -1260,3 +1260,21 @@ def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()
         ultimo_motivo = motivo_groq or ultimo_motivo
 
     return {"resumo": None, "link_original": None, "motivo_indisponivel": ultimo_motivo}
+
+
+def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()) -> dict:
+    """Resumo de um GRUPO de noticias - ver _gerar_resumo_grupo pro
+    fluxo de geracao de verdade (inalterado). Esta funcao so' embrulha
+    com o cache GLOBAL do Supabase (data/ia_cache.py): cache hit (outro
+    usuario ja' resumiu o MESMO grupo) devolve sem chamar IA; cache miss
+    gera e persiste pra todos os usuarios reutilizarem depois. Chave de
+    cache = titulo+conjunto de links das fontes do grupo (ver
+    ia_cache.chave_news) - nunca so' o ticker, e muda se uma fonte nova
+    entrar no grupo (tratado como documento diferente de proposito)."""
+    links = tuple(link for _, link in fontes_ordenadas)
+    chave = ia_cache.chave_news(titulo, links)
+    link_principal = fontes_ordenadas[0][1] if fontes_ordenadas else None
+    return ia_cache.obter_resumo_com_cache(
+        chave, link_principal, "news",
+        lambda: _gerar_resumo_grupo(titulo, fontes_ordenadas, titulos),
+    )
