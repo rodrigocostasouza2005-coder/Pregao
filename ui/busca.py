@@ -7,11 +7,14 @@ já que a opção mostrada é "TICKER — Nome"), já tem navegação por
 teclado (↑/↓/Enter/Esc) de graça, sem nenhuma chamada de rede por tecla
 digitada e sem componente customizado (JS) nenhum.
 
-Universo de dados: combina a composição oficial do Ibovespa (B3, via
+Universo de dados: UNIÃO da composição oficial do Ibovespa (B3, via
 data/ibovespa.py:obter_composicao_oficial, cache de 24h - mesma fonte já
-usada pela aba MERCADO) + config.TICKER_ALIASES (BDRs) + a watchlist
-atual do usuário. Se a B3 falhar, cai pro fallback estático
-(config.IBOVESPA_SETORES) - nunca fica sem nenhuma opção. Ainda NÃO é o
+usada pela aba MERCADO) + config.IBOVESPA_SETORES (dict curado - cobre
+tanto o fallback se a B3 cair quanto tickers que saíram do índice
+oficial num rebalanceamento mas o projeto ainda rastreia, ex: CVCB3) +
+config.TICKER_ALIASES (BDRs) + a watchlist atual do usuário - nunca
+fica sem nenhuma opção, e nenhum ticker conhecido desaparece só porque
+a B3 removeu ele do índice. Ainda NÃO é o
 universo completo de tickers da B3 fora do índice (não existe hoje uma
 fonte local/cacheada pra isso, e buscar isso ao vivo a cada tecla
 violaria a regra de não bater em API por tecla). Ticker fora dessa lista
@@ -35,7 +38,16 @@ def _universo_ativos(extras: tuple) -> dict:
     busca. Função é barata (só dicts em memória, a composição oficial já
     vem cacheada) - não precisa de cache_data própria."""
     composicao = obter_composicao_oficial() or {}
-    universo_base = set(composicao.keys()) or set(config.IBOVESPA_SETORES.keys())
+    # UNIAO (nao "ou"/fallback exclusivo) com o dict curado: um ticker
+    # que caiu da composicao OFICIAL (rebalanceamento da B3, ex: CVCB3)
+    # mas que o projeto ainda rastreia manualmente em IBOVESPA_SETORES
+    # nao pode desaparecer da busca so' porque a B3 respondeu - achado
+    # real (2026-10-05): CVCB3 e mais 7 tickers (ECOR3/EZTC3/JBSS32/
+    # LWSA3/PCAR3/POSI3/SMTO3) sairam do indice oficial mas continuam
+    # validos/rastreados; o "or" anterior os escondia sempre que a B3
+    # estava no ar (quase sempre), so' apareciam se a B3 caisse por
+    # completo.
+    universo_base = set(composicao.keys()) | set(config.IBOVESPA_SETORES.keys())
     tickers = universo_base | set(config.TICKER_ALIASES.keys()) | set(extras)
     opcoes = {}
     for t in sorted(tickers):
