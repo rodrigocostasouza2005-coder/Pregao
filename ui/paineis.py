@@ -38,7 +38,12 @@ _FRACOES = {"1/4": 0.25, "1/2": 0.5, "3/4": 0.75, "FULL": 1.0}
 _TAMANHO_PADRAO = "FULL"
 
 _CSS_PAINEIS = """
-[data-testid="stButtonGroup"] { flex-wrap: wrap !important; row-gap: 0.3rem; }
+/* o elemento com display:flex de verdade e' um DIV filho direto de
+   stButtonGroup (o proprio stButtonGroup e' display:block) - achado
+   real corrigido no CALENDARIO (commit 919fabc) e propagado aqui: a
+   regra antiga mirava o pai display:block, onde nunca fazia efeito. */
+[data-testid="stButtonGroup"] { row-gap: 0.3rem; }
+[data-testid="stButtonGroup"] > div { flex-wrap: wrap !important; row-gap: 0.3rem; }
 
 /* popover de controle rapido (tamanho/esconder) no canto do painel -
    o container externo (com key) precisa de position:relative pra virar

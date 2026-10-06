@@ -178,8 +178,13 @@ div[class*="st-key-top-manchete-"] button p {
 }
 /* pills de setor (varias opcoes) quebram linha em vez de forcar rolagem
    horizontal - sem isso o grupo de botoes vira uma faixa so' que estoura
-   a largura da tela em telas estreitas */
-[data-testid="stButtonGroup"] { flex-wrap: wrap !important; row-gap: 0.3rem; }
+   a largura da tela em telas estreitas. O elemento com display:flex de
+   verdade e' um DIV filho direto de stButtonGroup (o proprio
+   stButtonGroup e' display:block) - achado real corrigido no CALENDARIO
+   (commit 919fabc) e propagado aqui: a regra antiga mirava o pai
+   display:block, onde nunca fazia efeito nenhum. */
+[data-testid="stButtonGroup"] { row-gap: 0.3rem; }
+[data-testid="stButtonGroup"] > div { flex-wrap: wrap !important; row-gap: 0.3rem; }
 
 /* linha wire (colunas de HORA/SELO/MANCHETE/FONTES etc): sem min-width:0
    nos filhos flex, o texto com white-space:nowrap dentro de uma coluna

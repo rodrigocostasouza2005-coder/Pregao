@@ -40,7 +40,12 @@ _EXTRATOR_POR_CASA = {c["nome"]: c["extrator_texto"] for c in CASAS}
 # 1/3 (st.columns(3)); mesma regra ja usada em ui/news_tab.py/ui/cvm_tab.py,
 # repetida aqui porque este modulo nao importava CSS de nenhum dos dois.
 _CSS_RESEARCH = """
-[data-testid="stButtonGroup"] { flex-wrap: wrap !important; row-gap: 0.3rem; }
+/* o elemento com display:flex de verdade e' um DIV filho direto de
+   stButtonGroup (o proprio stButtonGroup e' display:block) - achado
+   real corrigido no CALENDARIO (commit 919fabc) e propagado aqui: a
+   regra antiga mirava o pai display:block, onde nunca fazia efeito. */
+[data-testid="stButtonGroup"] { row-gap: 0.3rem; }
+[data-testid="stButtonGroup"] > div { flex-wrap: wrap !important; row-gap: 0.3rem; }
 """
 
 
