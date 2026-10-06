@@ -11,6 +11,7 @@ chamada de rede real.
 
 Uso: python tests/test_prices.py (python do .venv do projeto)."""
 import sys
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -194,6 +195,48 @@ def test_12_indicadores_timeout_cai_pro_fallback_anterior():
         resultado = obter_indicadores(ticker)
     _checar("12a timeout total mas com fallback anterior -> reusa os valores antigos (nao vira None)",
              resultado["pl"] == 10.0 and resultado["roe"] == 15.0, f"(resultado={resultado})")
+
+
+# ============================================================
+# DADOS STALE (2026-10-06): obter_indicadores grava "_coletado_em" so'
+# quando a coleta de verdade funciona - permite a UI avisar quando um
+# valor exibido veio de uma falha anterior (fallback), nao da tentativa
+# de agora.
+# ============================================================
+
+def test_13_coleta_bem_sucedida_grava_coletado_em():
+    ticker = "TESTE_STALE_SUCESSO"
+    with patch.object(prices_mod, "_tk_info_com_retry", return_value={"trailingPE": 10.0}), \
+         patch.object(prices_mod, "_calcular_beta", return_value=None), \
+         patch.object(prices_mod, "_dividend_yield_12m", return_value=None):
+        resultado = obter_indicadores(ticker)
+    _checar("13a coleta com sucesso grava _coletado_em", "_coletado_em" in resultado)
+    _checar("13b _coletado_em e' um timestamp ISO parseavel",
+             datetime.fromisoformat(resultado["_coletado_em"]) is not None)
+
+
+def test_14_fallback_propaga_coletado_em_original_nao_agora():
+    ticker = "TESTE_STALE_FALLBACK"
+    antigo_iso = "2026-09-01T12:00:00+00:00"
+    prices_mod._ultimo_indicadores_valido()[ticker] = {
+        "valor_mercado": 1.0, "pl": 1.0, "pvp": None, "dividend_yield": None, "beta": None,
+        "roe": None, "margem_liquida": None, "margem_operacional": None, "margem_ebitda": None,
+        "divida_liquida": None, "divida_liquida_ebitda": None, "_coletado_em": antigo_iso,
+    }
+    with patch.object(prices_mod, "_tk_info_com_retry", return_value={}), \
+         patch.object(prices_mod, "_calcular_beta", return_value=None):
+        resultado = obter_indicadores(ticker)
+    _checar("14 fallback carrega o _coletado_em ORIGINAL (nao 'agora') - nunca disfarça dado velho de novo",
+             resultado.get("_coletado_em") == antigo_iso, f"(resultado={resultado.get('_coletado_em')})")
+
+
+def test_15_sem_fallback_nenhum_nao_tem_coletado_em():
+    ticker = "TESTE_STALE_SEM_FALLBACK"
+    with patch.object(prices_mod, "_tk_info_com_retry", return_value={}), \
+         patch.object(prices_mod, "_calcular_beta", return_value=None):
+        resultado = obter_indicadores(ticker)
+    _checar("15 nunca houve coleta nem fallback -> sem _coletado_em (nada a declarar como 'velho')",
+             "_coletado_em" not in resultado)
 
 
 if __name__ == "__main__":

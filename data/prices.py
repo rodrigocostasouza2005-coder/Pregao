@@ -2,6 +2,7 @@
 """Cotações e histórico de preços via yfinance (tickers da B3, sufixo .SA)."""
 
 import re
+from datetime import datetime, timezone
 
 import pandas as pd
 import streamlit as st
@@ -225,13 +226,18 @@ def _calcular_beta(ticker: str) -> float | None:
 @st.cache_resource(show_spinner=False)
 def _ultimo_indicadores_valido() -> dict:
     """ticker -> ultimo dict de obter_indicadores() que veio com pelo
-    menos um campo preenchido. Mesmo mecanismo de fallback ja usado na
-    ticker tape (ver _ultima_cotacao_indice_valida) - Yahoo Finance
-    bloqueia/rate-limita tk.info bem mais em IP de datacenter (Streamlit
-    Cloud) do que localmente (achado real, 2026-09-25: todos os
-    indicadores voltavam None em producao mas funcionavam no sandbox de
-    dev). Sem isso, um bloqueio temporario derruba os indicadores pra
-    "-" mesmo tendo um valor real recente guardado."""
+    menos um campo preenchido (inclui "_coletado_em", timestamp ISO UTC
+    de quando a coleta foi bem-sucedida de verdade - ver obter_indicadores,
+    2026-10-06). Mesmo mecanismo de fallback ja usado na ticker tape (ver
+    _ultima_cotacao_indice_valida) - Yahoo Finance bloqueia/rate-limita
+    tk.info bem mais em IP de datacenter (Streamlit Cloud) do que
+    localmente (achado real, 2026-09-25: todos os indicadores voltavam
+    None em producao mas funcionavam no sandbox de dev). Sem isso, um
+    bloqueio temporario derruba os indicadores pra "-" mesmo tendo um
+    valor real recente guardado. O timestamp existe pra UI poder avisar
+    quando o valor exibido nao e' da coleta de agora, e sim reaproveitado
+    de uma tentativa anterior - sem isso um dado de dias atras podia
+    parecer tao atual quanto um calculado agora mesmo."""
     return {}
 
 
@@ -317,6 +323,11 @@ def obter_indicadores(ticker: str) -> dict:
     cache_fallback = _ultimo_indicadores_valido()
     algum_campo_valido = any(v is not None for k, v in resultado.items() if k != "beta")
     if algum_campo_valido:
+        # timestamp da coleta bem-sucedida (2026-10-06, dados stale):
+        # guardado junto no fallback pra UI saber, quando este valor for
+        # reaproveitado numa falha futura, ha' quanto tempo ele e'
+        # realmente de verdade - nunca mostrado como se fosse de agora
+        resultado["_coletado_em"] = datetime.now(timezone.utc).isoformat()
         cache_fallback[ticker] = resultado
         return resultado
 
@@ -337,6 +348,11 @@ def obter_indicadores(ticker: str) -> dict:
         # do tk.info) - so os campos vindos do tk.info usam o fallback.
         mesclado = {**resultado, **anterior}
         mesclado["beta"] = resultado["beta"]
+        # "_coletado_em" vem de 'anterior' (resultado de hoje nao tem essa
+        # chave, ja que a coleta de agora nao teve nenhum campo valido) -
+        # propagado naturalmente pelo merge acima, mantido explicito aqui
+        # so' pra documentar: e' a data da ULTIMA coleta que funcionou de
+        # verdade, nunca "agora"
         return mesclado
     return resultado
 

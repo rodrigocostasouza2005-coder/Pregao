@@ -60,6 +60,7 @@ _CSS_CALENDARIO = """
 .cal-ticker { color: var(--destaque); font-weight: 600; }
 .cal-subtitulo { color: var(--cinza); font-size: 0.72rem; margin: 0.1rem 0 0.7rem 0; }
 .cal-atualizado { color: var(--cinza); font-size: 0.62rem; margin: -0.3rem 0 0.6rem 0; letter-spacing: 0.02em; }
+.cal-atualizado-alerta { color: var(--destaque); }
 
 /* grade: cabecalho de dias da semana - mais respiro antes da 1a linha */
 .cal-grade-cabecalho {
@@ -301,11 +302,18 @@ def _detalhe_evento(evento: dict):
         )
 
 
-def _rotulo_atualizacao() -> str | None:
+_LIMIAR_SNAPSHOT_DESATUALIZADO_H = 48  # coletor roda a cada 30min quando ativo (seg-sex 07h-20h) - passar disso so' acontece se o agendamento parou de verdade (ja aconteceu antes, ver data/eventos_coleta.py)
+
+
+def _rotulo_atualizacao() -> tuple | None:
     """Indicador discreto de quando o snapshot foi gerado pela ultima
     vez (ver data/eventos.py:obter_snapshot_calendario) - None se nunca
     houve snapshot ainda (cai pro calculo em tempo real, sem indicador
-    nenhum pra nao afirmar uma "ultima atualizacao" que nao existe)."""
+    nenhum pra nao afirmar uma "ultima atualizacao" que nao existe).
+    Retorna (texto, desatualizado: bool) - desatualizado=True so' quando
+    a idade passa de _LIMIAR_SNAPSHOT_DESATUALIZADO_H (sinaliza sem
+    deixar de ser discreto - so' muda a cor, nunca vira alarme grande,
+    pedido explicito do Rodrigo)."""
     snapshot = obter_snapshot_calendario()
     if not snapshot or not snapshot.get("atualizado_em"):
         return None
@@ -317,13 +325,14 @@ def _rotulo_atualizacao() -> str | None:
         atualizado = atualizado.replace(tzinfo=timezone.utc)
     minutos = (datetime.now(timezone.utc) - atualizado).total_seconds() / 60
     if minutos < 1:
-        return "atualizado agora"
+        return "atualizado agora", False
     if minutos < 60:
-        return f"atualizado há {int(minutos)} min"
+        return f"atualizado há {int(minutos)} min", False
     horas = minutos / 60
+    desatualizado = horas > _LIMIAR_SNAPSHOT_DESATUALIZADO_H
     if horas < 24:
-        return f"atualizado há {int(horas)}h"
-    return f"atualizado há {int(horas // 24)}d"
+        return f"atualizado há {int(horas)}h", desatualizado
+    return f"atualizado há {int(horas // 24)}d", desatualizado
 
 
 def _legenda_status():
@@ -525,9 +534,11 @@ def _painel_agenda(prefs: dict):
         "<div class='cal-subtitulo'>Eventos de resultados e conferências das empresas</div>",
         unsafe_allow_html=True,
     )
-    rotulo_atualizacao = _rotulo_atualizacao()
-    if rotulo_atualizacao:
-        st.markdown(f"<div class='cal-atualizado'>{rotulo_atualizacao}</div>", unsafe_allow_html=True)
+    info_atualizacao = _rotulo_atualizacao()
+    if info_atualizacao:
+        texto_atualizacao, desatualizado = info_atualizacao
+        classe_atualizacao = "cal-atualizado cal-atualizado-alerta" if desatualizado else "cal-atualizado"
+        st.markdown(f"<div class='{classe_atualizacao}'>{texto_atualizacao}</div>", unsafe_allow_html=True)
 
     col_universo, col_janela = st.columns(2)
     with col_universo:

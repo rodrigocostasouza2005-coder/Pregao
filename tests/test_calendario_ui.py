@@ -7,7 +7,7 @@ UI real usa) - nao faz chamada de rede nem de IA.
 
 Uso: python tests/test_calendario_ui.py (python do .venv do projeto)."""
 import sys
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -330,6 +330,61 @@ def test_16_abev3_suzb3_aparecem_confirmados_na_grade_quando_filtro_permite():
     _checar("16b SUZB3 agrupado em 05/11/2026", eventos_por_data[date(2026, 11, 5)][0]["ticker"] == "SUZB3")
     _checar("16c ambos continuam CONFIRMADO (nao regredem pra PRAZO_CVM na camada de UI)",
              all(e["status"] == STATUS_CONFIRMADO for data in eventos_por_data.values() for e in data))
+
+
+# ============================================================
+# DADOS STALE (2026-10-06): "atualizado há Xh" ganha sinalizacao
+# (desatualizado=True) quando a idade do snapshot passa de
+# _LIMIAR_SNAPSHOT_DESATUALIZADO_H - ainda discreto (so' muda a cor via
+# classe CSS, pedido explicito do Rodrigo), nunca vira alarme grande.
+# ============================================================
+
+def _snapshot_com_idade(horas: float) -> dict:
+    momento = datetime.now(timezone.utc) - timedelta(hours=horas)
+    return {"eventos": [], "atualizado_em": momento.isoformat()}
+
+
+def test_17_rotulo_atualizacao_recente_nao_sinaliza_desatualizado():
+    with patch.object(calendario_tab_mod, "obter_snapshot_calendario", return_value=_snapshot_com_idade(2)):
+        resultado = calendario_tab_mod._rotulo_atualizacao()
+    _checar("17a snapshot de 2h -> nao desatualizado", resultado is not None and resultado[1] is False)
+    _checar("17b texto mostra horas", "2h" in resultado[0], f"(texto={resultado[0]!r})")
+
+
+def test_18_rotulo_atualizacao_velho_sinaliza_desatualizado():
+    with patch.object(calendario_tab_mod, "obter_snapshot_calendario", return_value=_snapshot_com_idade(72)):
+        resultado = calendario_tab_mod._rotulo_atualizacao()
+    _checar("18a snapshot de 72h (> limiar de 48h) -> sinaliza desatualizado", resultado is not None and resultado[1] is True)
+    _checar("18b texto mostra dias", "d" in resultado[0], f"(texto={resultado[0]!r})")
+
+
+def test_19_rotulo_atualizacao_logo_abaixo_do_limiar_nao_sinaliza():
+    # 47.9h (nao exatamente 48h - o tempo real que passa entre montar o
+    # snapshot e _rotulo_atualizacao calcular "agora" tornaria um teste
+    # "exatamente 48h" instavel/flaky por alguns milissegundos) - prova
+    # que o limiar e' > (estrito), nao >=, com folga segura pro teste
+    with patch.object(calendario_tab_mod, "obter_snapshot_calendario", return_value=_snapshot_com_idade(47.9)):
+        resultado = calendario_tab_mod._rotulo_atualizacao()
+    _checar("19 logo abaixo do limiar (47.9h de 48h) -> ainda NAO desatualizado",
+             resultado is not None and resultado[1] is False)
+
+
+def test_20_rotulo_atualizacao_sem_snapshot_retorna_none():
+    with patch.object(calendario_tab_mod, "obter_snapshot_calendario", return_value=None):
+        resultado = calendario_tab_mod._rotulo_atualizacao()
+    _checar("20 sem snapshot nenhum -> None (nunca afirma uma 'ultima atualizacao' que nao existe)", resultado is None)
+
+
+def test_21_painel_agenda_usa_classe_css_de_alerta_quando_desatualizado():
+    with patch.object(calendario_tab_mod, "_rotulo_atualizacao", return_value=("atualizado há 3d", True)), \
+         patch.object(calendario_tab_mod, "calcular_calendario_cacheado", return_value=[]), \
+         patch.object(calendario_tab_mod.st, "columns", return_value=(_FakeCol(), _FakeCol())), \
+         patch.object(calendario_tab_mod.st, "pills", return_value=None), \
+         patch.object(calendario_tab_mod.st, "spinner", return_value=_FakeCtx()):
+        capturado = _capturar_markdown(calendario_tab_mod._painel_agenda, {"watchlist": ["PETR4"]})
+    texto = " ".join(capturado)
+    _checar("21 classe de alerta aplicada quando _rotulo_atualizacao sinaliza desatualizado",
+             "cal-atualizado-alerta" in texto)
 
 
 if __name__ == "__main__":

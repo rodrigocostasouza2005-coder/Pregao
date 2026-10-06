@@ -3,7 +3,7 @@
 
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import plotly.graph_objects as go
@@ -623,6 +623,29 @@ if secao_atual == "EQUITY":
                 fmt = prefs["formato_numerico"]
                 ind = obter_indicadores(ticker_selecionado)
                 dy = ind["dividend_yield"]
+
+                # dados stale (2026-10-06): "_coletado_em" so' existe se
+                # pelo menos 1 campo veio de uma coleta bem-sucedida
+                # (ver data/prices.py:obter_indicadores) - se essa coleta
+                # for mais velha que o TTL normal (12h), os indicadores
+                # exibidos sao reaproveitados de um bloqueio anterior do
+                # Yahoo, nao da tentativa de agora - aviso discreto,
+                # mesma linguagem visual do "atualizado ha Xh" do
+                # CALENDARIO (ui/calendario_tab.py)
+                aviso_indicadores_antigos = ""
+                coletado_em = ind.get("_coletado_em")
+                if coletado_em:
+                    try:
+                        idade_h = (datetime.now(timezone.utc) - datetime.fromisoformat(coletado_em)).total_seconds() / 3600
+                        if idade_h > 12:
+                            aviso_indicadores_antigos = (
+                                f"<div class='cinza' style='font-size:0.65rem; margin-top:0.5rem;'>"
+                                f"⚠ indicadores reaproveitados de uma coleta de há {int(idade_h)}h "
+                                f"(Yahoo Finance bloqueou a tentativa mais recente)</div>"
+                            )
+                    except ValueError:
+                        pass
+
                 st.markdown(
                     f"""
                     <div style="overflow-x:auto; overflow-y:hidden;">
@@ -661,6 +684,7 @@ if secao_atual == "EQUITY":
                     </tr></tbody>
                     </table>
                     </div>
+                    {aviso_indicadores_antigos}
                     """,
                     unsafe_allow_html=True,
                 )
