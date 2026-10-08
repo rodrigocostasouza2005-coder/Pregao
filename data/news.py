@@ -1021,6 +1021,22 @@ _VEICULOS_PROVAVEL_PAYWALL = {"valor", "estadao", "folha", "bloomberg", "wall st
 # (compartilhado com o research, que usa um formato mais enxuto)
 _MAX_TOKENS_RESUMO_NEWS = 700
 
+# 2026-10-08 (auditoria pos-FASE 4, achado real): os campos IMPACTO e
+# PRÓXIMOS PASSOS, do jeito que estavam redigidos antes, so' diziam "nunca
+# invente" de forma generica - nao deixavam explicito o que CONTA como
+# informacao real nesses dois campos especificos, que sao exatamente os
+# dois mais propensos a' especulacao (um LLM tende a preencher "impacto"
+# com uma previsao plausivel de mercado e "proximos passos" com uma
+# expectativa generica, mesmo sem a fonte ter dito isso). Reforcado agora
+# com regra explicita: IMPACTO so' pode conter reacao/efeito que a FONTE
+# relatou como tendo realmente acontecido (ex: "ação caiu 3% após o
+# anúncio"), nunca uma previsao do que PODE acontecer; PRÓXIMOS PASSOS so'
+# pode conter evento futuro com data/acao EXPLICITA na fonte (ex:
+# "resultado trimestral sai dia 12"), nunca um "o mercado deve
+# acompanhar..." generico/especulativo. Mesma logica ja aplicada ao prompt
+# do RESEARCH/Morning Call (ver data/research/resumir.py), adaptada aqui
+# sem mudar os nomes dos 4 campos (ui/news_tab.py:_CAMPOS_TEASER e os
+# testes dependem do formato exato "CAMPO: valor").
 _PROMPT_SISTEMA_RESUMO = (
     "Você resume notícias do mercado financeiro brasileiro em português, "
     "SEMPRE com suas próprias palavras - nunca copie frases literais do "
@@ -1033,6 +1049,25 @@ _PROMPT_SISTEMA_RESUMO = (
     "NÚMEROS: ...\n"
     "IMPACTO: ...\n"
     "PRÓXIMOS PASSOS: ...\n"
+    "REGRAS DE CADA CAMPO, SEM EXCEÇÃO:\n"
+    "- O QUE ACONTECEU e NÚMEROS: só o que a fonte afirma como fato (evento, "
+    "dado, declaração) - nunca um fato que você deduziu ou um número "
+    "arredondado/estimado por você;\n"
+    "- IMPACTO: só uma reação ou consequência que a PRÓPRIA FONTE relata "
+    "como já tendo acontecido (ex: 'as ações caíram 3% após o anúncio', "
+    "'o mercado reagiu com venda de dólar') - NUNCA a sua previsão do que "
+    "pode/deve acontecer, nem um 'impacto esperado' que a fonte não "
+    "afirmou; se a fonte só descreve o fato sem relatar nenhuma reação, "
+    "escreva 'não informado', não invente uma consequência plausível;\n"
+    "- PRÓXIMOS PASSOS: só um evento futuro com data ou ação EXPLÍCITA na "
+    "fonte (ex: 'resultado sai dia 12', 'empresa convocou assembleia para "
+    "...') - nunca uma recomendação genérica tipo 'investidores devem "
+    "acompanhar o cenário' ou um desdobramento que você imagina ser "
+    "provável; sem isso explícito na fonte, escreva 'não informado';\n"
+    "- nunca apresente uma causa->consequência entre dois fatos que a fonte "
+    "não conectou explicitamente, nunca atribua uma expectativa/consenso de "
+    "mercado que a fonte não cite, e nunca trate uma hipótese/opinião do "
+    "texto como se fosse um fato confirmado.\n"
     "O TAMANHO do resumo deve ser PROPORCIONAL à quantidade de informação no "
     "texto: se o texto fornecido for curto (uma nota rápida, 1-2 parágrafos), "
     "o resumo também deve ser curto (2-3 linhas no total, pode combinar "
@@ -1056,9 +1091,14 @@ _PROMPT_SISTEMA_RESUMO_MANCHETES = (
     "PRÓXIMOS PASSOS: ...\n"
     "Como só tem as manchetes (não o texto completo), vá direto ao que elas "
     "revelam - escreva 'não informado' em qualquer campo sem base nas "
-    "manchetes, nunca invente número ou fato que não esteja nelas. Se as "
-    "manchetes não derem pra montar nem isso, responda exatamente: "
-    "SEM_CONTEUDO"
+    "manchetes, nunca invente número ou fato que não esteja nelas. IMPACTO "
+    "só conta se alguma manchete relatar uma reação/consequência JÁ "
+    "acontecida (nunca uma previsão sua); PRÓXIMOS PASSOS só conta se "
+    "alguma manchete citar um evento futuro explícito (nunca uma "
+    "recomendação genérica tipo 'acompanhar o mercado'). Nunca conecte duas "
+    "manchetes com uma relação de causa->consequência que nenhuma delas "
+    "afirma. Se as manchetes não derem pra montar nem isso, responda "
+    "exatamente: SEM_CONTEUDO"
 )
 
 

@@ -230,6 +230,46 @@ div[class*="st-key-top-manchete-"] button p {
     font-size: 0.78rem; color: var(--neutro); opacity: 0.86; line-height: 1.45; margin-top: 0.3rem;
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
+/* FIX (2026-10-08, causa raiz real - achado novo, nao e' repeticao das 2
+   tentativas descartadas em sessoes anteriores, documentadas no
+   BACKLOG.md): o bug de sobreposicao do card de noticia (meta/resumo
+   cobertos pelo divisor do item seguinte quando o texto quebra p/ 2+
+   linhas) NAO e' causa do texto quebrar em si - e' um wrapper interno do
+   proprio Streamlit (`stElementContainer > .stMarkdown > div[flex] >
+   [data-testid="stMarkdownContainer"]`) que mede a altura errada por 2
+   motivos, confirmados com Playwright medindo bounding box real de cada
+   nivel da arvore contra o CSS computado (nao suspeita, reproduzido e
+   corrigido num harness isolado, mesma tecnica ja usada p/ MERCADO/CVM):
+   1) o `div` entre `.stMarkdown` e `stMarkdownContainer` e'
+      `display:flex; flex-direction:row; flex-wrap:nowrap` com 1 filho
+      so' - nesse caso o Chromium as vezes calcula a altura "auto" do
+      flex container usando a largura ANTES do texto quebrar (altura de
+      1 linha so'), nao a altura real pos-wrap; forcar esse wrapper pra
+      `display:block` (o unico filho preenche 100% da largura de
+      qualquer jeito, visualmente identico) elimina o calculo de flex
+      errado.
+   2) `[data-testid="stMarkdownContainer"]` do proprio Streamlit vem com
+      `margin-bottom:-16px` embutido (serve pra' compensar a margem
+      inferior padrao de paragrafo <p> quando o markdown é texto comum) -
+      nosso HTML aqui e' um <div> cru sem <p>, entao não há margem de
+      paragrafo nenhuma pra compensar; essa margem negativa so' colapsa
+      pra' dentro do container pai (`stElementContainer`, que mede a
+      altura real do card), encurtando-o ~16px a menos que o conteudo
+      real renderizado - exatamente o "container menor que o conteudo"
+      medido nas 2 tentativas anteriores (13-16px de diferença, mesma
+      ordem de grandeza). Zerar essa margem SO' dentro do escopo do
+      card de noticia (via :has(), não global - não mexe no resto do
+      markdown do app) resolve o encurtamento.
+   Validado com harness Playwright isolado (dados sinteticos, mesmo
+   style.css real), 390/768/1280px, screenshot antes/depois: a linha de
+   metadados/resumo aparece completa (tickers + nº de fontes + "↗ abrir")
+   sem nenhuma sobreposição pelo divisor, com texto de 1 OU 2 linhas. */
+div[data-testid="stMarkdown"]:has(.news-item-meta, .news-item-resumo) > div {
+    display: block !important;
+}
+div[data-testid="stMarkdown"]:has(.news-item-meta, .news-item-resumo) [data-testid="stMarkdownContainer"] {
+    margin-bottom: 0 !important;
+}
 div[class*="st-key-news-card-titulo-"] button {
     background: transparent !important; border: none !important; box-shadow: none !important;
     color: var(--neutro) !important; text-decoration: none !important; text-align: left !important;

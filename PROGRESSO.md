@@ -3621,3 +3621,146 @@ deste arquivo).
    arquitetural grande, deliberadamente não implementada (ver "FILA2-T5"
    acima), com uma sugestão de caminho intermediário mais barato já
    registrada.
+
+---
+
+## FASE 5 — correções pós-auditoria (2026-10-08, rotina autônoma)
+
+Pedido explícito do Rodrigo: investigar e corrigir o que ainda for real
+da Fase 4/auditorias anteriores, sem reabrir o que já foi validado.
+Partiu do commit `4c87269` (já em `main`). Baseline confirmado antes de
+mexer: suite completa 249/249, `compileall`/`pyflakes` limpos.
+
+### 1. NEWS — bug visual do card (selo/ticker sobreposto pelo divisor)
+
+Item do BACKLOG.md com 2 tentativas anteriores já descartadas (uma
+piorou e foi revertida) — só reaberto porque consegui uma hipótese
+técnica NOVA, não uma repetição. Reconstruí o harness Playwright
+isolado de sessões anteriores (`render_news`/`_cartao_noticia` reais,
+importados diretamente de `ui/news_tab.py` — não reescritos à mão, pra
+garantir que o HTML/CSS testado é exatamente o de produção), dados
+sintéticos, `style.css` real, 390/768/1280px.
+
+Reproduzi o bug (confirmado de novo: container do Streamlit ~13-16px
+menor que o conteúdo real, overlap visual confirmado em screenshot) e,
+em vez de tentar mais uma variação de CSS "no escuro", instrumentei
+cada nível da árvore DOM entre `.news-item-meta`/`.news-item-resumo` e o
+`stElementContainer` (altura computada + bounding box de CADA wrapper
+intermediário, via Playwright). Achei 2 causas raiz reais e específicas,
+nunca identificadas antes:
+
+1. O wrapper `stMarkdown > div[display:flex;flex-direction:row;
+   flex-wrap:nowrap] > stMarkdownContainer` (estrutura interna do
+   próprio Streamlit 1.64.0, não nosso HTML) calcula a altura "auto" do
+   flex container com base na largura ANTES do texto do único filho
+   quebrar linha — bug conhecido de flexbox (flex-row + filho único
+   cujo conteúdo depende da própria largura pra decidir altura). Medido
+   diretamente: esse wrapper tinha `height:27.75px` enquanto o
+   `stMarkdownContainer` dentro dele já media `43.75px` de verdade.
+2. `[data-testid="stMarkdownContainer"]` do próprio Streamlit vem com
+   `margin-bottom:-16px` embutido na folha de estilo gerada (emotion) —
+   serve pra compensar a margem padrão de parágrafo `<p>` quando o
+   markdown é texto comum formatado pelo Streamlit. Nosso HTML aqui é
+   um `<div>` cru sem `<p>` nenhum — não há margem de parágrafo pra
+   compensar, então essa margem negativa só colapsa pra dentro do
+   `stElementContainer` (o container que a interface usa pra medir a
+   altura real do card), encolhendo-o ~16px a menos que o conteúdo
+   renderizado de verdade. Essa é a causa raiz concreta do "container
+   menor que o conteúdo" que as 2 sessões anteriores já tinham medido
+   (13-16px, mesma ordem de grandeza) mas não tinham conseguido
+   explicar.
+
+**Correção**: 2 regras CSS novas em `ui/news_tab.py` (`_CSS_WIRE`),
+escopadas com `:has(.news-item-meta, .news-item-resumo)` — só afeta o
+card de notícia/resumo, não mexe em nenhum outro markdown do app:
+o wrapper flex vira `display:block` (único filho, ocupa 100% da
+largura de qualquer jeito — visualmente idêntico, só muda o cálculo de
+altura) e a margem negativa é zerada nesse escopo.
+
+**Validação**: harness Playwright isolado (mesmas funções reais
+importadas de `ui/news_tab.py`), 390/768/1280px, ANTES e DEPOIS da
+correção — medição de `getBoundingClientRect` de cada card confirma
+`container_height >= conteúdo_height` em todos os casos (texto de 1 e 2
+linhas na linha de metadados, resumo com line-clamp de 2-3 linhas, com
+e sem tickers/CVM confirmada) e screenshot visual confirma a linha
+completa (badge do ticker + "NF" + "↗ abrir") sem nenhuma sobreposição
+pelo divisor, nos 3 breakpoints — antes mostrava claramente o fim da
+linha cortado. `git diff` revisado: só as 2 regras CSS novas, nenhum
+outro efeito colateral. Suite completa 249/249, `compileall`/`pyflakes`
+limpos em `ui/news_tab.py`. Item removido do BACKLOG.md.
+
+### 2. Fidelidade dos resumos (NEWS e Research/Morning Call)
+
+Pedido do Rodrigo: resumo deve dizer o que aconteceu, números e por que
+importa, sem inventar causalidade/consenso/impacto/próximos passos, sem
+tratar hipótese como fato.
+
+**Research/Morning Call** (`data/research/resumir.py`): li o prompt de
+sistema real por completo. Já é bem mais rigoroso do que o mínimo
+pedido — separação explícita FATO vs VISÃO DA CASA/ANALISTA vs LEITURA
+DO SISTEMA (com atribuição obrigatória), lista de "REGRAS ABSOLUTAS"
+que já proíbe explicitamente inventar causalidade/impacto
+setorial/consenso/opinião de analista, e `_extrair_dados_estruturados`
+só preenche preço-alvo/recomendação quando EXPLICITAMENTE escritos no
+texto (nunca estimados/calculados/deduzidos — instrução explícita no
+próprio prompt, com exemplo do que fazer na dúvida: `NAO_IDENTIFICADO`).
+Nenhum problema de fidelidade real encontrado — não alterado (já
+funciona, não é componente pra refazer).
+
+**NEWS** (`data/news.py:_PROMPT_SISTEMA_RESUMO`/
+`_PROMPT_SISTEMA_RESUMO_MANCHETES`): achado real — o formato fixo de 4
+campos (O QUE ACONTECEU/NÚMEROS/IMPACTO/PRÓXIMOS PASSOS) só tinha uma
+instrução genérica de "nunca invente, escreva 'não informado' se faltar
+informação". IMPACTO e PRÓXIMOS PASSOS são exatamente os 2 campos mais
+propensos a especulação de um LLM sob esse tipo de formato rígido (a
+tendência é preencher "impacto" com uma previsão plausível de mercado,
+e "próximos passos" com uma recomendação genérica, mesmo sem a fonte
+ter dito nada disso) — exatamente a categoria de problema que o Rodrigo
+descreveu. Corrigido trazendo a mesma régua do prompt do Research pra
+cá: regra explícita por campo (IMPACTO só conta reação/consequência que
+a FONTE relata como já acontecida, nunca previsão do resumo; PRÓXIMOS
+PASSOS só conta com data/ação explícita na fonte, nunca recomendação
+genérica) e proibição explícita de causa->consequência não conectada
+pela fonte, consenso não citado e hipótese tratada como fato. Formato e
+nomes dos 4 campos mantidos inalterados de propósito — `ui/
+news_tab.py:_CAMPOS_TEASER` e os testes de `tests/test_news_fase3.py`
+dependem do formato exato `CAMPO: valor`, e mudar os nomes seria
+reescrever um componente que já funciona (teaser do card) sem motivo.
+Suite completa 249/249 depois da mudança (os testes de teaser usam
+texto de resumo fixo nos fixtures, não o prompt em si — não afetados).
+
+### 3. Cards de notícia / feed editorial (item 4)
+
+Conferido o estado atual antes de considerar mudar algo (instrução
+explícita: "se ainda não estiver implementado"). Já está implementado
+desde a FASE 3 (`ui/news_tab.py`): card compacto com foto (quando
+cacheada — `obter_resumos_prontos`, 1 leitura em lote pra tela inteira,
+nunca requisição de imagem nova por render), título, fonte, data/hora,
+resumo curto (teaser com line-clamp) e tickers relacionados
+(`_cartao_noticia`); Morning Call/lives da Genial aparecem
+cronologicamente intercalados no MESMO feed, em card próprio
+(`_cartao_live`, combinado por `_montar_feed` com ordenação
+cronológica real via `_dt_ordenacao`, não a string de data crua — já
+testado). Fallback discreto de imagem ausente (iniciais do veículo)
+via `_thumb_html`, com `onerror` cobrindo falha de carregamento no
+navegador também. Nada a mudar aqui — já é o componente pedido.
+
+### 4. Research — coleta e extração (item 5)
+
+Delegado a uma sub-rotina de investigação dedicada
+(`data/research/*.py`, `data/eventos*.py`) em paralelo ao resto desta
+sessão — ver seção separada abaixo com o resultado (se alguma correção
+real foi encontrada) ou o registro de que nada precisou mudar.
+
+### Pendências pra próxima fase (FASE 6)
+
+1. Auditoria visual Playwright formal continua faltando harness
+   dedicado pra RESEARCH, TOP MERCADO, EQUITY e CALENDÁRIO (só MERCADO,
+   CVM e agora NEWS têm harness próprio) — candidato natural pro
+   próximo ciclo.
+2. Itens já conhecidos de ciclos anteriores continuam de pé sem
+   mudança: EQUITY não é "Company 360" (iniciativa de produto maior),
+   fontes de Research ainda não integradas (BTG/Itaú BBA/Santander/
+   BB/Safra/Ágora/Inter — bloqueio de IP/API fechada/SPA sem API
+   óbvia, ver BACKLOG.md), lives da Genial no YouTube desligadas por
+   respeito ao `robots.txt` (decisão de risco/ToS do Rodrigo).

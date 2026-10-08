@@ -3,6 +3,70 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-08 (FASE 5 — correções pós-auditoria: bug visual do NEWS + fidelidade dos resumos)
+
+Sessão autônoma agendada, pedido explícito do Rodrigo (FASE 5). Partiu do
+commit `4c87269` (já em `main`, fim do ciclo de 4 partes anterior). Suite
+completa (249/249) confirmada ANTES de qualquer mudança.
+
+- **fix (causa raiz real, não é repetição das 2 tentativas descartadas
+  antes)**: card de notícia do feed editorial (`ui/news_tab.py`) tinha a
+  linha de metadados (selo/veículo/hora/tickers/nº fontes/"↗ abrir") e o
+  teaser de resumo cobertos pelo divisor do próximo item quando o texto
+  quebrava pra 2+ linhas — bug real, já documentado no BACKLOG.md com 2
+  tentativas anteriores descartadas (uma piorou e foi revertida).
+  Reaberto só porque uma 3ª investigação, com harness Playwright isolado
+  (dados sintéticos, CSS real, mesma técnica das sessões anteriores),
+  encontrou uma causa raiz NOVA e mais profunda que a hipótese anterior
+  ("stale ResizeObserver"): medindo a altura computada de CADA nível da
+  árvore do Streamlit (não só o container mais externo), achei 2 causas
+  reais e específicas — (1) o wrapper interno
+  `stMarkdown > div[display:flex;flex-direction:row] > stMarkdownContainer`
+  calcula a altura "auto" do flex container usando a largura ANTES do
+  texto quebrar linha (bug de flexbox do Chromium com flex-row + filho
+  único que quebra texto); (2) `[data-testid="stMarkdownContainer"]` do
+  próprio Streamlit vem com `margin-bottom:-16px` embutido (serve pra
+  compensar a margem de parágrafo `<p>` do markdown comum — nosso HTML é
+  um `<div>` cru, sem `<p>`, então essa margem negativa só encolhe o
+  container pai sem ter nada de verdade pra compensar). Corrigido com 2
+  regras CSS escopadas só ao card de notícia (via `:has(.news-item-meta,
+  .news-item-resumo)`, não mexe no resto do markdown do app): o wrapper
+  flex vira `display:block` (único filho, visualmente idêntico) e a
+  margem negativa é zerada nesse escopo. Validado com harness Playwright
+  isolado, 390/768/1280px, screenshot antes/depois (texto de 1 e 2
+  linhas, com e sem resumo) — zero sobreposição depois da correção,
+  confirmado por medição de DOM (`getBoundingClientRect`) e visualmente.
+- **fix (fidelidade dos resumos de NEWS)**: o prompt de resumo estruturado
+  de notícias (`data/news.py:_PROMPT_SISTEMA_RESUMO`/
+  `_PROMPT_SISTEMA_RESUMO_MANCHETES`) pedia 4 campos fixos (O QUE
+  ACONTECEU/NÚMEROS/IMPACTO/PRÓXIMOS PASSOS) com instrução genérica de
+  "nunca invente" — mas IMPACTO e PRÓXIMOS PASSOS são exatamente os 2
+  campos mais propensos a especulação de um LLM (tende a preencher
+  "impacto" com uma previsão plausível de mercado, e "próximos passos"
+  com uma expectativa genérica, mesmo sem a fonte ter dito isso).
+  Reforçado com regra explícita por campo (mesma lógica já usada no
+  prompt do RESEARCH/Morning Call, `data/research/resumir.py`, que já
+  era bem mais rigoroso nisso): IMPACTO só pode conter uma reação que a
+  FONTE relata como já tendo acontecido, nunca uma previsão do resumo;
+  PRÓXIMOS PASSOS só conta com data/ação explícita na fonte, nunca uma
+  recomendação genérica; e proibição explícita de causa->consequência
+  entre fatos que a fonte não conectou, consenso de mercado não citado,
+  e hipótese tratada como fato. Formato/nomes dos 4 campos mantidos
+  inalterados (o teaser do card e os testes dependem do formato exato).
+- **Auditoria dos resumos de RESEARCH/Morning Call** (`data/research/
+  resumir.py`): revisado o prompt real — já é bem mais rigoroso que o do
+  NEWS (separação explícita FATO vs VISÃO DA CASA/ANALISTA vs LEITURA
+  DO SISTEMA, proibição explícita de inventar preço-alvo/recomendação/
+  causalidade/consenso, extração de preço-alvo/recomendação só quando
+  EXPLÍCITO no texto via `_extrair_dados_estruturados`, nunca estimado).
+  Nenhum problema de fidelidade encontrado nesse prompt — não alterado.
+- **Cards de notícia / feed editorial** (item 4 da FASE 5): conferido
+  antes de mexer — já está implementado (FASE 3): card compacto com
+  foto (quando cacheada, nunca requisição nova por render), título,
+  fonte, data/hora, resumo curto e tickers relacionados; Morning Call
+  aparece cronologicamente intercalado no mesmo feed, em card próprio
+  (`_cartao_live`/`_montar_feed`). Nada a mudar aqui.
+
 ## 2026-10-08 (rotina autônoma, parte 4/4 — hardening final + investigação NEWS)
 
 Sessão autônoma agendada (4ª e última parte do ciclo de hoje). Partiu do
