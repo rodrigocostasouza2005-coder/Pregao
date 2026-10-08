@@ -132,6 +132,19 @@ def _ticker_do_link(link: str) -> list:
     return [m.group(1)] if m else []
 
 
+def _ticker_da_url_recomendacao(url: str) -> str:
+    """Ultimo segmento do caminho de `url` (ex: "/acoes/PETR4" -> "PETR4")
+    - usado por obter_recomendacoes, cujo JSON da Genial traz a URL da
+    pagina do ticker em vez de um campo 'ticker' dedicado. rstrip da
+    barra final ANTES do rsplit: sem isso, uma url terminada em "/" (ex:
+    "/acoes/PETR4/") devolvia "" como ticker - string vazia nunca bate
+    com nenhum ticker da watchlist (ui/research_tab.py:363,
+    `r["ticker"] == ticker`), perdendo silenciosamente a
+    recomendacao/preco-alvo real daquele ticker. Mesmo cuidado que
+    data/research/xp.py:obter_texto_aberto ja tem pro slug."""
+    return url.rstrip("/").rsplit("/", 1)[-1]
+
+
 def _normalizar_data(texto: str) -> str:
     """Datas na Genial vem em dois formatos diferentes conforme a secao:
     'DD/MM/YYYY' (relatorios) ou 'YYYY-MM-DD HH:MM:SS' (newsletter/swing
@@ -227,7 +240,7 @@ def obter_recomendacoes() -> list | None:
             itens = secao.get("content") or []
             return [
                 {
-                    "ticker": it["url"].rsplit("/", 1)[-1],
+                    "ticker": _ticker_da_url_recomendacao(it["url"]),
                     "empresa": (it.get("empresaNome") or "").strip(),
                     "setor": it.get("setor", ""),
                     "recomendacao": it.get("recomendacao", ""),

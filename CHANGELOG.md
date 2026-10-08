@@ -66,6 +66,29 @@ completa (249/249) confirmada ANTES de qualquer mudança.
   fonte, data/hora, resumo curto e tickers relacionados; Morning Call
   aparece cronologicamente intercalado no mesmo feed, em card próprio
   (`_cartao_live`/`_montar_feed`). Nada a mudar aqui.
+- **fix (coleta/extração do Research, achado real)**:
+  `data/research/genial.py:obter_recomendacoes` extraía o ticker com
+  `it["url"].rsplit("/", 1)[-1]` - uma URL terminada em "/" (ex:
+  `/acoes/PETR4/`) devolvia `""` como ticker, que nunca batia com
+  nenhum ticker real em `ui/research_tab.py`, perdendo silenciosamente
+  a recomendação/preço-alvo daquele papel (o próprio projeto já tinha
+  esse cuidado em `data/research/xp.py:obter_texto_aberto`, só faltava
+  aqui). Corrigido com `_ticker_da_url_recomendacao` (`rstrip("/")`
+  antes do `rsplit`), com 2 testes de regressão novos em
+  `tests/test_research.py` (unitário + fim-a-fim com `_buscar_next_data`
+  mockado, confirmando que nenhum ticker perde nem embaralha dado).
+  Demais arquivos de research/eventos (`genial_lives.py`, `store.py`,
+  `historico.py`, `base.py`, `xp.py`, `eventos.py`, `eventos_coleta.py`)
+  auditados linha a linha - sem outra falha de corretude confirmada.
+  **Investigado, não alterado por falta de confirmação**: o regex que
+  extrai ticker do LINK de um relatório (`_TICKER_NO_LINK`, distinto do
+  bug acima) é case-sensitive (só casa `[A-Z0-9]`) - se a Genial usar
+  minúsculas no slug da URL em algum caso real, perderia a atribuição
+  do mesmo jeito, mas não há amostra real de URL salva no repo nem
+  acesso de rede neste sandbox pra confirmar o formato; o fix em si é
+  trivial (mesmo padrão de `.upper()` já usado em `xp.py`) mas não foi
+  aplicado sem essa confirmação - pendência concreta pro Rodrigo
+  confirmar em produção.
 
 ## 2026-10-08 (rotina autônoma, parte 4/4 — hardening final + investigação NEWS)
 

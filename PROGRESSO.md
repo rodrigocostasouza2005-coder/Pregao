@@ -3748,9 +3748,57 @@ navegador também. Nada a mudar aqui — já é o componente pedido.
 ### 4. Research — coleta e extração (item 5)
 
 Delegado a uma sub-rotina de investigação dedicada
-(`data/research/*.py`, `data/eventos*.py`) em paralelo ao resto desta
-sessão — ver seção separada abaixo com o resultado (se alguma correção
-real foi encontrada) ou o registro de que nada precisou mudar.
+(`data/research/*.py`, `data/eventos*.py`), em paralelo ao resto desta
+sessão, por falta de tempo pra fazer os dois em série dentro da janela
+de ~1h. Leu os 8 arquivos linha a linha, comparando com o que
+BACKLOG.md/PROGRESSO.md já documentavam como investigado/fechado, sem
+relitigar nada.
+
+**Bug real encontrado e corrigido**:
+`data/research/genial.py:obter_recomendacoes` extraía o ticker com
+`it["url"].rsplit("/", 1)[-1]` — uma URL terminada em "/" (ex:
+`/acoes/PETR4/`) devolve `""` como ticker, que nunca bate com nenhum
+ticker real em `ui/research_tab.py:363` (`r["ticker"] == ticker`),
+perdendo silenciosamente a recomendação/preço-alvo REAL daquele papel
+— exatamente a classe de falha pedida ("preserva número/tese/
+recomendação/preço-alvo só quando explicitamente presentes"). O
+próprio projeto já tinha esse cuidado simétrico em
+`data/research/xp.py:obter_texto_aberto` (`link.rstrip("/")` antes do
+`rsplit`), só faltava em `genial.py`. Corrigido extraindo a lógica pra
+`_ticker_da_url_recomendacao(url)` com `rstrip("/")` antes do
+`rsplit`. 2 testes de regressão novos em `tests/test_research.py`
+(unitário + fim-a-fim com `_buscar_next_data` mockado, 2 tickers — um
+com barra final, outro sem — confirmando que nenhum perde dado nem
+embaralha entre tickers). Confirmado que o teste de fato pega o bug
+(quebra revertendo só `genial.py`). Suite completa 251/251 depois
+(249 + 2 novos), `compileall`/`pyflakes` limpos.
+
+**Investigado, não alterado por falta de confirmação** (mesmo padrão
+de cautela desta rodada - nunca arriscar um fix especulativo sem
+conseguir confirmar o cenário real): o regex que extrai ticker do LINK
+de um relatório (`_TICKER_NO_LINK = r"^/acoes/([A-Z0-9]{4,6})(?:/|$)"`,
+usado por `_ticker_do_link`, distinto do bug acima) é case-sensitive —
+se a Genial usar minúsculas no slug da URL em algum relatório real
+(não confirmável sem acesso de rede ao domínio, bloqueado neste
+sandbox, nem amostra salva no repo), a atribuição se perderia do mesmo
+jeito, silenciosamente, pra TODO relatório de ações/estratégia/macro.
+Pendência concreta pro Rodrigo: abrir um relatório de ações em
+produção e confirmar se a URL tem o ticker em maiúscula (ex:
+`/acoes/PETR4/...`) ou minúscula (`/acoes/petr4/...`); se for
+minúscula, o fix é trivial e seguro (mesmo padrão de `.upper()` já
+usado em `xp.py:_tickers_do_class_list`).
+
+Demais arquivos auditados (`genial_lives.py`, `store.py`,
+`historico.py`, `base.py`, `xp.py`, `data/eventos.py`,
+`data/eventos_coleta.py`) — sem outra falha de corretude confirmada;
+`data/eventos.py` já muito bem auditado em ciclos recentes, nada novo
+encontrado. Risco teórico de falso-positivo em
+`historico._mudou` (comparação `!=` se o Postgrest devolver `numeric`
+como string em algum cenário) e o risco genérico de ambiguidade de
+nome de empresa em `eventos_coleta.py:tentar_news` (mitigado pela
+mesma janela de sanidade de data que o módulo já usa, por design) —
+ambos de impacto baixo e não verificáveis sem acesso real ao Supabase/
+rede, não alterados.
 
 ### Pendências pra próxima fase (FASE 6)
 

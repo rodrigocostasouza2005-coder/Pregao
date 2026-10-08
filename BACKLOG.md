@@ -3,6 +3,26 @@
 Pendências conhecidas, para resolver depois (ajustes visuais adiados
 enquanto avançamos nas próximas fases).
 
+## Research (Genial) — ticker do LINK de relatório pode ser case-sensitive
+(investigado 2026-10-08, FASE 5 — **não corrigido**, falta confirmação)
+
+`data/research/genial.py:_TICKER_NO_LINK` (regex que extrai o ticker do
+LINK de um relatório de ações/estratégia/macro, usado por
+`_ticker_do_link` — diferente do bug já corrigido em
+`obter_recomendacoes`/`_ticker_da_url_recomendacao`, que era sobre URL
+com barra final) é `r"^/acoes/([A-Z0-9]{4,6})(?:/|$)"` — case-sensitive,
+só casa maiúsculas. Se a Genial usar minúsculas no slug da URL em algum
+relatório real (ex: `/acoes/petr4/...`), a atribuição de ticker se
+perde silenciosamente pra TODO relatório daquele tipo, mesma classe de
+bug do que já foi corrigido. Não dá pra confirmar o formato real sem
+acesso de rede ao domínio (bloqueado neste sandbox) nem amostra de URL
+salva no repo — não arriscado um fix especulativo. **Pendência
+concreta pro Rodrigo**: abrir um relatório de ações qualquer em
+`pregao.streamlit.app` (aba RESEARCH, casa Genial) e conferir se a URL
+mostrada tem o ticker em maiúscula ou minúscula. Se for minúscula, o
+fix é trivial e seguro — mesmo padrão de `.upper()` já usado em
+`data/research/xp.py:_tickers_do_class_list`.
+
 ## Auditoria 2026-09-30 — itens revistos (releitura do código real)
 
 Vários itens abaixo listados em sessões anteriores já tinham sido

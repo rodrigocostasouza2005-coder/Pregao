@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import data.research.resumir as resumir_mod
-from data.research import historico
+from data.research import genial, historico
 from data.research.resumir import _chamar_groq_com_fallback, _extrair_dados_estruturados, obter_resumo
 
 _FALHAS = []
@@ -101,6 +101,62 @@ def test_historico_mudou_casos_extremos():
              historico._mudou({"recomendacao": None, "preco_alvo": None}, None, None) is False)
     _checar("_mudou: None -> valor real = True (passou a ter recomendacao)",
              historico._mudou({"recomendacao": None, "preco_alvo": None}, "COMPRA", None) is True)
+
+
+def test_genial_ticker_da_url_recomendacao_sobrevive_barra_final():
+    """Bug real corrigido (2026-10-08): data/research/genial.py:
+    obter_recomendacoes extraia o ticker com `url.rsplit("/", 1)[-1]` -
+    uma url terminada em "/" (ex: "/acoes/PETR4/") devolvia "" como
+    ticker (string vazia nunca bate com nenhum ticker da watchlist em
+    ui/research_tab.py, perdendo silenciosamente a
+    recomendacao/preco-alvo real daquele ticker)."""
+    _checar("url com barra final -> ticker correto (nao vazio)",
+             genial._ticker_da_url_recomendacao("https://analisa.genialinvestimentos.com.br/acoes/PETR4/") == "PETR4")
+    _checar("url sem barra final continua funcionando (comportamento de antes, intocado)",
+             genial._ticker_da_url_recomendacao("https://analisa.genialinvestimentos.com.br/acoes/PETR4") == "PETR4")
+
+
+def test_genial_obter_recomendacoes_preserva_preco_alvo_e_recomendacao_por_ticker():
+    """Fim-a-fim (_buscar_next_data mockado, sem rede): confere que
+    obter_recomendacoes nao so' extrai o ticker certo de uma url com
+    barra final, como preserva preco_alvo/recomendacao exatos do item -
+    nunca invents nem embaralha entre tickers diferentes da mesma
+    secao."""
+    next_data = {
+        "props": {"pageProps": {"page": {"sections": [
+            {
+                "type": "CARROSSEL_PRINCIPAIS_RECOMENDACOES_SETOR",
+                "content": [
+                    {
+                        "url": "/acoes/PETR4/", "empresaNome": "Petrobras", "setor": "Petróleo",
+                        "recomendacao": "COMPRA", "preco": 48.5, "potencial": 12.3,
+                    },
+                    {
+                        "url": "/acoes/VALE3", "empresaNome": "Vale", "setor": "Mineração",
+                        "recomendacao": "MANTER", "preco": 72.0, "potencial": 3.1,
+                    },
+                ],
+            },
+        ]}}},
+    }
+    with patch.object(genial, "_buscar_next_data", return_value=next_data):
+        genial.obter_recomendacoes.clear()  # evita cache de st.cache_data entre testes
+        recomendacoes = genial.obter_recomendacoes()
+    por_ticker = {r["ticker"]: r for r in (recomendacoes or [])}
+    _checar("2 recomendacoes retornadas, nenhuma perdida pela barra final",
+             len(recomendacoes or []) == 2, f"(recomendacoes={recomendacoes})")
+    _checar("PETR4 (url com barra final) presente com os dados certos",
+             por_ticker.get("PETR4") == {
+                 "ticker": "PETR4", "empresa": "Petrobras", "setor": "Petróleo", "recomendacao": "COMPRA",
+                 "preco_alvo": 48.5, "potencial_pct": 12.3,
+                 "link": "https://analisa.genialinvestimentos.com.br/acoes/PETR4/",
+             }, f"(por_ticker={por_ticker})")
+    _checar("VALE3 (url sem barra final) nao foi afetada pela mudanca",
+             por_ticker.get("VALE3") == {
+                 "ticker": "VALE3", "empresa": "Vale", "setor": "Mineração", "recomendacao": "MANTER",
+                 "preco_alvo": 72.0, "potencial_pct": 3.1,
+                 "link": "https://analisa.genialinvestimentos.com.br/acoes/VALE3",
+             }, f"(por_ticker={por_ticker})")
 
 
 def _groq_mock(resposta: str):
