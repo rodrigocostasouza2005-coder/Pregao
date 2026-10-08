@@ -3374,3 +3374,250 @@ no CHANGELOG). Nenhum outro P0/P1 óbvio identificado nesta sessão na
 camada de dados/confiabilidade além dos 2 corrigidos - próxima parte
 pode seguir direto pra cobertura de mercado (item 2) ou fontes/coleta
 (item 3) se a auditoria visual não render mais achados rápidos.
+
+## Rotina autônoma — ciclo de 4 partes, parte 4/4 (2026-10-08)
+
+Sessão agendada, isolada (clone próprio), última parte do ciclo de hoje.
+Partiu do commit `fa27dca` (já em `main`, fim da parte 3/4). `HEAD`
+estava detached no início (clone fresco) - resolvido com `git checkout
+main && git pull` antes de qualquer trabalho, sem perda de commits
+(fast-forward simples, mesmo padrão já documentado em sessões
+anteriores). Baseline confirmado antes de mexer: suite completa
+249/249.
+
+**Trabalho desta parte**:
+
+1. **Hardening - `pyflakes` no repositório inteiro** (não só arquivos
+   tocados recentemente, prática já usada nesta rodada pela parte 3/4):
+   achou 4 avisos reais, todos código morto, zero bug de comportamento -
+   `data/ir_sources.py` importava `_HEADERS`/`_TIMEOUT` de `data/cvm.py`
+   sem usar (a função reaproveitada, `_baixar_csv_do_zip`, já cuida
+   disso internamente); `tests/test_prices.py` e
+   `tests/test_news_fase3.py` importavam `MagicMock` sem usar (só
+   `patch` é usado nos dois); `tests/test_ia_cache.py:test_7` atribuía
+   o retorno de `obter_resumo_com_cache` a uma variável nunca lida.
+   Corrigidos os 4 (remoção de import/atribuição morta, nenhuma mudança
+   de lógica). `compileall`/suite completa confirmados limpos antes e
+   depois.
+2. **Continuação da auditoria visual Playwright pendente (NEWS/
+   RESEARCH/TOP MERCADO/EQUITY/CALENDÁRIO)**: construído harness
+   isolado (`render_news` com dados sintéticos + `style.css`/CSS
+   próprio reais, mesma técnica já validada pra MERCADO/CVM em partes
+   anteriores), 3 breakpoints. **Achado visual real, confirmado com
+   evidência** (zoom pixel a pixel + medição de DOM via
+   `getBoundingClientRect`, reproduzido em 2 breakpoints e sobrevive a
+   reload completo da página): a linha de metadados de cada card de
+   notícia (`_meta_noticia_html` - selo/veículo/hora/ticker(s)/nº de
+   fontes/link "↗ abrir") fica parcialmente coberta pelo divisor do
+   próximo item quando o texto quebra pra 2 linhas - o
+   `stElementContainer` do Streamlit (1.64.0, mesma versão de produção)
+   que envolve esse `st.markdown` mede uma altura ~13px menor que o
+   conteúdo real renderizado, e esse valor não é "auto" (CSS computado
+   trava num px fixo), nem se recalcula depois.
+   **Duas tentativas de correção testadas e descartadas**: (a) forçar
+   `height:auto !important` no container via seletor `:has()` - sem
+   efeito, a altura continuou travada no mesmo valor; (b) impedir a
+   quebra de linha na origem (`white-space:nowrap` + ellipsis em
+   `.news-item-meta`, reiniciando o servidor Streamlit do zero pra
+   testar de verdade, não só injeção JS tardia) - **piorou** a
+   renderização (quase todo o conteúdo da linha ficou invisível dentro
+   de um container ainda menor) - revertida imediatamente, `git diff`
+   conferido limpo antes de seguir pra qualquer outra coisa (nenhum
+   resíduo ficou no repositório).
+   **Decisão (regra 1 de autonomia + "causa raiz > workaround")**: não
+   forcei um fix sem entender o mecanismo real - as duas tentativas
+   mostraram que o sintoma não é simplesmente "texto quebrando em 2
+   linhas" (mexer nisso não ajudou, e piorou numa tentativa), pode ser
+   um comportamento mais profundo do próprio Streamlit (cache de altura
+   via `ResizeObserver` medido num momento diferente do layout final) ou
+   um artefato específico deste harness isolado (sandbox sem internet,
+   sem a fonte real "IBM Plex Mono" carregada via Google Fonts, só
+   fallback monospace genérico - métricas de caractere diferentes das
+   de produção). Investigar mais a fundo exigiria acesso ao bundle JS do
+   Streamlit (fora do escopo de uma correção cirúrgica) ou confirmação
+   ao vivo em `pregao.streamlit.app` com navegador real - nenhuma das
+   duas era viável nesta janela. Documentado em detalhe no BACKLOG.md
+   (mecanismo investigado, o que já foi tentado e descartado, pendência
+   concreta de confirmação em produção) em vez de arriscar uma segunda
+   regressão visual. Confirmado por leitura de código que o estilo
+   "wire" mais antigo (`_linha_noticia`/`_renderizar_lista`, usado por
+   TOP MERCADO e pelo bloco compacto de NEWS da aba EQUITY) usa colunas
+   de largura fixa com ellipsis (nunca quebra linha) e **não tem este
+   problema** - o risco é específico do estilo "editorial" (cards, Fase
+   3) usado só no feed principal de `render_news`.
+
+**Validação**: suite completa 249/249 (baseline e após a limpeza do
+pyflakes); `compileall`/`pyflakes` limpos no repositório inteiro (zero
+avisos depois da limpeza). `git status`/`git diff` conferidos limpos
+antes do commit final (confirmando que a investigação da NEWS não
+deixou nenhuma mudança de código pra trás, só documentação).
+
+**Arquivos alterados**: `data/ir_sources.py`, `tests/test_prices.py`,
+`tests/test_news_fase3.py`, `tests/test_ia_cache.py` (hardening),
+`BACKLOG.md`, `CHANGELOG.md`, `PROGRESSO.md` (documentação). Nenhuma
+mudança em código de produção além da limpeza de import morto (sem
+efeito de comportamento).
+
+---
+
+## Rotina autônoma — ciclo de 4 partes, RELATÓRIO CONSOLIDADO (2026-10-08)
+
+Relatório final cobrindo as 4 partes do ciclo autônomo de hoje (partes
+1/4 a 4/4, ~70min de espaçamento entre cada uma, sessões isoladas e
+independentes), conforme pedido explícito do Rodrigo pra última parte.
+
+### 1. Commits realizados (todas as partes)
+
+Partindo de `2e2a101` (estado de `main` antes da parte 1/4) até o commit
+final desta parte 4/4:
+
+- `9702fa7` fix: `test_eventos.py` quebrava sob pytest (10 falsos-falhos
+  pré-existentes) — **parte 1/4**
+- `de8eae8` docs: registra parte 1/4 (fix de testes + investigação curva
+  pré) — **parte 1/4**
+- `99cb357` fix: curva pré (MACRO) usava `date.today()` do servidor
+  (UTC) em vez do fuso de Brasília — **parte 2/4**
+- `d062db2` fix: CVM (tabela DATA/TICKER/TIPO) ilegível em mobile/tablet
+  — **parte 2/4**
+- `86d70cd` docs: registra parte 2/4 (fix timezone MACRO + mobile CVM)
+  — **parte 2/4**
+- `fa27dca` fix: MERCADO/VISÃO GERAL sem feedback de carregamento em
+  consulta fria — **parte 3/4**
+- `c4b2b59` chore: limpa 4 avisos do pyflakes (imports/variável não
+  usados) — **parte 4/4**
+- (commit de documentação desta parte 4/4, ver abaixo)
+
+Todos os commits foram enviados (`push`) pra `origin/main` ao final de
+cada parte, sem force-push, sem reescrita de histórico. Nenhum conflito
+real encontrado entre partes (cada sessão fez `git fetch`/`pull` antes
+de começar e checou `git diff` contra `origin/main` antes do push, como
+pedido).
+
+### 2. Problemas reais encontrados (e corrigidos)
+
+1. **`tests/test_eventos.py` sob pytest** — 10 falhas falsas por um mock
+   de `obter_cnpj` vivendo só no bloco `__main__`, nunca executado pelo
+   pytest (parte 1/4).
+2. **Curva pré (MACRO) com timezone errado** — `date.today()` do
+   servidor (UTC) em vez de `America/Sao_Paulo`, rotulando "Hoje" por
+   engano numa janela de ~3h todo dia (21h-23h59 BRT) (parte 2/4).
+3. **CVM ilegível em mobile/tablet** — colunas DATA/TICKER sem
+   `overflow:hidden`/ellipsis, único ponto da tabela sem essa proteção,
+   causando sobreposição de texto confirmada visualmente (parte 2/4).
+4. **MERCADO/VISÃO GERAL sem feedback de carregamento** — `yf.download`
+   real com `show_spinner=False` e nenhum spinner manual, tela parada
+   sem aviso numa consulta fria (parte 3/4).
+5. **4 avisos reais de `pyflakes`** (código morto - imports/variável sem
+   uso) no repositório inteiro (parte 4/4).
+
+### 3. Correções feitas
+
+Todas as 5 acima foram corrigidas, testadas (suite completa +
+`compileall`/`pyflakes`, screenshot real via Playwright/Chromium quando
+aplicável) e commitadas. Nenhuma correção ficou pela metade.
+
+### 4. Melhorias de UX
+
+- Feedback de carregamento (spinner com texto) no MERCADO/VISÃO GERAL,
+  mesma classe de correção já aplicada em CVM/NEWS/MACRO/RESEARCH em
+  ciclos anteriores — agora as 5 telas que fazem chamada de rede real
+  têm indicação visual de "carregando".
+- Rótulo honesto na curva pré do MACRO ("Última (dd/mm)" em vez de
+  "Hoje" quando a publicação não é de fato de hoje), evitando o usuário
+  interpretar um dado desatualizado como atual.
+
+### 5. Melhorias de performance
+
+Nenhuma nesta rodada de 4 partes — o foco identificado pela auditoria
+foi majoritariamente confiabilidade de dados/timezone e legibilidade
+mobile, não performance (já endereçada em ciclos anteriores: paralelismo
+do TOP MERCADO, cache de cotações em lote, etc. — ver seções anteriores
+deste arquivo).
+
+### 6. Melhorias de dados/coleta
+
+- Timezone da curva pré (ANBIMA ETTJ) corrigido pra `America/Sao_Paulo`
+  de ponta a ponta, consistente com a correção equivalente já feita em
+  `data/eventos.py:periodo_pendente` no mesmo dia por outra sessão.
+
+### 7. Cobertura/mobile
+
+- CVM: tabela DATA/TICKER/TIPO/ASSUNTO corrigida nos 3 breakpoints
+  (390/768/1280px), confirmado com screenshot antes/depois.
+- Varredura por bugs irmãos (mesmo padrão de `white-space:nowrap` sem
+  `overflow`/ellipsis) em todo `st.columns` do projeto — nenhum outro
+  caso real encontrado (parte 2/4).
+- NEWS (feed editorial): investigação real, com evidência (screenshots +
+  medição de DOM), de um problema visual na linha de metadados dos
+  cards quebrando pra 2 linhas — **não corrigido** por falta de certeza
+  sobre a causa raiz (ver seção 9 abaixo e BACKLOG.md).
+
+### 8. Testes executados e resultados
+
+- Suite completa (`pytest`): 249/249 em todas as 4 partes, confirmada
+  ANTES e DEPOIS de cada mudança (baseline limpo sempre verificado
+  primeiro).
+- `python -m compileall .`: limpo em todas as 4 partes.
+- `pyflakes` (repositório inteiro, não só arquivos tocados): limpo ao
+  final da parte 4/4 (4 avisos reais encontrados e corrigidos).
+- Validação visual real (Playwright/Chromium, 390/768/1280px, dados
+  sintéticos plausíveis — rede deste sandbox bloqueia Yahoo
+  Finance/B3/ANBIMA/CVM/Google News em todas as 4 partes, limitação de
+  ambiente já documentada em ciclos anteriores): usada nas partes 2/4
+  (CVM, antes/depois) e 4/4 (NEWS, investigação sem fix).
+- Python 3.12 usado em todas as partes (venv efêmero recriado a cada
+  sessão — `/tmp/venv312` não sobrevive entre sessões isoladas), já que
+  o projeto usa sintaxe que exige 3.12+.
+
+### 9. Investigado mas corretamente NÃO alterado
+
+- **Legenda da curva pré "sobreposta/cortada"** (BACKLOG antigo) — não
+  reproduzida com Playwright/dados sintéticos em nenhum dos 3
+  breakpoints (parte 1/4); hipótese não descartada mas não testável sem
+  sessão autenticada real.
+- **E-mail do usuário "some" no header em telas estreitas** — conta de
+  largura confere matematicamente, mas sem confirmação visual real em
+  produção (parte 3/4).
+- **Acentuação perdida em nomes de empresa em produção** — nenhuma causa
+  nova encontrada no código (funções de normalização só usadas pra
+  busca/dedup, nunca pro texto exibido); permanece como limitação
+  específica do ambiente de produção, não reproduzível aqui (parte 3/4).
+- **Chave de `session_state` compartilhada entre MERCADO/VISÃO GERAL**
+  (seletores DIA/SEMANA/MÊS) — confirmado que é intencional/sem bug de
+  corretude, decisão de produto pendente pro Rodrigo (ciclo anterior,
+  reconfirmado nesta rodada via BACKLOG.md).
+- **NEWS — overlap visual no feed editorial** (achado novo desta parte
+  4/4): investigado a fundo, 2 tentativas de correção testadas e
+  descartadas (uma delas piorou e foi revertida) — não há certeza
+  suficiente sobre a causa raiz (Streamlit internals vs. artefato do
+  harness de teste) pra arriscar um 3º fix sem confirmação em produção
+  real. Documentado em detalhe no BACKLOG.md.
+
+### 10. Principais pontos que ainda merecem atenção do Rodrigo
+
+1. **NEWS — confirmar em produção real** se o card de notícia (feed da
+   aba NOTÍCIAS, não TOP MERCADO) mostra o selo/ticker/link "↗ abrir"
+   cortado ou sobreposto pela linha do próximo item, numa tela estreita
+   ou tablet, com uma notícia de manchete longa + 2+ tickers + veículo
+   com nome longo (mais chance de quebrar pra 2 linhas). Se confirmado,
+   é um bug real de produção que precisa de uma 3ª tentativa de correção
+   — melhor com navegador real (fontes carregando de verdade) em vez de
+   só o harness isolado deste sandbox.
+2. **Auditoria visual Playwright ainda incompleta** — RESEARCH, TOP
+   MERCADO, EQUITY e CALENDÁRIO continuam sem harness dedicado (só
+   MERCADO, CVM e agora NEWS parcialmente receberam). Candidato natural
+   pro próximo ciclo autônomo.
+3. **EQUITY não é "Company 360"** (contexto de Research/preço-alvo
+   integrado à ficha do ativo) — iniciativa de produto de maior escopo,
+   já registrada em ciclos anteriores, não é uma tarefa pequena.
+4. **BTG/Itaú BBA/Santander/BB/Safra/Ágora/Inter Research** — fontes
+   ainda não integradas (bloqueio de IP/API fechada/SPA sem API óbvia),
+   ver detalhe em BACKLOG.md seção Research.
+5. **Lives da Genial no YouTube** — implementado tecnicamente, mas
+   desligado por respeito ao `robots.txt` do YouTube; decisão de
+   risco/ToS que fica pro Rodrigo (religar é 1 linha, ver PROGRESSO.md
+   "FILA2-T8").
+6. **Layout de painéis arrastável/redimensionável** — decisão
+   arquitetural grande, deliberadamente não implementada (ver "FILA2-T5"
+   acima), com uma sugestão de caminho intermediário mais barato já
+   registrada.

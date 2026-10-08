@@ -3,6 +3,74 @@
 Pendências conhecidas, para resolver depois (ajustes visuais adiados
 enquanto avançamos nas próximas fases).
 
+## NEWS — feed editorial: card com selo/ticker sobrepondo o item seguinte
+(investigado 2026-10-08, rotina autônoma parte 4/4 — **não corrigido**,
+evidência insuficiente pra decidir a causa real)
+
+Continuando a auditoria visual pendente (Playwright, 390/768/1280px) que
+as partes 1-3/4 já tinham feito pra MERCADO/CVM, rodei a mesma técnica em
+`render_news` (feed editorial da aba NOTÍCIAS, `ui/news_tab.py`) com dados
+sintéticos plausíveis e o `style.css`/CSS próprio reais (harness isolado,
+sem login, mesma técnica já validada). **Achado visual real** (não
+hipótese — confirmado em screenshot com zoom pixel a pixel, replicável
+após reload completo da página): a linha de metadados de cada notícia
+(`_meta_noticia_html` — selo · veículo · hora · ticker(s) · nº de fontes
+· link "↗ abrir") aparece cortada/sobreposta pelo divisor do item
+seguinte quando o texto quebra pra 2 linhas — o conteúdo real (confirmado
+via `innerText`/`getBoundingClientRect` do DOM) está completo e com cor
+correta, mas visualmente alguns pixels do fim da 2ª linha (ex: badge do
+ticker, link "↗ abrir") ficam cobertos.
+
+**Causa raiz investigada, não fechada com confiança**: medindo a altura
+do elemento `stElementContainer` do Streamlit (que envolve o
+`st.markdown` dessa linha) contra a altura real do conteúdo
+(`getBoundingClientRect`), a primeira é sistematicamente MENOR que a
+segunda (ex: container 27.75px vs conteúdo 40.9px) — sobra ~13px de
+conteúdo "vazando" por baixo do container, exatamente onde o próximo
+elemento (divisor) começa, causando a sobreposição visual. Isso persiste
+depois de reload completo (não é uma animação/transição que só não deu
+tempo de terminar) e uma tentativa de forçar `height:auto !important`
+via `:has()` no container, bem como forçar o texto a NUNCA quebrar
+(`white-space:nowrap + ellipsis` na própria `.news-item-meta`), **não
+resolveu** — pelo contrário, a segunda tentativa (testada com reinício
+limpo do servidor, não só injeção JS tardia) piorou visualmente (quase
+todo o conteúdo da linha ficou invisível, cortado num container ainda
+menor) e foi revertida imediatamente (`git diff` confirmado limpo antes
+de seguir). Ou seja: o mecanismo real por trás da altura "travada" do
+container não é simplesmente "o texto quebra em 2 linhas" — pode ser
+algo mais profundo do próprio Streamlit (cache de altura via
+ResizeObserver medido num momento diferente do layout final, específico
+desta versão 1.64.0) ou um artefato específico deste harness isolado
+(sandbox sem internet, sem a fonte real "IBM Plex Mono" carregada via
+Google Fonts — só fallback monospace genérico, métricas de caractere
+diferentes das de produção).
+
+**Por que não virou um fix nesta sessão**: qualquer mudança de CSS
+tentada pra "consertar" sem entender o mecanismo real arriscava piorar
+(como já aconteceu uma vez, revertida). Investigar mais a fundo exigiria
+acesso ao bundle JS do Streamlit (fora do escopo de uma correção
+cirúrgica) ou confirmação em produção real (Google Fonts carregando,
+Streamlit Cloud, navegador real) pra saber se o sintoma reproduz do
+mesmo jeito — nenhuma das duas era viável nesta janela de execução.
+
+**Pendência concreta pra próxima sessão/pro Rodrigo**: confirmar ao vivo
+em `pregao.streamlit.app` (NEWS, watchlist com 2+ tickers, tela estreita
+ou tablet) se algum card de notícia mostra o selo/ticker/link "↗ abrir"
+cortado ou sobreposto pela linha divisória do próximo item. Se confirmado
+em produção real (não só neste harness), o próximo passo é testar a
+mesma mudança isolando UMA variável por vez (ex: só reduzir o número de
+elementos inline distintos na mesma `st.markdown`, ou forçar um
+`st.rerun()` extra após o primeiro mount pra dar ao Streamlit uma segunda
+chance de remedir a altura) em vez de mexer no CSS de wrap, que já
+provou piorar as coisas. Esta aba já usa um padrão mais simples (uma
+linha só, sem wrap, com ellipsis) em `_linha_noticia`/`_renderizar_lista`
+("wire", reusado por TOP MERCADO e pelo bloco compacto de NEWS da aba
+EQUITY) — **esse estilo NÃO tem este problema** (confirmado lendo o
+código: cada parte vive na sua própria coluna de largura fixa, com
+`white-space:nowrap` + `text-overflow:ellipsis`, nunca quebra linha) —
+é específico do estilo "editorial" (cards, Fase 3) usado só no feed
+principal de `render_news`.
+
 ## Auditoria 2026-09-30 — itens revistos (releitura do código real)
 
 Vários itens abaixo listados em sessões anteriores já tinham sido

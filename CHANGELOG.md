@@ -3,6 +3,53 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-08 (rotina autônoma, parte 4/4 — hardening final + investigação NEWS)
+
+Sessão autônoma agendada (4ª e última parte do ciclo de hoje). Partiu do
+commit `fa27dca` (já em `main`), lendo PROGRESSO.md/CHANGELOG.md/
+BACKLOG.md das 3 partes anteriores pra não repetir investigação. Suite
+completa (249/249) confirmada ANTES de qualquer mudança. HEAD estava
+detached no início da sessão — resolvido com `checkout main` + `pull`
+(mesmo padrão documentado em sessões anteriores), sem perda de trabalho.
+
+- **Hardening**: `pyflakes` no repositório inteiro (não só arquivos
+  tocados recentemente) achou 4 avisos reais — todos código morto, zero
+  bug: import não usado em `data/ir_sources.py` (`_HEADERS`/`_TIMEOUT`,
+  só `data/cvm.py` usa internamente), `MagicMock` sem uso em 2 arquivos
+  de teste (`tests/test_prices.py`, `tests/test_news_fase3.py` — só
+  `patch` é usado), variável local sem uso em
+  `tests/test_ia_cache.py:test_7`. Corrigidos. Suite completa 249/249 e
+  `compileall` confirmados limpos antes e depois.
+- **Investigado, sem mudança de código (evidência insuficiente pra
+  decidir a causa real, risco de piorar)**: dando sequência à auditoria
+  visual Playwright pendente desde a parte 3/4 (NEWS/RESEARCH/TOP
+  MERCADO/EQUITY/CALENDÁRIO ainda sem harness dedicado), construí um
+  harness isolado pra `render_news` (feed editorial da aba NOTÍCIAS) com
+  dados sintéticos e CSS real, nos 3 breakpoints. Achado visual real
+  (confirmado em screenshot com zoom + medição de DOM, replicável após
+  reload completo): a linha de metadados de cada card
+  (`_meta_noticia_html`) aparece parcialmente coberta pelo divisor do
+  próximo item quando o texto quebra pra 2 linhas — o `stElementContainer`
+  do Streamlit que envolve esse `st.markdown` mede uma altura menor que o
+  conteúdo real renderizado. Tentei 2 correções de CSS (forçar
+  `height:auto` no container via `:has()`, e evitar a quebra de linha com
+  `white-space:nowrap`+ellipsis na origem) — nenhuma resolveu a causa, e a
+  segunda **piorou** visualmente (quase todo o conteúdo da linha sumiu) -
+  revertida imediatamente, `git diff` confirmado limpo antes de seguir
+  (nenhum resíduo no repositório). Documentado em detalhe no BACKLOG.md
+  (mecanismo investigado, hipóteses, o que já foi tentado e descartado,
+  pendência concreta de confirmação em produção real) em vez de forçar um
+  fix sem entender a causa — risco real de regressão visual maior que o
+  bug original. O estilo "wire" mais antigo (TOP MERCADO, bloco de NEWS
+  da EQUITY) usa colunas de largura fixa com ellipsis (nunca quebra
+  linha) e **não tem este problema** — confirmado lendo o código, não
+  alterado.
+- **Testes**: suite completa 249/249 (baseline e após as mudanças);
+  `compileall`/`pyflakes` limpos no repositório inteiro.
+- **Relatório consolidado do ciclo inteiro** (partes 1/4 a 4/4) escrito em
+  PROGRESSO.md, seção "Rotina autônoma — ciclo de 4 partes, RELATÓRIO
+  CONSOLIDADO (2026-10-08)".
+
 ## 2026-10-08 (rotina autônoma, parte 3/4 — feedback de carregamento no MERCADO)
 
 Sessão autônoma agendada (3ª de 4 partes do ciclo). Partiu do commit
