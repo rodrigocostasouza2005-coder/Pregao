@@ -3116,3 +3116,106 @@ confirmar em `pregao.streamlit.app` depois do deploy.
 `ui/visao_geral.py`, `ui/workspace.py`, `MANUAL.md` + testes novos/
 estendidos listados acima. Nenhuma mudança em `auth.py`, `config.py`,
 `coletor_local.py`, schema SQL, ou nos módulos CVM/MACRO não citados.
+
+## FASE 8/9 — pós-V1, melhoria contínua controlada (2026-10-08)
+
+Continuação explicitamente escopada do ciclo anterior: só tratar os
+itens que ficaram no BACKLOG.md ("Auditoria 2026-10-08") depois da
+rodada pós-FASE 3, sem refazer a auditoria nem reabrir o que já tinha
+sido decidido lá. Partiu do commit `cb868c6` (já em main).
+
+**Decisões de implementação que valem registrar**:
+
+- **N+1 da sidebar/EQUITY**: o BACKLOG já tinha identificado que
+  `obter_cotacao` por ticker continuava em 2 lugares (sidebar, EQUITY
+  comparativo), e que o comparativo também buscava `obter_indicadores`
+  por ticker. Investigação confirmou que só a parte de COTAÇÃO tem
+  forma segura de lote (`data/mercado.py:obter_cotacoes_lote`, já
+  existente e testado desde a rodada anterior) — `obter_indicadores`
+  vem de `yf.Ticker().info`, que o yfinance não expõe em lote (só
+  `fast_info`/`download` de OHLCV são batcháveis). Decisão: migrar só a
+  cotação nos 2 pontos, documentar explicitamente por que indicadores
+  continua por ticker (não é uma pendência disfarçada, é um limite real
+  da fonte) — já cacheado 12h por ticker, então o impacto prático é
+  baixo mesmo sem lote.
+- **Coluna `modelo` do cache de IA**: a tarefa pedia "corrigir somente
+  se for seguro determinar o modelo efetivamente usado, nunca inventar,
+  preservar NULL se não disponível". Investigação em
+  `data/research/resumir.py:resumir_com_groq` achou que essa informação
+  JÁ é calculada internamente (`_chamar_groq_com_fallback` retorna
+  `usou_fallback`) mas era descartada com `_` antes de chegar no dict
+  salvo — ou seja, não era um caso de "informação indisponível", era
+  informação disponível e jogada fora. Corrigido propagando
+  `usou_fallback` até o dict que `data/ia_cache.py` lê, com `None`
+  (nunca um valor chutado) no único caminho defensivo onde a chave
+  poderia faltar. `data/news.py:_gerar_resumo_grupo` é mais simples
+  (sem fallback de modelo ali — sempre 1 modelo só, zero ambiguidade),
+  só precisava parar de OMITIR a chave, nunca teve risco de "inventar".
+  Efeito colateral limpo: `config.obter_modelo_groq()` (wrapper de 1
+  linha) ficou sem nenhum chamador depois da correção em
+  `_gerar_resumo` — removido (código morto).
+- **Testes de dedup de NEWS** (`_agrupar`/`_mesmo_grupo`): ao escrever
+  os cenários "notícias distintas não podem se fundir", 2 das minhas
+  primeiras tentativas de fixture (mesma empresa com baixa similaridade
+  de texto; 2 bancos com manchete de estrutura idêntica) na verdade SE
+  FUNDIRAM ao rodar contra o código real — não por bug nos testes
+  acharem um problema novo, mas porque minha intuição sobre o limiar de
+  similaridade/janela de entidade estava errada. Investigando a fundo:
+  o nome da própria empresa sozinho ("Petrobras", capitalizado, 5+
+  letras) já conta como "entidade em comum" em `_extrair_entidades`
+  (`_ENTIDADE_IGNORAR` só lista termos genéricos, não nomes de empresa)
+  - dentro da janela de 24h, isso basta pra fundir 2 fatos DIFERENTES da
+  mesma empresa. Por instrução explícita da tarefa ("não alterar a
+  regra sem evidência de bug"), **não mudei a heurística** - corrigi as
+  fixtures dos testes pra reflotar o comportamento real (ou empurrar a
+  diferença de horário além de 24h, ou escolher conteúdo realmente
+  distinto) e documentei o comportamento do nome-sozinho-como-entidade
+  num teste dedicado (`test_3b`), não como falha.
+- **`_cache_eventos()`**: antes de decidir "poda ou não", fiz a conta
+  real em vez de supor - cresce ~1 entrada por `(ticker, período)` já
+  calculado (4/ano por ticker, já que o período muda por trimestre),
+  é `st.cache_resource` de 1 processo só (terminal pessoal, não
+  multi-tenant), e nenhuma entrada antiga é lida de novo (lookup é
+  sempre pelo período ATUAL). Concluí que é seguro e não implementei
+  poda - a tarefa foi explícita que "se o cache já estiver seguro, não
+  alterar apenas por estética".
+- **Link CVM→CALENDÁRIO**: não implementado por restrição REAL de
+  arquitetura, não falta de tempo - `app.py` só permite escrever
+  `st.session_state["secao_ativa"]` ANTES do `st.segmented_control` do
+  nav ser instanciado no mesmo rerun (erro documentado no próprio
+  código: `StreamlitWidgetAlreadyInstantiatedError`), e CVM renderiza
+  bem depois desse ponto no fluxo do script. Fazer esse link exigiria
+  mudar a ordem de renderização ou um mecanismo de navegação diferido -
+  isso é arquitetura nova, que a tarefa pediu explicitamente pra não
+  criar.
+- **Chave de `session_state` MERCADO/VISÃO GERAL**: a tarefa pedia só
+  alterar "se o código/teste confirmar bug real". Testei na prática
+  (setar a chave do lado de MERCADO, ler do lado de VISÃO GERAL) e
+  CONFIRMEI que a interferência é real (não é só suspeita do BACKLOG
+  antigo) - mas também confirmei que isso nunca produz dado ERRADO (as
+  duas abas sempre mostram a janela selecionada corretamente, só
+  compartilham QUAL janela está ativa). Como a tarefa distinguiu
+  explicitamente "bug real" de "escolha intencional que não causa
+  comportamento incorreto", e este é o segundo caso, não alterei -
+  registrei a confirmação no BACKLOG como decisão de produto pendente,
+  não como bug.
+
+**Validação**: suíte completa (17 arquivos de teste, 3 novos:
+`test_news_dedup.py`, `test_news_contexto_research.py`,
+`test_resumir_modelo.py`) + `compileall` + `pyflakes` (repo inteiro,
+não só os arquivos tocados) limpos. As 2 correções de N+1 em `app.py`
+vivem em closures que exigem login real (`auth.py`) pra executar via
+Streamlit de verdade - mesma limitação "impossível de automatizar" já
+documentada em fases anteriores, confirmada de novo ao tentar (sem
+`user=` disponível em `AppTest.run()` nesta versão do Streamlit
+instalada) - validadas por revisão de código (compatibilidade exata de
+campos com `obter_cotacoes_lote`, já testado) + `compileall`/`pyflakes`,
+não por harness `AppTest` dedicado (diferença honesta registrada no
+CHANGELOG, não escondida).
+
+**Arquivos alterados**: `app.py`, `config.py`, `data/news.py`,
+`data/research/resumir.py`, `BACKLOG.md`, `CHANGELOG.md` + testes
+novos (`test_news_dedup.py`, `test_news_contexto_research.py`,
+`test_resumir_modelo.py`). Nenhuma mudança em `data/ia_cache.py`,
+`data/mercado.py`, `data/eventos.py`, `ui/*`, schema SQL, ou em
+qualquer regra financeira/dado exibido ao usuário.

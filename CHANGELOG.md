@@ -3,6 +3,67 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-08 (chore: harden post-v1 terminal — FASE 8/9)
+
+Continuação controlada da melhoria contínua, partindo do estado
+validado da rodada anterior (NÃO repete a auditoria de lá). Fecha os
+itens que tinham ficado em BACKLOG.md por falta de tempo/escopo:
+
+- **N+1 de cotação corrigido na sidebar e no comparativo da EQUITY**
+  (`app.py:_fragmento_watchlist`, `_painel_comparativo_watchlist`):
+  os 2 últimos pontos que ainda chamavam `data/prices.py:obter_cotacao`
+  1x por ticker num loop agora usam `data/mercado.py:obter_cotacoes_lote`
+  (já existente, já testado) — 1 única requisição em lote. No
+  comparativo, `obter_indicadores` (P/L, P/VP, DY) **continua** por
+  ticker de propósito: vem de `yf.Ticker().info`, que o yfinance não
+  oferece em lote — já cacheado 12h por ticker, custo real de rede raro.
+- **Coluna `modelo` do cache global de IA deixa de ficar sempre vazia**
+  (`data/ia_cache.py:resumos_ia_cache`, sem alterar `ia_cache.py` em
+  si): `data/research/resumir.py:resumir_com_groq` já calculava
+  internamente qual dos 2 modelos (principal/fallback) de fato gerou o
+  resumo (`usou_fallback`) mas descartava essa informação (`_`) antes
+  de chegar no dict salvo — agora propaga o modelo REAL (nunca
+  presumido; `None` quando genuinamente não disponível, nunca um
+  "chute"). `data/news.py:_gerar_resumo_grupo` (sem fallback de modelo,
+  sem ambiguidade) também passa a reportar o modelo usado.
+- **Testes de integração do motor de dedup de NEWS**
+  (`tests/test_news_dedup.py`, novo): `_agrupar`/`_mesmo_grupo` sem
+  nenhuma cobertura antes — cobre notícias equivalentes fundindo por
+  texto/entidade/título idêntico, notícias distintas (mesma empresa,
+  empresas diferentes) ficando separadas, cadeia de títulos mudando
+  gradualmente sem fragmentar, e propagação de `relevante`/`ao_vivo`
+  pro grupo. Documenta também (teste explícito, não um "bug" alterado)
+  uma característica real da heurística: o nome da própria empresa
+  sozinho (capitalizado, 5+ letras) já conta como "entidade em comum"
+  dentro da janela de 24h.
+- **Testes de `_bloco_contexto_research`** (`tests/test_news_contexto_research.py`,
+  novo): integração NEWS→RESEARCH dentro do dialog da notícia (FASE 3)
+  sem nenhum teste direto antes — cobre contexto correto, ausência de
+  contexto, múltiplos tickers com limite, fallback quando nenhum ticker
+  da notícia está na watchlist, fonte indisponível, e que nunca fabrica
+  potencial/preço-alvo ausente.
+- **Código morto removido**: `config.obter_modelo_groq()` (wrapper fino
+  de 1 linha, ficou sem nenhum chamador depois da correção da coluna
+  `modelo` acima).
+- Investigado e **deliberadamente não alterado** (ver BACKLOG.md,
+  "Auditoria 2026-10-08 (FASE 8)", com prioridade/impacto/esforço):
+  link CVM→CALENDÁRIO (bloqueado por restrição real de ordenação do
+  nav do Streamlit, não é "pequeno"), `_layout_grafico_escuro`
+  duplicado (sem bug ativo), chave de `session_state` compartilhada
+  entre MERCADO/VISÃO GERAL (confirmada empiricamente, mas é UX — nunca
+  mostra dado errado — decisão de produto), `_cache_eventos()` sem
+  poda (auditado, crescimento desprezível pra terminal pessoal, seguro).
+
+Validação: suíte completa (17 arquivos, 3 novos) + `compileall` +
+`pyflakes` (repo inteiro) limpos. Sem acesso a browser real neste
+ambiente — mesma limitação já documentada; os 2 pontos de N+1
+corrigidos vivem em closures de `app.py` que dependem de login real
+(`auth.py`, "impossível de automatizar", mesma decisão de fases
+anteriores) e por isso não têm harness `AppTest` dedicado — a correção
+é a mesma função já testada (`obter_cotacoes_lote`, `tests/test_mercado.py`
+da rodada anterior) em 2 pontos de chamada adicionais, confirmados por
+revisão de código (compatibilidade de campos) + `compileall`/`pyflakes`.
+
 ## 2026-10-08 (fix/feat/perf/test: ciclo de melhoria contínua pós-FASE 3)
 
 Auditoria completa (leitura real do código, não só do relatório da fase

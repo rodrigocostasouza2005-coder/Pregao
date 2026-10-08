@@ -429,8 +429,13 @@ with st.sidebar:
 
     @st.fragment(run_every=prefs["atualizacao_intervalo"])
     def _fragmento_watchlist():
+        # obter_cotacoes_lote (N+1 restante corrigido, FASE 8): 1 UNICA
+        # requisicao em lote pra watchlist inteira, mesmo mecanismo ja
+        # usado no ticker tape/VISAO GERAL (data/mercado.py) - antes
+        # disparava 1 yf.Ticker().fast_info POR TICKER aqui tambem.
+        cotacoes = obter_cotacoes_lote(tuple(prefs["watchlist"]))
         for t in list(prefs["watchlist"]):
-            cot = obter_cotacao(t)
+            cot = cotacoes.get(t, {"erro": "sem dado"})
             nome = nome_empresa(t)
             if cot.get("erro"):
                 var_html = "<span class='cinza'>--</span>"
@@ -481,8 +486,18 @@ if secao_atual == "EQUITY":
                 def _painel_comparativo_watchlist():
                     fmt = prefs["formato_numerico"]
                     linhas_dados = []
+                    # obter_cotacoes_lote (N+1 corrigido, FASE 8): 1 UNICA
+                    # requisicao em lote pra cotacao da watchlist inteira.
+                    # obter_indicadores CONTINUA por ticker de proposito:
+                    # vem de yf.Ticker().info (P/L, P/VP, DY...), que o
+                    # yfinance nao oferece em lote (so' fast_info/download
+                    # de OHLCV sao batcheaveis) - e' cacheado 12h por
+                    # ticker (data/prices.py:_TTL_INDICADORES), bem acima
+                    # do run_every deste fragment, entao o custo real de
+                    # rede aqui ja' e' raro (so' no 1o load/expiracao).
+                    cotacoes = obter_cotacoes_lote(tuple(prefs["watchlist"]))
                     for t in prefs["watchlist"]:
-                        cot = obter_cotacao(t)
+                        cot = cotacoes.get(t, {"erro": "sem dado"})
                         if cot.get("erro"):
                             continue
                         ind = obter_indicadores(t)

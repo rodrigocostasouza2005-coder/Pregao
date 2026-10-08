@@ -518,7 +518,7 @@ def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") ->
     foco = _detectar_foco(casa, tipo)
     prompt_sistema = _PROMPT_SISTEMA + _FOCO_POR_TIPO.get(foco, "")
 
-    conteudo, motivo, _ = _chamar_groq_com_fallback(
+    conteudo, motivo, usou_fallback = _chamar_groq_com_fallback(
         chave, modelo, modelo_fallback,
         [
             {"role": "system", "content": prompt_sistema},
@@ -530,14 +530,22 @@ def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") ->
     if conteudo is None:
         return None, motivo, {}
 
-    dados_estruturados = {}
+    # qual dos 2 modelos de fato gerou ESTE resumo (usou_fallback vem da
+    # chamada narrativa final acima, a que produz 'conteudo') - usado so'
+    # como metadado de auditoria/debug na coluna "modelo" do cache global
+    # (data/ia_cache.py:resumos_ia_cache); achado real (FASE 8, 2026-10-08):
+    # essa informacao ja' era calculada aqui mas descartada (`_`) antes
+    # dessa correcao, entao a coluna ficava sempre vazia.
+    modelo_usado = modelo_fallback if usou_fallback else modelo
+    dados_estruturados = {"modelo": modelo_usado}
     if tipo in _TIPOS_COM_DADOS_ESTRUTURADOS:
         # mesma chamada/texto ja' carregado - so' mais uma requisicao HTTP
         # leve (max_tokens=60) pra Groq, nenhum novo download de pagina.
         # Falha aqui nunca derruba o resumo narrativo (ja pronto acima) -
         # so' os campos extra ficam None.
         preco_alvo, recomendacao = _extrair_dados_estruturados(texto, titulo, chave, modelo)
-        dados_estruturados = {"preco_alvo": preco_alvo, "recomendacao": recomendacao}
+        dados_estruturados["preco_alvo"] = preco_alvo
+        dados_estruturados["recomendacao"] = recomendacao
 
     return _normalizar_formatacao(conteudo), None, dados_estruturados
 
@@ -558,8 +566,17 @@ def _gerar_resumo(link: str, titulo: str, extrator_texto, casa: str, tipo: str) 
 
     preco_alvo = dados_estruturados.get("preco_alvo")
     recomendacao = dados_estruturados.get("recomendacao")
-    store.salvar_resumo(link, resumo, config.obter_modelo_groq(), preco_alvo=preco_alvo, recomendacao=recomendacao)
-    return {"resumo": resumo, "motivo_indisponivel": None, "preco_alvo": preco_alvo, "recomendacao": recomendacao}
+    # modelo real que gerou o resumo (pode ser o fallback - ver
+    # resumir_com_groq), nunca presumido - achado real corrigido, FASE 8
+    # (antes sempre assumia o modelo PRINCIPAL, mesmo quando o fallback
+    # de fato respondeu). None (nunca um modelo chutado) no caso
+    # defensivo em que dados_estruturados nao trouxer a chave.
+    modelo_usado = dados_estruturados.get("modelo")
+    store.salvar_resumo(link, resumo, modelo_usado, preco_alvo=preco_alvo, recomendacao=recomendacao)
+    return {
+        "resumo": resumo, "motivo_indisponivel": None, "preco_alvo": preco_alvo,
+        "recomendacao": recomendacao, "modelo": modelo_usado,
+    }
 
 
 def obter_resumo(link: str, titulo: str, extrator_texto=None, casa: str = "", tipo: str = "") -> dict:

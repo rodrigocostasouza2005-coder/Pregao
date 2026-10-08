@@ -301,10 +301,6 @@ GROQ_REASONING_EFFORT = "low"
 GROQ_MAX_TOKENS = 900
 
 
-def obter_modelo_groq() -> str:
-    return obter_credenciais_groq()[1]
-
-
 def obter_modelo_groq_fallback() -> str:
     """Modelo de fallback (ver GROQ_MODELO_FALLBACK) - funcao separada de
     obter_credenciais_groq() de proposito: data/news.py ja' desempacota

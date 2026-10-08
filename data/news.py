@@ -1260,6 +1260,14 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
     - misturar texto de paginas diferentes e' aceitavel pro resumo
     (sintese), mas escolher a foto de UMA dessas paginas pra representar
     o grupo inteiro seria arbitrario."""
+    # qual modelo Groq de fato gera o resumo - usado so' como metadado de
+    # auditoria/debug na coluna "modelo" do cache global (data/ia_cache.py:
+    # resumos_ia_cache); diferente do research, o NEWS nao tem fallback de
+    # modelo (_chamar_groq usa sempre config.obter_credenciais_groq(),
+    # sem 2a tentativa) - entao aqui e' sempre o mesmo valor, sem
+    # ambiguidade nenhuma pra determinar (achado real, FASE 8 2026-10-08).
+    _, modelo_groq_usado = config.obter_credenciais_groq()
+
     ultimo_motivo = "nenhuma fonte disponível no grupo"
     fragmentos_curtos = []
     for veiculo, link in fontes_ordenadas:
@@ -1275,7 +1283,8 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
             continue
         resumo, motivo_groq = _resumir_com_groq(texto, titulo)
         if resumo:
-            return {"resumo": resumo, "link_original": link_real, "imagem": imagem, "motivo_indisponivel": None}
+            return {"resumo": resumo, "link_original": link_real, "imagem": imagem,
+                    "motivo_indisponivel": None, "modelo": modelo_groq_usado}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
             # falha do Groq em si (cota/config), nao da fonte - tentar as
             # proximas fontes do grupo so repetiria o mesmo erro a toa
@@ -1291,7 +1300,8 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
         texto_combinado = _combinar_fragmentos(fragmentos_curtos, titulos_unicos)
         resumo, motivo_groq = _resumir_com_groq(texto_combinado, titulo)
         if resumo:
-            return {"resumo": resumo, "link_original": None, "imagem": None, "motivo_indisponivel": None}
+            return {"resumo": resumo, "link_original": None, "imagem": None,
+                    "motivo_indisponivel": None, "modelo": modelo_groq_usado}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
             return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": motivo_groq}
         ultimo_motivo = motivo_groq or ultimo_motivo
@@ -1299,7 +1309,8 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
     if len(titulos_unicos) >= 2:
         resumo, motivo_groq = _resumir_das_manchetes(titulo, titulos_unicos)
         if resumo:
-            return {"resumo": resumo, "link_original": None, "imagem": None, "motivo_indisponivel": None}
+            return {"resumo": resumo, "link_original": None, "imagem": None,
+                    "motivo_indisponivel": None, "modelo": modelo_groq_usado}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
             return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": motivo_groq}
         ultimo_motivo = motivo_groq or ultimo_motivo

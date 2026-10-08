@@ -117,68 +117,88 @@ tinha sido limpo. Confirmado lendo o código atual (não só memória):
   ainda não desenhada (fonte, formato do resumo, frequência de
   atualização etc. — definir quando chegar a vez).
 
-## Auditoria 2026-10-08 — itens revistos, não implementados nesta rodada
+## Auditoria 2026-10-08 (FASE 8) — itens revistos, classificados
 
-Rodada de melhoria contínua (auditoria + correção autônoma) depois da
-FASE 3 (feed editorial NEWS+RESEARCH). Os achados de alto impacto/baixo
-esforço foram corrigidos nesta mesma sessão (ver CHANGELOG.md/PROGRESSO.md
-pra lista completa). Os itens abaixo foram identificados mas
-deliberadamente NÃO implementados — ou por exigirem decisão estratégica
-maior, ou por risco/esforço desproporcional ao ganho nesta rodada:
+Continuação controlada da rodada de melhoria contínua pós-FASE 3. A
+FASE 8 fechou a maior parte dos itens que a auditoria anterior tinha
+deixado em aberto (N+1 de cotação na sidebar/EQUITY, coluna `modelo`
+do cache de IA, testes de dedup de NEWS e de `_bloco_contexto_research`
+— ver CHANGELOG.md/PROGRESSO.md pra detalhe completo). Os itens abaixo
+foram investigados nesta rodada e **deliberadamente não alterados**,
+com prioridade/impacto/esforço:
 
-- **CVM não linka de volta pro CALENDÁRIO/RESEARCH**: o CALENDÁRIO já
-  conecta CVM/RESEARCH/NEWS/HISTÓRICO num hub por evento, mas a aba CVM
-  em si é deliberadamente isolada (não importa nada de outras abas) e
-  não oferece esse link de volta a partir de um documento. Lacuna de
-  integração real, não bug — decisão de produto (vale a pena um link
-  "ver no CALENDÁRIO" a partir de um documento CVM?).
-- **Sidebar watchlist (app.py, fragment da barra lateral) e painel
-  COMPARATIVO DA WATCHLIST (aba EQUITY)** ainda chamam
-  `data/prices.py:obter_cotacao` 1x por ticker num loop (mesmo padrão
-  N+1 já corrigido no ticker tape do header e na VISÃO GERAL via
-  `data/mercado.py:obter_cotacoes_lote`). Não corrigido aqui: o painel
-  da EQUITY também busca `obter_indicadores(t)` por ticker (P/L, ROE
-  etc. — sem equivalente em lote hoje), então a migração para
-  `obter_cotacoes_lote` sozinha só resolveria a metade do problema;
-  fazer os dois precisa de mais desenho (TTL compartilhado, formato de
-  retorno) do que cabia nesta rodada.
-- **Coluna `modelo` de `resumos_ia_cache` sempre vazia**
-  (`data/ia_cache.py:_salvar_resultado`): metadado de auditoria/debug,
-  não afeta o resumo exibido. Não corrigido por risco de introduzir um
-  bug de precisão pior que o atual — o valor certo é o modelo que DE
-  FATO gerou o resumo (pode ser o principal ou o fallback, ver
-  `config.obter_modelo_groq_fallback`), não simplesmente
-  `config.obter_modelo_groq()`; precisa que `resumir.py`/`news.py`
-  passem explicitamente qual modelo respondeu, não só o nome da coluna
-  virar não-vazio.
+- **Link de navegação CVM → CALENDÁRIO/RESEARCH**
+  PRIORIDADE: BAIXA · IMPACTO: BAIXO · ESFORÇO: MÉDIO (arquitetural, não "pequeno")
+  Investigado a fundo nesta rodada: app.py só permite escrever em
+  `st.session_state["secao_ativa"]` (troca de aba) **antes** do widget
+  de navegação (`st.segmented_control`) ser instanciado no mesmo rerun
+  — é assim que a busca global (`_ir_com_ticker`) já faz, documentado
+  explicitamente no próprio código ("descoberto na prática:
+  StreamlitWidgetAlreadyInstantiatedError"). A aba CVM renderiza bem
+  depois desse ponto no fluxo do script — um botão "ver no CALENDÁRIO"
+  dentro de `ui/cvm_tab.py` bateria direto nesse erro. Não é "pequeno e
+  consistente com a UI existente" (critério explícito pra essa tarefa):
+  precisaria mover a ordem de renderização ou criar um mecanismo de
+  navegação diferido (ex: redirecionar só no próximo rerun) — isso é
+  mudança de arquitetura de navegação, fora do escopo autorizado.
+- **`obter_indicadores(t)` no comparativo da EQUITY continua por ticker**
+  PRIORIDADE: BAIXA · IMPACTO: BAIXO · ESFORÇO: ALTO (sem solução segura hoje)
+  A cotação do comparativo da EQUITY e da sidebar JÁ foi migrada pra
+  `obter_cotacoes_lote` nesta rodada (FASE 8). `obter_indicadores`
+  (P/L, P/VP, DY — vem de `yf.Ticker().info`) continua 1x por ticker
+  porque o yfinance **não oferece** esse dado em lote (só
+  `fast_info`/`download` de preço são batcháveis) — não é uma omissão,
+  é um limite real da fonte. Impacto prático baixo: já é cacheado 12h
+  por ticker (`data/prices.py:_TTL_INDICADORES`), bem acima do
+  `run_every` do fragment, então o custo de rede só aparece no 1º load
+  ou na expiração do cache, não a cada rerun.
 - **`_layout_grafico_escuro` (template Plotly dark) duplicado** em
   `app.py`, `ui/mercado_tab.py`, `ui/macro_tab.py` e inline em
-  `ui/visao_geral.py`. Candidato a função única em `ui/graficos.py`
-  (já é o módulo compartilhado de infra de gráfico) — não feito nesta
-  rodada por ser refactor transversal a 4 arquivos sem bug ativo por
-  trás (risco > ganho pro escopo "corrigir, não refatorar tudo").
-- **Chave de `session_state` dos seletores DIA/SEMANA/MÊS
-  (`ui/mercado_tab.py:_escolha_estavel_mercado`) é compartilhada entre
-  MERCADO e VISÃO GERAL** (que reaproveita os mesmos painéis
-  diretamente) — escolher "SEMANA" numa aba muda a outra também. Pode
-  ser intencional (preferência persistente entre abas) ou efeito
-  colateral do reuso de função; não alterado sem confirmar a intenção
-  com o Rodrigo.
-- **`_cache_eventos()` (cache de último-dado-válido do CALENDÁRIO,
-  `data/eventos.py`) nunca é podado** — cresce lentamente ao longo de
-  meses/anos (1 entrada por `(ticker, período)` já calculado). Vazamento
-  de memória lento, não crítico; limpar entradas de períodos encerrados
-  ao calcular o período atual seria a correção, não feita por baixa
-  prioridade.
-- **Testes de `data/news.py` ainda têm lacuna no nível de integração**:
-  `tests/test_news_relevancia.py` (novo, nesta rodada) cobre a fundo as
-  peças PURAS do motor (`_relevante`, `_tokens_similaridade`/
-  `_similaridade`, `_calcular_score`), mas `_agrupar`/`_mesmo_grupo`
-  (orquestração completa de dedup entre itens de busca reais, com
-  datas/múltiplas fontes) ainda não têm teste de ponta a ponta.
-  `ui/news_tab.py:_bloco_contexto_research` (integração NEWS→RESEARCH
-  dentro do dialog, nova na FASE 3) também continua sem teste direto.
+  `ui/visao_geral.py`.
+  PRIORIDADE: BAIXA · IMPACTO: BAIXO (manutenção, não bug) · ESFORÇO: MÉDIO
+  Candidato a função única em `ui/graficos.py` (já é o módulo
+  compartilhado de infra de gráfico) — refactor transversal a 4
+  arquivos sem bug ativo por trás; critério explícito desta rodada é só
+  refatorar com "benefício concreto de manutenção e baixo risco", e
+  tocar 4 arquivos de UI pra um ganho puramente estético não atinge essa
+  barra ainda.
+- **Chave de `session_state` dos seletores DIA/SEMANA/MÊS compartilhada
+  entre MERCADO e VISÃO GERAL** (`ui/mercado_tab.py:_escolha_estavel_mercado`,
+  chave `"mercado_altas_baixas"`/`"mercado_setorial"` etc.)
+  PRIORIDADE: BAIXA · IMPACTO: NENHUM CONFIRMADO (UX, não dado errado) · ESFORÇO: BAIXO (se decidido separar)
+  **Confirmado empiricamente nesta rodada** (não é só suspeita): setar
+  a chave pelo lado de MERCADO e ler pelo lado de VISÃO GERAL devolve o
+  valor persistido — as duas abas de fato compartilham a escolha de
+  janela, porque `ui/visao_geral.py` reaproveita as MESMAS funções
+  (`_painel_altas_baixas`/`_painel_setorial`) de `ui/mercado_tab.py`,
+  mesma chave de widget. Importante: isso nunca mostra dado ERRADO (as
+  duas abas sempre renderizam a janela selecionada corretamente, só
+  compartilham QUAL janela está selecionada) — não é bug de
+  corretude, é uma escolha de UX (persistência entre abas) que pode ser
+  intencional ou não. Não alterado — decisão de produto do Rodrigo:
+  manter compartilhado (atual) ou separar por `aba_id`.
+- **`_cache_eventos()` (último-dado-válido do CALENDÁRIO,
+  `data/eventos.py`) nunca é podado**
+  PRIORIDADE: BAIXA · IMPACTO: BAIXO (auditado nesta rodada — seguro) · ESFORÇO: BAIXO
+  Reauditado nesta rodada: cresce ~1 entrada por `(ticker, período)` já
+  calculado, nunca removida — mas cada ticker só acumula ~4
+  entradas/ano (1 por trimestre), é um `st.cache_resource` de processo
+  único (terminal pessoal, não multi-tenant), e nenhuma entrada antiga
+  é lida de novo (lookups são sempre pelo período ATUAL). Memória
+  desperdiçada é desprezível mesmo depois de anos de uso — confirmado
+  seguro, não alterado "só por estética" (critério explícito desta
+  rodada).
 - **EQUITY não é "Company 360"** (contexto de Research/preço-alvo
-  integrado à ficha do ativo) — pendência já conhecida de ciclos
-  anteriores, reconfirmada nesta auditoria; decisão de produto grande
-  demais pra essa rodada.
+  integrado à ficha do ativo)
+  PRIORIDADE: MÉDIA (iniciativa de produto) · IMPACTO: ALTO (se feito bem) · ESFORÇO: ALTO
+  Pendência já conhecida de ciclos anteriores, reconfirmada nesta
+  auditoria; decisão de produto/design grande demais pra uma rodada de
+  correção controlada — mantida explicitamente como iniciativa futura
+  de maior escopo, não uma tarefa pequena a encaixar.
+- **Browser real indisponível neste ambiente de execução** (limitação
+  de infraestrutura, não do produto) — Playwright/Chromium não estão
+  configurados contra o app Streamlit completo aqui; toda validação
+  visual usa `compileall` + suíte determinística + harness `AppTest`
+  (prova "renderiza sem exceção com o dado certo", não "fica bonito na
+  tela"). Confirmação visual real fica sempre pendente pro Rodrigo em
+  `pregao.streamlit.app`.
