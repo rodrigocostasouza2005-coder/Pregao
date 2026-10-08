@@ -3,6 +3,75 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-08 (rotina autônoma, parte 2/4 — confiabilidade de dados + mobile real)
+
+Sessão autônoma agendada (2ª de 4 partes do ciclo). Partiu do commit
+`de8eae8` (já em `main`), lendo PROGRESSO.md/CHANGELOG.md/BACKLOG.md da
+parte 1/4 pra não repetir investigação já feita. Suite completa (249
+testes) confirmada passando ANTES de qualquer mudança (baseline limpo,
+sem regressão herdada). Duas correções, ambas reproduzidas de verdade
+antes de alterar código (não hipótese):
+
+- **MACRO (curva pré ANBIMA) — rótulo "Hoje"/"Última" e janelas de
+  comparação usavam o fuso do SERVIDOR, não o de Brasília**:
+  `ui/macro_tab.py:_painel_curva_pre` calculava `hoje = date.today()`
+  (fuso do processo - UTC no Streamlit Cloud). Reproduzido
+  analiticamente (simulação de horário real): entre 21h e 23h59 no
+  horário de Brasília, `date.today()` já retorna o dia seguinte em UTC -
+  nessa janela diária, a curva publicada HOJE pela ANBIMA seria rotulada
+  "Última" por engano (a comparação `data_ref_hoje.date() == hoje`
+  falha), e as janelas "1 semana atrás"/"1 mês atrás" ficariam
+  deslocadas em 1 dia. Mesma classe de bug já corrigida em
+  `data/eventos.py:periodo_pendente` nesta mesma data por outra sessão -
+  só não tinha sido replicada aqui. Corrigido com
+  `datetime.now(data.macro.TZ).date()` (America/Sao_Paulo, mesmo fuso já
+  usado no resto do projeto). Validado: teste direto da comparação
+  `eh_hoje` com dado sintético confirma `True` quando a publicação é
+  realmente de hoje em BRT; AppTest do painel sem exceção.
+- **CVM (tabela DATA/TICKER/TIPO/ASSUNTO) — texto sobrepondo colunas
+  vizinhas em mobile/tablet**: reproduzido com Playwright/Chromium REAL
+  (não AppTest - harness isolado rodando `ui/cvm_tab.render_cvm` com
+  dados sintéticos, igual ao padrão já usado pra MERCADO numa sessão
+  anterior) nos 3 breakpoints (390/768/1280px). A 390px, DATA/TICKER (e
+  o badge de TIPO) ficavam visualmente sobrepostos uns aos outros, linha
+  a linha - tabela ilegível. A 768px, data e ticker colavam sem espaço
+  ("08/10/2026PETR4"). Causa raiz: `.cvm-data`/`.cvm-ticker` eram as
+  ÚNICAS peças da tabela sem `overflow:hidden`/`text-overflow:ellipsis`
+  (o botão de assunto e o cabeçalho já tratavam disso) - em telas
+  estreitas, onde `st.columns` não empilha, só encolhe (CSS global
+  `min-width:0`), o texto `white-space:nowrap` sem contenção vazava
+  visualmente para a coluna seguinte. Corrigido aplicando a mesma técnica
+  já usada em todo o resto do app (ellipsis + `overflow-x:hidden` no
+  bloco de colunas como rede de segurança); pesos de coluna também
+  rebalanceados (`_COLS`: de `[9,8,16,55]` pra `[12,10,14,50]` - TIPO
+  tinha folga de sobra, realocada pra DATA/TICKER sem reduzir ASSUNTO).
+  Confirmado com nova screenshot nos 3 breakpoints: zero sobreposição,
+  zero scroll horizontal, tablet/desktop com data+ticker completos.
+- **Investigado e descartado** (não é bug, não alterado): varredura de
+  todos os outros `st.columns` com pesos fixos do projeto
+  (`calendario_tab.py`, `news_tab.py`, `graficos.py`, `paineis.py`,
+  `app.py`) em busca do mesmo padrão (`white-space:nowrap` sem
+  `overflow`/`ellipsis`) que causou o bug da CVM - nenhum outro caso
+  encontrado; os demais têm ou proporções bem mais folgadas (`[4,1]`,
+  `[3,1]`) ou já tratam overflow corretamente (NEWS, auditado numa
+  sessão anterior com o mesmo método).
+- **Nota de ambiente**: mesma limitação de sessões anteriores - rede
+  deste sandbox bloqueia Yahoo Finance/B3/ANBIMA/CVM (confirmado de novo
+  nesta sessão com teste direto de conectividade), então toda validação
+  visual usou harness Playwright isolado com dados sintéticos plausíveis
+  (fora do `app.py` real, sem login), mesmo padrão já documentado.
+  Python 3.12 (`/tmp/venv312`, recriado nesta sessão - efêmero).
+- **Testes**: suite completa 249/249 (baseline e após cada mudança);
+  `compileall`/`pyflakes` limpos nos arquivos tocados; validação visual
+  real via Playwright/Chromium (pré-instalado) nos 2 bugs encontrados,
+  antes E depois da correção (evidência de before/after, não só
+  "renderiza sem exceção").
+- Não fiz (falta de tempo nesta janela de ~1h, ficam pro próximo ciclo):
+  auditoria visual formal (signal→context→detail) das 9 telas; revisão
+  visual com dados mockados de NEWS/RESEARCH/TOP MERCADO/EQUITY/
+  CALENDÁRIO nos 3 breakpoints (só MERCADO e agora CVM receberam harness
+  dedicado até aqui).
+
 ## 2026-10-08 (rotina autônoma, parte 1/4 — confiabilidade de testes)
 
 Sessão autônoma agendada (ciclo de 4 partes). Retomou exatamente o

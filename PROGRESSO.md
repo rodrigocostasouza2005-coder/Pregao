@@ -3277,3 +3277,100 @@ revisão visual completa de NEWS/CVM/RESEARCH/TOP MERCADO/EQUITY nos 3
 breakpoints com dados mockados (só MERCADO recebeu harness dedicado até
 agora); auditoria de hierarquia visual (signal→context→detail) das 9
 telas ainda não foi feita formalmente.
+
+## Rotina autônoma — ciclo de 4 partes, parte 2/4 (2026-10-08)
+
+Sessão agendada, isolada (clone próprio), continuação do ciclo. Partiu
+do commit `de8eae8` (já em `main`, fim da parte 1/4). Baseline
+confirmado antes de qualquer mudança: suite completa 249/249, sem
+regressão herdada.
+
+**Trabalho desta parte** (2 bugs reais, ambos reproduzidos antes de
+corrigir, não hipótese):
+
+1. **MACRO — curva pré (ETTJ ANBIMA) usava `date.today()` do servidor
+   (UTC) em vez do fuso de Brasília**: achado lendo
+   `ui/macro_tab.py:_painel_curva_pre` com o item 1 da ordem de
+   prioridade do Rodrigo em mente ("verificar datas, timezone
+   America/Sao_Paulo"). `hoje = date.today()` é o fuso do processo -
+   UTC no Streamlit Cloud. Reproduzido analiticamente (simulação de
+   horário UTC real): entre 21h e 23h59 em Brasília, `date.today()` já
+   retorna amanhã em UTC - nessa janela diária todo dia, a curva
+   publicada HOJE pela ANBIMA seria rotulada "Última" por engano, e as
+   janelas de "1 semana atrás"/"1 mês atrás" ficariam deslocadas em 1
+   dia. Achado reforçado por um precedente direto: a MESMA classe de bug
+   já tinha sido corrigida em `data/eventos.py:periodo_pendente` nesta
+   mesma data (2026-10-08) por outra sessão - só não tinha sido
+   replicada aqui. Corrigido com `datetime.now(data.macro.TZ).date()`
+   (America/Sao_Paulo, `TZ` já exportado por `data/macro.py`, mesmo fuso
+   usado no resto do projeto). Validado com teste direto da comparação
+   `eh_hoje` (dado sintético com `data_referencia` = hoje em BRT) -
+   confirma `True` depois da correção; AppTest do painel sem exceção;
+   suite completa 249/249 depois da mudança.
+2. **CVM — tabela DATA/TICKER/TIPO/ASSUNTO ilegível em mobile/tablet**:
+   pendência explícita deixada pela parte 1/4 ("revisão visual completa
+   ... só MERCADO recebeu harness dedicado até agora"). Construído
+   harness Playwright isolado (`render_cvm` com dados sintéticos, sem
+   login, mesmo padrão já usado pra MERCADO numa sessão anterior),
+   screenshot real nos 3 breakpoints (390/768/1280px) via
+   Chromium pré-instalado neste ambiente. **Confirmado visualmente**
+   (não suspeita): a 390px, DATA/TICKER/badge de TIPO ficavam
+   sobrepostos uns aos outros linha a linha (texto ilegível, "garbled");
+   a 768px, data e ticker colavam sem espaço ("08/10/2026PETR4"). Causa
+   raiz: `.cvm-data`/`.cvm-ticker` eram as ÚNICAS peças da tabela sem
+   `overflow:hidden`/`text-overflow:ellipsis` (o botão de assunto e o
+   cabeçalho já tratavam disso) - em telas estreitas, onde `st.columns`
+   não empilha (confirmado: só encolhe, via `min-width:0` global em
+   `style.css`), o texto `white-space:nowrap` sem contenção vazava
+   visualmente por cima da coluna seguinte. Corrigido com a mesma
+   técnica já usada em todo o resto do app (ellipsis nos 4 elementos +
+   `overflow-x:hidden` no bloco de colunas como rede de segurança) e
+   rebalanceamento de `_COLS` (`[9,8,16,55]` → `[12,10,14,50]` - TIPO
+   tinha folga de sobra, nunca precisou de 16/88 pro rótulo mais longo
+   "FATO RELEVANTE"; realocada pra DATA/TICKER sem reduzir ASSUNTO, que
+   continua dominando a largura por pedido explícito original).
+   Confirmado com nova screenshot nos 3 breakpoints, antes E depois:
+   zero sobreposição, zero scroll horizontal (`stHorizontalBlock` sem
+   overflow em nenhum dos 3), tablet/desktop com data+ticker completos e
+   espaçados corretamente.
+3. **Varredura por bugs irmãos (mesmo padrão)**: busca de todo
+   `st.columns` com pesos fixos no projeto
+   (`calendario_tab.py`/`news_tab.py`/`graficos.py`/`paineis.py`/
+   `app.py`) por `white-space:nowrap` sem `overflow`/`ellipsis` - mesmo
+   padrão da causa raiz do bug da CVM. **Nenhum outro caso encontrado**:
+   os demais usos têm proporções bem mais folgadas (`[4,1]`, `[3,1]`,
+   `[1,9]`) ou já tratam overflow corretamente (NEWS, auditado com o
+   mesmo método Playwright numa sessão anterior). Não alterado (nada a
+   corrigir sem bug confirmado).
+
+**Nota de ambiente**: mesma limitação de sessões anteriores - rede deste
+sandbox bloqueia Yahoo Finance/B3/ANBIMA/CVM (reconfirmado nesta sessão
+com teste direto de conectividade HTTPS). Toda validação visual usou
+harness Playwright isolado com dados sintéticos plausíveis (fora do
+`app.py` real, sem login - os dois bugs encontrados são de LAYOUT/CSS,
+não de dado, então dado sintético plausível é suficiente pra reproduzir
+e validar a correção). Python 3.12 (`/tmp/venv312`, recriado nesta
+sessão - efêmero, mesma razão de sempre: sintaxe de f-string que exige
+3.12+).
+
+**Validação**: suite completa 249/249 (baseline antes de mexer, e de
+novo depois de cada uma das 2 correções); `compileall`/`pyflakes`
+limpos nos arquivos tocados (`ui/macro_tab.py`, `ui/cvm_tab.py`);
+screenshots reais (Chromium) nos 3 breakpoints, antes E depois, pro bug
+da CVM - evidência de before/after, não só "renderiza sem exceção".
+
+**Arquivos alterados**: `ui/macro_tab.py`, `ui/cvm_tab.py`,
+`CHANGELOG.md`, `PROGRESSO.md`.
+
+**Pendências pra próxima parte (3/4)**: a auditoria visual formal
+(signal→context→detail) das 9 telas continua pendente, assim como a
+revisão com dados mockados de NEWS/RESEARCH/TOP MERCADO/EQUITY/
+CALENDÁRIO nos 3 breakpoints (agora MERCADO e CVM têm harness dedicado;
+as outras 5 ainda não). O harness Playwright isolado usado aqui pra CVM
+é reaproveitável como padrão pras próximas (copiar a estrutura de
+`cvm_harness.py`/`shoot_cvm.py` do scratchpad desta sessão - não ficou
+no repositório, era só validação, mas o padrão está documentado aqui e
+no CHANGELOG). Nenhum outro P0/P1 óbvio identificado nesta sessão na
+camada de dados/confiabilidade além dos 2 corrigidos - próxima parte
+pode seguir direto pra cobertura de mercado (item 2) ou fontes/coleta
+(item 3) se a auditoria visual não render mais achados rápidos.
