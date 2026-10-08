@@ -186,10 +186,28 @@ def _painel_setorial(prefs):
     fig = go.Figure(go.Bar(
         x=df["variacao_media_pct"], y=df["setor"], orientation="h",
         marker_color=cores, text=df["variacao_media_pct"].map(lambda v: _fmt_pct(v, prefs)),
-        textposition="outside",
+        textposition="outside", cliponaxis=False,
     ))
-    fig.update_yaxes(autorange="reversed")
+    # automargin=True (achado real, Playwright a 768/1280px): sem isso o
+    # nome de setor mais comprido ("Petróleo e Gás", "Materiais Básicos")
+    # cortava na borda ESQUERDA do painel ("'etróleo e Gás") - o
+    # margin.l:10 fixo de _layout_grafico_escuro nunca foi pensado pra
+    # reservar espaco pro rotulo de categoria (so' pra folga extra alem
+    # dele); automargin manda o Plotly calcular esse espaco de verdade a
+    # partir do texto mais largo, em vez de confiar num numero fixo.
+    fig.update_yaxes(autorange="reversed", automargin=True)
     _layout_grafico_escuro(fig, tema, altura=max(240, 28 * len(setores)))
+    # achado real (2026-10-08, Playwright a 390px): o rotulo "+X,XX%" de
+    # cada barra (textposition="outside") cortava na borda do grafico em
+    # telas estreitas - o container fica tao estreito (~300px uteis,
+    # descontado o espaco dos nomes de setor no eixo Y) que o autorange
+    # padrao do eixo X nao sobra espaco pro texto depois da ultima barra.
+    # Folga fixa de 35% sobre o maior valor absoluto (pra ambos os lados,
+    # ja que setor pode estar em alta OU baixa) da' espaco pro rotulo
+    # sempre que algo comparado a so' confiar no autorange; cliponaxis=False
+    # acima e' a rede de seguranca pro caso raro de nao bastar mesmo assim.
+    maior_abs = max(df["variacao_media_pct"].abs().max(), 0.5)
+    fig.update_xaxes(range=[-maior_abs * 1.55, maior_abs * 1.55])
     chave = graficos.zoom_key("mercado_setorial", janela)
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave)
 

@@ -60,7 +60,7 @@ def _serie_sgs(codigo: int, dias_historico: int) -> pd.DataFrame:
     return df[["data", "valor"]]
 
 
-@st.cache_data(ttl=_TTL_SERIES, show_spinner=False)
+@st.cache_data(ttl=_TTL_SERIES, show_spinner="atualizando indicadores macro…")
 def obter_ipca(dias_historico: int = 760) -> pd.DataFrame | None:
     """IPCA mensal (% a.m.) e acumulado 12 meses (%), lado a lado por data,
     cobrindo os ultimos `dias_historico` dias corridos (padrao ~25 meses).
@@ -74,7 +74,7 @@ def obter_ipca(dias_historico: int = 760) -> pd.DataFrame | None:
         return None
 
 
-@st.cache_data(ttl=_TTL_SERIES, show_spinner=False)
+@st.cache_data(ttl=_TTL_SERIES, show_spinner="atualizando indicadores macro…")
 def obter_selic_meta(dias_historico: int = 400) -> pd.DataFrame | None:
     """Historico da meta Selic definida pelo Copom (% a.a.), cobrindo os
     ultimos `dias_historico` dias corridos. A serie tem um ponto por dia
@@ -86,7 +86,7 @@ def obter_selic_meta(dias_historico: int = 400) -> pd.DataFrame | None:
         return None
 
 
-@st.cache_data(ttl=_TTL_SERIES, show_spinner=False)
+@st.cache_data(ttl=_TTL_SERIES, show_spinner="atualizando indicadores macro…")
 def obter_cdi(dias_historico: int = 90) -> pd.DataFrame | None:
     """CDI diario (% a.d.) e CDI anualizado base 252 (% a.a.), lado a lado
     por data, cobrindo os ultimos `dias_historico` dias corridos. None se
@@ -145,7 +145,7 @@ def _focus_multi_ano(indicador: str, quantidade_anos: int = 3) -> pd.DataFrame |
         return None
 
 
-@st.cache_data(ttl=_TTL_SERIES, show_spinner=False)
+@st.cache_data(ttl=_TTL_SERIES, show_spinner="atualizando indicadores macro…")
 def obter_focus_ipca() -> pd.DataFrame | None:
     """Expectativa de mercado (Focus/BC) pra IPCA do ano corrente e dos
     dois seguintes: mediana, media e numero de respondentes. None se a
@@ -153,7 +153,7 @@ def obter_focus_ipca() -> pd.DataFrame | None:
     return _focus_multi_ano("IPCA")
 
 
-@st.cache_data(ttl=_TTL_SERIES, show_spinner=False)
+@st.cache_data(ttl=_TTL_SERIES, show_spinner="atualizando indicadores macro…")
 def obter_focus_selic() -> pd.DataFrame | None:
     """Expectativa de mercado (Focus/BC) pra Selic (fim de periodo) do ano
     corrente e dos dois seguintes. None se a consulta falhar ou nao vier
@@ -205,7 +205,7 @@ def _parse_ettj_anbima(texto: str) -> pd.DataFrame:
     return pd.DataFrame(registros)
 
 
-@st.cache_data(ttl=_TTL_CURVA, show_spinner=False)
+@st.cache_data(ttl=_TTL_CURVA, show_spinner="atualizando curva de juros…")
 def obter_curva_pre(data_referencia: date | None = None) -> pd.DataFrame | None:
     """Curva de juros prefixada (dias uteis x taxa % a.a.), fonte ANBIMA ETTJ
     (bloco 'PREFIXADOS - CIRCULAR 3.361'), com poucos vertices padronizados.

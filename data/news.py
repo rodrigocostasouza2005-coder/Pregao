@@ -612,7 +612,7 @@ def _agrupar(itens: list) -> list:
     return grupos
 
 
-@st.cache_data(ttl=_TTL_COLETA, show_spinner=False)
+@st.cache_data(ttl=_TTL_COLETA, show_spinner="buscando notícias…")
 def obter_noticias(ticker: str):
     """Noticias de uma empresa (nome + ticker), agrupadas e com score de
     confiabilidade. None se a fonte falhar; [] se a fonte respondeu mas
@@ -946,7 +946,7 @@ def _processar_pool(entries_por_link: dict, setor: str, regiao: str) -> list:
     return resultado
 
 
-@st.cache_data(ttl=_TTL_COLETA, show_spinner=False)
+@st.cache_data(ttl=_TTL_COLETA, show_spinner="buscando notícias do mercado…")
 def obter_top_mercado(setor: str = "TODOS"):
     """As _TOP_MERCADO_QTD noticias mais "importantes" do momento no
     Brasil (ver _calcular_importancia) - secao de negocios do Google News
@@ -962,7 +962,7 @@ def obter_top_mercado(setor: str = "TODOS"):
     return resultado[:_TOP_MERCADO_QTD]
 
 
-@st.cache_data(ttl=_TTL_COLETA, show_spinner=False)
+@st.cache_data(ttl=_TTL_COLETA, show_spinner="buscando notícias internacionais…")
 def obter_top_mercado_internacional(setor: str = "TODOS"):
     """Como obter_top_mercado, mas fontes internacionais (Google News EUA
     + CNBC/MarketWatch/Yahoo Finance - Parte D). Bloomberg/WSJ/FT
@@ -979,7 +979,7 @@ def obter_top_mercado_internacional(setor: str = "TODOS"):
     return resultado[:_TOP_MERCADO_QTD]
 
 
-@st.cache_data(ttl=_TTL_COLETA, show_spinner=False)
+@st.cache_data(ttl=_TTL_COLETA, show_spinner="buscando notícias…")
 def obter_top_mercado_tudo(setor: str = "TODOS"):
     """BRASIL + INTERNACIONAL ranqueados juntos (nao e' so concatenar os
     2 top-20 separados: processa os 2 pools - inteiros, antes do corte -

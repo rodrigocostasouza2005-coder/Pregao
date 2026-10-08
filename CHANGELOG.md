@@ -3,6 +3,109 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-08 (continuação — UX/hierarquia/mobile/performance percebida)
+
+Sessão autônoma agendada, continuação da sessão anterior (mesmo dia -
+calendário/botão de login mobile já resolvidos, não repetidos aqui).
+Foco: revisão crítica de UX nas 9 telas + responsividade real
+(Playwright 390/768/1280px) + feedback de carregamento.
+
+- **Feedback de carregamento ausente no app inteiro** (`data/cvm.py`,
+  `data/news.py`, `data/macro.py`, `data/research/genial.py`): todo
+  `@st.cache_data` do projeto usava `show_spinner=False` sem exceção -
+  numa consulta fria (CVM, notícias, research, séries macro, todas com
+  TTL de 20min-24h e fetch de rede real), a tela ficava literalmente
+  parada, sem spinner nem texto, até o dado chegar (achado real: zero
+  ocorrências de `st.spinner` nas camadas de dado do projeto todo).
+  Adicionado texto de spinner (`show_spinner="buscando notícias…"`,
+  etc.) exatamente nas funções que: (a) fazem fetch de rede de verdade
+  (não só leitura de Supabase já cacheada) e (b) NÃO vivem dentro de um
+  `st.fragment(run_every=...)` de auto-atualização (só 4 lugares no
+  app inteiro - ticker tape, watchlist do header, comparativo da
+  watchlist em EQUITY, painel PREÇOS - nenhum deles chama essas
+  funções), pra nunca piscar o spinner a cada refresh periódico.
+  Conferido um a um: funções já cobertas por um `st.spinner(...)`
+  manual no ponto de chamada (resumo de documento CVM, resumo de
+  notícia, calendário, coleta de relatórios pendente) foram
+  deliberadamente DEIXADAS de fora pra não duplicar/aninhar spinner com
+  texto diferente no mesmo carregamento.
+- **MERCADO/MACRO/VISÃO GERAL: botão "↺ RESTAURAR LAYOUT" cortava em
+  QUALQUER tela abaixo de ~800px de conteúdo, tablet incluído, não só
+  celular** (`ui/workspace.py:renderizar_workspace`) — bug real
+  confirmado com Playwright (390/768/1280px, harness com dados
+  mockados já que a rede deste sandbox bloqueia Yahoo/B3/RSS - ver nota
+  de ambiente abaixo): o botão vivia num `st.columns([5, 1.3])` ao lado
+  da dica de arrastar — uma FRAÇÃO da largura, não um valor fixo, então
+  "RESTAURAR LAYOUT" (19 caracteres) nunca cabia nos ~20% de coluna
+  reservados a ele abaixo de ~800px, virando "RESTAURAR ..." cortado e
+  inútil. Removida a divisão em colunas: dica em cima (some de todo
+  abaixo de 640px — nessa largura o workspace já cai pro fallback
+  empilhado, arrastar/redimensionar não existe mais, a dica ficaria
+  descrevendo uma interação indisponível), botão embaixo, largura
+  total sempre — não depende de nenhum breakpoint específico, funciona
+  igual em qualquer largura. Afeta as 3 abas que usam o workspace
+  modular (MERCADO, MACRO, VISÃO GERAL).
+- **MERCADO (painel DESEMPENHO SETORIAL): rótulo de % cortava na borda
+  do gráfico em telas estreitas + nome de setor comprido cortava na
+  borda ESQUERDA em tablet/desktop** (`ui/mercado_tab.py:_painel_setorial`)
+  — 2 bugs reais confirmados com Playwright (mesmo harness mockado):
+  (1) o texto "+X,XX%" de cada barra (`textposition="outside"`) não
+  tinha folga reservada no eixo X pra caber depois da última barra em
+  containers estreitos — corrigido com uma folga fixa de 55% sobre o
+  maior valor absoluto do dia (pra ambos os lados, setor pode estar em
+  alta OU baixa) + `cliponaxis=False` como rede de segurança; (2) nomes
+  de setor mais longos ("Petróleo e Gás", "Materiais Básicos")
+  cortavam na borda esquerda do painel mesmo em 768/1280px porque o
+  `margin.l` fixo do layout nunca foi pensado pra reservar espaço pro
+  rótulo de categoria — corrigido com `automargin=True` no eixo Y
+  (Plotly calcula o espaço de verdade a partir do texto mais largo).
+  Esse painel é reaproveitado por VISÃO GERAL também (mesma função,
+  `ui/visao_geral.py:REGISTRO_PAINEIS`) — o fix vale pras duas abas.
+  Limitação conhecida: a 390px (celular), "Petróleo e Gás" ainda perde
+  1 caractere ("'etróleo e Gás") — a largura disponível ali (~300px,
+  descontado o espaço do próprio rótulo) é estreita demais pro rótulo
+  mais longo do conjunto caber inteiro ao lado de uma barra+texto
+  legíveis; não persegui esse último caractere pra não gastar o tempo
+  da sessão num detalhe cosmético de 1 painel (dado continua
+  identificável - "etróleo e Gás" + a barra colorida ao lado).
+- **Nota de ambiente**: rede deste sandbox bloqueia Yahoo Finance/B3/
+  RSS/sites de research (confirmado: toda tentativa de fetch real
+  nessas fontes retornou indisponível) — validação visual real das
+  telas com DADO DE VERDADE não foi possível aqui (mesma limitação já
+  documentada em sessões anteriores, ver nota de 2026-09/10 em
+  PROGRESSO.md sobre harness Playwright com dados mockados). Contornado
+  com 2 harnesses Playwright isolados (fora do app.py real, sem login):
+  um importando os `render_*` de verdade contra a rede real (confirma
+  ausência de overflow horizontal e exercita os estados vazio/erro,
+  que acabaram sendo o que a rede bloqueada mostrou de qualquer jeito);
+  outro com `data.mercado`/`data.ibovespa` substituídos por dados
+  sintéticos plausíveis (só pra MERCADO, onde estavam os 2 bugs reais
+  acima) pra validar tabelas/gráfico/treemap com conteúdo de verdade
+  nos 3 breakpoints. Mesmo venv Python 3.12 (`/tmp/venv312`) das
+  sessões anteriores, por causa da mesma sintaxe de f-string aninhada
+  que exige 3.12+.
+- **Testes**: suite completa (17 arquivos, 243 testes) rodada em Python
+  3.12 - 233 passam, 10 falham em `tests/test_eventos.py`
+  (`calcular_proximo_resultado` retornando `None` em vez de dict em
+  alguns cenários de leitura de evento persistido) - confirmado que as
+  10 falhas já existiam ANTES desta sessão (mesmo resultado rodando os
+  testes no HEAD limpo, `ab4ca56`, sem nenhuma mudança minha) - não são
+  regressão deste ciclo, ficam registradas aqui pro próximo ciclo
+  investigar a causa raiz. `compileall` limpo em todos os arquivos
+  tocados.
+- Não fiz (falta de tempo nesta janela de ~1h, ficam pro próximo
+  ciclo): revisão visual completa de NEWS/CVM/RESEARCH/TOP MERCADO/
+  CALENDÁRIO/EQUITY nos 3 breakpoints com dados mockados (só MERCADO
+  recebeu harness mockado dedicado nesta sessão - as outras abas só
+  foram validadas contra a rede real bloqueada, que mostrou os estados
+  vazio/erro mas não o layout com conteúdo real); auditoria de
+  hierarquia visual (itens 1-9 do pedido original - VISÃO GERAL como
+  primeira impressão, EQUITY como experiência de análise, NEWS como
+  leitura editorial, etc.) não foi abordada por falta de tempo depois
+  do trabalho de responsividade/loading state, que achei ter maior
+  impacto imediato (bugs reais confirmados, cross-tela) do que
+  reorganização de hierarquia sem bug concreto por trás.
+
 ## 2026-10-08 (auditoria de confiabilidade/UX/responsividade — rotina autônoma)
 
 Sessão autônoma agendada, focada na suspeita de que o CALENDÁRIO

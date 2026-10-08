@@ -139,7 +139,7 @@ def _baixar_csv_do_zip(url: str, nome_no_zip: str):
         return None
 
 
-@st.cache_data(ttl=_TTL_MAPA_TICKER, show_spinner=False)
+@st.cache_data(ttl=_TTL_MAPA_TICKER, show_spinner="carregando cadastro de tickers da CVM…")
 def _mapa_ticker_cnpj() -> dict:
     """{ticker: cnpj}, construido a partir do FCA (Formulario Cadastral)
     - unica fonte da CVM que liga o codigo de negociacao da B3 ao CNPJ.
@@ -175,7 +175,7 @@ def obter_cnpj(ticker: str):
     return _mapa_ticker_cnpj().get(ticker.upper())
 
 
-@st.cache_data(ttl=_TTL_DOCUMENTOS, show_spinner=False)
+@st.cache_data(ttl=_TTL_DOCUMENTOS, show_spinner="consultando documentos da CVM…")
 def _ipe_ano(ano: int):
     """DataFrame bruto do IPE de um ano inteiro (~30-40 mil linhas, todas
     as companhias), so' com as colunas usadas. None se a fonte falhar.
@@ -238,7 +238,7 @@ def _documentos_brutos(cnpj: str):
     return pd.concat(partes).to_dict("records")
 
 
-@st.cache_data(ttl=_TTL_DOCUMENTOS, show_spinner=False)
+@st.cache_data(ttl=_TTL_DOCUMENTOS, show_spinner="consultando documentos da CVM…")
 def obter_documentos_cvm(ticker: str):
     """Documentos oficiais recentes (fato relevante, comunicado ao
     mercado, proventos, calendario) de um ticker. None se a fonte
@@ -278,7 +278,7 @@ def obter_documentos_cvm(ticker: str):
     return resultado
 
 
-@st.cache_data(ttl=_TTL_DOCUMENTOS, show_spinner=False)
+@st.cache_data(ttl=_TTL_DOCUMENTOS, show_spinner="consultando documentos da CVM…")
 def obter_documentos_watchlist(tickers: list) -> tuple:
     """Agrega obter_documentos_cvm de varios tickers. Retorna (documentos,
     falhas). Ao final de uma coleta com sucesso, grava no Supabase (ver

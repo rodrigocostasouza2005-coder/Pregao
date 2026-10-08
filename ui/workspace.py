@@ -129,6 +129,13 @@ div[class*="st-key-workspace_bridge_wrap_"] {
         top: auto !important;
         margin-bottom: 0.6rem !important;
     }
+
+    /* abaixo de 640px o workspace nem permite arrastar/redimensionar
+       (fallback empilhado logo acima) - a dica descreveria uma interacao
+       que nao esta disponivel nesta largura, entao some (ver
+       renderizar_workspace: o botao RESTAURAR continua, empilhado,
+       sempre largura total - nao depende de breakpoint nenhum). */
+    .workspace-aviso-drag { display: none !important; }
 }
 """
 
@@ -495,14 +502,21 @@ def renderizar_workspace(aba_id: str, registro: list, prefs: dict, *args, persis
         st.info("Nenhum painel visível nesta aba — ajuste em CONFIG, seção LAYOUT.")
         return
 
-    col_aviso, col_restaurar = st.columns([5, 1.3])
-    with col_aviso:
+    with st.container(key=f"workspace_toolbar_{aba_id}"):
+        # achado real (2026-10-08, Playwright a 390px E 768px): esse
+        # controle vivia num st.columns([5, 1.3]) - uma FRACAO da
+        # largura, nao um valor fixo em px, entao o botao "RESTAURAR
+        # LAYOUT" cortava ("RESTAURAR ...") em QUALQUER largura abaixo de
+        # ~800px de conteudo, tablet incluido, nao so' celular. Empilhado
+        # (dica em cima, botao embaixo, cada um ocupando a linha
+        # inteira) em vez de lado a lado: sem fracao nenhuma pra
+        # estourar, funciona igual em qualquer largura - nao depende de
+        # breakpoint.
         st.markdown(
-            "<div class='cinza' style='font-size:0.65rem; padding-top:0.4rem;'>"
+            "<div class='cinza workspace-aviso-drag' style='font-size:0.65rem; padding-bottom:0.3rem;'>"
             "Arraste pelo título pra mover · arraste a borda/canto inferior-direito pra redimensionar</div>",
             unsafe_allow_html=True,
         )
-    with col_restaurar:
         if st.button("↺ RESTAURAR LAYOUT", key=f"restaurar_layout_{aba_id}", width="stretch"):
             _restaurar_layout_aba(aba_id, prefs, persistir_fn)
             st.rerun()

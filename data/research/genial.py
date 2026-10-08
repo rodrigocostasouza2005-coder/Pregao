@@ -99,7 +99,7 @@ _TIPO_SECAO_NEWSLETTER = "CARROSSEL_NEWSLETTER"
 _TICKER_NO_LINK = re.compile(r"^/acoes/([A-Z0-9]{4,6})(?:/|$)")
 
 
-@st.cache_data(ttl=TTL_COLETA, show_spinner=False)
+@st.cache_data(ttl=TTL_COLETA, show_spinner="consultando research (Genial)…")
 def _buscar_next_data() -> dict | None:
     """Cacheado (nao so as 3 funcoes publicas que consomem isso): sem
     isso, obter_relatorios/obter_recomendacoes/obter_swing_trade batiam
@@ -212,7 +212,7 @@ def obter_relatorios() -> list | None:
         return None
 
 
-@st.cache_data(ttl=TTL_COLETA, show_spinner=False)
+@st.cache_data(ttl=TTL_COLETA, show_spinner="consultando research (Genial)…")
 def obter_recomendacoes() -> list | None:
     """Principais recomendacoes por setor: ticker, empresa, setor,
     recomendacao (COMPRA/MANTER/VENDA), preco-alvo, potencial (%), link.
@@ -242,7 +242,7 @@ def obter_recomendacoes() -> list | None:
         return None
 
 
-@st.cache_data(ttl=TTL_COLETA, show_spinner=False)
+@st.cache_data(ttl=TTL_COLETA, show_spinner="consultando research (Genial)…")
 def obter_swing_trade() -> list | None:
     """Oportunidades de swing trade: ticker, empresa, recomendacao,
     status ('em aberto' / encerrado), data, link. None se a home falhar
