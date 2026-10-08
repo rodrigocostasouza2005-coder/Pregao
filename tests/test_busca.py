@@ -75,6 +75,29 @@ def test_4_extras_e_aliases_continuam_funcionando():
              next(iter(config.TICKER_ALIASES.keys()), None) in opcoes if config.TICKER_ALIASES else True)
 
 
+def test_5b_roxo34_nubank_esta_cadastrado_como_bdr():
+    """Achado real (2026-10-08, investigacao pontual pedida pelo Rodrigo):
+    ROXO34 (BDR do Nubank/Nu Holdings) nao aparecia na busca/autocomplete
+    nem tinha cobertura de noticia decente - nao e' limitacao da B3
+    (Ibovespa nao inclui BDR por regra do indice, isso e' esperado), e'
+    so' uma lacuna de cadastro: ao contrario de MELI34/NFLX34/etc, ROXO34
+    nunca tinha sido adicionado em config.TICKER_ALIASES/NOMES_ATIVOS_BUSCA
+    (os dicts GENERICOS que ja resolvem esse problema pra qualquer BDR -
+    nenhuma logica nova, so' a entrada que faltava). Sem o alias "Nubank"
+    (nome popular, nunca "Nu Holdings") a busca de noticia
+    (data/news.py:obter_noticias) praticamente nao achava nada pro papel."""
+    _checar("5b1 ROXO34 tem aliases cadastrados pra busca de noticia",
+             bool(config.TICKER_ALIASES.get("ROXO34")))
+    _checar("5b2 'Nubank' (nome popular, o que a imprensa usa de verdade) esta nos aliases",
+             "Nubank" in config.TICKER_ALIASES.get("ROXO34", []))
+    _checar("5b3 ROXO34 tem nome curado pra busca/autocomplete",
+             bool(config.NOMES_ATIVOS_BUSCA.get("ROXO34")))
+    with patch.object(busca_mod, "obter_composicao_oficial", return_value={}):
+        opcoes = busca_mod._universo_ativos(())
+    _checar("5b4 ROXO34 aparece no universo da busca/autocomplete (EQUITY/NEWS)",
+             "ROXO34" in opcoes)
+
+
 def test_5_cvcb3_esta_no_universo_do_coletor_de_eventos():
     """O coletor (coletor_local.py -> data.eventos_coleta.coletar_eventos_universo)
     usa list(config.IBOVESPA_SETORES.keys()) direto como universo (nao

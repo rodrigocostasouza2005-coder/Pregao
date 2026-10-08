@@ -44,6 +44,7 @@ TICKER_ALIASES = {
     "NVDC34": ["NVDA", "Nvidia"],
     "DISB34": ["DIS", "Disney"],
     "COCA34": ["KO", "Coca-Cola"],
+    "ROXO34": ["NU", "Nu Holdings", "Nubank"],
 }
 
 # --- Temas visuais (estetica terminal financeiro) -----------------------
@@ -186,6 +187,7 @@ NOMES_ATIVOS_BUSCA = {
     "MELI34": "MercadoLibre", "NFLX34": "Netflix", "AAPL34": "Apple",
     "GOGL34": "Alphabet (Google)", "AMZO34": "Amazon", "MSFT34": "Microsoft",
     "TSLA34": "Tesla", "NVDC34": "Nvidia", "DISB34": "Disney", "COCA34": "Coca-Cola",
+    "ROXO34": "Nubank (Nu Holdings)",
 }
 
 # --- Principais indices globais (aba MERCADO, painel MERCADOS GLOBAIS) --
