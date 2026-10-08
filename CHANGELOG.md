@@ -3,6 +3,54 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-08 (rotina autônoma, parte 1/4 — confiabilidade de testes)
+
+Sessão autônoma agendada (ciclo de 4 partes). Retomou exatamente o
+ponto deixado pela sessão anterior: `tests/test_eventos.py` tinha 10
+falhas confirmadas como pré-existentes (não regressão) ao rodar via
+`pytest`, com a causa raiz ainda não investigada.
+
+- **`tests/test_eventos.py` quebrava sob `pytest` (10 testes) — causa
+  raiz confirmada e corrigida**: o arquivo foi escrito pra rodar via
+  `python tests/test_eventos.py`, com um mock global de
+  `obter_cnpj` aplicado só dentro do bloco `if __name__ == "__main__"`.
+  Esse mock ficou necessário desde 2026-10-08 (correção anterior em
+  `data/eventos.py:periodo_pendente`, que passou a checar
+  `obter_cnpj(ticker)` antes de calcular qualquer prazo). Rodando via
+  `pytest` (que nunca executa o bloco `__main__`), todo teste chamava o
+  `obter_cnpj` REAL — sem rede/dados locais neste runner, sempre
+  devolve `None` — fazendo `periodo_pendente` devolver `None` sempre e
+  `calcular_proximo_resultado` devolver `None` pra qualquer ticker,
+  quebrando 10 testes com `TypeError: 'NoneType' object is not
+  subscriptable`. Corrigido com uma fixture `pytest.fixture(autouse=True)`
+  que replica o mesmo default do runner `__main__` (CNPJ fake mapeado
+  por padrão); o teste que cobre o caso real "ticker sem CNPJ" segue
+  funcionando porque o `with patch.object(...)` local dele prevalece
+  enquanto ativo. Nenhuma mudança em código de produção — o bug era só
+  do arnês de teste, não de `data/eventos.py`. Suite completa:
+  233/243 → **249/249** (os 6 testes "extras" vieram só do recount do
+  pytest depois do fix, não de testes novos).
+- **Curva pré (ETTJ, MACRO) — investigação da legenda sobreposta/cortada
+  (item do BACKLOG)**: reproduzida com Playwright/Chromium (dados
+  sintéticos, já que a rede bloqueia a ANBIMA aqui) nos 3 breakpoints
+  (390/768/1280px), usando o layout real de
+  `ui/macro_tab.py:_painel_curva_pre`. **Não reproduziu** — o Plotly
+  encolhe a área do gráfico pra caber a legenda (que quebra em 2-3
+  linhas em telas estreitas) dentro da altura declarada, sem clipping
+  visível em nenhum breakpoint. Não alterado o código (nada a
+  corrigir sem reprodução); BACKLOG.md atualizado com o resultado da
+  investigação e uma hipótese não testável aqui (painel
+  redimensionado manualmente abaixo do necessário no workspace
+  modular, que exige sessão autenticada real).
+- **Nota de ambiente**: mesma limitação de sessões anteriores — rede
+  deste sandbox bloqueia Yahoo Finance/B3/ANBIMA/RSS, então toda
+  validação visual usou dados sintéticos plausíveis via harness
+  isolado (Playwright + Chromium pré-instalados, plotly.js embutido
+  inline pra não depender de CDN). Suite de testes/`compileall`/
+  `pyflakes` rodados em Python 3.12 (venv dedicado, `/tmp/venv312` —
+  o projeto usa sintaxe de f-string que exige 3.12+, sandbox vem com
+  3.11 por padrão).
+
 ## 2026-10-08 (continuação — UX/hierarquia/mobile/performance percebida)
 
 Sessão autônoma agendada, continuação da sessão anterior (mesmo dia -

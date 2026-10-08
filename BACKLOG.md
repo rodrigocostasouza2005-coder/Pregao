@@ -75,9 +75,23 @@ tinha sido limpo. Confirmado lendo o código atual (não só memória):
   da curva no Supabase via GitHub Actions (Fase 7 do roadmap original,
   coleta automática). Já degrada graciosamente (aviso explícito na UI
   quando a comparação de 1 mês não está disponível).
-- Curva pré: legenda (Hoje / 1 semana atrás / 1 mês atrás) aparece
-  sobreposta/cortada no gráfico — ainda não investigado a fundo, precisa
-  de inspeção visual real.
+- Curva pré: legenda (Hoje / 1 semana atrás / 1 mês atrás) — investigado
+  a fundo em 2026-10-08 (rotina autônoma, parte 1/4) com inspeção visual
+  real (Playwright/Chromium, 390/768/1280px, reproduzindo exatamente o
+  layout de `ui/macro_tab.py:_painel_curva_pre`/`_layout_grafico_escuro`
+  com dados sintéticos plausíveis, já que a rede deste sandbox bloqueia
+  a ANBIMA): **não reproduziu** sobreposição/corte em nenhum dos 3
+  breakpoints — a legenda horizontal com os 3 rótulos quebra pra 2-3
+  linhas em telas estreitas (390px) e o Plotly encolhe a área do
+  gráfico pra caber tudo dentro da `height=380` declarada, sem
+  clipping. Hipótese não descartada: o sintoma original pode ter vindo
+  do wrapper `overflow:auto` dos painéis arrastáveis/redimensionáveis
+  (`ui/workspace.py`, workspace modular) quando o usuário encolhe o
+  painel manualmente abaixo da altura que o gráfico precisa — isso não
+  é testável sem sessão Streamlit autenticada real (login Google) nem
+  reproduzido aqui. Rebaixado: reabrir só se o Rodrigo confirmar o
+  sintoma ao vivo em produção, com os passos exatos (tamanho do painel,
+  breakpoint, tema).
 
 ## Research
 - BTG Research: API pública em

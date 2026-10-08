@@ -3219,3 +3219,61 @@ novos (`test_news_dedup.py`, `test_news_contexto_research.py`,
 `test_resumir_modelo.py`). Nenhuma mudança em `data/ia_cache.py`,
 `data/mercado.py`, `data/eventos.py`, `ui/*`, schema SQL, ou em
 qualquer regra financeira/dado exibido ao usuário.
+
+## Rotina autônoma — ciclo de 4 partes, parte 1/4 (2026-10-08)
+
+Sessão agendada, isolada (clone próprio), continuação do ciclo de
+melhoria contínua. Partiu do commit `2e2a101` (já em `main`), lendo
+PROGRESSO.md/CHANGELOG.md/BACKLOG.md da sessão anterior pra não repetir
+investigação já feita (CALENDÁRIO/ROXO34/mobile, todas já fechadas).
+
+**Trabalho desta parte**:
+
+1. **`tests/test_eventos.py` — 10 falhas sob `pytest` (deixadas pela
+   sessão anterior como "confirmado pré-existente, não investigado")**:
+   causa raiz encontrada — arquivo escrito pra um runner próprio
+   (`python tests/test_eventos.py`), com o mock de `obter_cnpj`
+   (necessário desde a correção de `periodo_pendente` em 2026-10-08)
+   vivendo só dentro do `if __name__ == "__main__"`, que o `pytest`
+   nunca executa. Sob `pytest`, isso fazia `calcular_proximo_resultado`
+   devolver `None` sempre (chamando o `obter_cnpj` real, sem rede
+   aqui), quebrando 10 testes com erro de `NoneType`. Fix: fixture
+   `autouse=True` que replica o mesmo mock padrão do runner, sem tocar
+   em nenhum teste nem em `data/eventos.py`. Validado nos dois modos de
+   invocação (`pytest` e `python tests/test_eventos.py` direto) — os
+   dois passam 100%.
+2. **Curva pré (MACRO) — item do BACKLOG, legenda "sobreposta/cortada"
+   nunca confirmada**: reproduzida com Playwright/Chromium (pré-
+   instalado neste ambiente) + dados sintéticos (rede bloqueia ANBIMA
+   aqui) usando o layout real do painel, nos 3 breakpoints. Não
+   reproduziu em nenhum — Plotly já encolhe a área do gráfico pra
+   caber a legenda quebrada em 2-3 linhas sem cortar nada. Não alterei
+   código (nada a corrigir sem bug confirmado); documentei a
+   investigação + uma hipótese não testável aqui no BACKLOG.md, pra não
+   reabrir sem evidência nova.
+
+**Decisão de escopo**: com o tempo restante da janela de ~1h gasto
+nessas duas investigações (a primeira era um item concreto e
+específico já apontado pela sessão anterior; a segunda era o próximo
+item de prioridade razoável do BACKLOG), não iniciei uma 3ª frente
+nova — preferi fechar as duas com evidência real (testes passando,
+screenshots reais) a abrir uma 3ª investigação pela metade.
+
+**Validação**: suíte completa 249/249 (Python 3.12, venv
+`/tmp/venv312` recriado nesta sessão — efêmero, não é o mesmo arquivo
+de sessões anteriores); `compileall` e `pyflakes` limpos nos arquivos
+tocados.
+
+**Arquivos alterados**: `tests/test_eventos.py`, `BACKLOG.md`,
+`CHANGELOG.md`, `PROGRESSO.md`. Nenhuma mudança em código de produção
+(`data/*.py`, `ui/*.py`, `app.py`).
+
+**Pendências pra próxima parte (2/4)**: nenhuma pendência bloqueante
+desta parte. Continuar pela ordem de prioridade original do Rodrigo a
+partir do que a auditoria de UX (item 5) e cobertura/mobile (item 6)
+ainda não fecharam por completo (ver nota "Não fiz" na sessão anterior,
+2026-10-08 "continuação — UX/hierarquia/mobile/performance percebida"):
+revisão visual completa de NEWS/CVM/RESEARCH/TOP MERCADO/EQUITY nos 3
+breakpoints com dados mockados (só MERCADO recebeu harness dedicado até
+agora); auditoria de hierarquia visual (signal→context→detail) das 9
+telas ainda não foi feita formalmente.
