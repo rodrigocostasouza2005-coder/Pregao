@@ -13,7 +13,7 @@ Uso: python tests/test_prices.py (python do .venv do projeto)."""
 import sys
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd

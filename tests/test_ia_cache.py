@@ -328,7 +328,7 @@ def test_7_reserva_abandonada_e_liberada_e_regerada():
         return {"resumo": "resumo apos reserva abandonada"}
 
     with patch.object(ia_cache_mod, "obter_cliente", return_value=cliente):
-        resultado = ia_cache_mod.obter_resumo_com_cache("chaveH", "https://s.com", "research", gerar)
+        ia_cache_mod.obter_resumo_com_cache("chaveH", "https://s.com", "research", gerar)
     _checar("7a reserva 'gerando' antiga (processo morto) e' liberada e regerada", chamadas == [1])
     _checar("7b novo resultado persistido com sucesso", cliente.linhas["chaveH"]["status"] == "concluido")
 

@@ -26,7 +26,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from data.cvm import _HEADERS, _TIMEOUT, _TZ_SP, _URL_FCA, _baixar_csv_do_zip, obter_cnpj
+from data.cvm import _TZ_SP, _URL_FCA, _baixar_csv_do_zip, obter_cnpj
 
 _TTL_PAGINA_WEB = 24 * 60 * 60  # 24h - mesmo criterio do cadastro FCA em data/cvm.py (muda raramente)
 
