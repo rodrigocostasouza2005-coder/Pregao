@@ -129,9 +129,20 @@ def obter_cotacoes_lote(tickers: tuple) -> dict:
     return resultado
 
 
-@st.cache_data(ttl=_TTL_LOTE, show_spinner=False)
+@st.cache_data(ttl=_TTL_LOTE, show_spinner="atualizando panorama do mercado…")
 def obter_panorama_ibovespa() -> list:
-    """Lista de dicts {ticker, setor, preco, variacao_pct,
+    """show_spinner com texto (nao False): achado real (2026-10-08) - a
+    auditoria de feedback de carregamento ausente (CVM/NEWS/MACRO/
+    RESEARCH, commit 9fd20a1) tinha deixado mercado.py de fora. Em
+    consulta fria (cache de 90s expirado), MERCADO/VISÃO GERAL (que
+    reaproveita este mesmo painel - ver ui/visao_geral.py) ficavam
+    parados sem nenhum aviso ate o yf.download (~80 tickers) responder.
+    Seguro mostrar o spinner aqui (ao contrario de _baixar_lote, usado
+    tambem por obter_cotacoes_lote DENTRO de fragments com run_every -
+    essa funcao nunca e' chamada de dentro de um fragment, confirmado
+    nao ha' risco de o spinner "piscar" a cada atualizacao automatica).
+
+    Lista de dicts {ticker, setor, preco, variacao_pct,
     variacao_semana_pct, variacao_mes_pct, volume, volume_financeiro}
     pra cada papel da composição oficial do Ibovespa (B3) que respondeu
     com dado valido (as duas variacoes extras podem vir None
@@ -212,14 +223,19 @@ def obter_desempenho_setorial(janela: str = "dia") -> list:
 
 
 
-@st.cache_data(ttl=_TTL_LOTE, show_spinner=False)
+@st.cache_data(ttl=_TTL_LOTE, show_spinner="atualizando mercados globais…")
 def _baixar_lote_bruto(symbols: tuple) -> pd.DataFrame | None:
     """Igual _baixar_lote, mas SEM passar os symbols por _para_symbol_yf -
     usado pros indices globais (config.INDICES_GLOBAIS), que ja vem no
     formato exato que o yfinance espera (ex: '^GSPC', '000001.SS') e NAO
     devem levar o sufixo '.SA' (esse sufixo e' so' pra tickers da B3 sem
     prefixo/sufixo especial - _para_symbol_yf aplicava ele errado em cima
-    de '000001.SS', virando '000001.SS.SA', symbol invalido)."""
+    de '000001.SS', virando '000001.SS.SA', symbol invalido).
+
+    show_spinner com texto (mesmo achado de obter_panorama_ibovespa acima):
+    unica usuaria desta funcao e' obter_mercados_globais, nunca chamada de
+    dentro de um fragment - seguro mostrar o spinner sem risco de piscar
+    a cada atualizacao automatica."""
     try:
         df = yf.download(list(symbols), period="5d", group_by="ticker", threads=True, progress=False, auto_adjust=False, timeout=_TIMEOUT_YF)
         return df if not df.empty else None

@@ -3,6 +3,75 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-08 (rotina autônoma, parte 3/4 — feedback de carregamento no MERCADO)
+
+Sessão autônoma agendada (3ª de 4 partes do ciclo). Partiu do commit
+`86d70cd` (já em `main`), confirmando via `git log`/CHANGELOG.md/BACKLOG.md
+o que as partes 1/4 e 2/4 já tinham corrigido hoje (testes, timezone da
+curva pré, CVM mobile) pra não repetir investigação. Suite completa
+(249/249) confirmada ANTES de qualquer mudança.
+
+- **MERCADO/VISÃO GERAL (painel IBOVESPA + mercados globais) — feedback
+  de carregamento ausente, mesma classe de bug já corrigida em
+  CVM/NEWS/MACRO/RESEARCH (commit `9fd20a1`), mas `data/mercado.py`
+  tinha ficado de fora daquela auditoria**: `obter_panorama_ibovespa()`
+  (base de altas/baixas, termômetro, mais negociados, setorial e
+  heatmap - MERCADO inteira e os painéis que VISÃO GERAL reaproveita de
+  `ui/mercado_tab.py`) e `_baixar_lote_bruto`/`obter_mercados_globais`
+  (painel MERCADOS GLOBAIS) faziam `yf.download` real com
+  `show_spinner=False` e nenhum `st.spinner` manual no ponto de chamada
+  - numa consulta fria (cache de 90s expirado), a tela ficava parada,
+  sem nenhum aviso, até a resposta do Yahoo Finance chegar. Confirmado
+  lendo o código (não hipótese): nenhum dos dois é chamado de dentro de
+  um `st.fragment(run_every=...)` (confirmado com grep em todo o
+  projeto - só `obter_cotacoes_lote`/`_baixar_lote`, função IRMÃ mas
+  DIFERENTE, usada pelo ticker tape/watchlist/comparativo da EQUITY,
+  vive dentro de fragments; é exatamente por isso que aquela outra
+  função manteve `show_spinner=False` de propósito, pra não piscar a
+  cada atualização automática - não tem esse risco aqui). Corrigido
+  trocando `show_spinner=False` por um texto nos dois pontos certos
+  (`obter_panorama_ibovespa`, `_baixar_lote_bruto`) - mesmo padrão já
+  usado em `data/research/genial.py` (spinner no nível que faz a
+  chamada de rede de verdade, não no wrapper que só filtra/agrega o
+  resultado já cacheado).
+  Arquivo: `data/mercado.py`.
+- **Investigado, sem mudança de código** (evidência insuficiente pra
+  reabrir, conforme regra desta rodada):
+  - E-mail do usuário "some" do header: revisada a conta de largura das
+    colunas do header (`app.py`, `col_user` 1.7/8.4 ≈ 20% da largura
+    útil em 768px, chip a 0.68rem) depois da correção já aplicada numa
+    sessão anterior - a matemática bate (cabe e-mails de tamanho normal
+    antes do ellipsis entrar). Sem browser/produção real neste ambiente
+    pra confirmar visualmente - permanece como pendência de confirmação
+    visual, não como bug reaberto.
+  - Acentuação em nomes de empresa (ex: "Dança" -> "Danca") em produção:
+    nova varredura por `.encode`/`unicodedata.normalize`/ASCII-strip em
+    todo o projeto - as únicas ocorrências (`cvm.py`, `news.py`,
+    `news_setores.py`, `cvm_tab.py`) são funções `_sem_acento`/
+    `_normalizar_busca` usadas SÓ pra tokenizar/comparar busca e dedup,
+    nunca aplicadas ao texto exibido na tela. Nenhuma pista nova
+    encontrada; segue como limitação específica do ambiente de produção
+    (Streamlit Cloud), não reproduzível aqui - não alterado, conforme
+    regra explícita de não especular.
+  - Varredura geral por bugs P0/P1 adicionais (exceções silenciosas,
+    N+1 novos, filtros padrão escondendo dado, cache sem indicação de
+    stale): nenhum achado novo alem do item acima - `data/research`
+    já expõe falha parcial de coleta via `st.warning` (`ui/research_tab.py`),
+    filtros padrão de NEWS/RESEARCH/TOP MERCADO já abrem com tudo
+    visível, `except Exception` remanescentes (`data/ia_cache.py`,
+    `config.py`) são fallbacks documentados e intencionais.
+- **Não feito** (falta de tempo nesta janela de ~1h; fica pro próximo
+  ciclo): auditoria Playwright dedicada de NEWS/RESEARCH/TOP MERCADO/
+  EQUITY/CALENDÁRIO nos 3 breakpoints (só MERCADO e CVM já receberam
+  harness até aqui) e revisão de hierarquia visual das 9 abas.
+- **Testes**: suite completa 249/249 (baseline e após a mudança);
+  `compileall`/`pyflakes` limpos nos arquivos tocados e relacionados
+  (`data/mercado.py`, `ui/mercado_tab.py`, `ui/visao_geral.py`, `app.py`).
+  Sem rede neste sandbox (mesma limitação de sessões anteriores) - a
+  mudança é só `show_spinner` (texto em vez de `False`), que não afeta
+  retorno/lógica nenhuma função (confirmado: `tests/test_mercado.py`
+  mocka `yf.download` e os 11 testes continuam passando sem alteração).
+
 ## 2026-10-08 (rotina autônoma, parte 2/4 — confiabilidade de dados + mobile real)
 
 Sessão autônoma agendada (2ª de 4 partes do ciclo). Partiu do commit
