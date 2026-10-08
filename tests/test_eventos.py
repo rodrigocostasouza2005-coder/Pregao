@@ -4,11 +4,14 @@ proximo resultado via prazo regulatorio da CVM. Mocka
 data.cvm.obter_documentos_cvm (mesma fonte/identificador que CVM ja
 usa) - nao faz chamada de rede nem de IA.
 
-Uso: python tests/test_eventos.py (python do .venv do projeto)."""
+Uso: python tests/test_eventos.py (python do .venv do projeto) OU
+pytest tests/test_eventos.py (suite completa do projeto)."""
 import sys
 from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -21,12 +24,29 @@ from data.eventos import (
 
 _FALHAS = []
 
-# CNPJ fake usado como default em TODO o arquivo (ver __main__ no fim) -
-# a maioria dos testes representa um ticker CVM-regulado de verdade
-# (PETR4/VALE3/etc), onde obter_cnpj() sempre acha algo; so' o teste 7
-# sobrescreve isso localmente pra cobrir o caso real "ticker sem CNPJ
-# mapeado" (bug corrigido em 2026-10-08, ver data/eventos.py:periodo_pendente).
+# CNPJ fake usado como default em TODO o arquivo (ver fixture abaixo e
+# __main__ no fim) - a maioria dos testes representa um ticker
+# CVM-regulado de verdade (PETR4/VALE3/etc), onde obter_cnpj() sempre
+# acha algo; so' o teste 7b sobrescreve isso localmente pra cobrir o
+# caso real "ticker sem CNPJ mapeado" (bug corrigido em 2026-10-08, ver
+# data/eventos.py:periodo_pendente).
 _CNPJ_FAKE = "11.222.333/0001-44"
+
+
+@pytest.fixture(autouse=True)
+def _cnpj_mapeado_por_padrao():
+    """Sob pytest, o bloco `if __name__ == "__main__"` no fim do arquivo
+    nunca roda - sem isso, todo teste chamava o obter_cnpj REAL (sem
+    rede/dados locais neste runner), periodo_pendente devolvia None
+    sempre e calcular_proximo_resultado devolvia None pra TODO ticker,
+    quebrando 10 testes com 'NoneType is not subscriptable' (achado
+    real, 2026-10-08: a suite via `python tests/test_eventos.py`
+    sempre passou por isso, mascarando a quebra sob pytest). Mock
+    padrao aqui replica o mesmo default do runner `__main__`; o teste
+    7b sobrescreve localmente pra cobrir o caso sem CNPJ, e o `with`
+    interno dele prevalece enquanto ativo (patch mais interno vence)."""
+    with patch.object(eventos_mod, "obter_cnpj", return_value=_CNPJ_FAKE):
+        yield
 
 
 def _checar(nome, condicao, detalhe=""):
