@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Interface da aba MACRO: chamada de render_macro(prefs) pelo app.py."""
 
-from datetime import date, timedelta
+from datetime import datetime, timedelta
 
 import plotly.graph_objects as go
 import streamlit as st
@@ -9,6 +9,7 @@ from plotly.subplots import make_subplots
 
 import config
 from data.macro import (
+    TZ,
     obter_cdi,
     obter_cenario_global,
     obter_curva_pre,
@@ -190,7 +191,13 @@ def _painel_resumo(prefs):
 def _painel_curva_pre(prefs):
     st.markdown('<div class="painel-titulo">CURVA PRÉ (ETTJ ANBIMA)</div>', unsafe_allow_html=True)
     tema = _tema_atual(prefs)
-    hoje = date.today()
+    # date.today() usa o fuso do servidor (UTC no Streamlit Cloud) - entre
+    # 21h e 23h59 no horario de Brasilia isso já é "amanhã" em UTC, o que
+    # rotulava a publicação de hoje da ANBIMA como "Última" por engano e
+    # deslocava as janelas de "1 semana"/"1 mês atrás" em 1 dia (achado
+    # real, 2026-10-08 - mesma classe de bug já corrigida em app.py/
+    # data/eventos.py para outros usos de data "hoje").
+    hoje = datetime.now(TZ).date()
 
     curva_hoje = obter_curva_pre()
     curva_semana = obter_curva_pre(hoje - timedelta(days=7))
