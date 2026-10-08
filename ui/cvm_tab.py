@@ -49,8 +49,14 @@ _JANELA_DESTAQUES_DIAS = 30  # janela pra "fatos relevantes recentes" e "ticker 
 
 # pesos relativos (nao pixels - ver st.columns) pra DATA/TICKER/TIPO/ASSUNTO.
 # ASSUNTO domina a largura de proposito (pedido explicito: "deve ocupar a
-# maior parte da tela").
-_COLS = [9, 8, 16, 55]
+# maior parte da tela"). DATA/TICKER ganharam um pouco mais de peso (eram
+# 9/8, TIPO 16) nesta revisao: confirmado com Playwright em 390/768px que
+# "08/10/2026" (10 caracteres) nao cabia nem perto da largura anterior -
+# mesmo com o corte em reticencias (ver fix de overflow acima), sobrava
+# so' 1-2 caracteres visiveis. TIPO tinha folga de sobra (o rotulo mais
+# longo, "FATO RELEVANTE", nunca precisou de 16/88 de verdade) - realocada
+# pra DATA/TICKER sem reduzir ASSUNTO.
+_COLS = [12, 10, 14, 50]
 
 _CSS_CVM = """
 .cvm-desc-principal { color:var(--neutro); font-size:0.82rem; margin-bottom:0.15rem; }
@@ -67,15 +73,25 @@ _CSS_CVM = """
 .cvm-destaque-label { color:var(--cinza); font-size:0.62rem; letter-spacing:0.03em; text-transform:uppercase; }
 
 .cvm-cabecalho { color:var(--cinza); font-size:10.5px; font-weight:600; letter-spacing:0.04em;
-    text-transform:uppercase; padding-bottom:0.3rem; }
+    text-transform:uppercase; padding-bottom:0.3rem;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; display:block; }
 .cvm-cabecalho-divider { border-bottom:1px solid var(--borda); margin-bottom:0.15rem; }
 
-.cvm-data { color:var(--cinza); white-space:nowrap; font-size:12.5px; }
-.cvm-ticker { color:var(--destaque); font-weight:700; white-space:nowrap; font-size:12.5px; }
+/* overflow:hidden + text-overflow:ellipsis (bug real corrigido, 2026-10-08):
+   sem isso, DATA/TICKER (colunas estreitas por design - ASSUNTO domina a
+   largura) vazavam visualmente por cima da coluna vizinha em telas
+   estreitas (confirmado com Playwright/Chromium em 390/768px - "08/10/2026"
+   e "PETR4" ficavam colados/sobrepostos, e o badge de TIPO sobrepunha o
+   texto do ASSUNTO) - mesma técnica já usada no botão de assunto logo
+   abaixo e em ui/news_tab.py, só faltava aplicar aqui também. */
+.cvm-data { color:var(--cinza); white-space:nowrap; font-size:12.5px;
+    overflow:hidden; text-overflow:ellipsis; width:100%; display:block; }
+.cvm-ticker { color:var(--destaque); font-weight:700; white-space:nowrap; font-size:12.5px;
+    overflow:hidden; text-overflow:ellipsis; width:100%; display:block; }
 .cvm-tipo {
     display:inline-block; padding:0.15rem 0.45rem; border-radius:2px;
     font-size:10px; font-weight:700; letter-spacing:0.03em; white-space:nowrap;
-    line-height:1.3;
+    line-height:1.3; max-width:100%; overflow:hidden; text-overflow:ellipsis;
 }
 .cvm-tipo-destaque { background:var(--destaque); color:var(--bg); }
 .cvm-tipo-normal { background:transparent; color:var(--cinza); border:1px solid var(--borda); }
@@ -84,6 +100,7 @@ _CSS_CVM = """
 div[class*="st-key-cvm-row-"] { border-radius:3px; transition:background-color 0.1s ease; }
 div[class*="st-key-cvm-row-"]:hover { background-color:rgba(255,160,40,0.06); }
 div[class*="st-key-cvm-row-"] { padding:0.28rem 0.3rem; }
+div[class*="st-key-cvm-row-"] [data-testid="stHorizontalBlock"] { overflow-x:hidden; }
 
 div[class*="st-key-cvm-assunto-"] button {
     background:transparent !important; border:none !important; box-shadow:none !important;
