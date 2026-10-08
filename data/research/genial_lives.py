@@ -32,6 +32,7 @@ sem republicar nem redistribuir o conteudo. Nao generalizar esse padrao
 pra outras fontes sem a mesma decisao explicita."""
 
 import re
+from datetime import datetime, timezone
 
 import feedparser
 
@@ -75,6 +76,20 @@ def _identificar_programa(titulo: str) -> str | None:
     return None
 
 
+def _publicado_em_iso(entry) -> str | None:
+    """Timestamp COMPLETO (ISO, UTC) de publicacao do video - usado so'
+    pelo feed editorial do NEWS (fase 3) pra posicionar o Morning Call/
+    lives cronologicamente ENTRE as noticias (ver
+    ui/news_tab.py:_chave_ordenacao_live). 'data' (so' o dia, ja
+    existente, usado pelo resto do projeto - radar, retencao, filtro por
+    dia) continua exatamente igual, intocado. None se o feed nao trouxer
+    o campo estruturado (nunca inventa hora)."""
+    bruto = entry.get("published_parsed")
+    if not bruto:
+        return None
+    return datetime(*bruto[:6], tzinfo=timezone.utc).isoformat()
+
+
 def obter_relatorios() -> list | None:
     """Metadados dos vídeos recentes do canal que batem com algum
     programa conhecido (ver _PADROES_PROGRAMA). None se o feed falhar
@@ -101,6 +116,7 @@ def obter_relatorios() -> list | None:
             "casa": _NOME_CASA,
             "titulo": titulo,
             "data": publicado[:10] if publicado else "",
+            "publicado_em": _publicado_em_iso(entry),
             "autor": programa,
             "tipo": "LIVE",
             "setor": "",

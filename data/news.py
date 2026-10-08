@@ -16,6 +16,7 @@ palavras-chave ficam aqui (nao em config.py) por pedido explicito: e'
 detalhe de implementacao deste coletor, nao configuracao do app.
 """
 
+import json
 import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -1095,27 +1096,52 @@ _MIN_CHARS_TEXTO = 60
 _MIN_CHARS_FRAGMENTO = 15
 
 
+def _url_imagem_valida(url) -> str | None:
+    """So aceita URL absoluta http(s) - nunca inventa/completa uma
+    imagem a partir de caminho relativo ou data: URI (risco real de
+    imagem quebrada ou irrelevante)."""
+    if not url or not isinstance(url, str):
+        return None
+    url = url.strip()
+    return url if url.startswith("http://") or url.startswith("https://") else None
+
+
 def _extrair_texto_artigo(link_google_news: str) -> tuple:
-    """Resolve o link real e extrai o texto com trafilatura. Retorna
-    (texto, link_real, motivo_falha) - texto=None se o link nao resolveu,
-    o download falhou ou nao sobrou nem um fragmento minimo aproveitavel
-    (ver _MIN_CHARS_FRAGMENTO). Um texto entre _MIN_CHARS_FRAGMENTO e
-    _MIN_CHARS_TEXTO ainda volta aqui (nao e' None) - quem chama
-    (obter_resumo_grupo) decide se resume sozinho ou combina com outras
-    fontes do grupo antes de desistir."""
+    """Resolve o link real e extrai texto+imagem com trafilatura (MESMO
+    download, sem nenhuma requisicao de rede extra so' pra foto - a
+    imagem vem do meta og:image da propria pagina, via
+    with_metadata=True). Retorna (texto, imagem, link_real,
+    motivo_falha) - texto=None se o link nao resolveu, o download falhou
+    ou nao sobrou nem um fragmento minimo aproveitavel (ver
+    _MIN_CHARS_FRAGMENTO); imagem=None se a pagina nao declarar uma ou a
+    extracao de metadado falhar (nunca inventada). Um texto entre
+    _MIN_CHARS_FRAGMENTO e _MIN_CHARS_TEXTO ainda volta aqui (nao e'
+    None) - quem chama (obter_resumo_grupo) decide se resume sozinho ou
+    combina com outras fontes do grupo antes de desistir."""
     link_real = _resolver_link_real(link_google_news)
     if not link_real:
-        return None, None, "não foi possível resolver o link original"
+        return None, None, None, "não foi possível resolver o link original"
     try:
         baixado = trafilatura.fetch_url(link_real)
     except Exception as e:
-        return None, link_real, f"erro ao baixar: {e}"
+        return None, None, link_real, f"erro ao baixar: {e}"
     if not baixado:
-        return None, link_real, "erro ao baixar a página"
-    texto = trafilatura.extract(baixado, include_comments=False, include_tables=False)
+        return None, None, link_real, "erro ao baixar a página"
+
+    try:
+        bruto = trafilatura.extract(
+            baixado, include_comments=False, include_tables=False,
+            with_metadata=True, output_format="json",
+        )
+        dados = json.loads(bruto) if bruto else {}
+    except Exception:
+        dados = {}
+    texto = (dados.get("text") or "").strip() or None
+    imagem = _url_imagem_valida(dados.get("image"))
+
     if not texto or len(texto) < _MIN_CHARS_FRAGMENTO:
-        return None, link_real, "conteúdo muito curto (provável paywall/bloqueio)"
-    return texto, link_real, None
+        return None, imagem, link_real, "conteúdo muito curto (provável paywall/bloqueio)"
+    return texto, imagem, link_real, None
 
 
 def _chamar_groq(prompt_sistema: str, prompt_usuario: str) -> tuple:
@@ -1214,11 +1240,21 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
     motivo_indisponivel guarda o motivo ESPECIFICO da ULTIMA fonte
     tentada (decode falhou / erro ao baixar / conteúdo curto / cota da
     IA) - a interface mostra isso em vez de um "indisponível" generico,
-    ajuda a diferenciar bloqueio do servidor de paywall de verdade."""
+    ajuda a diferenciar bloqueio do servidor de paywall de verdade.
+
+    "imagem" (fase 3, feed editorial): URL da foto principal da materia,
+    extraida do MESMO download usado pra resumir (ver
+    _extrair_texto_artigo) - nunca uma requisicao de rede extra so' pra
+    imagem. So' preenchida no caminho de fonte UNICA bem-sucedida (uma
+    pagina real, um og:image real); nos caminhos de fallback (fragmentos
+    combinados de VARIAS fontes, ou so'-manchetes) fica None de proposito
+    - misturar texto de paginas diferentes e' aceitavel pro resumo
+    (sintese), mas escolher a foto de UMA dessas paginas pra representar
+    o grupo inteiro seria arbitrario."""
     ultimo_motivo = "nenhuma fonte disponível no grupo"
     fragmentos_curtos = []
     for veiculo, link in fontes_ordenadas:
-        texto, link_real, motivo_extracao = _extrair_texto_artigo(link)
+        texto, imagem, link_real, motivo_extracao = _extrair_texto_artigo(link)
         if texto is None:
             ultimo_motivo = motivo_extracao or ultimo_motivo
             continue
@@ -1230,11 +1266,11 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
             continue
         resumo, motivo_groq = _resumir_com_groq(texto, titulo)
         if resumo:
-            return {"resumo": resumo, "link_original": link_real, "motivo_indisponivel": None}
+            return {"resumo": resumo, "link_original": link_real, "imagem": imagem, "motivo_indisponivel": None}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
             # falha do Groq em si (cota/config), nao da fonte - tentar as
             # proximas fontes do grupo so repetiria o mesmo erro a toa
-            return {"resumo": None, "link_original": link_real, "motivo_indisponivel": motivo_groq}
+            return {"resumo": None, "link_original": link_real, "imagem": None, "motivo_indisponivel": motivo_groq}
         ultimo_motivo = motivo_groq or ultimo_motivo
 
     titulos_unicos = tuple(dict.fromkeys(titulos))
@@ -1246,20 +1282,20 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
         texto_combinado = _combinar_fragmentos(fragmentos_curtos, titulos_unicos)
         resumo, motivo_groq = _resumir_com_groq(texto_combinado, titulo)
         if resumo:
-            return {"resumo": resumo, "link_original": None, "motivo_indisponivel": None}
+            return {"resumo": resumo, "link_original": None, "imagem": None, "motivo_indisponivel": None}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
-            return {"resumo": None, "link_original": None, "motivo_indisponivel": motivo_groq}
+            return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": motivo_groq}
         ultimo_motivo = motivo_groq or ultimo_motivo
 
     if len(titulos_unicos) >= 2:
         resumo, motivo_groq = _resumir_das_manchetes(titulo, titulos_unicos)
         if resumo:
-            return {"resumo": resumo, "link_original": None, "motivo_indisponivel": None}
+            return {"resumo": resumo, "link_original": None, "imagem": None, "motivo_indisponivel": None}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
-            return {"resumo": None, "link_original": None, "motivo_indisponivel": motivo_groq}
+            return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": motivo_groq}
         ultimo_motivo = motivo_groq or ultimo_motivo
 
-    return {"resumo": None, "link_original": None, "motivo_indisponivel": ultimo_motivo}
+    return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": ultimo_motivo}
 
 
 def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()) -> dict:
@@ -1278,3 +1314,25 @@ def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()
         chave, link_principal, "news",
         lambda: _gerar_resumo_grupo(titulo, fontes_ordenadas, titulos),
     )
+
+
+def obter_resumos_prontos(grupos: list) -> dict:
+    """Leitura em LOTE (1 unica query, NUNCA gera) dos resumos/imagens JA
+    cacheados pros grupos dados - usada pelo feed editorial (fase 3) pra
+    mostrar resumo curto + foto direto no card da lista, sem chamada de
+    rede nem de IA por card (ver ia_cache.obter_varios). Grupo ainda sem
+    resumo cacheado simplesmente nao aparece no dict retornado - quem
+    chama mostra so' titulo+meta pra esse card (nunca inventa resumo).
+
+    Retorna {link_do_grupo: resultado} - 'link' e' a mesma chave que a
+    UI ja usa pra identificar um grupo na lista (ver ui/news_tab.py)."""
+    link_por_chave = {}
+    for g in grupos:
+        fontes_ordenadas = ordenar_fontes_para_resumo(g["fontes"])
+        links = tuple(link for _, link in fontes_ordenadas)
+        chave = ia_cache.chave_news(g["titulo"], links)
+        link_por_chave[chave] = g["link"]
+    if not link_por_chave:
+        return {}
+    encontrados = ia_cache.obter_varios(list(link_por_chave.keys()))
+    return {link_por_chave[chave]: resultado for chave, resultado in encontrados.items()}

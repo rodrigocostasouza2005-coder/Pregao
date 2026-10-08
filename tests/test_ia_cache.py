@@ -60,6 +60,14 @@ class _TabelaFake:
     def eq(self, campo, valor):
         if campo == "chave_documento":
             self._filtro_chave = valor
+        elif campo == "status":
+            self._filtro_status = valor
+        return self
+
+    def in_(self, campo, valores):
+        self.cliente.chamadas_in.append(list(valores))
+        if campo == "chave_documento":
+            self._filtro_in_chaves = set(valores)
         return self
 
     def limit(self, _n):
@@ -68,6 +76,13 @@ class _TabelaFake:
     def execute(self):
         c = self.cliente
         chave = self._filtro_chave
+        if self._op == "select" and getattr(self, "_filtro_in_chaves", None) is not None:
+            linhas = [c.linhas[k] for k in self._filtro_in_chaves if k in c.linhas]
+            if getattr(self, "_filtro_status", None):
+                linhas = [l for l in linhas if l.get("status") == self._filtro_status]
+            resp = MagicMock()
+            resp.data = linhas
+            return resp
         if self._op == "select":
             linha = c.linhas.get(chave)
             resp = MagicMock()
@@ -104,6 +119,7 @@ class _ClienteFake:
         self.inserts = []
         self.updates = []
         self.deletes = []
+        self.chamadas_in = []
         self.falhar_insert_chaves = set()
 
     def table(self, nome):
@@ -341,6 +357,55 @@ def test_8_geracao_sem_sucesso_libera_a_reserva_em_vez_de_travar():
         resultado2 = ia_cache_mod.obter_resumo_com_cache("chaveJ", "https://q.com", "research", gerar_sucesso)
     _checar("8c nova tentativa gera normalmente (reserva anterior nao bloqueou)", chamadas2 == [1])
     _checar("8d resultado da 2a tentativa persistido", resultado2["resumo"] == "funcionou na 2a tentativa")
+
+
+# ============================================================
+# 9. obter_varios - leitura em LOTE (fase 3, feed editorial do NEWS):
+# nunca gera, nunca reserva, so' le o que ja estiver concluido.
+# ============================================================
+
+def test_9a_obter_varios_retorna_so_concluidos():
+    cliente = _ClienteFake()
+    cliente.linhas["chaveK"] = {
+        "chave_documento": "chaveK", "status": "concluido",
+        "resultado": {"resumo": "pronto K", "imagem": "https://x.com/k.jpg"},
+    }
+    cliente.linhas["chaveL"] = {"chave_documento": "chaveL", "status": "gerando", "resultado": None}
+    with patch.object(ia_cache_mod, "obter_cliente", return_value=cliente):
+        resultado = ia_cache_mod.obter_varios(["chaveK", "chaveL", "chaveInexistente"])
+    _checar("9a chave concluida volta no dict", resultado.get("chaveK") == {"resumo": "pronto K", "imagem": "https://x.com/k.jpg"})
+    _checar("9b chave 'gerando' (ainda sem resultado) NAO volta", "chaveL" not in resultado)
+    _checar("9c chave inexistente simplesmente nao aparece (nunca erro)", "chaveInexistente" not in resultado)
+
+
+def test_9b_obter_varios_lista_vazia_e_supabase_fora_do_ar():
+    cliente = _ClienteFake()
+    with patch.object(ia_cache_mod, "obter_cliente", return_value=cliente):
+        _checar("9d lista de chaves vazia -> {} sem bater no banco", ia_cache_mod.obter_varios([]) == {})
+    with patch.object(ia_cache_mod, "obter_cliente", return_value=None):
+        _checar("9e Supabase fora do ar -> {} (nunca excecao)", ia_cache_mod.obter_varios(["chaveM"]) == {})
+
+
+def test_9c_obter_varios_erro_de_schema_nao_quebra():
+    cliente = MagicMock()
+    cliente.table.return_value.select.return_value.in_.return_value.eq.return_value.execute.side_effect = Exception("PGRST205")
+    with patch.object(ia_cache_mod, "obter_cliente", return_value=cliente):
+        resultado = ia_cache_mod.obter_varios(["chaveN"])
+    _checar("9f erro de schema/infra -> {} sem lancar excecao", resultado == {})
+
+
+def test_9d_obter_varios_uma_unica_query_pra_varias_chaves():
+    """N+1 seria 1 query por card - aqui tem que ser 1 SO' query pra
+    TODAS as chaves pedidas, mesmo com repeticao na lista de entrada."""
+    cliente = _ClienteFake()
+    cliente.linhas["chaveO"] = {"chave_documento": "chaveO", "status": "concluido", "resultado": {"resumo": "O"}}
+    cliente.linhas["chaveP"] = {"chave_documento": "chaveP", "status": "concluido", "resultado": {"resumo": "P"}}
+
+    with patch.object(ia_cache_mod, "obter_cliente", return_value=cliente):
+        resultado = ia_cache_mod.obter_varios(["chaveO", "chaveO", "chaveNenhuma", "chaveP"])
+
+    _checar("9g exatamente 1 chamada a .in_() (1 query, nao 1 por chave)", len(cliente.chamadas_in) == 1)
+    _checar("9h as 2 chaves concluidas voltam, deduplicadas na entrada", resultado == {"chaveO": {"resumo": "O"}, "chaveP": {"resumo": "P"}})
 
 
 if __name__ == "__main__":

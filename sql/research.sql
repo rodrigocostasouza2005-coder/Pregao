@@ -57,3 +57,16 @@ create index if not exists idx_research_hist_casa_ticker
   on research_recomendacoes_historico (casa, ticker, capturado_em desc);
 
 alter table research_recomendacoes_historico enable row level security;
+
+-- ============================================================
+-- FASE 3 — feed editorial NEWS+RESEARCH (2026-10-08) — idempotente.
+-- ============================================================
+
+-- publicado_em: timestamp COMPLETO (data+hora) de publicacao, hoje so'
+-- preenchido pelas lives da Genial (Morning Call/Resumo da Manha/
+-- Fechamento etc - ver data/research/genial_lives.py) - usado so' pra
+-- posicionar esses itens cronologicamente (hora certa) dentro do feed
+-- unificado do NEWS (ver ui/news_tab.py). 'data' (so' o dia) continua
+-- sendo a coluna que o resto do projeto usa - nullable de proposito,
+-- a maioria dos itens (research normal) nao tem isso.
+alter table research_itens add column if not exists publicado_em timestamptz;

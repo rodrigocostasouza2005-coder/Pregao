@@ -23,6 +23,12 @@ def _linha_para_item(linha: dict) -> dict:
         "resumo": linha.get("resumo"), "modelo_resumo": linha.get("modelo_resumo"),
         "preco_alvo": linha.get("preco_alvo"), "recomendacao": linha.get("recomendacao"),
         "coletado_em": linha.get("coletado_em"),
+        # fase 3 (feed editorial NEWS+RESEARCH): timestamp completo de
+        # publicacao, hoje so' preenchido pelas lives da Genial (ver
+        # data/research/genial_lives.py) - None pras demais casas/linhas
+        # coletadas antes dessa coluna existir (coluna pode nem existir
+        # ainda no banco - .get() cobre os dois casos sem quebrar).
+        "publicado_em": linha.get("publicado_em"),
     }
 
 
@@ -90,7 +96,15 @@ def salvar_itens(itens: list) -> bool:
     upsert com o mesmo link repetido dentro do MESMO lote falha inteiro
     no Postgres ("ON CONFLICT DO UPDATE command cannot affect row a
     second time"); pode acontecer se a fonte listar o mesmo relatorio em
-    mais de uma categoria (confirmado em teste com a XP)."""
+    mais de uma categoria (confirmado em teste com a XP).
+
+    'publicado_em' (fase 3, coluna nova - ver sql/research.sql) so' vai
+    no payload quando pelo menos 1 item do lote tiver o campo (hoje so'
+    genial_lives.py preenche) - e se o UPSERT falhar por causa dela (ex:
+    Supabase do usuario ainda sem rodar a migracao), tenta de novo SEM
+    essa coluna antes de desistir: nunca quebra a coleta de TODAS as
+    casas so' porque uma coluna nova ainda nao existe no banco de quem
+    esta rodando."""
     cliente = obter_cliente()
     if cliente is None:
         return False
@@ -98,12 +112,14 @@ def salvar_itens(itens: list) -> bool:
         return True
     itens = list({it["link"]: it for it in itens}.values())
     agora = datetime.now(timezone.utc).isoformat()
+    tem_publicado_em = any(it.get("publicado_em") for it in itens)
     linhas = [
         {
             "link": it["link"], "casa": it["casa"], "titulo": it["titulo"],
             "data": it.get("data") or None, "autor": it.get("autor") or None,
             "tipo": it["tipo"], "tickers": it.get("tickers") or [],
             "coletado_em": agora,
+            **({"publicado_em": it.get("publicado_em")} if tem_publicado_em else {}),
         }
         for it in itens
     ]
@@ -111,7 +127,14 @@ def salvar_itens(itens: list) -> bool:
         cliente.table("research_itens").upsert(linhas, on_conflict="link").execute()
         return True
     except Exception:
-        return False
+        if not tem_publicado_em:
+            return False
+        linhas_sem_publicado = [{k: v for k, v in linha.items() if k != "publicado_em"} for linha in linhas]
+        try:
+            cliente.table("research_itens").upsert(linhas_sem_publicado, on_conflict="link").execute()
+            return True
+        except Exception:
+            return False
 
 
 def apagar_itens_antigos(dias: int = RETENCAO_DIAS) -> int:

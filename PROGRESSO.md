@@ -2862,3 +2862,168 @@ alteração. `compileall` do projeto + AppTest das 10 seções sem exceção.
 Validação visual via Playwright com as 4 seções populadas (Petrobras:
 research+news+cvm+histórico sintéticos) confirma renderização compacta
 no estilo terminal, link clicável, zero erro de console.
+
+## FASE 3 — evolução completa de NEWS + RESEARCH (2026-10-08)
+
+Pedido do Rodrigo, executado de forma autônoma (sessão agendada, sem
+aprovação intermediária): transformar NOTÍCIAS num feed editorial de
+terminal (foto + título + resumo curto), intercalar o Morning Call
+cronologicamente no mesmo feed (em vez de seção isolada), melhorar o
+resumo do Morning Call (estrutura real em vez de genérico) e integrar
+NEWS↔RESEARCH de forma compacta — sem introduzir N+1, sem nova chamada
+de rede por card/imagem, sem duplicar o sistema de cache/IA existente.
+
+**Auditoria antes de codar** (pra não duplicar nem contradizer decisões
+já tomadas): li `data/news.py` (score de confiabilidade, agrupamento
+por fato, cache `st.cache_data` de 20min, resumo por grupo via
+`data/ia_cache.py` — cache GLOBAL no Supabase desde 2026-10-05),
+`data/research/resumir.py` (prompt narrativo + `_FOCO_POR_TIPO`, já
+tinha um foco `MORNING_CALL` desde a fase do Morning Call/lives da
+Genial), `data/research/genial_lives.py` (coleta de metadados via RSS
+do YouTube + legenda automática), `ui/news_tab.py` (estilo "wire" denso
+reusado por TOP MERCADO e pelo bloco compacto da EQUITY) e
+`ui/research_tab.py` (dialog `_abrir_resumo_live`, painel de
+recomendações da Genial). Decisão central: **reusar tudo isso**, nunca
+criar um pipeline paralelo.
+
+**Decisão de arquitetura mais importante — foto sem rede extra**: o
+RSS do Google News não traz imagem de matéria (só título/veículo/data).
+A única forma de ter foto real sem violar "nunca 1 chamada de rede por
+card" é extrair o `og:image` do MESMO HTML que já é baixado pra gerar o
+resumo via `trafilatura` — e `trafilatura.extract(..., with_metadata=True,
+output_format="json")` devolve texto+metadado (incluindo `image`) numa
+chamada só, confirmado com um teste local antes de codar (HTML
+sintético com `og:image`, sem rede). Resultado: a foto fica disponível
+exatamente quando o resumo também fica (lazy, sob demanda, cacheada
+globalmente no Supabase junto do resumo) — zero fonte nova, zero custo
+extra, nunca inventada (fallback visual discreto quando ausente/falha).
+
+**Decisão — card do feed só mostra o que já está cacheado**: gerar
+resumo/imagem pra TODOS os itens visíveis da lista seria N+1 real (e
+custaria cota de IA/trafilatura à toa pra itens que o usuário nunca vai
+abrir). Em vez disso, `data/ia_cache.py:obter_varios` faz 1 única
+query (`IN (...)`) pra todas as chaves visíveis, e
+`data/news.py:obter_resumos_prontos` embrulha isso pro formato do feed.
+Item ainda não resumido por ninguém aparece só com título+meta (nunca
+inventa teaser) — e assim que QUALQUER usuário abrir o dialog e gerar o
+resumo pela primeira vez, o card dele passa a mostrar foto+teaser pra
+TODO MUNDO nas próximas renderizações (cache global, mesmo mecanismo
+que já existia).
+
+**Decisão — Morning Call cronológico precisa de hora real**: o campo
+`data` de `research_itens` sempre foi só a DATA (dia), nunca a hora —
+suficiente pro resto do projeto, insuficiente pra intercalar "08:30
+MORNING CALL" entre notícias de minuto certo. O feed do YouTube
+(`genial_lives.py`) já trazia `published_parsed` com hora completa, só
+que era truncado pra `[:10]` antes de salvar. Solução: nova coluna
+`publicado_em` (timestamptz, nullable) em `research_itens`, preenchida
+só pela Genial Lives — `data` (coluna antiga, usada por todo o resto do
+projeto: radar, retenção, filtro por dia) **intocada**. Pra não quebrar
+a coleta de QUALQUER outra casa enquanto o Rodrigo não rodar a migração
+no Supabase, `store.salvar_itens` tenta o upsert COM a coluna nova e,
+se falhar (coluna ainda não existe), tenta de novo SEM ela antes de
+desistir — confirmado com teste simulando exatamente esse cenário
+("column ... does not exist" na 1ª tentativa, sucesso na 2ª). Sem
+`publicado_em` (linha antiga ou coluna não migrada ainda), o item nunca
+mostra uma hora inventada — só entra no feed numa posição aproximada
+(meio-dia da data, só pra ordenar) e a UI mostra o horário em branco,
+nunca "08:00" fingindo precisão que não existe. Isso também corrigiu
+um bug real pego pelo próprio teste de ordenação: comparar as strings
+ISO cruas (ex: `"09:42-03:00"` vs `"11:30+00:00"`) ordena errado entre
+fusos diferentes — a ordenação do feed agora usa `datetime` parseado de
+verdade, não a string.
+
+**Decisão — resumo do Morning Call reescrito, mesmo sistema**: só o
+texto do foco `MORNING_CALL` em `_FOCO_POR_TIPO` (resumir.py) mudou —
+zero pipeline novo, zero prompt paralelo, mesmo cache/fallback de
+modelo de sempre. Pede estrutura real (**O QUE IMPORTA HOJE** com
+subtemas Brasil/Exterior/Juros/Câmbio/Commodities/Ações, só os que o
+episódio de fato cobriu; **DESTAQUES** com os tickers citados pelo
+nome), reforça a separação FATO/VISÃO DA CASA/LEITURA já existente no
+prompt geral, e proíbe explicitamente inventar tese, impacto, consenso,
+preço-alvo, recomendação ou causalidade que o programa não disse — com
+uma válvula de escape explícita pro formato narrativo genérico quando o
+episódio não tiver conteúdo real pra nenhum dos 2 blocos (nunca força
+template vazio, mesma filosofia que já existia no prompt geral).
+
+**Integração NEWS↔RESEARCH**: bloco compacto "Research" dentro do
+dialog de detalhe da notícia, só quando algum ticker do item já tem
+recomendação/preço-alvo coletado pela Genial — reusa
+`data/research/genial.py:obter_recomendacoes()` (já cacheada, já usada
+pela aba RESEARCH), nunca uma chamada nova, nunca N+1 (só dispara
+dentro do dialog já aberto pelo clique do usuário).
+
+**O que NÃO foi tocado**: `_linha_noticia`/`_renderizar_lista` (estilo
+"wire" denso original) continuam exatamente como estavam — usados só
+por TOP MERCADO e pelo bloco compacto de NOTÍCIAS da aba EQUITY,
+deliberadamente fora do escopo visual desta fase pra não arriscar
+regressão onde não foi pedido. CALENDÁRIO, CVM, MACRO, MERCADO, preços,
+coleta não relacionada, Supabase (arquitetura geral) e o sistema de
+cache existente (`data/ia_cache.py`) — zero mudança estrutural, só uso.
+
+**Testes**: `tests/test_news_fase3.py` (novo, 26 checks) — extração de
+imagem do mesmo download (sucesso, sem `og:image`, imagem relativa/
+inválida descartada, JSON malformado do `trafilatura.extract` não
+quebra, falha de download, link não resolvido), `obter_resumos_prontos`
+em lote (1 única chamada, nunca por grupo), merge cronológico
+NOTÍCIA+LIVE (ordem correta, tipo certo, feed vazio), hora de exibição
+honesta (nunca inventa HH:MM), teaser de notícia (extrai O QUE
+ACONTECEU+IMPACTO, nunca "não informado", cai pro texto cru se o
+formato não bater) e teaser de live (remove título do bloco e tags
+`<b>`). `tests/test_ia_cache.py` (+9 checks, 38 no total) —
+`obter_varios`: só devolve concluído, nunca gera/reserva, lista vazia e
+Supabase fora do ar não quebram, erro de schema não quebra, exatamente
+1 query pra várias chaves (prova direta contra N+1).
+`tests/test_research_fase3.py` (novo, 17 checks) — `publicado_em`
+extraído do mesmo feed (com e sem o campo estruturado), `data` (coluna
+antiga) intocada, upsert aditivo/gracioso (com a coluna, sem nenhum
+item com ela, retry sem a coluna quando ela não existe no banco, falha
+persistente retorna False sem exceção), `_linha_para_item` com
+`.get()` seguro, e o prompt do foco MORNING_CALL (pede os 2 blocos,
+proíbe resumo genérico, reforça FATO vs VISÃO DA CASA, proíbe inventar
+preço-alvo/recomendação/consenso, permite cair pro formato genérico sem
+conteúdo real). Todos os 10 arquivos de teste do projeto (104+ checks
+no total) passando, `compileall` limpo (venv recriado com Python 3.12,
+já que `app.py`/`ui/mercado_tab.py` usam sintaxe de f-string aninhada
+só válida a partir do 3.12 — nada relacionado a esta fase, achado do
+próprio setup do ambiente).
+
+Validação de nível Streamlit via 2 harnesses `AppTest` isolados
+(scratchpad, fora do repo — mesmo padrão de sessões anteriores: nunca
+tocam `auth.py`/login real, que é impossível de automatizar). Harness 1
+(feed editorial): cenário completo (notícia com foto cacheada, notícia
+sem imagem/fallback, Morning Call intercalado cronologicamente, teaser
+de ambos aparecendo) sem exceção; clique na manchete abre o dialog,
+gera resumo+imagem, mostra o contexto RESEARCH (recomendação Genial)
+sem exceção; falha total das fontes (notícias=None, lives=None) não
+quebra a página; watchlist vazia mostra o aviso certo; live sem resumo
+ainda gerado mostra o aviso "clique pra gerar". Harness 2 (TOP
+MERCADO/EQUITY, estilo wire): confirma que os dois pontos que reusam
+`_renderizar_lista`/`_linha_noticia` continuam funcionando sem nenhuma
+mudança visual, incluindo o dialog com a seção nova de contexto
+RESEARCH, sem exceção.
+
+**Nota de validação visual (honesta)**: este ambiente é um sandbox na
+nuvem sem Playwright/Chromium configurado contra o app Streamlit
+completo (nem haveria como passar pelo login Google do `auth.py`, limite
+já documentado em fases anteriores). A correção dos harnesses `AppTest`
+acima prova que o Streamlit renderiza sem exceção, estados de erro
+degradam graciosamente e os fluxos de clique funcionam — **não** prova
+como o card realmente fica na tela (cor exata, densidade, alinhamento,
+responsividade). Isso fica como pendência real: Rodrigo confirmar
+visualmente em `pregao.streamlit.app` depois do deploy, e rodar a
+migração `sql/research.sql` atualizada no Supabase (idempotente) pra
+`publicado_em` passar a ser preenchido de verdade (sem ela, Morning
+Call aparece no feed sem hora exibida — degradação já prevista, nunca
+quebra).
+
+**Arquivos alterados**: `ui/news_tab.py` (feed editorial + integração
+Morning Call/RESEARCH), `data/news.py` (extração de imagem +
+`obter_resumos_prontos`), `data/ia_cache.py` (`obter_varios`, leitura em
+lote), `data/research/resumir.py` (prompt do foco MORNING_CALL),
+`data/research/genial_lives.py` (`publicado_em`), `data/research/store.py`
+(`publicado_em` aditivo/gracioso), `sql/research.sql` (coluna nova,
+idempotente) + `tests/test_news_fase3.py`,
+`tests/test_research_fase3.py` (novos) e `tests/test_ia_cache.py`
+(estendido). Nenhuma mudança em `app.py`, CALENDÁRIO, CVM, MACRO,
+MERCADO, preços, Supabase (arquitetura) ou no estilo "wire" original.

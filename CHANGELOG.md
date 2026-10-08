@@ -3,6 +3,79 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-08 (feat: FASE 3 — feed editorial NEWS + integração RESEARCH)
+
+- **NOTÍCIAS vira um feed editorial** (`ui/news_tab.py`): cada item vira
+  um card com foto (quando disponível), título, veículo/hora/ticker e
+  um teaser de 2-4 linhas do resumo — tudo isso **só quando já estiver
+  cacheado por algum uso anterior** (leitura em lote,
+  `data/ia_cache.py:obter_varios` + `data/news.py:obter_resumos_prontos`
+  — 1 única query pra tela inteira, nunca 1 chamada de rede/IA por
+  card). Item sem imagem cacheada mostra um fallback discreto (iniciais
+  do veículo), nunca um ícone de foto quebrada. O estilo "wire" denso
+  original (`_linha_noticia`/`_renderizar_lista`) continua **intocado**
+  — usado só por TOP MERCADO e pelo bloco compacto da aba EQUITY.
+- **Foto da matéria sem nenhuma requisição de rede extra**: a imagem
+  (meta `og:image`) é extraída do MESMO download HTML já usado pra
+  gerar o resumo (`trafilatura.extract(..., with_metadata=True)`) — zero
+  fonte nova, zero custo extra. Fica cacheada junto do resumo no Supabase
+  (`resultado.imagem`, mesma tabela `resumos_ia_cache`).
+- **Morning Call intercalado cronologicamente no feed**, não mais numa
+  seção isolada: itens "LIVE" da Genial (Morning Call, Resumo da Manhã,
+  Fechamento de Mercado etc — já coletados pelo RESEARCH, ver
+  `data/research/genial_lives.py`) ganham um card próprio
+  (`_cartao_live`), identificado por programa+casa, posicionado por
+  horário real entre as notícias. Nova coluna `publicado_em` (timestamp
+  completo) em `research_itens` — nullable, preenchida só pelas lives;
+  sem ela (banco ainda não migrado), o item aparece sem hora exibida
+  (nunca inventada) e `salvar_itens` cai pro upsert antigo sem quebrar a
+  coleta de nenhuma outra casa. **Ação necessária**: rodar
+  `sql/research.sql` atualizado no Supabase (idempotente).
+- **Resumo do Morning Call reescrito** (`data/research/resumir.py`,
+  foco `MORNING_CALL`, mesmo sistema de IA/cache de sempre — nenhum
+  pipeline novo): troca o resumo genérico por estrutura real **O QUE
+  IMPORTA HOJE** (Brasil/Exterior/Juros/Câmbio/Commodities/Ações, só os
+  temas que o episódio de fato cobriu) + **DESTAQUES** (tickers citados
+  pelo nome), reforçando a separação FATO vs VISÃO DA CASA/ANALISTA vs
+  LEITURA e proibindo explicitamente inventar tese/impacto/consenso/
+  preço-alvo/recomendação. Cai pro formato narrativo genérico quando o
+  episódio não tem conteúdo real pros blocos (nunca força template vazio).
+- **Integração NEWS↔RESEARCH no dialog da notícia**: quando um ticker do
+  item já tem recomendação/preço-alvo coletado da Genial, aparece um
+  bloco compacto "Research" dentro do card de detalhe — mesma função
+  cacheada que a aba RESEARCH já usa (`obter_recomendacoes`), zero fonte
+  nova, zero chamada de IA, nunca N+1 (só no dialog já aberto).
+- **Testes** (`tests/test_news_fase3.py` novo — 26 checks; +9 em
+  `tests/test_ia_cache.py`; `tests/test_research_fase3.py` novo — 17
+  checks): extração de imagem do mesmo download (sucesso, sem og:image,
+  JSON malformado, falha de fetch, link não resolvido), `obter_varios`/
+  `obter_resumos_prontos` em lote (1 única query, nunca N+1), merge
+  cronológico NOTÍCIA+LIVE (pego um bug real de ordenação por string
+  entre offsets de fuso diferentes — corrigido comparando datetime de
+  verdade), hora de exibição honesta (nunca inventa HH:MM sem
+  `publicado_em`), teasers (news e live), `publicado_em` aditivo/
+  gracioso no upsert (incluindo coluna ausente no banco), prompt do
+  Morning Call. `compileall` do projeto limpo. Validação de nível
+  Streamlit via harness `AppTest` isolado (scratchpad, fora do repo,
+  mesmo padrão de fases anteriores — nunca toca `auth.py`/login real):
+  feed completo (foto ok, foto ausente, Morning Call intercalado,
+  Morning Call sem resumo), clique abrindo o dialog (resumo + contexto
+  RESEARCH), falha total de fontes, watchlist vazia — todos sem exceção;
+  + harness separado confirmando TOP MERCADO e o bloco compacto da
+  EQUITY (estilo wire, intocado) continuam funcionando, inclusive o
+  dialog com a seção nova de contexto RESEARCH.
+- **Limitação real**: validação visual (como o card realmente fica na
+  tela — cor, espaçamento, densidade) não foi feita num navegador de
+  verdade neste ambiente (sandbox de nuvem sem Playwright/Chromium
+  configurado pro app completo) — só os harnesses `AppTest` acima
+  (corretude de render/estado do Streamlit, não aparência). Pendência
+  real: Rodrigo confirmar visualmente em `pregao.streamlit.app`.
+- Arquivos: `ui/news_tab.py`, `data/news.py`, `data/ia_cache.py`,
+  `data/research/resumir.py`, `data/research/genial_lives.py`,
+  `data/research/store.py`, `sql/research.sql` + 3 arquivos de teste
+  novos/estendidos. Nenhuma mudança em CALENDÁRIO/CVM/MACRO/MERCADO/
+  preços/Supabase (arquitetura)/sistema de cache existente (só reuso).
+
 ## 2026-10-02 (feat: CALENDÁRIO - Hub do evento)
 
 - Detalhe de um evento vira um hub compacto: RESEARCH, NEWS, CVM e

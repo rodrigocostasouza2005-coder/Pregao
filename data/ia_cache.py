@@ -141,6 +141,40 @@ def _esperar_geracao_concorrente(cliente, chave: str) -> dict | None:
     return None
 
 
+def obter_varios(chaves: list) -> dict:
+    """Leitura em LOTE (1 unica query, SEM reservar nem gerar nada) dos
+    resumos JA CONCLUIDOS pras chaves dadas - usada pelo feed editorial
+    do NEWS (fase 3) pra mostrar resumo/imagem de itens ja cacheados por
+    QUALQUER usuario anterior sem bater 1x no Supabase por card (N+1):
+    so' 1 SELECT com IN(...) pra todas as chaves visiveis na tela.
+
+    Retorna {chave: resultado} so' das chaves com status='concluido' e
+    'resultado' presente; chave ausente no retorno = ainda nao cacheada
+    (quem chama trata como "sem resumo ainda", nunca como erro). Lista
+    vazia ou Supabase fora do ar -> {} (nunca lanca excecao, nunca
+    bloqueia o feed principal)."""
+    if not chaves:
+        return {}
+    cliente = obter_cliente()
+    if cliente is None:
+        return {}
+    try:
+        resp = (
+            cliente.table(_TABELA)
+            .select("chave_documento,resultado,status")
+            .in_("chave_documento", list(dict.fromkeys(chaves)))
+            .eq("status", "concluido")
+            .execute()
+        )
+    except Exception:
+        return {}
+    return {
+        linha["chave_documento"]: linha["resultado"]
+        for linha in (resp.data or [])
+        if linha.get("resultado")
+    }
+
+
 def obter_resumo_com_cache(chave: str, link_principal: str, origem: str, gerar_fn) -> dict:
     """Ponto de entrada unico (Research e News): verifica cache -> se
     nao houver, tenta reservar a geracao -> se perder a corrida, espera

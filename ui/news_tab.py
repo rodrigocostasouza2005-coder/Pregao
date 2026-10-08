@@ -1,28 +1,46 @@
 # -*- coding: utf-8 -*-
-"""Interface da fase NOTICIAS, estilo "wire" de terminal financeiro: uma
-linha densa por noticia (HORA | SELO | MANCHETE | Nº FONTES | ↗). Ticker
-nao tem coluna propria - entra como texto inline no comeco da manchete,
-so' quando existe. Clique na manchete abre um card (st.dialog) com
-selo+score explicado, veiculos com link, tickers citados e resumo sob
-demanda; o icone ↗ abre a materia direto em nova aba, sem passar pelo
-card. render_news(prefs) pra aba NEWS (feed da watchlist) e
-render_news_ticker(ticker, prefs) pro bloco compacto na aba EQUITY.
+"""Interface da fase NOTICIAS.
 
-A lista (_renderizar_lista) roda dentro de um st.fragment - clicar numa
-manchete so' reroda o fragmento, nao a pagina inteira (era a causa real
-da lentidao: cada clique reconstruia todos os widgets da lista do zero,
-mesmo com os dados ja vindo de cache).
+Dois estilos de apresentacao, MESMOS dados/cache por baixo:
+- "wire" denso (_linha_noticia/_renderizar_lista, original) - uma linha
+  por noticia (HORA | SELO | MANCHETE | Nº FONTES | ↗), reusado por
+  TOP MERCADO (ui/top_mercado_tab.py) e pelo bloco compacto da aba
+  EQUITY (render_news_ticker) - **intocado** na fase 3, pra nao arriscar
+  regressao em telas que nao pediram mudanca.
+- "editorial" (fase 3, _cartao_noticia/_cartao_live/_renderizar_feed) -
+  card com foto (quando cacheada, nunca busca de rede extra so' pra
+  isso - ver data/news.py:obter_resumos_prontos), titulo, veiculo/hora/
+  ticker e resumo curto SO' quando ja estiver cacheado por algum uso
+  anterior (nunca gera IA pra lista inteira - so' sob demanda, dentro do
+  card, igual antes). Usado so' por render_news (feed principal da
+  watchlist), que tambem passa a intercalar cronologicamente os itens
+  "LIVE" da Genial (Morning Call etc, ja coletados pelo RESEARCH - ver
+  data/research/genial_lives.py) como cards proprios no mesmo feed.
 
-Modulo tambem exporta o renderizador de lista/card (_renderizar_lista,
-_abrir_card) pra reuso da aba TOP MERCADO (ui/top_mercado_tab.py)."""
+Clique na manchete/titulo abre um card (st.dialog) com selo+score
+explicado, veiculos com link, tickers citados, resumo sob demanda e
+contexto compacto de RESEARCH quando existir (recomendacao/preco-alvo ja
+coletados, nunca uma fonte nova); o icone ↗ abre a materia direto em
+nova aba, sem passar pelo card.
+
+As listas rodam dentro de um st.fragment - clicar num item so' reroda o
+fragmento, nao a pagina inteira (era a causa real da lentidao: cada
+clique reconstruia todos os widgets da lista do zero, mesmo com os dados
+ja vindo de cache)."""
 
 import html
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import streamlit as st
 
-from data.news import SELO_CONFIRMADA, SELO_MENCAO, eh_fonte_confiavel, obter_noticias, obter_noticias_watchlist, obter_resumo_grupo, ordenar_fontes_para_resumo
+from data.news import (
+    SELO_CONFIRMADA, SELO_MENCAO, eh_fonte_confiavel, obter_noticias, obter_noticias_watchlist,
+    obter_resumo_grupo, obter_resumos_prontos, ordenar_fontes_para_resumo,
+)
+from data.research import store as research_store
+from data.research.genial import obter_recomendacoes
+from ui.research_tab import _abrir_resumo_live, _casas_ativas, _EXTRATOR_POR_CASA
 
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
 
@@ -192,6 +210,59 @@ div[class*="st-key-top-manchete-"] button p {
    a cortar "ranking"/"top 20" pela esquerda - ver PROGRESSO.md) */
 [data-testid="stHorizontalBlock"] { overflow-x: hidden; }
 [data-testid="stHorizontalBlock"] > div { min-width: 0 !important; }
+
+/* ---- feed editorial (fase 3) ----------------------------------------
+   Card denso, sem aparencia de SaaS: sem sombra, sem gradiente, sem
+   border-radius exagerado - so' uma borda fina separando itens (mesma
+   logica do .w-divider acima), foto pequena (ajuda a identificar a
+   materia, nunca domina o conteudo) e hierarquia por tamanho/peso de
+   fonte, nao por caixa colorida. */
+.news-divider { border-bottom: 1px solid #1A1A1A; margin: 0.35rem 0 0.7rem 0; }
+.news-item-thumb-wrap {
+    position: relative; width: 60px; height: 60px; flex: 0 0 60px;
+    border: 1px solid var(--borda); background: var(--painel-bg); overflow: hidden;
+}
+.news-item-thumb-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.news-item-thumb-fallback {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--cinza); font-size: 0.85rem; font-weight: 700; letter-spacing: 0.02em;
+    font-family: 'IBM Plex Mono', monospace;
+}
+.news-item-meta {
+    font-size: 0.72rem; color: var(--cinza); font-family: 'IBM Plex Mono', monospace;
+    margin-top: 0.18rem; line-height: 1.5;
+}
+.news-item-resumo {
+    font-size: 0.78rem; color: var(--neutro); opacity: 0.86; line-height: 1.45; margin-top: 0.3rem;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+div[class*="st-key-news-card-titulo-"] button {
+    background: transparent !important; border: none !important; box-shadow: none !important;
+    color: var(--neutro) !important; text-decoration: none !important; text-align: left !important;
+    justify-content: flex-start !important; padding: 0 !important; margin: 0 !important;
+    min-height: auto !important; height: auto !important; font-size: 0.92rem !important;
+    font-weight: 600 !important; line-height: 1.32 !important; white-space: normal !important;
+    width: 100% !important; display: block !important;
+}
+div[class*="st-key-news-card-titulo-"] button:hover { color: var(--destaque) !important; background: transparent !important; }
+div[class*="st-key-news-card-titulo-"] button p { color: inherit !important; font-size: inherit !important; text-align: left !important; white-space: normal !important; }
+
+/* card do MORNING CALL/lives - mesma densidade, destacado so' por uma
+   borda lateral (sem preencher o fundo todo, sem sombra). Selector por
+   st-key (nao classe propria) porque o conteudo vem de varios
+   st.markdown/st.button dentro de um st.container(key=...) - ver
+   _cartao_live e o comentario sobre nao-aninhamento de <div> cru. */
+div[class*="st-key-news-live-card-"] {
+    border-left: 3px solid var(--destaque); padding: 0.35rem 0 0.35rem 0.6rem; margin: 0.1rem 0;
+}
+.news-live-badge {
+    color: var(--destaque); font-weight: 700; letter-spacing: 0.04em; font-size: 0.68rem;
+    font-family: 'IBM Plex Mono', monospace;
+}
+.news-research-ctx {
+    font-size: 0.74rem; color: var(--neutro); padding: 0.25rem 0.5rem; margin-top: 0.3rem;
+    border-left: 2px solid var(--borda);
+}
 """
 
 
@@ -372,10 +443,52 @@ def _abrir_card(n: dict, watchlist: list):
         resultado = obter_resumo_grupo(n["titulo"], fontes_ordenadas, titulos_grupo)
 
     if resultado["resumo"]:
+        imagem = resultado.get("imagem")
+        if imagem:
+            st.markdown(
+                f"<img src='{html.escape(imagem)}' loading='lazy' style='width:100%; max-height:260px; "
+                f"object-fit:cover; border:1px solid var(--borda); margin-bottom:0.6rem;' "
+                f"onerror=\"this.style.display='none';\">",
+                unsafe_allow_html=True,
+            )
         st.markdown(f"<div class='w-resumo-dialogo'>{html.escape(resultado['resumo'])}</div>", unsafe_allow_html=True)
     else:
         motivo = resultado.get("motivo_indisponivel") or "motivo desconhecido"
         st.caption(f"resumo indisponível ({motivo})")
+
+    _bloco_contexto_research(_tickers_do_item(n), watchlist)
+
+
+_LIMITE_CONTEXTO_RESEARCH = 3
+
+
+def _bloco_contexto_research(tickers: list, watchlist: list):
+    """Contexto compacto de RESEARCH (fase 3, integracao NEWS<->RESEARCH):
+    so' aparece quando ja existe recomendacao/preco-alvo REAL coletado
+    pela Genial (mesma funcao cacheada - obter_recomendacoes - que a aba
+    RESEARCH ja usa, ver ui/research_tab.py:_painel_watchlist) pra algum
+    ticker do item. Zero fonte nova, zero chamada de IA, nunca N+1 (so'
+    chamado aqui, dentro do dialog ja aberto - nunca na lista inteira)."""
+    tickers_watch = [t for t in tickers if t in watchlist] or tickers
+    if not tickers_watch:
+        return
+    recomendacoes = obter_recomendacoes() or []
+    relevantes = [r for r in recomendacoes if r["ticker"] in tickers_watch][:_LIMITE_CONTEXTO_RESEARCH]
+    if not relevantes:
+        return
+
+    st.markdown("<div class='w-card-divisor'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='cinza' style='font-size:0.72rem; text-transform:uppercase; margin-bottom:0.2rem;'>Research</div>", unsafe_allow_html=True)
+    for r in relevantes:
+        potencial = r.get("potencial_pct")
+        potencial_txt = f" · potencial {potencial:.1f}%" if potencial is not None else ""
+        preco_alvo = r.get("preco_alvo")
+        preco_txt = f" · preço-alvo R$ {preco_alvo:.2f}" if preco_alvo is not None else ""
+        st.markdown(
+            f"<div class='news-research-ctx'><span style='color:var(--destaque); font-weight:600;'>{r['ticker']}</span>"
+            f" · Genial: <b>{html.escape(str(r['recomendacao']))}</b>{potencial_txt}{preco_txt}</div>",
+            unsafe_allow_html=True,
+        )
 
 
 def _linha_noticia(n: dict, idx: int, mostrar_ticker: bool, prefixo: str, watchlist: list):
@@ -435,12 +548,242 @@ def _renderizar_lista(itens: list, mostrar_ticker: bool, prefixo: str, watchlist
         _linha_noticia(n, idx, mostrar_ticker, prefixo, watchlist)
 
 
+# ===================== feed editorial (fase 3) =====================
+#
+# NOTICIAS vira um feed editorial de terminal: card com foto (so' quando
+# ja cacheada - nunca 1 chamada de rede por card), titulo, veiculo/hora/
+# ticker e um teaser do resumo (idem, so' se ja cacheado); e os itens
+# "LIVE" da Genial (Morning Call, Resumo da Manha, Fechamento de Mercado
+# etc - ja coletados pelo RESEARCH, ver data/research/genial_lives.py)
+# passam a aparecer intercalados CRONOLOGICAMENTE no mesmo feed, com um
+# card proprio (_cartao_live) claramente identificado pelo programa+casa,
+# em vez de ficarem numa secao isolada. _linha_noticia/_renderizar_lista
+# acima (wire denso) continuam intocados - usados so' por TOP MERCADO e
+# pelo bloco compacto da aba EQUITY (render_news_ticker).
+
+_TRUNCA_TEASER = 220
+_CAMPOS_TEASER = ("O QUE ACONTECEU", "IMPACTO")
+
+
+def _resumo_teaser(resumo: str, limite: int = _TRUNCA_TEASER) -> str:
+    """Teaser de 2-4 linhas pro card do feed, extraido do resumo
+    estruturado completo de NEWS (O QUE ACONTECEU/NUMEROS/IMPACTO/
+    PROXIMOS PASSOS, ver data/news.py) - nunca o bloco inteiro (verboso
+    demais pra uma linha de lista, o bloco completo continua disponivel
+    no dialog). Cai pro texto cru truncado se o formato nao bater (ex:
+    resumo baseado so' em manchetes, que tem o mesmo formato + sufixo)."""
+    campos = {}
+    for linha in resumo.splitlines():
+        campo, _, valor = linha.partition(":")
+        if valor:
+            campos[campo.strip().upper()] = valor.strip()
+    partes = [
+        campos[c] for c in _CAMPOS_TEASER
+        if campos.get(c) and "informado" not in campos[c].lower()
+    ]
+    teaser = " ".join(partes).strip() or resumo.strip()
+    return _truncar(teaser, limite)
+
+
+def _teaser_live(resumo: str, limite: int = _TRUNCA_TEASER) -> str:
+    """Teaser pro card do feed a partir do resumo narrativo do RESEARCH
+    (blocos tipo 'O QUE IMPORTA HOJE' em MAIUSCULAS numa linha propria -
+    ver data/research/resumir.py) - pula a(s) linha(s) que sao so' o
+    titulo do bloco e tira a tag <b> (so' faz sentido dentro do dialog
+    completo; aqui e' so' um preview em texto puro)."""
+    sem_tags = resumo.replace("<b>", "").replace("</b>", "")
+    linhas = [l.strip() for l in sem_tags.splitlines() if l.strip()]
+    corpo = [l for l in linhas if not (l.isupper() and len(l) < 40)]
+    texto = " ".join(corpo) if corpo else " ".join(linhas)
+    return _truncar(texto, limite)
+
+
+def _thumb_html(imagem: str | None, iniciais: str) -> str:
+    """Thumbnail do card: foto (quando ja cacheada - ver
+    data/news.py:obter_resumos_prontos, nunca uma busca de rede aqui)
+    com fallback visual discreto (iniciais do veiculo, sem foto nenhuma)
+    se a imagem faltar OU falhar ao carregar no navegador - onerror troca
+    pro fallback, nunca deixa um icone de imagem quebrada no feed."""
+    marca = html.escape((iniciais or "?")[:2].upper())
+    if not imagem:
+        return f"<div class='news-item-thumb-wrap'><div class='news-item-thumb-fallback'>{marca}</div></div>"
+    return (
+        "<div class='news-item-thumb-wrap'>"
+        f"<img src='{html.escape(imagem)}' loading='lazy' alt='' "
+        "onerror=\"this.style.display='none'; this.nextElementSibling.style.display='flex';\">"
+        f"<div class='news-item-thumb-fallback' style='display:none;'>{marca}</div>"
+        "</div>"
+    )
+
+
+def _meta_noticia_html(n: dict, mostrar_ticker: bool, watchlist: list) -> str:
+    classe_selo = _CLASSE_SELO.get(n["selo"], "selo-naoconfirmada")
+    tooltip = html.escape(_tooltip_regras(n))
+    partes = [
+        f"<span class='selo-tag {classe_selo}' title='{tooltip}'>{_texto_tag(n)}</span>",
+        html.escape((n.get("veiculos") or [""])[0]),
+        _fmt_hora(n["data"]),
+    ]
+    if mostrar_ticker:
+        for t in _tickers_do_item(n)[:3]:
+            classe = "w-ticker-tag w-ticker-tag-watch" if t in watchlist else "w-ticker-tag"
+            partes.append(f"<span class='{classe}'>{t}</span>")
+    partes.append(_plural_fontes(n["fontes_count"]))
+    partes.append(f"<a class='w-abrir-link' style='display:inline;' href='{n['link']}' target='_blank' title='Abrir matéria'>↗ abrir</a>")
+    return f"<div class='news-item-meta'>{' · '.join(p for p in partes if p)}</div>"
+
+
+def _cartao_noticia(n: dict, idx: int, mostrar_ticker: bool, prefixo: str, watchlist: list, resultado: dict | None):
+    """Card editorial de UMA noticia/grupo - foto+resumo so' quando
+    `resultado` ja vier preenchido (leitura em lote feita 1x pro feed
+    inteiro ANTES deste loop, ver obter_resumos_prontos/render_news) -
+    nunca gera nada aqui. Clique no titulo abre o dialog completo
+    (_abrir_card, inalterado), que ai' sim gera o resumo sob demanda se
+    ainda nao existir."""
+    cols = st.columns([1, 9], gap="small", vertical_alignment="top")
+    with cols[0]:
+        imagem = (resultado or {}).get("imagem")
+        iniciais = (n.get("veiculos") or [n["titulo"]])[0]
+        st.markdown(_thumb_html(imagem, iniciais), unsafe_allow_html=True)
+    with cols[1]:
+        prefixo_ticker = _prefixo_tickers(n) if mostrar_ticker else ""
+        chave_botao = f"news-card-titulo-{prefixo}-{idx}-{abs(hash(n['link']))}"
+        if st.button(prefixo_ticker + n["titulo"], key=chave_botao):
+            _abrir_card(n, watchlist)
+        st.markdown(_meta_noticia_html(n, mostrar_ticker, watchlist), unsafe_allow_html=True)
+        if resultado and resultado.get("resumo"):
+            st.markdown(
+                f"<div class='news-item-resumo'>{html.escape(_resumo_teaser(resultado['resumo']))}</div>",
+                unsafe_allow_html=True,
+            )
+    st.markdown("<div class='news-divider'></div>", unsafe_allow_html=True)
+
+
+def _chave_ordenacao_live(rel: dict) -> str:
+    """Timestamp usado SO' PRA ORDENAR o item LIVE dentro do feed
+    unificado - usa publicado_em (hora REAL, quando a fonte preencheu -
+    hoje so' Genial Lives, ver data/research/genial_lives.py) ou cai pro
+    meio-dia da DATA de publicacao quando so' isso existir (so' posiciona
+    o item no dia certo; NUNCA exibido - ver _hora_exibicao_live, que so'
+    mostra HH:MM quando publicado_em de fato existe, nunca inventa hora)."""
+    publicado = rel.get("publicado_em")
+    if publicado:
+        return publicado
+    data = rel.get("data") or ""
+    return f"{data}T12:00:00-03:00" if data else "1970-01-01T00:00:00+00:00"
+
+
+def _hora_exibicao_live(rel: dict) -> str:
+    publicado = rel.get("publicado_em")
+    if not publicado:
+        return ""
+    try:
+        return datetime.fromisoformat(publicado).astimezone(_TZ_SP).strftime("%H:%M")
+    except Exception:
+        return ""
+
+
+def _cartao_live(rel: dict, idx: int, prefixo: str):
+    """Card editorial de um item LIVE (Morning Call/Resumo da Manha/
+    Fechamento etc) - mesma densidade dos cards de noticia, diferenciado
+    so' por uma borda lateral + selo CASA/PROGRAMA (sem preencher o fundo
+    todo, sem sombra). st.container(key=...) (nao HTML cru) pra' borda
+    envolver de verdade titulo+meta+teaser - um <div> aberto num
+    st.markdown e fechado em outro NAO aninha no DOM real do Streamlit
+    (cada st.markdown/st.button e' seu proprio elemento isolado)."""
+    chave_container = f"news-live-card-{prefixo}-{idx}-{abs(hash(rel['link']))}"
+    with st.container(key=chave_container):
+        hora = _hora_exibicao_live(rel)
+        programa = html.escape((rel.get("autor") or "LIVE").upper())
+        casa = html.escape((rel.get("casa") or "").upper())
+        cabecalho = f"<span class='news-live-badge'>{programa} · {casa}</span>"
+        if hora:
+            cabecalho += f" <span class='w-hora'>{hora}</span>"
+        st.markdown(cabecalho, unsafe_allow_html=True)
+
+        chave_botao = f"news-card-titulo-live-{prefixo}-{idx}-{abs(hash(rel['link']))}"
+        if st.button(rel["titulo"], key=chave_botao):
+            _abrir_resumo_live(rel, _EXTRATOR_POR_CASA.get(rel["casa"]))
+
+        if rel.get("resumo"):
+            st.markdown(
+                f"<div class='news-item-resumo'>{html.escape(_teaser_live(rel['resumo']))}</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("Resumo ainda não gerado — clique no título para gerar.")
+    st.markdown("<div class='news-divider'></div>", unsafe_allow_html=True)
+
+
+def _lives_para_feed(prefs: dict) -> list:
+    """Itens LIVE (Morning Call etc da Genial) pra intercalar no feed do
+    NEWS - SO' LEITURA do que o RESEARCH ja coletou (mesma tabela/cache
+    de sempre, data.research.store.listar_itens) - nunca dispara coleta
+    nova daqui: quem e' responsavel por coletar e' a aba RESEARCH (ver
+    data/research/__init__.py:coletar_pendentes); ler de novo aqui so'
+    duplicaria a responsabilidade sem ganhar nada, e coletar a cada
+    abertura do NEWS violaria "nao coletar a cada rerun". Respeita a
+    mesma preferencia de casas ativas da aba RESEARCH (CONFIG > CASAS DE
+    RESEARCH) - se o usuario desligou "Genial (Lives)" la, tambem nao
+    aparece aqui. [] (nunca None) se desligado ou se o Supabase falhar -
+    o feed principal de noticias nunca e' derrubado por isso."""
+    if "genial_lives" not in _casas_ativas(prefs):
+        return []
+    return research_store.listar_itens(["Genial (Lives)"]) or []
+
+
+def _dt_ordenacao(chave_data: str) -> datetime:
+    """Parseia 'chave_data' (ISO, offsets podem variar: noticias vem em
+    -03:00 jah convertido, lives podem vir em +00:00 - ver
+    _chave_ordenacao_live) pra um datetime tz-aware COMPARAVEL de
+    verdade. Comparar as STRINGS direto (como _dentro_de_horas faz,
+    seguro so' porque so' testa distancia pra 'agora') ordenaria errado
+    aqui: '09:42-03:00' (meio-dia UTC) viria ANTES de '11:30+00:00' na
+    ordenacao lexicografica, mesmo sendo horario UTC mais tarde - bug
+    real pego pelo teste de ordenacao cronologica (tests/test_news_fase3.py)."""
+    try:
+        return datetime.fromisoformat(chave_data)
+    except Exception:
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _montar_feed(noticias: list, lives: list) -> list:
+    """Combina noticias + lives num feed CRONOLOGICO unico - funcao pura
+    (sem Streamlit, testavel isoladamente). Cada item fica envelopado com
+    'tipo_feed' (NOTICIA/LIVE) + 'chave_data' (string ISO, usada pelos
+    filtros de janela/VER MAIS existentes, que ja operam so' com uma
+    string de data - ver _dentro_de_horas) - a ORDENACAO em si usa
+    _dt_ordenacao (datetime real, nunca a string crua - ver acima)."""
+    itens = [{"tipo_feed": "NOTICIA", "chave_data": n["data"], "dado": n} for n in noticias]
+    itens += [{"tipo_feed": "LIVE", "chave_data": _chave_ordenacao_live(r), "dado": r} for r in lives]
+    itens.sort(key=lambda it: _dt_ordenacao(it["chave_data"]), reverse=True)
+    return itens
+
+
+@st.fragment
+def _renderizar_feed_editorial(itens_feed: list, watchlist: list, resumos_prontos: dict, prefixo: str):
+    """Feed editorial (fase 3): cards de noticia + lives intercalados
+    cronologicamente. @st.fragment, mesmo motivo de _renderizar_lista:
+    clicar num item so' reroda isso aqui, nao a pagina inteira."""
+    for idx, item in enumerate(itens_feed):
+        if item["tipo_feed"] == "LIVE":
+            _cartao_live(item["dado"], idx, prefixo)
+        else:
+            n = item["dado"]
+            _cartao_noticia(n, idx, True, prefixo, watchlist, resumos_prontos.get(n["link"]))
+
+
 def render_news(prefs: dict):
-    """Ponto de entrada da aba NEWS, chamado pelo app.py. Feed de todos os
-    tickers da watchlist, ordenado por data, com filtro compacto (pills)
-    por ticker e selo. Padrão: últimas 48h, até 50 linhas, com VER MAIS
-    pra expandir. Resumo só sob demanda, dentro do card (clique na
-    manchete) - nada de resumo automático travando a lista."""
+    """Ponto de entrada da aba NEWS, chamado pelo app.py. Feed editorial
+    (fase 3) da watchlist: noticias + Morning Call/lives da Genial
+    intercalados cronologicamente (ver _montar_feed), com filtro
+    compacto (pills) por ticker e selo. Padrão: últimas 48h, até 50
+    itens, com VER MAIS pra expandir. O teaser que aparece direto no
+    card (foto+resumo curto) so' usa o que JA estiver cacheado por algum
+    uso anterior (obter_resumos_prontos - 1 leitura em lote pra tela
+    inteira, nunca 1 chamada de IA/rede por card); resumo completo
+    continua so' sob demanda, dentro do dialog (clique no título) -
+    comportamento inalterado."""
     _injetar_css()
 
     with st.container(border=True):
@@ -452,18 +795,19 @@ def render_news(prefs: dict):
             return
 
         noticias, falhas = obter_noticias_watchlist(watchlist)
+        lives = _lives_para_feed(prefs)
 
         if falhas:
             st.warning("Indisponível no momento: " + ", ".join(falhas) + ".")
 
-        if not noticias:
+        if not noticias and not lives:
             st.info("Nenhuma notícia encontrada para os tickers da sua watchlist no momento.")
             return
 
         st.caption(
-            f"Mostrando notícias das últimas {_JANELA_PADRAO_HORAS}h por padrão (clique em VER MAIS pra ver até "
+            f"Mostrando itens das últimas {_JANELA_PADRAO_HORAS}h por padrão (clique em VER MAIS pra ver até "
             f"5 dias) — selo de confiabilidade calculado por regras simples (fonte, nº de veículos, linguagem), "
-            f"não é uma verificação factual definitiva. Clique numa manchete para ver os detalhes."
+            f"não é uma verificação factual definitiva. Clique num item para ver os detalhes."
         )
 
         # so' tickers da watchlist do usuario - _tickers_do_item(n) ja deveria
@@ -483,13 +827,20 @@ def render_news(prefs: dict):
             "Selo", selos_no_feed, default="TODOS", selection_mode="single", key="news_pill_selo",
         ) or "TODOS"
 
-        base = [
+        # filtro de ticker/selo so' se aplica a NOTICIA (LIVE nao tem selo
+        # nem ticker unico) - com algum filtro ativo, os lives somem do
+        # feed (filtrar por ticker/selo e' sobre uma noticia de mercado
+        # especifica, nao sobre o programa do dia)
+        noticias_filtradas = [
             n for n in noticias
             if (filtro_ticker == "TODOS" or filtro_ticker in _tickers_do_item(n))
             and (filtro_selo == "TODOS" or n["selo"] == filtro_selo)
         ]
+        lives_filtradas = lives if (filtro_ticker == "TODOS" and filtro_selo == "TODOS") else []
 
-        if not base:
+        feed = _montar_feed(noticias_filtradas, lives_filtradas)
+
+        if not feed:
             st.info("Nenhuma notícia com esses filtros.")
             return
 
@@ -499,21 +850,22 @@ def render_news(prefs: dict):
             st.session_state.news_limite = _LIMITE_PADRAO
 
         if st.session_state.news_ver_mais:
-            candidatas = base
+            candidatos = feed
         else:
-            candidatas = [n for n in base if _dentro_de_horas(n["data"], _JANELA_PADRAO_HORAS)] or base
+            candidatos = [it for it in feed if _dentro_de_horas(it["chave_data"], _JANELA_PADRAO_HORAS)] or feed
 
-        mostrar = candidatas[: st.session_state.news_limite]
+        mostrar = candidatos[: st.session_state.news_limite]
 
         st.markdown(
-            f"<div class='cinza' style='font-size:0.68rem; margin:0.3rem 0 0.4rem 0;'>{len(mostrar)} de {len(candidatas)} notícia(s)</div>",
+            f"<div class='cinza' style='font-size:0.68rem; margin:0.3rem 0 0.4rem 0;'>{len(mostrar)} de {len(candidatos)} item(ns)</div>",
             unsafe_allow_html=True,
         )
 
-        _renderizar_lista(mostrar, mostrar_ticker=True, prefixo="feed", watchlist=watchlist)
+        resumos_prontos = obter_resumos_prontos([it["dado"] for it in mostrar if it["tipo_feed"] == "NOTICIA"])
+        _renderizar_feed_editorial(mostrar, watchlist, resumos_prontos, prefixo="feed")
 
-        falta_mostrar = len(candidatas) - len(mostrar)
-        falta_janela = not st.session_state.news_ver_mais and len(base) > len(candidatas)
+        falta_mostrar = len(candidatos) - len(mostrar)
+        falta_janela = not st.session_state.news_ver_mais and len(feed) > len(candidatos)
         if falta_mostrar > 0 or falta_janela:
             if st.button("VER MAIS", key="news_ver_mais_btn"):
                 st.session_state.news_ver_mais = True
