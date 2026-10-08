@@ -16,7 +16,7 @@ from data.ibovespa import obter_composicao_oficial
 from data.macro import obter_cdi
 from data.mercado import obter_cotacoes_lote, obter_mercados_globais
 from data.news import obter_top_mercado_tudo
-from data.prices import obter_cotacao, obter_cotacao_indice, obter_historico
+from data.prices import obter_cotacao, obter_cotacao_indice, obter_historico, obter_historico_intraday
 from ui import graficos, workspace
 from ui.mercado_tab import _painel_altas_baixas, _painel_globais, _painel_mais_negociados, _painel_setorial
 from ui.news_tab import _injetar_css, _renderizar_lista
@@ -117,7 +117,16 @@ def _painel_ibov_grafico(prefs):
     periodo = sel or padrao
     st.session_state["vg_periodo_ibov_valido"] = periodo
 
-    df = obter_historico(config.SIMBOLO_IBOVESPA, periodo)
+    # causa raiz real (2026-10-08): _PERIODOS_IBOV inclui "1D"/"1S", mas so'
+    # PERIODOS_GRAFICO (periodos diarios/semanais) tem esses rotulos - os
+    # intradiarios sao' outra tabela (PERIODOS_INTRADIARIOS / obter_historico_
+    # intraday), igual ja' tratado no grafico de MERCADO (app.py). Sem esse
+    # branch, selecionar "1D"/"1S" aqui ia pra obter_historico() e estourava
+    # KeyError em PERIODOS_GRAFICO[periodo_label] (data/prices.py).
+    if periodo in config.PERIODOS_INTRADIARIOS:
+        df = obter_historico_intraday(config.SIMBOLO_IBOVESPA, periodo)
+    else:
+        df = obter_historico(config.SIMBOLO_IBOVESPA, periodo)
     if df is None or df.empty:
         st.warning("Não foi possível obter o histórico do Ibovespa.")
         return

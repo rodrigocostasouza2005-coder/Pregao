@@ -15,10 +15,15 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
+import pandas as pd
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import config
 import data.mercado as mercado_mod
 import data.prices as prices_mod
+import ui.visao_geral as visao_geral_mod
 from data.prices import (
     _TIMEOUT_YF, _calcular_beta, _historico_semanal_ibov, obter_cotacao, obter_cotacao_indice,
     obter_historico, obter_historico_intraday, obter_indicadores, validar_ticker,
@@ -237,6 +242,120 @@ def test_15_sem_fallback_nenhum_nao_tem_coletado_em():
         resultado = obter_indicadores(ticker)
     _checar("15 nunca houve coleta nem fallback -> sem _coletado_em (nada a declarar como 'velho')",
              "_coletado_em" not in resultado)
+
+
+# ============================================================
+# 16. KeyError real de producao (2026-10-08): VISAO GERAL deixava
+#     selecionar "1D"/"1S" no mini-grafico do IBOV, que nao sao'
+#     rotulos de PERIODOS_GRAFICO (so' os diarios/semanais - "1D"/"1S"
+#     sao' intradiarios, outra tabela) -> obter_historico() estourava
+#     KeyError sem cair no except (lookup e' ANTES do try). Testes
+#     abaixo cobrem: (a) todos os periodos oficialmente suportados por
+#     PERIODOS_GRAFICO funcionam; (b) rotulo intradiario/legado/invalido
+#     nunca propaga KeyError - obter_historico() so' aceita rotulo
+#     oficial, qualquer outro vira None (ultima camada de seguranca,
+#     generica - nao' e' so' pro IBOV); (c) o caminho real da VISAO GERAL
+#     (ui/visao_geral.py:_painel_ibov_grafico) roteia "1D"/"1S" pra
+#     obter_historico_intraday() e os demais pra obter_historico(),
+#     igual o grafico de MERCADO em app.py ja' fazia.
+# ============================================================
+
+class _TickerHistoricoValido:
+    """yf.Ticker(...).history() sempre devolve um DataFrame OHLCV valido
+    (> 200 candles, pra MM200 nao ficar vazia) - simula fonte saudavel,
+    sem rede."""
+    def __init__(self, *_a, **_k):
+        pass
+
+    def history(self, *_a, **kwargs):
+        n = 260
+        idx = pd.date_range("2024-01-01", periods=n, freq="D", name="Date")
+        preco = np.linspace(100, 120, n)
+        return pd.DataFrame(
+            {"Open": preco, "High": preco + 1, "Low": preco - 1, "Close": preco, "Volume": 1000},
+            index=idx,
+        )
+
+
+def test_16a_obter_historico_cobre_todos_os_periodos_oficiais_de_periodos_grafico():
+    with patch.object(prices_mod.yf, "Ticker", _TickerHistoricoValido):
+        for rotulo in config.PERIODOS_GRAFICO:
+            resultado = obter_historico(f"TESTE_PERIODO_{rotulo}", rotulo)
+            _checar(f"16a '{rotulo}' (oficial de PERIODOS_GRAFICO) nunca quebra e devolve DataFrame",
+                    resultado is not None and not resultado.empty, f"(rotulo={rotulo})")
+
+
+def test_16b_obter_historico_com_rotulo_intradiario_ou_invalido_nunca_propaga_keyerror():
+    with patch.object(prices_mod.yf, "Ticker", _TickerHistoricoValido):
+        for rotulo in ["1D", "1S", "ROTULO_LEGADO_INEXISTENTE", ""]:
+            try:
+                resultado = obter_historico("TESTE_ROTULO_INVALIDO", rotulo)
+                excecao = None
+            except Exception as exc:  # pragma: no cover - e' exatamente o que nao queremos
+                resultado, excecao = None, exc
+            _checar(f"16b rotulo invalido '{rotulo}' nunca propaga excecao (nunca derruba a UI)",
+                    excecao is None, f"(excecao={excecao})")
+            _checar(f"16b rotulo invalido '{rotulo}' -> None (nunca inventa periodo)", resultado is None)
+
+
+class _FakeSessionState(dict):
+    pass
+
+
+class _FakeStVisaoGeral:
+    """Dublê mínimo de streamlit pra exercitar _painel_ibov_grafico sem
+    sessão real - so' os metodos que a funcao de fato chama."""
+    def __init__(self, selecao):
+        self.session_state = _FakeSessionState()
+        self._selecao = selecao
+        self.avisos = []
+
+    def markdown(self, *_a, **_k):
+        pass
+
+    def segmented_control(self, *_a, **_k):
+        return self._selecao
+
+    def warning(self, msg, **_k):
+        self.avisos.append(msg)
+
+    def plotly_chart(self, *_a, **_k):
+        pass
+
+
+def _rodar_painel_ibov_grafico(selecao):
+    chamadas = {"intraday": None, "diario": None}
+    fake_st = _FakeStVisaoGeral(selecao)
+    with patch.object(visao_geral_mod, "st", fake_st), \
+         patch.object(visao_geral_mod, "obter_historico_intraday",
+                      side_effect=lambda t, p: chamadas.__setitem__("intraday", (t, p))), \
+         patch.object(visao_geral_mod, "obter_historico",
+                      side_effect=lambda t, p: chamadas.__setitem__("diario", (t, p))):
+        visao_geral_mod._painel_ibov_grafico({"tema": "AMBAR"})
+    return chamadas
+
+
+def test_16c_painel_ibov_grafico_roteia_1d_pra_obter_historico_intraday():
+    chamadas = _rodar_painel_ibov_grafico("1D")
+    _checar("16c selecionar '1D' na VISAO GERAL chama obter_historico_intraday(IBOV, '1D')",
+            chamadas["intraday"] == (config.SIMBOLO_IBOVESPA, "1D"), f"(chamadas={chamadas})")
+    _checar("16c selecionar '1D' NUNCA chama obter_historico() (o bug real de producao)",
+            chamadas["diario"] is None, f"(chamadas={chamadas})")
+
+
+def test_16d_painel_ibov_grafico_roteia_1s_pra_obter_historico_intraday():
+    chamadas = _rodar_painel_ibov_grafico("1S")
+    _checar("16d selecionar '1S' na VISAO GERAL chama obter_historico_intraday(IBOV, '1S')",
+            chamadas["intraday"] == (config.SIMBOLO_IBOVESPA, "1S"), f"(chamadas={chamadas})")
+    _checar("16d selecionar '1S' NUNCA chama obter_historico()", chamadas["diario"] is None, f"(chamadas={chamadas})")
+
+
+def test_16e_painel_ibov_grafico_roteia_periodo_diario_pro_obter_historico():
+    chamadas = _rodar_painel_ibov_grafico("6M")
+    _checar("16e selecionar '6M' na VISAO GERAL chama obter_historico(IBOV, '6M')",
+            chamadas["diario"] == (config.SIMBOLO_IBOVESPA, "6M"), f"(chamadas={chamadas})")
+    _checar("16e selecionar '6M' NUNCA chama obter_historico_intraday()",
+            chamadas["intraday"] is None, f"(chamadas={chamadas})")
 
 
 if __name__ == "__main__":

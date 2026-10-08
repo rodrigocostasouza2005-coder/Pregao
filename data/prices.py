@@ -487,8 +487,14 @@ def obter_historico(ticker: str, periodo_label: str):
     Histórico OHLCV + médias móveis para o período escolhido (ex: '1M', '1A').
     Busca um período maior (buffer) pra ter dados suficientes pra calcular
     MM20/50/200 mesmo no inicio da janela exibida, e só depois recorta pro
-    período pedido. None se falhar.
+    período pedido. None se falhar - inclusive se periodo_label nao for um
+    dos rotulos diarios/semanais oficiais de PERIODOS_GRAFICO (ex: um rotulo
+    intradiario como "1D"/"1S", que usam obter_historico_intraday(), ou um
+    valor persistido antigo/invalido) - ultima camada de seguranca pra nunca
+    propagar KeyError pra UI, sem inventar periodo nenhum.
     """
+    if periodo_label not in PERIODOS_GRAFICO:
+        return None
     symbol = _para_symbol_yf(ticker)
     period_exibicao, interval = PERIODOS_GRAFICO[periodo_label]
     period_buffer, _ = PERIODOS_BUFFER[periodo_label]
