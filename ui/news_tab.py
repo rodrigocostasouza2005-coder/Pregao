@@ -194,15 +194,9 @@ div[class*="st-key-top-manchete-"] button p {
     color: #000000 !important;
     font-weight: 600;
 }
-/* pills de setor (varias opcoes) quebram linha em vez de forcar rolagem
-   horizontal - sem isso o grupo de botoes vira uma faixa so' que estoura
-   a largura da tela em telas estreitas. O elemento com display:flex de
-   verdade e' um DIV filho direto de stButtonGroup (o proprio
-   stButtonGroup e' display:block) - achado real corrigido no CALENDARIO
-   (commit 919fabc) e propagado aqui: a regra antiga mirava o pai
-   display:block, onde nunca fazia efeito nenhum. */
-[data-testid="stButtonGroup"] { row-gap: 0.3rem; }
-[data-testid="stButtonGroup"] > div { flex-wrap: wrap !important; row-gap: 0.3rem; }
+/* a correcao de flex-wrap das pills (duplicada em 4 arquivos, deixava
+   MACRO/MERCADO/TOP MERCADO/VISAO GERAL de fora do mesmo bug) foi
+   centralizada em style.css (2026-10-08, auditoria de responsividade). */
 
 /* linha wire (colunas de HORA/SELO/MANCHETE/FONTES etc): sem min-width:0
    nos filhos flex, o texto com white-space:nowrap dentro de uma coluna

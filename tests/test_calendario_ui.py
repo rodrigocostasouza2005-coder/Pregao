@@ -387,6 +387,34 @@ def test_21_painel_agenda_usa_classe_css_de_alerta_quando_desatualizado():
              "cal-atualizado-alerta" in texto)
 
 
+def test_22_legenda_de_escopo_aparece_no_filtro_padrao_watchlist():
+    # achado da auditoria de cobertura (2026-10-08): o CALENDARIO "parecia"
+    # mostrar so' 2-3 empresas porque o filtro padrao e' MINHA WATCHLIST e a
+    # watchlist padrao (config.TICKERS_PADRAO) tem so' 3 tickers - nao e'
+    # bug de coleta/parsing/dedup. Essa legenda deixa o escopo explicito.
+    with patch.object(calendario_tab_mod, "calcular_calendario_cacheado", return_value=[]), \
+         patch.object(calendario_tab_mod.st, "columns", return_value=(_FakeCol(), _FakeCol())), \
+         patch.object(calendario_tab_mod.st, "pills", return_value=None), \
+         patch.object(calendario_tab_mod.st, "spinner", return_value=_FakeCtx()):
+        capturado = _capturar_markdown(calendario_tab_mod._painel_agenda, {"watchlist": ["PETR4", "VALE3"]})
+    texto = " ".join(capturado)
+    total_universo = len(calendario_tab_mod.config.IBOVESPA_SETORES)
+    _checar("22a legenda menciona o tamanho real da watchlist (2 ativos)", "2 ativos" in texto, f"(texto={texto!r})")
+    _checar("22b legenda aponta pro TODOS com o total real do universo",
+             f"TODOS para ver as {total_universo} empresas" in texto)
+
+
+def test_23_legenda_de_escopo_nao_aparece_fora_do_filtro_watchlist():
+    with patch.object(calendario_tab_mod, "calcular_calendario_cacheado", return_value=[]), \
+         patch.object(calendario_tab_mod.st, "columns", return_value=(_FakeCol(), _FakeCol())), \
+         patch.object(calendario_tab_mod.st, "pills", return_value="TODOS"), \
+         patch.object(calendario_tab_mod.st, "spinner", return_value=_FakeCtx()):
+        capturado = _capturar_markdown(calendario_tab_mod._painel_agenda, {"watchlist": ["PETR4"]})
+    texto = " ".join(capturado)
+    _checar("23 sem a legenda de escopo quando o filtro ja' e' TODOS (nao watchlist)",
+             "mostrando sua watchlist" not in texto)
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

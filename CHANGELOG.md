@@ -3,6 +3,66 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-08 (auditoria de confiabilidade/UX/responsividade — rotina autônoma)
+
+Sessão autônoma agendada, focada na suspeita de que o CALENDÁRIO
+mostrava cobertura baixa (2-3 empresas) + responsividade mobile real.
+
+- **CALENDÁRIO: causa real da "cobertura baixa" identificada — não é
+  bug de coleta/parsing/dedup** (`ui/calendario_tab.py:_painel_agenda`):
+  auditei o pipeline completo (fonte CVM → `_mapa_ticker_cnpj` → IPE →
+  `periodo_pendente` → `calcular_calendario` → snapshot → UI). A fonte
+  cobre normalmente as ~84 empresas de `config.IBOVESPA_SETORES` — o
+  que o usuário via era o filtro padrão da UI (MINHA WATCHLIST) somado
+  à watchlist padrão de quem nunca editou (`config.TICKERS_PADRAO`, só
+  3 tickers: PETR4/VALE3/ITUB4). Não mudei filtro/fonte/dado algum (só
+  mascararia o sintoma ou inflaria contagem artificialmente, ambos
+  proibidos) — adicionei uma legenda de 1 linha no painel, visível só
+  quando o filtro é MINHA WATCHLIST, mostrando o tamanho real da
+  watchlist e quantas empresas o TODOS cobre. Testes novos (22-23 em
+  `tests/test_calendario_ui.py`) travam o texto exato e que ela some
+  fora desse filtro.
+- **Mobile: botão ENTRAR COM GOOGLE cortava/vazava em telas estreitas**
+  (`auth.py:tela_apresentacao`) — bug real confirmado com Playwright
+  (390/768/1280px, Streamlit rodando em Python 3.12, já que este
+  sandbox tem 3.11 por padrão — ver nota de ambiente abaixo): o botão
+  vivia dentro de `st.columns([1,1,1])` pra ficar centralizado no
+  desktop, o que o espremia em 1/3 da largura do painel (~100px a
+  390px) — "ENTRAR COM GOOGLE" não cabia. Removida a coluna (a própria
+  div do botão já tinha `max-width:320px`); a centralização real
+  (achado 2: `justify-content:center` no wrapper nunca fazia efeito,
+  porque o filho de fato é `div[data-testid="stButton"]`, que já
+  preenche 100% da linha sozinho) passou pro `margin:0 auto !important`
+  no próprio botão. Validado visualmente nos 3 breakpoints (screenshots
+  antes/depois, botão centralizado e texto completo nos 3).
+- **Pills sem quebra de linha em telas estreitas, fora de CALENDÁRIO/
+  RESEARCH/NEWS/paineis.py** (`style.css`): a correção de flex-wrap das
+  pills (`st.pills`/`segmented_control`) já existia, mas duplicada
+  identicamente em 4 arquivos — nunca chegou em MACRO/MERCADO/TOP
+  MERCADO/VISÃO GERAL, que também usam pills e tinham o mesmo bug.
+  Centralizada em `style.css` (infra compartilhada, pedido explícito
+  de preferir isso a regra por aba); removidas as 4 cópias duplicadas
+  (`ui/calendario_tab.py`, `ui/research_tab.py`, `ui/paineis.py`,
+  `ui/news_tab.py` — a última ficou sem `_injetar_css`/`_CSS_RESEARCH`
+  nenhum, já que isso era todo o conteúdo).
+- **Nota de ambiente**: este sandbox de auditoria tem Python 3.11.17
+  por padrão, mas o projeto usa sintaxe de f-string com aspas aninhadas
+  (`app.py`, `ui/mercado_tab.py`) que exige Python 3.12+ (PEP 701) —
+  `compileall`/testes desses 2 arquivos falham aqui por isso, não por
+  regressão (confirmado compilando com `python3.12` explícito, sem
+  erro). Validação real (testes, `compileall`, Playwright) rodou num
+  venv Python 3.12 criado só pra esta sessão.
+- **Testes**: suite completa (17 arquivos) verde em Python 3.12,
+  incluindo os 2 novos de `test_calendario_ui.py`; `test_mercado.py`
+  também passa em 3.12 (falha só em 3.11 pelo motivo acima).
+  `compileall`/pyflakes limpos nos arquivos tocados.
+- Não fiz (falta de tempo/risco maior que o ganho, ficam pro próximo
+  ciclo): revisão visual completa das 9 abas (Prioridade 2 do pedido —
+  só o achado do CALENDÁRIO foi tratado); validação visual real das
+  abas autenticadas (EQUITY/MACRO/MERCADO/...) — exigem login Google
+  real, não automatizável neste sandbox; só a tela de login/apresentação
+  (pública, sem auth) foi validada ao vivo no navegador.
+
 ## 2026-10-08 (chore: harden post-v1 terminal — FASE 8/9)
 
 Continuação controlada da melhoria contínua, partindo do estado

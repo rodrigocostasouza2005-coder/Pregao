@@ -37,22 +37,9 @@ _AVISO_IA_INDISPONIVEL = "Resumo por IA temporariamente indisponível — os lin
 _EXTRATOR_POR_CASA = {c["nome"]: c["extrator_texto"] for c in CASAS}
 
 # pills de filtro (Casa/Tipo/Ticker) quebram linha em vez de forcar
-# rolagem horizontal - sem isso, Tipo (ate 6 opcoes) ou Casa (varia com
-# quantas fontes estao ativas) podem estourar a largura da coluna de
-# 1/3 (st.columns(3)); mesma regra ja usada em ui/news_tab.py/ui/cvm_tab.py,
-# repetida aqui porque este modulo nao importava CSS de nenhum dos dois.
-_CSS_RESEARCH = """
-/* o elemento com display:flex de verdade e' um DIV filho direto de
-   stButtonGroup (o proprio stButtonGroup e' display:block) - achado
-   real corrigido no CALENDARIO (commit 919fabc) e propagado aqui: a
-   regra antiga mirava o pai display:block, onde nunca fazia efeito. */
-[data-testid="stButtonGroup"] { row-gap: 0.3rem; }
-[data-testid="stButtonGroup"] > div { flex-wrap: wrap !important; row-gap: 0.3rem; }
-"""
-
-
-def _injetar_css():
-    st.markdown(f"<style>{_CSS_RESEARCH}</style>", unsafe_allow_html=True)
+# rolagem horizontal em telas estreitas - correcao centralizada em
+# style.css (2026-10-08, auditoria de responsividade); este modulo nao
+# tem mais CSS proprio pra injetar.
 
 
 # recomendacoes/swing trade da Genial sao SEMPRE ao vivo (obter_recomendacoes/
@@ -548,7 +535,6 @@ def render_research(prefs: dict):
     data/research/base.py). Se a coleta atualizar algo, um st.rerun()
     reexibe a tela com os dados novos; se falhar, fica com o que ja tinha
     mostrado + um aviso de uma linha - nunca trava a tela."""
-    _injetar_css()
     st.markdown('<div class="painel-titulo">RESEARCH</div>', unsafe_allow_html=True)
 
     casas_ativas = _casas_ativas(prefs)

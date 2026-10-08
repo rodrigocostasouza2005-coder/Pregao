@@ -337,6 +337,21 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
     color: #000000 !important;
     font-weight: 600;
 }
+/* quebra de linha em telas estreitas (achado real, ja corrigido so' em
+   CALENDARIO/RESEARCH/NEWS/paineis.py - regra IDENTICA duplicada em 4
+   arquivos, nunca propagada pros outros que tambem usam st.pills/
+   segmented_control: MACRO, MERCADO, TOP MERCADO, VISAO GERAL e a busca
+   global do app.py ainda tinham pills com rotulo longo cortadas na
+   borda da coluna em vez de quebrar, em telas estreitas - mesmo bug,
+   so' que a correcao nunca chegou aqui porque nao existia um lugar
+   central pra ela. Centralizada aqui (infra compartilhada, nao mais
+   especifica por aba) - [data-testid="stButtonGroup"] por si so e'
+   display:block; quem precisa do flex-wrap e' o DIV filho direto, que
+   e' o container flex de verdade. A navegacao principal
+   (.st-key-nav_secao, mais abaixo) continua com scroll horizontal
+   proprio - aquela regra e' mais especifica e vence aqui de proposito. */
+[data-testid="stButtonGroup"] { row-gap: 0.3rem; }
+[data-testid="stButtonGroup"] > div { flex-wrap: wrap !important; row-gap: 0.3rem; }
 
 /* navegacao principal (camada 3 do header, redesign 2026-09-28): visual
    proprio, DIFERENTE do estilo generico de pills acima (que continua

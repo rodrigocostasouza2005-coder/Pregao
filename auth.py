@@ -78,10 +78,18 @@ div[class*="st-key-login-panel"] {{ animation: login-fade-in 0.45s ease-out; }}
 }}
 .login-preview-news div {{ color:var(--cinza); font-size:0.74rem; padding:0.12rem 0; opacity:0.85; }}
 
-div[class*="st-key-login-google-btn"] {{ display:flex; justify-content:center; margin-bottom:0.6rem; }}
+div[class*="st-key-login-google-btn"] {{ margin-bottom:0.6rem; }}
 div[class*="st-key-login-google-btn"] button {{
+    /* bug real (achado via Playwright, 2026-10-08): justify-content:center
+       no wrapper (regra removida acima) nunca centralizava de verdade - o
+       filho real do wrapper e' div[data-testid="stButton"] (display:block,
+       100% da largura do wrapper), que ja' preenche a linha inteira sozinho;
+       centralizar um filho que ja' ocupa 100% da linha nao faz nada visivel.
+       margin:auto no PROPRIO botao (ja' display:flex + max-width:320px)
+       centraliza de verdade, dentro do pai real, sem depender da largura
+       de nenhum ancestral. */
     display:flex !important; align-items:center; justify-content:center; gap:0.6rem;
-    width:100%; max-width:320px; min-height:48px;
+    width:100%; max-width:320px; min-height:48px; margin:0 auto !important;
     background-color:var(--painel-bg) !important; border:1px solid var(--borda) !important;
     color:var(--neutro) !important; font-weight:600 !important; font-size:0.85rem !important;
     letter-spacing:0.04em; border-radius:3px !important; box-shadow:none !important;
@@ -152,10 +160,18 @@ def tela_apresentacao():
             unsafe_allow_html=True,
         )
 
-        _, col, _ = st.columns([1, 1, 1])
-        with col:
-            if st.button("ENTRAR COM GOOGLE", width="stretch", key="login-google-btn"):
-                st.login()
+        # bug real de mobile (achado via Playwright, 2026-10-08, auditoria
+        # de responsividade): st.columns([1,1,1]) espremia o botao em 1/3
+        # da largura do painel pra centraliza-lo no desktop - em telas
+        # estreitas (390px testado) isso deixava a coluna com so' ~100px,
+        # texto "ENTRAR COM GOOGLE" nao cabia e vazava/cortava. A div do
+        # proprio botao (key=login-google-btn, ver _CSS_LOGIN acima) ja'
+        # e' display:flex;justify-content:center com max-width:320px no
+        # botao - centraliza sozinha, sem precisar da coluna de 1/3. Sem
+        # colunas, o botao usa a largura real do painel (ate' 320px),
+        # identico no desktop e correto no mobile.
+        if st.button("ENTRAR COM GOOGLE", width="stretch", key="login-google-btn"):
+            st.login()
 
         st.markdown(
             """

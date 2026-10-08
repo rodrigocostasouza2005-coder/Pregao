@@ -47,14 +47,11 @@ _MESES_NOME = [
 _NOMES_CASAS = [c["nome"] for c in CASAS]
 
 _CSS_CALENDARIO = """
-/* o elemento com display:flex de verdade e' um DIV filho direto de
-   stButtonGroup (o proprio stButtonGroup e' display:block) - achado
-   real (2026-10-05): as pills de CONTEXTO (rotulos mais longos, ex:
-   "HISTÓRICO (4)") estouravam a largura do painel lateral e ficavam
-   cortadas, porque o flex-wrap de antes mirava o elemento errado (o
-   pai display:block, onde a regra nunca fazia efeito nenhum). */
-[data-testid="stButtonGroup"] { row-gap: 0.3rem; }
-[data-testid="stButtonGroup"] > div { flex-wrap: wrap !important; row-gap: 0.3rem; }
+/* a correcao de flex-wrap das pills (rotulos longos, ex: "HISTÓRICO
+   (4)" de CONTEXTO, estourando a largura do painel) foi centralizada
+   em style.css (2026-10-08, auditoria de responsividade) - aplicava
+   so' a 4 arquivos (duplicados) e deixava MACRO/MERCADO/TOP MERCADO/
+   VISAO GERAL de fora do mesmo bug. Nada pra repetir aqui agora. */
 .cal-data-grupo {
     margin-top: 0.7rem; font-size: 0.68rem; color: var(--cinza);
     letter-spacing: 0.06em; border-bottom: 1px solid var(--borda); padding-bottom: 0.25rem;
@@ -562,6 +559,22 @@ def _painel_agenda(prefs: dict):
     if not tickers:
         st.info("Nenhum ticker nesse filtro.")
         return
+
+    # achado da auditoria de cobertura (2026-10-08): o calendario "parecia"
+    # mostrar so' 2-3 empresas - nao e' bug de coleta/parsing/dedup (a fonte
+    # CVM cobre as ~84 empresas de config.IBOVESPA_SETORES normalmente),
+    # e' o filtro padrao (MINHA WATCHLIST) + a watchlist padrao de quem
+    # nunca editou (config.TICKERS_PADRAO) ter so' 3 tickers. Essa legenda
+    # deixa o escopo atual explicito e aponta o caminho pra ver tudo, sem
+    # mudar o filtro/comportamento padrao nem inflar numero de empresas.
+    if filtro == "MINHA WATCHLIST":
+        total_universo = len(config.IBOVESPA_SETORES)
+        st.markdown(
+            f"<div class='cal-atualizado'>mostrando sua watchlist "
+            f"({len(tickers)} ativo{'s' if len(tickers) != 1 else ''}) · "
+            f"toque em TODOS para ver as {total_universo} empresas do Ibovespa cobertas</div>",
+            unsafe_allow_html=True,
+        )
 
     with st.spinner("Calculando calendário..."):
         eventos = calcular_calendario_cacheado(tickers)
