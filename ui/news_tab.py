@@ -773,6 +773,7 @@ def _renderizar_feed_editorial(itens_feed: list, watchlist: list, resumos_pronto
             _cartao_noticia(n, idx, True, prefixo, watchlist, resumos_prontos.get(n["link"]))
 
 
+@st.fragment
 def render_news(prefs: dict):
     """Ponto de entrada da aba NEWS, chamado pelo app.py. Feed editorial
     (fase 3) da watchlist: noticias + Morning Call/lives da Genial
@@ -783,7 +784,16 @@ def render_news(prefs: dict):
     uso anterior (obter_resumos_prontos - 1 leitura em lote pra tela
     inteira, nunca 1 chamada de IA/rede por card); resumo completo
     continua so' sob demanda, dentro do dialog (clique no título) -
-    comportamento inalterado."""
+    comportamento inalterado.
+
+    @st.fragment (perf, bug real corrigido 2026-10-08): so' o feed
+    (_renderizar_feed_editorial) era fragment - os pills de ticker/selo
+    e o botão VER MAIS, que ficam AQUI fora, continuavam disparando
+    rerun da PÁGINA INTEIRA a cada clique (o fragment interno não
+    blinda widgets fora dele). Isso incluía reconsultar o Supabase via
+    obter_noticias_watchlist/_lives_para_feed/obter_resumos_prontos de
+    novo a cada clique de filtro. Mesmo padrão já usado em RESEARCH
+    (ponto de entrada inteiro é o fragment, não só o feed interno)."""
     _injetar_css()
 
     with st.container(border=True):

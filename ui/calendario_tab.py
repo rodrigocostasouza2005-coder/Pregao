@@ -23,6 +23,7 @@ dict em memória."""
 
 import calendar
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -35,6 +36,8 @@ from data.eventos import (
 from data.news import obter_noticias
 from data.research import CASAS
 from data.research.store import listar_itens
+
+_TZ_SP = ZoneInfo("America/Sao_Paulo")
 
 _DIAS_SEMANA = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"]
 _MESES_NOME = [
@@ -363,7 +366,7 @@ def _painel_proximos_watchlist(prefs: dict):
         )
         return
 
-    hoje = date.today()
+    hoje = datetime.now(_TZ_SP).date()
     proximos_7d = sum(1 for e in eventos if (e["data"] - hoje).days <= 7)
     st.markdown(
         f"<div class='cinza' style='font-size:0.68rem; margin-bottom:0.35rem;'>{proximos_7d} evento(s) nos próximos 7 dias</div>",
@@ -422,7 +425,7 @@ def _grade_calendario(semanas: list, eventos_por_data: dict, mes_referencia, dia
         if chaves_fora:
             seletor = ", ".join(f".st-key-{c}" for c in chaves_fora)
             regras.append(f"{seletor} {{ opacity: 0.4; }}")
-    chave_hoje = f"cal_cel_{date.today().isoformat()}"
+    chave_hoje = f"cal_cel_{datetime.now(_TZ_SP).date().isoformat()}"
     regras.append(f".st-key-{chave_hoje} {{ border-color: var(--destaque) !important; }}")
     if dia_selecionado is not None:
         chave_sel = f"cal_cel_{dia_selecionado.isoformat()}"
@@ -563,7 +566,7 @@ def _painel_agenda(prefs: dict):
     with st.spinner("Calculando calendário..."):
         eventos = calcular_calendario_cacheado(tickers)
 
-    hoje = date.today()
+    hoje = datetime.now(_TZ_SP).date()
     eventos = _filtrar_janela(eventos, janela, hoje)
 
     if not eventos:
@@ -640,8 +643,16 @@ def _painel_agenda(prefs: dict):
         _painel_lateral(eventos_por_data, dia_selecionado)
 
 
+@st.fragment
 def render_calendario(prefs: dict):
-    """Ponto de entrada da aba CALENDÁRIO, chamado pelo app.py."""
+    """Ponto de entrada da aba CALENDÁRIO, chamado pelo app.py.
+
+    @st.fragment (perf, 2026-10-08): navegação de mês, seleção de
+    dia/evento e as pills de CONTEXTO disparavam st.rerun() da PÁGINA
+    INTEIRA a cada clique - mesmo sintoma ("tela pula pro topo", perde
+    posição de scroll, recalcula o resto da página sem necessidade) já
+    corrigido em CVM/RESEARCH/TOP MERCADO/NEWS. Mesmo padrão aplicado
+    aqui - não muda nenhum dado/cálculo, só o ESCOPO do rerun."""
     _injetar_css()
 
     with st.container(border=True):

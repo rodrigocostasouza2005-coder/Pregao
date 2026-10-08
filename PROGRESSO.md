@@ -3027,3 +3027,92 @@ idempotente) + `tests/test_news_fase3.py`,
 `tests/test_research_fase3.py` (novos) e `tests/test_ia_cache.py`
 (estendido). Nenhuma mudança em `app.py`, CALENDÁRIO, CVM, MACRO,
 MERCADO, preços, Supabase (arquitetura) ou no estilo "wire" original.
+
+## FASE — ciclo de melhoria contínua pós-FASE 3 (2026-10-08)
+
+Continuação autônoma pedida explicitamente nesses termos: "não criar
+funcionalidades aleatórias — primeiro entender profundamente o que já
+existe, o que foi corrigido e como o usuário realmente utiliza o
+Pregão, depois encontrar melhorias". Ciclo AUDITAR → IDENTIFICAR →
+PRIORIZAR → IMPLEMENTAR → TESTAR → REVISAR → COMMITAR, sem perguntar o
+que fazer.
+
+**Guarda de entrada**: antes de qualquer alteração, confirmado via
+`git log origin/main` que a FASE 3 (feed editorial NEWS+RESEARCH) de
+fato estava concluída e pushada em main (commit `3666cf3`), com
+CHANGELOG/PROGRESSO/testes reais — não só relatório de intenção. Só
+então a tarefa prosseguiu.
+
+**Auditoria**: 3 agentes de leitura em paralelo (nenhum alterou
+código), cruzando achados contra PROGRESSO.md/BACKLOG.md pra não
+redescobrir decisões já tomadas: (1) NEWS+RESEARCH, (2) MERCADO/EQUITY/
+TOP MERCADO/VISÃO GERAL, (3) MACRO/CVM/CALENDÁRIO + transversal
+(integração/performance/manutenção). ~27 achados reais no total,
+priorizados por impacto×esforço; os de impacto alto/médio com esforço
+baixo/médio foram implementados nesta mesma sessão (lista completa e
+justificativa de cada um em CHANGELOG.md, entrada "ciclo de melhoria
+contínua pós-FASE 3"). Os que exigiam decisão estratégica maior (ex:
+Company 360 no EQUITY, link CVM→CALENDÁRIO) ou tinham risco
+desproporcional ao ganho (ex: coluna `modelo` do cache de IA, refactor
+de `_layout_grafico_escuro` em 4 arquivos) foram registrados em
+BACKLOG.md ("Auditoria 2026-10-08"), não implementados às pressas.
+
+**Decisões de implementação que valem registrar** (raciocínio, não só
+o "o quê" — esse já está no CHANGELOG):
+
+- `periodo_pendente` (CALENDÁRIO) tratava "ticker sem CNPJ mapeado" e
+  "ticker com CNPJ mas sem documento ainda" como o MESMO caso (ambos
+  `obter_documentos_cvm` retornando `[]`) — só o primeiro é um bug (prazo
+  fabricado pra quem nunca vai reportar); o segundo é comportamento
+  correto e já tinha teste cobrindo exatamente essa intenção (`test_7`
+  antigo). A correção precisou distinguir os dois casos via
+  `obter_cnpj(ticker) is None`, não simplesmente "nunca calcular prazo
+  quando `[]`" — isso quebraria o caso legítimo. `tests/test_eventos.py`
+  reescrito pra isolar os 2 cenários (`test_7`/`test_7b`), com CNPJ fake
+  default pro resto do arquivo via `patch.object` em volta do runner
+  `__main__` (evita precisar editar 15+ `with patch.object(...)` um por
+  um, já que quase todo o resto do arquivo representa ticker CVM-regulado
+  de verdade).
+- `obter_cotacoes_lote` (novo, `data/mercado.py`) foi aplicado só no
+  ticker tape do header e na VISÃO GERAL, NÃO na watchlist da sidebar
+  nem no comparativo da EQUITY (mesmo padrão N+1 lá) — esses 2 também
+  buscam `obter_indicadores(t)` por ticker (sem equivalente em lote
+  hoje), então migrar só a cotação resolveria metade do problema;
+  registrado em BACKLOG.md em vez de fazer um fix parcial.
+- `_bloco_contexto_news`/`_linha_relatorio` (RESEARCH): a causa raiz do
+  bloco repetido não era "falta de deduplicação visual" — era a função
+  ser chamada por RELATÓRIO dentro de um loop por TICKER, com o
+  gate "resumo já existe" satisfeito pra cada um. Fix: parâmetro
+  `mostrar_contexto_news` (default `True`, preserva o Research Radar
+  sem mudança) + `_linha_relatorio` passa a retornar se exibiu resumo,
+  pra `_painel_watchlist` decidir 1x por ticker, não em cada chamada.
+- `_data_publicacao_brt` (Genial Lives): a data crua do feed (UTC) só
+  "erra o dia" perto da virada de meia-noite UTC (~21h BRT) — o teste
+  de regressão (`test_1a2`) usa exatamente esse horário-limite
+  (01:30 UTC = 22:30 BRT do dia anterior) pra provar a correção, não
+  um horário qualquer onde o bug não se manifestaria.
+
+**Validação**: suíte completa (14 arquivos de teste, incluindo 4 novos:
+`test_cvm.py`, `test_mercado.py`, `test_news_tickers.py`,
+`test_news_relevancia.py`) + `compileall` limpos. `pyflakes` rodado
+manualmente nos arquivos tocados (achou 3 imports/variáveis mortas só
+nos testes novos escritos nesta sessão — corrigidos antes do commit).
+Validação de nível Streamlit via harness `AppTest` único
+(`/tmp/.../scratchpad/apptest_fase4.py`, fora do repo) cobrindo as 6
+telas tocadas (CALENDÁRIO, NEWS, VISÃO GERAL ×2, RESEARCH, CVM) — todas
+renderizam sem exceção com o fragment/cache/timezone novos; inclui
+asserção de conteúdo (CDI mostra "+0,05%" calculado, não mais "+0,00%"
+fixo; expander de histórico aparece com 2+ snapshots). **Nota de
+validação visual (honesta, mesma limitação de fases anteriores)**: este
+ambiente não tem Playwright/Chromium configurado contra o app Streamlit
+completo — o harness `AppTest` prova que renderiza sem exceção e o
+conteúdo calculado está correto, não prova como fica visualmente na
+tela (cor exata, densidade, alinhamento). Pendência real pro Rodrigo
+confirmar em `pregao.streamlit.app` depois do deploy.
+
+**Arquivos alterados**: `data/eventos.py`, `data/cvm.py`,
+`data/mercado.py`, `data/news.py`, `data/research/genial_lives.py`,
+`app.py`, `ui/calendario_tab.py`, `ui/news_tab.py`, `ui/research_tab.py`,
+`ui/visao_geral.py`, `ui/workspace.py`, `MANUAL.md` + testes novos/
+estendidos listados acima. Nenhuma mudança em `auth.py`, `config.py`,
+`coletor_local.py`, schema SQL, ou nos módulos CVM/MACRO não citados.

@@ -140,6 +140,91 @@ def test_7_nenhum_resumo_de_ia_e_chamado():
              chamadas_ia == [], f"(chamadas_ia={chamadas_ia})")
 
 
+# ============================================================
+# bug real corrigido (2026-10-08): _painel_watchlist mostrava o bloco
+# CONTEXTO RECENTE · NEWS 1x por RELATORIO com resumo cacheado, nao 1x
+# por TICKER - um ticker com 2+ relatorios repetia o mesmo bloco de
+# noticias 2+ vezes na tela.
+# ============================================================
+
+def _relatorio(ticker, titulo, resumo="Resumo ja cacheado."):
+    return {
+        "ticker": ticker, "tickers": [ticker], "titulo": titulo, "casa": "Casa Teste",
+        "tipo": "ACOES", "data": "2026-10-01", "autor": "", "link": f"https://exemplo.com/{titulo}",
+        "resumo": resumo,
+    }
+
+
+def test_8_contexto_news_aparece_so_1x_por_ticker_mesmo_com_varios_relatorios():
+    relatorios = [
+        _relatorio("PETR4", "Relatorio 1"),
+        _relatorio("PETR4", "Relatorio 2"),
+        _relatorio("PETR4", "Relatorio 3"),
+    ]
+    chamadas = []
+    prefs = {"watchlist": ["PETR4"], "formato_numerico": "BR"}
+    with patch.object(research_tab_mod, "_bloco_contexto_news", side_effect=lambda tickers: chamadas.append(list(tickers))), \
+         patch.object(research_tab_mod.st, "markdown"), patch.object(research_tab_mod, "_bloco_resumo"), \
+         patch.object(research_tab_mod, "_bloco_o_que_mudou"):
+        research_tab_mod._painel_watchlist(prefs, relatorios, [], [], [])
+    _checar("8a _bloco_contexto_news chamado exatamente 1 vez (nao 1 por relatorio)",
+            len(chamadas) == 1, f"(chamadas={chamadas})")
+    _checar("8b chamado com o ticker certo (PETR4)", chamadas == [["PETR4"]], f"(chamadas={chamadas})")
+
+
+def test_9_contexto_news_nunca_aparece_sem_nenhum_resumo_exibido():
+    relatorios = [_relatorio("VALE3", "Relatorio sem resumo ainda", resumo=None)]
+    chamadas = []
+    prefs = {"watchlist": ["VALE3"], "formato_numerico": "BR"}
+    with patch.object(research_tab_mod, "_bloco_contexto_news", side_effect=lambda tickers: chamadas.append(list(tickers))), \
+         patch.object(research_tab_mod.st, "markdown"), patch.object(research_tab_mod.st, "button", return_value=False), \
+         patch.object(research_tab_mod, "_bloco_o_que_mudou"):
+        research_tab_mod._painel_watchlist(prefs, relatorios, [], [], [])
+    _checar("9 sem nenhum resumo exibido pro ticker -> CONTEXTO RECENTE nunca aparece",
+            chamadas == [], f"(chamadas={chamadas})")
+
+
+# ============================================================
+# historico de recomendacao exposto na UI (2026-10-08): so' existia na
+# camada de dado (data/research/historico.py:historico_ticker), nunca
+# chamado por nenhuma tela - achado real desta sessao.
+# ============================================================
+
+class _ExpanderFake:
+    def __init__(self, chamadas, titulo):
+        chamadas.append(titulo)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_10_historico_recomendacao_nao_aparece_com_menos_de_2_snapshots():
+    chamadas_expander = []
+    with patch.object(research_tab_mod, "historico_ticker", return_value=[{"recomendacao": "COMPRA", "preco_alvo": 40.0, "capturado_em": "2026-10-01T10:00:00+00:00"}]), \
+         patch.object(research_tab_mod.st, "expander", side_effect=lambda t: _ExpanderFake(chamadas_expander, t)):
+        research_tab_mod._expander_historico_recomendacao("PETR4", "BR")
+    _checar("10 so' 1 snapshot -> nenhum expander (nao ha' 'evolucao' pra mostrar)", chamadas_expander == [])
+
+
+def test_11_historico_recomendacao_aparece_com_2_ou_mais_snapshots():
+    historico = [
+        {"recomendacao": "COMPRA", "preco_alvo": 42.0, "capturado_em": "2026-10-05T10:00:00+00:00"},
+        {"recomendacao": "MANTER", "preco_alvo": 40.0, "capturado_em": "2026-09-01T10:00:00+00:00"},
+    ]
+    chamadas_expander = []
+    chamadas_historico = []
+    with patch.object(research_tab_mod, "historico_ticker", side_effect=lambda casa, ticker, limite=10: (chamadas_historico.append((casa, ticker)), historico)[1]), \
+         patch.object(research_tab_mod.st, "expander", side_effect=lambda t: _ExpanderFake(chamadas_expander, t)), \
+         patch.object(research_tab_mod.st, "markdown"):
+        research_tab_mod._expander_historico_recomendacao("PETR4", "BR")
+    _checar("11a 2+ snapshots -> expander aparece", len(chamadas_expander) == 1, f"(chamadas={chamadas_expander})")
+    _checar("11b historico_ticker chamado com a casa certa (Genial Analisa) e o ticker certo",
+            chamadas_historico == [("Genial Analisa", "PETR4")], f"(chamadas={chamadas_historico})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

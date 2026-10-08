@@ -103,6 +103,32 @@ def _linha_papel(df: pd.DataFrame, ticker: str, symbol: str) -> dict | None:
         return None
 
 
+def obter_cotacoes_lote(tickers: tuple) -> dict:
+    """{ticker: {"preco", "variacao_pct", "erro"}} pra VARIOS tickers de
+    uma vez, via UMA UNICA requisicao em lote (_baixar_lote, mesmo
+    mecanismo de obter_panorama_ibovespa) - pensado pra telas que mostram
+    a watchlist inteira (ex: VISÃO GERAL, ticker tape do header). N+1
+    real corrigido (2026-10-08): essas telas chamavam
+    data/prices.py:obter_cotacao (1 yf.Ticker().fast_info por papel) num
+    loop - com watchlist de 10+ tickers e cache (30s) expirado, a
+    renderização ficava bloqueada numa sequência de round-trips
+    sequenciais ao Yahoo. Ticker que o lote não trouxe (symbol não
+    respondeu/recém-listado) cai com erro, nunca quebra o resto."""
+    if not tickers:
+        return {}
+    df = _baixar_lote(tuple(tickers))
+    if df is None:
+        return {t: {"erro": "fonte de cotação indisponível"} for t in tickers}
+    resultado = {}
+    for t in tickers:
+        linha = _linha_papel(df, t, _para_symbol_yf(t))
+        if linha is None:
+            resultado[t] = {"erro": "sem dado"}
+        else:
+            resultado[t] = {"preco": linha["preco"], "variacao_pct": linha["variacao_pct"], "erro": None}
+    return resultado
+
+
 @st.cache_data(ttl=_TTL_LOTE, show_spinner=False)
 def obter_panorama_ibovespa() -> list:
     """Lista de dicts {ticker, setor, preco, variacao_pct,

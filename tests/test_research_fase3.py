@@ -60,6 +60,53 @@ def test_1a_publicado_em_extraido_do_mesmo_feed():
     _checar("1c 'publicado_em' tem o timestamp COMPLETO (ISO, com hora)", relatorios[0]["publicado_em"] == "2026-10-08T08:30:00+00:00")
 
 
+def test_1a2_data_usa_fuso_de_sp_nunca_a_data_crua_em_utc():
+    # bug real corrigido (2026-10-08): video publicado as 22:30 BRT (ex:
+    # "Fechamento de Mercado") vira 01:30 UTC do dia SEGUINTE - o campo
+    # 'published' (string crua do feed, em UTC) ja' mostra a data
+    # errada. 'data' precisa vir da CONVERSAO pro fuso de Brasilia, nao
+    # da string crua.
+    entry = _EntryFake({
+        "title": "Fechamento de Mercado - 08/10",
+        "yt_videoid": "def456",
+        "published": "2026-10-09T01:30:00+00:00",
+        "published_parsed": (2026, 10, 9, 1, 30, 0, 0, 0, 0),
+    })
+    feed_fake = MagicMock()
+    feed_fake.bozo = False
+    feed_fake.entries = [entry]
+    with patch.object(lives_mod.feedparser, "parse", return_value=feed_fake):
+        relatorios = lives_mod.obter_relatorios()
+    _checar("1a2 'data' e' 08/10 em BRT (nao 09/10, a data crua em UTC)",
+             relatorios[0]["data"] == "2026-10-08", f"(data={relatorios[0]['data']!r})")
+    _checar("1a2b 'publicado_em' continua em UTC (ISO completo, intocado - so' 'data' muda de fuso)",
+             relatorios[0]["publicado_em"] == "2026-10-09T01:30:00+00:00")
+
+
+def test_1c_item_malformado_nao_derruba_os_demais():
+    # isolado por item (2026-10-08): entry sem 'title' (AttributeError/
+    # TypeError dentro de _identificar_programa) nao pode descartar os
+    # videos que ja parsearam certo.
+    entry_boa = _EntryFake({
+        "title": "Morning Call - 08/10", "yt_videoid": "abc123",
+        "published": "2026-10-08T08:30:00+00:00",
+        "published_parsed": (2026, 10, 8, 8, 30, 0, 0, 0, 0),
+    })
+
+    class _EntryQuebra(dict):
+        def get(self, *_a, **_k):
+            raise RuntimeError("feed malformado")
+
+    feed_fake = MagicMock()
+    feed_fake.bozo = False
+    feed_fake.entries = [_EntryQuebra(), entry_boa]
+    with patch.object(lives_mod.feedparser, "parse", return_value=feed_fake):
+        relatorios = lives_mod.obter_relatorios()
+    _checar("1c item malformado e' ignorado, o item bom continua aparecendo",
+             len(relatorios) == 1 and relatorios[0]["titulo"] == "Morning Call - 08/10",
+             f"(relatorios={relatorios})")
+
+
 def test_1b_sem_published_parsed_publicado_em_e_none():
     """Nunca inventa hora - se o feed nao trouxer o campo estruturado,
     publicado_em fica None (quem usa cai pro meio-dia so' pra ordenar,

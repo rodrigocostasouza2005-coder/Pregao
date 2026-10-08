@@ -76,14 +76,17 @@ hierarquia RI>NEWS>PRAZO_CVM, só que na ponta do consumo em vez da
 coleta. Nenhuma lógica de UI/dedup/cache-resiliente mudou."""
 
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 import config
-from data.cvm import obter_documentos_cvm
+from data.cvm import obter_cnpj, obter_documentos_cvm
 from data.ibovespa import obter_composicao_oficial
 from data.prices import obter_nome_yf
 from data.supabase_client import obter_cliente
+
+_TZ_SP = ZoneInfo("America/Sao_Paulo")
 
 STATUS_CONFIRMADO = "CONFIRMADO"
 STATUS_ESTIMADO = "ESTIMADO"
@@ -189,7 +192,20 @@ def periodo_pendente(ticker: str, hoje: date = None) -> tuple | None:
     duplicar a logica de "qual trimestre procurar" - o coletor precisa
     saber o periodo ANTES de tentar RI/NEWS, pra saber o que buscar na
     pagina/noticia (ex: "3T26")."""
-    hoje = hoje or date.today()
+    # date.today() usa o fuso do servidor (UTC no Streamlit Cloud) - perto
+    # da meia-noite UTC (~21h em Brasilia) isso considerava um trimestre
+    # "encerrado" ~3h antes da hora real em BRT (achado real, 2026-10-08).
+    hoje = hoje or datetime.now(_TZ_SP).date()
+    # bug real corrigido (2026-10-08): obter_documentos_cvm devolve []
+    # tanto pro ticker SEM CNPJ mapeado (nunca protocola na CVM - ex. BDR
+    # estrangeiro como MELI34/AAPL34) quanto pro ticker COM CNPJ que so'
+    # ainda nao tem documento no periodo. O prazo regulatorio (Instrucao
+    # CVM 480) so' existe pra quem de fato protocola - sem CNPJ mapeado,
+    # calcular um prazo aqui fabricava um evento PRAZO_CVM pra empresa
+    # que nunca vai reportar nesse regime (mesma limitacao ja' documentada
+    # em MANUAL.md pra aba CVM, que o CALENDARIO nao aplicava).
+    if obter_cnpj(ticker) is None:
+        return None
     documentos = obter_documentos_cvm(ticker)
     if documentos is None:
         return None

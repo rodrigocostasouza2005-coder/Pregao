@@ -116,3 +116,69 @@ tinha sido limpo. Confirmado lendo o código atual (não só memória):
 - Morning Call da Genial: transcrição + resumo automático. Fase futura,
   ainda não desenhada (fonte, formato do resumo, frequência de
   atualização etc. — definir quando chegar a vez).
+
+## Auditoria 2026-10-08 — itens revistos, não implementados nesta rodada
+
+Rodada de melhoria contínua (auditoria + correção autônoma) depois da
+FASE 3 (feed editorial NEWS+RESEARCH). Os achados de alto impacto/baixo
+esforço foram corrigidos nesta mesma sessão (ver CHANGELOG.md/PROGRESSO.md
+pra lista completa). Os itens abaixo foram identificados mas
+deliberadamente NÃO implementados — ou por exigirem decisão estratégica
+maior, ou por risco/esforço desproporcional ao ganho nesta rodada:
+
+- **CVM não linka de volta pro CALENDÁRIO/RESEARCH**: o CALENDÁRIO já
+  conecta CVM/RESEARCH/NEWS/HISTÓRICO num hub por evento, mas a aba CVM
+  em si é deliberadamente isolada (não importa nada de outras abas) e
+  não oferece esse link de volta a partir de um documento. Lacuna de
+  integração real, não bug — decisão de produto (vale a pena um link
+  "ver no CALENDÁRIO" a partir de um documento CVM?).
+- **Sidebar watchlist (app.py, fragment da barra lateral) e painel
+  COMPARATIVO DA WATCHLIST (aba EQUITY)** ainda chamam
+  `data/prices.py:obter_cotacao` 1x por ticker num loop (mesmo padrão
+  N+1 já corrigido no ticker tape do header e na VISÃO GERAL via
+  `data/mercado.py:obter_cotacoes_lote`). Não corrigido aqui: o painel
+  da EQUITY também busca `obter_indicadores(t)` por ticker (P/L, ROE
+  etc. — sem equivalente em lote hoje), então a migração para
+  `obter_cotacoes_lote` sozinha só resolveria a metade do problema;
+  fazer os dois precisa de mais desenho (TTL compartilhado, formato de
+  retorno) do que cabia nesta rodada.
+- **Coluna `modelo` de `resumos_ia_cache` sempre vazia**
+  (`data/ia_cache.py:_salvar_resultado`): metadado de auditoria/debug,
+  não afeta o resumo exibido. Não corrigido por risco de introduzir um
+  bug de precisão pior que o atual — o valor certo é o modelo que DE
+  FATO gerou o resumo (pode ser o principal ou o fallback, ver
+  `config.obter_modelo_groq_fallback`), não simplesmente
+  `config.obter_modelo_groq()`; precisa que `resumir.py`/`news.py`
+  passem explicitamente qual modelo respondeu, não só o nome da coluna
+  virar não-vazio.
+- **`_layout_grafico_escuro` (template Plotly dark) duplicado** em
+  `app.py`, `ui/mercado_tab.py`, `ui/macro_tab.py` e inline em
+  `ui/visao_geral.py`. Candidato a função única em `ui/graficos.py`
+  (já é o módulo compartilhado de infra de gráfico) — não feito nesta
+  rodada por ser refactor transversal a 4 arquivos sem bug ativo por
+  trás (risco > ganho pro escopo "corrigir, não refatorar tudo").
+- **Chave de `session_state` dos seletores DIA/SEMANA/MÊS
+  (`ui/mercado_tab.py:_escolha_estavel_mercado`) é compartilhada entre
+  MERCADO e VISÃO GERAL** (que reaproveita os mesmos painéis
+  diretamente) — escolher "SEMANA" numa aba muda a outra também. Pode
+  ser intencional (preferência persistente entre abas) ou efeito
+  colateral do reuso de função; não alterado sem confirmar a intenção
+  com o Rodrigo.
+- **`_cache_eventos()` (cache de último-dado-válido do CALENDÁRIO,
+  `data/eventos.py`) nunca é podado** — cresce lentamente ao longo de
+  meses/anos (1 entrada por `(ticker, período)` já calculado). Vazamento
+  de memória lento, não crítico; limpar entradas de períodos encerrados
+  ao calcular o período atual seria a correção, não feita por baixa
+  prioridade.
+- **Testes de `data/news.py` ainda têm lacuna no nível de integração**:
+  `tests/test_news_relevancia.py` (novo, nesta rodada) cobre a fundo as
+  peças PURAS do motor (`_relevante`, `_tokens_similaridade`/
+  `_similaridade`, `_calcular_score`), mas `_agrupar`/`_mesmo_grupo`
+  (orquestração completa de dedup entre itens de busca reais, com
+  datas/múltiplas fontes) ainda não têm teste de ponta a ponta.
+  `ui/news_tab.py:_bloco_contexto_research` (integração NEWS→RESEARCH
+  dentro do dialog, nova na FASE 3) também continua sem teste direto.
+- **EQUITY não é "Company 360"** (contexto de Research/preço-alvo
+  integrado à ficha do ativo) — pendência já conhecida de ciclos
+  anteriores, reconfirmada nesta auditoria; decisão de produto grande
+  demais pra essa rodada.

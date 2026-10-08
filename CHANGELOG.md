@@ -3,6 +3,105 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-08 (fix/feat/perf/test: ciclo de melhoria contínua pós-FASE 3)
+
+Auditoria completa (leitura real do código, não só do relatório da fase
+anterior) em NEWS/RESEARCH/MERCADO/EQUITY/VISÃO GERAL/MACRO/CVM/
+CALENDÁRIO, seguida de correção autônoma dos achados de maior impacto.
+Detalhe completo das decisões em PROGRESSO.md; itens revistos e
+deixados pra depois em BACKLOG.md ("Auditoria 2026-10-08").
+
+- **CALENDÁRIO não fabrica mais PRAZO_CVM pra ticker sem CNPJ mapeado**
+  (`data/eventos.py:periodo_pendente`): BDR estrangeiro (MELI34 etc,
+  nunca protocola ITR/DFP na CVM nesse regime) parava de ser
+  distinguido de uma empresa CVM-regulada que só ainda não tem
+  documento no período — agora checa `obter_cnpj(ticker)` antes de
+  calcular prazo, mesma limitação já documentada pra aba CVM.
+- **"nan" literal corrigido** em `data/cvm.py:obter_documentos_cvm`
+  (`data_referencia` vindo do CSV da CVM como `float('nan')`, campo
+  vazio, aparecia como "(ref. nan)" no CALENDÁRIO → HISTÓRICO —
+  `bool(nan)` é `True` em Python, escapava do filtro antigo).
+- **Fuso horário do CALENDÁRIO corrigido pra America/Sao_Paulo**
+  (`data/eventos.py`, `ui/calendario_tab.py`): `date.today()` usava o
+  fuso do servidor (UTC no Streamlit Cloud) — perto da meia-noite UTC
+  (~21h BRT) considerava um trimestre encerrado ~3h antes da hora real
+  e destacava a célula de HOJE errada por até 3h todo dia.
+- **CVM para de reescrever a watchlist inteira no Supabase a cada
+  clique**: `obter_documentos_cvm`/`obter_documentos_watchlist`
+  (`data/cvm.py`) agora cacheados (`st.cache_data`, mesmo TTL de 6h da
+  fonte) — a aba roda dentro de `@st.fragment` desde 2026-10-01, e cada
+  clique em filtro/pill/busca reexecutava o upsert inteiro mesmo sem
+  documento novo.
+- **CALENDÁRIO ganha `@st.fragment`** (`ui/calendario_tab.py`):
+  navegação de mês/seleção de dia/pills de CONTEXTO disparavam rerun
+  da página inteira a cada clique — mesmo padrão já corrigido em
+  CVM/RESEARCH/TOP MERCADO/NEWS.
+- **Variação do CDI na VISÃO GERAL deixa de ser fabricada**
+  (`ui/visao_geral.py:_painel_mercado_agora`): o card "DI (CDI anual.)"
+  mostrava sempre "+0,00%" fixo (hardcoded, nunca calculado) — agora
+  calcula a variação real (p.p.) entre as 2 últimas leituras do CDI
+  anualizado; sem leitura suficiente mostra "—", nunca mais um número
+  inventado.
+- **N+1 de cotação corrigido no header (ticker tape) e na VISÃO GERAL**
+  (`data/mercado.py:obter_cotacoes_lote`, nova função, reaproveita
+  `_baixar_lote`/`_linha_papel` já usados por `obter_panorama_ibovespa`):
+  `app.py:_ticker_tape` e `ui/visao_geral.py:_painel_watchlist_compacta`
+  faziam 1 `yf.Ticker().fast_info` POR TICKER da watchlist, sequencial —
+  agora é 1 única requisição em lote. Sidebar/EQUITY comparativo ainda
+  não migrados (ver BACKLOG.md — também buscam indicadores por ticker).
+- **Rótulo "atraso de ~15 min" da EQUITY passa a respeitar pregão
+  fechado** (`app.py`): fora do horário de pregão (fim de semana/
+  feriado/após 17h) misturava "hora em que a página renderizou" com
+  "hora real da cotação" — agora mostra "cotação de fechamento (mercado
+  fechado)" usando `_pregao_esta_aberto` (já existia, só não era
+  reaproveitada aqui).
+- **Morning Call/lives da Genial: `data` deixa de vir em UTC crua**
+  (`data/research/genial_lives.py`): vídeo publicado perto das 21h+ BRT
+  (típico do "Fechamento de Mercado") caía no dia UTC seguinte —
+  `publicado_em` (hora completa) continua em UTC, mas `data` (usada por
+  retenção/filtro/selo NOVO do Research Radar) agora vem da conversão
+  pro fuso de Brasília. Coleta também isolada por item (1 vídeo
+  malformado não derruba os demais, mesmo padrão de `xp.py`).
+- **NEWS ganha `@st.fragment` no ponto de entrada inteiro**
+  (`ui/news_tab.py:render_news`): só o feed interno era fragment — os
+  pills de ticker/selo e o botão VER MAIS, fora dele, continuavam
+  disparando rerun da página inteira (e reconsultando Supabase) a cada
+  clique. Mesmo padrão já usado em RESEARCH.
+- **Código de contrato futuro (WDOV26/WINV26 etc) para de ser marcado
+  como ticker** nas tags de notícia do TOP MERCADO (`data/news.py:
+  _tickers_no_titulo`): filtra pelo sufixo numérico REAL de ticker B3
+  (ação/unit/BDR), não só "4 letras + 1-2 dígitos".
+- **Histórico de recomendação exposto na UI** (`ui/research_tab.py`):
+  `data/research/historico.py:historico_ticker` existia só na camada de
+  dado desde a fase RESEARCH original — agora aparece num expander
+  fechado por padrão na watchlist, quando há 2+ snapshots.
+- **Bloco "CONTEXTO RECENTE · NEWS" deixa de repetir por relatório**
+  (`ui/research_tab.py:_painel_watchlist`): ticker com 3-4 relatórios
+  com resumo já cacheado repetia o mesmo bloco de notícias 3-4 vezes —
+  agora aparece 1x por ticker, depois do loop de relatórios.
+- **"—" de potencial ausente deixa de aparecer verde**
+  (`ui/research_tab.py`): `(potencial or 0) >= 0` classificava a
+  ausência de dado como "alta" (span verde); agora só classifica
+  alta/baixa quando há potencial real.
+- **HTML não escapado corrigido** em 2 pontos de `ui/research_tab.py`
+  (recomendação/status vindos da Genial) — mesmo tratamento que
+  `ui/news_tab.py` já aplicava pro mesmo tipo de dado.
+- **Testes novos** (nenhum arquivo quebrado — suíte inteira + compileall
+  seguem verdes): `tests/test_cvm.py` (zero cobertura antes),
+  `tests/test_mercado.py` (zero cobertura antes — inclui regressão do
+  bug "+NaN%" do treemap já documentado), `tests/test_news_tickers.py`,
+  `tests/test_news_relevancia.py` (motor de relevância/dedup/score de
+  `data/news.py`, zero cobertura direta antes), + extensões em
+  `tests/test_eventos.py`, `tests/test_research_fase3.py`,
+  `tests/test_research_news_context.py`. Validado também via harness
+  AppTest (scratchpad, fora do repo) nas 6 telas tocadas — sem exceção,
+  sem acesso a browser real neste ambiente (mesma limitação documentada
+  em fases anteriores).
+- **Docs**: nova seção CALENDÁRIO em MANUAL.md (não existia desde que a
+  aba foi criada); docstring desatualizado de `ui/workspace.py`
+  corrigido (dizia que VISÃO GERAL ainda não tinha migrado pro
+  workspace modular — já tinha, desde a ETAPA 5).
+
 ## 2026-10-08 (feat: FASE 3 — feed editorial NEWS + integração RESEARCH)
 
 - **NOTÍCIAS vira um feed editorial** (`ui/news_tab.py`): cada item vira

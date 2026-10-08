@@ -88,6 +88,13 @@ _PALAVRAS_MERCADO_SCORE = {
 # pra validar se o ticker existe de verdade (isso e' com yfinance)
 _TICKER_NA_MANCHETE = re.compile(r"\b[A-Z]{4}\d{1,2}\b")
 
+# sufixo numerico real de ticker B3 (acao ON=3/PN=4/PNA-C=5-8, units/ETFs/
+# FIIs=11, BDRs=32-39) - sem isso, _TICKER_NA_MANCHETE tambem casava
+# codigo de contrato futuro (ex: WDOV26, WINV26 - 4 letras + ano com 2
+# digitos, mesma forma de um ticker) e mostrava como se fosse uma acao
+# nas tags do card/dialog da noticia (achado real, 2026-10-08).
+_SUFIXOS_TICKER_VALIDOS = {"3", "4", "5", "6", "7", "8", "9", "11", "32", "33", "34", "35", "36", "37", "38", "39"}
+
 # --- Score de confiabilidade: fontes e palavras-chave --------------------
 
 # veiculos financeiros/economicos estabelecidos - casamento por substring
@@ -767,7 +774,9 @@ def obter_noticias_watchlist(tickers: list) -> tuple:
 
 
 def _tickers_no_titulo(titulo: str) -> list:
-    return sorted(set(_TICKER_NA_MANCHETE.findall(titulo)))
+    candidatos = _TICKER_NA_MANCHETE.findall(titulo)
+    validos = {c for c in candidatos if re.match(r"[A-Z]{4}(\d+)$", c).group(1) in _SUFIXOS_TICKER_VALIDOS}
+    return sorted(validos)
 
 
 def _montar_item_mercado(entry, veiculo_fixo: str = None):

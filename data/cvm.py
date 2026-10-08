@@ -238,6 +238,7 @@ def _documentos_brutos(cnpj: str):
     return pd.concat(partes).to_dict("records")
 
 
+@st.cache_data(ttl=_TTL_DOCUMENTOS, show_spinner=False)
 def obter_documentos_cvm(ticker: str):
     """Documentos oficiais recentes (fato relevante, comunicado ao
     mercado, proventos, calendario) de um ticker. None se a fonte
@@ -265,7 +266,11 @@ def obter_documentos_cvm(ticker: str):
             "categoria_original": linha["Categoria"],
             "assunto": _limpar_texto(linha.get("Assunto")) or _limpar_texto(linha.get("Tipo")) or linha["Categoria"],
             "data": data_entrega.isoformat(),
-            "data_referencia": linha.get("Data_Referencia"),
+            # _limpar_texto ja' filtra NaN (campo vazio no CSV da CVM virando
+            # float('nan') via pandas) - sem isso, "nan" aparecia literalmente
+            # na UI (ex: CALENDARIO -> HISTORICO "(ref. nan)"), porque
+            # bool(float('nan')) e' True em Python (achado real, 2026-10-08).
+            "data_referencia": _limpar_texto(linha.get("Data_Referencia")),
             "link": linha["Link_Download"],
             "destaque": tipo == "FATO_RELEVANTE",
         })
@@ -273,6 +278,7 @@ def obter_documentos_cvm(ticker: str):
     return resultado
 
 
+@st.cache_data(ttl=_TTL_DOCUMENTOS, show_spinner=False)
 def obter_documentos_watchlist(tickers: list) -> tuple:
     """Agrega obter_documentos_cvm de varios tickers. Retorna (documentos,
     falhas). Ao final de uma coleta com sucesso, grava no Supabase (ver
@@ -284,7 +290,16 @@ def obter_documentos_watchlist(tickers: list) -> tuple:
     em salvar_documentos), a limpeza ja' e' feita pelo mecanismo
     throttled de data/research/__init__.py:coletar_pendentes (1x/hora) -
     chamar de novo aqui bateria no banco a cada render da EQUITY, sem
-    gate nenhum."""
+    gate nenhum.
+
+    @st.cache_data (bug real corrigido, 2026-10-08): a aba CVM roda
+    dentro de @st.fragment (ui/cvm_tab.py) - cada clique em filtro/pill/
+    busca/paginação reexecutava esta função inteira, incluindo o upsert
+    em research_itens, OUTRA VEZ, mesmo sem nenhum documento novo.
+    Cachear (mesmo TTL de _ipe_ano/obter_documentos_cvm - a fonte real
+    não muda mais rápido que isso) faz o efeito colateral de gravação
+    acontecer só quando a coleta de fato roda de novo, não a cada
+    interação de UI."""
     todos = []
     falhas = []
     for ticker in tickers:

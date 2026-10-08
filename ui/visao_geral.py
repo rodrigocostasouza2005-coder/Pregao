@@ -12,8 +12,9 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import config
+from data.ibovespa import obter_composicao_oficial
 from data.macro import obter_cdi
-from data.mercado import obter_mercados_globais
+from data.mercado import obter_cotacoes_lote, obter_mercados_globais
 from data.news import obter_top_mercado_tudo
 from data.prices import obter_cotacao, obter_cotacao_indice, obter_historico
 from ui import graficos, workspace
@@ -54,9 +55,30 @@ def _card_mercado(rotulo: str, preco, variacao_pct, prefs, casas_preco: int = 2)
 
 def _painel_mercado_agora(prefs):
     st.markdown('<div class="painel-titulo">MERCADO AGORA</div>', unsafe_allow_html=True)
+    # achado real (2026-10-08): VISAO GERAL reaproveita _painel_altas_baixas/
+    # _painel_setorial de ui/mercado_tab.py, mas NAO _painel_termometro -
+    # que e' onde mora o unico aviso visivel de "B3 indisponivel, usando
+    # lista curada de fallback". Quem so' abre a VISAO GERAL nunca via
+    # esse aviso e nunca saberia que a base mudou. Mesma checagem
+    # (barata, cacheada) exposta aqui pra nao degradar silenciosamente.
+    if not obter_composicao_oficial():
+        st.caption(
+            f"B3 indisponível no momento - altas/baixas e desempenho setorial usam lista curada de "
+            f"fallback ({len(config.IBOVESPA_SETORES)} papéis)."
+        )
     globais = {g["nome"]: g for g in obter_mercados_globais()}
     cdi_df = obter_cdi(dias_historico=5)
     cdi_atual = float(cdi_df["cdi_anualizado_pct"].iloc[-1]) if cdi_df is not None and not cdi_df.empty else None
+    # variacao real (p.p.) entre a ultima leitura e a anterior do CDI
+    # anualizado - achado real (2026-10-08): antes era "0.0" fixo (nunca
+    # calculado), fazendo o card sempre pintar verde e mostrar "+0,00%"
+    # mesmo quando a taxa de fato mudou no dia. None (nunca 0.0) quando
+    # so' ha' 1 leitura - sem dado suficiente pra comparar, o card mostra
+    # "—" (ver _card_mercado), nunca uma variacao inventada.
+    cdi_variacao = None
+    if cdi_df is not None and len(cdi_df) >= 2:
+        anterior = float(cdi_df["cdi_anualizado_pct"].iloc[-2])
+        cdi_variacao = cdi_atual - anterior if cdi_atual is not None else None
 
     ibov = obter_cotacao_indice("IBOVESPA", "^BVSP")
     dolar = obter_cotacao_indice("DOLAR", "USDBRL=X")
@@ -69,7 +91,7 @@ def _painel_mercado_agora(prefs):
     with cols[1]:
         _card_mercado("DÓLAR", None if dolar.get("erro") else dolar["preco"], None if dolar.get("erro") else dolar["variacao_pct"], prefs)
     with cols[2]:
-        _card_mercado("DI (CDI anual.)", cdi_atual, 0.0 if cdi_atual is not None else None, prefs)
+        _card_mercado("DI (CDI anual.)", cdi_atual, cdi_variacao, prefs)
     with cols[3]:
         sp500 = globais.get("S&P 500")
         _card_mercado("S&P 500", sp500["preco"] if sp500 else None, sp500["variacao_pct"] if sp500 else None, prefs, 0)
@@ -133,8 +155,14 @@ def _painel_watchlist_compacta(prefs):
         st.markdown("<div class='cinza' style='font-size:0.78rem;'>Adicione tickers na barra lateral.</div>", unsafe_allow_html=True)
         return
     linhas = []
+    # obter_cotacoes_lote (N+1 real corrigido, 2026-10-08): 1 UNICA
+    # requisicao em lote pra watchlist inteira, em vez de 1
+    # yf.Ticker().fast_info POR TICKER (obter_cotacao) - com watchlist
+    # grande e cache expirado, essa tela ficava bloqueada numa sequencia
+    # de round-trips sequenciais ao Yahoo.
+    cotacoes = obter_cotacoes_lote(tuple(watchlist))
     for t in watchlist:
-        cot = obter_cotacao(t)
+        cot = cotacoes.get(t, {"erro": "sem dado"})
         if cot.get("erro"):
             linhas.append(f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>{t}</td><td colspan='2' class='cinza'>—</td></tr>")
             continue

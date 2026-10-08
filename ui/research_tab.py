@@ -4,13 +4,15 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import html
+
 import streamlit as st
 
 import config
 from data.news import obter_noticias
 from data.research import CASAS, coletar_pendentes, preparar_leitura, ultimas_coletas_formatadas
 from data.research.genial import obter_recomendacoes, obter_swing_trade
-from data.research.historico import processar_recomendacoes
+from data.research.historico import historico_ticker, processar_recomendacoes
 from data.research.resumir import obter_resumo
 
 _TIPO_LABEL = {
@@ -200,7 +202,15 @@ def _abrir_resumo_live(rel: dict, extrator):
         st.caption(f"Resumo indisponível ({motivo}).")
 
 
-def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
+def _linha_relatorio(rel: dict, permitir_resumo_auto: bool, mostrar_contexto_news: bool = True) -> bool:
+    """Retorna True se um resumo foi exibido (cacheado ou gerado agora) -
+    usado por _painel_watchlist (mostrar_contexto_news=False aqui) pra
+    saber se deve mostrar o bloco CONTEXTO RECENTE · NEWS 1x por TICKER,
+    depois do loop de relatorios, em vez de 1x por RELATORIO (bug real
+    corrigido 2026-10-08: um ticker com 3-4 relatorios com resumo ja
+    cacheado repetia o MESMO bloco de noticias 3-4 vezes na tela -
+    contrariava a propria promessa do docstring de _bloco_contexto_news,
+    'so aparece 1x junto do resumo')."""
     tickers_html = " ".join(
         f"<span style='color:var(--destaque);'>{t}</span>" for t in rel.get("tickers", [])
     )
@@ -233,25 +243,28 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
         chave_botao = f"research_ver_resumo_{abs(hash(rel['link']))}"
         if st.button("VER RESUMO", key=chave_botao):
             _abrir_resumo_live(rel, extrator)
-        return
+        return False
 
     if rel.get("resumo"):
         _bloco_resumo(rel["resumo"])
-        _bloco_contexto_news(rel.get("tickers") or [])
-        return
+        if mostrar_contexto_news:
+            _bloco_contexto_news(rel.get("tickers") or [])
+        return True
 
     if permitir_resumo_auto:
         with st.spinner("Resumindo..."):
             resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator, casa=rel["casa"], tipo=rel["tipo"])
         if resultado["resumo"]:
             _bloco_resumo(resultado["resumo"])
-            _bloco_contexto_news(rel.get("tickers") or [])
+            if mostrar_contexto_news:
+                _bloco_contexto_news(rel.get("tickers") or [])
+            return True
         elif resultado["motivo_indisponivel"] == "cota":
             st.warning(_AVISO_COTA)
         elif resultado["motivo_indisponivel"] == "indisponivel":
             st.warning(_AVISO_IA_INDISPONIVEL)
         # outros motivos (login/PDF ilegivel/conteudo curto): so titulo+link mesmo, sem aviso por item
-        return
+        return False
 
     chave_botao = f"research_resumir_{abs(hash(rel['link']))}"
     if st.button("RESUMIR", key=chave_botao):
@@ -259,13 +272,46 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool):
             resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator, casa=rel["casa"], tipo=rel["tipo"])
         if resultado["resumo"]:
             _bloco_resumo(resultado["resumo"])
-            _bloco_contexto_news(rel.get("tickers") or [])
+            if mostrar_contexto_news:
+                _bloco_contexto_news(rel.get("tickers") or [])
+            return True
         elif resultado["motivo_indisponivel"] == "cota":
             st.warning(_AVISO_COTA)
         elif resultado["motivo_indisponivel"] == "indisponivel":
             st.warning(_AVISO_IA_INDISPONIVEL)
         else:
             st.caption(f"Resumo indisponível ({resultado['motivo_indisponivel']}).")
+    return False
+
+
+def _fmt_capturado_em(valor: str) -> str:
+    try:
+        return datetime.fromisoformat(valor).strftime("%d/%m/%Y")
+    except Exception:
+        return str(valor)[:10]
+
+
+def _expander_historico_recomendacao(ticker: str, fmt: str):
+    """Evolução de recomendação/preço-alvo da Genial pro ticker ao longo
+    do tempo (data/research/historico.py:historico_ticker - existia so'
+    na camada de dado, nunca exposto na UI; so' 'O QUE MUDOU' pontual
+    aparecia, achado real 2026-10-08). So' 1 chamada por ticker, dentro
+    de um expander FECHADO por padrão (nunca N+1 - mesmo tickers com
+    history vazio custam so' 1 consulta cacheada)."""
+    historico = historico_ticker("Genial Analisa", ticker, limite=5)
+    if len(historico) < 2:
+        return  # 0 ou 1 snapshot -> nao ha' "evolucao" nenhuma pra mostrar
+    with st.expander(f"Histórico de recomendação · {ticker} ({len(historico)} registros)"):
+        for h in historico:
+            rec = h.get("recomendacao") or "—"
+            preco_alvo = h.get("preco_alvo")
+            preco_txt = f"R$ {config.formatar_numero(preco_alvo, 2, fmt)}" if preco_alvo is not None else "—"
+            st.markdown(
+                f"<div style='font-size:0.74rem; padding:0.1rem 0;'>"
+                f"<span class='cinza'>[{_fmt_capturado_em(h.get('capturado_em', ''))}]</span> "
+                f"<b>{html.escape(str(rec))}</b> · preço-alvo {preco_txt}</div>",
+                unsafe_allow_html=True,
+            )
 
 
 def _formatar_valor_mudanca(campo: str, valor, fmt: str) -> str:
@@ -344,26 +390,35 @@ def _painel_watchlist(prefs: dict, relatorios: list, recomendacoes: list, swing:
 
         if recomendacao_ticker:
             potencial = recomendacao_ticker.get("potencial_pct")
-            sinal = "alta" if (potencial or 0) >= 0 else "baixa"
+            # so' classifica alta/baixa quando ha' potencial REAL - achado
+            # real (2026-10-08): "(potencial or 0) >= 0" fazia o "—" (sem
+            # dado ainda coletado) aparecer dentro de um <span> verde
+            # (classe 'alta'), sugerindo uma tendencia positiva inexistente.
+            sinal = ("alta" if potencial >= 0 else "baixa") if potencial is not None else ""
             preco_alvo = recomendacao_ticker.get("preco_alvo")
             potencial_txt = f"{config.formatar_numero(potencial, 1, fmt)}%" if potencial is not None else "—"
             preco_alvo_txt = f"R$ {config.formatar_numero(preco_alvo, 2, fmt)}" if preco_alvo is not None else "—"
             st.markdown(
-                f"<div style='font-size:0.78rem;'>Genial: <b>{recomendacao_ticker['recomendacao']}</b>"
+                f"<div style='font-size:0.78rem;'>Genial: <b>{html.escape(str(recomendacao_ticker['recomendacao']))}</b>"
                 f" · potencial <span class='{sinal}'>{potencial_txt}</span>"
                 f" · preço-alvo {preco_alvo_txt}</div>",
                 unsafe_allow_html=True,
             )
+            _expander_historico_recomendacao(ticker, fmt)
 
         for s in swing_ticker:
             st.markdown(
-                f"<div style='font-size:0.78rem;'>Swing trade: <b>{(s['recomendacao'] or '').upper()}</b>"
-                f" ({s['status']}) · <a href='{s['link']}' target='_blank' style='color:var(--ciano);'>ver oportunidade</a></div>",
+                f"<div style='font-size:0.78rem;'>Swing trade: <b>{html.escape((s['recomendacao'] or '').upper())}</b>"
+                f" ({html.escape(str(s['status']))}) · <a href='{s['link']}' target='_blank' style='color:var(--ciano);'>ver oportunidade</a></div>",
                 unsafe_allow_html=True,
             )
 
+        exibiu_resumo = False
         for rel in relatorios_ticker:
-            _linha_relatorio(rel, permitir_resumo_auto=True)
+            if _linha_relatorio(rel, permitir_resumo_auto=True, mostrar_contexto_news=False):
+                exibiu_resumo = True
+        if exibiu_resumo:
+            _bloco_contexto_news([ticker])
 
     if not mostrou_algo:
         st.info("Nenhum relatório, recomendação ou swing trade encontrado para os tickers da sua watchlist no momento.")

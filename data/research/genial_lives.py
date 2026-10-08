@@ -33,8 +33,11 @@ pra outras fontes sem a mesma decisao explicita."""
 
 import re
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import feedparser
+
+_TZ_SP = ZoneInfo("America/Sao_Paulo")
 
 # canal oficial da Genial Investimentos no YouTube (confirmado via busca +
 # leitura do feed real em 2026-09-24 - "Genial Investimentos", descrição
@@ -76,18 +79,31 @@ def _identificar_programa(titulo: str) -> str | None:
     return None
 
 
-def _publicado_em_iso(entry) -> str | None:
-    """Timestamp COMPLETO (ISO, UTC) de publicacao do video - usado so'
-    pelo feed editorial do NEWS (fase 3) pra posicionar o Morning Call/
-    lives cronologicamente ENTRE as noticias (ver
-    ui/news_tab.py:_chave_ordenacao_live). 'data' (so' o dia, ja
-    existente, usado pelo resto do projeto - radar, retencao, filtro por
-    dia) continua exatamente igual, intocado. None se o feed nao trouxer
-    o campo estruturado (nunca inventa hora)."""
+def _publicado_em_utc(entry) -> datetime | None:
+    """Datetime completo (UTC, aware) de publicacao do video, a partir do
+    campo estruturado do feed (published_parsed) - None se o feed nao
+    trouxer esse campo (nunca inventa hora)."""
     bruto = entry.get("published_parsed")
     if not bruto:
         return None
-    return datetime(*bruto[:6], tzinfo=timezone.utc).isoformat()
+    return datetime(*bruto[:6], tzinfo=timezone.utc)
+
+
+def _data_publicacao_brt(entry, publicado_utc: datetime | None) -> str:
+    """'data' (so' o dia, formato YYYY-MM-DD) usada pelo resto do projeto
+    (radar, retencao, filtro por dia) - bug real corrigido (2026-10-08):
+    antes vinha de entry.get('published')[:10], a string crua do feed em
+    UTC, sem converter pro fuso de Brasilia. A B3 fecha ~18h BRT (~21h
+    UTC) - uma live publicada depois disso (tipico do 'Fechamento de
+    Mercado') ja caia no dia UTC SEGUINTE, fazendo o selo NOVO do Research
+    Radar (ui/research_tab.py, compara contra 'hoje' em BRT) nunca
+    acertar o dia real de publicacao. Cai pro campo bruto (sem conversao)
+    so' se o feed nao trouxer published_parsed (nunca pior que o
+    comportamento anterior)."""
+    if publicado_utc is not None:
+        return publicado_utc.astimezone(_TZ_SP).strftime("%Y-%m-%d")
+    publicado_bruto = entry.get("published") or ""
+    return publicado_bruto[:10] if publicado_bruto else ""
 
 
 def obter_relatorios() -> list | None:
@@ -106,23 +122,29 @@ def obter_relatorios() -> list | None:
 
     relatorios = []
     for entry in feed.entries:
-        titulo = entry.get("title") or ""
-        programa = _identificar_programa(titulo)
-        if programa is None:
+        # isolado por item (2026-10-08): 1 entrada malformada do feed
+        # (campo inesperado ausente) nao pode descartar os videos que ja
+        # parsearam certo - mesmo padrao ja usado em data/research/xp.py.
+        try:
+            titulo = entry.get("title") or ""
+            programa = _identificar_programa(titulo)
+            if programa is None:
+                continue
+            video_id = entry.get("yt_videoid")
+            publicado_utc = _publicado_em_utc(entry)
+            relatorios.append({
+                "casa": _NOME_CASA,
+                "titulo": titulo,
+                "data": _data_publicacao_brt(entry, publicado_utc),
+                "publicado_em": publicado_utc.isoformat() if publicado_utc else None,
+                "autor": programa,
+                "tipo": "LIVE",
+                "setor": "",
+                "tickers": [],
+                "link": f"https://www.youtube.com/watch?v={video_id}" if video_id else entry.get("link", ""),
+            })
+        except Exception:
             continue
-        video_id = entry.get("yt_videoid")
-        publicado = entry.get("published") or ""
-        relatorios.append({
-            "casa": _NOME_CASA,
-            "titulo": titulo,
-            "data": publicado[:10] if publicado else "",
-            "publicado_em": _publicado_em_iso(entry),
-            "autor": programa,
-            "tipo": "LIVE",
-            "setor": "",
-            "tickers": [],
-            "link": f"https://www.youtube.com/watch?v={video_id}" if video_id else entry.get("link", ""),
-        })
     return relatorios
 
 

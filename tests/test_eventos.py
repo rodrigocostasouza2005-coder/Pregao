@@ -21,6 +21,13 @@ from data.eventos import (
 
 _FALHAS = []
 
+# CNPJ fake usado como default em TODO o arquivo (ver __main__ no fim) -
+# a maioria dos testes representa um ticker CVM-regulado de verdade
+# (PETR4/VALE3/etc), onde obter_cnpj() sempre acha algo; so' o teste 7
+# sobrescreve isso localmente pra cobrir o caso real "ticker sem CNPJ
+# mapeado" (bug corrigido em 2026-10-08, ver data/eventos.py:periodo_pendente).
+_CNPJ_FAKE = "11.222.333/0001-44"
+
 
 def _checar(nome, condicao, detalhe=""):
     status = "OK" if condicao else "FALHOU"
@@ -81,18 +88,29 @@ def test_4_evento_sem_horario():
     _checar("4 horario e' None (CVM nao informa isso - nunca inventado)", evento["horario"] is None)
 
 
-# --- 7: ausencia de eventos (fonte sem CNPJ/documento) --------------------
-def test_7_ausencia_de_eventos_fonte_sem_cnpj():
-    # obter_documentos_cvm retorna [] quando o ticker nao tem CNPJ mapeado
-    # ou nao ha documento algum - ainda assim calculamos o prazo
-    # regulatorio (independe de documento existir, e' uma regra legal
-    # generica) - o "evento" sempre existe quando a fonte responde (so'
-    # fica None se a FONTE falhar de verdade, ver teste 10)
+# --- 7: ausencia de eventos (ticker com CNPJ, mas sem documento ainda) ----
+def test_7_ausencia_de_documento_mas_cnpj_mapeado_ainda_calcula_prazo():
+    # obter_documentos_cvm retorna [] quando a fonte respondeu mas nao ha
+    # documento algum pro periodo - pra um ticker DE FATO regulado pela
+    # CVM (tem CNPJ mapeado), isso ainda e' prazo calculavel (independe
+    # de documento existir, e' uma regra legal generica).
     with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
          patch.object(eventos_mod, "obter_nome_yf", return_value="EMPRESA TESTE"), \
          patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
         evento = calcular_proximo_resultado("ZZZZ4", hoje=date(2026, 10, 1))
-    _checar("7 mesmo sem nenhum documento CVM, o prazo regulatorio ainda e' calculavel", evento is not None)
+    _checar("7 CNPJ mapeado + sem nenhum documento CVM -> prazo regulatorio ainda e' calculavel", evento is not None)
+
+
+# --- 7b: bug real corrigido (2026-10-08) - ticker SEM CNPJ mapeado nunca
+# pode ter um prazo fabricado (ex: BDR estrangeiro que nunca protocola
+# ITR/DFP na CVM nesse regime) -------------------------------------------
+def test_7b_ticker_sem_cnpj_mapeado_nao_fabrica_prazo_cvm():
+    with patch.object(eventos_mod, "obter_cnpj", return_value=None), \
+         patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(eventos_mod, "obter_nome_yf", return_value="BDR ESTRANGEIRO"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
+        evento = calcular_proximo_resultado("MELI34", hoje=date(2026, 10, 1))
+    _checar("7b ticker sem CNPJ mapeado (ex: BDR) -> None, nunca fabrica um PRAZO_CVM", evento is None)
 
 
 # --- 8: data invalida/ausente (data_referencia malformada) ----------------
@@ -573,9 +591,12 @@ def test_snap_8_cacheado_ignora_linha_malformada_no_snapshot_sem_quebrar():
 
 
 if __name__ == "__main__":
-    for nome, fn in list(globals().items()):
-        if nome.startswith("test_") and callable(fn):
-            fn()
+    # default global: CNPJ mapeado (ticker CVM-regulado "comum") - so'
+    # test_7b sobrescreve isso localmente pra cobrir o caso sem CNPJ.
+    with patch.object(eventos_mod, "obter_cnpj", return_value=_CNPJ_FAKE):
+        for nome, fn in list(globals().items()):
+            if nome.startswith("test_") and callable(fn):
+                fn()
 
     print()
     if _FALHAS:

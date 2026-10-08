@@ -13,6 +13,7 @@ from plotly.subplots import make_subplots
 import auth
 import config
 from data import diagnostico
+from data.mercado import obter_cotacoes_lote
 from data.prices import (
     calcular_retornos,
     dias_sem_pregao,
@@ -172,8 +173,14 @@ def _ticker_tape():
     # rodar feito a de indices acima). Mesmo formato dos indices acima
     # (ticker + preco + variacao), fonte de dados identica a' que a faixa
     # antiga ja usava (obter_cotacao, mesmo cache).
+    # obter_cotacoes_lote (N+1 real corrigido, 2026-10-08): 1 UNICA
+    # requisicao em lote pra watchlist inteira - essa fita roda no header,
+    # em TODA pagina, no mesmo run_every do fragment; antes disparava 1
+    # yf.Ticker().fast_info POR TICKER da watchlist (obter_cotacao)
+    # sequencialmente a cada atualizacao.
+    cotacoes_watchlist = obter_cotacoes_lote(tuple(prefs["watchlist"]))
     for t in prefs["watchlist"]:
-        cot = obter_cotacao(t)
+        cot = cotacoes_watchlist.get(t, {"erro": "sem dado"})
         if cot.get("erro"):
             itens.append(f"<span class='cinza'>{t} --</span>")
         else:
@@ -608,10 +615,20 @@ if secao_atual == "EQUITY":
                             unsafe_allow_html=True,
                         )
 
+                    agora_preco = datetime.now(FUSO_BR)
+                    if _pregao_esta_aberto(agora_preco):
+                        legenda_atraso = "cotação com atraso de ~15 min (fonte: Yahoo Finance)"
+                    else:
+                        # achado real (2026-10-08): fora do horario de pregao
+                        # (fim de semana/feriado/apos as 17h) o texto antigo
+                        # misturava "hora em que a pagina renderizou" com
+                        # "hora real da cotacao" - um domingo mostrava
+                        # "atraso de ~15 min" quando o ultimo preco real e'
+                        # de sexta-feira.
+                        legenda_atraso = "cotação de fechamento (mercado fechado, fonte: Yahoo Finance)"
                     st.markdown(
                         f"<div class='cinza' style='font-size:0.65rem; margin-top:0.3rem;'>"
-                        f"Última atualização {datetime.now(FUSO_BR).strftime('%H:%M:%S')} — "
-                        f"cotação com atraso de ~15 min (fonte: Yahoo Finance)</div>",
+                        f"Última atualização {agora_preco.strftime('%H:%M:%S')} — {legenda_atraso}</div>",
                         unsafe_allow_html=True,
                     )
 

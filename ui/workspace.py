@@ -483,9 +483,9 @@ def renderizar_workspace(aba_id: str, registro: list, prefs: dict, *args, persis
     Python, listener morto pós-rerun - ver PROGRESSO.md). ETAPA 2
     (MACRO, 2026-10-01) migrou em seguida - mesma REGISTRO_PAINEIS de
     antes, só troca o renderizador (`aba_id` é só uma string, sem
-    nenhum caso especial pra MERCADO vs MACRO aqui dentro). VISÃO GERAL
-    ainda não adota REGISTRO_PAINEIS (renderiza monolítico) - precisa
-    ser refeita pra esse formato antes de poder migrar."""
+    nenhum caso especial pra MERCADO vs MACRO aqui dentro). ETAPA 5
+    (VISÃO GERAL) já migrou também - ver ui/visao_geral.py:REGISTRO_PAINEIS,
+    mesmo mecanismo, sem caso especial nenhum pra essa aba aqui dentro."""
     _injetar_css_base()
     ids_validos = [pid for pid, _, _ in registro]
     mapa = {pid: fn for pid, _, fn in registro}

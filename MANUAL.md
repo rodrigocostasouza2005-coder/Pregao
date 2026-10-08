@@ -250,3 +250,35 @@ imediato, consulte o RAD/ENET da própria CVM).
 tiverem CNPJ mapeado no FCA da própria CVM (`data/cvm.py:_mapa_ticker_cnpj`);
 BDRs de empresa estrangeira (MELI34 etc.) não têm registro direto na CVM
 brasileira, então não aparecem aqui.
+
+## CALENDÁRIO
+
+Próximos resultados (ITR/DFP) da sua watchlist, numa grade mensal com
+painel lateral de detalhe. Fonte: hierarquia RI da empresa → notícia de
+veículo confiável → prazo regulatório da CVM (Instrução CVM 480/2009) —
+nessa ordem de confiabilidade.
+
+- **Selo CONFIRMADO**: data vinda do RI oficial da própria empresa.
+- **Selo ESTIMADO**: data vinda de notícia de veículo confiável, ainda
+  sem confirmação oficial da empresa.
+- **Selo PRAZO CVM**: nenhuma das duas fontes acima disponível — mostra
+  o prazo MÁXIMO legal pra entrega do ITR/DFP, nunca uma data anunciada
+  pela empresa (aviso explícito no detalhe do evento).
+- **Grade mensal**: navegação por mês, célula de HOJE destacada; painel
+  lateral mostra a semana atual e os eventos do dia selecionado.
+- **CONTEXTO (hub do evento)**: ao selecionar um evento, abas compactas
+  com RESEARCH/NEWS/DOCUMENTOS CVM/HISTÓRICO relacionados ao ticker —
+  mesmas fontes/cache já usadas pelas abas RESEARCH/NEWS/CVM, sem
+  nenhuma chamada de IA nem fonte nova.
+- **Leitura via snapshot**: a tela só lê o snapshot calculado
+  periodicamente em background (`coletor_local.py`) — nunca recalcula
+  ao navegar/filtrar, por isso é instantânea mesmo com watchlist grande.
+
+**Limitações conhecidas:** o prazo regulatório da CVM só existe pra
+empresas de fato registradas na CVM (mesmo CNPJ mapeado usado pela aba
+CVM) — BDR de empresa estrangeira (MELI34 etc.) nunca aparece aqui, já
+que nunca protocola ITR/DFP nesse regime (mesma limitação documentada
+na aba CVM acima). A categoria oficial "Calendário de Eventos
+Corporativos" da CVM não tem campo estruturado com a data do evento em
+si (só a data de protocolo do documento) — por isso o CONFIRMADO/
+ESTIMADO depende de RI/notícia, não de um feed estruturado único.
