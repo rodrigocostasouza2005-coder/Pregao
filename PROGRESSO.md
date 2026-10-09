@@ -4838,3 +4838,139 @@ nem espaço vazio grande.
   sem necessidade comprovada) - registrada em BACKLOG.md.
 
 Commits desta sessão: ver CHANGELOG.md (entrada "2026-10-09, RADAR").
+
+## FASE VERIFICAÇÃO 2026-10-09 (sessão agendada 16h UTC - estabilização pós-RADAR)
+
+Sessão autônoma agendada com mandato amplo (fases A-J do pedido do
+Rodrigo: auditoria de coletores, SAÚDE DOS DADOS, RADAR, editorial
+NEWS, BR/US, performance, testes, deploy). Começou ~1h40 depois da
+sessão anterior ("RADAR — nova aba de inteligência") ter commitado e
+pushado seu trabalho, exatamente pra evitar edição simultânea dos
+mesmos arquivos.
+
+### 1. Estado real do repositório ao iniciar (regra 1 - verificado, não presumido)
+
+- `git status`: working tree limpo, HEAD **detached** no mesmo commit
+  de `origin/main` (`b8c0a42`), mas a branch local `main` estava **27
+  commits atrasada** (ainda em `38e09f7`, de antes de toda a rodada de
+  auditoria de coletores) - `git merge --ff-only origin/main` corrigiu
+  (fast-forward puro, zero conflito, zero commit perdido).
+- `git fetch origin main` confirmou `origin/main` = `b8c0a42` (RADAR já
+  commitado e pushado pela sessão anterior) - **sem concorrência real**
+  nesta sessão (a outra sessão já tinha terminado e saído há mais de
+  1h quando esta começou).
+- Confirmado por leitura direta do código (não só do relato da sessão
+  anterior): `data/radar.py` (525 linhas) e `ui/radar_tab.py` (378
+  linhas) existem; `config.py` tem `"RADAR"` em `ABAS_DISPONIVEIS` +
+  ícone; `app.py` importa `render_radar` e chama dentro de
+  `if secao_atual == "RADAR":`. RADAR está de fato completo e
+  registrado - **não reimplementado** (conforme nota de coordenação,
+  tratado como "validar e documentar", não "construir").
+
+### 2. O que esta sessão verificou e confirmou (sem alterar)
+
+- **Suíte de testes completa**: `343 testes`, passam individualmente
+  (convenção real do projeto, `python tests/test_X.py` pra cada um dos
+  26 arquivos) - confirmado rodando TODOS, não só uma amostra.
+- **`compileall`/`pyflakes` limpos** no repositório inteiro, usando
+  `python3.12` (criado venv novo em `/tmp/pregao_venv` com
+  `requirements.txt` + `pytest`/`pyflakes` - o anterior,
+  `/tmp/pregao_venv_radar`, não sobrevive entre sessões/containers).
+  Reconfirmada a nota técnica já registrada por 2 sessões anteriores:
+  `app.py`/`ui/mercado_tab.py` usam aspas aninhadas do mesmo tipo
+  dentro de f-string (`class='{"alta" if ... else "baixa"}'`), sintaxe
+  só válida a partir do Python 3.12 (PEP 701) - **rastreado até sua
+  origem real** (`git log -L`): já existia desde o commit `b316e83`
+  ("perf: optimize terminal rendering and data flow"), bem antes de
+  qualquer sessão de auditoria recente - não é regressão de ninguém,
+  é só incompatibilidade do Python 3.11 (default deste sandbox) com
+  código já em produção há muito tempo. Produção (`pregao.streamlit.
+  app`) necessariamente já roda Python ≥3.12 - senão o app nunca teria
+  subido, com ou sem RADAR. **Não pinada em `runtime.txt`** por falta
+  de evidência confiável do formato exato aceito pelo Streamlit
+  Community Cloud nesta sessão (sem acesso de rede pra confirmar) -
+  risco de uma pinagem errada quebrar o deploy é maior que o benefício
+  especulativo; registrado como sugestão de baixo risco/baixa
+  prioridade pra uma sessão com acesso à documentação do Cloud.
+- **Rede bloqueada** (política da organização neste ambiente, mesma
+  limitação de toda sessão anterior): `api.bcb.gov.br`,
+  `query1.finance.yahoo.com`, `news.google.com`,
+  `pregao.streamlit.app` - todos `connect_rejected` pelo proxy. **FASE
+  I (execução real dos coletores) permanece impossível deste
+  sandbox** - não é uma tentativa nova que falhou, é a mesma barreira
+  de infraestrutura já documentada, reconfirmada por completude.
+- **Revisão pontual da integridade editorial de NEWS** (FASE E, caso
+  de regressão do IPCA/Tesouro Direto citado no pedido): lido
+  `_PROMPT_SISTEMA_RESUMO`/`_PROMPT_SISTEMA_RESUMO_MANCHETES`
+  (`data/news.py:1055-1125`) e o modal (`ui/news_tab.py`) - confirma
+  que as salvaguardas pedidas já existem no código atual: o prompt
+  proíbe explicitamente inventar causa->consequência não afirmada pela
+  fonte, inventar número/data/citação, tratar hipótese como fato
+  confirmado, ou prever reação de mercado (só relata reação JÁ
+  observada pela própria fonte); existe um prompt SEPARADO
+  (`_MANCHETES`) usado quando só manchetes foram acessadas, que avisa
+  explicitamente "o texto completo da matéria não foi acessado" no
+  modal (`ui/news_tab.py:562`); o rótulo de fontes é sempre "Veículos
+  (N)"/"N fonte(s)" (nunca "N confirmações") e o selo de confiabilidade
+  é descrito na própria UI como "calculado por regras simples (fonte,
+  nº de veículos, linguagem)" (`ui/news_tab.py:951`), sem alegar
+  verificação independente. Não encontrado o caso exato "IPCA 0,82%/
+  Tesouro Direto" nos testes por nome literal, mas a classe de bug que
+  ele describe (inflar confiança/inventar causalidade) já tem teste
+  dedicado em `tests/test_news_modal_editorial.py`/`tests/
+  test_news_relevancia.py` (passando). Não reaberto/reescrito sem
+  evidência de regressão real - FASE C já tinha auditado isso a fundo
+  em sessão anterior.
+
+### 3. O que esta sessão corrigiu
+
+- **Único bug com causa-raiz E correção verificada nesta sessão**:
+  `tests/test_research_resumo_live_sync.py` falhava (3 de 343 testes)
+  sob `pytest tests/` completo, mas passava 100% sozinho - já
+  diagnosticado por sessão anterior (BACKLOG.md) como sensibilidade à
+  ORDEM de coleta do `pytest` (`sys.modules` cacheado fazia o
+  monkeypatch de `st.dialog` não ter efeito se outro arquivo de teste
+  já tivesse importado `ui.research_tab` antes). Aplicada a correção
+  que o próprio BACKLOG já tinha proposto (`importlib.reload` depois
+  do patch) - `343/343` passam agora sob `pytest tests/` completo.
+  Commits `0a40a51` (fix) e `00188b2` (docs/BACKLOG), já no
+  `origin/main`.
+
+### 4. Por que o restante do mandato não gerou mudança de código nesta sessão
+
+As Fases A-C (auditoria/correção de coletores, SAÚDE DOS DADOS), F
+(BR/US), G (performance) e a maior parte da E (editorial) já foram
+cobertas por commits anteriores (`2f8a2a7` até `b8c0a42`), com matriz
+de classificação, testes dedicados e pendências já registradas com
+causa-raiz em BACKLOG.md - não há, neste sandbox, acesso de rede novo
+que permita validar algo que a sessão anterior não tenha já tentado e
+documentado como bloqueado. Reescrever/reimplementar algo já
+implementado e testado, sem evidência de que está quebrado, violaria a
+regra 3 (não sobrescrever trabalho de outra sessão) e a regra 10 (não
+prometer sucesso sem evidência) - por isso esta sessão focou em
+VERIFICAR com evidência real (testes rodados de verdade, não só
+lidos) e corrigir o único item concreto e seguro encontrado.
+
+### 5. Próximas três prioridades (se uma sessão futura continuar)
+
+1. **Confirmação visual/funcional em produção real** (`pregao.
+   streamlit.app`) de tudo que só foi validado por teste/AppTest neste
+   sandbox sem rede - RADAR (5 módulos com dado real), modal editorial
+   de NEWS com imagem/resumo real da Groq, SAÚDE DOS DADOS populando
+   depois de uso real. Nenhuma sessão em sandbox consegue fechar isso -
+   precisa do Rodrigo abrindo o app.
+2. **Timezone multi-mercado** (`America/New_York` pros ativos-piloto
+   EUA, hoje hardcoded `America/Sao_Paulo` em ~10 módulos) - já mapeado
+   em `config.FUSO_POR_MERCADO`, só falta os callers usarem.
+3. **Avaliar runtime.txt** pra pinar a versão do Python no Streamlit
+   Community Cloud (hoje implícito, sem registro em arquivo) - proteção
+   barata contra o Cloud mudar o default e quebrar `app.py`/`ui/
+   mercado_tab.py` (sintaxe só-3.12+) no futuro; precisa de uma sessão
+   com acesso à documentação atual do Cloud pra confirmar o formato
+   exato antes de aplicar (risco de pinagem errada > benefício
+   especulativo, por isso não aplicado agora).
+
+Commits desta sessão: `0a40a51` (fix: teste de ordem de import),
+`00188b2` (docs: BACKLOG). Estado final: `origin/main` sincronizado,
+working tree limpo, `343/343` testes passando, `compileall`/`pyflakes`
+limpos.

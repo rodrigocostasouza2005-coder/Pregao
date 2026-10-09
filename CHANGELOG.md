@@ -3,6 +3,30 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-09 (sessão de verificação/estabilização pós-RADAR)
+
+Sessão autônoma agendada (16h UTC, ~1h40 depois de outra sessão ter
+concluído e commitado o RADAR) com mandato amplo (auditoria de
+coletores, SAÚDE DOS DADOS, RADAR, editorial NEWS, BR/US, performance,
+testes). Ver PROGRESSO.md "FASE VERIFICAÇÃO 2026-10-09" pra relatório
+completo (estado confirmado vs. trabalho novo desta sessão).
+
+- **fix: teste de sincronia do resumo live (`tests/test_research_resumo_
+  live_sync.py`) falhava sob `pytest tests/` completo** (ordem de
+  coleta/import não-determinística fazia `_abrir_resumo_live` ficar com
+  o `st.dialog` real em vez do identity-decorator do teste) -
+  `importlib.reload` depois do patch resolve independente de ordem.
+  `343/343` testes passam agora sob `pytest tests/` completo (antes:
+  340/343 - achado e documentado no BACKLOG como pendência, não
+  corrigido até esta sessão).
+- Sem outras mudanças de código nesta sessão - o restante do mandato
+  (coletores, RADAR, editorial, BR/US, performance) foi auditado e
+  confirmado já implementado/documentado por sessões anteriores
+  (commits até `b8c0a42`), sem bug novo encontrado com evidência real
+  dentro das limitações deste sandbox (rede bloqueada pra Supabase/
+  yfinance/BCB/Google News/`pregao.streamlit.app`, mesma restrição já
+  registrada por sessões anteriores).
+
 ## 2026-10-09 (RADAR — nova aba de inteligência de investimentos)
 
 Sessão autônoma agendada, pedido explícito do Rodrigo (RADAR DE
