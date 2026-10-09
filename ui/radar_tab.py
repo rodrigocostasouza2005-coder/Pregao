@@ -57,6 +57,22 @@ _CSS_RADAR = """
 .radar-desatualizado { color: var(--cinza); font-size: 0.62rem; }
 .radar-flag { color: var(--destaque); font-size: 0.64rem; display: block; text-align: left; margin-top: 0.15rem; }
 .radar-stub { border: 1px solid var(--borda); padding: 0.8rem; font-size: 0.8rem; line-height: 1.6; color: var(--cinza); }
+/* BUG REAL confirmado em screenshot + medicao de DOM (Playwright,
+   2026-10-09): o wrapper interno que o proprio Streamlit gera ao redor
+   de um st.markdown com HTML customizado (unsafe_allow_html=True) media
+   uma altura ~16px MENOR que o conteudo real (confirmado via
+   getBoundingClientRect em ambos) quando ha quebra de linha dupla (2x
+   "br" seguidos) dentro de uma div com padding/borda propria - o proximo
+   elemento (st.caption logo abaixo, ver _secao_risco) nascia nessa
+   altura "errada", sobrepondo visualmente o fim do texto da caixa.
+   margin-bottom na propria .radar-stub NAO resolve (testado e
+   descartado) - o wrapper do Streamlit nao repassa a altura do filho
+   pro pai nesse caso especifico; o fix real e' dar respiro no elemento
+   SEGUINTE (o irmao stElementContainer logo depois do que contem a
+   .radar-stub), que ai' sim empurra o proprio container pra baixo. */
+div[data-testid="stElementContainer"]:has(.radar-stub) + div[data-testid="stElementContainer"] {
+    margin-top: 1.1rem;
+}
 """
 
 

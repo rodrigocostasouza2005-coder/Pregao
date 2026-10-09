@@ -43,7 +43,15 @@ from ui.top_mercado_tab import render_top_mercado
 from ui.visao_geral import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_VISAO_GERAL
 from ui.visao_geral import render_visao_geral
 
-st.set_page_config(page_title="PREGÃO", layout="wide", initial_sidebar_state="expanded")
+# initial_sidebar_state="auto" (nao mais "expanded" fixo): bug real
+# confirmado por screenshot (Playwright contra o app rodando de verdade,
+# 2026-10-09) - "expanded" forcava a sidebar (WATCHLIST) aberta em
+# QUALQUER largura, inclusive celular; numa tela de ~390px isso deixava
+# so' ~90px pro conteudo principal (app ilegivel ate' o usuario fechar
+# a sidebar manualmente). "auto" e' o modo que a propria documentacao do
+# Streamlit recomenda pra isso: comeca aberta em telas largas (mesmo
+# comportamento desktop de sempre) e fechada em telas estreitas.
+st.set_page_config(page_title="PREGÃO", layout="wide", initial_sidebar_state="auto")
 
 with open(config.BASE_DIR / "style.css", encoding="utf-8") as f:
     st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)

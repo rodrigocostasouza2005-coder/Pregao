@@ -144,6 +144,31 @@ header[data-testid="stHeader"] {
     background-color: var(--bg);
     z-index: 56;
 }
+/* BUG REAL confirmado por screenshot (Playwright contra o app rodando de
+   verdade, 2026-10-09): a sidebar (z-index:1100, acima do header de
+   proposito - ver comentario acima) cobre os primeiros 300px (largura
+   padrao dela) da tela inteira - inclusive o header_fixo, que e' fixed
+   relativo ao VIEWPORT (left:0, nao ao conteudo principal) e por isso
+   nao "sabe" que a sidebar existe. Resultado: com a sidebar aberta
+   (estado padrao do app, initial_sidebar_state="expanded" em app.py) a
+   logo PREGAO, a busca global e o inicio do ticker tape ficavam
+   literalmente escondidos atras da sidebar pra TODO usuario, toda vez
+   que abre o app - nao um problema cosmetico pequeno, o header inteiro
+   parecia quebrado. So' desloca quando a sidebar de fato esta expandida
+   (aria-expanded="true", atributo real do proprio Streamlit) e so' em
+   telas largas (>640px - no mobile .st-key-header_fixo vira position:
+   static/width:100%, ver media query abaixo, que ja' neutraliza isso
+   sem precisar de regra nova ali). 300px = largura PADRAO da sidebar
+   (medida real, nao estimada) - Streamlit nao expoe a largura
+   arrastada pelo usuario via CSS; se o usuario arrastar pra mais larga,
+   o alinhamento pode ficar levemente impreciso de novo, mas e' um caso
+   bem mais raro que o logo inteiro sumido no estado padrao. */
+@media (min-width: 641px) {
+    div[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="true"]) .st-key-header_fixo {
+        left: 300px;
+        width: calc(100vw - 300px);
+    }
+}
 .st-key-camada1_header {
     border-bottom: 1px solid var(--borda);
     padding: 0.65rem 1rem 0.6rem 2.75rem;
@@ -251,11 +276,6 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 section[data-testid="stSidebar"] {
     background-color: var(--painel-bg);
     border-right: 1px solid var(--borda);
-    /* fica ACIMA da faixa fixa do topo (.st-key-header_fixo, z-index 56):
-       como essa faixa e' fixed de ponta a ponta da tela, sem isso ela
-       cobriria o topo da sidebar aberta em vez de ficar atras dela */
-    position: relative;
-    z-index: 1100;
     /* NAO forcar largura aqui (ja tentado e revertido, 2026-09-28): o
        Streamlit calcula a largura do CONTEUDO PRINCIPAL com base na largura
        real/arrastavel da sidebar via JS - sobrescrever so' a largura da
@@ -265,6 +285,32 @@ section[data-testid="stSidebar"] {
        Streamlit (arrastavel pelo usuario), como sempre foi. */
 }
 section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
+/* BUG REAL confirmado por screenshot (Playwright contra o app rodando de
+   verdade, 2026-10-09): position:relative aqui (pra ficar ACIMA do
+   header_fixo - comentario original abaixo) e' aplicado em QUALQUER
+   largura de tela, inclusive mobile - isso anula o comportamento nativo
+   responsivo do Streamlit (sidebar vira um overlay/gaveta que desliza por
+   cima do conteudo em telas estreitas, sem ocupar espaco fixo) porque
+   position:relative tira a sidebar do mecanismo de overlay nativo
+   (normalmente position:fixed + transform) e a prende no fluxo normal,
+   SEMPRE com sua largura padrao (300px) reservada. Numa tela de 390px
+   (iPhone comum) isso deixava so' 90px pro conteudo principal - app
+   inteiro ilegivel no mobile com a sidebar aberta (estado padrao,
+   initial_sidebar_state="expanded" em app.py). Escopado so' pra desktop
+   (>640px, mesmo breakpoint ja usado no resto do arquivo) - no mobile a
+   sidebar volta a se comportar como o Streamlit nativo decide (overlay),
+   e o motivo original (nao deixar o header_fixo cobrir o topo da sidebar
+   aberta) so' importa quando as duas coisas coexistem lado a lado, que e'
+   so' o caso desktop. */
+@media (min-width: 641px) {
+    section[data-testid="stSidebar"] {
+        /* fica ACIMA da faixa fixa do topo (.st-key-header_fixo, z-index 56):
+           como essa faixa e' fixed de ponta a ponta da tela, sem isso ela
+           cobriria o topo da sidebar aberta em vez de ficar atras dela */
+        position: relative;
+        z-index: 1100;
+    }
+}
 
 /* botoes ---------------------------------------------------------------------- */
 .stButton button, .stFormSubmitButton button, button[data-testid^="stBaseButton"] {
@@ -514,4 +560,31 @@ table tr:last-child td { border-bottom: none; }
         top: auto;
     }
     .block-container { padding-top: 3.2rem; }
+
+    /* BUG REAL confirmado por screenshot (Playwright, 2026-10-09): o
+       comentario acima presumia que o Streamlit empilha as 7 colunas de
+       camada1_header (logo/busca/CTRL K/EQUITY/NOTICIAS/+/usuario)
+       verticalmente sozinho em tela estreita - na pratica (medido no DOM
+       real) ele so' ENCOLHE as 7 proporcionalmente pra caber numa UNICA
+       linha (cada coluna usa flex-basis em %, que sempre soma 100% da
+       largura da linha, entao "wrap" nunca dispara de verdade) - o botao
+       "CTRL K" (4 letras) ficava espremido em ~7px de largura, cada letra
+       numa linha, e a logo PREGAO cortada atras do campo de busca. Troca
+       o flex-basis percentual por conteudo real (min-width:fit-content) +
+       forca o campo de busca pra sua PROPRIA linha cheia (mais legivel
+       que espremido do lado de 4 botoes pequenos) - com isso o wrap
+       (ja' habilitado nativamente) passa a disparar de verdade: logo numa
+       linha, busca full-width na proxima, os botoes pequenos+usuario
+       numa 3a linha, cada um do tamanho real do seu conteudo. */
+    .st-key-camada1_header div[data-testid="stHorizontalBlock"] {
+        row-gap: 0.45rem;
+    }
+    .st-key-camada1_header div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        flex: 0 1 auto;
+        min-width: fit-content;
+    }
+    .st-key-camada1_header div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) {
+        flex-basis: 100%;
+        min-width: 0;
+    }
 }
