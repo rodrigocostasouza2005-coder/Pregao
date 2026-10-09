@@ -3,6 +3,69 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-09 (FASE C — NEWS: modal editorial)
+
+Sessão autônoma agendada (continuação da FASE 6, frente C) - redesenho
+do modal de detalhe de notícia (`ui/news_tab.py:_abrir_card`), que o
+Rodrigo descreveu como visualmente ruim e com conteúdo superficial. Ver
+PROGRESSO.md pra auditoria completa do pipeline e evidências.
+
+- **feat (resumo editorial)**: formato do resumo de IA mudou de 4 campos
+  fixos numa linha cada (`O QUE ACONTECEU:`/`NÚMEROS:`/`IMPACTO:`/
+  `PRÓXIMOS PASSOS:`, sempre mostrando "não informado" quando faltava
+  dado) pra 2 blocos (`data/news.py:_PROMPT_SISTEMA_RESUMO`): `RESUMO`
+  (3-5 parágrafos editoriais, proporcional ao conteúdo real) e `LEITURA
+  DE MERCADO` (relevância pro investidor - ativos/setores afetados,
+  separando fato de interpretação analítica), que o próprio modelo
+  OMITE quando não há base (nunca mais um campo vazio). Parser novo
+  `separar_secoes_resumo()` (ancorado em início de linha, não em
+  substring - bug real pego pelos próprios testes) e filtro
+  `_leitura_sem_base()` descartam qualquer "não informado" residual.
+  Cache do Supabase (`resumos_ia_cache`) ganhou versão (`chave_news`
+  agora prefixa "v2") pra nunca servir resumo no formato antigo pro
+  modal novo - reprocessa 1x por grupo, nunca mais depois disso.
+- **feat (síntese parcial, nunca finge acesso ao texto completo)**:
+  quando só manchetes/snippets estão disponíveis (paywall/bloqueio em
+  todas as fontes do grupo), `_gerar_resumo_grupo` marca
+  `parcial=True` e a UI mostra uma nota discreta ("síntese com base nas
+  informações públicas disponíveis...") em vez de inventar texto
+  completo. Imagem nunca é atribuída nesse caminho (síntese mistura
+  fontes, a foto seria arbitrária - comportamento já existente,
+  mantido).
+- **feat (capa + layout editorial)**: modal agora abre com imagem de
+  capa em destaque (og:image já extraída junto do texto - MESMO
+  download, zero requisição de rede extra, comportamento já existente
+  só agora exposto no topo do modal) com fallback elegante (nome do
+  veículo, nunca uma imagem genérica enganosa) quando não há foto
+  confiável ou ela falha ao carregar. Manchete + 1 linha de metadados
+  essenciais (selo com tooltip, veículo, hora, nº de fontes, link CVM
+  quando houver) substituem o bloco antigo de selo+lista de "regras"
+  soltas. Corpo em parágrafos com espaçamento/tipografia legível,
+  LEITURA DE MERCADO destacada só por borda lateral (nunca caixa
+  colorida competindo com o conteúdo), veículos/tickers/contexto de
+  research movidos pro rodapé em fonte pequena - sem listas/divisores
+  internos nem rótulos redundantes (era a crítica real do Rodrigo
+  sobre o modal parecer "log de depuração"). CSS responsivo (breakpoint
+  480px: capa 4:3 em vez de 16:9, fonte menor).
+- **test**: 14 cenários novos (`tests/test_news_modal_editorial.py` +
+  extensão de `tests/test_news_fase3.py`) cobrindo os 5 pedidos pelo
+  Rodrigo (texto completo com imagem, só manchete/snippet, sem imagem,
+  falha de extração, números relevantes preservados no prompt e no
+  parser) + correspondência imagem-matéria entre grupos diferentes (uma
+  foto nunca vaza pro grupo errado) + a "LEITURA DE MERCADO: não
+  informado" sendo descartada mesmo se o modelo não seguir a instrução
+  de omitir. Validado com harness Playwright isolado (imagem real,
+  fallback sem imagem, e cenário parcial/manchetes-only) em 1280/768/
+  390px - capturas no scratchpad da sessão.
+- **Não confirmado em produção real** (sem acesso a Supabase/Groq/rede
+  equivalente deste sandbox): se uma og:image real carrega e renderiza
+  bem num navegador de verdade (o harness local só confirmou que o
+  `onerror`/fallback dispara corretamente quando a imagem falha - rede
+  do sandbox bloqueia hosts de imagem externos); se o Groq de produção
+  de fato segue o formato RESUMO/LEITURA DE MERCADO na prática (prompt
+  testado só com mocks, nunca com uma chamada real à API) - só o
+  Rodrigo pode confirmar abrindo NOTÍCIAS em produção depois do deploy.
+
 ## 2026-10-09 (FASE 7 — SAÚDE DOS DADOS + piloto EUA + avaliação do X)
 
 Sessão autônoma agendada, antecipando a rotina de 05:00 UTC (aba

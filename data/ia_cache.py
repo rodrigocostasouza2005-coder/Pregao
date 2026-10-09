@@ -46,6 +46,18 @@ def chave_research(link: str) -> str:
     return hashlib.sha256(f"research:{link}".encode("utf-8")).hexdigest()
 
 
+#  v2 (2026-10-09, modal editorial NEWS - FASE C): formato do resumo mudou
+# de 4 campos fixos (O QUE ACONTECEU/NÚMEROS/IMPACTO/PRÓXIMOS PASSOS) pra
+# blocos RESUMO/LEITURA DE MERCADO (ver data/news.py:_PROMPT_SISTEMA_RESUMO)
+# - sem bump de versao, todo resumo JA' cacheado pelo formato antigo
+# continuaria sendo servido pro modal novo pra sempre (esta tabela nao tem
+# TTL, so' expira se o CONJUNTO de fontes do grupo mudar), quebrando o
+# parser novo (_separar_secoes_resumo). O prefixo forca cache MISS pra todo
+# resumo gerado antes desta mudanca - reprocessado uma vez, na primeira
+# visita ao grupo depois do deploy, nunca de novo depois disso.
+_VERSAO_CHAVE_NEWS = "v2"
+
+
 def chave_news(titulo: str, links: tuple) -> str:
     """Chave de cache pro resumo de um GRUPO de noticias do NEWS - como
     um grupo nao tem uma unica URL canonica (varias fontes sobre o
@@ -55,8 +67,9 @@ def chave_news(titulo: str, links: tuple) -> str:
     Qualquer mudanca no conjunto de fontes (uma materia nova entrou no
     grupo) gera uma chave NOVA de proposito - trata como um documento
     diferente em vez de arriscar devolver um resumo que nao viu a fonte
-    nova."""
-    identidade = titulo.strip().lower() + "|" + "|".join(sorted(links))
+    nova. Prefixo de versao (_VERSAO_CHAVE_NEWS) pra invalidar cache
+    quando o FORMATO do resumo muda (ver comentario acima)."""
+    identidade = _VERSAO_CHAVE_NEWS + "|" + titulo.strip().lower() + "|" + "|".join(sorted(links))
     return hashlib.sha256(identidade.encode("utf-8")).hexdigest()
 
 

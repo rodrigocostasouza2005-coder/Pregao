@@ -167,23 +167,77 @@ def test_3d_feed_vazio():
 # 4. teaser de resumo (card do feed) - nunca o bloco inteiro
 # ============================================================
 
-def test_4a_teaser_news_extrai_so_o_que_aconteceu_e_impacto():
+def test_4a_teaser_news_extrai_so_o_primeiro_paragrafo_do_resumo():
     resumo_completo = (
-        "O QUE ACONTECEU: Petrobras anunciou revisão do plano de investimentos.\n"
-        "NÚMEROS: não informado\n"
-        "IMPACTO: ações podem reagir na abertura.\n"
-        "PRÓXIMOS PASSOS: não informado"
+        "RESUMO:\n"
+        "Petrobras anunciou revisão do plano de investimentos para 2027, após "
+        "queda no preço do petróleo no mercado internacional.\n\n"
+        "O capex previsto cai de R$ 12 bilhões para R$ 9,5 bilhões, segundo o "
+        "comunicado da empresa.\n\n"
+        "LEITURA DE MERCADO:\n"
+        "A revisão pode pressionar o setor de petróleo e gás no curto prazo."
     )
     teaser = news_tab_mod._resumo_teaser(resumo_completo, limite=500)
-    _checar("4a teaser inclui O QUE ACONTECEU", "Petrobras anunciou" in teaser)
-    _checar("4b teaser inclui IMPACTO", "ações podem reagir" in teaser)
-    _checar("4c teaser NAO inclui 'não informado'", "não informado" not in teaser)
+    _checar("4a teaser inclui o 1o parágrafo do RESUMO", "Petrobras anunciou revisão" in teaser)
+    _checar("4b teaser NAO inclui o 2o parágrafo (só o 1o)", "R$ 12 bilhões" not in teaser)
+    _checar("4c teaser NAO inclui a LEITURA DE MERCADO (é interpretação, não o fato)", "pressionar o setor" not in teaser)
     _checar("4d teaser nao e' o bloco completo (bem mais curto)", len(teaser) < len(resumo_completo))
 
 
 def test_4b_teaser_cai_pro_texto_cru_se_formato_nao_bater():
-    texto_livre = "Resumo baseado nas manchetes, sem o formato de campos."
+    texto_livre = "Resumo em texto corrido, sem os marcadores RESUMO:/LEITURA DE MERCADO:."
     _checar("4e formato nao-estruturado cai pro texto cru truncado", news_tab_mod._resumo_teaser(texto_livre, limite=500) == texto_livre)
+
+
+# ============================================================
+# 4a. separar_secoes_resumo (data/news.py) - formato editorial novo
+#     (FASE C, 2026-10-09: RESUMO em parágrafos + LEITURA DE MERCADO
+#     opcional, substitui os 4 campos fixos antigos)
+# ============================================================
+
+def test_4i_separa_paragrafos_e_leitura_de_mercado():
+    bruto = (
+        "RESUMO:\n"
+        "Primeiro parágrafo com o contexto e o fato principal.\n\n"
+        "Segundo parágrafo com números: receita cresceu 12% no trimestre.\n\n"
+        "LEITURA DE MERCADO:\n"
+        "Isso pode sinalizar recuperação do setor, a depender do próximo balanço."
+    )
+    paragrafos, leitura = news_mod.separar_secoes_resumo(bruto)
+    _checar("4i1 2 parágrafos extraídos", len(paragrafos) == 2)
+    _checar("4i2 primeiro parágrafo correto", paragrafos[0].startswith("Primeiro parágrafo"))
+    _checar("4i3 segundo parágrafo preserva o número citado (fidelidade)", "12%" in paragrafos[1])
+    _checar("4i4 leitura de mercado extraída", leitura is not None and "recuperação do setor" in leitura)
+
+
+def test_4j_leitura_de_mercado_omitida_quando_modelo_nao_segue_a_regra():
+    """O prompt pede pra OMITIR o bloco inteiro quando não há base - mas se
+    o modelo mesmo assim escrever algo tipo 'não informado', a seção não
+    pode aparecer pro usuário como um campo vazio (ver _leitura_sem_base)."""
+    bruto = "RESUMO:\nParágrafo único, sem mais contexto.\n\nLEITURA DE MERCADO:\nnão informado"
+    paragrafos, leitura = news_mod.separar_secoes_resumo(bruto)
+    _checar("4j1 paragrafo do resumo preservado", len(paragrafos) == 1)
+    _checar("4j2 leitura 'não informado' é descartada (nunca mostrada como campo vazio)", leitura is None)
+
+
+def test_4k_sem_marcador_leitura_resulta_em_none():
+    bruto = "RESUMO:\nParágrafo único sem seção de leitura de mercado nenhuma."
+    _, leitura = news_mod.separar_secoes_resumo(bruto)
+    _checar("4k sem o marcador LEITURA DE MERCADO -> None (nunca inventa a seção)", leitura is None)
+
+
+def test_4l_formato_sem_marcador_resumo_ainda_funciona():
+    """Fallback de robustez: se o modelo não repetir o marcador RESUMO:
+    (ex: respondeu só com os parágrafos), ainda extrai o corpo certo."""
+    bruto = "Parágrafo único, sem o marcador RESUMO: no início."
+    paragrafos, leitura = news_mod.separar_secoes_resumo(bruto)
+    _checar("4l corpo extraído mesmo sem o marcador RESUMO:", paragrafos == [bruto])
+    _checar("4l2 leitura None", leitura is None)
+
+
+def test_4m_vazio_ou_none_nunca_quebra():
+    _checar("4m1 string vazia -> ([], None)", news_mod.separar_secoes_resumo("") == ([], None))
+    _checar("4m2 None -> ([], None)", news_mod.separar_secoes_resumo(None) == ([], None))
 
 
 def test_4c_teaser_live_remove_titulo_do_bloco_e_tags():

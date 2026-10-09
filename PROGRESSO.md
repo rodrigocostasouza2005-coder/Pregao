@@ -4187,3 +4187,174 @@ checada antes e depois de cada uma das 3 fases, nunca só no final.
    as instrumentações desta sessão (SAÚDE DOS DADOS) e do piloto EUA
    — não verificável deste sandbox (mesma limitação já registrada em
    FASE 6 pros fixes de Genial/CALENDÁRIO).
+
+## FASE C — NEWS: modal editorial, 2026-10-09
+
+Sessão autônoma agendada, continuação da FASE 6 (frentes A/B cobertas
+por sessão anterior - Genial/Research Radar + CALENDÁRIO, confirmado
+lendo a seção "FASE 6" acima e `git log`, não reinvestigado do zero).
+Escopo desta sessão: frente C, pedido explícito do Rodrigo - transformar
+o modal de detalhe de notícia (clique numa manchete em NOTÍCIAS/TOP
+MERCADO) numa experiência editorial completa, com imagem de capa e
+resumo substancial, em vez do "log de depuração" que era antes (4
+campos rotulados, às vezes com "não informado" sobrando, sem imagem em
+destaque).
+
+### 0. Preparação
+
+Confirmado por leitura de `PROGRESSO.md`/`CHANGELOG.md`/`BACKLOG.md` e
+`git log --oneline`: a sessão da FASE 6 (frentes A/B) já tinha causa
+raiz/correção/testes/commits registrados ANTES desta sessão começar
+(`main` em `6e4ac84`, 23 commits à frente do que a FASE 6 descreve como
+ponto de partida - confirma que FASE 6 E FASE 7 já estão na história).
+Suite completa rodada ANTES de qualquer mudança: `compileall` limpo
+(Python 3.12, venv nova `/tmp/pregao_venv_c`), **305/305 testes
+passando** (pytest E execução direta de cada `tests/test_*.py` - a
+suite usa um padrão próprio de `_checar()`/`sys.exit(1)` em vez de
+`assert`, então só a execução direta captura uma falha real; pytest
+sozinho não detectaria regressão nesses arquivos).
+
+### 1. Auditoria do pipeline ANTES de mexer (pedido explícito)
+
+Leitura completa de `data/news.py` (1408 linhas) e `ui/news_tab.py` (935
+linhas) antes de qualquer edição:
+
+- **Imagem**: já existia extração de og:image (`_extrair_texto_artigo`,
+  via `trafilatura.extract(..., with_metadata=True)`) do MESMO download
+  usado pra extrair o texto - zero requisição de rede extra. Só
+  preenchida no caminho de fonte ÚNICA bem-sucedida (nunca nos
+  fallbacks de fragmentos combinados/só-manchetes, que misturam texto
+  de fontes diferentes - escolher 1 foto pra representar isso seria
+  arbitrário). Essa relação imagem↔matéria correta já estava garantida
+  pela arquitetura existente - **não precisou de nova coleta**, só
+  precisava aparecer no TOPO do modal (antes aparecia pequena, abaixo
+  do título, só quando o resumo tinha sucesso).
+- **Resumo**: formato rígido de 4 campos numa linha cada ("O QUE
+  ACONTECEU:"/"NÚMEROS:"/"IMPACTO:"/"PRÓXIMOS PASSOS:"), sempre
+  mostrando literalmente "não informado" quando a fonte não dava pra
+  preencher um campo - exatamente a reclamação do Rodrigo ("log de
+  depuração"). Cache GLOBAL no Supabase (`data/ia_cache.py:chave_news`)
+  sem versionamento - mudar o formato sem mudar a chave serviria resumo
+  no formato ANTIGO pro modal NOVO pra sempre (a tabela não tem TTL).
+- **Layout do modal**: selo em linha própria + lista solta de "regras"
+  (motivo do score) + bloco "Veículos" com divisor + tags de ticker +
+  resumo só depois de tudo isso - exatamente a estrutura "despejada"
+  criticada.
+
+### 2. Resumo editorial (pedido 2) + LEITURA DE MERCADO (pedido 3)
+
+`data/news.py:_PROMPT_SISTEMA_RESUMO`/`_PROMPT_SISTEMA_RESUMO_MANCHETES`
+reescritos: formato novo com 2 blocos (`RESUMO:` - 3 a 5 parágrafos
+editoriais, tamanho proporcional ao conteúdo real; `LEITURA DE MERCADO:`
+- relevância pro investidor, só escrito pelo modelo quando há base,
+linguagem explicitamente hedged pra interpretação analítica nunca virar
+fato). Regras de fidelidade (nunca invente número/citação/causalidade/
+recomendação/previsão) mantidas idênticas ao formato antigo - só a FORMA
+de apresentar mudou.
+
+`separar_secoes_resumo()` (novo, `data/news.py`) faz o parsing: regex
+ANCORADA em início de linha (`^RESUMO:`/`^LEITURA DE MERCADO:`, não
+`str.find()` por substring) - achado real nos PRÓPRIOS testes desta
+sessão (cenários 4e/4l de `tests/test_news_fase3.py`): um resumo que só
+MENCIONA a palavra "resumo:" no meio de uma frase comum quebrava o
+parser ingênuo original, cortando texto de verdade. `_leitura_sem_base()`
+descarta qualquer "LEITURA DE MERCADO: não informado" residual (o modelo
+é instruído a OMITIR o bloco inteiro, mas o parser não confia cegamente
+nisso) - elimina as seções vazias pedidas explicitamente ("Números: não
+informado"/"Próximos passos: não informado" nunca mais aparecem).
+
+Síntese parcial (só manchetes/trechos curtos, nunca o texto completo de
+UMA matéria): `_gerar_resumo_grupo` agora retorna `parcial=True` nesses
+caminhos - a UI mostra uma nota discreta em itálico ("síntese com base
+nas informações públicas disponíveis...") em vez de fingir acesso ao
+texto completo (pedido explícito do Rodrigo) ou de sufixar o próprio
+texto do resumo como antes (`"(resumo baseado nas manchetes)"` colado
+no fim do resumo - virou um campo estruturado separado, mais fácil de
+estilizar discretamente em vez de aparecer como texto solto no corpo).
+
+Cache: `data/ia_cache.py:chave_news` ganhou prefixo de versão
+(`_VERSAO_CHAVE_NEWS = "v2"`) - todo resumo já cacheado no formato
+antigo vira cache MISS automático na primeira visita ao grupo depois do
+deploy (reprocessa 1x, nunca mais depois disso) - sem isso, o modal novo
+tentaria `separar_secoes_resumo()` num texto no formato antigo
+indefinidamente até o CONJUNTO de fontes do grupo mudar por conta
+própria.
+
+### 3. Layout editorial completo (pedido 4)
+
+`ui/news_tab.py:_abrir_card` reescrito:
+
+- `_capa_html()` (novo): imagem em destaque no topo (aspect-ratio 16:9,
+  `object-fit:cover`, `loading=lazy`/`decoding=async`) com fallback
+  elegante (nome do veículo centralizado, tom discreto) quando não há
+  imagem confiável OU ela falha ao carregar no navegador - mesmo padrão
+  comprovado de `onerror` + irmão oculto já usado em `_thumb_html`
+  (evitado o padrão frágil de `innerHTML` via JS com aspas aninhadas
+  dentro de atributo HTML, que foi tentado primeiro e tinha um bug real
+  de escaping - pego ainda durante o desenvolvimento, antes de virar
+  teste).
+- `_meta_line_dialog()` (novo): 1 linha compacta (selo com tooltip de
+  score/regras, veículo principal, hora, nº de fontes, link pro
+  documento oficial da CVM quando houver confirmação) - substitui o
+  bloco antigo de selo em linha própria + lista solta de "regras".
+- Corpo do resumo em parágrafos (`<div class='news-corpo-p'>`, um por
+  parágrafo real, `max-width:68ch` pra legibilidade) em vez de um bloco
+  único de texto cru.
+- `LEITURA DE MERCADO` destacada só por borda lateral (nunca uma caixa
+  colorida competindo com o conteúdo), com nota fixa deixando explícito
+  que é interpretação analítica, não fato confirmado pela fonte (pedido
+  3 - separar fato de interpretação).
+- Veículos/tickers citados movidos pro rodapé (`.news-secundario`),
+  fonte pequena/cinza, sem divisores extras; contexto de RESEARCH
+  (recomendação Genial já existente) continua logo abaixo, inalterado.
+- CSS responsivo: breakpoint 480px (capa vira 4:3 em vez de 16:9, fonte
+  do corpo reduzida, `max-width` removido pra não sobrar espaço vazio
+  em tela estreita).
+
+### 4. Validação
+
+`compileall` limpo (Python 3.12) e `pyflakes` sem avisos em
+`data/news.py`/`data/ia_cache.py`/`ui/news_tab.py`/testes novos.
+
+**14 cenários novos**: `tests/test_news_modal_editorial.py` (11 novos,
+cobrindo os 5 cenários pedidos pelo Rodrigo - texto completo com
+imagem, só manchete/snippet, sem imagem, falha de extração/decode,
+números relevantes preservados tanto no prompt enviado à IA quanto no
+parser do resumo gerado - mais correspondência imagem↔matéria entre 2
+grupos diferentes em sequência, nunca vaza foto de um grupo pro outro)
++ `tests/test_news_fase3.py` (6 novos/reescritos - `separar_secoes_resumo`
+isolado: parágrafos+leitura extraídos corretamente, leitura "não
+informado" descartada, sem marcador LEITURA vira `None`, formato sem
+marcador RESUMO ainda funciona, vazio/`None` nunca quebra; teaser do
+card do feed atualizado pro formato novo). **Suite completa: 319/319
+testes passando** (305 baseline + 14 novos), checada com pytest E com
+execução direta de cada arquivo de teste (nunca só pytest, que não
+captura falha nesse padrão de testes do projeto - ver seção 0) - um bug
+real (parser ancorando por substring em vez de início de linha, caso
+acima) foi pego exatamente pela execução direta dos testes novos ainda
+durante o desenvolvimento, antes do commit.
+
+**Validação visual** (harness Playwright isolado, dados sintéticos +
+CSS real do projeto, mesma técnica já documentada em PROGRESSO.md pra
+bugs de CSS anteriores): 3 cenários renderizados e capturados em
+1280px/768px/390px - (1) imagem de capa + resumo completo + LEITURA DE
+MERCADO, (2) sem imagem (fallback elegante com nome do veículo), (3)
+síntese parcial (nota discreta, sem seção LEITURA DE MERCADO). Confirma
+visualmente: capa no topo, sem overflow em mobile, fallback de imagem
+dispara corretamente via `onerror` (testado forçando falha de carregamento
+- a rede do sandbox bloqueia hosts de imagem externos, então toda
+imagem "real" testada caiu no fallback, o que CONFIRMA que o fallback
+funciona mas NÃO confirma visualmente uma og:image de verdade carregando
+- ver BACKLOG.md), nenhuma seção vazia aparece, parágrafos com respiro
+legível.
+
+### Pendências pra próxima fase (sem solução inventada)
+
+Ver BACKLOG.md "FASE C" pra lista completa. Resumo: (1) imagem real de
+produção nunca confirmada visualmente neste sandbox (rede bloqueada);
+(2) formato RESUMO/LEITURA DE MERCADO só testado com mocks do Groq,
+nunca com uma chamada real à API (sem `GROQ_API_KEY` no sandbox); (3)
+cache antigo invalidado por design (não migrado) - 1 reprocessamento
+por grupo popular na primeira hora após o deploy, custo esperado, não
+um bug. Confirmação final em produção real (abrir NOTÍCIAS em
+`pregao.streamlit.app` depois do deploy) só o Rodrigo pode fazer.

@@ -1026,88 +1026,101 @@ def obter_top_mercado_tudo(setor: str = "TODOS"):
 # tentamos essas por ultimo dentro do grupo, ja que costumam falhar
 _VEICULOS_PROVAVEL_PAYWALL = {"valor", "estadao", "folha", "bloomberg", "wall street journal", "wsj", "financial times"}
 
-# 5-8 linhas estruturadas precisam de mais espaco que o formato antigo
-# (2-3 linhas livres) - budget proprio, maior que config.GROQ_MAX_TOKENS
-# (compartilhado com o research, que usa um formato mais enxuto)
-_MAX_TOKENS_RESUMO_NEWS = 700
+# FASE C (2026-10-09, modal editorial de NEWS): formato antigo era 4 campos
+# fixos numa linha cada ("O QUE ACONTECEU: ...") - lia como log de debug e
+# sempre sobrava campo vazio ("NÚMEROS: não informado") quando a fonte não
+# dava pra preencher os 4. Formato novo tem 2 blocos com marcador próprio
+# (RESUMO:/LEITURA DE MERCADO:, ver _separar_secoes_resumo) - RESUMO é
+# prosa editorial em paragrafos curtos (proporcional ao conteudo real, nunca
+# infla pra preencher), LEITURA DE MERCADO e' OMITIDA pelo proprio modelo
+# quando nao ha' base (nunca "não informado") em vez de um campo vazio pra
+# UI filtrar depois. Budget de tokens maior que o formato antigo (paragrafos
+# por extenso gastam mais que 1 linha por campo) - ainda proprio do NEWS,
+# maior que config.GROQ_MAX_TOKENS (compartilhado com o research, que usa
+# um formato mais enxuto).
+_MAX_TOKENS_RESUMO_NEWS = 900
 
-# 2026-10-08 (auditoria pos-FASE 4, achado real): os campos IMPACTO e
-# PRÓXIMOS PASSOS, do jeito que estavam redigidos antes, so' diziam "nunca
-# invente" de forma generica - nao deixavam explicito o que CONTA como
-# informacao real nesses dois campos especificos, que sao exatamente os
-# dois mais propensos a' especulacao (um LLM tende a preencher "impacto"
-# com uma previsao plausivel de mercado e "proximos passos" com uma
-# expectativa generica, mesmo sem a fonte ter dito isso). Reforcado agora
-# com regra explicita: IMPACTO so' pode conter reacao/efeito que a FONTE
-# relatou como tendo realmente acontecido (ex: "ação caiu 3% após o
-# anúncio"), nunca uma previsao do que PODE acontecer; PRÓXIMOS PASSOS so'
-# pode conter evento futuro com data/acao EXPLICITA na fonte (ex:
-# "resultado trimestral sai dia 12"), nunca um "o mercado deve
-# acompanhar..." generico/especulativo. Mesma logica ja aplicada ao prompt
-# do RESEARCH/Morning Call (ver data/research/resumir.py), adaptada aqui
-# sem mudar os nomes dos 4 campos (ui/news_tab.py:_CAMPOS_TEASER e os
-# testes dependem do formato exato "CAMPO: valor").
+# marcadores do formato novo - usados tanto no prompt quanto no parser
+# (_separar_secoes_resumo) - precisam casar exatamente
+_MARCADOR_RESUMO = "RESUMO:"
+_MARCADOR_LEITURA = "LEITURA DE MERCADO:"
+
+# regras de fidelidade (nunca invente numero/citacao/causalidade/
+# recomendacao/previsao que a fonte nao afirme) sao as MESMAS do formato
+# antigo (2026-10-08, auditoria pos-FASE 4) - so' a FORMA de apresentar
+# mudou (paragrafos corridos em vez de campos rotulados); o reforco
+# explicito sobre IMPACTO/PRÓXIMOS PASSOS (so' reacao/evento que a fonte
+# relatou como JA' acontecido, nunca previsao) continua, agora embutido nas
+# regras do bloco RESUMO em vez de serem campos proprios.
 _PROMPT_SISTEMA_RESUMO = (
-    "Você resume notícias do mercado financeiro brasileiro em português, "
-    "SEMPRE com suas próprias palavras - nunca copie frases literais do "
-    "texto original, nem reproduza parágrafos inteiros do texto fornecido. "
-    "O texto fornecido foi extraído automaticamente de uma página web e pode "
-    "conter trechos de menu, anúncio ou navegação misturados - ignore esse "
-    "ruído e resuma só o conteúdo jornalístico. Formato fixo, uma linha por "
-    "item, começando exatamente assim:\n"
-    "O QUE ACONTECEU: ...\n"
-    "NÚMEROS: ...\n"
-    "IMPACTO: ...\n"
-    "PRÓXIMOS PASSOS: ...\n"
-    "REGRAS DE CADA CAMPO, SEM EXCEÇÃO:\n"
-    "- O QUE ACONTECEU e NÚMEROS: só o que a fonte afirma como fato (evento, "
-    "dado, declaração) - nunca um fato que você deduziu ou um número "
-    "arredondado/estimado por você;\n"
-    "- IMPACTO: só uma reação ou consequência que a PRÓPRIA FONTE relata "
-    "como já tendo acontecido (ex: 'as ações caíram 3% após o anúncio', "
-    "'o mercado reagiu com venda de dólar') - NUNCA a sua previsão do que "
-    "pode/deve acontecer, nem um 'impacto esperado' que a fonte não "
-    "afirmou; se a fonte só descreve o fato sem relatar nenhuma reação, "
-    "escreva 'não informado', não invente uma consequência plausível;\n"
-    "- PRÓXIMOS PASSOS: só um evento futuro com data ou ação EXPLÍCITA na "
-    "fonte (ex: 'resultado sai dia 12', 'empresa convocou assembleia para "
-    "...') - nunca uma recomendação genérica tipo 'investidores devem "
-    "acompanhar o cenário' ou um desdobramento que você imagina ser "
-    "provável; sem isso explícito na fonte, escreva 'não informado';\n"
-    "- nunca apresente uma causa->consequência entre dois fatos que a fonte "
+    "Você é um editor financeiro que escreve, em português, um resumo "
+    "editorial de uma matéria do mercado financeiro brasileiro pra um "
+    "terminal de investimentos - SEMPRE com suas próprias palavras, nunca "
+    "copie frases literais nem reproduza parágrafos inteiros do texto "
+    "original. O texto fornecido foi extraído automaticamente de uma página "
+    "web e pode conter trechos de menu, anúncio ou navegação misturados - "
+    "ignore esse ruído e resuma só o conteúdo jornalístico.\n\n"
+    "Formato de saída, EXATAMENTE nesta estrutura (sem nenhum outro texto "
+    "antes ou depois):\n\n"
+    f"{_MARCADOR_RESUMO}\n"
+    "<3 a 5 parágrafos curtos, cada um separado por uma linha em branco>\n\n"
+    f"{_MARCADOR_LEITURA}\n"
+    "<parágrafo curto, só se houver base - ver regra abaixo>\n\n"
+    f"REGRAS DO BLOCO {_MARCADOR_RESUMO}\n"
+    "- Primeiro parágrafo: contexto e o acontecimento principal.\n"
+    "- Parágrafos seguintes: números/evidências que a fonte cita, "
+    "desdobramentos que a fonte relata, e - só quando a PRÓPRIA FONTE "
+    "relata como já tendo acontecido (ex: 'as ações caíram 3% após o "
+    "anúncio') - uma reação de mercado já observada; NUNCA sua previsão do "
+    "que pode/deve acontecer.\n"
+    "- Um evento futuro só entra se tiver data ou ação EXPLÍCITA na fonte "
+    "(ex: 'resultado sai dia 12') - nunca uma recomendação genérica tipo "
+    "'investidores devem acompanhar o cenário'.\n"
+    "- O TAMANHO é proporcional à quantidade de informação no texto: texto "
+    "curto (nota rápida, 1-2 parágrafos de fonte) gera resumo de 1-2 "
+    "parágrafos só - NUNCA infle com conteúdo inventado pra preencher mais "
+    "parágrafos. Nunca invente números, datas, citações ou fatos que não "
+    "estejam no texto fornecido.\n"
+    "- Nunca apresente uma causa->consequência entre dois fatos que a fonte "
     "não conectou explicitamente, nunca atribua uma expectativa/consenso de "
-    "mercado que a fonte não cite, e nunca trate uma hipótese/opinião do "
-    "texto como se fosse um fato confirmado.\n"
-    "O TAMANHO do resumo deve ser PROPORCIONAL à quantidade de informação no "
-    "texto: se o texto fornecido for curto (uma nota rápida, 1-2 parágrafos), "
-    "o resumo também deve ser curto (2-3 linhas no total, pode combinar "
-    "campos numa frase só se não houver informação pra separar) - NUNCA "
-    "invente conteúdo extra só pra preencher todos os 4 campos. Se algum "
-    "campo não tiver informação no texto, escreva 'não informado' nesse "
-    "campo - nunca invente números, datas ou fatos que não estejam no texto "
-    "fornecido. Se não houver conteúdo jornalístico aproveitável nenhum, "
-    "responda exatamente: SEM_CONTEUDO"
+    "mercado que a fonte não cite, nunca trate uma hipótese/opinião do "
+    "texto como se fosse um fato confirmado.\n\n"
+    f"REGRAS DO BLOCO {_MARCADOR_LEITURA}\n"
+    "- Só escreva este bloco se houver base real no texto pra discutir "
+    "relevância pro investidor: por que a notícia pode importar, quais "
+    "ativos/setores/variáveis macro podem ser afetados, e o que ainda "
+    "falta saber.\n"
+    "- Deixe claro quando for SUA interpretação analítica (use linguagem "
+    "como 'pode sinalizar', 'tende a', 'a depender de') - nunca apresente "
+    "uma inferência sua como se fosse um fato que a fonte confirmou.\n"
+    "- Se não houver base suficiente pra essa leitura, OMITA O BLOCO "
+    f"INTEIRO (não escreva {_MARCADOR_LEITURA} nem 'não informado' nem "
+    "nada parecido).\n\n"
+    "Se não houver conteúdo jornalístico aproveitável nenhum, responda "
+    "exatamente: SEM_CONTEUDO"
 )
 
 _PROMPT_SISTEMA_RESUMO_MANCHETES = (
-    "Você resume um fato do mercado financeiro brasileiro a partir SÓ das "
+    "Você é um editor financeiro que escreve, em português, um resumo "
+    "editorial de um fato do mercado financeiro brasileiro a partir SÓ das "
     "manchetes de várias fontes sobre o mesmo fato - não teve acesso ao "
-    "texto completo de nenhuma matéria (todas bloquearam o download). Use as "
-    "manchetes fornecidas pra montar um resumo curto (3 a 5 linhas), SEMPRE "
-    "com suas próprias palavras, mesmo formato fixo:\n"
-    "O QUE ACONTECEU: ...\n"
-    "NÚMEROS: ...\n"
-    "IMPACTO: ...\n"
-    "PRÓXIMOS PASSOS: ...\n"
+    "texto completo de nenhuma matéria (todas bloquearam o download). "
+    "SEMPRE com suas próprias palavras.\n\n"
+    "Formato de saída, EXATAMENTE nesta estrutura (sem nenhum outro texto "
+    "antes ou depois):\n\n"
+    f"{_MARCADOR_RESUMO}\n"
+    "<1 a 3 parágrafos curtos, separados por linha em branco>\n\n"
+    f"{_MARCADOR_LEITURA}\n"
+    "<parágrafo curto, só se houver base clara nas manchetes>\n\n"
     "Como só tem as manchetes (não o texto completo), vá direto ao que elas "
-    "revelam - escreva 'não informado' em qualquer campo sem base nas "
-    "manchetes, nunca invente número ou fato que não esteja nelas. IMPACTO "
-    "só conta se alguma manchete relatar uma reação/consequência JÁ "
-    "acontecida (nunca uma previsão sua); PRÓXIMOS PASSOS só conta se "
-    "alguma manchete citar um evento futuro explícito (nunca uma "
-    "recomendação genérica tipo 'acompanhar o mercado'). Nunca conecte duas "
+    "revelam - nunca invente número, data ou fato que não esteja nelas. Uma "
+    "reação de mercado só conta se alguma manchete relatar como já "
+    "acontecida (nunca sua previsão); um próximo passo só conta se alguma "
+    "manchete citar um evento futuro explícito. Nunca conecte duas "
     "manchetes com uma relação de causa->consequência que nenhuma delas "
-    "afirma. Se as manchetes não derem pra montar nem isso, responda "
+    f"afirma. Se não houver base pro bloco {_MARCADOR_LEITURA}, OMITA O "
+    f"BLOCO INTEIRO (não escreva {_MARCADOR_LEITURA} nem 'não informado'). "
+    "Se as manchetes não derem pra montar nem o RESUMO, responda "
     "exatamente: SEM_CONTEUDO"
 )
 
@@ -1245,11 +1258,74 @@ def _chamar_groq(prompt_sistema: str, prompt_usuario: str) -> tuple:
 
 
 def _resumir_com_groq(texto: str, titulo: str) -> tuple:
-    """Resume o TEXTO COMPLETO extraído de uma matéria (formato
-    estruturado O QUE ACONTECEU/NÚMEROS/IMPACTO/PRÓXIMOS PASSOS)."""
+    """Resume o TEXTO COMPLETO extraído de uma matéria (formato editorial
+    RESUMO/LEITURA DE MERCADO, ver _PROMPT_SISTEMA_RESUMO)."""
     texto_truncado = texto[:6000]
     prompt_usuario = f"Título: {titulo}\n\nTexto extraído da página:\n{texto_truncado}"
     return _chamar_groq(_PROMPT_SISTEMA_RESUMO, prompt_usuario)
+
+
+_PADROES_LEITURA_SEM_BASE = (
+    "nao informado", "nao ha base", "sem base suficiente", "informacao insuficiente",
+    "nao e possivel", "nao foi possivel", "n/a", "nao aplicavel",
+)
+
+
+def _leitura_sem_base(texto: str) -> bool:
+    """True se o texto da LEITURA DE MERCADO for, na prática, um campo
+    vazio (o modelo não seguiu a instrução de OMITIR o bloco inteiro e
+    escreveu algo tipo 'não informado') OU curto demais pra ser um
+    parágrafo real - nesses casos a seção inteira é descartada, nunca
+    mostrada como um rótulo vazio pra UI (ver separar_secoes_resumo)."""
+    t = _sem_acento(texto).strip(" .-")
+    if len(t) < 15:
+        return True
+    return any(p in t for p in _PADROES_LEITURA_SEM_BASE) and len(t) < 160
+
+
+# regex ANCORADA no inicio de linha (^, com re.MULTILINE) - um .find() por
+# substring (tentativa original) tratava QUALQUER ocorrencia do texto
+# "RESUMO:"/"LEITURA DE MERCADO:" como marcador de secao, mesmo dentro de
+# uma frase comum (ex: um paragrafo que cite "leitura de mercado:" dentro
+# de uma citacao) - bug real pego pelo proprio teste da secao 4 (ver
+# tests/test_news_fase3.py, cenarios 4e/4l) com um texto de exemplo que so'
+# MENCIONA a palavra "resumo" no meio da frase.
+_RE_MARCADOR_RESUMO = re.compile(r"(?m)^[ \t]*" + re.escape(_MARCADOR_RESUMO))
+_RE_MARCADOR_LEITURA = re.compile(r"(?m)^[ \t]*" + re.escape(_MARCADOR_LEITURA))
+
+
+def separar_secoes_resumo(resumo: str) -> tuple:
+    """Quebra o texto bruto do resumo (formato RESUMO:/LEITURA DE MERCADO:,
+    ver _PROMPT_SISTEMA_RESUMO) em (paragrafos_corpo: list[str],
+    leitura_mercado: str|None) - usado pela UI pra renderizar o modal
+    editorial (ver ui/news_tab.py:_abrir_card). Os marcadores so' contam
+    quando abrem uma LINHA (ver _RE_MARCADOR_*) - nunca quando a palavra
+    aparece no meio de uma frase comum do proprio resumo. Tolerante a
+    formato inesperado (o modelo nem sempre segue a estrutura à risca):
+    sem os marcadores, devolve o texto inteiro quebrado em parágrafos e
+    leitura_mercado=None - nunca lança excecao, nunca inventa conteúdo.
+    leitura_mercado vem None tanto quando o marcador não aparece quanto
+    quando aparece mas o conteúdo é, na prática, um campo vazio (ver
+    _leitura_sem_base) - a UI nunca precisa saber a diferença."""
+    texto = (resumo or "").strip()
+    if not texto:
+        return [], None
+
+    corpo = texto
+    leitura = None
+    match_leitura = _RE_MARCADOR_LEITURA.search(texto)
+    if match_leitura:
+        corpo = texto[: match_leitura.start()]
+        bruto_leitura = texto[match_leitura.end():].strip()
+        if bruto_leitura and not _leitura_sem_base(bruto_leitura):
+            leitura = bruto_leitura
+
+    match_resumo = _RE_MARCADOR_RESUMO.search(corpo)
+    if match_resumo:
+        corpo = corpo[match_resumo.end():]
+
+    paragrafos = [p.strip() for p in re.split(r"\n\s*\n", corpo) if p.strip()]
+    return paragrafos, leitura
 
 
 def _combinar_fragmentos(fragmentos: list, titulos_unicos: tuple) -> str:
@@ -1272,10 +1348,7 @@ def _resumir_das_manchetes(titulo: str, titulos: tuple) -> tuple:
     _resumir_com_groq: (resumo, motivo_falha)."""
     manchetes = "\n".join(f"- {t}" for t in dict.fromkeys(titulos))  # remove duplicatas, preserva ordem
     prompt_usuario = f"Manchetes sobre o mesmo fato (fontes diferentes):\n{manchetes}"
-    resumo, motivo = _chamar_groq(_PROMPT_SISTEMA_RESUMO_MANCHETES, prompt_usuario)
-    if resumo:
-        resumo += "\n\n(resumo baseado nas manchetes)"
-    return resumo, motivo
+    return _chamar_groq(_PROMPT_SISTEMA_RESUMO_MANCHETES, prompt_usuario)
 
 
 def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()) -> dict:
@@ -1334,7 +1407,7 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
         resumo, motivo_groq = _resumir_com_groq(texto, titulo)
         if resumo:
             return {"resumo": resumo, "link_original": link_real, "imagem": imagem,
-                    "motivo_indisponivel": None, "modelo": modelo_groq_usado}
+                    "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": False}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
             # falha do Groq em si (cota/config), nao da fonte - tentar as
             # proximas fontes do grupo so repetiria o mesmo erro a toa
@@ -1345,13 +1418,16 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
 
     # nenhuma fonte teve texto longo o bastante sozinha, mas pelo menos 1
     # fragmento curto foi extraido de verdade - combina fragmento(s) +
-    # manchetes antes de cair pro fallback so'-manchete (sinal mais fraco)
+    # manchetes antes de cair pro fallback so'-manchete (sinal mais fraco).
+    # "parcial"=True daqui pra baixo (ver ui/news_tab.py): a sintese nao
+    # veio do texto completo de UMA materia, a UI avisa isso discretamente
+    # (pedido do Rodrigo - nunca simular acesso ao texto completo).
     if fragmentos_curtos:
         texto_combinado = _combinar_fragmentos(fragmentos_curtos, titulos_unicos)
         resumo, motivo_groq = _resumir_com_groq(texto_combinado, titulo)
         if resumo:
             return {"resumo": resumo, "link_original": None, "imagem": None,
-                    "motivo_indisponivel": None, "modelo": modelo_groq_usado}
+                    "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": True}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
             return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": motivo_groq}
         ultimo_motivo = motivo_groq or ultimo_motivo
@@ -1360,7 +1436,7 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
         resumo, motivo_groq = _resumir_das_manchetes(titulo, titulos_unicos)
         if resumo:
             return {"resumo": resumo, "link_original": None, "imagem": None,
-                    "motivo_indisponivel": None, "modelo": modelo_groq_usado}
+                    "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": True}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
             return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": motivo_groq}
         ultimo_motivo = motivo_groq or ultimo_motivo

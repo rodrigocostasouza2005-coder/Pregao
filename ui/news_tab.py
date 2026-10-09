@@ -36,7 +36,7 @@ import streamlit as st
 
 from data.news import (
     SELO_CONFIRMADA, SELO_MENCAO, eh_fonte_confiavel, obter_noticias, obter_noticias_watchlist,
-    obter_resumo_grupo, obter_resumos_prontos, ordenar_fontes_para_resumo,
+    obter_resumo_grupo, obter_resumos_prontos, ordenar_fontes_para_resumo, separar_secoes_resumo,
 )
 from data.research import store as research_store
 from data.research.genial import obter_recomendacoes
@@ -297,6 +297,66 @@ div[class*="st-key-news-live-card-"] {
     font-size: 0.74rem; color: var(--neutro); padding: 0.25rem 0.5rem; margin-top: 0.3rem;
     border-left: 2px solid var(--borda);
 }
+
+/* ---- modal editorial da noticia (FASE C, 2026-10-09) -----------------
+   Capa (imagem OU fallback elegante) no topo, manchete, 1 linha de
+   metadados essenciais, corpo em paragrafos com respiro, LEITURA DE
+   MERCADO destacada so' por borda lateral (nunca uma caixa colorida
+   competindo com o conteudo) e o resto (veiculos/tickers/score) em
+   fonte pequena/cinza no rodape - nada de lista de campos internos ou
+   divisores em excesso (era a critica real do Rodrigo sobre o modal
+   antigo parecer "log de depuracao"). */
+.news-capa {
+    width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid var(--borda);
+    background: var(--painel-bg); margin-bottom: 0.7rem; border-radius: 2px;
+}
+.news-capa img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.news-capa-fallback {
+    display: flex; align-items: center; justify-content: center; height: 100%;
+    flex-direction: column; gap: 0.3rem;
+}
+.news-capa-fallback span {
+    font-family: 'IBM Plex Mono', monospace; font-size: 1.1rem; letter-spacing: 0.1em;
+    color: var(--cinza); opacity: 0.55; text-transform: uppercase;
+}
+.news-headline {
+    font-size: 1.1rem; font-weight: 700; line-height: 1.32; color: var(--neutro);
+    margin-bottom: 0.35rem;
+}
+.news-meta-line {
+    font-size: 0.74rem; color: var(--cinza); font-family: 'IBM Plex Mono', monospace;
+    line-height: 1.6; margin-bottom: 0.6rem;
+}
+.news-meta-line a { color: var(--destaque); text-decoration: none; }
+.news-meta-line a:hover { text-decoration: underline; }
+.news-corpo-p {
+    font-size: 0.92rem; line-height: 1.68; color: var(--neutro); margin-bottom: 0.85rem;
+    max-width: 68ch;
+}
+.news-parcial-nota {
+    font-size: 0.7rem; color: var(--cinza); opacity: 0.8; margin: -0.3rem 0 0.9rem 0;
+    font-style: italic;
+}
+.news-leitura-wrap {
+    border-left: 2px solid var(--destaque); padding: 0.1rem 0 0.1rem 0.7rem; margin: 0.3rem 0 1rem 0;
+}
+.news-leitura-titulo {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; color: var(--destaque);
+    text-transform: uppercase; margin-bottom: 0.25rem;
+}
+.news-leitura-corpo { font-size: 0.86rem; line-height: 1.6; color: var(--neutro); opacity: 0.92; }
+.news-leitura-nota { font-size: 0.68rem; color: var(--cinza); opacity: 0.75; margin-top: 0.3rem; }
+.news-secundario {
+    border-top: 1px solid var(--borda); margin-top: 0.8rem; padding-top: 0.6rem;
+    font-size: 0.74rem; color: var(--cinza); line-height: 1.7;
+}
+.news-secundario b { color: var(--neutro); font-weight: 600; }
+
+@media (max-width: 480px) {
+    .news-capa { aspect-ratio: 4 / 3; }
+    .news-headline { font-size: 1rem; }
+    .news-corpo-p { font-size: 0.88rem; max-width: none; }
+}
 """
 
 
@@ -427,68 +487,108 @@ def _linha_veiculos(fontes: list) -> str:
     return linha
 
 
-@st.dialog("NOTÍCIA", width="large")
-def _abrir_card(n: dict, watchlist: list):
-    """Card com os detalhes completos do grupo - resumo e' gerado aqui,
-    na hora do clique (nunca antes), com cache de obter_resumo_grupo."""
-    st.markdown(f"**{html.escape(n['titulo'])}**")
-    st.caption(_fmt_hora(n["data"]))
-
-    st.link_button("ABRIR MATÉRIA ↗", n["link"], use_container_width=True)
-
-    classe_selo = _CLASSE_SELO.get(n["selo"], "selo-naoconfirmada")
-    sufixo_score = "" if n["selo"] in (SELO_MENCAO, SELO_CONFIRMADA) else f" · {n['score']}"
-    st.markdown(
-        f"<span class='selo-tag {classe_selo}'>{n['selo']}{sufixo_score}</span>",
-        unsafe_allow_html=True,
+def _capa_html(imagem: str | None, veiculo_principal: str) -> str:
+    """Capa do modal editorial - imagem real da materia (og:image, ja'
+    extraida junto do texto - ver data/news.py:_extrair_texto_artigo,
+    nunca uma busca de rede extra so' pra foto) OU um fallback visual
+    discreto (nome do veiculo, sem foto nenhuma) quando nao ha' imagem
+    confiavel - NUNCA um placeholder generico enganoso (ex: foto de banco
+    de imagens que pareça ser da matéria). Mesmo padrão de
+    onerror+irmão-oculto de _thumb_html (nunca troca innerHTML via JS com
+    aspas aninhadas - frágil dentro de um atributo HTML): a imagem some e
+    o fallback (já no DOM, só oculto) aparece, se o link quebrar/expirar
+    no navegador."""
+    marca = html.escape(veiculo_principal or "NOTÍCIA")
+    if not imagem:
+        return f"<div class='news-capa'><div class='news-capa-fallback'><span>{marca}</span></div></div>"
+    return (
+        "<div class='news-capa'>"
+        f"<img src='{html.escape(imagem)}' loading='lazy' decoding='async' alt='' "
+        "onerror=\"this.style.display='none'; this.nextElementSibling.style.display='flex';\">"
+        f"<div class='news-capa-fallback' style='display:none;'><span>{marca}</span></div>"
+        "</div>"
     )
-    for regra in n["regras"]:
-        st.markdown(f"<div class='cinza' style='font-size:0.76rem; margin-top:0.15rem;'>• {html.escape(regra)}</div>", unsafe_allow_html=True)
 
+
+def _meta_line_dialog(n: dict) -> str:
+    """1 linha compacta de metadados essenciais (selo+score no tooltip,
+    hora, veiculo principal, nº de fontes) - substitui o antigo bloco com
+    selo em linha própria + lista de "regras" soltas (lia como log de
+    depuração, ver PROGRESSO.md FASE C)."""
+    classe_selo = _CLASSE_SELO.get(n["selo"], "selo-naoconfirmada")
+    tooltip = html.escape(_tooltip_regras(n))
+    veiculo_principal = (n.get("veiculos") or [""])[0]
+    partes = [f"<span class='selo-tag {classe_selo}' title='{tooltip}'>{_texto_tag(n)}</span>"]
+    if veiculo_principal:
+        partes.append(html.escape(veiculo_principal))
+    partes.append(_fmt_hora(n["data"]))
+    partes.append(f"{n['fontes_count']} fonte(s)")
     confirmacao = n.get("cvm_confirmacao")
     if confirmacao:
-        data_doc = confirmacao["data"][:10]  # so' a data (Data_Entrega da CVM nao tem hora de verdade)
-        st.markdown(
-            f"<div style='margin-top:0.3rem;'><a href='{confirmacao['link']}' target='_blank' "
-            f"style='color:var(--alta); font-size:0.76rem;'>↗ ver documento oficial na CVM "
-            f"({html.escape(confirmacao['tipo_label'])}, {data_doc})</a></div>",
-            unsafe_allow_html=True,
+        data_doc = confirmacao["data"][:10]
+        partes.append(
+            f"<a href='{confirmacao['link']}' target='_blank'>↗ documento oficial CVM "
+            f"({html.escape(confirmacao['tipo_label'])}, {data_doc})</a>"
         )
+    return f"<div class='news-meta-line'>{' · '.join(partes)}</div>"
 
-    if n.get("tickers"):
-        tags = "".join(
-            f"<span class='w-ticker-tag{' w-ticker-tag-watch' if t in watchlist else ''}'>{t}</span>"
-            for t in n["tickers"]
-        )
-        st.markdown(f"<div style='margin-top:0.4rem;'>{tags}</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='w-card-divisor'></div>", unsafe_allow_html=True)
-    st.markdown(
-        f"<div class='cinza' style='font-size:0.72rem; text-transform:uppercase; margin-bottom:0.2rem;'>Veículos ({n['fontes_count']})</div>"
-        f"<div style='font-size:0.82rem;'>{_linha_veiculos(n['fontes'])}</div>",
-        unsafe_allow_html=True,
-    )
-
-    st.markdown("<div class='w-card-divisor'></div>", unsafe_allow_html=True)
-    st.markdown("<div class='cinza' style='font-size:0.72rem; text-transform:uppercase; margin-bottom:0.2rem;'>Resumo</div>", unsafe_allow_html=True)
+@st.dialog("NOTÍCIA", width="large")
+def _abrir_card(n: dict, watchlist: list):
+    """Card editorial completo do grupo - capa, manchete, metadados
+    essenciais, resumo em parágrafos (editorial, gerado aqui na hora do
+    clique, nunca antes - cache de obter_resumo_grupo) e LEITURA DE
+    MERCADO quando houver base; veículos/tickers/contexto de research
+    ficam em área secundária discreta no rodapé, sem listas/divisores
+    internos competindo com o conteúdo (reescrito na FASE C, 2026-10-09 -
+    ver PROGRESSO.md)."""
     with st.spinner("Gerando resumo..."):
         fontes_ordenadas = ordenar_fontes_para_resumo(n["fontes"])
         titulos_grupo = tuple(n.get("titulos") or [n["titulo"]])
         resultado = obter_resumo_grupo(n["titulo"], fontes_ordenadas, titulos_grupo)
 
+    veiculo_principal = (n.get("veiculos") or [""])[0]
+    st.markdown(_capa_html(resultado.get("imagem"), veiculo_principal), unsafe_allow_html=True)
+    st.markdown(f"<div class='news-headline'>{html.escape(n['titulo'])}</div>", unsafe_allow_html=True)
+    st.markdown(_meta_line_dialog(n), unsafe_allow_html=True)
+
     if resultado["resumo"]:
-        imagem = resultado.get("imagem")
-        if imagem:
+        paragrafos, leitura_mercado = separar_secoes_resumo(resultado["resumo"])
+        for p in paragrafos:
+            st.markdown(f"<div class='news-corpo-p'>{html.escape(p)}</div>", unsafe_allow_html=True)
+        if resultado.get("parcial"):
             st.markdown(
-                f"<img src='{html.escape(imagem)}' loading='lazy' style='width:100%; max-height:260px; "
-                f"object-fit:cover; border:1px solid var(--borda); margin-bottom:0.6rem;' "
-                f"onerror=\"this.style.display='none';\">",
+                "<div class='news-parcial-nota'>Síntese com base nas informações públicas disponíveis "
+                "(manchetes/trechos de várias fontes) — o texto completo da matéria não foi acessado.</div>",
                 unsafe_allow_html=True,
             )
-        st.markdown(f"<div class='w-resumo-dialogo'>{html.escape(resultado['resumo'])}</div>", unsafe_allow_html=True)
+        if leitura_mercado:
+            st.markdown(
+                "<div class='news-leitura-wrap'>"
+                "<div class='news-leitura-titulo'>Leitura de mercado</div>"
+                f"<div class='news-leitura-corpo'>{html.escape(leitura_mercado)}</div>"
+                "<div class='news-leitura-nota'>Interpretação analítica a partir do texto acima — não é "
+                "um fato confirmado pela fonte.</div>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
     else:
         motivo = resultado.get("motivo_indisponivel") or "motivo desconhecido"
-        st.caption(f"resumo indisponível ({motivo})")
+        st.caption(f"Resumo indisponível ({motivo}).")
+
+    st.link_button("ABRIR MATÉRIA ↗", n["link"], use_container_width=True)
+
+    secundario = [f"<b>Veículos</b> ({n['fontes_count']}): {_linha_veiculos(n['fontes'])}"]
+    if n.get("tickers"):
+        tags = "".join(
+            f"<span class='w-ticker-tag{' w-ticker-tag-watch' if t in watchlist else ''}'>{t}</span>"
+            for t in n["tickers"]
+        )
+        secundario.append(f"<b>Tickers citados</b>: {tags}")
+    st.markdown(
+        f"<div class='news-secundario'>{'<br>'.join(secundario)}</div>",
+        unsafe_allow_html=True,
+    )
 
     _bloco_contexto_research(_tickers_do_item(n), watchlist)
 
@@ -596,26 +696,17 @@ def _renderizar_lista(itens: list, mostrar_ticker: bool, prefixo: str, watchlist
 # pelo bloco compacto da aba EQUITY (render_news_ticker).
 
 _TRUNCA_TEASER = 220
-_CAMPOS_TEASER = ("O QUE ACONTECEU", "IMPACTO")
 
 
 def _resumo_teaser(resumo: str, limite: int = _TRUNCA_TEASER) -> str:
-    """Teaser de 2-4 linhas pro card do feed, extraido do resumo
-    estruturado completo de NEWS (O QUE ACONTECEU/NUMEROS/IMPACTO/
-    PROXIMOS PASSOS, ver data/news.py) - nunca o bloco inteiro (verboso
-    demais pra uma linha de lista, o bloco completo continua disponivel
-    no dialog). Cai pro texto cru truncado se o formato nao bater (ex:
-    resumo baseado so' em manchetes, que tem o mesmo formato + sufixo)."""
-    campos = {}
-    for linha in resumo.splitlines():
-        campo, _, valor = linha.partition(":")
-        if valor:
-            campos[campo.strip().upper()] = valor.strip()
-    partes = [
-        campos[c] for c in _CAMPOS_TEASER
-        if campos.get(c) and "informado" not in campos[c].lower()
-    ]
-    teaser = " ".join(partes).strip() or resumo.strip()
+    """Teaser de 2-4 linhas pro card do feed, extraido do primeiro
+    parágrafo do resumo EDITORIAL completo de NEWS (blocos RESUMO/LEITURA
+    DE MERCADO, ver data/news.py:separar_secoes_resumo) - nunca o bloco
+    inteiro (verboso demais pra uma linha de lista; o resumo completo
+    continua disponível no dialog) e nunca a LEITURA DE MERCADO (é
+    interpretação, não o fato em si - não cabe como teaser)."""
+    paragrafos, _ = separar_secoes_resumo(resumo)
+    teaser = paragrafos[0] if paragrafos else resumo.strip()
     return _truncar(teaser, limite)
 
 

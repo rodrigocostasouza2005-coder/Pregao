@@ -3,6 +3,41 @@
 Pendências conhecidas, para resolver depois (ajustes visuais adiados
 enquanto avançamos nas próximas fases).
 
+## FASE C (2026-10-09) — pendências do modal editorial de NEWS
+
+Ver PROGRESSO.md FASE C pra auditoria completa (prompt novo, parser,
+layout) + CHANGELOG.md pro resumo do que mudou. Itens não verificáveis
+deste sandbox, registrados aqui pra o Rodrigo confirmar em produção:
+
+- **Imagem real em produção**: o harness Playwright isolado confirmou
+  que o fallback (`onerror`) dispara corretamente quando uma imagem
+  falha ao carregar, mas a rede do sandbox bloqueia hosts de imagem
+  externos (CDN de veículo de notícia) — nunca foi possível confirmar
+  visualmente uma og:image REAL carregando no modal. Precisa abrir
+  NOTÍCIAS em produção e clicar numa matéria com foto conhecida.
+- **Formato RESUMO/LEITURA DE MERCADO com o Groq real**: o prompt novo
+  (`data/news.py:_PROMPT_SISTEMA_RESUMO`) só foi testado com mocks
+  (`_chamar_groq` nunca foi chamado de verdade nesta sessão, sem
+  `GROQ_API_KEY` configurada no sandbox) — o parser
+  (`separar_secoes_resumo`) é tolerante a formato inesperado (cai pro
+  texto inteiro como 1 parágrafo se os marcadores não aparecerem), mas
+  o ideal (3-5 parágrafos + LEITURA DE MERCADO omitida quando não há
+  base) só se confirma com uma resposta real da API em produção.
+- **Cache antigo invalidado, não migrado**: resumos já gerados no
+  formato antigo (4 campos fixos) nunca mais são lidos (bump de versão
+  em `ia_cache.chave_news`) — primeira visita a cada grupo depois do
+  deploy reprocessa 1x (custo normal de cache miss, não um bug), mas
+  isso significa que todo grupo popular vai gerar 1 chamada de IA extra
+  na primeira hora após o deploy. Sem problema de verba (free tier
+  Groq), só registrado pra não ser confundido com um bug de cache se
+  alguém notar mais chamadas que o normal logo após o deploy.
+- **Cobertura de teste do formato parcial com imagem presente+inválida
+  simultaneamente** (ex: trafilatura retorna og:image mas o link está
+  quebrado) não foi testada separadamente — o fallback de `<img
+  onerror>` cobre isso no browser, mas não há teste automatizado
+  Python específico pra esse caso exato (já era assim antes desta
+  sessão, comportamento do HTML/browser, não da lógica Python).
+
 ## FASE 7 (2026-10-09) — pendências da SAÚDE DOS DADOS / piloto EUA / X
 
 Ver PROGRESSO.md FASE 7 pra auditoria completa + matriz de
