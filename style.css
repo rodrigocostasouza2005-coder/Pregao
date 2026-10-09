@@ -579,12 +579,17 @@ table tr:last-child td { border-bottom: none; }
     .st-key-camada1_header div[data-testid="stHorizontalBlock"] {
         row-gap: 0.45rem;
     }
+    /* !important necessario aqui (nao e' preferencia, e' obrigatorio):
+       o proprio Streamlit injeta [data-testid="stHorizontalBlock"] > div
+       { min-width: 0px !important; } (confirmado lendo os stylesheets
+       carregados de verdade) - especificidade normal nunca vence um
+       !important nativo, so' outro !important. */
     .st-key-camada1_header div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-        flex: 0 1 auto;
-        min-width: fit-content;
+        flex: 0 1 auto !important;
+        min-width: fit-content !important;
     }
     .st-key-camada1_header div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) {
-        flex-basis: 100%;
-        min-width: 0;
+        flex-basis: 100% !important;
+        min-width: 0 !important;
     }
 }
