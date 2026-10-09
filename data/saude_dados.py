@@ -162,8 +162,13 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 2, "instrumentado": True,
     },
     {
-        "nome": "MACRO", "fonte": "Banco Central (SGS/Focus) + ANBIMA (ETTJ)",
-        "categoria": "Macro", "frequencia_esperada": "sob demanda (cache 4-6h)",
+        "nome": "MACRO (BCB)", "fonte": "Banco Central (SGS - IPCA/Selic/CDI)",
+        "categoria": "Macro", "frequencia_esperada": "sob demanda (cache 4h)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
+    {
+        "nome": "MACRO (ANBIMA)", "fonte": "ANBIMA (ETTJ - curva pre)",
+        "categoria": "Macro", "frequencia_esperada": "sob demanda (cache 6h)",
         "idade_maxima_horas": 30, "instrumentado": True,
     },
     {

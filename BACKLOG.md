@@ -10,12 +10,11 @@ classificação de cada coletor. Itens deliberadamente não resolvidos
 nesta sessão (tempo/escopo), registrados aqui pra não serem
 reinventados do zero:
 
-- **SAÚDE DOS DADOS — MACRO com 2 fontes numa linha só**: BCB (SGS,
-  IPCA/Selic/CDI) e ANBIMA (ETTJ/curva pré) compartilham o mesmo nome
-  `"MACRO"` na tabela `coletores_status` — a tentativa mais recente de
-  QUALQUER uma das duas sobrescreve o status da outra. Simplificação
-  deliberada (tempo); separar em 2 linhas (`"MACRO (BCB)"`/`"MACRO
-  (ANBIMA)"`) é mudança pequena e segura quando alguém priorizar.
+- ~~**SAÚDE DOS DADOS — MACRO com 2 fontes numa linha só**~~ — **corrigido
+  ainda nesta sessão** (depois do registro inicial): BCB (SGS,
+  IPCA/Selic/CDI) e ANBIMA (ETTJ/curva pré) agora são 2 linhas
+  separadas (`"MACRO (BCB)"`/`"MACRO (ANBIMA)"`) na tabela
+  `coletores_status` — não compartilham mais status.
 - **SAÚDE DOS DADOS — cobertura parcial dos entry points**: só o
   agregador principal de cada coletor foi instrumentado
   (`obter_top_mercado_tudo` em NEWS, `_baixar_lote` em MERCADO,

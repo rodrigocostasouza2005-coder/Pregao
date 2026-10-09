@@ -4054,8 +4054,8 @@ nunca escondida.
 | CALENDÁRIO (eventos de resultado) | RI das empresas + NEWS + prazo CVM | PARCIAL | `coletor_local.py`, ~30min | Bug real de estagnação (universo de 84 tickers nunca completava, tickers do fim da lista nunca alcançados) encontrado e corrigido na FASE 6, com teste reproduzindo o cenário exato | Confirmação em produção real pendente (mesma limitação de rede/Supabase da FASE 6) |
 | NEWS (feed wire + TOP MERCADO) | Google News RSS + extração (InfoMoney/Money Times/trafilatura) | NÃO COMPROVADO → agora instrumentado | sob demanda (cache 20min por ticker / `obter_top_mercado_tudo` próprio TTL) | Auditoria desta sessão confirmou ZERO registro de tentativa existente antes; `data/news.py:obter_top_mercado_tudo` agora chama `registrar_tentativa` (execução+persistência+parcial quando só um dos pools BR/INTL responde) | Só `obter_top_mercado_tudo` está instrumentado — `obter_noticias` (por ticker) ainda não; status real só aparece depois de alguém abrir TOP MERCADO/VISÃO GERAL em produção |
 | MERCADO (cotações em lote, Ibovespa) | yfinance (`yf.download` em lote) | NÃO COMPROVADO → agora instrumentado | sob demanda (cache 90s) | `data/mercado.py:_baixar_lote` (único ponto real de rede, usado por `obter_panorama_ibovespa` E `obter_cotacoes_lote`) agora registra tentativa | Status real só aparece após alguém abrir MERCADO/VISÃO GERAL/EQUITY em produção |
-| MACRO — BCB/SGS (IPCA/Selic/CDI) | api.bcb.gov.br (SGS) | NÃO COMPROVADO → agora instrumentado (parcialmente) | sob demanda (cache 4h) | `obter_ipca` instrumentado (representa a fonte SGS); Selic/CDI usam o mesmo `_serie_sgs` mas não têm registro próprio — ficam sob a mesma linha "MACRO" | Simplificação deliberada: 1 linha "MACRO" no painel cobre 2 fontes (BCB e ANBIMA) — a tentativa mais recente de QUALQUER uma das duas sobrescreve a outra (ver BACKLOG, limitação documentada) |
-| MACRO — ANBIMA (curva pré/ETTJ) | anbima.com.br (ETTJ CSV) | NÃO COMPROVADO → agora instrumentado | sob demanda (cache 6h) | `obter_curva_pre` instrumentado | Mesma limitação de linha compartilhada acima |
+| MACRO (BCB) — SGS (IPCA/Selic/CDI) | api.bcb.gov.br (SGS) | NÃO COMPROVADO → agora instrumentado (parcialmente) | sob demanda (cache 4h) | `obter_ipca` instrumentado (representa a fonte SGS, linha própria `"MACRO (BCB)"`); Selic/CDI usam o mesmo `_serie_sgs` mas não têm registro próprio - ficam implícitos na mesma linha | Só `obter_ipca` instrumentado — `obter_selic_meta`/`obter_cdi` ainda não têm chamada própria |
+| MACRO (ANBIMA) — curva pré/ETTJ | anbima.com.br (ETTJ CSV) | NÃO COMPROVADO → agora instrumentado | sob demanda (cache 6h) | `obter_curva_pre` instrumentado, linha própria `"MACRO (ANBIMA)"` (separada de BCB desde esta sessão - não compartilham mais status) | Status real só aparece após alguém abrir MACRO em produção |
 | CVM (documentos oficiais) | dados.cvm.gov.br (IPE/FCA) | NÃO COMPROVADO → agora instrumentado | sob demanda (cache 6h) | `_ipe_ano` (download do zip anual, único ponto real de rede) instrumentado | Status real só aparece após alguém abrir CVM/CALENDÁRIO em produção |
 | X (sinais sociais) | x.com / API X | NÃO VIÁVEL POR ORA (documentado, não simulado) | — | Pesquisa real (2026-10-09): sem tier gratuito pra dev novo desde 06/02/2026; busca/descoberta parece exigir tier pago específico ou Enterprise (US$42k+/mês) | Aguardar decisão do Rodrigo sobre custo — `data/x_signals.py` isolado/desligado, pronto pra integração futura |
 
@@ -4174,9 +4174,9 @@ checada antes e depois de cada uma das 3 fases, nunca só no final.
    principal de cada coletor on-demand (ver matriz, coluna
    "Pendência") — ampliar cobertura (ex: `obter_noticias` por ticker)
    é trabalho futuro, não bloqueador.
-3. MACRO tem 2 fontes (BCB/ANBIMA) compartilhando 1 linha de status
-   (`nome="MACRO"`) — a mais recente sobrescreve a outra. Separar em
-   2 linhas é uma mudança pequena, não feita por tempo nesta sessão.
+3. ~~MACRO tem 2 fontes (BCB/ANBIMA) compartilhando 1 linha de
+   status~~ — corrigido ainda nesta sessão: agora são 2 linhas
+   (`"MACRO (BCB)"`/`"MACRO (ANBIMA)"`), sem compartilhar status.
 4. FASE 3: timezone/status de pregão multi-mercado, fundamentos/
    notícias/calendário pra ativos EUA, comparativo BRL/USD na
    watchlist — tudo registrado como pendência explícita (seção 3),
