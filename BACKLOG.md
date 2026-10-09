@@ -8,26 +8,16 @@ enquanto avançamos nas próximas fases).
 Ver PROGRESSO.md "FASE RADAR" pra arquitetura completa. Itens
 registrados nesta sessão, não resolvidos de propósito:
 
-- **`pytest tests/` completo falha em 3 testes de
-  `tests/test_research_resumo_live_sync.py`** (achado REAL, mas
-  **pré-existente** - confirmado isolando com `git stash -u` que o
-  mesmo acontece no `main` original, sem nenhum arquivo desta sessão
-  presente). Causa provável: aquele teste faz `st.dialog = (decorator
-  identidade)` ANTES do PRIMEIRO `import ui.research_tab` do processo,
-  pra testar a função decorada sem o decorador real - se outro arquivo
-  de teste já importou `ui.research_tab` antes dele na mesma sessão do
-  interpretador (ordem de coleta do pytest, não necessariamente
-  alfabética), o `import` dentro do teste vira no-op (`sys.modules`
-  cacheado) e o monkeypatch não tem efeito, derrubando `st.dialog(...)`
-  de verdade sem `ScriptRunContext`. Rodar o arquivo sozinho (ou a
-  suíte inteira via execução DIRETA de cada `tests/test_X.py`,
-  convenção real do projeto) sempre passa - só o conjunto completo sob
-  `pytest` falha. Não corrigido aqui (fora do escopo desta tarefa,
-  teste de outra sessão, risco de mexer sem necessidade comprovada).
-  **Pendência concreta**: mover esse teste pra isolar `st.dialog` via
-  `pytest` fixture/`monkeypatch` com escopo de MÓDULO (garante ordem),
-  ou usar `importlib.reload` em vez de depender de `sys.modules` nunca
-  ter sido populado antes.
+- ~~**`pytest tests/` completo falha em 3 testes de
+  `tests/test_research_resumo_live_sync.py`**~~ — **corrigido** (sessão
+  2026-10-09, pós-RADAR): `importlib.reload(research_tab)` depois do
+  patch de `st.dialog` força a redecoração de `_abrir_resumo_live`
+  independente de import anterior do módulo por outro arquivo de
+  teste. `343/343` testes passam agora sob `pytest tests/` completo
+  (antes: 340 passavam, 3 falhavam só nessa condição de ordem de
+  coleta). Confirmado sem regressão: `compileall`/`pyflakes` limpos e
+  os 25 arquivos de teste executados individualmente (convenção do
+  projeto) continuam 100% ok.
 - **Dado real de produção não confirmado**: Supabase/yfinance 100%
   bloqueados neste sandbox (mesma limitação de toda sessão anterior) -
   AppTest confirma que o RADAR não quebra e degrada certo (estado
