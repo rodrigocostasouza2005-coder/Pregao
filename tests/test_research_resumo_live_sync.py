@@ -16,7 +16,20 @@ escopo deste teste unitario). Elementos st.markdown/st.caption/etc fora
 de uma sessao real so' avisam no log (nao quebram) - comportamento
 padrao do Streamlit em "bare mode".
 
-Uso: python tests/test_research_resumo_live_sync.py (python do .venv do projeto)."""
+Uso: python tests/test_research_resumo_live_sync.py (python do .venv do projeto).
+
+Nota (FASE RADAR, correcao de teste fragil sob pytest): sob a suite
+COMPLETA (`pytest tests/`), se outro arquivo de teste ja' tiver
+importado ui.research_tab ANTES deste (ordem de coleta do pytest, nao
+necessariamente alfabetica), o `import` abaixo virava no-op (modulo
+cacheado em sys.modules com _abrir_resumo_live decorado pelo
+st.dialog REAL, nao pelo identity-decorator patcheado aqui) e o teste
+quebrava com StreamlitAPIException ao chamar dialog.open() fora de
+ScriptRunContext - mesmo passando 100% sozinho
+(`python tests/test_research_resumo_live_sync.py`). `importlib.reload`
+forca a re-execucao do modulo (reaplicando o decorator com o st.dialog
+patcheado no momento do reload, independente de import anterior)."""
+import importlib
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -29,8 +42,9 @@ _dialog_original = st.dialog
 st.dialog = lambda *a, **k: (lambda fn: fn)  # decorator identidade so' pra este teste
 
 import ui.research_tab as research_tab  # noqa: E402 (import depois do patch de proposito)
+importlib.reload(research_tab)  # garante _abrir_resumo_live redecorado mesmo se ja importado antes
 
-st.dialog = _dialog_original  # restaura pra nao afetar outro modulo que importe depois
+st.dialog = _dialog_original  # restaura pra nao afetar outro modulo que importe/recarregue depois
 
 _FALHAS = []
 
