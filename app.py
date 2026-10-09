@@ -34,7 +34,7 @@ from ui.macro_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MACRO
 from ui.macro_tab import render_macro
 from ui.mercado_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MERCADO
 from ui.mercado_tab import render_mercado
-from ui.news_tab import render_news, render_news_ticker
+from ui.news_tab import injetar_fallback_imagem, render_news, render_news_ticker
 from ui.radar_tab import render_radar
 from ui.research_tab import render_research
 from ui.saude_dados_tab import render_saude_dados
@@ -78,6 +78,13 @@ if not auth.logado():
     st.stop()
 
 usuario = auth.dados_usuario()
+
+# instalado 1x por pagina (nao so' dentro de NEWS): o modal editorial de
+# noticia pode abrir a partir de QUALQUER aba que reaproveite
+# abrir_card_noticia (RADAR, por exemplo) - ver ui/news_tab.py:
+# injetar_fallback_imagem pro bug real que isso corrige (onerror inline
+# nunca disparava, imagem quebrada ficava visivel sem fallback nenhum).
+injetar_fallback_imagem()
 
 
 def nome_empresa(ticker: str) -> str:

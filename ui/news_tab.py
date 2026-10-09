@@ -494,20 +494,64 @@ def _capa_html(imagem: str | None, veiculo_principal: str) -> str:
     discreto (nome do veiculo, sem foto nenhuma) quando nao ha' imagem
     confiavel - NUNCA um placeholder generico enganoso (ex: foto de banco
     de imagens que pareça ser da matéria). Mesmo padrão de
-    onerror+irmão-oculto de _thumb_html (nunca troca innerHTML via JS com
-    aspas aninhadas - frágil dentro de um atributo HTML): a imagem some e
-    o fallback (já no DOM, só oculto) aparece, se o link quebrar/expirar
-    no navegador."""
+    irmão-oculto de _thumb_html: a imagem some e o fallback (já no DOM,
+    só oculto) aparece, se o link quebrar/expirar no navegador - quem
+    faz a troca é o listener global de injetar_fallback_imagem()."""
     marca = html.escape(veiculo_principal or "NOTÍCIA")
     if not imagem:
         return f"<div class='news-capa'><div class='news-capa-fallback'><span>{marca}</span></div></div>"
     return (
         "<div class='news-capa'>"
-        f"<img src='{html.escape(imagem)}' loading='lazy' decoding='async' alt='' "
-        "onerror=\"this.style.display='none'; this.nextElementSibling.style.display='flex';\">"
+        f"<img src='{html.escape(imagem)}' loading='lazy' decoding='async' alt=''>"
         f"<div class='news-capa-fallback' style='display:none;'><span>{marca}</span></div>"
         "</div>"
     )
+
+
+# bug real encontrado nesta auditoria (2026-10-09, evidencia real via
+# Playwright): o atributo onerror="..." inline (abordagem antiga de
+# _thumb_html/_capa_html) NUNCA disparava - confirmado lendo o DOM
+# renderizado de verdade, o proprio Streamlit remove atributos de evento
+# inline (onerror/onclick/etc) do HTML passado em st.markdown(...,
+# unsafe_allow_html=True) como protecao contra XSS (sanitizacao da
+# propria lib, nao e' bug deste projeto) - toda imagem quebrada ficava
+# com o <img> vazio visivel (sem fallback nenhum), o oposto do que o
+# pedido do Rodrigo exige ("nunca apresente imagem quebrada"). Scripts
+# inline tambem nao bastam sozinhos (um <script> inserido via innerHTML
+# nao executa, limitacao conhecida do DOM) - a saida real (mesmo padrao
+# ja' usado em ui/workspace.py pro drag/resize) e' st.iframe(html,
+# height=1), que roda o script de verdade (com acesso a
+# window.parent.document) e sobrevive a reruns via um listener de
+# 'error' em fase de CAPTURA (captura e' obrigatorio: o evento 'error'
+# de <img> NAO faz bubble) anexado 1x no document pai, cobrindo
+# qualquer imagem (thumb do feed OU capa do modal) que falhar, mesmo
+# recriada em reruns futuros.
+_SCRIPT_FALLBACK_IMAGEM = """
+<script>
+(function() {
+    const doc = window.parent.document;
+    if (doc.__pregaoImgFallbackInstalado) return;
+    doc.__pregaoImgFallbackInstalado = true;
+    doc.addEventListener('error', function(ev) {
+        const img = ev.target;
+        if (!img || img.tagName !== 'IMG') return;
+        if (!img.closest('.news-item-thumb-wrap, .news-capa')) return;
+        img.style.display = 'none';
+        const fallback = img.nextElementSibling;
+        if (fallback) fallback.style.display = 'flex';
+    }, true);
+})();
+</script>
+"""
+
+
+def injetar_fallback_imagem():
+    """Chamado 1x no app.py (toda pagina, nao so' dentro de NEWS) - o
+    modal editorial (_capa_html) pode abrir a partir de outras abas
+    tambem (RADAR reaproveita abrir_card_noticia, ver ui/radar_tab.py),
+    entao o listener precisa estar instalado ANTES de qualquer imagem
+    poder falhar, nao so' quando render_news roda."""
+    st.iframe(_SCRIPT_FALLBACK_IMAGEM, height=1)
 
 
 def _meta_line_dialog(n: dict) -> str:
@@ -734,15 +778,16 @@ def _thumb_html(imagem: str | None, iniciais: str) -> str:
     """Thumbnail do card: foto (quando ja cacheada - ver
     data/news.py:obter_resumos_prontos, nunca uma busca de rede aqui)
     com fallback visual discreto (iniciais do veiculo, sem foto nenhuma)
-    se a imagem faltar OU falhar ao carregar no navegador - onerror troca
-    pro fallback, nunca deixa um icone de imagem quebrada no feed."""
+    se a imagem faltar OU falhar ao carregar no navegador - quem troca
+    pro fallback e' o listener global injetado por
+    injetar_fallback_imagem() (ver mais abaixo), nunca deixa um icone de
+    imagem quebrada no feed."""
     marca = html.escape((iniciais or "?")[:2].upper())
     if not imagem:
         return f"<div class='news-item-thumb-wrap'><div class='news-item-thumb-fallback'>{marca}</div></div>"
     return (
         "<div class='news-item-thumb-wrap'>"
-        f"<img src='{html.escape(imagem)}' loading='lazy' alt='' "
-        "onerror=\"this.style.display='none'; this.nextElementSibling.style.display='flex';\">"
+        f"<img src='{html.escape(imagem)}' loading='lazy' alt=''>"
         f"<div class='news-item-thumb-fallback' style='display:none;'>{marca}</div>"
         "</div>"
     )
