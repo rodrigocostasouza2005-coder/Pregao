@@ -197,17 +197,39 @@ def _painel_setorial(prefs):
     # partir do texto mais largo, em vez de confiar num numero fixo.
     fig.update_yaxes(autorange="reversed", automargin=True)
     _layout_grafico_escuro(fig, tema, altura=max(240, 28 * len(setores)))
+    # BUG REAL confirmado em screenshot + medicao de DOM (Playwright
+    # contra o app rodando de verdade, 2026-10-09): mesmo com
+    # automargin=True (acima), dentro de um painel redimensionavel do
+    # workspace (MERCADO e' a aba piloto desse sistema) o container do
+    # grafico as vezes NAO cresce o suficiente pra acomodar a margem que
+    # o automargin calculou - confirmado medindo getBoundingClientRect:
+    # o texto do rotulo mais comprido ("Bancos e Serviços Financeiros")
+    # renderizava ~52px pra ESQUERDA do proprio container do grafico,
+    # cortado pelo overflow:hidden nativo do Plotly. Margem esquerda
+    # MINIMA explicita (estimativa de largura de caractere da fonte
+    # monoespacada do terminal) garante espaco reservado de verdade,
+    # independente do automargin conseguir redimensionar o container.
+    margem_l = max(60, 7.3 * max(len(s) for s in df["setor"]) + 16)
+    # margem direita fixa (nao so' folga de x-range - testado e
+    # descartado: aumentar so' o range ESCALA a barra E o espaco vazio
+    # juntos, mas o texto do rotulo "+X,XX%" tem largura em PIXELS fixa
+    # (nao encolhe com a escala), entao em telas estreitas um range
+    # maior sozinho nunca fecha a conta - confirmado ainda cortando
+    # mesmo com folga de 110% sobre o maior valor) - 50px e' espaco de
+    # sobra real pro rotulo mais largo possivel aqui ("+99,99%").
+    fig.update_layout(margin=dict(l=margem_l, r=50))
     # achado real (2026-10-08, Playwright a 390px): o rotulo "+X,XX%" de
     # cada barra (textposition="outside") cortava na borda do grafico em
     # telas estreitas - o container fica tao estreito (~300px uteis,
     # descontado o espaco dos nomes de setor no eixo Y) que o autorange
     # padrao do eixo X nao sobra espaco pro texto depois da ultima barra.
-    # Folga fixa de 35% sobre o maior valor absoluto (pra ambos os lados,
-    # ja que setor pode estar em alta OU baixa) da' espaco pro rotulo
-    # sempre que algo comparado a so' confiar no autorange; cliponaxis=False
-    # acima e' a rede de seguranca pro caso raro de nao bastar mesmo assim.
+    # Folga de 35% sobre o maior valor absoluto (pra ambos os lados, ja
+    # que setor pode estar em alta OU baixa) da' espaco extra pra barra
+    # nao encostar na borda; cliponaxis=False acima + margem direita
+    # fixa (comentario acima) e' quem realmente garante espaco pro
+    # texto do rotulo em si.
     maior_abs = max(df["variacao_media_pct"].abs().max(), 0.5)
-    fig.update_xaxes(range=[-maior_abs * 1.55, maior_abs * 1.55])
+    fig.update_xaxes(range=[-maior_abs * 1.35, maior_abs * 1.35])
     chave = graficos.zoom_key("mercado_setorial", janela)
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave)
 
