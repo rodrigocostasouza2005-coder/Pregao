@@ -61,6 +61,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
+from data.coletores_status import registrar_tentativa
 from data.research import store
 
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -184,12 +185,19 @@ def _ipe_ano(ano: int):
     por empresa)."""
     df = _baixar_csv_do_zip(_URL_IPE.format(ano=ano), f"ipe_cia_aberta_{ano}.csv")
     if df is None:
+        # registro de SAUDE DOS DADOS (ver data/saude_dados.py) - so'
+        # numa execucao real (cache miss), nunca muda o retorno (None)
+        registrar_tentativa("CVM", "dados.cvm.gov.br (IPE)", execucao_ok=False,
+                             erro=f"download/parse do zip IPE {ano} falhou", categoria="CVM")
         return None
     colunas = [
         "CNPJ_Companhia", "Categoria", "Tipo", "Especie", "Assunto",
         "Data_Referencia", "Data_Entrega", "Link_Download",
     ]
-    return df[[c for c in colunas if c in df.columns]]
+    df = df[[c for c in colunas if c in df.columns]]
+    registrar_tentativa("CVM", "dados.cvm.gov.br (IPE)", execucao_ok=True,
+                         registros_novos=len(df), categoria="CVM")
+    return df
 
 
 def _parse_data(valor):

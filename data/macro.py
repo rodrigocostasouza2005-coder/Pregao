@@ -14,6 +14,7 @@ import requests
 import streamlit as st
 
 from config import CENARIO_GLOBAL
+from data.coletores_status import registrar_tentativa
 from data.mercado import _baixar_lote_bruto, _linha_papel
 
 TZ = ZoneInfo("America/Sao_Paulo")
@@ -69,8 +70,16 @@ def obter_ipca(dias_historico: int = 760) -> pd.DataFrame | None:
         mensal = _serie_sgs(_SGS_IPCA_MENSAL, dias_historico).rename(columns={"valor": "ipca_mensal_pct"})
         doze_meses = _serie_sgs(_SGS_IPCA_12M, dias_historico).rename(columns={"valor": "ipca_12m_pct"})
         df = pd.merge(mensal, doze_meses, on="data", how="outer").sort_values("data").reset_index(drop=True)
+        # registro de SAUDE DOS DADOS (ver data/saude_dados.py) - so'
+        # numa execucao real (cache miss); IPCA e' usado como ponto
+        # representativo da fonte BCB/SGS (CDI/Selic usam o mesmo
+        # _serie_sgs, nao instrumentados individualmente)
+        registrar_tentativa("MACRO", "Banco Central (SGS)", execucao_ok=True,
+                             registros_novos=len(df), categoria="Macro")
         return df
-    except Exception:
+    except Exception as e:
+        registrar_tentativa("MACRO", "Banco Central (SGS)", execucao_ok=False,
+                             erro=str(e)[:300], categoria="Macro")
         return None
 
 
@@ -237,15 +246,23 @@ def obter_curva_pre(data_referencia: date | None = None) -> pd.DataFrame | None:
     mudar."""
     try:
         if data_referencia is None:
-            return _parse_ettj_anbima(_buscar_ettj_anbima(""))
-
-        for volta in range(7):
-            dia = data_referencia - timedelta(days=volta)
-            texto = _buscar_ettj_anbima(dia.strftime("%d%m%Y"))
-            if texto.strip():
-                return _parse_ettj_anbima(texto)
-        raise ValueError(f"sem publicacao da ANBIMA nos 7 dias antes de {data_referencia}")
-    except Exception:
+            df = _parse_ettj_anbima(_buscar_ettj_anbima(""))
+        else:
+            df = None
+            for volta in range(7):
+                dia = data_referencia - timedelta(days=volta)
+                texto = _buscar_ettj_anbima(dia.strftime("%d%m%Y"))
+                if texto.strip():
+                    df = _parse_ettj_anbima(texto)
+                    break
+            if df is None:
+                raise ValueError(f"sem publicacao da ANBIMA nos 7 dias antes de {data_referencia}")
+        registrar_tentativa("MACRO", "ANBIMA (ETTJ)", execucao_ok=True,
+                             registros_novos=len(df), categoria="Macro")
+        return df
+    except Exception as e:
+        registrar_tentativa("MACRO", "ANBIMA (ETTJ)", execucao_ok=False,
+                             erro=str(e)[:300], categoria="Macro")
         return None
 
 

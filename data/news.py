@@ -40,6 +40,7 @@ except Exception:
 
 import config
 from data import ia_cache, news_setores
+from data.coletores_status import registrar_tentativa
 from data.cvm import documento_confirmador
 from data.prices import obter_nome_yf
 
@@ -991,6 +992,11 @@ def obter_top_mercado_tudo(setor: str = "TODOS"):
     br_entries, br_ok = _coletar_pool_brasil(setor)
     intl_entries, intl_ok = _coletar_pool_internacional(setor)
     if not br_ok and not intl_ok:
+        # registro de SAUDE DOS DADOS (nao faz parte da logica de news em
+        # si - ver data/saude_dados.py/coletores_status.py) - so' numa
+        # execucao real (cache miss), nunca bloqueia o retorno
+        registrar_tentativa("NEWS", "Google News (BR+INTL)", execucao_ok=False,
+                             erro="pool Brasil e Internacional falharam", categoria="Noticias")
         return None
 
     resultado = []
@@ -1000,7 +1006,11 @@ def obter_top_mercado_tudo(setor: str = "TODOS"):
         resultado += _processar_pool(intl_entries, setor, "INT")
 
     resultado.sort(key=lambda n: n["importancia"], reverse=True)
-    return resultado[:_TOP_MERCADO_QTD]
+    resultado = resultado[:_TOP_MERCADO_QTD]
+    registrar_tentativa("NEWS", "Google News (BR+INTL)", execucao_ok=True,
+                         parcial=not (br_ok and intl_ok), registros_novos=len(resultado),
+                         categoria="Noticias")
+    return resultado
 
 
 # --- Resumo por grupo (sob demanda / automatico p/ watchlist nas ultimas 24h) --

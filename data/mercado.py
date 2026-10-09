@@ -29,6 +29,7 @@ import yfinance as yf
 _TIMEOUT_YF = 15
 
 from config import IBOVESPA_SETORES, INDICES_GLOBAIS
+from data.coletores_status import registrar_tentativa
 from data.ibovespa import obter_composicao_oficial
 from data.prices import _para_symbol_yf
 
@@ -57,8 +58,19 @@ def _baixar_lote(tickers: tuple) -> pd.DataFrame | None:
     symbols = [_para_symbol_yf(t) for t in tickers]
     try:
         df = yf.download(symbols, period="2mo", group_by="ticker", threads=True, progress=False, auto_adjust=False, timeout=_TIMEOUT_YF)
-        return df if not df.empty else None
-    except Exception:
+        if df.empty:
+            registrar_tentativa("MERCADO", "yfinance (lote)", execucao_ok=False,
+                                 erro="yf.download retornou vazio", categoria="Cotacoes")
+            return None
+        registrar_tentativa("MERCADO", "yfinance (lote)", execucao_ok=True,
+                             registros_novos=len(symbols), categoria="Cotacoes")
+        return df
+    except Exception as e:
+        # registro de SAUDE DOS DADOS (ver data/saude_dados.py) - so'
+        # numa execucao real (cache miss do @st.cache_data acima), nunca
+        # muda o comportamento de retorno (continua None na falha)
+        registrar_tentativa("MERCADO", "yfinance (lote)", execucao_ok=False,
+                             erro=str(e)[:300], categoria="Cotacoes")
         return None
 
 

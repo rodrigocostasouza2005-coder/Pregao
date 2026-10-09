@@ -245,6 +245,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .neutro { color: var(--neutro); }
 .cinza { color: var(--cinza); }
 .ciano { color: var(--ciano); }
+.alerta { color: var(--destaque); }
 
 /* sidebar -------------------------------------------------------------------- */
 section[data-testid="stSidebar"] {

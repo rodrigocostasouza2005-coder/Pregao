@@ -252,9 +252,11 @@ ICONES_SECAO = {
     "MERCADO": ":material/bar_chart:",
     "CONFIG": ":material/settings:",
     "SISTEMA": ":material/bolt:",
+    "SAÚDE DOS DADOS": ":material/monitor_heart:",
 }
 
-# --- E-mails com acesso a paineis de admin (DIAGNOSTICO DE FONTES, SISTEMA) --
+# --- E-mails com acesso a paineis de admin (DIAGNOSTICO DE FONTES, SISTEMA,
+# SAUDE DOS DADOS) -----------------------------------------------------------
 # repo publico: nao deixar e-mail pessoal fixo no codigo. Le
 # st.secrets["admin"]["emails"] (lista); enquanto esse secret nao for
 # configurado, cai pro fallback abaixo - o painel continua funcionando

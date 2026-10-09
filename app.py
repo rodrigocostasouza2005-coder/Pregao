@@ -36,6 +36,7 @@ from ui.mercado_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MERCADO
 from ui.mercado_tab import render_mercado
 from ui.news_tab import render_news, render_news_ticker
 from ui.research_tab import render_research
+from ui.saude_dados_tab import render_saude_dados
 from ui.sistema_tab import render_sistema
 from ui.top_mercado_tab import render_top_mercado
 from ui.visao_geral import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_VISAO_GERAL
@@ -264,7 +265,11 @@ secoes = abas_visiveis + ["CONFIG"]
 # a aba pra todo mundo, ver migracao de abas novas la em cima)
 _eh_admin = usuario["email"] in config.obter_emails_admin()
 if _eh_admin:
-    secoes = secoes + ["SISTEMA"]
+    # SAÚDE DOS DADOS: mesmo tratamento de SISTEMA (so' admin, fora de
+    # ABAS_DISPONIVEIS) - painel operacional de monitoramento dos
+    # coletores (ver ui/saude_dados_tab.py/data/saude_dados.py, FASE 2
+    # da auditoria 2026-10-09), mesmo publico que DIAGNÓSTICO DE FONTES.
+    secoes = secoes + ["SISTEMA", "SAÚDE DOS DADOS"]
 rotulos_secao = [f"{config.ICONES_SECAO.get(chave, '')} {chave}".strip() for chave in secoes]
 mapa_rotulo_secao = dict(zip(rotulos_secao, secoes))
 padrao_rotulo_secao, mem_secao = _escolha_estavel("secao_ativa", rotulos_secao, rotulos_secao[0])
@@ -929,6 +934,12 @@ if secao_atual == "MERCADO":
 if secao_atual == "SISTEMA":
     with st.container():
         render_sistema(prefs)
+
+
+# --- aba SAÚDE DOS DADOS (so admin, ver ui/saude_dados_tab.py) --------------
+if secao_atual == "SAÚDE DOS DADOS":
+    with st.container():
+        render_saude_dados()
 
 
 # --- aba CVM (documentos oficiais: fato relevante, comunicado, resultados,
