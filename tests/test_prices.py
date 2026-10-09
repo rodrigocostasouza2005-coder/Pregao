@@ -25,8 +25,8 @@ import data.mercado as mercado_mod
 import data.prices as prices_mod
 import ui.visao_geral as visao_geral_mod
 from data.prices import (
-    _TIMEOUT_YF, _calcular_beta, _historico_semanal_ibov, obter_cotacao, obter_cotacao_indice,
-    obter_historico, obter_historico_intraday, obter_indicadores, validar_ticker,
+    _TIMEOUT_YF, _calcular_beta, _historico_semanal_indice, obter_cotacao,
+    obter_cotacao_indice, obter_historico, obter_historico_intraday, obter_indicadores, validar_ticker,
 )
 
 _FALHAS = []
@@ -120,9 +120,9 @@ def test_3_validar_ticker_timeout_retorna_false_sem_quebrar():
     _checar("3 timeout em validar_ticker -> False (nunca assume ticker valido)", resultado is False)
 
 
-def test_4_historico_semanal_ibov_timeout_retorna_none():
+def test_4_historico_semanal_indice_timeout_retorna_none():
     with patch.object(prices_mod.yf, "Ticker", _TickerTimeout):
-        resultado = _historico_semanal_ibov()
+        resultado = _historico_semanal_indice("^BVSP")
     _checar("4 timeout -> None (nunca inventa historico)", resultado is None)
 
 

@@ -9,6 +9,7 @@ import streamlit as st
 import yfinance as yf
 from curl_cffi import requests as cffi_requests
 
+import config
 from config import PERIODOS_BUFFER, PERIODOS_GRAFICO
 
 # timeout explicito pra toda chamada yfinance que aceita o parametro
@@ -58,10 +59,21 @@ _DIAS_EXIBICAO = {
 
 def _para_symbol_yf(ticker: str) -> str:
     """Converte 'PETR4' -> 'PETR4.SA' (mantém se já tiver sufixo, ou se for
-    indice/moeda do yfinance, ex: '^BVSP', 'USDBRL=X', que nao levam .SA)."""
+    indice/moeda do yfinance, ex: '^BVSP', 'USDBRL=X', que nao levam .SA).
+
+    FASE 3 (ativos EUA, auditoria 2026-10-09): tickers cadastrados em
+    config.ATIVOS_CADASTRO_US (grupo-piloto NVDA/AAPL/MSFT) usam o
+    `simbolo_provedor` do cadastro DIRETO, sem colar '.SA' - antes desta
+    funcao sempre colava '.SA' em QUALQUER ticker sem sufixo, o que
+    tornava 'NVDA' em 'NVDA.SA' (invalido no Yahoo Finance). Qualquer
+    ticker fora do cadastro US continua no caminho B3 de sempre, zero
+    mudanca de comportamento (regressao coberta em tests/test_prices.py)."""
     ticker = ticker.strip().upper()
     if ticker.startswith("^") or "=" in ticker or ticker.endswith(".SA"):
         return ticker
+    info = config.info_ativo(ticker)
+    if info["mercado"] != "B3":
+        return info["simbolo_provedor"]
     return ticker + ".SA"
 
 
@@ -183,14 +195,22 @@ def _dividend_yield_12m(ticker_obj, preco_atual: float):
         return None
 
 
+# indice de referencia pro calculo de beta, por mercado do ativo (ver
+# config.info_ativo) - FASE 3 (auditoria 2026-10-09): beta sempre
+# comparava contra o Ibovespa, inclusive pra ativos fora da B3 (achado
+# real, nao hipotetico - um NVDA/AAPL/MSFT fica sem sentido comparado
+# ao Ibovespa). B3 continua ^BVSP, sem mudanca de comportamento.
+_BENCHMARK_POR_MERCADO = {"B3": "^BVSP", "NASDAQ": "^GSPC", "NYSE": "^GSPC"}
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
-def _historico_semanal_ibov():
-    """Fechamentos semanais do Ibovespa, 2 anos - base pro calculo local
-    de beta (_calcular_beta). Cacheado separado do beta em si: varios
-    tickers da watchlist reusam o mesmo historico do indice dentro do
-    TTL, em vez de cada um buscar de novo."""
+def _historico_semanal_indice(simbolo_indice: str):
+    """Fechamentos semanais de um indice de referencia, 2 anos - base pro
+    calculo local de beta (_calcular_beta). Cacheado por indice (nao so'
+    '_ibov' fixo): varios tickers do MESMO mercado reusam o mesmo
+    historico dentro do TTL, em vez de cada um buscar de novo."""
     try:
-        hist = yf.Ticker("^BVSP").history(period="2y", interval="1wk", timeout=_TIMEOUT_YF)["Close"]
+        hist = yf.Ticker(simbolo_indice).history(period="2y", interval="1wk", timeout=_TIMEOUT_YF)["Close"]
         return hist if not hist.empty else None
     except Exception:
         return None
@@ -199,28 +219,31 @@ def _historico_semanal_ibov():
 @st.cache_data(ttl=3600, show_spinner=False)
 def _calcular_beta(ticker: str) -> float | None:
     """Beta calculado localmente: cov(retornos semanais do ticker,
-    retornos semanais do Ibovespa) / var(retornos semanais do Ibovespa),
-    2 anos de historico. O campo 'beta' do yfinance costuma vir mal
-    calculado pra acoes da B3 (referencia de mercado errada, periodo
+    retornos semanais do indice de referencia do MERCADO do ativo -
+    Ibovespa pra B3, S&P 500 pra NASDAQ/NYSE) / var(retornos semanais do
+    indice), 2 anos de historico. O campo 'beta' do yfinance costuma vir
+    mal calculado pra acoes da B3 (referencia de mercado errada, periodo
     curto etc - ver BACKLOG.md) - por isso recalculado aqui em vez de
     usar info['beta']. None se nao houver historico suficiente."""
     symbol = _para_symbol_yf(ticker)
+    mercado = config.info_ativo(ticker)["mercado"]
+    indice = _BENCHMARK_POR_MERCADO.get(mercado, "^BVSP")
     try:
         hist_ticker = yf.Ticker(symbol).history(period="2y", interval="1wk", timeout=_TIMEOUT_YF)["Close"]
     except Exception:
         return None
-    hist_ibov = _historico_semanal_ibov()
-    if hist_ibov is None or len(hist_ticker) < 20 or len(hist_ibov) < 20:
+    hist_indice = _historico_semanal_indice(indice)
+    if hist_indice is None or len(hist_ticker) < 20 or len(hist_indice) < 20:
         return None
     ret_ticker = hist_ticker.pct_change().dropna()
-    ret_ibov = hist_ibov.pct_change().dropna()
-    df = pd.DataFrame({"ticker": ret_ticker, "ibov": ret_ibov}).dropna()
+    ret_indice = hist_indice.pct_change().dropna()
+    df = pd.DataFrame({"ticker": ret_ticker, "indice": ret_indice}).dropna()
     if len(df) < 20:
         return None
-    variancia_ibov = df["ibov"].var()
-    if not variancia_ibov:
+    variancia_indice = df["indice"].var()
+    if not variancia_indice:
         return None
-    return float(df["ticker"].cov(df["ibov"]) / variancia_ibov)
+    return float(df["ticker"].cov(df["indice"]) / variancia_indice)
 
 
 @st.cache_resource(show_spinner=False)

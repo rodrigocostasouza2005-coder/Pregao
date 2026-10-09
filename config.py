@@ -22,6 +22,58 @@ TICKER_NOME = {
     "B3SA3": "B3",
 }
 
+# --- Cadastro unificado de ativos (FASE 3 - expansao B3 + EUA, auditoria
+# 2026-10-09) -----------------------------------------------------------
+#
+# Por que isso existe: `data/prices.py:_para_symbol_yf` SEMPRE colava
+# ".SA" em qualquer ticker sem sufixo (unico comportamento ate agora,
+# so' B3) - "NVDA" virava "NVDA.SA" (invalido no Yahoo Finance) e
+# quebrava silenciosamente (yfinance so' retorna vazio, nunca excecao
+# clara). Confirmado na auditoria: nao existe HOJE nenhum conceito de
+# mercado/pais/moeda em lugar nenhum do codigo - tudo assume B3/BRL
+# implicitamente.
+#
+# Grupo-piloto (pedido explicito do Rodrigo) pra validar o fluxo
+# internacional de ponta a ponta sem reescrever a base de tickers B3
+# inteira (IBOVESPA_SETORES/TICKER_ALIASES continuam so' B3, sem
+# duplicacao): qualquer ticker FORA deste dict continua exatamente como
+# antes (default B3/.SA/BRL, zero mudanca de comportamento) - so' os
+# tickers cadastrados aqui ganham tratamento de mercado estrangeiro.
+# Ativos de REGRESSAO (PETR4/VALE3/ITUB4/WEGE3) de proposito NAO entram
+# aqui: continuam no caminho padrao B3, validando que nada quebrou.
+ATIVOS_CADASTRO_US = {
+    "NVDA": {"mercado": "NASDAQ", "pais": "EUA", "moeda": "USD", "simbolo_provedor": "NVDA"},
+    "AAPL": {"mercado": "NASDAQ", "pais": "EUA", "moeda": "USD", "simbolo_provedor": "AAPL"},
+    "MSFT": {"mercado": "NASDAQ", "pais": "EUA", "moeda": "USD", "simbolo_provedor": "MSFT"},
+}
+
+# fuso do mercado de cada moeda suportada - so' usado onde o caller
+# precisa diferenciar horario de pregao (ex: status aberto/fechado) e
+# JA' sabe tratar mais de um fuso; a maioria do app ainda assume
+# America/Sao_Paulo pra tudo (ver BACKLOG.md, pendencia registrada -
+# nao mudado nesta sessao por ser mudanca maior de UI/status bar).
+FUSO_POR_MERCADO = {
+    "B3": "America/Sao_Paulo",
+    "NASDAQ": "America/New_York",
+    "NYSE": "America/New_York",
+}
+
+PREFIXO_MOEDA = {"BRL": "R$", "USD": "US$"}
+
+
+def info_ativo(ticker: str) -> dict:
+    """Cadastro unificado - {ticker, mercado, pais, moeda,
+    simbolo_provedor} pra QUALQUER ticker. Default (nao cadastrado em
+    ATIVOS_CADASTRO_US) e' B3/Brasil/BRL, simbolo_provedor=ticker (quem
+    usa aplica o sufixo .SA - ver data/prices.py:_para_symbol_yf) -
+    mesmo comportamento de sempre, preservado por design pra nao quebrar
+    nenhum ticker B3 existente."""
+    ticker = ticker.strip().upper()
+    extra = ATIVOS_CADASTRO_US.get(ticker)
+    if extra:
+        return {"ticker": ticker, **extra}
+    return {"ticker": ticker, "mercado": "B3", "pais": "Brasil", "moeda": "BRL", "simbolo_provedor": ticker}
+
 # --- Termos extras pra busca de noticias (data/news.py:obter_noticias) --
 # SO pra tickers onde o nome/ticker que a fonte de noticias usa e'
 # DIFERENTE do que o yfinance/B3 usam - o caso mais comum e' BDR de
@@ -188,6 +240,11 @@ NOMES_ATIVOS_BUSCA = {
     "GOGL34": "Alphabet (Google)", "AMZO34": "Amazon", "MSFT34": "Microsoft",
     "TSLA34": "Tesla", "NVDC34": "Nvidia", "DISB34": "Disney", "COCA34": "Coca-Cola",
     "ROXO34": "Nubank (Nu Holdings)",
+    # grupo-piloto FASE 3 (acoes EUA nativas, cotadas em USD - ver
+    # config.ATIVOS_CADASTRO_US) - diferente das BDRs acima (AAPL34/
+    # MSFT34/NVDC34, cotadas em BRL na B3): mesma empresa, ativo e
+    # mercado diferentes, aparecem como entradas separadas de proposito.
+    "NVDA": "Nvidia (NASDAQ, USD)", "AAPL": "Apple (NASDAQ, USD)", "MSFT": "Microsoft (NASDAQ, USD)",
 }
 
 # --- Principais indices globais (aba MERCADO, painel MERCADOS GLOBAIS) --
@@ -406,15 +463,23 @@ def formatar_numero(valor: float, casas: int = 2, formato: str = "BR") -> str:
     return texto
 
 
-def formatar_valor_mercado(valor, formato: str = "BR") -> str:
-    """Valor de mercado compacto: 'R$ 660,6 bi' / 'R$ 45,2 mi'. '-' se None."""
+def formatar_valor_mercado(valor, formato: str = "BR", moeda: str = "BRL") -> str:
+    """Valor de mercado compacto: 'R$ 660,6 bi' / 'R$ 45,2 mi' (BRL,
+    default - comportamento igual a sempre) ou 'US$ 2,8 tri' etc pra
+    `moeda="USD"` (ver config.info_ativo/PREFIXO_MOEDA - FASE 3, ativos
+    EUA). '-' se None. NUNCA mistura moedas num mesmo numero - quem
+    chama e' responsavel por passar a moeda certa do ativo (nao
+    adivinha nem converte)."""
+    prefixo = PREFIXO_MOEDA.get(moeda, moeda)
     if valor is None:
         return "—"
+    if valor >= 1_000_000_000_000:
+        return f"{prefixo} {formatar_numero(valor / 1_000_000_000_000, 1, formato)} tri"
     if valor >= 1_000_000_000:
-        return f"R$ {formatar_numero(valor / 1_000_000_000, 1, formato)} bi"
+        return f"{prefixo} {formatar_numero(valor / 1_000_000_000, 1, formato)} bi"
     if valor >= 1_000_000:
-        return f"R$ {formatar_numero(valor / 1_000_000, 1, formato)} mi"
-    return f"R$ {formatar_numero(valor, 0, formato)}"
+        return f"{prefixo} {formatar_numero(valor / 1_000_000, 1, formato)} mi"
+    return f"{prefixo} {formatar_numero(valor, 0, formato)}"
 
 
 def formatar_multiplo(valor, casas: int = 2, formato: str = "BR") -> str:
