@@ -3,6 +3,57 @@
 Pendências conhecidas, para resolver depois (ajustes visuais adiados
 enquanto avançamos nas próximas fases).
 
+## Research (Genial) — "Swing trade" nunca aparece na watchlist em produção
+(investigado 2026-10-09, FASE 6 — **não corrigido**, falta decisão de escopo)
+
+Mesma causa raiz do bug corrigido nesta sessão pra "recomendação"/Research
+Radar (ver CHANGELOG.md 2026-10-09): em produção, `obter_swing_trade()` só
+tem leitura AO VIVO da Genial, desligada por `tentar_coleta_automatica=
+False`. A diferença é que recomendação/preço-alvo JÁ tinham uma tabela de
+histórico persistido (`research_recomendacoes_historico`, alimentada por
+`coletor_local.py:coletar_snapshot_genial`) que a UI simplesmente não
+sabia ler — bug corrigido agora. Swing trade **nunca foi persistido em
+tabela alguma** — não existe hoje nenhum dado salvo pra servir de
+fallback. Pra corrigir de verdade precisa de: (1) uma função de coleta
+análoga a `coletar_snapshot_genial` (ex: `coletar_snapshot_swing_trade`,
+persistindo ticker/empresa/recomendação/status/data/link — schema novo,
+porque swing trade tem campos que `research_itens` não tem, como
+`status` "em aberto"/encerrado), (2) uma tabela nova ou coluna(s) extra
+em uma existente, (3) chamada no `coletor_local.py`, (4) leitura
+equivalente a `ultimo_snapshot` em `ui/research_tab.py`. Não implementado
+nesta sessão por ser mudança de schema (tabela nova), fora do escopo de
+"correção pequena e verificável" pedido pra esta rodada — fica registrado
+pra uma próxima sessão dedicada, se o Rodrigo confirmar que quer esse
+dado também disponível em produção (sem ele, swing trade continua
+visível só pra quem abre o app localmente, onde a coleta ao vivo da
+Genial funciona).
+
+## Research (Genial Lives) — "última coleta" ficou parada em 08/10 21:13
+(investigado 2026-10-09, FASE 6 — **sem bug de código confirmado**, falta acesso aos Logs do Cloud)
+
+Auditoria completa do pipeline (`data/research/genial_lives.py` — feed
+RSS do canal, identificação de programa por título, `store.salvar_itens`
+upsert/dedup por link) não encontrou nenhuma falha de parsing/dedup que
+impedisse `coletado_em` de avançar: toda vez que `obter_relatorios()`
+retorna pelo menos 1 item, `salvar_itens` atualiza `coletado_em` de TODOS
+os itens enviados (upsert, não é condicional a mudança de conteúdo).
+Causa mais provável, mas **não verificável sem acesso real aos Logs do
+Streamlit Cloud** (a rede deste ambiente de execução bloqueia até o feed
+público do YouTube — erro 403 do proxy do próprio sandbox, não da
+Genial/YouTube — então não dá pra testar reachability real a partir
+daqui): coleta de casas com `tentar_coleta_automatica=True` (inclui
+Genial Lives) só roda como efeito colateral de alguém abrir a aba
+RESEARCH (`coletar_pendentes` dentro de `ui/research_tab.py:
+render_research`) — não é um cron de verdade. Streamlit Community Cloud
+hiberna o app sem visitas recentes; "última coleta" parada pode ser
+simplesmente "ninguém abriu a aba RESEARCH desde então", não uma falha.
+**Pendência concreta pro Rodrigo**: checar os Logs do app em
+`share.streamlit.io` (ou painel do Cloud) por linhas
+`[research] coleta Genial (Lives): FALHOU` no período - se existirem,
+é uma falha real de rede/feed (investigar bloqueio de IP do Cloud,
+mesma classe de problema já confirmada pra Genial/XP); se não existirem
+tentativas nenhumas, é só falta de visita à aba.
+
 ## Research (Genial) — ticker do LINK de relatório pode ser case-sensitive
 (investigado 2026-10-08, FASE 5 — **não corrigido**, falta confirmação)
 

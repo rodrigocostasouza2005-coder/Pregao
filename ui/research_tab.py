@@ -11,8 +11,9 @@ import streamlit as st
 import config
 from data.news import obter_noticias
 from data.research import CASAS, coletar_pendentes, preparar_leitura, ultimas_coletas_formatadas
+from data.research.base import TTL_COLETA
 from data.research.genial import obter_recomendacoes, obter_swing_trade
-from data.research.historico import historico_ticker, processar_recomendacoes
+from data.research.historico import historico_ticker, mudancas_hoje, processar_recomendacoes, ultimo_snapshot
 from data.research.resumir import obter_resumo
 
 _TIPO_LABEL = {
@@ -51,6 +52,18 @@ _EXTRATOR_POR_CASA = {c["nome"]: c["extrator_texto"] for c in CASAS}
 _GENIAL_COLETA_AUTOMATICA = next(
     (c.get("tentar_coleta_automatica", True) for c in CASAS if c["id"] == "genial"), True
 )
+
+
+@st.cache_data(ttl=TTL_COLETA, show_spinner=False)
+def _ultimo_snapshot_cacheado(ticker: str) -> dict | None:
+    """Wrapper cacheado de historico.ultimo_snapshot, so' pra uso da UI
+    (_painel_watchlist) - 1 consulta por ticker da watchlist por janela
+    de atualizacao, nao a cada rerun da aba. NAO cacheia a funcao
+    original (data/research/historico.py:ultimo_snapshot) porque
+    registrar_se_mudou depende dela pra comparar com o valor MAIS
+    RECENTE de verdade antes de decidir se grava um snapshot novo -
+    cachear ali poderia fazer o coletor perder uma mudanca real."""
+    return ultimo_snapshot("Genial Analisa", ticker)
 
 
 def _casas_ativas(prefs):
@@ -361,6 +374,21 @@ def _painel_watchlist(prefs: dict, relatorios: list, recomendacoes: list, swing:
     for ticker in watchlist:
         relatorios_ticker = [r for r in relatorios if ticker in r.get("tickers", [])]
         recomendacao_ticker = next((r for r in recomendacoes if r["ticker"] == ticker), None)
+        if recomendacao_ticker is None:
+            # fallback pro ultimo snapshot PERSISTIDO (ver
+            # data/research/historico.py:ultimo_snapshot) - cobre
+            # producao, onde a Genial tem tentar_coleta_automatica=False
+            # (recomendacoes ao vivo sempre []) e a UNICA fonte de
+            # "recomendacao atual" e' o que coletor_local.py ja' gravou
+            # em research_recomendacoes_historico. Mesmo formato de
+            # campos (ticker/recomendacao/preco_alvo/potencial_pct) - a
+            # linha abaixo so' preenche quando o live ja nao achou nada.
+            snap = _ultimo_snapshot_cacheado(ticker)
+            if snap is not None:
+                recomendacao_ticker = {
+                    "ticker": ticker, "recomendacao": snap.get("recomendacao"),
+                    "preco_alvo": snap.get("preco_alvo"), "potencial_pct": snap.get("potencial_pct"),
+                }
         swing_ticker = [
             s for s in swing
             if s["ticker"] == ticker and "aberto" in (s.get("status") or "").lower()
@@ -557,7 +585,21 @@ def render_research(prefs: dict):
     # da aba (ver data/research/historico.py). Calculado 1x aqui e
     # reaproveitado pelo watchlist (filtrado) e pelo radar (completo) -
     # evita processar a mesma lista duas vezes com escopos diferentes.
-    mudancas_todas = processar_recomendacoes("Genial Analisa", recomendacoes) if recomendacoes else []
+    #
+    # Combina com mudancas_hoje (le o historico JA' PERSISTIDO, sem
+    # precisar de recomendacoes ao vivo) - bug real corrigido
+    # (2026-10-09): em producao _GENIAL_COLETA_AUTOMATICA e' False,
+    # entao processar_recomendacoes(recomendacoes) sozinho SEMPRE
+    # retornava [] la' (recomendacoes ao vivo tambem sempre []), mesmo
+    # com coletor_local.py alimentando o historico com dado real - o
+    # Research Radar/'O QUE MUDOU' nunca tinham como mostrar nada pra
+    # Genial em producao. Dedup por (ticker,casa): se os dois
+    # detectarem a mesma mudanca (dev local, onde a coleta ao vivo
+    # tambem funciona), mantem so' 1.
+    mudancas_vivas = processar_recomendacoes("Genial Analisa", recomendacoes) if recomendacoes else []
+    mudancas_persistidas = mudancas_hoje("Genial Analisa")
+    vistos = {(m["ticker"], m["casa"]) for m in mudancas_vivas}
+    mudancas_todas = mudancas_vivas + [m for m in mudancas_persistidas if (m["ticker"], m["casa"]) not in vistos]
 
     with st.container(border=True):
         _painel_watchlist(prefs, relatorios, recomendacoes, swing, mudancas_todas)

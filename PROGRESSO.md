@@ -3812,3 +3812,203 @@ rede, não alterados.
    BB/Safra/Ágora/Inter — bloqueio de IP/API fechada/SPA sem API
    óbvia, ver BACKLOG.md), lives da Genial no YouTube desligadas por
    respeito ao `robots.txt` (decisão de risco/ToS do Rodrigo).
+
+## FASE 6 — auditoria e correção dos coletores (Genial/Research Radar + CALENDÁRIO), 2026-10-09
+
+Sessão autônoma agendada, pedido explícito do Rodrigo (escopo maior que
+a tentativa anterior, que cobriu só NEWS+Genial e foi interrompida por
+rate limit). Executada do estado real de `main` (commit `45e2de2`),
+sem reconstruir nada já feito.
+
+### 0. Preparação
+
+Confirmado lendo o código (não só o relato da tentativa anterior):
+`main` local estava 17 commits atrás de `origin/main` (fast-forward
+feito, sem conflito — nenhuma sessão concorrente). `45e2de2` já tem
+`_ticker_da_url_recomendacao` (rstrip da barra final antes do rsplit,
+ver `data/research/genial.py`) commitado e com 2 testes em
+`tests/test_research.py` — confirmado de novo rapidamente (leitura do
+código + rodada da suite), **não refeito**.
+
+Ambiente local não tinha `streamlit`/`pandas`/`numpy`/`bs4`/`feedparser`/
+`pytest`/etc. instalados (sandbox limpo) — criada uma venv Python 3.12
+(`/tmp/pregao_venv`) com `pip install -r requirements.txt pytest` pra
+rodar a suite de verdade, não só conferir sintaxe. Baseline confirmado
+ANTES de qualquer mudança: `compileall` limpo, 17/17 arquivos de teste
+passando sem nenhuma falha. Achado colateral: o Python 3.11 padrão do
+sandbox não compila `app.py`/`ui/mercado_tab.py` (f-string com aspas
+duplas aninhadas, sintaxe PEP 701, só válida a partir do 3.12) — não é
+bug novo, é uma pegadinha do ambiente local; Python 3.12 compila limpo,
+e produção (Streamlit Cloud) já roda isso sem erro, então o código em
+si está correto.
+
+### 1. GENIAL E RESEARCH RADAR — causa raiz real encontrada e corrigida
+
+Investigação completa do pipeline (ponta a ponta, não só uma hipótese):
+agendamento/execução (`data/research/__init__.py:coletar_pendentes`,
+`coletar_todas_disponiveis`) → conectividade (`genial.py:_tentar_buscar`,
+WAF/Akamai documentado) → parsing/extração (`_item_relatorio`,
+`obter_recomendacoes`, `obter_swing_trade`) → persistência/dedup
+(`store.py:salvar_itens`, upsert por link) → UI/filtros
+(`ui/research_tab.py`) → estado da última coleta
+(`ultimas_coletas_formatadas`).
+
+**Causa raiz confirmada** (não é rede/WAF — é um bug de arquitetura na
+camada de leitura): `data/research/__init__.py:CASAS["genial"]` tem
+`tentar_coleta_automatica=False` desde 2026-09-24 (decisão correta —
+Genial é bloqueada por WAF tanto no sandbox quanto no Streamlit Cloud
+de produção). Por causa disso, `ui/research_tab.py:render_research`
+NUNCA chama `genial.obter_recomendacoes()`/`obter_swing_trade()` ao
+vivo em produção (`_GENIAL_COLETA_AUTOMATICA=False` lá) —
+`recomendacoes`/`swing` ficam SEMPRE `[]`. Isso por si só já é
+intencional (evita martelar uma fonte bloqueada). O bug real: a ÚNICA
+fonte alternativa de recomendação/preço-alvo que sobrava acessível em
+produção — a tabela `research_recomendacoes_historico`, alimentada de
+verdade por `coletor_local.py:coletar_snapshot_genial()` sempre que
+roda de uma rede sem bloqueio — **nunca era lida por nenhuma tela**.
+Resultado exato do sintoma relatado: `_painel_watchlist` (seção
+"Genial: recomendação"/"Swing trade") e `_painel_radar` (Research
+Radar, via `processar_recomendacoes(recomendacoes)` com `recomendacoes`
+sempre `[]`) ficavam permanentemente vazios em produção — não por falta
+de dado real coletado, mas porque a camada de leitura da UI só sabia
+falar com a fonte ao vivo (desligada), nunca com o histórico persistido.
+
+**Correção** (2 pontas, mesma tabela existente, sem schema novo):
+1. `data/research/historico.py:mudancas_hoje(casa)` (nova função,
+   cacheada com `TTL_COLETA` igual `processar_recomendacoes`) — lê
+   `_tickers_capturados_hoje` (quais tickers têm linha gravada HOJE,
+   fuso BR) e, pra cada um, compara os 2 snapshots mais recentes
+   (`historico_ticker`, já existente) pra reconstruir a mudança — MESMO
+   formato de retorno de `processar_recomendacoes`
+   (`{ticker,casa,de,para}`), zero chamada à Genial. `ui/research_tab.py:
+   render_research` agora combina `processar_recomendacoes(recomendacoes)`
+   (ao vivo, quando disponível — dev local) com `mudancas_hoje` (sempre
+   disponível, lê só o persistido), deduplicando por `(ticker,casa)`.
+2. `_painel_watchlist` ganhou um fallback: quando não há
+   `recomendacao_ticker` ao vivo pro ticker, consulta
+   `historico.ultimo_snapshot("Genial Analisa", ticker)` (via wrapper
+   cacheado `_ultimo_snapshot_cacheado`, pra não bater no Supabase 1x
+   por ticker da watchlist a cada rerun) — mesmos 3 campos
+   (recomendação/preço-alvo/potencial), nunca inventa nada, só mostra o
+   que já foi salvo de verdade por `coletor_local.py`.
+
+**Swing trade** continua sem solução (ver BACKLOG.md) — nunca foi
+persistido em tabela alguma (diferente de recomendação, que já tinha
+`research_recomendacoes_historico` pronta, só não lida). Corrigir isso
+de verdade precisa de schema novo (tabela ou colunas extras) — fora do
+escopo de "correção pequena e verificável" desta rodada; registrado
+como pendência concreta, não inventada.
+
+**Testes**: 7 cenários novos — `tests/test_research.py`
+(`test_mudancas_hoje_usa_historico_persistido_sem_live`,
+`test_mudancas_hoje_ticker_com_1_so_snapshot_nao_e_mudanca`,
+`test_mudancas_hoje_sem_captura_hoje_retorna_vazio`,
+`test_tickers_capturados_hoje_banco_fora_do_ar_retorna_vazio`,
+`test_tickers_capturados_hoje_filtra_pela_casa_e_pelo_dia`) e
+`tests/test_research_news_context.py`
+(`test_12_watchlist_usa_snapshot_persistido_quando_recomendacao_viva_vazia`,
+`test_13_watchlist_prefere_recomendacao_viva_e_nao_consulta_o_snapshot`,
+`test_14_watchlist_sem_recomendacao_viva_nem_persistida_fica_vazia`) —
+confirmam que o fallback lê exatamente o que o Supabase tem (mock),
+nunca inventa, e nunca consulta o persistido quando o ao vivo já
+respondeu (sem custo extra em dev local).
+
+**"Genial (Lives): última coleta 08/10 21:13"** — investigado
+separadamente (feed RSS, identificação de programa, dedup/upsert),
+nenhum bug de código confirmado — ver BACKLOG.md pra hipótese mais
+provável (hibernação do Streamlit Community Cloud sem visitas) e o que
+falta pro Rodrigo confirmar (Logs do Cloud).
+
+### 2. COLETOR DO CALENDÁRIO — causa raiz real encontrada e corrigida
+
+Auditoria independente do fluxo completo (não presumi que o
+agendamento garantia que a coleta funcionava): `coletor_local.py`
+chama `data.eventos_coleta.coletar_eventos_universo` pro universo de
+`config.IBOVESPA_SETORES` (**84 tickers reais**, confirmado em runtime
+— não os ~38 estimados por contagem de linha do config.py) a cada
+execução agendada, e depois `data.eventos.salvar_snapshot_calendario`
+grava o snapshot que a UI (`ui/calendario_tab.py`) só lê (nunca
+recalcula ao navegar).
+
+**Causa raiz confirmada**: `data/eventos_coleta.py:coletar_evento`
+tentava RI (rede, até `_TIMEOUT=10s`) e, se falhasse, NEWS (outra
+busca de rede) pra **TODO ticker em TODA execução** — inclusive os que
+já tinham um CONFIRMADO persistido no período pendente (a maior
+confiabilidade possível em `PRIORIDADE_STATUS` — nada que RI/NEWS
+encontrem melhora isso). Com o orçamento fixo de
+`coletar_eventos_universo` (`_ORCAMENTO_TOTAL_S=5min`) e um universo
+de 84 tickers processados SEMPRE na mesma ordem (`dict.keys()` de
+`config.IBOVESPA_SETORES`, determinístico), os primeiros tickers da
+lista consumiam o orçamento inteiro só reconfirmando o que já sabiam —
+os tickers do final da lista NUNCA eram alcançados, em NENHUMA
+execução, por mais dias que passassem. Não é lentidão: é estagnação
+permanente — a promessa do próprio docstring de
+`coletar_eventos_universo` ("o próximo run continua de onde parou,
+já que tickers já resolvidos como CONFIRMADO não mudam") era FALSA na
+implementação real, porque "não mudam" não significava "não custam
+rede de novo".
+
+**Correção** (pequena e verificável, sem mudar a lógica RI→NEWS→
+PRAZO_CVM pra quem ainda não tem CONFIRMADO): atalho no início de
+`coletar_evento` — se `_buscar_evento_salvo(ticker, periodo)` já
+retorna um CONFIRMADO pro período pendente calculado, monta e retorna
+o evento direto a partir da linha salva, SEM chamar `tentar_ri`/
+`tentar_news` (zero rede). ESTIMADO não ganha o atalho de propósito
+(ainda pode ser superado por um CONFIRMADO real, então o pipeline
+continua tentando RI normalmente pra esses). Linha persistida
+malformada (sem `data_evento`/`fonte`) cai pro pipeline normal, nunca
+quebra.
+
+**Demais pontos da auditoria pedida** (checados, sem bug confirmado):
+timezone (`periodo_pendente` já usa `datetime.now(_TZ_SP)`, fix de
+2026-10-08, confirmado ainda correto); snapshot só sobrescreve com
+`eventos` não-vazio (`salvar_snapshot_calendario`, preserva o último
+bom); dedup por `(ticker,periodo)` real via `mesclar_eventos`/
+`aplicar_cache_resiliente`; UI distingue CONFIRMADO/ESTIMADO/PRAZO_CVM
+com aviso explícito de que PRAZO_CVM não é data de divulgação, e mostra
+"atualizado há Xh/d" com alerta visual se passar de 48h sem atualizar
+(`ui/calendario_tab.py:_rotulo_atualizacao`). Fontes de RI/NEWS
+(`data/ir_sources.py`, campo oficial `Pagina_Web` do FCA da CVM) —
+revisadas, nenhum problema novo encontrado. Não dá pra confirmar
+coleta/persistência/credenciais no AMBIENTE REAL de produção a partir
+deste sandbox (Supabase real não acessível daqui, e a rede deste
+ambiente bloqueia até o feed do YouTube com 403 — não é
+representativo da rede do Streamlit Cloud) — fica pendente pro Rodrigo
+confirmar via Logs do Cloud/painel do Supabase.
+
+**Testes**: 5 cenários novos em `tests/test_eventos_coleta.py`
+(`test_10a_confirmado_persistido_pula_ri_e_news`,
+`test_10c_estimado_persistido_nao_pula_ri_news`,
+`test_10d_linha_persistida_malformada_cai_pro_pipeline_normal`,
+`test_10e_universo_grande_nao_estagna_nos_tickers_ja_confirmados` — este
+último reproduz o cenário real: 20 tickers, 15 já-CONFIRMADOS + 5
+pendentes, confirma que os 20 são processados e só os 5 pendentes de
+verdade chamam RI).
+
+### 3. Validação final
+
+`compileall` limpo (Python 3.12) e `pyflakes` sem avisos em todos os
+arquivos tocados (`data/research/historico.py`, `ui/research_tab.py`,
+`data/eventos_coleta.py`, `tests/test_research.py`,
+`tests/test_research_news_context.py`, `tests/test_eventos_coleta.py`).
+Suite completa: 17/17 arquivos de teste passando, zero falha, antes e
+depois de cada mudança (nunca só no final).
+
+### Pendências pra próxima fase (sem solução inventada)
+
+1. **Swing trade da Genial na watchlist** — precisa de persistência
+   nova (tabela/colunas), ver BACKLOG.md.
+2. **"Genial (Lives): última coleta" estagnada** — precisa dos Logs
+   reais do Streamlit Cloud pra distinguir falha de "sem visitas", ver
+   BACKLOG.md.
+3. **Confirmação em produção real** (Supabase de verdade, rede do
+   Cloud) de que os dois pipelines corrigidos nesta sessão realmente
+   voltaram a mostrar dado novo — não dá pra validar isso deste
+   sandbox (sem acesso a secrets de produção nem rede equivalente); as
+   correções foram validadas com mocks fiéis ao schema real (ver
+   testes) e por leitura cuidadosa do caminho de código, mas o "antes
+   vs depois" em `pregao.streamlit.app` só o Rodrigo pode confirmar
+   abrindo a aba RESEARCH/CALENDÁRIO depois do deploy deste commit.
+4. Case-sensitivity do ticker no LINK de relatório (`_TICKER_NO_LINK`)
+   — pendência já registrada em BACKLOG.md desde a FASE 5, não
+   reinvestigada nesta rodada por falta de dado novo pra confirmar.

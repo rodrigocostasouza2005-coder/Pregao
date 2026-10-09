@@ -209,11 +209,39 @@ def coletar_evento(ticker: str, hoje: date = None) -> dict | None:
     """Pipeline completo pra 1 ticker: RI -> NEWS -> PRAZO_CVM (fallback
     final, sempre disponivel se a CVM responder). None so' se nem o
     PRAZO_CVM puder ser calculado (fonte CVM de verdade indisponivel -
-    nunca inventa evento nenhum nesse caso)."""
+    nunca inventa evento nenhum nesse caso).
+
+    Atalho (bug real de "fome" de recurso corrigido, 2026-10-09): se o
+    (ticker,periodo) JA' tem um CONFIRMADO persistido (maior
+    confiabilidade possivel - PRIORIDADE_STATUS - nada que RI/NEWS
+    possam achar melhora isso), pula RI/NEWS direto pro valor ja' salvo,
+    sem nenhuma chamada de rede. Sem isso, TODO ticker (mesmo os ja'
+    resolvidos) refazia RI+NEWS (rede, ate' ~20s cada) em TODA execucao
+    do coletor - com o orcamento de coletar_eventos_universo
+    (_ORCAMENTO_TOTAL_S=5min) e o universo de ~84 tickers (
+    config.IBOVESPA_SETORES), os primeiros tickers da lista (SEMPRE a
+    MESMA ordem, dict.keys()) consumiam o orcamento inteiro so'
+    reconfirmando o que ja' sabiam, e os tickers do final da lista NUNCA
+    eram alcancados - nao e' so' lento, e' estagnacao permanente (o
+    docstring de coletar_eventos_universo promete "o proximo run
+    continua de onde parou", o que so' e' verdade se os ja'-CONFIRMADOS
+    pularem a parte cara da rede)."""
     periodo = periodo_pendente(ticker, hoje)
     if periodo is None:
         return None
     ano, trimestre = periodo
+    rotulo = rotulo_periodo(ano, trimestre)
+
+    salvo = _buscar_evento_salvo(ticker, rotulo)
+    if salvo is not None and salvo.get("status") == STATUS_CONFIRMADO:
+        try:
+            return _montar_evento(
+                ticker, obter_nome_yf(ticker) or ticker, ano, trimestre, STATUS_CONFIRMADO,
+                date.fromisoformat(str(salvo["data_evento"])[:10]), salvo["fonte"], salvo.get("url_fonte"),
+            )
+        except (KeyError, ValueError, TypeError):
+            pass  # linha salva malformada - ignora o atalho, segue o pipeline normal (RI/NEWS/PRAZO_CVM)
+
     empresa = obter_nome_yf(ticker) or ticker
 
     evento = tentar_ri(ticker, empresa, ano, trimestre)

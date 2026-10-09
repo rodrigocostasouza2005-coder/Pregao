@@ -225,6 +225,51 @@ def test_11_historico_recomendacao_aparece_com_2_ou_mais_snapshots():
             chamadas_historico == [("Genial Analisa", "PETR4")], f"(chamadas={chamadas_historico})")
 
 
+# ============================================================
+# fallback pro snapshot PERSISTIDO na watchlist (bug real corrigido,
+# 2026-10-09): em producao, recomendacoes AO VIVO da Genial sao
+# sempre [] (tentar_coleta_automatica=False, bloqueada por WAF no
+# Cloud) - sem o fallback, "Genial: recomendacao" nunca aparecia na
+# watchlist em producao, mesmo com coletor_local.py ja' tendo salvo o
+# dado real em research_recomendacoes_historico (ver
+# data/research/historico.py:ultimo_snapshot).
+# ============================================================
+
+def test_12_watchlist_usa_snapshot_persistido_quando_recomendacao_viva_vazia():
+    prefs = {"watchlist": ["PETR4"], "formato_numerico": "BR"}
+    snap = {"recomendacao": "COMPRA", "preco_alvo": 48.5, "potencial_pct": 12.3}
+    capturado = []
+    with patch.object(research_tab_mod, "_ultimo_snapshot_cacheado", return_value=snap) as mock_snap, \
+         patch.object(research_tab_mod.st, "markdown", side_effect=lambda html, **k: capturado.append(html)), \
+         patch.object(research_tab_mod, "_bloco_o_que_mudou"):
+        research_tab_mod._painel_watchlist(prefs, [], [], [], [])
+    mock_snap.assert_called_once_with("PETR4")
+    _checar("12a sem recomendacao AO VIVO, cai pro snapshot persistido (ultimo_snapshot)", True)
+    _checar("12b a recomendacao do snapshot (COMPRA) aparece de verdade na tela",
+             any("COMPRA" in c and "Genial" in c for c in capturado), f"(capturado={capturado})")
+
+
+def test_13_watchlist_prefere_recomendacao_viva_e_nao_consulta_o_snapshot():
+    prefs = {"watchlist": ["PETR4"], "formato_numerico": "BR"}
+    recomendacoes_vivas = [{"ticker": "PETR4", "recomendacao": "VENDA", "preco_alvo": 30.0, "potencial_pct": -5.0}]
+    with patch.object(research_tab_mod, "_ultimo_snapshot_cacheado") as mock_snap, \
+         patch.object(research_tab_mod.st, "markdown"), patch.object(research_tab_mod, "_bloco_o_que_mudou"):
+        research_tab_mod._painel_watchlist(prefs, [], recomendacoes_vivas, [], [])
+    _checar("13 recomendacao AO VIVO disponivel -> NUNCA consulta o snapshot persistido", mock_snap.call_count == 0)
+
+
+def test_14_watchlist_sem_recomendacao_viva_nem_persistida_fica_vazia():
+    prefs = {"watchlist": ["PETR4"], "formato_numerico": "BR"}
+    capturado = []
+    with patch.object(research_tab_mod, "_ultimo_snapshot_cacheado", return_value=None), \
+         patch.object(research_tab_mod.st, "markdown", side_effect=lambda html, **k: capturado.append(html)), \
+         patch.object(research_tab_mod.st, "info", side_effect=lambda t: capturado.append(t)), \
+         patch.object(research_tab_mod, "_bloco_o_que_mudou"):
+        research_tab_mod._painel_watchlist(prefs, [], [], [], [])
+    _checar("14 nem live nem snapshot -> nenhuma linha 'Genial:' inventada", not any("Genial:" in c for c in capturado),
+            f"(capturado={capturado})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

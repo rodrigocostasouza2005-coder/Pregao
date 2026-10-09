@@ -16,6 +16,9 @@ obter_recomendacoes/obter_swing_trade) - arquitetura generica (campo
 'casa' em toda consulta) pra outras fontes alimentarem a mesma tabela no
 futuro, se/quando tiverem dado estruturado equivalente."""
 
+from datetime import datetime, time, timezone
+from zoneinfo import ZoneInfo
+
 import streamlit as st
 
 from data.supabase_client import obter_cliente
@@ -23,6 +26,7 @@ from data.supabase_client import obter_cliente
 from .base import TTL_COLETA
 
 _CAMPOS_COMPARADOS = ("recomendacao", "preco_alvo")
+_TZ_SP = ZoneInfo("America/Sao_Paulo")
 
 
 def ultimo_snapshot(casa: str, ticker: str) -> dict | None:
@@ -123,6 +127,68 @@ def processar_recomendacoes(casa: str, recomendacoes: list) -> list:
                 "de": {"recomendacao": anterior.get("recomendacao"), "preco_alvo": anterior.get("preco_alvo")},
                 "para": {"recomendacao": rec.get("recomendacao"), "preco_alvo": rec.get("preco_alvo")},
             })
+    return mudancas
+
+
+def _tickers_capturados_hoje(casa: str) -> list:
+    """Tickers com pelo menos 1 linha gravada HOJE (fuso America/Sao_Paulo)
+    em research_recomendacoes_historico pra essa casa - usado so' por
+    mudancas_hoje (ver docstring la') pra saber ONDE procurar, sem
+    precisar de uma consulta por ticker. [] se nao houver nenhuma hoje
+    ou o banco estiver fora do ar."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return []
+    inicio_dia_br = datetime.combine(datetime.now(_TZ_SP).date(), time.min, tzinfo=_TZ_SP)
+    inicio_dia_utc = inicio_dia_br.astimezone(timezone.utc)
+    try:
+        resp = (
+            cliente.table("research_recomendacoes_historico")
+            .select("ticker")
+            .eq("casa", casa)
+            .gte("capturado_em", inicio_dia_utc.isoformat())
+            .execute()
+        )
+        return sorted({linha["ticker"] for linha in resp.data})
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=TTL_COLETA, show_spinner=False)
+def mudancas_hoje(casa: str) -> list:
+    """Mesmo formato/proposito de processar_recomendacoes (lista de
+    {ticker, casa, de, para} pro Research Radar/'O QUE MUDOU'), mas lida
+    do historico JA' PERSISTIDO em vez de exigir uma chamada AO VIVO a'
+    fonte - bug real corrigido (2026-10-09): em producao (Streamlit
+    Cloud), Genial tem tentar_coleta_automatica=False (bloqueada por WAF
+    - ver data/research/__init__.py), entao obter_recomendacoes() nunca
+    roda la' e processar_recomendacoes nunca tinha recomendacoes pra
+    comparar - MESMO com coletor_local.py alimentando
+    research_recomendacoes_historico via coletar_snapshot_genial() toda
+    vez que roda de uma rede onde a Genial nao esta' bloqueada. O
+    Research Radar/'O QUE MUDOU' em producao ficavam permanentemente
+    vazios pra Genial, nao por falta de dado real, mas porque a UI so'
+    sabia ler o dado AO VIVO (desligado), nunca o PERSISTIDO.
+
+    Pra cada ticker com uma linha capturada HOJE, compara os 2 snapshots
+    mais recentes (historico_ticker, ja existente) - so' conta como
+    mudanca se os 2 existirem e diferirem (1 snapshot so' = primeiro
+    registro conhecido, nunca "mudou" - mesma regra de _mudou). []
+    se nao houver nenhuma mudanca hoje ou o banco estiver fora do ar."""
+    mudancas = []
+    for ticker in _tickers_capturados_hoje(casa):
+        ultimos = historico_ticker(casa, ticker, limite=2)
+        if len(ultimos) < 2:
+            continue
+        atual, anterior = ultimos[0], ultimos[1]
+        if atual.get("recomendacao") == anterior.get("recomendacao") and atual.get("preco_alvo") == anterior.get("preco_alvo"):
+            continue
+        mudancas.append({
+            "ticker": ticker,
+            "casa": casa,
+            "de": {"recomendacao": anterior.get("recomendacao"), "preco_alvo": anterior.get("preco_alvo")},
+            "para": {"recomendacao": atual.get("recomendacao"), "preco_alvo": atual.get("preco_alvo")},
+        })
     return mudancas
 
 

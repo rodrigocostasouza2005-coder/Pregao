@@ -159,6 +159,68 @@ def test_genial_obter_recomendacoes_preserva_preco_alvo_e_recomendacao_por_ticke
              }, f"(por_ticker={por_ticker})")
 
 
+# ============================================================
+# historico.mudancas_hoje / ultimo_snapshot (bug real corrigido,
+# 2026-10-09): em producao, Genial tem tentar_coleta_automatica=False
+# (bloqueada por WAF no Cloud - ver data/research/__init__.py), entao
+# obter_recomendacoes() ao vivo NUNCA roda la' e
+# processar_recomendacoes(recomendacoes) sempre recebia [] - o Research
+# Radar/'O QUE MUDOU'/watchlist ficavam vazios pra Genial em producao,
+# mesmo com coletor_local.py alimentando research_recomendacoes_historico
+# de verdade (coletar_snapshot_genial, rodando de uma rede sem bloqueio).
+# mudancas_hoje/ultimo_snapshot leem esse historico JA' PERSISTIDO -
+# funcionam mesmo quando a Genial esta' inacessivel DESTE processo.
+# ============================================================
+
+def test_mudancas_hoje_usa_historico_persistido_sem_live():
+    """Nucleo do bug: mudancas_hoje precisa funcionar usando SO' o que
+    ja' esta' no banco (historico_ticker), nunca uma chamada ao vivo a'
+    Genial - exatamente o caminho que fica disponivel em producao."""
+    historico.mudancas_hoje.clear()
+    with patch.object(historico, "_tickers_capturados_hoje", return_value=["PETR4", "VALE3"]), \
+         patch.object(historico, "historico_ticker", side_effect=lambda casa, ticker, limite=10: {
+             "PETR4": [{"recomendacao": "COMPRA", "preco_alvo": 52.0}, {"recomendacao": "MANTER", "preco_alvo": 48.0}],
+             "VALE3": [{"recomendacao": "MANTER", "preco_alvo": 70.0}, {"recomendacao": "MANTER", "preco_alvo": 70.0}],
+         }[ticker]):
+        mudancas = historico.mudancas_hoje("Genial Analisa")
+    _checar("so' PETR4 (teve diff real) aparece, VALE3 (sem diff) nao", [m["ticker"] for m in mudancas] == ["PETR4"],
+            f"(mudancas={mudancas})")
+    _checar("de/para do PETR4 refletem os 2 snapshots reais (nunca inventados)",
+             mudancas[0]["de"] == {"recomendacao": "MANTER", "preco_alvo": 48.0}
+             and mudancas[0]["para"] == {"recomendacao": "COMPRA", "preco_alvo": 52.0}, f"(mudancas={mudancas})")
+
+
+def test_mudancas_hoje_ticker_com_1_so_snapshot_nao_e_mudanca():
+    historico.mudancas_hoje.clear()
+    with patch.object(historico, "_tickers_capturados_hoje", return_value=["PETR4"]), \
+         patch.object(historico, "historico_ticker", return_value=[{"recomendacao": "COMPRA", "preco_alvo": 52.0}]):
+        mudancas = historico.mudancas_hoje("Genial Analisa")
+    _checar("1 snapshot so' (primeiro registro) nunca e' reportado como mudanca", mudancas == [], f"(mudancas={mudancas})")
+
+
+def test_mudancas_hoje_sem_captura_hoje_retorna_vazio():
+    historico.mudancas_hoje.clear()
+    with patch.object(historico, "_tickers_capturados_hoje", return_value=[]):
+        mudancas = historico.mudancas_hoje("Genial Analisa")
+    _checar("nenhum ticker capturado hoje -> [], nunca quebra", mudancas == [])
+
+
+def test_tickers_capturados_hoje_banco_fora_do_ar_retorna_vazio():
+    with patch.object(historico, "obter_cliente", return_value=None):
+        tickers = historico._tickers_capturados_hoje("Genial Analisa")
+    _checar("Supabase fora do ar -> [] (nunca quebra, nunca finge dado)", tickers == [])
+
+
+def test_tickers_capturados_hoje_filtra_pela_casa_e_pelo_dia():
+    cliente = MagicMock()
+    resp = MagicMock()
+    resp.data = [{"ticker": "PETR4"}, {"ticker": "VALE3"}, {"ticker": "PETR4"}]  # PETR4 duplicado - precisa dedup
+    cliente.table.return_value.select.return_value.eq.return_value.gte.return_value.execute.return_value = resp
+    with patch.object(historico, "obter_cliente", return_value=cliente):
+        tickers = historico._tickers_capturados_hoje("Genial Analisa")
+    _checar("tickers com linha hoje, deduplicados e ordenados", tickers == ["PETR4", "VALE3"], f"(tickers={tickers})")
+
+
 def _groq_mock(resposta: str):
     """Mock de resumir._chamar_groq pra testar SO' o parsing de
     _extrair_dados_estruturados, sem chamada de rede nenhuma."""

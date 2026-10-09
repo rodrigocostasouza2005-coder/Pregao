@@ -173,6 +173,109 @@ def test_periodo_pendente_none_retorna_none_sem_tentar_nada():
 
 
 # ============================================================
+# atalho CONFIRMADO persistido (bug real de "fome" de recurso corrigido,
+# 2026-10-09): sem isso, coletar_eventos_universo com orcamento de tempo
+# fixo nunca alcancava os tickers do fim da lista, porque os do inicio
+# (mesmo ja' CONFIRMADOS) refaziam RI+NEWS (rede) em TODA execucao - ver
+# docstring de coletar_evento.
+# ============================================================
+
+def test_10a_confirmado_persistido_pula_ri_e_news():
+    salvo = {
+        "ticker": "PETR4", "periodo": "3T26", "status": STATUS_CONFIRMADO,
+        "data_evento": "2026-10-20", "fonte": "Petrobras RI", "url_fonte": "https://ri.example.com",
+    }
+    chamadas_rede = []
+    with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
+         patch.object(coleta_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(coleta_mod, "_buscar_evento_salvo", return_value=salvo), \
+         patch.object(coleta_mod, "tentar_ri", side_effect=lambda *a: chamadas_rede.append("ri")), \
+         patch.object(coleta_mod, "tentar_news", side_effect=lambda *a: chamadas_rede.append("news")):
+        evento = coleta_mod.coletar_evento("PETR4")
+    _checar("10a CONFIRMADO ja' persistido -> NUNCA chama RI nem NEWS (atalho sem rede)", chamadas_rede == [])
+    _checar("10b retorna o CONFIRMADO salvo, com a data/fonte/url exatas", evento == {
+        "ticker": "PETR4", "empresa": "Petrobras", "periodo": "3T26", "data": date(2026, 10, 20),
+        "horario": None, "status": STATUS_CONFIRMADO, "fonte": "Petrobras RI",
+        "origem_url": "https://ri.example.com", "tipo_evento": "RESULTADO",
+        "coletado_em": evento["coletado_em"],
+    }, f"(evento={evento})")
+
+
+def test_10c_estimado_persistido_nao_pula_ri_news():
+    """So' CONFIRMADO e' atalho (ja' tem a MAIOR confiabilidade possivel -
+    PRIORIDADE_STATUS - nada que RI/NEWS achem melhora isso). ESTIMADO
+    ainda pode ser superado por um CONFIRMADO real, entao o pipeline
+    continua tentando RI normalmente."""
+    salvo = {
+        "ticker": "PETR4", "periodo": "3T26", "status": STATUS_ESTIMADO,
+        "data_evento": "2026-10-25", "fonte": "Reuters", "url_fonte": "https://reuters.example.com/n1",
+    }
+    with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
+         patch.object(coleta_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(coleta_mod, "_buscar_evento_salvo", return_value=salvo), \
+         patch.object(coleta_mod, "tentar_ri", return_value=None) as mock_ri, \
+         patch.object(coleta_mod, "tentar_news", return_value=None):
+        coleta_mod.coletar_evento("PETR4")
+    _checar("10c ESTIMADO persistido NAO pula o pipeline - RI ainda e' tentado", mock_ri.called)
+
+
+def test_10d_linha_persistida_malformada_cai_pro_pipeline_normal():
+    salvo_malformado = {"ticker": "PETR4", "periodo": "3T26", "status": STATUS_CONFIRMADO}  # sem 'data_evento'/'fonte'
+    prazo_evento = {
+        "ticker": "PETR4", "empresa": "Petrobras", "periodo": "3T26", "data": date(2026, 11, 14),
+        "horario": None, "status": STATUS_PRAZO_CVM, "fonte": "CVM — prazo regulatório",
+        "origem_url": None, "tipo_evento": "RESULTADO", "coletado_em": datetime.now(timezone.utc),
+    }
+    with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
+         patch.object(coleta_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(coleta_mod, "_buscar_evento_salvo", return_value=salvo_malformado), \
+         patch.object(coleta_mod, "tentar_ri", return_value=None), \
+         patch.object(coleta_mod, "tentar_news", return_value=None), \
+         patch.object(coleta_mod, "_calcular_proximo_resultado", return_value=prazo_evento):
+        evento = coleta_mod.coletar_evento("PETR4")
+    _checar("10d linha persistida malformada (sem data_evento) nunca quebra - cai pro pipeline normal",
+             evento["status"] == STATUS_PRAZO_CVM, f"(evento={evento})")
+
+
+def test_10e_universo_grande_nao_estagna_nos_tickers_ja_confirmados():
+    """Reproduz o cenario real: orcamento de tempo pequeno, universo
+    grande, primeiros tickers da lista JA' CONFIRMADOS (persistidos) -
+    antes do atalho, cada um custava uma chamada de rede (RI, aqui
+    simulada com um sleep) e o orcamento esgotava sem alcancar os
+    tickers novos do fim da lista. Com o atalho, os ja'-CONFIRMADOS sao
+    O(1) (sem rede) e o orcamento inteiro fica disponivel pros tickers
+    que ainda precisam ser investigados."""
+    tickers = [f"TICK{i}" for i in range(20)]
+    persistidos = {
+        t: {"ticker": t, "periodo": "3T26", "status": STATUS_CONFIRMADO,
+            "data_evento": "2026-10-20", "fonte": "RI", "url_fonte": None}
+        for t in tickers[:15]  # os 15 primeiros ja' resolvidos
+    }
+    processados_de_verdade = []
+
+    def _buscar_salvo_fake(ticker, periodo):
+        return persistidos.get(ticker)
+
+    def _tentar_ri_fake(ticker, empresa, ano, trimestre):
+        processados_de_verdade.append(ticker)  # so' os 5 ultimos (nao persistidos) devem chegar aqui
+        return None
+
+    with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
+         patch.object(coleta_mod, "obter_nome_yf", return_value="Empresa"), \
+         patch.object(coleta_mod, "_buscar_evento_salvo", side_effect=_buscar_salvo_fake), \
+         patch.object(coleta_mod, "tentar_ri", side_effect=_tentar_ri_fake), \
+         patch.object(coleta_mod, "tentar_news", return_value=None), \
+         patch.object(coleta_mod, "salvar_evento_se_mais_confiavel", return_value=False), \
+         patch.object(coleta_mod, "tabela_eventos_disponivel", return_value=True):
+        stats = coleta_mod.coletar_eventos_universo(tickers)
+    _checar("10e TODOS os 20 tickers sao processados (nenhum estagnado pelos ja'-CONFIRMADOS)",
+             stats["processados"] == 20, f"(stats={stats})")
+    _checar("10e so' os 5 tickers NAO persistidos chamam RI de verdade (os 15 CONFIRMADOS pulam a rede)",
+             processados_de_verdade == tickers[15:], f"(processados_de_verdade={processados_de_verdade})")
+    _checar("10e orcamento nao esgota (universo pequeno + atalho rapido)", stats["tempo_esgotado"] is False)
+
+
+# ============================================================
 # persistencia: priorizacao/deduplicacao (Supabase mockado)
 # ============================================================
 

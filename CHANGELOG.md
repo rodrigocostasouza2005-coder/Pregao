@@ -3,6 +3,88 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-09 (FASE 6 — auditoria dos coletores: Genial/Research Radar + CALENDÁRIO)
+
+Sessão autônoma agendada, pedido explícito do Rodrigo (FASE 6). Partiu do
+commit `45e2de2` (já em `main` — confirmado que a correção do ticker da
+Genial com barra final, `_ticker_da_url_recomendacao`, já estava commitada
+e testada, não refeita). Suite completa (17 arquivos de teste, todos
+passando, sem nenhuma falha) e `compileall` confirmados ANTES e DEPOIS de
+cada mudança — 12 cenários de regressão novos (7 em
+`tests/test_research.py`/`tests/test_research_news_context.py`, 5 em
+`tests/test_eventos_coleta.py`). Ambiente local sem `streamlit`/`pandas`/
+etc. pré-instalados — criada venv Python 3.12 com
+`pip install -r requirements.txt` pra rodar a suite de verdade (não só
+sintaxe); `compileall` do sandbox também expôs que o Python 3.11 padrão
+não entende as f-strings com aspas duplas aninhadas de `app.py`/
+`ui/mercado_tab.py` (sintaxe PEP 701, só válida a partir do 3.12) — não é
+bug (Streamlit Cloud roda 3.12+), só uma pegadinha do ambiente local.
+
+- **fix (causa raiz real — Research Radar e "Genial: recomendação" na
+  watchlist SEMPRE vazios em produção)**: `ui/research_tab.py` só sabia
+  ler recomendação/preço-alvo/mudança da Genial de uma chamada AO VIVO
+  (`obter_recomendacoes()`/`processar_recomendacoes`) — mas em produção
+  (Streamlit Cloud) a Genial tem `tentar_coleta_automatica=False`
+  (bloqueada por WAF, decisão de 2026-09-24), então essa chamada ao vivo
+  SEMPRE retorna `[]` lá. Resultado prático: mesmo com `coletor_local.py`
+  rodando de uma rede sem bloqueio e alimentando
+  `research_recomendacoes_historico` de verdade (via
+  `coletar_snapshot_genial`), a tela nunca tinha como mostrar esse dado —
+  não é falta de dado, é a UI não saber ler a única fonte que sobrou
+  acessível em produção. Corrigido com 2 pontas: (1)
+  `data/research/historico.py:mudancas_hoje(casa)` (nova, cacheada) lê o
+  histórico JÁ PERSISTIDO (sem nenhuma chamada à Genial) e reconstrói as
+  mudanças de hoje comparando os 2 snapshots mais recentes por ticker —
+  `render_research` agora combina isso com `processar_recomendacoes`
+  (dedup por ticker+casa, prioriza o ao vivo quando disponível); (2)
+  `_painel_watchlist` cai pro último snapshot persistido
+  (`historico.ultimo_snapshot`, via wrapper cacheado
+  `_ultimo_snapshot_cacheado`) quando a recomendação ao vivo não veio —
+  mesmos campos (recomendação/preço-alvo/potencial), nunca inventa nada,
+  só lê o que já foi salvo de verdade. Swing trade continua sem solução
+  (nunca foi persistido em tabela alguma — ver BACKLOG.md, pendência
+  nova). 7 testes de regressão novos (`tests/test_research.py`,
+  `tests/test_research_news_context.py`).
+- **fix (causa raiz real — coletor do CALENDÁRIO nunca avançava pros
+  tickers do fim do universo)**: `data/eventos_coleta.py:coletar_evento`
+  refazia RI+NEWS (rede, até ~20s cada tentativa) pra TODO ticker em
+  TODA execução do coletor — mesmo os que já tinham um CONFIRMADO
+  persistido (a maior confiabilidade possível, nada que RI/NEWS achem
+  melhora isso). Com orçamento fixo de 5min
+  (`_ORCAMENTO_TOTAL_S`) e um universo real de 84 tickers
+  (`config.IBOVESPA_SETORES`), os primeiros tickers da lista (SEMPRE a
+  MESMA ordem, `dict.keys()`) consumiam o orçamento inteiro só
+  reconfirmando o que já sabiam — os tickers do final da lista NUNCA
+  eram alcançados. Não é só lentidão: é estagnação permanente (a
+  promessa do docstring, "o próximo run continua de onde parou", só era
+  verdade se os já-resolvidos pulassem a parte cara). Corrigido com um
+  atalho no início de `coletar_evento`: se já existe um CONFIRMADO
+  persistido pro (ticker,período) pendente, retorna ele direto, sem
+  nenhuma chamada de rede. ESTIMADO não ganha o atalho (ainda pode ser
+  superado por um CONFIRMADO real). 5 testes de regressão novos
+  (`tests/test_eventos_coleta.py`), incluindo um cenário com 20 tickers
+  (15 já-CONFIRMADOS + 5 pendentes) confirmando que os 20 são processados
+  e só os 5 pendentes de verdade chamam RI.
+- **Investigado, sem bug de código confirmado — "Genial (Lives): última
+  coleta 08/10 21:13" (stale)**: auditoria completa do pipeline
+  (`data/research/genial_lives.py` — feed RSS, identificação de
+  programa, dedup/upsert em `store.salvar_itens`) não encontrou nenhuma
+  falha de parsing/dedup que impedisse `coletado_em` de avançar. Causa
+  mais provável, documentada mas **não confirmável sem acesso aos logs
+  reais do Streamlit Cloud** (rede deste ambiente bloqueia até o feed
+  público do YouTube, 403 do proxy — não dá pra testar reachability
+  real daqui): coleta de casas com `tentar_coleta_automatica=True`
+  (Genial Lives inclui) só acontece como efeito colateral de alguém
+  abrir a aba RESEARCH (`coletar_pendentes` dentro de `render_research`)
+  — Streamlit Community Cloud hiberna o app sem visitas, então "última
+  coleta" fica parada no último acesso real, não é um cron verdadeiro.
+  Pendência registrada no BACKLOG.md: confirmar nos Logs do Streamlit
+  Cloud se há tentativas falhando (erro real) ou se simplesmente não
+  houve visitas à aba RESEARCH no período.
+- **Reconfirmado, sem mudança**: `_ticker_da_url_recomendacao` (barra
+  final na URL de recomendação da Genial) — já commitado em `45e2de2`,
+  testado em `tests/test_research.py`. Não refeito.
+
 ## 2026-10-08 (FASE 5 — correções pós-auditoria: bug visual do NEWS + fidelidade dos resumos)
 
 Sessão autônoma agendada, pedido explícito do Rodrigo (FASE 5). Partiu do
