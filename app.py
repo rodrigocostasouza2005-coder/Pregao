@@ -35,6 +35,7 @@ from ui.macro_tab import render_macro
 from ui.mercado_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MERCADO
 from ui.mercado_tab import render_mercado
 from ui.news_tab import render_news, render_news_ticker
+from ui.radar_tab import render_radar
 from ui.research_tab import render_research
 from ui.saude_dados_tab import render_saude_dados
 from ui.sistema_tab import render_sistema
@@ -470,6 +471,12 @@ with st.sidebar:
 if secao_atual == "VISÃO GERAL":
     with st.container():
         render_visao_geral(prefs, persistir_fn=_persistir_prefs)
+
+
+# --- aba RADAR (inteligência de investimentos, ver ui/radar_tab.py) --------
+if secao_atual == "RADAR":
+    with st.container():
+        render_radar(prefs)
 
 
 # --- aba EQUITY --------------------------------------------------------------

@@ -593,6 +593,13 @@ def _abrir_card(n: dict, watchlist: list):
     _bloco_contexto_research(_tickers_do_item(n), watchlist)
 
 
+def abrir_card_noticia(n: dict, watchlist: list):
+    """Wrapper público de _abrir_card - pensado pra RADAR (ui/radar_tab.py)
+    reaproveitar o MESMO dialog editorial da aba NEWS em vez de duplicar
+    a lógica (zero implementação paralela, pedido explícito)."""
+    _abrir_card(n, watchlist)
+
+
 _LIMITE_CONTEXTO_RESEARCH = 3
 
 

@@ -281,7 +281,7 @@ VELOCIDADES_TICKER_TAPE = {"LENTA": 25, "NORMAL": 50, "RAPIDA": 80}
 JANELAS_RETORNO = ["1D", "1S", "1M", "3M", "6M", "12M", "ANO"]
 
 # --- Abas do app (chave interna = titulo exibido na navegacao) ----------
-ABAS_DISPONIVEIS = ["VISÃO GERAL", "EQUITY", "MACRO", "RESEARCH", "NEWS", "CVM", "CALENDÁRIO", "TOP MERCADO", "MERCADO"]
+ABAS_DISPONIVEIS = ["VISÃO GERAL", "RADAR", "EQUITY", "MACRO", "RESEARCH", "NEWS", "CVM", "CALENDÁRIO", "TOP MERCADO", "MERCADO"]
 
 # icone (so decorativo, sem nenhum significado funcional) por aba, usado
 # no rotulo da navegacao principal (app.py) - CONFIG/SISTEMA nao entram em
@@ -299,6 +299,7 @@ ABAS_DISPONIVEIS = ["VISÃO GERAL", "EQUITY", "MACRO", "RESEARCH", "NEWS", "CVM"
 # muito mais com o terminal ambar/preto do que emoji colorido do sistema.
 ICONES_SECAO = {
     "VISÃO GERAL": ":material/dashboard:",
+    "RADAR": ":material/radar:",
     "EQUITY": ":material/trending_up:",
     "MACRO": ":material/public:",
     "RESEARCH": ":material/description:",

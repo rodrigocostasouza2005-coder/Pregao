@@ -203,6 +203,13 @@ def _abrir_card(d: dict):
     st.link_button("ABRIR DOCUMENTO ↗", d["link"], use_container_width=True)
 
 
+def abrir_card_documento(d: dict):
+    """Wrapper público de _abrir_card - pensado pra RADAR (ui/radar_tab.py)
+    reaproveitar o MESMO dialog/resumo por IA da aba CVM em vez de
+    duplicar a lógica (zero implementação paralela, pedido explícito)."""
+    _abrir_card(d)
+
+
 def _cabecalho_tabela():
     col_data, col_ticker, col_tipo, col_assunto = st.columns(_COLS, gap="small")
     with col_data:
