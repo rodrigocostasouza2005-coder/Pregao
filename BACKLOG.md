@@ -3,6 +3,53 @@
 Pendências conhecidas, para resolver depois (ajustes visuais adiados
 enquanto avançamos nas próximas fases).
 
+## FASE 8 (2026-10-09) — pendências da auditoria funcional/performance/MERCADO
+
+Ver PROGRESSO.md FASE 8 pra auditoria completa (2 bugs reais corrigidos
+nesta sessão: sincronia do resumo de Morning Call/Lives, rotação do
+universo do coletor de eventos do CALENDÁRIO). Itens investigados e
+**não confirmados/não implementados** nesta sessão:
+
+- **"Mapa do mercado aparentemente vazio"**: não reproduzido com
+  evidência real (sandbox sem rede pra buscar panorama real do
+  Ibovespa). Hipótese não confirmada: se a última vela do dia tiver
+  `volume=0` (ex: logo após abertura do pregão), TODOS os papéis caem
+  no filtro `volume_financeiro > 0` de `ui/mercado_tab.py:_painel_
+  treemap` e o mapa aparece vazio de verdade (não é bug de renderização,
+  seria um efeito real do filtro combinado com o timing da coleta).
+  **Pendência concreta pro Rodrigo**: em que dia/horário exato viu o
+  mapa vazio? Se foi logo na abertura do pregão (perto das 10h),
+  a hipótese ganha força; se foi no meio do pregão com volume normal
+  em outras telas (ex: TOP MERCADO funcionando), é outra causa.
+- **"Tabelas/gráficos cortados" em MERCADO**: testado com harness
+  Playwright real (CSS/layout fiéis ao `style.css`/`ui/workspace.py`
+  reais) em 2 cenários plausíveis (tabela de 10 linhas em painel de
+  altura padrão 18rem; painel redimensionado pro mínimo 8rem) - NENHUM
+  corte reproduzido nos dois (o painel usa `overflow:auto`, que vence
+  sobre o `overflow-y:hidden` da tabela quando o conteúdo é maior que o
+  espaço - resultado é scroll, não corte). **Pendência concreta pro
+  Rodrigo**: qual painel especificamente, em que largura/altura de
+  tela (desktop normal? notebook pequeno? painel redimensionado na
+  mão?) - sem isso não dá pra tentar reproduzir de novo com mais
+  precisão.
+- **Performance: `@st.fragment` em MERCADO/MACRO/VISÃO GERAL** -
+  candidato identificado (as únicas 3 seções sem fragment, entre as 8
+  que usam alguma forma de renderização por aba; as outras 5 já
+  ganharam isso na FASE 13 do ciclo de 2026-10-01, especificamente pra
+  parar o "scroll pra cima" a cada clique de filtro). As 3 passam por
+  `ui/workspace.py:renderizar_workspace` (drag/resize com ponte JS↔
+  Python via iframe), sistema com histórico documentado de bugs sutis
+  de escopo de rerun (3 bugs reais já corrigidos em produção, ver
+  comentário em `ui/workspace.py:273-298`). Mudar o escopo de rerun
+  (full-page → fragment) nessas 3 abas PODE ser uma melhoria real de
+  performance (qualquer clique dentro delas hoje reroda a página
+  inteira: header, ticker tape, sidebar, nav), mas precisa de validação
+  com browser real (Playwright contra o app rodando de verdade,
+  simulando o gesto de drag/resize) antes de aplicar - não disponível
+  de forma segura neste sandbox. Próxima sessão com acesso a
+  browser real contra o app rodando (não só harness isolado) pode
+  tentar isso com segurança.
+
 ## FASE C (2026-10-09) — pendências do modal editorial de NEWS
 
 Ver PROGRESSO.md FASE C pra auditoria completa (prompt novo, parser,

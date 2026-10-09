@@ -28,6 +28,14 @@ inteiro numa execucao so'; o proximo run (agendado a cada 30min)
 continua cobrindo gradualmente (tickers ja' CONFIRMADOS nao regridem,
 ver data.eventos_coleta.salvar_evento_se_mais_confiavel).
 
+FASE 8 (2026-10-09): o universo passado pra coletar_eventos_universo e'
+ROTACIONADO a cada execucao (ver _universo_rotativo) - bug real
+encontrado na auditoria: ticker que nunca vira CONFIRMADO (ESTIMADO/
+PRAZO_CVM nao tem atalho pra pular RI/NEWS) refaz a parte cara de rede
+em TODA execucao; sem rotacionar o ponto de partida, so' os primeiros
+~15-20 tickers da ordem fixa de config.IBOVESPA_SETORES.keys() jamais
+recebiam esse orcamento, os do fim da lista nunca eram alcancados.
+
 Uso: python coletor_local.py (rodar com o python do .venv do projeto) ou
 pythonw coletor_local.py (mesma coisa, sem abrir janela de console - e' o
 que o Agendador de Tarefas usa, ver PROGRESSO.md). Saida: exit code 0 se
@@ -57,6 +65,7 @@ if sys.stderr is None:
     sys.stderr = sys.stdout
 
 import logging
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -89,6 +98,37 @@ logger.addHandler(_handler_console)
 # nivel minimo pra ERROR so' pro logger do streamlit, sem mexer no logger
 # proprio deste script (logger acima continua em INFO).
 logging.getLogger("streamlit").setLevel(logging.ERROR)
+
+
+_JANELA_ROTACAO_S = 30 * 60  # mesmo intervalo do agendamento (Agendador de Tarefas roda a cada 30min)
+
+
+def _universo_rotativo(tickers: list, agora: float = None) -> list:
+    """Rotaciona o ponto de partida do universo a cada janela de 30min
+    (mesmo intervalo do agendamento), sem precisar de nenhum estado
+    persistido novo - so' usa o relogio.
+
+    Bug real corrigido (2026-10-09, FASE 8): coletar_eventos_universo tem
+    orcamento de tempo fixo (eventos_coleta._ORCAMENTO_TOTAL_S = 5min) e
+    RI/NEWS por ticker sao caros (rede, ate' ~10-20s cada); a MAIORIA dos
+    tickers do universo nunca chega a CONFIRMADO (RI so' le' a URL exata
+    registrada na CVM, taxa de sucesso baixa por design - ver docstring
+    de data/eventos_coleta.py) e fica so' em ESTIMADO/PRAZO_CVM, status
+    que NAO tem o atalho que pula RI/NEWS (so' CONFIRMADO tem, ver
+    coletar_evento). Sem rotacao, toda execucao comecava do MESMO
+    ticker0 (list(config.IBOVESPA_SETORES.keys()), ordem fixa de dict) -
+    os tickers do fim da lista que nunca virassem CONFIRMADO ficavam
+    permanentemente fora do orcamento, igual ao bug ja corrigido pra
+    tickers JA'-confirmados, so' um nivel acima (aqui e' estrutural, nao
+    tem atalho possivel - ESTIMADO/PRAZO_CVM sempre tentam RI de novo).
+    Rotacionar o ponto de partida garante que, ao longo de varias
+    execucoes, TODO ticker eventualmente fica no inicio da lista e recebe
+    seu orcamento de rede - nao so' os primeiros ~15-20 da ordem fixa."""
+    if not tickers:
+        return []
+    agora = time.time() if agora is None else agora
+    offset = int(agora // _JANELA_ROTACAO_S) % len(tickers)
+    return tickers[offset:] + tickers[:offset]
 
 
 def main() -> int:
@@ -125,7 +165,7 @@ def main() -> int:
     # datas reais de resultado (RI->NEWS->PRAZO_CVM, 2026-10-02) - ver
     # data/eventos_coleta.py. Orcamento proprio de tempo (5min), pode nao
     # cobrir o universo inteiro numa execucao so' (ver docstring do modulo).
-    stats_eventos = coletar_eventos_universo(list(config.IBOVESPA_SETORES.keys()))
+    stats_eventos = coletar_eventos_universo(_universo_rotativo(list(config.IBOVESPA_SETORES.keys())))
     if stats_eventos["tabela_disponivel"] is False:
         logger.warning(
             "  eventos de resultado: tabela 'eventos_resultados' nao encontrada/inacessivel no "

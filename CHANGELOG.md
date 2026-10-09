@@ -3,6 +3,58 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-09 (FASE 8 — auditoria funcional, performance e usabilidade)
+
+Sessão autônoma agendada (pedido explícito do Rodrigo). Ver PROGRESSO.md
+pra auditoria completa (medições de performance, harness Playwright de
+layout, investigação por item do pedido) - resumo dos 2 bugs reais
+corrigidos:
+
+- **fix (Morning Call/Lives - "Resumo ainda não gerado" não
+  sincronizava)**: `ui/research_tab.py:_abrir_resumo_live` gerava e
+  persistia o resumo com sucesso (Supabase, upsert por link - já
+  funcionava certo), mas nunca atualizava o dict `rel` em memória (MESMA
+  referência que o card da lista usa, `ui/news_tab.py:_cartao_live`) -
+  o card continuava mostrando "Resumo ainda não gerado" no MESMO clique
+  que acabou de gerar o resumo, só corrigindo no próximo rerun completo
+  da página. Corrigido com `rel["resumo"] = resumo` após geração
+  bem-sucedida - nunca fabrica/mascara erro, só sincroniza com o que já
+  foi persistido de verdade. 3 testes novos (`tests/test_research_
+  resumo_live_sync.py`).
+- **fix (CALENDÁRIO - coletor de eventos estagnava nos mesmos tickers
+  pra sempre)**: `coletor_local.py` sempre passava `config.IBOVESPA_
+  SETORES.keys()` na MESMA ordem fixa pro coletor de datas de resultado
+  (RI→NEWS→PRAZO_CVM, orçamento de 5min) - como a maioria dos tickers
+  nunca chega a CONFIRMADO (RI só lê a URL exata da CVM, taxa de sucesso
+  baixa por design) e só CONFIRMADO tem atalho pra pular a rede (fix da
+  FASE 6), os tickers do FIM da lista nunca eram tentados, em NENHUMA
+  execução, pra sempre. Corrigido com `_universo_rotativo()`: rotaciona
+  o ponto de partida da lista a cada janela de 30min (mesmo intervalo do
+  agendamento), só usando o relógio - sem tabela/estado novo. 4 testes
+  novos (`tests/test_coletor_local.py`).
+- **Investigado, sem bug de código confirmado**: "Genial Analisa: nunca"
+  (bloqueio de rede já documentado, reconfirmado - não é código);
+  "mapa do mercado vazio" e "tabelas/gráficos cortados" em MERCADO (não
+  reproduzido com evidência real - testado com harness Playwright real
+  contra CSS/layout fiéis ao projeto, sem corte encontrado nos cenários
+  testados); candidato de performance (`@st.fragment` em MERCADO/MACRO/
+  VISÃO GERAL) identificado e DELIBERADAMENTE não aplicado por risco
+  documentado no sistema de drag/resize (`ui/workspace.py`) - precisa de
+  validação com browser real antes de aplicar.
+- **Medição de performance (real, harness AppTest, 10 seções)**: com
+  cache 100% quente, troca de aba custa 0.05-0.07s em TODAS as seções -
+  arquitetura de cache já construída pelas sessões anteriores confirmada
+  funcionando como desenhado, nenhum N+1/recálculo evitável novo
+  encontrado. "Lentidão" percebida em produção mais provável de vir de
+  cold-cache real ou latência de rede fora do alcance deste sandbox
+  (rede bloqueada por completo, confirmado com `curl` -> 403 em todo
+  domínio externo testado) - nunca inventado número de produção.
+- Arquivos: `ui/research_tab.py`, `coletor_local.py`.
+- Testes novos: `tests/test_research_resumo_live_sync.py`, `tests/
+  test_coletor_local.py`. Suite completa (24 arquivos, convenção do
+  projeto - execução direta, não só pytest) + `compileall` + `pyflakes`
+  limpos antes e depois.
+
 ## 2026-10-09 (FASE C — NEWS: modal editorial)
 
 Sessão autônoma agendada (continuação da FASE 6, frente C) - redesenho

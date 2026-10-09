@@ -190,6 +190,16 @@ def _abrir_resumo_live(rel: dict, extrator):
             resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator_item, casa=rel["casa"], tipo=rel["tipo"])
         resumo = resultado["resumo"]
         motivo = resultado["motivo_indisponivel"]
+        if resumo:
+            # Sincroniza o dict EM MEMORIA (mesma referencia usada pelo
+            # card na lista, ver _cartao_live/_montar_feed - nunca uma
+            # copia) com o que acabou de ser persistido (store.salvar_resumo,
+            # dentro de obter_resumo) - bug real corrigido (2026-10-09): sem
+            # isso, o card por tras deste dialogo continuava mostrando
+            # "Resumo ainda nao gerado" no MESMO clique (so' sumia no
+            # proximo rerun da pagina, nao neste), mesmo o resumo ja' tendo
+            # sido gerado e salvo com sucesso agora mesmo.
+            rel["resumo"] = resumo
 
     if resumo:
         _bloco_resumo(resumo)

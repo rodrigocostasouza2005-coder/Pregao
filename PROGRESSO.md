@@ -4358,3 +4358,240 @@ cache antigo invalidado por design (não migrado) - 1 reprocessamento
 por grupo popular na primeira hora após o deploy, custo esperado, não
 um bug. Confirmação final em produção real (abrir NOTÍCIAS em
 `pregao.streamlit.app` depois do deploy) só o Rodrigo pode fazer.
+
+## FASE 8 (2026-10-09) — auditoria funcional, performance e usabilidade
+
+Sessão autônoma agendada (pedido explícito do Rodrigo, "FASE 8"). Leu
+PROGRESSO.md/CHANGELOG.md/BACKLOG.md e `git log --oneline -30` ANTES de
+agir (regra explícita do pedido) — confirmado que duas sessões FASE 6
+(Genial/Research Radar + CALENDÁRIO; modal editorial de NEWS) e a FASE 7
+(SAÚDE DOS DADOS + piloto EUA) já tinham corrigido/documentado boa parte
+do escopo pedido. Nenhuma screenshot foi de fato anexada a esta tarefa
+(limitação da forma como foi agendada, confirmado explicitamente no
+próprio pedido) — toda correção abaixo vem de leitura de código, testes
+reais (`pytest`/execução direta dos arquivos de teste, convenção do
+próprio projeto) e um harness Playwright isolado (HTML/CSS sintéticos
+fiéis ao `style.css`/`ui/workspace.py` reais, não o app inteiro).
+Rede deste ambiente bloqueia TODO acesso externo (confirmado com `curl`
+retornando `403 CONNECT tunnel failed` pra `genialinvestimentos.com.br`,
+`conteudos.xpi.com.br` e `query1.finance.yahoo.com`) — nenhuma coleta
+real foi possível nesta sessão; as seções abaixo dizem explicitamente o
+que foi medido/confirmado versus o que não pôde ser verificado daqui.
+
+### (1) Genial/Research e Morning Call
+
+**"Genial Analisa: nunca"**: reconfirmado que é o comportamento
+ESPERADO da arquitetura atual, não um bug novo — `ultimas_coletas_
+formatadas` (`data/research/__init__.py`) mostra "nunca" quando
+`store.ultima_coleta_em("Genial Analisa")` não tem NENHUM registro
+ainda; a Genial tem `tentar_coleta_automatica=False` (bloqueio WAF no
+Cloud, decisão de 2026-09-24) — só `coletor_local.py`, rodando na
+máquina do Rodrigo, pode alimentar isso, e o próprio P0.3 (sessão
+anterior) já tinha confirmado que a Genial falha por timeout mesmo
+rodando localmente (não é exclusivo do Cloud). Não há nada novo pra
+corrigir no código aqui — é uma limitação de rede/acesso externa ao
+projeto, já documentada. Bug da URL com barra final
+(`_ticker_da_url_recomendacao`, `data/research/genial.py:145`)
+RECONFIRMADO presente e correto (`url.rstrip("/").rsplit("/", 1)[-1]`).
+
+**Morning Call "Resumo ainda não gerado" — bug real encontrado e
+corrigido**: o resumo de uma Live (Morning Call/Resumo da Manhã/
+Fechamento) é gerado SOB DEMANDA (clique em "VER RESUMO"/título,
+`ui/research_tab.py:_abrir_resumo_live`) e persistido corretamente no
+Supabase (`data/research/resumir.py:obter_resumo` → `store.salvar_
+resumo`, upsert por link — confirmado lendo o código, geração/
+persistência/recuperação todas corretas). O bug real: depois de gerar e
+salvar o resumo com sucesso, a função NUNCA atualizava o dict `rel` em
+memória (mesma referência usada pelo card na lista, `ui/news_tab.py:
+_cartao_live`/`_montar_feed`, que NÃO copia o dict) — o card por trás do
+diálogo continuava mostrando "Resumo ainda não gerado" no MESMO clique,
+só corrigindo no PRÓXIMO rerun completo da página. Corrigido com 1 linha
+(`rel["resumo"] = resumo` após geração bem-sucedida, `ui/research_tab.py`)
+— nunca fabrica nem mascara erro: só sincroniza o que JÁ foi persistido
+de verdade; o caminho de falha (motivo real exibido) é intocado. 3
+testes de regressão novos (`tests/test_research_resumo_live_sync.py`,
+usando `st.dialog` patcheado pra decorator identidade — testa só a
+lógica, não a UI do modal em si).
+Swing trade (nunca persistido em tabela) e o regex case-sensitive de
+`_TICKER_NO_LINK` continuam como pendências já documentadas no
+BACKLOG.md (mudança de schema / sem confirmação de formato real,
+nenhuma das duas é "correção pequena e verificável" sem mais dado).
+
+### (2) Coletor e interface do Calendário
+
+**Bug real encontrado e corrigido — estagnação estrutural (1 nível
+acima da já corrigida na FASE 6)**: a FASE 6 corrigiu a estagnação pra
+tickers JÁ CONFIRMADOS (atalho que pula RI/NEWS). Mas CONFIRMADO via RI
+tem taxa de sucesso baixa por design (`data/eventos_coleta.py` só lê a
+URL exata registrada na CVM, raramente a subpágina certa de calendário)
+— a MAIORIA dos tickers do universo (`config.IBOVESPA_SETORES`, ~84)
+fica em ESTIMADO/PRAZO_CVM, status que NÃO tem atalho (ESTIMADO ainda
+pode ser superado por um CONFIRMADO real, então sempre retenta RI/NEWS).
+Com orçamento fixo de 5min (`_ORCAMENTO_TOTAL_S`) e `coletar_eventos_
+universo` sempre recebendo `list(config.IBOVESPA_SETORES.keys())` na
+MESMA ordem fixa de dict, os tickers do FIM da lista nunca tinham chance
+de serem tentados — mesma classe de bug da FASE 6, um nível estrutural
+acima (lá era "quem já tem CONFIRMADO rouba o orçamento de quem não
+tem"; aqui é "quem nunca CONSEGUE CONFIRMADO rouba o orçamento de quem
+está mais atrás na lista, pra sempre"). Corrigido em `coletor_local.py`
+com `_universo_rotativo()`: rotaciona o ponto de partida da lista a cada
+janela de 30min (mesmo intervalo do agendamento), usando só o relógio
+(`time.time() // 1800`) — sem precisar de nenhum estado/tabela nova.
+Ao longo de várias execuções, todo ticker eventualmente começa a lista
+e recebe seu orçamento de rede, não só os primeiros ~15-20 da ordem
+fixa. 4 testes de regressão novos (`tests/test_coletor_local.py`),
+incluindo um que varre 12 janelas e confirma que todo ticker chega a
+ser o 1º da vez pelo menos uma vez.
+
+**Importante, confirmado lendo o código**: `calcular_calendario`/
+`calcular_proximo_resultado` (o que a UI de fato lê, via `calcular_
+calendario_cacheado`/snapshot) NUNCA chama RI/NEWS — só lê
+`eventos_resultados` (persistido pelo coletor) e cai pro cálculo
+determinístico PRAZO_CVM (sem rede) quando não há nada melhor. Ou seja,
+mesmo com a estagnação acima, a aba CALENDÁRIO sempre mostra ALGO
+(estimativa pelo prazo regulatório), nunca fica "sem funcionar" — o
+sintoma real era "a maioria fica em PRAZO_CVM/ESTIMADO, poucos avançam
+pra CONFIRMADO", não "o calendário não aparece". Snapshot (`salvar_
+snapshot_calendario`) preserva o último bom em qualquer falha (já
+confirmado por código antes desta sessão, reconfirmado agora).
+**Não verificável sem acesso à rede real**: se o universo inteiro passa
+a avançar de verdade em produção (depende de RI/NEWS conseguirem
+responder a partir do Streamlit Cloud/máquina do Rodrigo, bloqueado
+neste sandbox).
+
+### (3) Lentidão e medições de performance antes/depois
+
+Medição real (harness `AppTest` do próprio Streamlit, autenticação
+mockada, 10 seções) nesta máquina/sandbox:
+- **Carga inicial fria** (1º load, todos os caches vazios): ~40s —
+  dominada por `yfinance`/`curl_cffi` tentando (e falhando, com retry
+  de cookie/crumb) contra ~90+ símbolos (Ibovespa completo + índices
+  globais) através da rede bloqueada deste ambiente. **Não representa
+  a latência real de produção** (lá a rede funciona; aqui cada tentativa
+  falha e retenta) — registrado só como limite superior do pior caso
+  teórico, não um número de produção.
+- **1ª visita a cada aba** (algumas ainda frias, outras já aquecidas por
+  dado compartilhado): MERCADO/CALENDÁRIO/CVM/CONFIG em 0.05-0.07s
+  (dado já cacheado por uma aba visitada antes, ou cache-miss resolvido
+  rápido); MACRO/VISÃO GERAL/EQUITY em 3-4s (índices globais/papéis
+  individuais ainda não cacheados, mesma causa da carga fria); RESEARCH/
+  NEWS/TOP MERCADO em 0.25-0.4s.
+- **2ª passada, cache 100% quente** (TTL ainda válido): **TODAS as 10
+  seções em 0.05-0.07s**, sem exceção — trocar de aba com cache quente
+  tem custo Python desprezível; o tempo todo mora na busca de dado
+  (rede), não na renderização.
+
+**Conclusão (confirmada por medição, não suposição)**: a arquitetura de
+cache já construída pelas sessões anteriores (`@st.cache_data` com TTL
+por natureza do dado, lote em vez de N+1, `@st.fragment` em CVM/TOP
+MERCADO/RESEARCH/NEWS/CALENDÁRIO) está funcionando como desenhado — não
+encontrei nenhuma chamada de rede redundante nem recálculo evitável
+novo além do que o BACKLOG já lista como limitação aceita (`obter_
+indicadores` por ticker, sem alternativa em lote no yfinance). A
+"lentidão" percebida em produção é mais provável de vir de (a) cold-
+cache real (1ª visita após expirar TTL, custo de rede real que não dá
+pra medir daqui) e/ou (b) algo fora do alcance deste ambiente (latência
+real do Streamlit Cloud/Supabase/Groq) — nunca inventei um número de
+produção que não pude medir.
+
+**Candidato investigado e DELIBERADAMENTE NÃO aplicado**: `render_
+mercado`/`render_macro`/`render_visao_geral` são as 3 únicas seções sem
+`@st.fragment` (as outras 5 já ganharam isso numa fase anterior,
+FASE 13 do ciclo de 2026-10-01, especificamente pra resolver "filtro
+causa scroll pra cima"). Em tese, decorar as 3 isolaria o rerun de
+qualquer clique dentro delas (ex: seletor DIA/SEMANA/MÊS). NÃO aplicado
+porque as 3 passam por `ui/workspace.py:renderizar_workspace` — sistema
+de drag/resize com uma PONTE JS↔Python via `st.components.v1.html`
+(iframe) + `st.text_input` oculto, com histórico documentado de bugs
+sutis de escopo de rerun (`ui/workspace.py:273-298`, "listener morto
+pós-rerun", 3 bugs reais já corrigidos em produção). Mudar o escopo de
+rerun de FULL-PAGE pra FRAGMENT nessas 3 abas é exatamente o tipo de
+mudança que esse histórico mostra que precisa de validação com browser
+real (Playwright contra o app rodando de verdade, simulando o gesto de
+drag/resize) — não disponível de forma seroa neste sandbox (precisaria
+de um servidor Streamlit real + bypass de login OAuth). Registrado no
+BACKLOG.md como candidato de performance pra uma sessão dedicada com
+validação visual real, não implementado especulativamente.
+
+### (4) MERCADO, gráficos e responsividade
+
+**"Mapa do mercado aparentemente vazio"**: código já trata o caso vazio
+explicitamente (`ui/mercado_tab.py:_painel_treemap` mostra "—" quando
+nenhum papel tem `volume_financeiro > 0`, nunca um treemap quebrado) —
+NÃO FOI POSSÍVEL REPRODUZIR o sintoma relatado com evidência real (sem
+rede, não dá pra buscar panorama real do Ibovespa). Hipótese levantada
+e não confirmada: se a última vela do dia ainda tiver volume=0 (ex:
+logo após a abertura do pregão), TODOS os papéis cairiam no filtro e o
+mapa apareceria vazio de verdade — mas não há como confirmar isso sem
+dado real do yfinance em horário de pregão. Registrado no BACKLOG.md
+como pendência que só o Rodrigo pode confirmar (em que horário/dia viu
+o mapa vazio).
+
+**"Tabelas/gráficos cortados"**: testado com harness Playwright real
+(Chromium headless, HTML/CSS extraídos fiéis do `style.css` real —
+regra `[data-testid="stMarkdown"]:has(table) { overflow-y: hidden }` —
+e do `ui/workspace.py:_gerar_css` real — painel com `height` fixo em
+rem + `overflow: auto`): com uma tabela de 10 linhas (tamanho real do
+"maiores altas/baixas") dentro do painel de altura PADRÃO (18rem/288px),
+NENHUM corte reproduzido — cabe inteira, com ~44px de sobra. Testado
+também um painel redimensionado pro MÍNIMO (8rem/128px, o usuário
+arrastando a borda pra baixo): o conteúdo que não cabe fica
+ALCANÇÁVEL por scroll (`overflow:auto` do painel vence sobre o
+`overflow-y:hidden` da tabela, que só comprimiria conteúdo que FOSSE
+mais alto que o próprio espaço natural dela, o que não é o caso aqui) -
+ou seja, mesmo o cenário "painel redimensionado pequeno demais" degrada
+pra scroll, não pra corte/perda de conteúdo. **Não encontrei evidência
+real de corte** nos dois cenários mais plausíveis testados — se o
+sintoma for real, pode depender de um breakpoint/tema/combinação de
+paineis não reproduzido aqui; fica pro Rodrigo confirmar com largura/
+altura exatas de tela em produção (ver BACKLOG.md).
+
+Gráficos (`_layout_grafico_escuro`, treemap) já usam `displayModeBar:
+False`, margens pequenas e altura explícita (340-420px) — nenhuma
+mudança feita por falta de evidência de bug real.
+
+### (5) NEWS e resumos
+
+Preservado o modal editorial da FASE 6 (capa, RESUMO/LEITURA DE
+MERCADO, parágrafos) — nenhuma mudança nesta sessão, só confirmado que
+os testes dele (`tests/test_news_modal_editorial.py`) continuam
+passando. O único bug real de "resumo não aparece" encontrado nesta
+rodada foi o do Morning Call/Lives (ver seção 1 acima) — resumo de NEWS
+(notícias normais, não Lives) é gerado inteiramente DENTRO do diálogo
+(sem o padrão de card pré-gerado), então não tinha esse bug de
+sincronia; confirmado lendo `ui/news_tab.py:_abrir_card`.
+
+### (6) Testes executados, commits, pendências e riscos residuais
+
+**Testes**: `compileall` limpo (Python 3.12, necessário — f-strings com
+aspas aninhadas em `app.py`/`ui/mercado_tab.py` são PEP 701, só válidas
+a partir do 3.12, mesma nota já registrada em sessões anteriores);
+`pyflakes` limpo no repositório inteiro; os 24 arquivos de teste
+executados DIRETAMENTE (`python tests/test_X.py`, convenção real do
+projeto — note-se que rodar via `pytest` sozinho NÃO basta pra esses
+arquivos, que usam um checker próprio por `print`/lista de falhas em
+vez de `assert`; todos passaram nas duas formas) — 4 novos (`test_
+coletor_local.py`, `test_research_resumo_live_sync.py`) cobrindo os 2
+bugs reais corrigidos nesta sessão. AppTest (harness próprio, não
+commitado - mesma convenção já usada em sessões anteriores) confirmou
+as 10 seções renderizando sem exceção, inclusive após as mudanças.
+
+**Pendências/riscos residuais** (nenhuma marcada como resolvida sem
+confirmação real):
+- Genial/XP continuam bloqueadas (WAF/IP) tanto no Cloud quanto
+  localmente — limitação de rede externa ao projeto, não código.
+- Rotação do universo do CALENDÁRIO (item 2) só se confirma em produção
+  real ao longo de várias janelas de 30min — não verificável numa
+  sessão isolada.
+- "Mapa do mercado vazio" e "tabelas/gráficos cortados" (item 4): não
+  reproduzidos com evidência real nesta sessão — ver BACKLOG.md pras
+  perguntas concretas que destravam a investigação.
+- `@st.fragment` em MERCADO/MACRO/VISÃO GERAL: candidato de performance
+  identificado e deliberadamente NÃO implementado (risco real
+  documentado no sistema de drag/resize) — precisa de validação com
+  browser real antes de aplicar.
+- Swing trade (Research) e regex case-sensitive da Genial: pendências
+  antigas, já documentadas, reconfirmadas sem mudança (fora do escopo
+  de correção pequena/verificável desta rodada).
+
+Commits desta sessão: ver CHANGELOG.md (entrada "2026-10-09, FASE 8").
