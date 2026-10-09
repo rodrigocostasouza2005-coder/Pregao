@@ -3,6 +3,65 @@
 Pendências conhecidas, para resolver depois (ajustes visuais adiados
 enquanto avançamos nas próximas fases).
 
+## RADAR (2026-10-09) — pendências da nova aba de inteligência
+
+Ver PROGRESSO.md "FASE RADAR" pra arquitetura completa. Itens
+registrados nesta sessão, não resolvidos de propósito:
+
+- **`pytest tests/` completo falha em 3 testes de
+  `tests/test_research_resumo_live_sync.py`** (achado REAL, mas
+  **pré-existente** - confirmado isolando com `git stash -u` que o
+  mesmo acontece no `main` original, sem nenhum arquivo desta sessão
+  presente). Causa provável: aquele teste faz `st.dialog = (decorator
+  identidade)` ANTES do PRIMEIRO `import ui.research_tab` do processo,
+  pra testar a função decorada sem o decorador real - se outro arquivo
+  de teste já importou `ui.research_tab` antes dele na mesma sessão do
+  interpretador (ordem de coleta do pytest, não necessariamente
+  alfabética), o `import` dentro do teste vira no-op (`sys.modules`
+  cacheado) e o monkeypatch não tem efeito, derrubando `st.dialog(...)`
+  de verdade sem `ScriptRunContext`. Rodar o arquivo sozinho (ou a
+  suíte inteira via execução DIRETA de cada `tests/test_X.py`,
+  convenção real do projeto) sempre passa - só o conjunto completo sob
+  `pytest` falha. Não corrigido aqui (fora do escopo desta tarefa,
+  teste de outra sessão, risco de mexer sem necessidade comprovada).
+  **Pendência concreta**: mover esse teste pra isolar `st.dialog` via
+  `pytest` fixture/`monkeypatch` com escopo de MÓDULO (garante ordem),
+  ou usar `importlib.reload` em vez de depender de `sys.modules` nunca
+  ter sido populado antes.
+- **Dado real de produção não confirmado**: Supabase/yfinance 100%
+  bloqueados neste sandbox (mesma limitação de toda sessão anterior) -
+  AppTest confirma que o RADAR não quebra e degrada certo (estado
+  vazio honesto em todos os 5 módulos), mas não confirma que mudanças
+  de tese/valuation reais aparecem corretas - só o Rodrigo confirma
+  abrindo a aba em produção.
+- **Custo/latência real do comparativo setorial**
+  (`data/radar.py:comparaveis_setor`, ~5-15 chamadas yfinance por
+  clique, dentro de um `@st.dialog` sob demanda) nunca medido contra
+  rede real - se ficar lento demais em produção, considerar reduzir o
+  universo de pares ou pré-calcular por setor num coletor agendado
+  (mesmo padrão do CALENDÁRIO) em vez de ao vivo por clique.
+- **Timezone multi-mercado**: RADAR herda a mesma lacuna já registrada
+  na FASE 7 (ver abaixo, "FASE EUA 3") - datas de catalisadores/
+  research pros ativos EUA piloto (NVDA/AAPL/MSFT) aparecem convertidas
+  pro fuso de Brasília, não `America/New_York`.
+- **Mudanças de tese cobrem só Genial Analisa** (única casa com
+  histórico estruturado persistido hoje, ver `data/research/
+  historico.py`) - XP/outras casas quando tiverem dado estruturado
+  equivalente alimentam a MESMA tabela (`casa` já é campo genérico),
+  zero mudança de schema necessária, só o coletor.
+- **Copiloto de research é determinístico** (sem chamada de IA nova) -
+  decisão de arquitetura deliberada (ver PROGRESSO.md, seção 2 da FASE
+  RADAR), não um atalho forçado por falta de `GROQ_API_KEY` no sandbox.
+  Se o Rodrigo quiser respostas em linguagem mais natural/sintetizada
+  no futuro, dá pra acrescentar uma camada de IA por cima das MESMAS
+  evidências (reaproveitando `data/research/resumir.py:_chamar_groq` ou
+  equivalente) sem mudar a lógica de agregação.
+- **Argumento contrário quase sempre vazio**: a tabela de histórico de
+  recomendação (Genial) só guarda número (recomendação/preço-alvo), não
+  o racional por escrito - sem texto pra extrair um argumento contrário
+  real. Campo existe no schema (`argumento_contrario`), pronto pra uma
+  fonte futura com racional em texto.
+
 ## FASE 8 (2026-10-09) — pendências da auditoria funcional/performance/MERCADO
 
 Ver PROGRESSO.md FASE 8 pra auditoria completa (2 bugs reais corrigidos

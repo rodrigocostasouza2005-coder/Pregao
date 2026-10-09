@@ -3,6 +3,50 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-09 (RADAR — nova aba de inteligência de investimentos)
+
+Sessão autônoma agendada, pedido explícito do Rodrigo (RADAR DE
+INTELIGÊNCIA DE INVESTIMENTOS). Ver PROGRESSO.md pra arquitetura
+completa, matriz fonte-por-módulo e o que foi/não foi validado.
+
+- **feat: nova aba RADAR** (registrada logo após VISÃO GERAL), página
+  central com 5 módulos + copiloto - responde "o que mudou?",
+  "onde vale investigar?", "o que pode dar errado?":
+  - **Mudanças de tese** (prioridade máxima): mudanças reais de
+    recomendação/preço-alvo (Genial, via histórico já persistido) +
+    fato relevante da CVM, dentro de uma janela (HOJE/7 DIAS/30 DIAS).
+    Cada alerta cita fonte clicável, data do evento, e classifica o
+    dado como FATO/CÁLCULO INTERNO/DADO INSUFICIENTE - nunca inventa
+    argumento contrário sem base real.
+  - **Valuation Radar**: tabela com preço/P-L/P-VP/DY/ROE/margem/
+    dívida-EBITDA por ativo da watchlist (dado já cacheado, zero
+    consulta nova no primeiro load) + comparativo de mediana setorial
+    sob demanda (dentro de um `@st.dialog`, só roda quando pedido) -
+    sem valor justo/cenário inventado (sem estimativa de analista
+    disponível no projeto pra sustentar isso).
+  - **Catalisadores**: reaproveita o snapshot do CALENDÁRIO + proventos
+    (CVM) já coletados, sem fonte nova nem evento artificial.
+  - **Risco da carteira**: estado honesto - o projeto não tem cadastro
+    de posições (quantidade/preço médio) hoje, só watchlist; nunca
+    trata a watchlist como se fosse a carteira.
+  - **Research com evidências**: feed compacto (notícia + documento
+    CVM) que abre os MESMOS dialogs editoriais de NEWS/CVM (wrappers
+    públicos novos `abrir_card_noticia`/`abrir_card_documento`) - zero
+    UI duplicada.
+  - **Copiloto de research**: as 4 perguntas sugeridas respondidas de
+    forma DETERMINÍSTICA a partir da evidência já agregada acima (sem
+    chamada de IA nova) - cita fonte/data real ou declara "dado
+    insuficiente" explicitamente, nunca uma síntese inventada.
+- `data/radar.py` (camada de agregação) + `ui/radar_tab.py` (UI) +
+  17 funções de teste novas (`tests/test_radar.py`).
+- Validado: `compileall`/`pyflakes` limpos no repo inteiro, suite
+  completa (343 testes, execução direta), harness `AppTest` real (zero
+  exceção, clique no copiloto funcionando) e inspeção visual real
+  (Playwright/Chromium local, 390/768/1280px, markup real extraído do
+  AppTest) - tabela larga usa o mesmo mecanismo de scroll horizontal já
+  validado em CVM/PREÇOS (`overflow-x:auto`), confirmado com
+  `scrollWidth > clientWidth` + screenshot rolado, não um corte.
+
 ## 2026-10-09 (FASE 8 — auditoria funcional, performance e usabilidade)
 
 Sessão autônoma agendada (pedido explícito do Rodrigo). Ver PROGRESSO.md

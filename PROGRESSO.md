@@ -4595,3 +4595,246 @@ confirmação real):
   de correção pequena/verificável desta rodada).
 
 Commits desta sessão: ver CHANGELOG.md (entrada "2026-10-09, FASE 8").
+
+## FASE RADAR — nova aba de inteligência de investimentos, 2026-10-09
+
+Sessão autônoma agendada (rotina de 05:00 UTC, antecipada/retomada após
+interrupção real por limite de uso de 5h numa tentativa anterior no
+mesmo dia - essa tentativa não chegou a commitar/pushar nada, `main`
+estava limpo no início desta sessão, confirmado com `git log`/`git
+status`). Pedido explícito e extenso do Rodrigo: transformar a aba
+RADAR em 5 módulos (Mudanças de Tese, Valuation Radar, Catalisadores,
+Risco da Carteira, Research com Evidências) + Copiloto de Research.
+
+### 0. PRÉ-VOO (confirmado por leitura, não suposição)
+
+Antes de editar qualquer arquivo: `git fetch`/`git log --oneline -20`
+confirmou 4 sessões já em `main` desde a última tentativa de RADAR -
+FASE 6 (Genial/Research Radar + CALENDÁRIO corrigidos), FASE 7
+(SAÚDE DOS DADOS + matriz de classificação dos coletores + piloto EUA +
+avaliação do X), FASE C (modal editorial de NEWS) e FASE 8 (sincronia
+do resumo de Morning Call + rotação do coletor do CALENDÁRIO). Nenhum
+dos 2 arquivos que esta sessão cria (`data/radar.py`, `ui/radar_tab.py`)
+existia - confirmado com `ls`/`git log -- data/radar.py` antes de
+escrever qualquer linha.
+
+Leitura completa de CLAUDE.md (não existe neste repo), PROGRESSO.md
+(matriz da FASE 7, seção 4036-4189 acima), BACKLOG.md, CHANGELOG.md,
+README.md, MANUAL.md. Investigação de código real (não só docs) antes
+de desenhar a arquitetura:
+- `data/research/historico.py`: tabela `research_recomendacoes_historico`
+  já guarda TODA mudança real de recomendação/preço-alvo (Genial, única
+  fonte estruturada hoje) - zero coleta nova necessária, só ler com uma
+  janela de dias em vez de só "hoje" (`mudancas_hoje` existente).
+- `data/cvm.py:obter_documentos_watchlist`: já traz FATO_RELEVANTE/
+  COMUNICADO/RESULTADOS/PROVENTOS por ticker, com link oficial.
+- `data/eventos.py:calcular_calendario_cacheado`: snapshot do
+  CALENDÁRIO já persistido pelo coletor - reaproveitado DIRETO (mesma
+  função que `ui/calendario_tab.py` usa), nunca recalculado pelo RADAR.
+- `data/prices.py:obter_indicadores`/`obter_cotacao`: únicas fontes de
+  múltiplo/preço - `obter_indicadores` já expõe `_coletado_em` (dado
+  desatualizado), reaproveitado pra marcar staleness sem reinventar.
+- Auditoria explícita (grep) confirmou: **não existe, em lugar nenhum
+  do projeto, cadastro de posição real** (nenhum campo
+  "quantidade"/"preço_médio"/"posicao") - só watchlist (lista de
+  tickers, sem peso). Decisão de arquitetura consequente: o módulo D
+  (Risco da Carteira) NUNCA deriva concentração/risco da watchlist -
+  mostra um estado honesto, pedindo cadastro real.
+- `ui/news_tab.py:_abrir_card`/`ui/cvm_tab.py:_abrir_card`: dialogs
+  editoriais completos já existem e já fazem resumo por IA sob demanda
+  - RADAR reaproveita via wrappers públicos novos
+  (`abrir_card_noticia`/`abrir_card_documento`), zero duplicação de UI.
+- `ui/visao_geral.py`: precedente arquitetural direto (aba 100%
+  agregação, zero coleta própria) - mesmo princípio aplicado ao RADAR,
+  mas SEM o sistema de workspace drag/resize (reservado hoje a
+  MERCADO/MACRO/VISÃO GERAL, README) porque os módulos do RADAR são
+  mais pesados (ex: comparativo setorial) e precisavam de
+  carregamento sob demanda explícito, não "todos os painéis sempre
+  renderizados" do workspace.
+
+### 1. Arquitetura
+
+`data/radar.py` - camada de agregação PURA (zero coleta nova, zero
+chamada de IA nova, só combina dado que os módulos acima já coletam/
+persistem). Convenção de evidência usada em TODA saída: `FATO` (algo
+que de fato aconteceu, fonte datada e verificável) / `CALCULO_INTERNO`
+(número derivado aqui, ex: potencial recalculado com preço atual,
+mediana setorial - nunca confundido com dado da própria fonte) /
+`DADO_INSUFICIENTE` (declarado explicitamente, nunca inventado).
+
+Funções principais (cada uma com teste de regressão, ver seção 4):
+- `mudancas_tese(tickers, janela)` - combina `historico_ticker`
+  (Genial) + `obter_documentos_watchlist` (FATO_RELEVANTE), filtra por
+  janela (HOJE/7 DIAS/30 DIAS), ordena por data. `[]` honesto quando
+  não há mudança real.
+- `valuation_radar(tickers)` - 1 linha por ticker com múltiplos JÁ
+  CACHEADOS (zero consulta nova no primeiro render) + flags de
+  qualidade (`_alertas_qualidade`: P/L negativo, margem negativa,
+  dívida/EBITDA alta - só quando o PRÓPRIO dado sustenta, nunca
+  inferência de causa) + `_indicadores_desatualizados` (>24h desde a
+  última coleta real bem-sucedida).
+- `comparaveis_setor(ticker)` - mediana de P/L/P-VP/DY entre pares do
+  mesmo setor (universo Ibovespa, `config.IBOVESPA_SETORES`) - só
+  reporta mediana com >=3 pares válidos, senão declara dado
+  insuficiente. **Chamada só de dentro de um `@st.dialog`** (ver
+  `ui/radar_tab.py:_dialog_comparaveis`), nunca no primeiro render do
+  Valuation Radar - testado explicitamente (`test_11_linha_valuation_
+  nao_chama_peers`) que `valuation_radar()` faz exatamente 1 chamada de
+  indicadores por ticker, sem N+1 de pares.
+- `catalisadores(tickers)` - reaproveita `calcular_calendario_cacheado`
+  (mesmo snapshot da aba CALENDÁRIO) + documentos PROVENTOS da CVM
+  (dividendo/JCP já protocolado = CONFIRMADO, não estimativa). Zero
+  fonte nova, zero evento artificial.
+- `risco_carteira(prefs)` - stub 100% honesto: `carteira_cadastrada:
+  False` sempre (não existe cadastro real hoje), nunca deriva nada da
+  watchlist.
+- `evidencias_recentes(tickers)` - feed compacto (notícia via
+  `obter_noticias_watchlist` + documento CVM tipo FATO_RELEVANTE/
+  COMUNICADO/RESULTADOS), ordenado por data, limitado.
+- `responder_copiloto(pergunta, ticker)` - as 4 perguntas sugeridas
+  pelo pedido, respondidas de forma DETERMINÍSTICA a partir das funções
+  acima (sem chamada de IA nova) - decisão de arquitetura deliberada,
+  ver seção 3.
+
+`ui/radar_tab.py` - `render_radar(prefs)` (`@st.fragment`, mesmo padrão
+de RESEARCH/CALENDÁRIO): Mudanças de Tese direto na tela (prioridade
+máxima, pedido explícito), os outros 4 módulos + copiloto dentro de
+`st.expander` (carregamento sob demanda real - código roda a cada
+rerun do fragment, mas cada função de dado já é cacheada
+individualmente, então reabrir um expander já visto não reconsulta
+nada). CSS próprio (`_CSS_RADAR`, prefixo `radar-`), mono/âmbar,
+consistente com o resto do terminal - sem card decorativo excessivo
+nem espaço vazio grande.
+
+### 2. Decisões de dado deliberadas (nunca inventado)
+
+- **Valuation Radar sem cenário pessimista/base/otimista**: o pedido
+  proíbe explicitamente inventar premissa/estimativa ausente. O projeto
+  não tem (e não coleta) estimativa de analista de crescimento/
+  consenso - construir um cenário exigiria inventar taxa de
+  crescimento/desconto, exatamente o que foi pedido pra NÃO fazer.
+  Entregue em vez disso: múltiplos reais + mediana setorial (cálculo
+  interno, rotulado como tal) + flags de qualidade. Documentado aqui
+  como limitação real da fonte, não esquecimento.
+- **"Argumento contrário" raramente preenchido**: a tabela de histórico
+  de recomendação (Genial) guarda só número (recomendação/preço-alvo),
+  não o racional por escrito da casa - não há texto pra extrair um
+  argumento contrário real sem inventar. `argumento_contrario` fica
+  `None` em toda mudança de research hoje (campo existe no schema,
+  pronto pra uma fonte futura que traga racional em texto).
+- **Copiloto sem chamada de IA nova**: decisão deliberada, não
+  limitação técnica. O pedido pede explicitamente "se não houver
+  evidência suficiente, diga isso - não gere resposta confiante só pra
+  preencher a interface". Uma síntese por LLM arriscaria exatamente
+  isso (alucinar quando a evidência é fraca) e adicionaria uma
+  dependência de rede/quota nova (Groq) a um recurso que já tem
+  resposta objetiva nos dados agregados pelos outros módulos. As 4
+  respostas são determinísticas, citam fonte/data reais ou declaram
+  "dado insuficiente" - mais verificável e testável que uma geração por
+  IA nesta janela de tempo.
+- **Fonte das mudanças de research**: `genial.BASE_URL` (site da casa),
+  não um link de artigo específico - a tabela de histórico não guarda
+  URL por mudança (só número). Rotulado honestamente como a casa de
+  research, não fabricado como link de matéria específica.
+- **Timezone multi-mercado**: RADAR herda a mesma limitação já
+  registrada na FASE 7 (BACKLOG.md) - datas de catalisadores/research
+  pra ativos EUA (piloto NVDA/AAPL/MSFT) aparecem no fuso de Brasília,
+  não `America/New_York`. Não é uma regressão nova, é a mesma lacuna
+  documentada herdada sem agravar nem fingir resolvida.
+
+### 3. Testes e validação
+
+- `tests/test_radar.py`: 17 funções de teste (`python tests/test_
+  radar.py` e `pytest` - mesma convenção dupla do projeto), Supabase/
+  yfinance/CVM/calendário sempre mockados (`unittest.mock.patch`),
+  zero chamada de rede real. Cobertura: parsing de data/datetime
+  (casos-limite: ISO completo, só data, `None`, inválido); descrição
+  de mudança de recomendação/preço-alvo (iniciada/mudou/sem mudança);
+  potencial recalculado (cotação indisponível vs disponível); dedup +
+  janela de mudanças de research E de CVM (FATO_RELEVANTE vs outros
+  tipos, dentro/fora da janela); combinação+ordenação de
+  `mudancas_tese` com estado vazio honesto; flags de qualidade
+  (casos-limite: P/L negativo, margem negativa, dívida/EBITDA alta,
+  tudo `None`); staleness de indicadores (<24h/>24h/sem timestamp);
+  confirmação explícita de que `valuation_radar` NUNCA itera pares do
+  setor (anti-N+1); `comparaveis_setor` com poucos pares (insuficiente)
+  e com pares suficientes (mediana real); catalisadores combinando
+  calendário+proventos sem duplicar e respeitando janela;
+  `risco_carteira` nunca fingindo ter posição; `evidencias_recentes`
+  filtrando tipo de documento, ordenando e respeitando limite; as 4
+  respostas do copiloto (incluindo pergunta fora da lista).
+- `compileall`/`pyflakes` limpos no repositório inteiro (Python 3.12,
+  `/tmp/pregao_venv_radar` criado nesta sessão - **nota técnica real**:
+  o Python padrão deste ambiente é 3.11, que NÃO suporta aspas
+  aninhadas do mesmo tipo dentro de f-string (PEP 701, só a partir do
+  3.12) - `app.py`/`ui/mercado_tab.py` já usam essa sintaxe de sessões
+  anteriores, então `compileall` com 3.11 falha em arquivos que esta
+  sessão nem tocou; resolvido usando `python3.12` explícito, mesma nota
+  já registrada por sessões anteriores).
+- Suite completa: **343 testes** (326 preexistentes + 17 novos),
+  **100% passando** na execução direta (`python tests/test_X.py` pra
+  cada um dos 25 arquivos - convenção real do projeto, a que de fato
+  pega regressão nesses arquivos). Sob `pytest` puro: 340 passam e
+  **3 falham em `tests/test_research_resumo_live_sync.py`** - **achado
+  real, mas pré-existente, não causado por esta sessão**: confirmado
+  isolando com `git stash -u` (removendo TODOS os arquivos desta sessão,
+  inclusive os novos/não-rastreados) que a mesma falha já acontece no
+  `main` original sob `pytest` completo (326 testes, mesmas 3 falhas).
+  Causa provável: aquele teste faz um monkeypatch de `st.dialog` ANTES
+  de importar `ui.research_tab` pela primeira vez (pra testar a função
+  decorada como se não tivesse decorador) - se QUALQUER outro arquivo
+  de teste já importou `ui.research_tab` antes dele na mesma sessão do
+  interpretador (`sys.modules` cacheado), o monkeypatch não tem efeito,
+  porque o `import` dentro do teste vira no-op. Isso é sensível à ORDEM
+  de coleta do pytest (que não é necessariamente alfabética simples,
+  depende de plugins/config) - rodar o arquivo sozinho ou em par com
+  poucos outros SEMPRE passou nesta sessão; só o conjunto completo
+  falha. Registrado em BACKLOG.md pra não ser confundido com regressão
+  desta sessão nem reinvestigado do zero.
+- **AppTest real** (harness próprio do Streamlit, não commitado - mesma
+  convenção de sessões anteriores): autenticação mockada
+  (`auth.logado`/`auth.dados_usuario`) + `abas_visiveis=["RADAR"]` (evita
+  o custo de renderizar VISÃO GERAL/84 tickers do Ibovespa primeiro,
+  que nesta rede bloqueada estoura timeout sozinho) - **app inteiro
+  renderiza a aba RADAR, todos os 5 módulos + copiloto, sem NENHUMA
+  exceção**, mesmo com Supabase/yfinance 100% fora do ar (rede deste
+  sandbox bloqueada) - cada módulo caiu corretamente no próprio estado
+  vazio honesto (confirmado lendo o HTML real gerado: "Nenhuma mudança
+  de tese verificada...", "Sem cotação disponível...", "Nenhum
+  catalisador...", stub do Risco da Carteira, "Nenhuma notícia ou
+  documento..."). Clique real no botão de uma pergunta do copiloto
+  também validado (`at.button(...).click().run()`) - respondeu
+  "DADO INSUFICIENTE" corretamente (sem evidência real disponível nesta
+  rede), zero exceção.
+- **Inspeção visual real** (Playwright + Chromium pré-instalado local,
+  `/opt/pw-browsers` - não precisa de rede): markup HTML REAL (não
+  sintético) extraído do próprio AppTest (com os módulos de dado
+  mockados pra conteúdo preenchido, não só estado vazio) + `style.css`
+  real do projeto, renderizado em 390/768/1280px. Confirmado: cards de
+  alerta/badges/stub sem sobreposição em nenhuma largura; a tabela do
+  Valuation Radar (9 colunas) usa o MESMO mecanismo de scroll
+  horizontal já validado em CVM/PREÇOS (`[data-testid="stMarkdown"]:
+  has(table) { overflow-x:auto }`, `style.css:499`) - confirmado que
+  não é corte via `scrollWidth (620px) > clientWidth (358px)` +
+  screenshot após `scrollLeft = scrollWidth` mostrando as colunas
+  restantes (DY/ROE/MARGEM LÍQ./DÍV-EBITDA/VALOR DE MERCADO) legíveis,
+  incluindo as flags de qualidade (⚠) sem sobrepor texto.
+
+### 4. O que NÃO foi/não pôde ser validado nesta sessão
+
+- **Dado real de produção**: Supabase e yfinance 100% bloqueados nesta
+  rede (mesma limitação já documentada em toda sessão anterior) - os
+  testes/AppTest provam que o CÓDIGO não quebra e degrada
+  corretamente, não que o CONTEÚDO (mudanças de tese reais, valuation
+  real) está correto - isso só o Rodrigo confirma abrindo a aba RADAR
+  em `pregao.streamlit.app` depois do deploy.
+- **Custo/latência real do comparativo setorial** (`comparaveis_setor`,
+  ~5-15 chamadas yfinance por clique) em produção - não medível nesta
+  rede bloqueada; arquitetura deliberadamente isola isso dentro de um
+  dialog sob demanda exatamente por essa incerteza de custo.
+- **Falha cruzada em `pytest` completo** (seção 3, item do `test_
+  research_resumo_live_sync.py`) - pré-existente, não corrigida aqui
+  (fora do escopo desta tarefa, risco de tocar teste de outra sessão
+  sem necessidade comprovada) - registrada em BACKLOG.md.
+
+Commits desta sessão: ver CHANGELOG.md (entrada "2026-10-09, RADAR").
