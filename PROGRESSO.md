@@ -4012,3 +4012,178 @@ depois de cada mudança (nunca só no final).
 4. Case-sensitivity do ticker no LINK de relatório (`_TICKER_NO_LINK`)
    — pendência já registrada em BACKLOG.md desde a FASE 5, não
    reinvestigada nesta rodada por falta de dado novo pra confirmar.
+
+## FASE 7 — SAUDE DOS DADOS + piloto EUA + avaliação do X, 2026-10-09
+
+Sessão autônoma agendada, ANTECIPANDO a rotina de 2026-10-09T05:00:00Z
+(aba RADAR) — pedido explícito do Rodrigo: preparar terreno de dados
+confiáveis/documentados para a sessão RADAR, SEM implementar a aba
+RADAR em si (fora de escopo desta sessão por design) e SEM duplicar
+uma sessão paralela que estava auditando/corrigindo Genial/Research
+Radar + CALENDÁRIO ao mesmo tempo (ver FASE 6 acima — essa sessão
+terminou antes desta tocar qualquer arquivo do escopo dela; CONFIRMADO
+por leitura do próprio relato da FASE 6, não reinvestigado).
+
+Janela prática ~1h50 (02:40–04:20 UTC), antes da rotina de 04:35 UTC
+(FASE 8). `git fetch`/checagem de commits recentes antes de cada
+commit/push (coordenação) — nenhum conflito: a sessão paralela só
+tocou Genial/Research/CALENDÁRIO (commit `2f8a2a7`, já em `main` antes
+desta sessão começar), esta sessão tocou NEWS/MERCADO/MACRO/CVM/
+config/prices (zero overlap de arquivo confirmado por `git status`
+antes de cada commit). 3 commits, todos fast-forward, sem rebase
+necessário.
+
+### 1. MATRIZ DE CLASSIFICAÇÃO DOS COLETORES (pedida explicitamente
+para a sessão RADAR poder confiar nisso em vez de reinvestigar do
+zero)
+
+Convenção: VALIDADO (execução real e dados de saída verificados) ·
+PARCIAL (funciona, com limitações documentadas) · FALHANDO (erro
+reproduzido/evidência concreta de falha) · NÃO COMPROVADO (sem
+evidência suficiente pra confirmar). Nenhuma linha usa "VALIDADO" sem
+evidência real citada — ausência de teste de produção real (Supabase
+de verdade, rede do Streamlit Cloud) é sempre uma limitação explícita,
+nunca escondida.
+
+| Coletor | Fonte | Classificação | Frequência esperada | Evidência | Pendência |
+|---|---|---|---|---|---|
+| Genial Analisa (recomendação/preço-alvo) | analisa.genialinvestimentos.com.br | PARCIAL | `coletor_local.py`, ~30min (seg-sex 07-20h) | Pipeline completo auditado na FASE 6 (ponta a ponta), bug real de leitura corrigido e testado (7 cenários, mocks fiéis ao schema); bloqueada por WAF tanto no Cloud quanto neste sandbox — coleta real só funciona fora dessas redes | Confirmação em produção real (Supabase/Cloud de verdade) ainda não feita — só o Rodrigo pode confirmar abrindo RESEARCH após o deploy (FASE 6, pendência registrada) |
+| Genial — Swing trade | idem | FALHANDO (dado nunca persistido) | idem | Confirmado na FASE 6: nunca existiu tabela/coluna pra isso — não é falha de rede, é lacuna de schema | Precisa de tabela/coluna nova — fora de "correção pequena" (FASE 6/BACKLOG) |
+| XP Investimentos | conteudos.xpi.com.br (WP REST) | NÃO COMPROVADO | `coletor_local.py`, ~30min | Campos confirmados uma vez com requisição real fora do sandbox (histórico do projeto); IP deste sandbox bloqueado pelo CDN; `ativa_por_padrao=False` até confirmação | Confirmar coleta real em produção/local (BACKLOG, item antigo) |
+| Genial (Lives) | YouTube RSS (canal Genial Analisa) | PARCIAL | `coletor_local.py`, ~30min | Pipeline (feed/parsing/dedup) auditado na FASE 6, nenhum bug de código encontrado | "Última coleta" parada desde 08/10 21:13 — causa mais provável é hibernação do Streamlit Cloud sem visitas (coleta só roda como efeito colateral de abrir a aba RESEARCH, não é cron de verdade), não confirmável sem Logs reais do Cloud (BACKLOG) |
+| CALENDÁRIO (eventos de resultado) | RI das empresas + NEWS + prazo CVM | PARCIAL | `coletor_local.py`, ~30min | Bug real de estagnação (universo de 84 tickers nunca completava, tickers do fim da lista nunca alcançados) encontrado e corrigido na FASE 6, com teste reproduzindo o cenário exato | Confirmação em produção real pendente (mesma limitação de rede/Supabase da FASE 6) |
+| NEWS (feed wire + TOP MERCADO) | Google News RSS + extração (InfoMoney/Money Times/trafilatura) | NÃO COMPROVADO → agora instrumentado | sob demanda (cache 20min por ticker / `obter_top_mercado_tudo` próprio TTL) | Auditoria desta sessão confirmou ZERO registro de tentativa existente antes; `data/news.py:obter_top_mercado_tudo` agora chama `registrar_tentativa` (execução+persistência+parcial quando só um dos pools BR/INTL responde) | Só `obter_top_mercado_tudo` está instrumentado — `obter_noticias` (por ticker) ainda não; status real só aparece depois de alguém abrir TOP MERCADO/VISÃO GERAL em produção |
+| MERCADO (cotações em lote, Ibovespa) | yfinance (`yf.download` em lote) | NÃO COMPROVADO → agora instrumentado | sob demanda (cache 90s) | `data/mercado.py:_baixar_lote` (único ponto real de rede, usado por `obter_panorama_ibovespa` E `obter_cotacoes_lote`) agora registra tentativa | Status real só aparece após alguém abrir MERCADO/VISÃO GERAL/EQUITY em produção |
+| MACRO — BCB/SGS (IPCA/Selic/CDI) | api.bcb.gov.br (SGS) | NÃO COMPROVADO → agora instrumentado (parcialmente) | sob demanda (cache 4h) | `obter_ipca` instrumentado (representa a fonte SGS); Selic/CDI usam o mesmo `_serie_sgs` mas não têm registro próprio — ficam sob a mesma linha "MACRO" | Simplificação deliberada: 1 linha "MACRO" no painel cobre 2 fontes (BCB e ANBIMA) — a tentativa mais recente de QUALQUER uma das duas sobrescreve a outra (ver BACKLOG, limitação documentada) |
+| MACRO — ANBIMA (curva pré/ETTJ) | anbima.com.br (ETTJ CSV) | NÃO COMPROVADO → agora instrumentado | sob demanda (cache 6h) | `obter_curva_pre` instrumentado | Mesma limitação de linha compartilhada acima |
+| CVM (documentos oficiais) | dados.cvm.gov.br (IPE/FCA) | NÃO COMPROVADO → agora instrumentado | sob demanda (cache 6h) | `_ipe_ano` (download do zip anual, único ponto real de rede) instrumentado | Status real só aparece após alguém abrir CVM/CALENDÁRIO em produção |
+| X (sinais sociais) | x.com / API X | NÃO VIÁVEL POR ORA (documentado, não simulado) | — | Pesquisa real (2026-10-09): sem tier gratuito pra dev novo desde 06/02/2026; busca/descoberta parece exigir tier pago específico ou Enterprise (US$42k+/mês) | Aguardar decisão do Rodrigo sobre custo — `data/x_signals.py` isolado/desligado, pronto pra integração futura |
+
+**Nota sobre instrumentação desta sessão**: "agora instrumentado" significa
+que o MECANISMO de registro existe e foi testado (23 testes com mocks,
+ver seção 3) — NÃO significa que a classificação do coletor mudou pra
+VALIDADO. Nenhuma tentativa real foi registrada ainda nesta sessão
+(sem acesso a Supabase de produção neste sandbox) — a tabela
+`coletores_status` fica vazia até o primeiro usuário real abrir a aba
+correspondente em produção. A aba SAÚDE DOS DADOS mostrará
+corretamente "NUNCA EXECUTADO" até isso acontecer — não finge sucesso.
+
+### 2. SAÚDE DOS DADOS (FASE 2) — implementado
+
+- `sql/coletores_status.sql` (tabela nova) + `data/coletores_status.py`
+  (`registrar_tentativa`/`obter_status`/`obter_todos_status`) — mesmo
+  padrão Supabase já usado no projeto (upsert, degrada graciosamente,
+  nunca lança exceção).
+- `data/saude_dados.py:classificar_estado()` — função pura, cobre os
+  9 estados pedidos (SUCESSO_COM_NOVIDADE, SUCESSO_SEM_NOVIDADE,
+  PARCIAL, FALHA_EXECUCAO, FALHA_PERSISTENCIA, DADOS_DESATUALIZADOS,
+  FONTE_INDISPONIVEL, NAO_COMPROVADO, NUNCA_EXECUTADO).
+- Instrumentados (escrita real): NEWS, MERCADO, MACRO (BCB+ANBIMA),
+  CVM — ver matriz acima pros detalhes exatos de cobertura.
+  Research (Genial/XP/Lives) e CALENDÁRIO ficam SOMENTE-LEITURA
+  (`data/saude_dados.py` lê `store.ultima_coleta_em`/
+  `eventos.obter_snapshot_calendario`, já existentes — zero edição
+  nos módulos dessas duas frentes, de propósito, pra não conflitar
+  com a sessão paralela).
+- Nova aba **SAÚDE DOS DADOS** (`ui/saude_dados_tab.py`), admin-only
+  (mesmo público de SISTEMA/DIAGNÓSTICO DE FONTES) — tabela por
+  categoria, cores (verde=sucesso, âmbar=parcial/desatualizado,
+  vermelho=falha, cinza=sem evidência).
+- 23 testes novos (`tests/test_saude_dados.py`,
+  `tests/test_coletores_status.py`).
+
+### 3. EXPANSÃO B3 + EUA (FASE 3) — cadastro unificado + piloto
+
+Achado real que bloqueava qualquer tentativa de usar ticker
+americano: `data/prices.py:_para_symbol_yf` colava `.SA` em TODO
+ticker sem sufixo, sem exceção — `"NVDA"` virava `"NVDA.SA"` (inválido
+no Yahoo Finance), falhando silenciosamente (yfinance retorna vazio,
+não exceção). Não existia, em lugar nenhum do código, nenhum conceito
+de mercado/país/moeda por ativo — tudo assumia B3/BRL implicitamente
+(confirmado por auditoria dedicada, zero achado em contrário).
+
+Implementado:
+- `config.info_ativo(ticker)` — cadastro unificado: mercado/país/
+  moeda/símbolo-do-provedor pra QUALQUER ticker. Default (não
+  cadastrado) é B3/Brasil/BRL — zero mudança de comportamento pra
+  tudo que já existia. Overrides em `config.ATIVOS_CADASTRO_US`
+  (grupo-piloto: NVDA, AAPL, MSFT).
+- `_para_symbol_yf` consulta o cadastro antes de aplicar `.SA`.
+- `_calcular_beta` usa o índice de referência certo por mercado
+  (`^BVSP` pra B3, `^GSPC`/S&P500 pra NASDAQ/NYSE) — antes comparava
+  QUALQUER ticker contra o Ibovespa, o que não faz sentido pra ativo
+  americano.
+- `config.formatar_valor_mercado(valor, moeda="USD")` — prefixo por
+  moeda (R$/US$) + faixa nova "tri" (trilhões — mercados americanos
+  passam de US$1tri de valor de mercado, faixa que não existia).
+- Autocomplete (`config.NOMES_ATIVOS_BUSCA`) ganhou NVDA/AAPL/MSFT
+  com rótulo "(NASDAQ, USD)" — distinto das BDRs já existentes
+  (AAPL34/MSFT34/NVDC34, cotadas em BRL na B3).
+- 12 testes novos (`tests/test_ativos_us.py`) cobrindo normalização
+  BR/US, cadastro unificado, formatação por moeda e escolha do
+  benchmark de beta — incluindo regressão explícita dos 4 tickers
+  pedidos (PETR4/VALE3/ITUB4/WEGE3, DE PROPÓSITO fora do cadastro US,
+  confirmando que o caminho B3 continua idêntico).
+
+**NÃO implementado nesta sessão** (decisão deliberada — infraestrutura
+de dados vem antes de UI "completa", instrução explícita do Rodrigo):
+timezone por mercado (hoje `America/Sao_Paulo` hardcoded em ~10
+módulos, sem diferenciar `America/New_York` pra NASDAQ/NYSE — ver
+BACKLOG.md); status de pregão aberto/fechado multi-mercado;
+fundamentos/notícias/calendário/CVM pra ativos americanos (CVM é 100%
+Brasil — equivalente seria SEC EDGAR, não implementado); comparativo
+da watchlist em EQUITY ainda não diferencia BRL/USD lado a lado sem
+conversão explícita.
+
+### 4. X COMO FONTE DE DESCOBERTA (FASE 4) — avaliado, não viável por ora
+
+Pesquisa real feita ANTES de qualquer tentativa de implementação
+(WebSearch, 2026-10-09): API do X sem tier gratuito pra desenvolvedor
+novo desde 06/02/2026; Basic ($200/mês fixo) forçado pra pay-per-use
+(~US$0,005/leitura) e fechado pra assinante novo; busca/descoberta de
+posts recentes (o uso que esta fase precisaria) parece exigir tier
+pago específico ou Enterprise (US$42k+/mês) — nenhuma fonte confirma
+busca incluída no pay-per-use básico. Scraping não-oficial contornaria
+Termos de Serviço — descartado pelo mesmo princípio já aplicado a
+outras fontes do projeto.
+
+`data/x_signals.py` criado ISOLADO e DESLIGADO (`DISPONIVEL=False`,
+fora do grafo de import do app/ui — confirmado por teste dedicado) —
+define o contrato de dados (3 níveis de evidência, ciclo de vida de 5
+estados, proveniência completa, dedup por acontecimento) pra uma
+integração futura não ter que redesenhar isso do zero, SEM simular
+nenhuma conexão funcional. `buscar_sinais()` lança `NotImplementedError`
+explícito. 7 testes novos (`tests/test_x_signals.py`).
+
+### 5. Validação final
+
+`compileall` limpo (Python 3.12, mesma venv `/tmp/pregao_venv_new`
+criada nesta sessão) e `pyflakes` sem avisos em todos os arquivos
+tocados. Suite completa: **305/305 testes passando** (263 na baseline
++ 42 novos desta sessão: 23 SAÚDE DOS DADOS + 12 ativos BR/US + 7 X),
+checada antes e depois de cada uma das 3 fases, nunca só no final.
+
+### Pendências pra próxima fase (RADAR, 05:00 UTC, e além)
+
+1. **RADAR (5 módulos + copiloto)** — não implementado nesta sessão,
+   por design (escopo da rotina de 05:00 UTC). A matriz de
+   classificação na seção 1 e a infraestrutura de SAÚDE DOS DADOS
+   (seção 2) existem justamente pra essa sessão não precisar
+   reinvestigar a confiabilidade de cada fonte do zero.
+2. Instrumentação de SAÚDE DOS DADOS cobre só o ponto de entrada
+   principal de cada coletor on-demand (ver matriz, coluna
+   "Pendência") — ampliar cobertura (ex: `obter_noticias` por ticker)
+   é trabalho futuro, não bloqueador.
+3. MACRO tem 2 fontes (BCB/ANBIMA) compartilhando 1 linha de status
+   (`nome="MACRO"`) — a mais recente sobrescreve a outra. Separar em
+   2 linhas é uma mudança pequena, não feita por tempo nesta sessão.
+4. FASE 3: timezone/status de pregão multi-mercado, fundamentos/
+   notícias/calendário pra ativos EUA, comparativo BRL/USD na
+   watchlist — tudo registrado como pendência explícita (seção 3),
+   não inventado.
+5. FASE 4: aguardar decisão do Rodrigo sobre custo da API do X antes
+   de qualquer nova tentativa de integração.
+6. Confirmação em produção real (Supabase/Cloud de verdade) de TODAS
+   as instrumentações desta sessão (SAÚDE DOS DADOS) e do piloto EUA
+   — não verificável deste sandbox (mesma limitação já registrada em
+   FASE 6 pros fixes de Genial/CALENDÁRIO).

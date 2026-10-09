@@ -3,6 +3,59 @@
 Pendências conhecidas, para resolver depois (ajustes visuais adiados
 enquanto avançamos nas próximas fases).
 
+## FASE 7 (2026-10-09) — pendências da SAÚDE DOS DADOS / piloto EUA / X
+
+Ver PROGRESSO.md FASE 7 pra auditoria completa + matriz de
+classificação de cada coletor. Itens deliberadamente não resolvidos
+nesta sessão (tempo/escopo), registrados aqui pra não serem
+reinventados do zero:
+
+- **SAÚDE DOS DADOS — MACRO com 2 fontes numa linha só**: BCB (SGS,
+  IPCA/Selic/CDI) e ANBIMA (ETTJ/curva pré) compartilham o mesmo nome
+  `"MACRO"` na tabela `coletores_status` — a tentativa mais recente de
+  QUALQUER uma das duas sobrescreve o status da outra. Simplificação
+  deliberada (tempo); separar em 2 linhas (`"MACRO (BCB)"`/`"MACRO
+  (ANBIMA)"`) é mudança pequena e segura quando alguém priorizar.
+- **SAÚDE DOS DADOS — cobertura parcial dos entry points**: só o
+  agregador principal de cada coletor foi instrumentado
+  (`obter_top_mercado_tudo` em NEWS, `_baixar_lote` em MERCADO,
+  `obter_ipca`/`obter_curva_pre` em MACRO, `_ipe_ano` em CVM). Pontos
+  mais granulares (ex: `data/news.py:obter_noticias` por ticker
+  individual) continuam sem registro de tentativa própria.
+- **FASE 3 (EUA) — timezone multi-mercado não implementado**:
+  `America/Sao_Paulo` está hardcoded em ~10 módulos (news/cvm/eventos/
+  macro/research/app.py) sem diferenciar `America/New_York` pra
+  NASDAQ/NYSE. `config.FUSO_POR_MERCADO` já existe (mapa mercado->fuso)
+  mas nenhum caller usa ainda — qualquer horário de notícia/evento
+  exibido pra NVDA/AAPL/MSFT hoje aparece convertido pro fuso de
+  Brasília, não pro fuso real do mercado americano.
+- **FASE 3 — status de pregão aberto/fechado** (barra de status,
+  `app.py`) continua só B3 — não diferencia horário de pregão
+  NASDAQ/NYSE.
+- **FASE 3 — fundamentos/notícias/CVM/calendário pra ativos EUA**: só
+  cotação (preço/variação/beta/indicadores básicos via
+  `yf.Ticker().info`) funciona hoje pro grupo-piloto. CVM é 100%
+  Brasil (dataset oficial `dados.cvm.gov.br`, sem equivalente SEC
+  EDGAR implementado) — documentos oficiais/calendário de resultados
+  NÃO existem pra NVDA/AAPL/MSFT. Notícias (Google News) deveriam
+  funcionar (agnóstico de mercado, já lida com nome de empresa
+  estrangeira via `TICKER_ALIASES` de BDR) mas não foi testado
+  especificamente pro grupo-piloto nesta sessão.
+- **FASE 3 — comparativo da watchlist (EQUITY)** ainda não diferencia
+  BRL/USD lado a lado - se a watchlist tiver um ticker BR e um US
+  juntos, o painel comparativo pode mostrar os dois sem indicar a
+  moeda de cada um (`formatar_valor_mercado` já aceita `moeda=`, mas
+  nenhum caller do comparativo passa isso ainda).
+- **FASE 4 (X)** — `data/x_signals.py` isolado/desligado, pronto pra
+  integração futura. Decisão de custo (ver PROGRESSO.md FASE 7) fica
+  com o Rodrigo; não reabrir sem aprovação explícita de orçamento/
+  credencial nova.
+- **Confirmação em produção real** de todas as instrumentações desta
+  sessão (SAÚDE DOS DADOS) — não verificável deste sandbox (sem acesso
+  a Supabase/rede de produção reais). A tabela `coletores_status` só
+  passa a ter dado depois que alguém abrir as abas correspondentes em
+  `pregao.streamlit.app` após o deploy.
+
 ## Research (Genial) — "Swing trade" nunca aparece na watchlist em produção
 (investigado 2026-10-09, FASE 6 — **não corrigido**, falta decisão de escopo)
 

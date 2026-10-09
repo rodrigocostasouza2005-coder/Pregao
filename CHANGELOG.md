@@ -3,6 +3,46 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-09 (FASE 7 — SAÚDE DOS DADOS + piloto EUA + avaliação do X)
+
+Sessão autônoma agendada, antecipando a rotina de 05:00 UTC (aba
+RADAR) — ver PROGRESSO.md pra auditoria completa e matriz de
+classificação de cada coletor. Rodou em paralelo (sem conflito
+confirmado, zero arquivo em comum) com a sessão da FASE 6 acima.
+
+- **feat (SAÚDE DOS DADOS)**: tabela nova `coletores_status` +
+  `data/coletores_status.py` registram cada tentativa de coleta
+  (execução ok/falhou, persistência ok/falhou, registros novos, erro) -
+  até agora nenhum coletor registrava isso. Instrumentado em NEWS
+  (`obter_top_mercado_tudo`), MERCADO (`_baixar_lote`), MACRO
+  (`obter_ipca`/BCB + `obter_curva_pre`/ANBIMA) e CVM (`_ipe_ano`).
+  Research (Genial/XP/Lives) e CALENDÁRIO ficam somente-leitura (lê
+  dado já persistido, sem tocar nesses módulos - coordenação com a
+  sessão paralela). `data/saude_dados.py:classificar_estado()` cobre 9
+  estados (sucesso com/sem novidade, parcial, falha de execução, falha
+  de persistência, dados desatualizados, fonte indisponível, não
+  comprovado, nunca executado). Nova aba SAÚDE DOS DADOS (admin-only).
+- **feat (piloto EUA — NVDA/AAPL/MSFT)**: `config.info_ativo(ticker)`
+  cadastro unificado de mercado/país/moeda/símbolo - corrige
+  `data/prices.py:_para_symbol_yf`, que colava ".SA" em TODO ticker sem
+  sufixo (quebrava qualquer tentativa de ticker americano). Beta agora
+  usa o índice certo por mercado (S&P500 pra NASDAQ/NYSE, não mais
+  Ibovespa pra tudo). `formatar_valor_mercado` ganhou parâmetro `moeda`
+  + faixa "tri". Tickers B3 de regressão (PETR4/VALE3/ITUB4/WEGE3)
+  confirmados intactos. Timezone/status de pregão multi-mercado e
+  fundamentos/notícias/CVM pra EUA NÃO implementados nesta sessão
+  (infraestrutura antes de UI completa - ver BACKLOG.md).
+- **docs (X como fonte de descoberta)**: pesquisa real confirmou que a
+  API do X não tem mais tier gratuito pra dev novo desde 06/02/2026 e
+  busca/descoberta exigiria tier pago específico ou Enterprise
+  (US$42k+/mês) - não viável sem custo novo aprovado.
+  `data/x_signals.py` criado ISOLADO e DESLIGADO (fora do grafo de
+  import do app), define o contrato de dados (níveis de evidência,
+  ciclo de vida do sinal, dedup por acontecimento) pra integração
+  futura, sem simular conexão funcional.
+- 42 testes novos (23 SAÚDE DOS DADOS, 12 ativos BR/US, 7 X) - 305/305
+  passando, `compileall`/`pyflakes` limpos.
+
 ## 2026-10-09 (FASE 6 — auditoria dos coletores: Genial/Research Radar + CALENDÁRIO)
 
 Sessão autônoma agendada, pedido explícito do Rodrigo (FASE 6). Partiu do
