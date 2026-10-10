@@ -108,11 +108,25 @@ def render_saude_dados():
                 """,
                 unsafe_allow_html=True,
             )
-            for item in itens:
-                st.markdown(
-                    f"<div class='cinza' style='font-size:0.65rem;'>"
-                    f"{item['nome']}: frequência esperada — {item['frequencia_esperada']}"
-                    f"{'' if item['instrumentado'] else ' · status derivado só do último dado persistido (coletor ainda não registra tentativas)'}"
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
+            # 1 st.markdown SO' pra todas as legendas da categoria (nao 1
+            # por item): bug real corrigido, 2026-10-10 (confirmado por
+            # screenshot real do Playwright) - varias chamadas separadas
+            # de st.markdown, uma por item, renderizavam cada uma com
+            # ALTURA EFETIVA ZERO entre si (o gap de 0.4rem do bloco
+            # vertical do Streamlit nao se aplicava aqui, causa exata nao
+            # isolada) e as linhas ficavam sobrepostas/ilegiveis quando
+            # havia mais de 1 coletor na mesma categoria (MACRO, RESEARCH).
+            # Combinar num unico bloco HTML com margin-top proprio entre
+            # linhas resolve de forma determinista, sem depender do
+            # espacamento entre elementos do Streamlit.
+            legendas_html = "".join(
+                f"<div style='margin-top:0.25rem;'>{item['nome']}: frequência esperada — "
+                f"{item['frequencia_esperada']}"
+                f"{'' if item['instrumentado'] else ' · status derivado só do último dado persistido (coletor ainda não registra tentativas)'}"
+                "</div>"
+                for item in itens
+            )
+            st.markdown(
+                f"<div class='cinza' style='font-size:0.65rem;'>{legendas_html}</div>",
+                unsafe_allow_html=True,
+            )
