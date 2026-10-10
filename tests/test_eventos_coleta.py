@@ -7,7 +7,7 @@ cliente Supabase - nao faz requisicao real nem precisa de
 
 Uso: python tests/test_eventos_coleta.py (python do .venv do projeto)."""
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -190,6 +190,7 @@ def test_10a_confirmado_persistido_pula_ri_e_news():
     salvo = {
         "ticker": "PETR4", "periodo": "3T26", "status": STATUS_CONFIRMADO,
         "data_evento": "2026-10-20", "fonte": "Petrobras RI", "url_fonte": "https://ri.example.com",
+        "coletado_em": datetime.now(timezone.utc).isoformat(),  # verificado ha pouco - dentro da janela, nao reverifica
     }
     chamadas_rede = []
     with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
@@ -254,7 +255,8 @@ def test_10e_universo_grande_nao_estagna_nos_tickers_ja_confirmados():
     tickers = [f"TICK{i}" for i in range(20)]
     persistidos = {
         t: {"ticker": t, "periodo": "3T26", "status": STATUS_CONFIRMADO,
-            "data_evento": "2026-10-20", "fonte": "RI", "url_fonte": None}
+            "data_evento": "2026-10-20", "fonte": "RI", "url_fonte": None,
+            "coletado_em": datetime.now(timezone.utc).isoformat()}
         for t in tickers[:15]  # os 15 primeiros ja' resolvidos
     }
     processados_de_verdade = []
@@ -279,6 +281,71 @@ def test_10e_universo_grande_nao_estagna_nos_tickers_ja_confirmados():
     _checar("10e so' os 5 tickers NAO persistidos chamam RI de verdade (os 15 CONFIRMADOS pulam a rede)",
              processados_de_verdade == tickers[15:], f"(processados_de_verdade={processados_de_verdade})")
     _checar("10e orcamento nao esgota (universo pequeno + atalho rapido)", stats["tempo_esgotado"] is False)
+
+
+# ============================================================
+# _confirmado_precisa_reverificar / reverificacao periodica de CONFIRMADO
+# (bug real corrigido, auditoria 2026-10-10 - ver docstring da funcao)
+# ============================================================
+
+def test_11a_confirmado_recente_com_data_futura_nao_precisa_reverificar():
+    salvo = {"data_evento": "2026-12-01", "coletado_em": datetime.now(timezone.utc).isoformat()}
+    precisa = coleta_mod._confirmado_precisa_reverificar(salvo, hoje=date(2026, 10, 10))
+    _checar("11a verificado ha pouco, data no futuro -> nao reverifica", precisa is False)
+
+
+def test_11b_confirmado_antigo_com_data_futura_precisa_reverificar():
+    """O cenario do bug: empresa confirmou ha mais de 7 dias, o evento
+    ainda nao aconteceu - precisa de 1 nova tentativa pra captar um
+    possivel adiamento/correcao."""
+    coletado_em_antigo = (date(2026, 10, 10) - timedelta(days=10)).isoformat() + "T00:00:00+00:00"
+    salvo = {"data_evento": "2026-12-01", "coletado_em": coletado_em_antigo}
+    precisa = coleta_mod._confirmado_precisa_reverificar(salvo, hoje=date(2026, 10, 10))
+    _checar("11b verificado ha 10 dias (> janela de 7), data ainda no futuro -> reverifica", precisa is True)
+
+
+def test_11c_confirmado_com_data_no_passado_nunca_reverifica():
+    """Evento que ja' aconteceu nao tem mais o que corrigir - nunca vale
+    a pena gastar rede reverificando, mesmo que coletado_em seja antigo."""
+    coletado_em_muito_antigo = "2020-01-01T00:00:00+00:00"
+    salvo = {"data_evento": "2026-09-01", "coletado_em": coletado_em_muito_antigo}
+    precisa = coleta_mod._confirmado_precisa_reverificar(salvo, hoje=date(2026, 10, 10))
+    _checar("11c data confirmada no passado -> nunca reverifica", precisa is False)
+
+
+def test_11d_sem_coletado_em_precisa_reverificar():
+    """Linha salva ANTES desta correcao (sem a coluna coletado_em
+    preenchida) - mais seguro reverificar que confiar ciegamente."""
+    salvo = {"data_evento": "2026-12-01"}
+    precisa = coleta_mod._confirmado_precisa_reverificar(salvo, hoje=date(2026, 10, 10))
+    _checar("11d sem coletado_em -> reverifica (nao assume nada)", precisa is True)
+
+
+def test_11e_coletar_evento_reverifica_confirmado_antigo_e_detecta_correcao():
+    """Integra'cao completa: CONFIRMADO salvo ha' mais de 7 dias com data
+    no futuro - coletar_evento tenta RI de novo (nao usa mais o atalho
+    sem rede) e, se a empresa corrigiu a data, o novo CONFIRMADO reflete
+    a correcao (nao fica preso na data velha pra sempre)."""
+    coletado_em_antigo = "2026-09-01T00:00:00+00:00"
+    salvo = {
+        "ticker": "PETR4", "periodo": "3T26", "status": STATUS_CONFIRMADO,
+        "data_evento": "2026-11-05", "fonte": "Petrobras RI", "url_fonte": "https://ri.example.com",
+        "coletado_em": coletado_em_antigo,
+    }
+    evento_corrigido = {
+        "ticker": "PETR4", "empresa": "Petrobras", "periodo": "3T26", "data": date(2026, 11, 20),
+        "horario": None, "status": STATUS_CONFIRMADO, "fonte": "Petrobras RI",
+        "origem_url": "https://ri.example.com", "tipo_evento": "RESULTADO",
+        "coletado_em": datetime.now(timezone.utc),
+    }
+    with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
+         patch.object(coleta_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(coleta_mod, "_buscar_evento_salvo", return_value=salvo), \
+         patch.object(coleta_mod, "tentar_ri", return_value=evento_corrigido) as mock_ri:
+        evento = coleta_mod.coletar_evento("PETR4", hoje=date(2026, 10, 10))
+    _checar("11e CONFIRMADO desatualizado (>7 dias) chama RI de novo (nao usa mais o atalho sem rede)", mock_ri.called)
+    _checar("11e retorna a data CORRIGIDA (20/11), nao a antiga (05/11) presa pra sempre",
+             evento == evento_corrigido, f"(evento={evento})")
 
 
 # ============================================================

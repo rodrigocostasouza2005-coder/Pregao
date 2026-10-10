@@ -205,6 +205,46 @@ def tentar_news(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | N
     return None
 
 
+_JANELA_REVERIFICACAO_DIAS = 7  # ver _confirmado_precisa_reverificar
+
+
+def _confirmado_precisa_reverificar(salvo: dict, hoje: date) -> bool:
+    """True se um evento ja' CONFIRMADO precisa de 1 nova tentativa de
+    RI/NEWS, em vez do atalho direto pro valor salvo (ver coletar_evento).
+    Bug real corrigido (auditoria 2026-10-10): o atalho introduzido em
+    2026-10-09 pra consertar a "fome" de recurso (ver docstring de
+    coletar_evento) tambem eliminou qualquer chance de corrigir um
+    CONFIRMADO - uma vez salvo, RI/NEWS NUNCA eram tentados de novo pro
+    mesmo (ticker,periodo), nem que a empresa adiasse/corrigisse a data
+    (atualizando a MESMA URL de RI ja' registrada na CVM, ver
+    data/ir_sources.py). salvar_evento_se_mais_confiavel ja' suporta
+    sobrescrever um CONFIRMADO por outro CONFIRMADO com data diferente -
+    so' nunca era exercitado, porque o atalho nunca deixava chegar la'.
+
+    So' reverifica (no maximo 1x por _JANELA_REVERIFICACAO_DIAS, pra nao
+    reintroduzir o custo de rede em TODA execucao - o mesmo problema que
+    o atalho original resolveu) quando a data confirmada AINDA esta' no
+    futuro (evento que ja' aconteceu nao tem mais o que corrigir) E a
+    ultima verificacao (coletado_em) ja' passou dessa janela. Linha
+    salva malformada (sem data/coletado_em parseavel) tambem pede
+    reverificacao - mais seguro que confiar numa linha que nao da' pra
+    interpretar."""
+    try:
+        data_confirmada = date.fromisoformat(str(salvo["data_evento"])[:10])
+    except (KeyError, ValueError, TypeError):
+        return True
+    if data_confirmada < hoje:
+        return False
+    coletado_em = salvo.get("coletado_em")
+    if not coletado_em:
+        return True
+    try:
+        verificado_em = datetime.fromisoformat(str(coletado_em)).date()
+    except (ValueError, TypeError):
+        return True
+    return (hoje - verificado_em).days >= _JANELA_REVERIFICACAO_DIAS
+
+
 def coletar_evento(ticker: str, hoje: date = None) -> dict | None:
     """Pipeline completo pra 1 ticker: RI -> NEWS -> PRAZO_CVM (fallback
     final, sempre disponivel se a CVM responder). None so' se nem o
@@ -214,26 +254,36 @@ def coletar_evento(ticker: str, hoje: date = None) -> dict | None:
     Atalho (bug real de "fome" de recurso corrigido, 2026-10-09): se o
     (ticker,periodo) JA' tem um CONFIRMADO persistido (maior
     confiabilidade possivel - PRIORIDADE_STATUS - nada que RI/NEWS
-    possam achar melhora isso), pula RI/NEWS direto pro valor ja' salvo,
-    sem nenhuma chamada de rede. Sem isso, TODO ticker (mesmo os ja'
-    resolvidos) refazia RI+NEWS (rede, ate' ~20s cada) em TODA execucao
-    do coletor - com o orcamento de coletar_eventos_universo
-    (_ORCAMENTO_TOTAL_S=5min) e o universo de ~84 tickers (
-    config.IBOVESPA_SETORES), os primeiros tickers da lista (SEMPRE a
-    MESMA ordem, dict.keys()) consumiam o orcamento inteiro so'
-    reconfirmando o que ja' sabiam, e os tickers do final da lista NUNCA
-    eram alcancados - nao e' so' lento, e' estagnacao permanente (o
-    docstring de coletar_eventos_universo promete "o proximo run
+    possam achar melhora isso) E essa confirmacao ainda nao precisa de
+    reverificacao (ver _confirmado_precisa_reverificar), pula RI/NEWS
+    direto pro valor ja' salvo, sem nenhuma chamada de rede. Sem isso,
+    TODO ticker (mesmo os ja' resolvidos) refazia RI+NEWS (rede, ate'
+    ~20s cada) em TODA execucao do coletor - com o orcamento de
+    coletar_eventos_universo (_ORCAMENTO_TOTAL_S=5min) e o universo de
+    ~84 tickers (config.IBOVESPA_SETORES), os primeiros tickers da lista
+    (SEMPRE a MESMA ordem, dict.keys()) consumiam o orcamento inteiro
+    so' reconfirmando o que ja' sabiam, e os tickers do final da lista
+    NUNCA eram alcancados - nao e' so' lento, e' estagnacao permanente
+    (o docstring de coletar_eventos_universo promete "o proximo run
     continua de onde parou", o que so' e' verdade se os ja'-CONFIRMADOS
-    pularem a parte cara da rede)."""
+    pularem a parte cara da rede).
+
+    Reverificacao periodica (bug real corrigido, auditoria 2026-10-10):
+    o atalho acima, sem limite, tambem impedia pra sempre a correcao de
+    um CONFIRMADO que a empresa depois adia/corrige - ver
+    _confirmado_precisa_reverificar."""
     periodo = periodo_pendente(ticker, hoje)
     if periodo is None:
         return None
     ano, trimestre = periodo
     rotulo = rotulo_periodo(ano, trimestre)
+    hoje_efetivo = hoje if hoje is not None else date.today()
 
     salvo = _buscar_evento_salvo(ticker, rotulo)
-    if salvo is not None and salvo.get("status") == STATUS_CONFIRMADO:
+    if (
+        salvo is not None and salvo.get("status") == STATUS_CONFIRMADO
+        and not _confirmado_precisa_reverificar(salvo, hoje_efetivo)
+    ):
         try:
             return _montar_evento(
                 ticker, obter_nome_yf(ticker) or ticker, ano, trimestre, STATUS_CONFIRMADO,
