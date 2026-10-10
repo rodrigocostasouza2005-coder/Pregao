@@ -94,7 +94,14 @@ _TICKER_NA_MANCHETE = re.compile(r"\b[A-Z]{4}\d{1,2}\b")
 # codigo de contrato futuro (ex: WDOV26, WINV26 - 4 letras + ano com 2
 # digitos, mesma forma de um ticker) e mostrava como se fosse uma acao
 # nas tags do card/dialog da noticia (achado real, 2026-10-08).
-_SUFIXOS_TICKER_VALIDOS = {"3", "4", "5", "6", "7", "8", "9", "11", "32", "33", "34", "35", "36", "37", "38", "39"}
+# "54": bug real corrigido (auditoria 2026-10-10) - a AZUL trocou de
+# AZUL4 pra AZUL54 em 23/12/2025 (ver data/news_setores.py, tickers de
+# TRANSPORTE & LOGISTICA, e PROGRESSO.md) mas esse conjunto nunca foi
+# atualizado; sem o "54", uma manchete tipo "AZUL54 sobe 5%..." (sem
+# palavra-chave de setor) nunca reconhecia AZUL54 como ticker valido -
+# a materia desaparecia silenciosamente ao filtrar por TRANSPORTE &
+# LOGISTICA e a tag do ticker nunca aparecia no card.
+_SUFIXOS_TICKER_VALIDOS = {"3", "4", "5", "6", "7", "8", "9", "11", "32", "33", "34", "35", "36", "37", "38", "39", "54"}
 
 # --- Score de confiabilidade: fontes e palavras-chave --------------------
 
