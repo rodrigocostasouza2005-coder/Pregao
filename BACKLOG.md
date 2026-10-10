@@ -3,6 +3,46 @@
 Pendências conhecidas, para resolver depois (ajustes visuais adiados
 enquanto avançamos nas próximas fases).
 
+## AUDITORIA VISUAL (2026-10-10) — pendências desta rodada
+
+Ver PROGRESSO.md "AUDITORIA VISUAL — continuação 2026-10-10" pro
+relatório completo (método, 6 bugs reais corrigidos com evidência de
+screenshot). Itens investigados e **deliberadamente não alterados**:
+
+- **SAÚDE DOS DADOS — tabela principal usa rolagem horizontal no
+  mobile** (não truncamento de coluna, diferente do padrão já usado em
+  CVM)
+  PRIORIDADE: BAIXA · IMPACTO: BAIXO (funcional, só menos polido) · ESFORÇO: MÉDIO
+  A tabela tem 6 colunas (COLETOR/FONTE/ESTADO/ÚLTIMA TENTATIVA/ÚLTIMO
+  SUCESSO/REGISTROS NOVOS) com texto de largura bem variável (ex:
+  "Fonte indisponível: timeout ao conectar na fonte (connection timed
+  out apos 15s)" na coluna ESTADO) - truncar com reticências (como CVM
+  faz) perderia informação de diagnóstico que é o propósito inteiro
+  dessa aba. Rolagem horizontal (já implementada via
+  `overflow-x:auto`) é funcional, só não tão polida quanto o padrão de
+  truncamento - redesenhar exigiria decidir QUAIS colunas priorizar
+  em tela estreita (card empilhado por coletor em vez de tabela?),
+  decisão de produto maior que um ajuste pontual desta rodada.
+- **EQUITY, TOP MERCADO, CONFIG** — não auditados visualmente nesta
+  rodada
+  PRIORIDADE: MÉDIA (nunca tiveram auditoria visual dedicada) · IMPACTO: DESCONHECIDO · ESFORÇO: DESCONHECIDO
+  Fora da lista de áreas pedida explicitamente pelo Rodrigo nesta
+  rodada (RADAR/MERCADO/MACRO/NEWS/CALENDÁRIO/RESEARCH/CVM/SAÚDE DOS
+  DADOS/Navegação) - não tocados de propósito, candidatos naturais pra
+  próxima rodada de auditoria visual.
+- **MERCADO — 4 dos 5 painéis do registro não re-auditados nesta
+  rodada** (altas/baixas, mais negociados, setorial, treemap - só
+  `_painel_globais` foi reconferido de passagem)
+  PRIORIDADE: BAIXA · IMPACTO: BAIXO (já teve 1 bug real corrigido pela
+  sessão anterior, `a05c545`) · ESFORÇO: -
+  Não refeito do zero sem evidência de regressão - mesmo critério de
+  sempre (nunca re-auditar algo já verificado sem motivo concreto).
+- **Escala não testada**: toda a auditoria desta rodada usou 3 tickers
+  na watchlist (PETR4/VALE3/ITUB4) - nunca testado com watchlist vazia,
+  1 ticker só, ou volume real (20+ tickers). Layout pode se comportar
+  diferente em escala (ex: paginação, scroll, quantidade de pílulas de
+  filtro) - não verificado.
+
 ## RADAR (2026-10-09) — pendências da nova aba de inteligência
 
 Ver PROGRESSO.md "FASE RADAR" pra arquitetura completa. Itens

@@ -4974,3 +4974,279 @@ Commits desta sessão: `0a40a51` (fix: teste de ordem de import),
 `00188b2` (docs: BACKLOG). Estado final: `origin/main` sincronizado,
 working tree limpo, `343/343` testes passando, `compileall`/`pyflakes`
 limpos.
+
+## AUDITORIA VISUAL — continuação 2026-10-10 (sessão agendada, retomando
+sessão interrompida por limite de uso às 16h38 UTC do dia anterior)
+
+### 0. Estado real do repositório ao iniciar (regra 1 - verificado, não presumido)
+
+- `git status`: working tree limpo, mas HEAD estava **detached** no
+  mesmo commit de `origin/main` (`a05c545`) - a branch local `main`
+  estava desatualizada (ainda em `38e09f7`, de ANTES de toda a rodada
+  de correções visuais da sessão anterior). `git fetch origin main`
+  confirmou que `origin/main` já estava em `a05c545` (o trabalho da
+  sessão anterior - RADAR/NEWS/header/MERCADO - **já tinha sido
+  commitado e pushado de verdade**, só o ponteiro local `main` que
+  estava obsoleto). `git checkout main && git merge --ff-only a05c545`
+  corrigiu (fast-forward puro, zero commit perdido) - sem isso, o
+  primeiro commit novo desta sessão teria ficado órfão de novo numa
+  branch sem nome.
+- Confirmado por leitura direta do código (não só do relato da sessão
+  anterior, conforme nota de handoff do agendador): os 4 commits da
+  rodada anterior (`fa66c18` header/sidebar/RADAR, `5ceff3e` fallback
+  de imagem NEWS, `df9f63e` header mobile, `a05c545` gráfico setorial
+  MERCADO) estavam de fato em `ui/`/`style.css`, não só relatados.
+
+### 1. Método (mesmo da sessão anterior, reconstruído do zero - nada
+persiste entre containers)
+
+Rede bloqueada por política da organização neste sandbox (confirmado de
+novo: `api.bcb.gov.br`, `query1.finance.yahoo.com`, `news.google.com`,
+`pregao.streamlit.app`, até `picsum.photos` - qualquer domínio externo,
+inclusive a partir do PRÓPRIO BROWSER do harness, não só do backend
+Python - achado novo desta sessão, ver item 4). Sem evidência visual
+real (screenshot de browser de verdade), não dá pra distinguir "parece
+bugado no código" de "realmente renderiza errado" - por isso o método
+é sempre: reconstruir o harness, rodar `streamlit run` de verdade,
+screenshot real via Playwright, só então corrigir.
+
+Harness reconstruído em `/tmp/pregao_venv_audit` (venv Python 3.12) +
+scratchpad (`mocks.py`/`harness_app.py`/`shot.py`, não commitados -
+infraestrutura de teste, não faz parte do produto):
+- `harness_app.py`: aplica os mocks (abaixo) nos MÓDULOS DE DADO
+  (`data.macro`, `data.cvm`, `data.eventos`, `data.news`,
+  `data.research.*`, `data.coletores_status`, `data.ibovespa`, `auth`)
+  **antes** de importar `app.py` via `exec()` - essencial, porque
+  `ui/*.py` faz `from data.X import obter_Y` (bind por valor no
+  import), então o mock tem que estar em vigor antes desse import
+  acontecer, não depois.
+- `mocks.py`: ao invés de recriar módulos inteiros, troca só as
+  funções de ponta ("obter_*"/"listar_*") que fazem rede/Supabase real
+  por geradores de dado falso determinísticos (seed por ticker/título),
+  mantendo toda a lógica de UI/formatação real e intocada. Além disso,
+  **`yfinance` inteiro é substituído por um módulo falso** (`yf.Ticker`/
+  `yf.download` sintéticos) - como várias fontes (preços, cotações,
+  cenário global do MACRO) passam por `yfinance`, mockar só esse ponto
+  cobre `data/prices.py`, `data/mercado.py` e
+  `data/macro.py:obter_cenario_global` de uma vez, sem precisar mockar
+  cada um individualmente.
+- `shot.py`: Playwright contra o Chromium pré-instalado
+  (`/opt/pw-browsers/chromium-1194/.../chrome`), screenshot real em
+  1280px (desktop) e 390px (mobile).
+- Email do usuário mockado = o admin padrão (`config.
+  _EMAILS_ADMIN_PADRAO`), de propósito, pra conseguir auditar SISTEMA/
+  SAÚDE DOS DADOS também (só aparecem pra admin).
+
+**Achado de metodologia (vale registrar pra próxima sessão)**: `pgrep
+-f "<padrão>"` dentro deste harness às vezes casa com o PRÓPRIO
+processo wrapper do shell que executa o comando (o texto do comando
+aparece literalmente no `cmdline` do wrapper) - um PID "encontrado" que
+já não existe mais na hora do `kill`. Usar `ps aux | grep '[s]tream...'`
+(truque do colchete, evita auto-match) é mais confiável pra achar
+processos do harness entre reinícios do servidor Streamlit.
+
+### 2. MACRO — terminada (handoff da sessão anterior: parou no meio,
+suspeitava de bug no rótulo do eixo Y do IPCA)
+
+Confirmado por screenshot real: **NÃO era o rótulo do IPCA
+especificamente** - era um bug mais amplo, afetando os 3 gráficos
+Plotly da aba (Curva Pré, IPCA, Selic x CDI). Causa raiz real (não a
+hipótese inicial de margem do Plotly, que foi testada e descartada
+primeiro - ver commit): o painel do workspace livre
+(`ui/workspace.py`, `overflow:auto`) usa uma altura padrão genérica
+(`_ALTURA_PADRAO_REM = 18rem/288px`) menor que a altura real do gráfico
+Plotly (`altura=380px`) + cabeçalho do painel - o rodapé do gráfico
+ficava cortado/só acessível rolando DENTRO do painel (overflow:auto,
+não hidden - então nunca "sumia" de vez, só ficava invisível até o
+usuário redimensionar manualmente), inclusive o título do eixo Y
+("Mensal (%)"/"12 meses (%)"/"% a.a.") e as datas do eixo X.
+
+Corrigido com um parâmetro opcional `alturas_padrao` em
+`workspace.layout_efetivo`/`renderizar_workspace` (retrocompatível,
+`None` preserva o comportamento de sempre pras outras abas) - MACRO
+passa uma altura maior só pros 3 painéis de gráfico. Testado:
+`selic_cdi` precisa de ainda mais altura que os outros 2 (tem uma linha
+extra de UI, o `segmented_control` de período, acima do gráfico) -
+achado por tentativa/erro com screenshot real, não adivinhado.
+Confirmado desktop E mobile (390px), confirmado que MERCADO/VISÃO GERAL
+(que reusam o mesmo `workspace.py`) continuam exatamente iguais (não
+usam `alturas_padrao`, caem no comportamento antigo).
+
+Commit: `553a090`.
+
+### 3. CALENDÁRIO — primeira auditoria visual real desta aba
+
+Desktop: grade mensal, painel "EVENTOS DO DIA", badges de status
+(CONFIRMADO/ESTIMADO/PRAZO CVM), tudo bem alinhado, sem achados.
+
+Mobile (390px) - **bug real confirmado**: a grade de 7 colunas (SEG-
+DOM) não tem `white-space:nowrap` em NENHUM texto da célula - numa tela
+de celular (~40-45px úteis por célula), tanto o NÚMERO DO DIA ("28")
+quanto o TICKER ("MGLU3") quebravam letra por letra dentro da célula,
+completamente ilegível. Corrigido com uma media query
+`@max-width:640px` (mesmo breakpoint já usado no resto do app):
+`white-space:nowrap` + `text-overflow:ellipsis` nos textos da célula
+(trunca com "…" em vez de quebrar linha), fonte/padding da célula um
+pouco menores. Desktop confirmado inalterado.
+
+Commit: `e889282`.
+
+### 4. RESEARCH — primeira auditoria visual real desta aba
+
+**Bug real #1 (dado, não layout)**: `_fmt_data` (`ui/research_tab.py`)
+fazia `data_iso.split("-")` assumindo sempre `'YYYY-MM-DD'` puro, mas
+`data/news.py` manda `datetime.isoformat()` **completo** (hora + fuso
+de Brasília, sufixo `-03:00`). O `-` do offset virava um separador a
+mais: o unpacking de 3 valores estourava (`ValueError`, cai no
+`except`, mostra o ISO cru) - **em produção (sempre fuso de Brasília),
+TODA data do bloco "CONTEXTO RECENTE · NEWS" caía nesse caminho
+quebrado**, mostrando algo como `2026-10-09T18:30:12.655291-03:00` em
+vez de `09/10/2026`. (Achado inicialmente através do mock, com um
+timezone sem `-` no offset, que expôs uma variante ainda pior do mesmo
+bug - o unpack "funcionava" errado e remontava a string trocada tipo
+`09T18:30:12.655291+00:00/10/2026` - mas o bug em si, confirmado lendo
+`data/news.py`, é 100% real em produção, não um artefato do mock.) Fix:
+recorta os 10 primeiros caracteres (`'YYYY-MM-DD'`) antes de dividir -
+mesmo padrão que `ui/calendario_tab.py` já usa corretamente pros mesmos
+campos de data.
+
+**Bug real #2 (mobile)**: filtros "Casa"/"Tipo"/"Ticker" do FEED DE
+RESEARCH usam `st.columns(3)` - mesma causa-raiz já documentada pro
+header (Streamlit só encolhe as colunas proporcionalmente, nunca
+empilha de verdade, porque o flex-basis é percentual) - numa tela de
+celular cada coluna sobra uns 130px, insuficiente pra uma única pílula
+tipo "Genial (Lives)" (14 caracteres), que ficava **cortada sem "…"**
+(diferente do CALENDÁRIO - aqui nem truncava elegante, só sumia o
+resto). Fix: container com `key="research_filtros_feed"` + regra mobile
+em `style.css` empilhando as 3 colunas em largura cheia (1 filtro por
+linha). Desktop confirmado inalterado nos dois casos.
+
+Commits: `0771f5c` (datas), `d77e279` (pílulas).
+
+### 5. CVM — primeira auditoria visual real desta aba
+
+Sem bug de produto encontrado. Tabela de documentos (DATA/TICKER/TIPO/
+DOCUMENTO) renderiza bem desktop e mobile - a correção de truncamento
+com reticências de uma sessão anterior (`d062db2`) segue funcionando
+nos dois tamanhos de tela. (Um `TypeError` apareceu durante a auditoria,
+mas era do MOCK do harness - `data_iso` sintético sem timezone,
+inconsistente com o formato real de `data/cvm.py:obter_documentos_cvm`,
+que sempre inclui timezone - corrigido só no harness, não no produto;
+registrado aqui pra não confundir uma sessão futura que reveja os logs
+desta auditoria.)
+
+### 6. SAÚDE DOS DADOS — primeira auditoria visual real desta aba
+
+**Bug real confirmado**: na categoria MACRO (2 coletores: BCB/ANBIMA) e
+RESEARCH (3 coletores: Genial Analisa/XP/Genial Lives), as legendas de
+rodapé ("X: frequência esperada — ...") ficavam **sobrepostas/
+ilegíveis** - cada uma era um `st.markdown()` separado dentro de um
+loop (1 por coletor), e o espaçamento entre esses elementos ficava com
+altura efetiva zero nesse caso específico (não herdava o `gap:0.4rem`
+do bloco vertical do Streamlit). Só aparecia com 2+ coletores na mesma
+categoria - por isso passou despercebido até agora (a maioria das
+categorias tem 1 só). Fix: combina todas as legendas da categoria num
+único `st.markdown`, com `margin-top` próprio por linha - não depende
+mais do espaçamento entre elementos do Streamlit. Confirmado desktop e
+mobile.
+
+A tabela principal (6 colunas: COLETOR/FONTE/ESTADO/ÚLTIMA TENTATIVA/
+ÚLTIMO SUCESSO/REGISTROS NOVOS) usa rolagem horizontal no mobile (sem
+truncamento de coluna, diferente de CVM) - **não é regressão nem bug
+novo**, é um padrão alternativo já aceitável (a tabela já vem envolta
+em `overflow-x:auto`); registrado em BACKLOG como candidato de
+melhoria futura, não corrigido agora (6 colunas com texto variável
+tipo "Fonte indisponível: timeout..." não truncam bem sem perder
+informação crítica).
+
+Commit: `d3531fe`.
+
+### 7. NEWS / Morning Call — segunda passada (1 bug já corrigido em
+sessão anterior: fallback de imagem quebrada)
+
+Capa do modal editorial, proporção de imagem (thumb do feed via
+`_thumb_html`, 16:9 na capa do modal via `_capa_html`), separação
+RESUMO/LEITURA DE MERCADO, seção "Veículos"/"Tickers citados"/
+"RESEARCH" no rodapé do modal - tudo conferido com imagem REAL
+carregando (não só o fallback) depois de ajustar o mock (ver nota
+abaixo) - sem bug novo de produto encontrado. O fallback discreto
+(nome do veículo, sem foto) ocupa a mesma proporção 16:9 que uma foto
+de verdade ocuparia - **decisão de design deliberada e documentada no
+próprio código** (consistência de layout entre ter/não ter imagem),
+não um bug de "espaço desperdiçado".
+
+**Nota de metodologia (não é bug de produto)**: a rede deste sandbox
+bloqueia qualquer domínio externo **a partir do próprio browser do
+harness**, não só do backend Python - uma URL de imagem real (ex:
+`picsum.photos`, usada inicialmente pro mock) nunca carregava, então
+toda imagem "deveria ter carregado" caía direto no fallback, tornando
+impossível validar visualmente o caminho de sucesso. Troquei por uma
+`data:` URI (SVG gerado na hora, sem rede nenhuma) pro caso "imagem OK"
+do mock - só assim deu pra confirmar visualmente que a imagem real
+renderiza com a proporção/recorte certos quando carrega.
+
+Também corrigido no MOCK (não no produto): o resumo fake usava uma tag
+HTML (`<b>LEITURA DE MERCADO</b>`) em vez do marcador de texto puro que
+`data/news.py:separar_secoes_resumo` realmente espera (`"LEITURA DE
+MERCADO:"`, regex `_RE_MARCADOR_LEITURA`) - isso fazia o parser real
+(correto) tratar tudo como 1 parágrafo só, vazando a tag crua pro
+teaser do card. Sem alteração nenhuma em `data/news.py`/`ui/news_tab.py`
+por causa disso - era 100% um descompasso de formato do dado de teste,
+confirmado lendo o regex real antes de concluir.
+
+### 8. Navegação/cabeçalho/busca global/responsividade geral
+
+Busca global (`Busca global`, dropdown de sugestões) testada desktop e
+mobile (390px) - abre, filtra, sem overflow, sem achado. Header/sidebar/
+ticker tape - já cobertos a fundo pela sessão anterior (`fa66c18`/
+`df9f63e`), reconfirmados visualmente de passagem (sem regressão).
+
+**Bug real confirmado (achado fazendo a varredura geral, não estava na
+lista original de pendências)**: painel "MERCADO AGORA" da aba VISÃO
+GERAL (a aba padrão/primeira coisa que o usuário vê) usa `st.columns(7)`
+pros 7 cards (IBOV/DÓLAR/DI/S&P 500/NASDAQ/PETR4/VALE3) - mesma causa-
+raiz do bug de RESEARCH (item 4) e do header - numa tela de celular
+cada card sobrava uns 45px, insuficiente até pro NÚMERO ("101" quebrava
+"1/0/1" dígito por dígito) e pros rótulos ("DI (CDI anual.)" quebrava
+letra por letra). Era o painel MAIS visível de todo o app nesse estado
+quebrado (primeiro conteúdo da aba padrão). Confirmado que
+`ui/mercado_tab.py:_painel_globais` (painel irmão, mesma ideia de
+cards) já usa `flex-wrap` HTML em vez de `st.columns` - não reproduz o
+bug, é só uma divergência isolada do padrão correto já estabelecido.
+Fix: mesmo padrão do item 4 (`key` no container + regra mobile em
+`style.css`, ~3 cards por linha em vez de 7 espremidos ou 1 por linha
+desperdiçando espaço). Desktop confirmado inalterado.
+
+Commit: `d05e8a9`.
+
+### 9. O que NÃO foi auditado nesta sessão (pendências explícitas)
+
+- **EQUITY** (ficha do ativo) - não estava na lista de áreas pedida
+  pelo Rodrigo nesta rodada (RADAR/MERCADO/MACRO/NEWS/CALENDÁRIO/
+  RESEARCH/CVM/SAÚDE DOS DADOS/Navegação), não auditada de propósito.
+- **TOP MERCADO** e **CONFIG** - mesma razão, fora do escopo explícito
+  desta rodada.
+- Testado só com 3 tickers na watchlist (PETR4/VALE3/ITUB4) e dado
+  sintético determinístico - nunca testado com uma watchlist vazia, com
+  1 ticker só, ou com 20+ tickers (volume real de uso) - layout pode se
+  comportar diferente em escala, não verificado.
+- **MERCADO**: só o painel `_painel_globais` foi reconferido de
+  passagem (item 8); os outros 4 painéis do registro (altas/baixas,
+  mais negociados, setorial, treemap) não foram re-auditados nesta
+  sessão (já tinham 1 bug real corrigido pela sessão anterior, `a05c545`
+  - não refeito do zero sem evidência de regressão, mesmo critério de
+  sempre).
+- Nenhuma validação de performance/custo de rede real (sandbox sem
+  rede) - só validação visual.
+
+### 10. Estado final
+
+6 commits novos nesta sessão (`553a090` até `d05e8a9`), todos com
+evidência visual real (screenshot Playwright, desktop 1280px + mobile
+390px, antes/depois quando havia fix), `origin/main` sincronizado a
+cada commit (nunca deixado acumulando local), `343/343` testes
+passando, `compileall`/`pyflakes` limpos no repositório inteiro.
+Working tree limpo ao final. Harness de teste (`/tmp/pregao_venv_audit`
++ scratchpad) é infraestrutura efêmera do container, não commitada -
+uma sessão futura precisa reconstruir do zero seguindo a descrição do
+método (seção 1 acima).
