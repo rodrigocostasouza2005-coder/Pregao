@@ -108,6 +108,28 @@ _CSS_CALENDARIO = """
     border-top: 1px solid var(--borda); padding-top: 0.7rem; margin-top: 0.8rem; margin-bottom: 0.5rem;
 }
 .cal-contexto-linha { font-size: 0.78rem; line-height: 1.7; padding: 0.25rem 0; font-family: 'IBM Plex Mono', monospace; }
+
+/* mobile (bug real corrigido, 2026-10-10 - confirmado por screenshot real
+   do Playwright a 390px): a grade sempre tem 7 colunas (SEG-DOM), entao
+   cada celula fica com so' uns 40-45px uteis numa tela de celular - sem
+   isto, o NUMERO DO DIA ("28") e o TICKER ("MGLU3") quebravam letra por
+   letra dentro da celula (nenhum texto tem white-space:nowrap), ficando
+   ilegiveis. white-space:nowrap + reticencias (nunca deixa o texto
+   quebrar linha) + fonte/padding um pouco menores pra sobrar espaco de
+   verdade pro conteudo. */
+@media (max-width: 640px) {
+    [class*="st-key-cal_cel_"] {
+        padding: 0.2rem 0.2rem 0.3rem 0.2rem; min-height: 3.6rem;
+    }
+    .st-key-cal_grade_area button p { font-size: 0.82rem !important; white-space: nowrap !important; }
+    .cal-cel-evento { margin-top: 0.3rem; padding-top: 0.2rem; }
+    .cal-cel-ticker, .cal-cel-periodo, .cal-cel-status, .cal-cel-mais {
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cal-cel-ticker { font-size: 0.62rem; }
+    .cal-cel-periodo, .cal-cel-status, .cal-cel-mais { font-size: 0.52rem; }
+    .cal-grade-cabecalho { font-size: 0.56rem; gap: 2px; }
+}
 """
 
 
