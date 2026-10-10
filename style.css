@@ -605,4 +605,16 @@ table tr:last-child td { border-bottom: none; }
         flex: 1 1 100% !important;
         min-width: 100% !important;
     }
+
+    /* VISAO GERAL - "MERCADO AGORA" (bug real confirmado por screenshot,
+       2026-10-10): mesma causa-raiz de novo (st.columns(7) so' encolhe,
+       nunca empilha) - cada uma das 7 colunas sobrava uns 45px numa tela
+       de celular, pouco ate' pro NUMERO ("101"), que quebrava digito por
+       digito. Deixa cada card quebrar linha com largura minima real (~3
+       por linha em vez de 7 espremidos ou 1 por linha desperdicando
+       espaco - sao cards curtos, cabem varios lado a lado). */
+    .st-key-visao_geral_mercado_agora_cols div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        flex: 1 1 30% !important;
+        min-width: 7rem !important;
+    }
 }

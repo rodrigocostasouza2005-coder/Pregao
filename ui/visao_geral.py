@@ -85,23 +85,24 @@ def _painel_mercado_agora(prefs):
     petr4 = obter_cotacao("PETR4")
     vale3 = obter_cotacao("VALE3")
 
-    cols = st.columns(7)
-    with cols[0]:
-        _card_mercado("IBOV", None if ibov.get("erro") else ibov["preco"], None if ibov.get("erro") else ibov["variacao_pct"], prefs, 0)
-    with cols[1]:
-        _card_mercado("DÓLAR", None if dolar.get("erro") else dolar["preco"], None if dolar.get("erro") else dolar["variacao_pct"], prefs)
-    with cols[2]:
-        _card_mercado("DI (CDI anual.)", cdi_atual, cdi_variacao, prefs)
-    with cols[3]:
-        sp500 = globais.get("S&P 500")
-        _card_mercado("S&P 500", sp500["preco"] if sp500 else None, sp500["variacao_pct"] if sp500 else None, prefs, 0)
-    with cols[4]:
-        nasdaq = globais.get("Nasdaq")
-        _card_mercado("NASDAQ", nasdaq["preco"] if nasdaq else None, nasdaq["variacao_pct"] if nasdaq else None, prefs, 0)
-    with cols[5]:
-        _card_mercado("PETR4", None if petr4.get("erro") else petr4["preco"], None if petr4.get("erro") else petr4["variacao_pct"], prefs)
-    with cols[6]:
-        _card_mercado("VALE3", None if vale3.get("erro") else vale3["preco"], None if vale3.get("erro") else vale3["variacao_pct"], prefs)
+    with st.container(key="visao_geral_mercado_agora_cols"):
+        cols = st.columns(7)
+        with cols[0]:
+            _card_mercado("IBOV", None if ibov.get("erro") else ibov["preco"], None if ibov.get("erro") else ibov["variacao_pct"], prefs, 0)
+        with cols[1]:
+            _card_mercado("DÓLAR", None if dolar.get("erro") else dolar["preco"], None if dolar.get("erro") else dolar["variacao_pct"], prefs)
+        with cols[2]:
+            _card_mercado("DI (CDI anual.)", cdi_atual, cdi_variacao, prefs)
+        with cols[3]:
+            sp500 = globais.get("S&P 500")
+            _card_mercado("S&P 500", sp500["preco"] if sp500 else None, sp500["variacao_pct"] if sp500 else None, prefs, 0)
+        with cols[4]:
+            nasdaq = globais.get("Nasdaq")
+            _card_mercado("NASDAQ", nasdaq["preco"] if nasdaq else None, nasdaq["variacao_pct"] if nasdaq else None, prefs, 0)
+        with cols[5]:
+            _card_mercado("PETR4", None if petr4.get("erro") else petr4["preco"], None if petr4.get("erro") else petr4["variacao_pct"], prefs)
+        with cols[6]:
+            _card_mercado("VALE3", None if vale3.get("erro") else vale3["preco"], None if vale3.get("erro") else vale3["variacao_pct"], prefs)
 
 
 def _painel_ibov_grafico(prefs):
