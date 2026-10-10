@@ -77,10 +77,21 @@ def _casas_ativas(prefs):
 
 
 def _fmt_data(data_iso):
+    """Aceita tanto 'YYYY-MM-DD' quanto um datetime ISO completo com hora/
+    timezone (ex: NEWS manda `datetime.isoformat()`, que no fuso de
+    Brasilia termina em '-03:00') - bug real corrigido, 2026-10-10
+    (confirmado por screenshot real do Playwright, bloco "CONTEXTO
+    RECENTE · NEWS" da aba RESEARCH): `data_iso.split("-")` sem recortar
+    so' a data antes contava o "-03:00" do offset como mais um separador,
+    estourando o unpack de 3 valores - caia no except e mostrava o ISO
+    cru (ou, pra um offset sem "-", tipo "+00:00", nem chegava a dar
+    excecao: o unpack "funcionava" errado e remontava a string trocada
+    (ex: "09T18:30:12.655291+00:00/10/2026"). Recortar os 10 primeiros
+    caracteres ('YYYY-MM-DD') ANTES de dividir resolve os dois casos."""
     if not data_iso:
         return "—"
     try:
-        ano, mes, dia = data_iso.split("-")
+        ano, mes, dia = data_iso[:10].split("-")
         return f"{dia}/{mes}/{ano}"
     except Exception:
         return data_iso
