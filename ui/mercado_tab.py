@@ -133,7 +133,7 @@ def _tabela_papeis(papeis, prefs, titulo, campo="variacao_pct"):
     linhas = "".join(
         f"<tr><td style='padding:0.15rem 0.4rem 0.15rem 0;'>{p['ticker']}</td>"
         f"<td style='padding:0.15rem 0.4rem; text-align:right;' class='neutro'>R$ {config.formatar_numero(p['preco'], 2, prefs['formato_numerico'])}</td>"
-        f"<td style='padding:0.15rem 0 0.15rem 0.4rem; text-align:right;' class='{"alta" if p[campo] >= 0 else "baixa"}'>{_fmt_pct(p[campo], prefs)}</td></tr>"
+        f"<td style='padding:0.15rem 0 0.15rem 0.4rem; text-align:right;' class='{'alta' if p[campo] >= 0 else 'baixa'}'>{_fmt_pct(p[campo], prefs)}</td></tr>"
         for p in papeis
     )
     st.markdown(
@@ -164,7 +164,7 @@ def _painel_mais_negociados(prefs):
     linhas = "".join(
         f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>{p['ticker']}</td>"
         f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>R$ {config.formatar_numero(p['volume_financeiro'] / 1_000_000, 1, prefs['formato_numerico'])} mi</td>"
-        f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='{"alta" if p["variacao_pct"] >= 0 else "baixa"}'>{_fmt_pct(p['variacao_pct'], prefs)}</td></tr>"
+        f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='{'alta' if p['variacao_pct'] >= 0 else 'baixa'}'>{_fmt_pct(p['variacao_pct'], prefs)}</td></tr>"
         for p in negociados
     )
     st.markdown(

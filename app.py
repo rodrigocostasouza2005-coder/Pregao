@@ -554,7 +554,7 @@ if secao_atual == "EQUITY":
                                 f"<tr>"
                                 f"<td style='padding:0.2rem 0.4rem 0.2rem 0;'><span style='color:var(--destaque); font-weight:600;'>{d['ticker']}</span></td>"
                                 f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>R$ {config.formatar_numero(d['cot']['preco'], 2, fmt)}</td>"
-                                f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='{"alta" if d["cot"]["variacao_pct"] >= 0 else "baixa"}'>"
+                                f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='{'alta' if d['cot']['variacao_pct'] >= 0 else 'baixa'}'>"
                                 f"{'+' if d['cot']['variacao_pct'] >= 0 else ''}{config.formatar_numero(d['cot']['variacao_pct'], 2, fmt)}%</td>"
                                 f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>{config.formatar_multiplo(d['ind']['pl'], 2, fmt)}</td>"
                                 f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>{config.formatar_multiplo(d['ind']['pvp'], 2, fmt)}</td>"
