@@ -5185,6 +5185,22 @@ impossível validar visualmente o caminho de sucesso. Troquei por uma
 do mock - só assim deu pra confirmar visualmente que a imagem real
 renderiza com a proporção/recorte certos quando carrega.
 
+**Morning Call especificamente** (cartões/resumos/hierarquia, item
+pedido à parte): `ui/news_tab.py:_cartao_live` renderiza os itens LIVE
+(Genial Lives - Morning Call/Resumo da Manhã/Fechamento de Mercado,
+intercalados no feed por `_montar_feed`) com borda lateral âmbar +
+badge "PROGRAMA · CASA" + horário (quando `publicado_em` existe) +
+teaser - visualmente diferenciado dos cards de notícia comum, sem
+competir por atenção. Conferido também o modal dedicado (`RESUMO`,
+aberto ao clicar no título): separa "O QUE IMPORTA HOJE"/"DESTAQUES"
+em blocos com cabeçalho em maiúsculas, mostra "CONTEXTO RECENTE · NEWS"
+com datas já formatadas corretamente (mesmo fix do item 4). Sem bug de
+produto encontrado - o mock inicial usava `autor="Equipe"` genérico em
+vez de um nome de programa real (ex: "Morning Call"), então essa
+verificação só ficou completa depois de corrigir o mock pra usar os
+mesmos rótulos que `data/research/genial_lives.py:_PADROES_PROGRAMA`
+realmente produz.
+
 Também corrigido no MOCK (não no produto): o resumo fake usava uma tag
 HTML (`<b>LEITURA DE MERCADO</b>`) em vez do marcador de texto puro que
 `data/news.py:separar_secoes_resumo` realmente espera (`"LEITURA DE
