@@ -378,18 +378,32 @@ _CASA_CVM = "CVM"
 
 def salvar_documentos(documentos: list) -> bool:
     """Converte pro formato de data/research/store.salvar_itens (upsert
-    em lote por link, mesmo mecanismo dos outros coletores de research)."""
+    em lote por link, mesmo mecanismo dos outros coletores de research).
+
+    Agrupa por 'link' ANTES de montar os itens (bug real corrigido,
+    auditoria 2026-10-10): quando a watchlist tem 2+ tickers do mesmo
+    emissor (ex: PETR3+PETR4, ou uma unit e sua classe subjacente -
+    comum na B3), obter_documentos_watchlist chama obter_documentos_cvm
+    uma vez por ticker e os dois retornam o MESMO Fato Relevante/
+    Comunicado (mesmo link, mesmo CNPJ), so' com 'ticker' diferente cada
+    vez. Sem agrupar aqui, cada ticker virava um item SEPARADO com
+    tickers=[d['ticker']] (lista de 1); store.salvar_itens deduplica por
+    link mantendo so' a ULTIMA ocorrencia (upsert on_conflict='link'),
+    entao o ticker que viesse primeiro na lista era silenciosamente
+    sobrescrito - a linha persistida ficava com so' 1 dos 2 tickers
+    legitimamente associados ao documento."""
     if not documentos:
         return True
-    itens = [
-        {
+    por_link = {}
+    for d in documentos:
+        item = por_link.setdefault(d["link"], {
             "link": d["link"], "casa": _CASA_CVM, "titulo": d["assunto"],
             "data": d["data"][:10] if d.get("data") else "",
-            "autor": "", "tipo": d["tipo"], "tickers": [d["ticker"]],
-        }
-        for d in documentos
-    ]
-    return store.salvar_itens(itens)
+            "autor": "", "tipo": d["tipo"], "tickers": [],
+        })
+        if d["ticker"] not in item["tickers"]:
+            item["tickers"].append(d["ticker"])
+    return store.salvar_itens(list(por_link.values()))
 
 
 def apagar_documentos_antigos(dias: int = RETENCAO_DIAS) -> int:

@@ -132,6 +132,43 @@ def test_7_watchlist_so_salva_quando_ha_documento():
              salvou == [])
 
 
+def test_8_mesmo_documento_em_2_tickers_do_mesmo_emissor_mantem_os_2_tickers():
+    """Bug real corrigido (auditoria 2026-10-10): watchlist com 2 tickers
+    do mesmo emissor (ex: PETR3+PETR4) - obter_documentos_cvm retorna o
+    MESMO Fato Relevante (mesmo link) pra cada um, so' com 'ticker'
+    diferente. Antes da correcao, salvar_documentos criava 1 item por
+    ticker (tickers=[ticker]) e store.salvar_itens deduplicava por link
+    mantendo so' a ULTIMA ocorrencia - o outro ticker era perdido."""
+    itens_salvos = []
+    with patch.object(cvm_mod.store, "salvar_itens", side_effect=lambda itens: itens_salvos.append(itens) or True):
+        ok = cvm_mod.salvar_documentos([
+            {"ticker": "PETR3", "assunto": "Fato Relevante - Acordo X", "data": "2026-10-01",
+             "tipo": "FATO_RELEVANTE", "link": "https://cvm/doc/123"},
+            {"ticker": "PETR4", "assunto": "Fato Relevante - Acordo X", "data": "2026-10-01",
+             "tipo": "FATO_RELEVANTE", "link": "https://cvm/doc/123"},
+        ])
+    _checar("8a salvar_documentos retorna True", ok is True)
+    _checar("8b chamou store.salvar_itens exatamente 1x", len(itens_salvos) == 1, f"(itens_salvos={itens_salvos})")
+    itens = itens_salvos[0]
+    _checar("8c so' 1 item persistido pro link duplicado (nao 2 linhas pro mesmo documento)",
+             len(itens) == 1, f"(itens={itens})")
+    _checar("8d o item final tem OS 2 tickers (PETR3 e PETR4), nenhum perdido",
+             sorted(itens[0]["tickers"]) == ["PETR3", "PETR4"], f"(tickers={itens[0]['tickers']})")
+
+
+def test_9_documentos_de_links_diferentes_continuam_itens_separados():
+    itens_salvos = []
+    with patch.object(cvm_mod.store, "salvar_itens", side_effect=lambda itens: itens_salvos.append(itens) or True):
+        cvm_mod.salvar_documentos([
+            {"ticker": "PETR4", "assunto": "Fato Relevante A", "data": "2026-10-01",
+             "tipo": "FATO_RELEVANTE", "link": "https://cvm/doc/1"},
+            {"ticker": "VALE3", "assunto": "Fato Relevante B", "data": "2026-10-02",
+             "tipo": "FATO_RELEVANTE", "link": "https://cvm/doc/2"},
+        ])
+    itens = itens_salvos[0]
+    _checar("9 links diferentes continuam 2 itens separados (nao agrupa indevidamente)", len(itens) == 2, f"(itens={itens})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
