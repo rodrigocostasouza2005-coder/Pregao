@@ -6,3 +6,4 @@ cache/*.json
 .streamlit/secrets.toml
 preview_macro.py
 coletor_local.log*
+coletor_local_checkpoint_calendario.txt

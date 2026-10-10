@@ -65,7 +65,6 @@ if sys.stderr is None:
     sys.stderr = sys.stdout
 
 import logging
-import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -101,13 +100,36 @@ logger.addHandler(_handler_console)
 logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 
-_JANELA_ROTACAO_S = 30 * 60  # mesmo intervalo do agendamento (Agendador de Tarefas roda a cada 30min)
+_ARQUIVO_CHECKPOINT_CALENDARIO = Path(__file__).parent / "coletor_local_checkpoint_calendario.txt"
 
 
-def _universo_rotativo(tickers: list, agora: float = None) -> list:
-    """Rotaciona o ponto de partida do universo a cada janela de 30min
-    (mesmo intervalo do agendamento), sem precisar de nenhum estado
-    persistido novo - so' usa o relogio.
+def _ler_e_avancar_checkpoint(tamanho_universo: int) -> int:
+    """Le o ultimo offset usado (arquivo local, 1 inteiro) pra ESTA
+    execucao e ja' avanca +1 (mod tamanho_universo) pra' PROXIMA - um
+    contador persistido que sempre avanca +1 cobre o universo INTEIRO em
+    exatamente `tamanho_universo` execucoes, pra QUALQUER tamanho de
+    universo. Arquivo ausente/corrompido -> comeca do offset 0 (nunca
+    lanca excecao - pior caso e' repetir o mesmo offset 1x, nao travar a
+    coleta)."""
+    try:
+        offset_atual = int(_ARQUIVO_CHECKPOINT_CALENDARIO.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        offset_atual = 0
+    tamanho_universo = max(tamanho_universo, 1)
+    offset_atual %= tamanho_universo
+    proximo = (offset_atual + 1) % tamanho_universo
+    try:
+        _ARQUIVO_CHECKPOINT_CALENDARIO.write_text(str(proximo), encoding="utf-8")
+    except OSError:
+        pass  # nao essencial - pior caso, repete o mesmo offset na proxima execucao
+    return offset_atual
+
+
+def _universo_rotativo(tickers: list, offset: int = None) -> list:
+    """Rotaciona o ponto de partida do universo via um CHECKPOINT
+    PERSISTIDO (arquivo local, ver _ler_e_avancar_checkpoint) - `offset`
+    explicito e' so' pra teste deterministico; em producao (offset=None)
+    usa o checkpoint real.
 
     Bug real corrigido (2026-10-09, FASE 8): coletar_eventos_universo tem
     orcamento de tempo fixo (eventos_coleta._ORCAMENTO_TOTAL_S = 5min) e
@@ -124,11 +146,28 @@ def _universo_rotativo(tickers: list, agora: float = None) -> list:
     tem atalho possivel - ESTIMADO/PRAZO_CVM sempre tentam RI de novo).
     Rotacionar o ponto de partida garante que, ao longo de varias
     execucoes, TODO ticker eventualmente fica no inicio da lista e recebe
-    seu orcamento de rede - nao so' os primeiros ~15-20 da ordem fixa."""
+    seu orcamento de rede - nao so' os primeiros ~15-20 da ordem fixa.
+
+    Segundo bug real corrigido (auditoria 2026-10-10): a versao original
+    derivava o offset do relogio (`int(time.time() // 30min) % N`) em vez
+    de um checkpoint persistido - isso so' garante cobertura completa do
+    universo quando mdc(48, N) <= 26 (48 = janelas de 30min por dia
+    corrido; 26 = janelas realmente executadas pelo agendamento real,
+    seg-sex 07h-20h, sempre no MESMO bloco continuo do dia; N = tamanho
+    do universo). Pra N=84 (config.IBOVESPA_SETORES hoje) isso vale por
+    coincidencia (mdc(48,84)=12), mas quebraria em SILENCIO se o universo
+    um dia tivesse outro tamanho com mdc(48,N) > 26 (ex: N=48 ou N=96) -
+    toda execucao comecaria do MESMO offset, todo dia, revivendo
+    exatamente a fome de recurso que esta rotacao existe pra evitar, so'
+    que agora pra sempre (nao so' nos primeiros dias). Um contador
+    persistido que avanca sempre +1 nao depende de nenhuma aritmetica
+    modular entre o agendamento real e o tamanho do universo - cobre
+    tudo em N execucoes, pra qualquer N."""
     if not tickers:
         return []
-    agora = time.time() if agora is None else agora
-    offset = int(agora // _JANELA_ROTACAO_S) % len(tickers)
+    if offset is None:
+        offset = _ler_e_avancar_checkpoint(len(tickers))
+    offset %= len(tickers)
     return tickers[offset:] + tickers[:offset]
 
 
