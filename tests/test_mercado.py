@@ -37,6 +37,12 @@ def _checar(nome, condicao, detalhe=""):
     print(f"[{status}] {nome} {detalhe}")
     if not condicao:
         _FALHAS.append(nome)
+        # 2026-10-10: faz a checagem REALMENTE falhar sob pytest (antes so'
+        # imprimia e guardava em _FALHAS, lido so' pelo runner `__main__` -
+        # sob pytest toda funcao test_* passava mesmo com condicao=False,
+        # a menos que outra linha lancasse excecao por acidente; ver
+        # investigacao registrada no relatorio da auditoria 2026-10-10)
+        raise AssertionError(f"{nome} {detalhe}".strip())
 
 
 def _df_simples(symbol, closes, volumes=None):
@@ -157,7 +163,10 @@ def test_11_cor_treemap_variacao_zero_fica_neutra():
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
-            fn()
+            try:
+                fn()
+            except AssertionError:
+                pass  # ja' registrado em _FALHAS por _checar
 
     print()
     if _FALHAS:

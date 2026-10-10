@@ -21,6 +21,12 @@ def _checar(nome, condicao, detalhe=""):
     print(f"[{status}] {nome} {detalhe}")
     if not condicao:
         _FALHAS.append(nome)
+        # 2026-10-10: faz a checagem REALMENTE falhar sob pytest (antes so'
+        # imprimia e guardava em _FALHAS, lido so' pelo runner `__main__` -
+        # sob pytest toda funcao test_* passava mesmo com condicao=False,
+        # a menos que outra linha lancasse excecao por acidente; ver
+        # investigacao registrada no relatorio da auditoria 2026-10-10)
+        raise AssertionError(f"{nome} {detalhe}".strip())
 
 
 def test_1_modulo_desligado_por_padrao():
@@ -85,7 +91,10 @@ def test_7_modulo_nao_e_importado_por_nenhum_arquivo_de_ui_nem_app():
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
-            fn()
+            try:
+                fn()
+            except AssertionError:
+                pass  # ja' registrado em _FALHAS por _checar
 
     print()
     if _FALHAS:
