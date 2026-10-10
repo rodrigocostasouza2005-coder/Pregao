@@ -592,4 +592,17 @@ table tr:last-child td { border-bottom: none; }
         flex-basis: 100% !important;
         min-width: 0 !important;
     }
+
+    /* RESEARCH - filtros Casa/Tipo/Ticker (bug real confirmado por
+       screenshot, 2026-10-10): mesma causa-raiz do header acima (Streamlit
+       so' ENCOLHE as 3 colunas proporcionalmente em vez de empilhar), mas
+       aqui o efeito e' pior - uma pilula como "Genial (Lives)" nao cabe
+       nem sozinha numa coluna de ~130px e fica cortada sem reticencias.
+       Empilha as 3 colunas em largura cheia (1 filtro por linha) - mais
+       legivel que espremido lado a lado numa tela de celular de qualquer
+       forma. */
+    .st-key-research_filtros_feed div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+    }
 }

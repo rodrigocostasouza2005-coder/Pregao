@@ -39,8 +39,12 @@ _EXTRATOR_POR_CASA = {c["nome"]: c["extrator_texto"] for c in CASAS}
 
 # pills de filtro (Casa/Tipo/Ticker) quebram linha em vez de forcar
 # rolagem horizontal em telas estreitas - correcao centralizada em
-# style.css (2026-10-08, auditoria de responsividade); este modulo nao
-# tem mais CSS proprio pra injetar.
+# style.css (2026-10-08, auditoria de responsividade). O CONTAINER das 3
+# colunas (Casa/Tipo/Ticker) tem key="research_filtros_feed" so' pra
+# essa regra de mobile em style.css poder mirar nele sem afetar outro
+# st.columns(3) do app (bug real corrigido 2026-10-10: cada coluna
+# ficava estreita demais pra caber uma pilula so' tipo "Genial
+# (Lives)", que cortava sem reticencias).
 
 
 # recomendacoes/swing trade da Genial sao SEMPRE ao vivo (obter_recomendacoes/
@@ -474,21 +478,22 @@ def _painel_feed(prefs: dict, relatorios: list, falhas: list):
     tipos_no_feed = sorted({r["tipo"] for r in relatorios})
     tickers_no_feed = _tickers_disponiveis(relatorios)
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        filtro_casa = st.pills(
-            "Casa", casas_no_feed, default=casas_no_feed, selection_mode="multi", key="research_filtro_casa",
-        ) or []
-    with col2:
-        filtro_tipo = st.pills(
-            "Tipo", tipos_no_feed, default=tipos_no_feed, selection_mode="multi",
-            format_func=lambda t: _TIPO_LABEL.get(t, t), key="research_filtro_tipo",
-        ) or []
-    with col3:
-        filtro_ticker = st.pills(
-            "Ticker", ["Todos"] + tickers_no_feed, default="Todos", selection_mode="single",
-            key="research_filtro_ticker",
-        ) or "Todos"
+    with st.container(key="research_filtros_feed"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            filtro_casa = st.pills(
+                "Casa", casas_no_feed, default=casas_no_feed, selection_mode="multi", key="research_filtro_casa",
+            ) or []
+        with col2:
+            filtro_tipo = st.pills(
+                "Tipo", tipos_no_feed, default=tipos_no_feed, selection_mode="multi",
+                format_func=lambda t: _TIPO_LABEL.get(t, t), key="research_filtro_tipo",
+            ) or []
+        with col3:
+            filtro_ticker = st.pills(
+                "Ticker", ["Todos"] + tickers_no_feed, default="Todos", selection_mode="single",
+                key="research_filtro_ticker",
+            ) or "Todos"
 
     filtrados = [
         r for r in relatorios
