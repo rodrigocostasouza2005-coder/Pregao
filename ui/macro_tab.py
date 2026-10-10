@@ -401,6 +401,20 @@ REGISTRO_PAINEIS = [
     ("cenario_global", "Cenário global", _painel_cenario_global),
 ]
 
+# altura padrao (workspace.layout_efetivo) MAIOR que o generico
+# (18rem/288px) pros 3 paineis com grafico Plotly de altura=380px (ver
+# _layout_grafico_escuro) + cabecalho do painel - bug real corrigido
+# 2026-10-10 (confirmado por screenshot real do Playwright): com o
+# padrao generico, o grafico nao cabia no painel (que usa overflow:auto,
+# nao hidden) e ficava com o rodape cortado/so' acessivel rolando DENTRO
+# do painel, inclusive o titulo do eixo Y ("Mensal (%)"/"% a.a."), ate' o
+# usuario redimensionar manualmente. "cenario_global" (cards, nao
+# grafico) fica de fora - cabe no padrao generico sem desperdicar
+# espaco.
+# selic_cdi precisa de mais altura que os outros 2: unico painel com uma
+# linha extra de UI (segmented_control de periodo) ACIMA do grafico.
+_ALTURAS_PADRAO = {"curva_pre": 28.0, "ipca": 28.0, "selic_cdi": 30.0}
+
 
 def render_macro(prefs, persistir_fn=None):
     """Ponto de entrada da aba MACRO. Chamar dentro de `with aba_macro:`.
@@ -413,4 +427,6 @@ def render_macro(prefs, persistir_fn=None):
     with st.container(border=True):
         _painel_resumo(prefs)
 
-    workspace.renderizar_workspace("MACRO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn)
+    workspace.renderizar_workspace(
+        "MACRO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn, alturas_padrao=_ALTURAS_PADRAO,
+    )

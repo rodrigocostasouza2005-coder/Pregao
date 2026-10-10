@@ -154,27 +154,42 @@ def _layout_valido(dados) -> bool:
     return all(k in dados and isinstance(dados[k], (int, float)) for k in ("x", "y", "w", "h"))
 
 
-def layout_efetivo(aba_id: str, registro: list, prefs: dict) -> dict:
+def layout_efetivo(aba_id: str, registro: list, prefs: dict, alturas_padrao: dict | None = None) -> dict:
     """pid -> {"x":pct, "y":rem, "w":pct, "h":rem}. Lê prefs["layout_paineis_livre"][aba_id];
     qualquer painel sem posição salva (primeira vez, ou painel novo no
     registro) recebe um layout padrão empilhado (1 coluna, largura
-    total) calculado pela ORDEM dele no registro - nunca colide com
-    painel vizinho, mesmo misturando painéis já personalizados com
-    painéis ainda no padrão."""
+    total), com "y" = soma acumulada da ALTURA PADRAO DE CADA PAINEL
+    anterior na ordem - nunca colide com painel vizinho, mesmo
+    misturando painéis já personalizados com painéis ainda no padrão.
+
+    `alturas_padrao` (opcional, {pid: altura_rem}): override da altura
+    padrão de UM painel especifico, pra quando o conteudo dele e'
+    conhecido de antemao e nao cabe no _ALTURA_PADRAO_REM generico (ex:
+    grafico Plotly alto do MACRO - bug real corrigido 2026-10-10:
+    _ALTURA_PADRAO_REM=18rem/288px e' menor que a altura real do
+    grafico (380px) + cabecalho do painel, cortando o rodape do grafico
+    - inclusive o titulo do eixo Y - atras do scroll interno do painel
+    ate o usuario redimensionar manualmente). None/ausente = sempre o
+    padrao de sempre, pras demais abas (retrocompativel, sem mudar
+    nada pra quem nao passa esse parametro)."""
     salvo = (prefs.get("layout_paineis_livre") or {}).get(aba_id, {})
     ordem = ordem_efetiva(aba_id, registro, prefs)
+    alturas_padrao = alturas_padrao or {}
     layout = {}
-    for indice, pid in enumerate(ordem):
+    y_atual = 0.0
+    for pid in ordem:
         dados_salvos = salvo.get(pid)
         if _layout_valido(dados_salvos):
             layout[pid] = {k: float(dados_salvos[k]) for k in ("x", "y", "w", "h")}
         else:
+            altura = alturas_padrao.get(pid, _ALTURA_PADRAO_REM)
             layout[pid] = {
                 "x": 0.0,
-                "y": indice * (_ALTURA_PADRAO_REM + _ESPACO_ENTRE_PADRAO_REM),
+                "y": y_atual,
                 "w": _LARGURA_PADRAO_PCT,
-                "h": _ALTURA_PADRAO_REM,
+                "h": altura,
             }
+            y_atual += altura + _ESPACO_ENTRE_PADRAO_REM
     return layout
 
 
@@ -481,7 +496,7 @@ def _script_js(aba_id: str, ordem: list, layout: dict) -> str:
 """
 
 
-def renderizar_workspace(aba_id: str, registro: list, prefs: dict, *args, persistir_fn=None, **kwargs):
+def renderizar_workspace(aba_id: str, registro: list, prefs: dict, *args, persistir_fn=None, alturas_padrao=None, **kwargs):
     """Ponto de entrada do workspace modular (equivalente a
     ui/paineis.py:renderizar, mesma assinatura/convenção de args/kwargs
     repassados a cada render_fn) - posição/tamanho livres em vez de
@@ -492,7 +507,12 @@ def renderizar_workspace(aba_id: str, registro: list, prefs: dict, *args, persis
     antes, só troca o renderizador (`aba_id` é só uma string, sem
     nenhum caso especial pra MERCADO vs MACRO aqui dentro). ETAPA 5
     (VISÃO GERAL) já migrou também - ver ui/visao_geral.py:REGISTRO_PAINEIS,
-    mesmo mecanismo, sem caso especial nenhum pra essa aba aqui dentro."""
+    mesmo mecanismo, sem caso especial nenhum pra essa aba aqui dentro.
+
+    `alturas_padrao` (opcional): repassado direto pra layout_efetivo -
+    ver docstring lá. Default None preserva o comportamento de sempre
+    pra quem não passa (todas as abas, exceto MACRO - ver
+    ui/macro_tab.py:render_macro)."""
     _injetar_css_base()
     ids_validos = [pid for pid, _, _ in registro]
     mapa = {pid: fn for pid, _, fn in registro}
@@ -528,7 +548,7 @@ def renderizar_workspace(aba_id: str, registro: list, prefs: dict, *args, persis
             on_change=_aplicar_bridge, args=(aba_id, ids_validos, prefs, persistir_fn),
         )
 
-    layout = layout_efetivo(aba_id, registro, prefs)
+    layout = layout_efetivo(aba_id, registro, prefs, alturas_padrao=alturas_padrao)
     st.markdown(f"<style>{_gerar_css(aba_id, layout, set(ordem))}</style>", unsafe_allow_html=True)
 
     with st.container(key=f"workspace_livre_{aba_id}"):
