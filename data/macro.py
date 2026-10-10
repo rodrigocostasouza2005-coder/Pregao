@@ -252,9 +252,23 @@ def obter_curva_pre(data_referencia: date | None = None) -> pd.DataFrame | None:
             for volta in range(7):
                 dia = data_referencia - timedelta(days=volta)
                 texto = _buscar_ettj_anbima(dia.strftime("%d%m%Y"))
-                if texto.strip():
+                if not texto.strip():
+                    continue
+                try:
                     df = _parse_ettj_anbima(texto)
-                    break
+                except Exception:
+                    # bug real corrigido (auditoria 2026-10-10): resposta
+                    # NAO-vazia mas malformada so' PRA ESSE dia (layout
+                    # mudou, mensagem de erro/manutencao no lugar do CSV)
+                    # lancava StopIteration/ValueError que escapava do
+                    # loop inteiro (so' havia o try/except externo),
+                    # abortando a tentativa nos outros 6 dias mesmo que
+                    # algum deles tivesse publicacao valida - contradizia
+                    # o proprio docstring ("tenta ate 6 dias corridos pra
+                    # tras ate achar o ultimo pregao"). Agora so' pula pro
+                    # dia anterior.
+                    continue
+                break
             if df is None:
                 raise ValueError(f"sem publicacao da ANBIMA nos 7 dias antes de {data_referencia}")
         registrar_tentativa("MACRO (ANBIMA)", "ANBIMA (ETTJ)", execucao_ok=True,
