@@ -29,6 +29,8 @@ import time
 
 import streamlit as st
 
+from data.coletores_status import registrar_tentativa
+
 from . import genial, genial_lives, store, xp
 from .base import TEMPO_MAX_COLETA_S
 
@@ -46,6 +48,7 @@ CASAS = [
     {
         "id": "genial",
         "nome": "Genial Analisa",
+        "fonte": "analisa.genialinvestimentos.com.br",
         "ativa_por_padrao": True,
         "disponivel": True,
         "obter_relatorios": genial.obter_relatorios,
@@ -59,6 +62,7 @@ CASAS = [
     {
         "id": "xp",
         "nome": "XP Investimentos",
+        "fonte": "conteudos.xpi.com.br (WP REST)",
         "ativa_por_padrao": True,  # campos confirmados com requisicao real (fora do sandbox), ver xp.py
         "disponivel": True,
         "obter_relatorios": xp.obter_relatorios,
@@ -75,6 +79,7 @@ CASAS = [
         # fonte sem a mesma decisao explicita.
         "id": "genial_lives",
         "nome": "Genial (Lives)",
+        "fonte": "YouTube RSS (canal Genial Analisa)",
         "ativa_por_padrao": True,
         "disponivel": True,
         "obter_relatorios": genial_lives.obter_relatorios,
@@ -111,11 +116,24 @@ def coletar_casa(casa: dict) -> tuple[int, bool]:
     inicio = time.monotonic()
     itens = casa["obter_relatorios"]()
     duracao = time.monotonic() - inicio
+    # registro de SAUDE DOS DADOS (ver data/saude_dados.py/coletores_status.py)
+    # - mesmo padrao ja usado em data/news.py, data/mercado.py, data/macro.py,
+    # data/cvm.py: registra no PONTO REAL de coleta, nao em quem chama, pra
+    # cobrir tanto a coleta ao vivo (genial_lives, via coletar_pendentes) quanto
+    # a coleta standalone (coletor_local.py, via coletar_todas_disponiveis).
     if itens is None:
         print(f"[research] coleta {casa['nome']} falhou apos {duracao:.1f}s")
+        registrar_tentativa(
+            casa["nome"], casa.get("fonte", casa["nome"]), execucao_ok=False,
+            erro=f"obter_relatorios retornou None apos {duracao:.1f}s", categoria="Research",
+        )
         return 0, False
     ok = store.salvar_itens(itens)
     print(f"[research] coleta {casa['nome']}: {len(itens)} itens em {duracao:.1f}s (salvou={ok})")
+    registrar_tentativa(
+        casa["nome"], casa.get("fonte", casa["nome"]), execucao_ok=True,
+        persistencia_ok=ok, registros_novos=len(itens), categoria="Research",
+    )
     return len(itens), ok
 
 

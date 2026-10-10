@@ -70,6 +70,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import config
+from data.coletores_status import registrar_tentativa
 from data.eventos import salvar_snapshot_calendario
 from data.eventos_coleta import coletar_eventos_universo
 from data.research import coletar_todas_disponiveis
@@ -193,6 +194,35 @@ def main() -> int:
         logger.info("  snapshot do calendario: atualizado")
     else:
         logger.warning("  snapshot do calendario: mantido o anterior (calculo vazio ou Supabase indisponivel)")
+
+    # registro de SAUDE DOS DADOS (ver data/saude_dados.py/coletores_status.py)
+    # pra CALENDARIO - combina os 2 passos acima (coleta de eventos
+    # RI/NEWS/PRAZO_CVM + persistencia do snapshot que a UI realmente le,
+    # ver data/eventos.py:calcular_calendario_cacheado) porque nenhum dos
+    # dois isolado representa "a UI vai mostrar o dado certo": a coleta
+    # pode achar CONFIRMADO/ESTIMADO novo mas o snapshot falhar ao gravar
+    # (ou vice-versa, sem nada novo mas o snapshot so' re-grava o mesmo
+    # calculo). execucao_ok=True sempre aqui: o pipeline RI/NEWS roda por
+    # ticker independente do Supabase estar de pe' (nunca lanca excecao,
+    # ver coletar_eventos_universo) - so' a PERSISTENCIA depende do banco.
+    _erros_calendario = []
+    _persistencia_ok_calendario = True
+    if stats_eventos["tabela_disponivel"] is False:
+        _erros_calendario.append("tabela eventos_resultados ausente/inacessivel - rode sql/eventos.sql")
+        _persistencia_ok_calendario = False
+    elif stats_eventos["tabela_disponivel"] is None:
+        _erros_calendario.append("Supabase indisponivel (eventos_resultados nao verificada)")
+        _persistencia_ok_calendario = False
+    if not snapshot_ok:
+        _erros_calendario.append("snapshot do calendario nao atualizado (calculo vazio ou Supabase indisponivel)")
+        _persistencia_ok_calendario = False
+    registrar_tentativa(
+        "CALENDARIO", "RI das empresas + NEWS + prazo CVM",
+        execucao_ok=True, persistencia_ok=_persistencia_ok_calendario,
+        registros_novos=stats_eventos["confirmados"] + stats_eventos["estimados"],
+        erro="; ".join(_erros_calendario) or None,
+        parcial=stats_eventos["tempo_esgotado"], categoria="Calendario",
+    )
 
     return 1 if any(not info["ok"] for info in resultado.values()) else 0
 

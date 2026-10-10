@@ -6,19 +6,29 @@ data/eventos.py, data/eventos_coleta.py nem coletor_local.py alem das
 funcoes de LEITURA ja existentes e publicas) - essa aba nao escreve
 nada nesses modulos, so' le o que eles ja expoem.
 
-Dois tipos de coletor nesta auditoria (ver PROGRESSO.md/BACKLOG.md,
-auditoria 2026-10-09):
+Dois tipos de coletor:
 
 - INSTRUMENTADO: registra cada tentativa via
   `data.coletores_status.registrar_tentativa` (NEWS, MERCADO, MACRO,
-  CVM - instrumentados nesta mesma sessao). Classificacao usa
-  execucao_ok/persistencia_ok/erro reais da tentativa mais recente.
-- SOMENTE_LEITURA: ainda NAO registra tentativas (Research
-  Genial/XP/Lives, Calendario - coletores de outra frente/sessao,
-  nao tocados aqui pra nao conflitar). Classificacao usa so' a idade
-  do ULTIMO DADO persistido (`ultima_coleta_em`/snapshot) - nunca
-  finge saber se a tentativa mais recente falhou ou nao, porque essa
-  informacao simplesmente nao existe ainda pra esses coletores.
+  CVM - auditoria 2026-10-09; Genial Analisa/XP Investimentos/
+  Genial (Lives)/CALENDARIO - auditoria 2026-10-10, direto no ponto
+  real de coleta em `data/research/__init__.py:coletar_casa` e
+  `coletor_local.py`, ja que esses 4 so' rodam de verdade na maquina
+  local do Rodrigo via `coletor_local.py`, nunca neste sandbox).
+  Classificacao usa execucao_ok/persistencia_ok/erro reais da
+  tentativa mais recente.
+- HIBRIDO (os 4 acima, ate' o Rodrigo rodar o `coletor_local.py`
+  atualizado pela 1a vez): como `coletores_status` comeca vazio pra
+  eles, cai pro mesmo leitor SOMENTE_LEITURA de antes (so' a idade do
+  ULTIMO DADO persistido) em vez de mostrar NUNCA_EXECUTADO e esconder
+  dado antigo real que ja existe - ver `_leitor_hibrido`. Assim que
+  existir pelo menos 1 tentativa real registrada, usa ela sempre (nunca
+  volta pro fallback).
+
+Nenhum dos dois finge saber mais do que realmente sabe: HIBRIDO nunca
+afirma execucao_ok/persistencia_ok reais enquanto so' tem o fallback
+(ver `_status_somente_leitura`), so' INSTRUMENTADO com tentativa real
+registrada classifica por execucao_ok/persistencia_ok de verdade.
 
 Nunca inventa estado "verde" por ausencia de evidencia - ver
 `classificar_estado` abaixo, o caso sem dado nenhum sempre cai em
@@ -146,6 +156,21 @@ def _leitor_calendario():
     return _ler
 
 
+def _leitor_hibrido(nome: str, leitor_fallback):
+    """Tentativa real registrada (`coletores_status`) quando existir;
+    cai pro `leitor_fallback` (SOMENTE_LEITURA, so' idade do ultimo dado
+    persistido) enquanto nenhuma tentativa real ainda foi gravada - evita
+    que virar INSTRUMENTADO esconda dado antigo real que ja existia antes
+    da 1a execucao do coletor com o registro novo (ver docstring do
+    modulo)."""
+    def _ler():
+        status = coletores_status.obter_status(nome)
+        if status is not None:
+            return status
+        return leitor_fallback()
+    return _ler
+
+
 # Registro dos coletores conhecidos (auditoria 2026-10-09). `idade_maxima_horas`
 # e' a folga acima da frequencia esperada antes de marcar DADOS_DESATUALIZADOS
 # (nao e' a frequencia em si - um coletor de 30min que atrasa 1h nao e'
@@ -179,26 +204,26 @@ REGISTRO_COLETORES = [
     {
         "nome": "Genial Analisa", "fonte": "analisa.genialinvestimentos.com.br",
         "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
-        "idade_maxima_horas": 48, "instrumentado": False,
-        "leitor": _leitor_research("Genial Analisa"),
+        "idade_maxima_horas": 48, "instrumentado": True,
+        "leitor": _leitor_hibrido("Genial Analisa", _leitor_research("Genial Analisa")),
     },
     {
         "nome": "XP Investimentos", "fonte": "conteudos.xpi.com.br (WP REST)",
         "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
-        "idade_maxima_horas": 48, "instrumentado": False,
-        "leitor": _leitor_research("XP Investimentos"),
+        "idade_maxima_horas": 48, "instrumentado": True,
+        "leitor": _leitor_hibrido("XP Investimentos", _leitor_research("XP Investimentos")),
     },
     {
         "nome": "Genial (Lives)", "fonte": "YouTube RSS (canal Genial Analisa)",
         "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
-        "idade_maxima_horas": 72, "instrumentado": False,
-        "leitor": _leitor_research("Genial (Lives)"),
+        "idade_maxima_horas": 72, "instrumentado": True,
+        "leitor": _leitor_hibrido("Genial (Lives)", _leitor_research("Genial (Lives)")),
     },
     {
         "nome": "CALENDARIO", "fonte": "RI das empresas + NEWS + prazo CVM",
         "categoria": "Calendario", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
-        "idade_maxima_horas": 48, "instrumentado": False,
-        "leitor": _leitor_calendario(),
+        "idade_maxima_horas": 48, "instrumentado": True,
+        "leitor": _leitor_hibrido("CALENDARIO", _leitor_calendario()),
     },
 ]
 
@@ -212,10 +237,7 @@ def obter_painel_saude() -> list:
     painel = []
     for c in REGISTRO_COLETORES:
         try:
-            if c["instrumentado"]:
-                status = coletores_status.obter_status(c["nome"])
-            else:
-                status = c["leitor"]()
+            status = c["leitor"]() if "leitor" in c else coletores_status.obter_status(c["nome"])
         except Exception:
             status = None
         codigo, rotulo = classificar_estado(status, c.get("idade_maxima_horas"))
