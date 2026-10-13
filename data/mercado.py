@@ -22,6 +22,7 @@ datas) - ver MELHORIAS FUTURAS em PROGRESSO.md."""
 import pandas as pd
 import streamlit as st
 import yfinance as yf
+from curl_cffi import requests as cffi_requests
 
 # timeout explicito (yf.download ja tem default interno de 10s nesta
 # versao da lib, mas deixado explicito de proposito em vez de depender
@@ -47,20 +48,56 @@ CAMPO_VARIACAO_POR_JANELA = {
 }
 
 
+def _yf_download_com_retry(symbols: list, period: str) -> pd.DataFrame:
+    """yf.download com 2 tentativas: primeiro simulando um Chrome de
+    verdade via curl_cffi, depois a sessao padrao do yfinance - mesma
+    tecnica (e mesmo motivo) de data/prices.py:_tk_info_com_retry. Yahoo
+    Finance bloqueia bem mais requisicoes vindas de IP de datacenter
+    (Streamlit Cloud) que parecem um script generico do que as que
+    parecem um navegador comum - sem isso, uma tentativa isolada
+    bloqueada derrubava o lote inteiro (altas/baixas, setorial, treemap,
+    mercados globais) sem nem tentar de outro jeito. `session` e'
+    aceito por yf.download mesmo com threads=True (usado pra TODAS as
+    requisicoes do lote, nao so' a primeira - confirmado na assinatura
+    da funcao). Propaga a ultima excecao se as 2 tentativas falharem (ou
+    retorna DataFrame vazio se as 2 responderem vazio), pra quem chama
+    decidir como registrar o erro em SAUDE DOS DADOS - nunca inventa
+    dado nem engana com "sucesso" parcial."""
+    ultimo_erro = None
+    for sessao in (cffi_requests.Session(impersonate="chrome"), None):
+        try:
+            df = yf.download(symbols, period=period, group_by="ticker", threads=True,
+                              progress=False, auto_adjust=False, timeout=_TIMEOUT_YF,
+                              session=sessao)
+            if not df.empty:
+                return df
+        except Exception as e:
+            ultimo_erro = e
+            continue
+    if ultimo_erro is not None:
+        raise ultimo_erro
+    return pd.DataFrame()
+
+
 @st.cache_data(ttl=_TTL_LOTE, show_spinner=False)
 def _baixar_lote(tickers: tuple) -> pd.DataFrame | None:
-    """yf.download em lote pros tickers dados (tupla, hashable p/ cache).
-    Retorna DataFrame multi-nivel (colunas: (campo, symbol)) ou None se a
-    chamada falhar por completo. Usa period='2mo' (nao '5d'): garante
-    historico suficiente pra calcular desempenho de semana/mes (7/30 dias
-    corridos), alem de continuar garantindo pelo menos 2 candles pra
-    variacao do dia mesmo se o pregao de hoje ainda nao fechou."""
+    """yf.download em lote pros tickers dados (tupla, hashable p/ cache),
+    com retry via _yf_download_com_retry (achado real, auditoria missao
+    coletores 2026-10-13: a tentativa unica anterior derrubava o painel
+    inteiro de MERCADO por 90s - o TTL do cache - sempre que o Yahoo
+    bloqueava so' a PRIMEIRA tentativa, mesmo quando uma segunda
+    tentativa teria funcionado). Retorna DataFrame multi-nivel (colunas:
+    (campo, symbol)) ou None se a chamada falhar por completo. Usa
+    period='2mo' (nao '5d'): garante historico suficiente pra calcular
+    desempenho de semana/mes (7/30 dias corridos), alem de continuar
+    garantindo pelo menos 2 candles pra variacao do dia mesmo se o
+    pregao de hoje ainda nao fechou."""
     symbols = [_para_symbol_yf(t) for t in tickers]
     try:
-        df = yf.download(symbols, period="2mo", group_by="ticker", threads=True, progress=False, auto_adjust=False, timeout=_TIMEOUT_YF)
+        df = _yf_download_com_retry(symbols, period="2mo")
         if df.empty:
             registrar_tentativa("MERCADO", "yfinance (lote)", execucao_ok=False,
-                                 erro="yf.download retornou vazio", categoria="Cotacoes")
+                                 erro="yf.download retornou vazio (2 tentativas)", categoria="Cotacoes")
             return None
         registrar_tentativa("MERCADO", "yfinance (lote)", execucao_ok=True,
                              registros_novos=len(symbols), categoria="Cotacoes")
@@ -247,9 +284,14 @@ def _baixar_lote_bruto(symbols: tuple) -> pd.DataFrame | None:
     show_spinner com texto (mesmo achado de obter_panorama_ibovespa acima):
     unica usuaria desta funcao e' obter_mercados_globais, nunca chamada de
     dentro de um fragment - seguro mostrar o spinner sem risco de piscar
-    a cada atualizacao automatica."""
+    a cada atualizacao automatica.
+
+    Mesma tecnica de retry de _baixar_lote (_yf_download_com_retry) -
+    sem isso, um bloqueio na primeira tentativa derrubava os indices
+    globais por 90s mesmo quando uma segunda tentativa teria
+    funcionado."""
     try:
-        df = yf.download(list(symbols), period="5d", group_by="ticker", threads=True, progress=False, auto_adjust=False, timeout=_TIMEOUT_YF)
+        df = _yf_download_com_retry(list(symbols), period="5d")
         return df if not df.empty else None
     except Exception:
         return None

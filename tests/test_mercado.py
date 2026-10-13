@@ -160,6 +160,67 @@ def test_11_cor_treemap_variacao_zero_fica_neutra():
     _checar("11 variacao 0% fica exatamente na cor neutra (cinza)", cor == tema["cinza"].lower(), f"(cor={cor})")
 
 
+def test_12_retry_primeira_tentativa_bloqueada_segunda_funciona():
+    # achado real, auditoria missao coletores 2026-10-13: 1 tentativa
+    # unica (sem retry) derrubava o lote inteiro sempre que o Yahoo
+    # bloqueava so' a 1a chamada - mesmo quando uma 2a tentaria teria ido
+    df_ok = _df_simples("PETR4.SA", [30.0, 31.0])
+    chamadas = []
+
+    def _download_mock(symbols, **kwargs):
+        chamadas.append(kwargs.get("session"))
+        if len(chamadas) == 1:
+            raise Exception("403 - bloqueado (IP de datacenter)")
+        return df_ok
+
+    with patch.object(mercado_mod.yf, "download", side_effect=_download_mock):
+        df = mercado_mod._yf_download_com_retry(["PETR4.SA"], period="2mo")
+    _checar("12a 1a tentativa falha, 2a funciona -> retorna o df da 2a (nunca propaga a falha da 1a)",
+            not df.empty)
+    _checar("12b exatamente 2 tentativas (chrome via curl_cffi, depois sessao padrao)", len(chamadas) == 2)
+    _checar("12c 1a tentativa usa sessao curl_cffi (impersonate chrome), 2a usa session=None",
+            chamadas[0] is not None and chamadas[1] is None, f"(chamadas={chamadas})")
+
+
+def test_13_retry_as_2_tentativas_falham_propaga_ultima_excecao():
+    with patch.object(mercado_mod.yf, "download", side_effect=Exception("timeout real")):
+        try:
+            mercado_mod._yf_download_com_retry(["PETR4.SA"], period="2mo")
+            lancou = False
+        except Exception as e:
+            lancou = True
+            msg = str(e)
+    _checar("13 as 2 tentativas falhando -> propaga a excecao (quem chama registra o erro real)",
+            lancou and msg == "timeout real")
+
+
+def test_14_retry_as_2_tentativas_vazias_devolve_df_vazio_sem_excecao():
+    with patch.object(mercado_mod.yf, "download", return_value=pd.DataFrame()):
+        df = mercado_mod._yf_download_com_retry(["PETR4.SA"], period="2mo")
+    _checar("14 as 2 tentativas respondendo vazio -> df vazio, nunca excecao (quem chama trata como falha)",
+            df.empty)
+
+
+def test_15_baixar_lote_usa_retry_e_registra_sucesso_na_2a_tentativa():
+    # garante que _baixar_lote (a funcao com cache/registrar_tentativa de
+    # verdade) de fato delega pro retry, nao so' o helper isolado
+    df_ok = _df_simples("PETR4.SA", [30.0, 31.0])
+    chamadas = []
+
+    def _download_mock(symbols, **kwargs):
+        chamadas.append(1)
+        if len(chamadas) == 1:
+            raise Exception("bloqueado na 1a tentativa")
+        return df_ok
+
+    with patch.object(mercado_mod.yf, "download", side_effect=_download_mock), \
+         patch.object(mercado_mod, "registrar_tentativa") as mock_registrar:
+        df = mercado_mod._baixar_lote.__wrapped__(("PETR4",))
+    _checar("15a _baixar_lote se recupera da 1a tentativa bloqueada via retry", df is not None and not df.empty)
+    _checar("15b registra execucao_ok=True (nunca marca falha por causa de uma 1a tentativa que se recuperou)",
+            mock_registrar.call_args.kwargs.get("execucao_ok") is True, f"(call={mock_registrar.call_args})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
