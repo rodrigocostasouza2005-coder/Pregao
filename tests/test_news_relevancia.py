@@ -159,6 +159,24 @@ def test_14_score_fica_sempre_entre_0_e_100():
     _checar("14b score nunca passa de 100", score_max <= 100, f"(score_max={score_max})")
 
 
+def test_15_azul54_e_relevante_pelo_nome_mesmo_sem_nome_empresa_do_yfinance():
+    """Bug real corrigido (auditoria missao coletores, 2026-10-13): o
+    yfinance nao resolve AZUL54 (ver config.py), entao nome_empresa
+    chega vazio em _relevante/_nome_curto - sem a excecao cadastrada em
+    config.TICKER_NOME, NENHUMA materia que cita a empresa pelo nome
+    (sem o ticker literal no titulo) era reconhecida como relevante no
+    feed por watchlist. O fix anterior (246dff1) so' corrigiu a TAG de
+    ticker em manchete no TOP MERCADO - caminho de codigo diferente."""
+    _checar(
+        "15a manchete com o nome da empresa (sem o ticker) -> relevante",
+        _relevante("AZUL54", "", "Azul anuncia resultado do terceiro trimestre e reduz dívida"),
+    )
+    _checar(
+        "15b manchete com o ticker literal continua relevante (nao regride)",
+        _relevante("AZUL54", "", "AZUL54 sobe 5% após resultado"),
+    )
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

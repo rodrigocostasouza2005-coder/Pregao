@@ -20,6 +20,16 @@ TICKER_NOME = {
     "PETR4": "Petrobras",
     "PETR3": "Petrobras",
     "B3SA3": "B3",
+    # AZUL54 (achado real, auditoria missao coletores 2026-10-13): o
+    # yfinance nao resolve esse ticker (ver comentario mais abaixo sobre
+    # AZUL4->AZUL54), entao data/news.py:_nome_curto cai pro nome_empresa
+    # vindo do yfinance - que vem vazio - e NENHUMA materia que cita a
+    # empresa pelo nome ("Azul anuncia...", sem o ticker literal no
+    # titulo) era reconhecida como relevante no feed por watchlist
+    # (data/news.py:_relevante). O fix anterior (246dff1) so' corrigiu a
+    # TAG de ticker em manchete no TOP MERCADO (_SUFIXOS_TICKER_VALIDOS),
+    # caminho de codigo diferente - esse aqui ficou descoberto.
+    "AZUL54": "Azul",
 }
 
 # --- Cadastro unificado de ativos (FASE 3 - expansao B3 + EUA, auditoria
