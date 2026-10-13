@@ -182,6 +182,17 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 6, "instrumentado": True,
     },
     {
+        # linha separada (achado real, auditoria missao coletores
+        # 2026-10-13): "NEWS" (acima) so' media' obter_top_mercado_tudo -
+        # a busca POR TICKER (obter_noticias_watchlist, o que a aba
+        # NOTICIAS de verdade usa) e' outro caminho de codigo/fonte, podia
+        # quebrar isolado sem aparecer aqui. Ver data/news.py:
+        # obter_noticias_watchlist.
+        "nome": "NEWS (watchlist)", "fonte": "Google News (busca por ticker)",
+        "categoria": "Noticias", "frequencia_esperada": "sob demanda (cache 20min)",
+        "idade_maxima_horas": 6, "instrumentado": True,
+    },
+    {
         "nome": "MERCADO", "fonte": "yfinance (cotacoes em lote)",
         "categoria": "Cotacoes", "frequencia_esperada": "sob demanda (cache 90s)",
         "idade_maxima_horas": 2, "instrumentado": True,

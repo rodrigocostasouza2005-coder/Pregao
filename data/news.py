@@ -775,6 +775,25 @@ def obter_noticias_watchlist(tickers: list) -> tuple:
         todas.extend(r)
     todas = _mesclar_entre_tickers(todas)
     todas.sort(key=lambda n: n["data"], reverse=True)
+    # registro de SAUDE DOS DADOS (achado real, auditoria missao coletores
+    # 2026-10-13): antes desta instrumentacao, a linha "NEWS" do painel so'
+    # refletia obter_top_mercado_tudo (pool BRASIL+INTERNACIONAL) - se a
+    # busca POR TICKER (usada pela aba NOTICIAS de verdade, a que o
+    # usuario abre) quebrasse isoladamente (ex: Google muda o formato de
+    # 'search?q=' mas mantem a secao de negocios funcionando), o painel
+    # continuava mostrando "NEWS: Coleta OK" com a aba principal vazia -
+    # exatamente o falso-positivo por omissao de instrumentacao que o
+    # projeto proibe. Nome separado ("NEWS (watchlist)") de proposito: e'
+    # uma fonte/caminho de codigo diferente de obter_top_mercado_tudo, nao
+    # deve compartilhar status com ele. So' registra quando ha pelo menos
+    # 1 ticker (watchlist vazia nao e' "falha", e' nada pra buscar).
+    if tickers:
+        if len(falhas) == len(tickers):
+            registrar_tentativa("NEWS (watchlist)", "Google News (busca por ticker)", execucao_ok=False,
+                                 erro=f"busca falhou pros {len(tickers)} ticker(s) da watchlist", categoria="Noticias")
+        else:
+            registrar_tentativa("NEWS (watchlist)", "Google News (busca por ticker)", execucao_ok=True,
+                                 parcial=bool(falhas), registros_novos=len(todas), categoria="Noticias")
     return todas, falhas
 
 
