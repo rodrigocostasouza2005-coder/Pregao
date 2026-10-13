@@ -3,6 +3,38 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-13 (MISSÃO CRÍTICA — COLETORES, retomada e conclusão)
+
+Sessão autônoma agendada, retomando uma sessão anterior (2026-10-10)
+que bateu o limite de uso no meio de escrever o relatório final. Ver
+PROGRESSO.md "MISSÃO CRÍTICA — COLETORES (2026-10-10 a 2026-10-13) —
+relatório final" pro relatório completo (achados de 4 subagentes em
+paralelo, tabela por coletor, testes de conectividade real).
+
+- **fix: MACRO (Focus/Olinda)** - ano malformado no loop de 3 anos
+  abortava os outros 2, mesma classe de bug já corrigida na ANBIMA
+  (`e04b295`). `20beed3`.
+- **fix: NEWS** - AZUL54 continuava com relevância quebrada no feed
+  por ticker (caminho de código diferente do já corrigido em
+  `246dff1`) - faltava exceção em `config.TICKER_NOME` pra quando o
+  yfinance não resolve o ticker. `fe339ee`.
+- **feat: SAÚDE DOS DADOS** passa a instrumentar a busca de NEWS por
+  ticker/watchlist (`NEWS (watchlist)`, linha separada de `NEWS`) -
+  antes um ponto cego podia mostrar "Coleta OK" com a aba NOTÍCIAS
+  vazia. `ee39fd2`.
+- **fix: CVM** - cache "preso" no FCA e no IPE (mesma classe de bug já
+  corrigida em MERCADO/B3, `9d765e9`) + FCA sem instrumentação de
+  saúde (linha nova `CVM (FCA)`). `testar_conexao()` ajustado pra não
+  ser mascarado pelo novo fallback. `5987a4a`.
+- Suite completa (`384/384`) confirmada explicitamente sob Python
+  3.11.17 (a versão real de produção/dev, não 3.12) - inclui o teste
+  de regressão do `SyntaxError` que já tinha derrubado produção por
+  ~11h antes desta missão (`8fad990`, sessão anterior).
+- Conectividade real (categoria C do pedido original) testada com
+  `curl` contra as 10 fontes obrigatórias: todas bloqueadas pela
+  política de rede deste ambiente cloud (confirmado no log do proxy,
+  não presumido) - 0 de 10 comprováveis nesta sessão.
+
 ## 2026-10-09 (sessão de verificação/estabilização pós-RADAR)
 
 Sessão autônoma agendada (16h UTC, ~1h40 depois de outra sessão ter

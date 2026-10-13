@@ -5266,3 +5266,289 @@ Working tree limpo ao final. Harness de teste (`/tmp/pregao_venv_audit`
 + scratchpad) é infraestrutura efêmera do container, não commitada -
 uma sessão futura precisa reconstruir do zero seguindo a descrição do
 método (seção 1 acima).
+
+## MISSÃO CRÍTICA — COLETORES (2026-10-10 a 2026-10-13) — relatório final
+
+Pedido original do Rodrigo: auditar, corrigir e validar **todo** o
+pipeline de coleta de dados do Pregão, com evidência real de execução
+(não só teste com mock, não só "parece bonito"). Duas sessões
+autônomas cobriram esta missão - a primeira (2026-10-10, ~03h11-03h44
+UTC) bateu o limite de uso de 5h no meio de escrever este relatório
+(working tree ficou limpo, nenhum commit quebrado, mas a documentação
+nunca foi escrita); esta sessão (2026-10-13) retomou de onde parou e
+fecha a missão. Este relatório cobre as DUAS sessões juntas, porque
+nenhuma das duas tinha sido documentada em PROGRESSO.md até agora.
+
+### 1. O que a primeira sessão (2026-10-10) já tinha corrigido
+
+9 commits (`246dff1` até `52bdc9f`), todos já em `origin/main` antes
+desta sessão começar:
+
+- **`8fad990` (CRÍTICO)**: `SyntaxError` real (f-string com aspas
+  duplas repetidas, sintaxe só válida em Python 3.12+ via PEP 701) nas
+  próprias correções visuais dos dias 9-10/10 (`a05c545`/`d05e8a9`) -
+  quebrava a IMPORTAÇÃO de `ui/mercado_tab.py` e `app.py`, derrubando
+  MERCADO, VISÃO GERAL e a tabela de destaques do dia em produção (que
+  roda Python 3.11, não 3.12) por ~11h. Corrigido + `tests/
+  test_sintaxe_modulos.py` novo (compila todo `.py` do projeto, falha
+  a suite se achar `SyntaxError`).
+- **`4fb2710`**: suite de testes não falhava sob `pytest` de verdade
+  (uma checagem só' registrava erro, nunca lançava exceção).
+- **`764c2c6`**: SAÚDE DOS DADOS passa a instrumentar Genial Analisa/
+  XP/Genial Lives/CALENDÁRIO.
+- **`246dff1`**: NEWS não reconhecia AZUL54 (ticker trocou de AZUL4 em
+  dez/2025) na TAG de ticker em manchete do TOP MERCADO.
+- **`9d765e9`**: MERCADO - falha transitória da B3 (composição do
+  índice) ficava travada 24h num fallback estático cacheado.
+- **`e04b295`**: MACRO (ANBIMA) - 1 dia malformado no loop de fallback
+  de 7 dias abortava a tentativa nos outros 6 dias.
+- **`185edc5`**: CVM - documento compartilhado por 2 tickers do mesmo
+  emissor perdia 1 ticker (upsert por `link` tratando 1-pra-N como
+  1-pra-1).
+- **`1c05b9c`**: CALENDÁRIO - eventos CONFIRMADO nunca eram
+  reverificados (adiamento/correção ficava preso pra sempre).
+- **`52bdc9f`**: CALENDÁRIO - rotação por relógio só garantia cobertura
+  completa por coincidência (mdc(48,N) - quebraria em silêncio se o
+  universo mudasse de tamanho); trocado por checkpoint persistido em
+  arquivo.
+
+### 2. Método desta sessão (2026-10-13)
+
+Confirmado antes de agir (nunca presumido): `git log`/`git fetch
+origin main` - nada mudou desde `52bdc9f`, working tree limpo, exatamente
+como a sessão anterior deixou.
+
+Em vez de reauditar do zero (os 9 commits acima já tinham evidência de
+teste), esta sessão: (a) confirmou a suite inteira com a versão de
+Python que produção/dev realmente usa, (b) despachou 4 subagentes em
+paralelo - 1 por coletor ainda não auditado especificamente nesta
+missão (NEWS, MERCADO, MACRO-BCB, CVM) - cada um com instrução
+explícita de ler o código real, citar arquivo:linha, rodar os testes
+existentes de verdade (nunca inventar resultado) e procurar
+especificamente pela MESMA classe de bug já corrigida nos itens acima
+(cache "preso", loop sem try/except por iteração, exceção silenciosa
+fingindo sucesso, dado inventado) em caminhos de código diferentes dos
+já corrigidos, (c) testou conectividade real (categoria C) contra
+TODAS as fontes externas obrigatórias.
+
+### 2a. Python 3.11 explícito (não presumir que 3.12 basta)
+
+`.devcontainer/devcontainer.json` confirma a imagem `mcr.microsoft.com/
+devcontainers/python:1-3.11-bookworm` - produção/dev usam Python 3.11
+(sem `runtime.txt` no repo; a imagem do devcontainer é a fonte de
+verdade). Criado venv com `/usr/bin/python3.11` (3.11.17, disponível no
+sandbox), `pip install -r requirements.txt` exato, suite completa
+rodada com ESSE interpretador (não o 3.12 que também está disponível,
+que mascararia exatamente o tipo de bug que gerou o incidente de
+`8fad990`): **372/372 testes passando**, `tests/
+test_sintaxe_modulos.py` PASSED, `compileall`/`pyflakes` limpos.
+
+### 2b. Achados dos 4 subagentes (auditoria dirigida, com código real)
+
+**MERCADO** (yfinance em lote, cache 90s) - nenhum bug crítico/alto
+novo. Confirmado: isolamento real por ticker dentro de um lote (um
+papel ausente não derruba os outros, testado em `tests/test_mercado.py`),
+cache de 90s sem fallback de "última boa" (diferente da B3, mas
+TTL curto o suficiente pra não "travar"), timeout explícito intacto,
+nenhum `except` fingindo sucesso, nenhum dado inventado. Gap real mas
+não corrigido agora (BAIXA/MÉDIA, não é "dado inventado" - degrada
+mostrando "—"): `_baixar_lote`/`_baixar_lote_bruto` não usam retry/
+curl_cffi impersonation como `data/prices.py:_tk_info_com_retry` já
+faz - risco de bloqueio por IP de datacenter sem segunda tentativa.
+Registrado no BACKLOG.
+
+**MACRO** (BCB/SGS + ANBIMA/ETTJ) - fix ANBIMA (`e04b295`) confirmado
+intacto. **Achado novo e corrigido nesta sessão**: `_focus_multi_ano`
+(expectativas Focus/Olinda, alimenta `obter_focus_ipca`/
+`obter_focus_selic`) tinha a MESMA classe de bug do fix ANBIMA, em
+caminho de código diferente - loop de 3 anos sem try/except por
+iteração, um ano malformado abortava os outros 2. Corrigido
+(`20beed3`) + 2 testes novos (`tests/test_macro.py`, testes 4-5).
+
+**NEWS** (Google News + extração + cache 20min) - fluxo de RSS/
+decodificação de link/extração via trafilatura/cache de IA confirmado
+correto, sem exceção silenciosa, sem dado inventado. **2 achados novos
+e corrigidos nesta sessão**: (1) AZUL54 continuava com relevância
+quebrada no FEED POR TICKER/WATCHLIST (`_relevante`/`_nome_curto`) -
+caminho de código diferente do já corrigido em `246dff1` (aquele só
+tratava a tag de ticker no TOP MERCADO); `yfinance` não resolve
+AZUL54, então faltava a exceção em `config.TICKER_NOME` - corrigido
+(`fe339ee`) + teste novo. (2) SAÚDE DOS DADOS nunca instrumentava a
+busca por ticker (`obter_noticias_watchlist`, o que a aba NOTÍCIAS de
+verdade usa) - só `obter_top_mercado_tudo` registrava tentativa; se a
+busca por ticker quebrasse isolada, o painel continuava mostrando
+"NEWS: Coleta OK" com a aba principal vazia. Corrigido (`ee39fd2`) com
+uma linha nova e separada ("NEWS (watchlist)") + 4 testes novos.
+Pendência **não** corrigida agora (fora do escopo desta rodada,
+registrada no BACKLOG): `obter_noticias` chamado direto por
+`ui/research_tab.py`/`ui/calendario_tab.py`/visão de ticker único em
+`ui/news_tab.py` também não passa por essa instrumentação - só o
+caminho da watchlist agregada foi coberto.
+
+**CVM** (FCA/IPE, cache 6h/24h) - fix do documento compartilhado
+(`185edc5`) confirmado completo (único ponto do pipeline com esse
+padrão de risco; CALENDÁRIO nunca foi afetado, não lê a tabela que o
+fix corrigiu). **2 achados novos e corrigidos nesta sessão**: (1)
+`_mapa_ticker_cnpj` (FCA) e `_ipe_ano` (IPE) tinham a MESMA classe de
+bug "cache preso" já corrigida em MERCADO/B3 (`9d765e9`) - sem
+fallback de última-boa, uma falha transitória no momento exato em que
+o cache expira travava o app sem NENHUM documento/ticker mapeado por
+6-24h. Corrigido com o mesmo padrão (`st.cache_resource`, espelhando
+`data/ibovespa.py`) - `testar_conexao()` (painel DIAGNÓSTICO DE
+FONTES) foi ajustado pra chamar o download direto, SEM esse fallback,
+senão deixaria de detectar uma falha real da fonte. (2) O FCA nunca
+chamava `registrar_tentativa` - só o IPE chamava; se o FCA quebrasse
+isolado, SAÚDE DOS DADOS continuava mostrando "CVM: OK" com
+`obter_cnpj` retornando `None` pra todo ticker. Corrigido (`5987a4a`,
+linha nova "CVM (FCA)") + 5 testes novos (`tests/test_cvm.py`, testes
+10-14).
+
+Nenhum dos 4 subagentes encontrou dado inventado ou exceção silenciosa
+fingindo sucesso nos 4 pipelines - os achados reais foram todos da
+MESMA classe (cache preso / loop sem isolamento por iteração /
+instrumentação ausente), nunca fabricação de dado.
+
+### 2c. Testes de conectividade real (categoria C) - resultado real, não simulado
+
+Testado com `curl` direto (não através do Python/libs do projeto) contra
+os 10 hosts que os coletores obrigatórios e os coletores locais usam:
+`api.bcb.gov.br`, `dados.cvm.gov.br`, `www.anbima.com.br`,
+`sistemaswebb3-listados.b3.com.br` (B3), `news.google.com`,
+`query1.finance.yahoo.com`, `analisa.genialinvestimentos.com.br`,
+`www.xpi.com.br`, `www.youtube.com`. **Resultado: os 10 bloqueados**
+(`curl: (56) CONNECT tunnel failed, response 403` em todos) - confirmado
+no log do proxy do ambiente (`/__agentproxy/status`, `recentRelayFailures`)
+como `connect_rejected` / "gateway answered 403 to CONNECT (policy
+denial or upstream failure)" - é política de rede da ORGANIZAÇÃO deste
+ambiente cloud, não falha de rede nem bloqueio específico de cada fonte
+(confirmado testando `pypi.org`, que está na lista liberada: `HTTP
+200` normal). Supabase nem chegou a ser testado por URL: não há
+`.streamlit/secrets.toml` real neste sandbox (só o `.example`), então
+não existe credencial pra testar - `data/supabase_client.py:
+obter_cliente()` cai em `None` por design nesse caso (degrada
+graciosamente, nunca quebra o app).
+
+**Conclusão da categoria C nesta sessão: 0 de 10 fontes testáveis com
+coleta real a partir deste ambiente** - mesma limitação já documentada
+por sessões anteriores (BACKLOG.md), agora confirmada com evidência de
+comando real (não presumida) e com a causa identificada precisamente
+(política de rede do ambiente cloud, editável pelo Rodrigo nas
+configurações do ambiente se quiser testes de conectividade real numa
+sessão futura - "Network access" no menu do ambiente cloud).
+
+### 3. Commits desta sessão (2026-10-13)
+
+- `20beed3` — fix: MACRO (Focus/Olinda) - ano malformado abortava os
+  outros 2 anos.
+- `fe339ee` — fix: NEWS - AZUL54 continuava com relevância quebrada no
+  feed por ticker.
+- `ee39fd2` — feat: SAÚDE DOS DADOS instrumenta a busca de NEWS por
+  ticker (watchlist).
+- `5987a4a` — fix: CVM - cache preso (FCA/IPE) + FCA sem instrumentação
+  de saúde.
+
+Todos com teste de regressão novo, suite completa (`384/384`) passando
+sob Python 3.11.17, `compileall`/`pyflakes` limpos, `origin/main`
+sincronizado logo após cada commit (checado `git fetch`/`git log
+HEAD..origin/main` antes de cada push - nunca houve commit concorrente).
+
+### 4. Relatório final por coletor (seção 8 do pedido original)
+
+| Coletor | Correção implementada (sessões 10/10 + 13/10) | Teste executado | Evidência de execução real | Persistência confirmada | Estado em produção | Pendência restante |
+|---|---|---|---|---|---|---|
+| **NEWS** | AZUL54: tag em manchete (`246dff1`) + relevância no feed por ticker (`fe339ee`); SAÚDE DOS DADOS passa a cobrir a busca por ticker (`ee39fd2`) | A/B: `tests/test_news_relevancia.py`, `tests/test_news_saude_dados.py`, `tests/test_news_*` (91+ testes) - mock, sem rede | C: **bloqueado** (política de rede do ambiente - `news.google.com` 403 no proxy) | D: **não verificável** (sem acesso a produção/Supabase reais) | Fix presente em `origin/main`; produção não confirmada nesta sessão | `obter_noticias` chamado fora da watchlist (RESEARCH/CALENDÁRIO/ticker único) ainda sem instrumentação; listas de ticker (`_SUFIXOS_TICKER_VALIDOS`/`TICKER_NOME`/`TICKER_ALIASES`) continuam 100% hardcoded - risco estrutural de recorrência pra qualquer renomeação futura de ticker |
+| **MERCADO** | Composição B3 - falha transitória não trava mais 24h (`9d765e9`, sessão 10/10) | A: `tests/test_mercado.py`, `tests/test_ibovespa.py` (26+ testes) - mock | C: **bloqueado** (`sistemaswebb3-listados.b3.com.br` 403) | D: **não verificável** | Fix presente em `origin/main` | Lote de cotações (`_baixar_lote`/`_baixar_lote_bruto`) sem retry/curl_cffi impersonation (gap de robustez, severidade baixa/média, registrado no BACKLOG) |
+| **MACRO - BCB** (IPCA/Selic/CDI) | Nenhuma correção necessária no SGS (fluxo já correto); Focus (Olinda) corrigido nesta sessão (`20beed3`) | A: `tests/test_macro.py` (5 testes, 2 novos) - mock | C: **bloqueado** (`api.bcb.gov.br` 403) | D: **não verificável** | Fix presente em `origin/main` | `obter_selic_meta`/`obter_cdi`/Focus não chamam `registrar_tentativa` individualmente (só IPCA representa o bucket "MACRO (BCB)") - decisão de escopo já documentada no código, não corrigida nesta rodada (ver BACKLOG) |
+| **MACRO - ANBIMA** (ETTJ) | Dia malformado não aborta mais o fallback de 7 dias (`e04b295`, sessão 10/10) | A: `tests/test_macro.py` (3 testes) - mock | C: **bloqueado** (`www.anbima.com.br` 403) | D: **não verificável** | Fix presente em `origin/main` | Nenhuma conhecida |
+| **CVM** (FCA/IPE) | Documento compartilhado por 2 tickers (`185edc5`, sessão 10/10); cache preso FCA+IPE + FCA sem instrumentação (`5987a4a`, sessão 13/10) | A: `tests/test_cvm.py` (14 testes, 5 novos) - mock | C: **bloqueado** (`dados.cvm.gov.br` 403) | D: **não verificável** | Fix presente em `origin/main` | Nenhuma conhecida além da defasagem de ~1-7 dias já documentada (natureza da fonte, não bug) |
+| **Genial Analisa** | Nenhuma correção nova (pipeline já auditado na FASE 6 anterior) | A: mocks fiéis ao schema (FASE 6) | C: **bloqueado tanto no Cloud quanto neste sandbox** (WAF) - só funciona de máquina real, fora dessas redes | D: **pendente - só o Rodrigo pode confirmar** (ver seção 5) | Depende de `coletor_local.py` rodando na máquina do Rodrigo | **Rodrigo precisa rodar localmente** (ver seção 5) |
+| **XP Investimentos** | Nenhuma correção nova | A: mocks com campos confirmados por requisição real fora do sandbox (2026-09-23) | C: **bloqueado no Cloud e neste sandbox** (CDN) | D: **pendente - só o Rodrigo pode confirmar** | Depende de `coletor_local.py` | **Rodrigo precisa rodar localmente** (ver seção 5) |
+| **Genial Lives** (YouTube RSS) | Nenhuma correção nova | A: mocks (feed/parsing/dedup) | C: **bloqueado** (`www.youtube.com` 403 no sandbox; no Cloud depende de hibernação) | D: **pendente - só o Rodrigo pode confirmar** | Depende de `coletor_local.py` | **Rodrigo precisa rodar localmente** (ver seção 5) |
+| **CALENDÁRIO** | CONFIRMADO reverificado em janela de 7 dias (`1c05b9c`); checkpoint persistido substitui rotação por relógio (`52bdc9f`) - ambos sessão 10/10 | A/B: `tests/test_calendario*.py`, `tests/test_eventos*.py` | C: depende de RI/NEWS/CVM, todos bloqueados nesta sessão | D: **não verificável** | Fix presente em `origin/main` | Nenhuma conhecida além das limitações já documentadas (RI só lê a URL exata registrada, taxa de sucesso de CONFIRMADO via RI tende a ser baixa por design) |
+
+Nenhum coletor foi declarado "concluído" só por código alterado - onde
+a categoria C/D não pôde ser comprovada (100% dos casos nesta sessão,
+por limitação do ambiente), isso está marcado explicitamente como
+**bloqueado**/**não verificável**, nunca como sucesso.
+
+### 5. Pendências que exigem o Rodrigo (máquina local) - consolidado num lugar só
+
+Genial Analisa, XP Investimentos e Genial Lives são bloqueados por WAF/
+CDN tanto no Streamlit Cloud quanto em qualquer sandbox de
+desenvolvimento - só funcionam executando numa máquina real, fora
+dessas redes. Nenhuma sessão cloud (esta incluída) tem acesso a essa
+máquina - os passos abaixo são EXATAMENTE o que precisa ser rodado,
+nunca "já executei isso" vindo de uma sessão cloud.
+
+**1. Comando exato** (pasta raiz do projeto, com o `.venv` do projeto
+ativo e `.streamlit/secrets.toml` preenchido com as credenciais reais
+do Supabase - mesmo arquivo que o app usa):
+```
+python coletor_local.py
+```
+(ou `pythonw coletor_local.py` pra rodar sem janela de console - é o
+que o Agendador de Tarefas do Windows usa de verdade, ver `PROGRESSO.md`
+"AÇÕES MANUAIS PENDENTES" em sessões anteriores pro passo-a-passo de
+agendamento). Frequência recomendada: ~30min, seg-sex 07h-20h.
+
+**2. O que checar no log** (`coletor_local.log`, raiz do projeto, ao
+lado de `coletor_local.py` - rotaciona em 1MB x 3 arquivos):
+- Uma linha por casa de research: `Genial Analisa: OK (N itens)` /
+  `XP Investimentos: OK (N itens)` / `Genial (Lives): OK (N itens)` -
+  `FALHOU` significa que a fonte não respondeu NESSA execução (não é
+  necessariamente erro permanente - WAF pode variar).
+  **Dica pra confirmar que é mesmo WAF/bloqueio e não bug**: se rodar
+  de uma rede residencial/doméstica comum e continuar `FALHOU` todas as
+  vezes, aí sim é algo pra investigar (abrir uma issue/pedir auditoria).
+- `historico de recomendações: N ticker(s) comparado(s), M mudança(s)
+  real(is) registrada(s)` - N=0 significa fonte indisponível OU nenhuma
+  recomendação retornada (não é erro, é o Genial fora do ar nessa
+  execução).
+- `eventos de resultado: N processado(s), C confirmado(s), E
+  estimado(s)...` + aviso se a tabela `eventos_resultados` estiver
+  ausente (nesse caso, rodar `sql/eventos.sql` no SQL Editor do
+  Supabase ANTES de qualquer coisa funcionar).
+- Exit code do processo: `0` = todas as casas disponíveis coletaram OK;
+  `1` = alguma falhou (útil pro Agendador de Tarefas marcar erro no
+  histórico da tarefa sem precisar abrir o log).
+
+**3. Como confirmar gravação real no Supabase** (SQL Editor do projeto
+Supabase, não no sandbox - sem credencial aqui pra rodar isso):
+```sql
+-- 1 linha por casa, count = quantos itens tem hoje, max(data) = mais recente
+select casa, count(*), max(data) from research_itens group by casa;
+
+-- status da ÚLTIMA tentativa de cada coletor (SAÚDE DOS DADOS) - 'nome'
+-- usa o rótulo exibido na aba, ex: 'Genial Analisa', 'XP Investimentos',
+-- 'Genial (Lives)', 'NEWS (watchlist)', 'CVM (FCA)'
+select nome, execucao_ok, persistencia_ok, ultima_tentativa_em,
+       ultimo_sucesso_em, registros_novos, ultimo_erro
+from coletores_status order by ultima_tentativa_em desc;
+```
+Se `research_itens` tiver linhas recentes (hoje/ontem) pra `casa IN
+('Genial Analisa', 'XP Investimentos', 'Genial (Lives)')` e
+`coletores_status` mostrar `ultimo_sucesso_em` recente pra esses
+nomes, a coleta local está funcionando de ponta a ponta (rede → parse →
+gravação → o que a aba RESEARCH/SAÚDE DOS DADOS realmente lê). Depois
+de confirmar, a aba RESEARCH em `pregao.streamlit.app` deve mostrar
+esses itens (ela lê do banco primeiro, nunca recoleta ao vivo pra essas
+3 casas - ver `data/research/__init__.py`, `tentar_coleta_automatica=
+False`).
+
+### 6. Estado final
+
+4 commits novos nesta sessão (`20beed3` até `5987a4a`), cada um com
+teste de regressão real, `origin/main` sincronizado logo após cada
+commit (checado antes, nunca houve commit concorrente), suite completa
+`384/384` passando sob Python 3.11.17 (o interpretador real de
+produção/dev, não presumido), `compileall`/`pyflakes` limpos. Working
+tree limpo ao final. Venv de teste (`/tmp/pregao_venv311`) é
+infraestrutura efêmera do container, não commitada. Categoria C
+(conectividade real) e D (persistência/produção real) permanecem
+**não comprovadas nesta sessão** por limitação do ambiente cloud
+(rede bloqueada por política da organização, sem credencial Supabase
+real) - isso é uma limitação de AMBIENTE, documentada com evidência de
+comando real (não presumida), não uma afirmação de sucesso da missão.
+Research local (Genial Analisa/XP/Genial Lives) segue dependendo
+inteiramente do Rodrigo rodar `coletor_local.py` numa máquina real
+(seção 5) - nenhuma sessão cloud pode fazer isso por ele.

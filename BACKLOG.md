@@ -3,6 +3,91 @@
 Pendências conhecidas, para resolver depois (ajustes visuais adiados
 enquanto avançamos nas próximas fases).
 
+## MISSÃO CRÍTICA — COLETORES (2026-10-13) — pendências desta rodada
+
+Ver PROGRESSO.md "MISSÃO CRÍTICA — COLETORES (2026-10-10 a 2026-10-13)
+— relatório final" pro relatório completo (achados dos 4 subagentes,
+tabela por coletor, testes de conectividade real). Itens investigados
+e **deliberadamente não corrigidos agora** (registrados aqui, não
+escondidos):
+
+- **MERCADO — lote de cotações sem retry/backoff**
+  PRIORIDADE: MÉDIA · IMPACTO: MÉDIO (degrada honestamente, nunca
+  inventa preço) · ESFORÇO: MÉDIO
+  `data/mercado.py:_baixar_lote`/`_baixar_lote_bruto` (yfinance em
+  lote, cache 90s) fazem 1 única tentativa, sem retry/backoff nem
+  `curl_cffi` impersonation - diferente de `data/prices.py:
+  _tk_info_com_retry` (2 tentativas, a segunda imitando um browser
+  Chrome), que existe especificamente porque o Yahoo Finance bloqueia
+  mais IP de datacenter (o caso real de produção, Streamlit Cloud).
+  Se o lote bloquear, o painel mostra "—" honestamente (nunca inventa
+  cotação) e fica registrado em SAÚDE DOS DADOS como falha - não é
+  dado inventado nem falso-sucesso, só um gap de robustez. Replicar o
+  padrão de `_tk_info_com_retry` pro lote exigiria confirmar que
+  `yf.download` aceita os mesmos parâmetros de sessão/impersonation
+  que `yf.Ticker()` usa - não testado nesta sessão (sem rede real pra
+  validar).
+- **MACRO (BCB) — Selic/CDI/Focus não chamam `registrar_tentativa`
+  individualmente**
+  PRIORIDADE: BAIXA · IMPACTO: BAIXO (UI avisa o usuário corretamente
+  mesmo assim, só o PAINEL de saúde tem o ponto cego) · ESFORÇO: MÉDIO
+  Decisão de escopo já documentada no próprio código
+  (`data/macro.py:73-76`): "IPCA é usado como ponto representativo da
+  fonte BCB/SGS" - só `obter_ipca` registra tentativa; `obter_selic_
+  meta`/`obter_cdi`/`obter_focus_ipca`/`obter_focus_selic` não. Se
+  Selic ou CDI quebrar isoladamente (ex: BC descontinua/renomeia um
+  desses códigos SGS) enquanto IPCA continua OK, o bucket "MACRO (BCB)"
+  mostra "Coleta OK" mesmo assim - a UI (`ui/macro_tab.py`) continua
+  avisando o usuário com `st.warning` quando o dado real falha, então
+  não há dado inventado nem engano pro usuário final, só um ponto
+  cego no painel de monitoramento. Corrigir direito (linhas separadas
+  por sub-série, igual ao que esta sessão fez pra "CVM (FCA)"/"NEWS
+  (watchlist)") é mudança de escopo maior (4 linhas novas em
+  `REGISTRO_COLETORES`), não feita nesta rodada por decisão de
+  priorizar os achados de severidade mais alta primeiro.
+- **NEWS — `obter_noticias` fora da watchlist agregada sem
+  instrumentação de SAÚDE DOS DADOS**
+  PRIORIDADE: BAIXA · IMPACTO: BAIXO · ESFORÇO: MÉDIO
+  Esta sessão instrumentou `obter_noticias_watchlist` (o que a aba
+  NOTÍCIAS de verdade usa pra montar o feed agregado). `ui/
+  research_tab.py`, `ui/calendario_tab.py` e a visão de ticker único
+  em `ui/news_tab.py` chamam `obter_noticias(ticker)` DIRETO, sem
+  passar por esse registro - se a busca por ticker quebrar bem no
+  momento em que só esses 3 consumidores estão ativos (watchlist
+  nunca chamada na mesma execução), o painel não capta a falha. Gap
+  menor (a watchlist agregada, o caminho mais usado, já está coberta),
+  registrado pra uma rodada futura.
+- **NEWS — listas de ticker 100% hardcoded (risco estrutural de
+  recorrência)**
+  PRIORIDADE: MÉDIA (nunca vai "terminar" - é uma classe de risco, não
+  um bug pontual) · IMPACTO: MÉDIO · ESFORÇO: ALTO (exigiria fonte
+  dinâmica de tickers validos, não existe hoje nenhuma no projeto)
+  `data/news.py:_SUFIXOS_TICKER_VALIDOS`, `data/news_setores.py:
+  SETORES` e `config.py:TICKER_NOME`/`TICKER_ALIASES`/
+  `IBOVESPA_SETORES` são todos editados manualmente - é exatamente
+  essa estrutura que permitiu o bug do AZUL54 (2 instâncias
+  diferentes, corrigidas em `246dff1` e nesta sessão) e vai permitir
+  recorrência com qualquer renomeação futura de ticker na B3. Não há
+  fonte "de verdade" (ex: cadastro oficial da B3/CVM consultado em
+  runtime) pra essas listas hoje. Fora do escopo de uma correção
+  pontual - registrado como risco de arquitetura.
+- **Categoria C (conectividade real) e D (persistência/produção) —
+  0 de 10 fontes testáveis a partir deste ambiente**
+  PRIORIDADE: N/A (limitação de ambiente, não de código) · IMPACTO:
+  bloqueia QUALQUER validação "real" (categorias C/D do pedido
+  original) nesta sessão · ESFORÇO: zero pro código, exige mudança de
+  configuração do ambiente
+  Confirmado com `curl` real (não presumido): os 10 hosts testados
+  (BCB, CVM, ANBIMA, B3, Google News, Yahoo Finance, Genial, XP,
+  YouTube) retornam `403` no proxy do ambiente (política de rede da
+  organização, não falha de rede - `pypi.org`, que está liberado,
+  respondeu `200` normal). Supabase nem foi testável por falta de
+  credencial real (só `.streamlit/secrets.toml.example` neste
+  sandbox). Pra uma sessão cloud futura conseguir testar conectividade
+  real, o Rodrigo precisaria mudar "Network access" nas configurações
+  do ambiente (cloud environment → Edit) pra incluir esses domínios -
+  decisão dele, não tomada por esta sessão.
+
 ## AUDITORIA VISUAL (2026-10-10) — pendências desta rodada
 
 Ver PROGRESSO.md "AUDITORIA VISUAL — continuação 2026-10-10" pro
