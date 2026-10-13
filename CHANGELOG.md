@@ -3,6 +3,35 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-13 (continuação — diagnóstico de infraestrutura da SAÚDE DOS DADOS)
+
+Sessão autônoma agendada, continuando a MISSÃO CRÍTICA — COLETORES logo
+após a sessão anterior fechar o relatório (mesmo dia). Fato novo que
+disparou esta sessão: o Rodrigo reportou, olhando a PRODUÇÃO real
+(`pregao.streamlit.app`), que o painel SAÚDE DOS DADOS continuava
+mostrando NEWS/MERCADO/MACRO(BCB)/MACRO(ANBIMA)/CVM/Genial Analisa/XP/
+CALENDÁRIO como "Nunca executado" mesmo com as instrumentações já
+commitadas. Ver PROGRESSO.md "CONTINUAÇÃO — diagnóstico de
+infraestrutura (2026-10-13, mesmo dia)" pro relatório completo.
+
+- **diag: SAÚDE DOS DADOS** expõe quando a tabela `coletores_status`
+  está ausente/inacessível no Supabase de produção (nova
+  `tabela_disponivel()`, banner `st.error`/`st.warning` no topo da aba)
+  - mesma classe de bug (migração SQL manual nunca rodada em produção)
+  já confirmada e corrigida pra `eventos_resultados` 8 dias antes
+  (`4c17876`, PGRST205). `registrar_tentativa`/`obter_status`/
+  `obter_todos_status` também passam a logar a exceção real (antes
+  100% silenciosa) - visível no log do Streamlit Cloud. `0ffa117`.
+- Conectividade real (categoria C) re-testada com `curl` contra as 10
+  fontes de sempre: confirmado de novo 0/10 (política de rede deste
+  ambiente, `pypi.org` liberado como controle) - mesma limitação, agora
+  reconfirmada com evidência fresca desta sessão.
+- Pendência que só o Rodrigo resolve: abrir a aba SAÚDE DOS DADOS em
+  produção agora e ver qual banner aparece (vermelho = rodar
+  `sql/coletores_status.sql`; amarelo = credencial Supabase ausente no
+  `st.secrets` do Cloud; nenhum = causa ainda não identificável sem
+  acesso direto a produção).
+
 ## 2026-10-13 (MISSÃO CRÍTICA — COLETORES, retomada e conclusão)
 
 Sessão autônoma agendada, retomando uma sessão anterior (2026-10-10)

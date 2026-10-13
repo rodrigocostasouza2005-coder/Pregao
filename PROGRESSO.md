@@ -5552,3 +5552,162 @@ comando real (não presumida), não uma afirmação de sucesso da missão.
 Research local (Genial Analisa/XP/Genial Lives) segue dependendo
 inteiramente do Rodrigo rodar `coletor_local.py` numa máquina real
 (seção 5) - nenhuma sessão cloud pode fazer isso por ele.
+
+## CONTINUAÇÃO — diagnóstico de infraestrutura (2026-10-13, mesmo dia)
+
+Sessão autônoma agendada, disparada minutos depois da sessão anterior
+fechar o relatório acima. Fato novo e crítico que nenhuma sessão
+anterior sabia (o Rodrigo reportou olhando a PRODUÇÃO real agora
+mesmo, não suposição): o painel SAÚDE DOS DADOS em
+`pregao.streamlit.app` **continua** mostrando NEWS, MERCADO, MACRO
+(BCB), MACRO (ANBIMA), CVM, Genial Analisa, XP e CALENDÁRIO como
+"Nunca executado", com Genial (Lives) desatualizado há 99h - isto é
+**depois** das instrumentações de `764c2c6`/`ee39fd2`/`5987a4a` já
+estarem em `origin/main` havia dias.
+
+### 1. Método
+
+Confirmado antes de agir (nunca presumido): `git fetch origin main` -
+nada divergente (working tree idêntico ao fim da sessão anterior,
+`HEAD` == `origin/main`); único detalhe de ambiente real encontrado foi
+o repositório local estar num estado raso (`shallow`) com a branch
+`main` local desatualizada num ref antigo e `HEAD` destacado em
+`08592f8` - `git fetch --unshallow` confirmou que `origin/main` real
+(GitHub) já estava em `08592f8` (a sessão anterior tinha de fato
+publicado tudo) - sem nenhum trabalho concorrente perdido, só uma
+diferença de cache local do ref `main` que o fast-forward resolveu.
+
+Em vez de reauditar os 4 pipelines do zero (código e testes já
+confirmados corretos pela sessão anterior), esta sessão: (a) releu o
+wiring real de `registrar_tentativa` nos 4 módulos instrumentados
+(`data/news.py`/`mercado.py`/`macro.py`/`cvm.py`) - confirmado chamado
+nos pontos reais de cache-miss, sem bug de wiring; (b) confirmou qual é
+a aba padrão (`config.ABAS_DISPONIVEIS[0]` = VISÃO GERAL,
+`app.py`) e que ela chama diretamente `obter_cotacoes_lote`
+(MERCADO, instrumentado) e `obter_top_mercado_tudo` (NEWS,
+instrumentado) - ou seja, **qualquer** carregamento da home em
+produção deveria ter dado pelo menos 1 tentativa registrada em dias,
+tornando "nunca executado" para MERCADO/NEWS especificamente muito
+improvável de ser "ninguém abriu a aba"; (c) por eliminação, comparou
+com um bug IDÊNTICO já resolvido neste projeto 8 dias antes
+(`4c17876`): a tabela `eventos_resultados` nunca existiu em produção
+porque a migração SQL (`sql/eventos.sql`) é manual e nunca foi rodada
+lá - erro real confirmado pelo próprio Rodrigo com credencial de
+produção: `PGRST205: Could not find the table 'public.eventos_resultados'
+in the schema cache`. `sql/coletores_status.sql` tem exatamente o mesmo
+requisito ("Rode isso uma vez em: Supabase > SQL Editor") e nada em
+PROGRESSO.md/BACKLOG.md/commits confirma que alguém rodou essa
+migração em produção - é o candidato de causa-raiz mais coerente com
+TODOS os sintomas observados ao mesmo tempo (8 coletores sem fallback
+ficando idênticos, Genial Lives com dado real porém "antigo" porque
+cai no fallback de leitura direta de `research_itens`, que é outra
+tabela).
+
+**Não comprovável a partir deste sandbox** (sem credencial Supabase de
+produção, rede bloqueada - ver seção 2 abaixo) - registrado como
+hipótese bem fundamentada, nunca como fato confirmado.
+
+### 2. Conectividade real (categoria C) - reconfirmada, não presumida
+
+`curl` direto contra os mesmos 10 hosts de sempre (`api.bcb.gov.br`,
+`dados.cvm.gov.br`, `www.anbima.com.br`,
+`sistemaswebb3-listados.b3.com.br`, `news.google.com`,
+`query1.finance.yahoo.com`, `analisa.genialinvestimentos.com.br`,
+`www.xpi.com.br`, `www.youtube.com`, mais `pregao.streamlit.app` em si)
++ controle (`pypi.org`): **0 de 10 fontes/produção alcançáveis**,
+`pypi.org` 200 normal - mesma política de rede do ambiente já
+documentada, agora reconfirmada com evidência fresca desta sessão (não
+reaproveitada da sessão anterior sem checar de novo).
+
+### 3. Causa real fixável por código, encontrada e corrigida
+
+O código de wiring (onde `registrar_tentativa` é chamado) está
+correto - o bug real e endereçável é que `registrar_tentativa`/
+`obter_status`/`obter_todos_status` tratavam QUALQUER exceção (banco
+fora do ar, tabela ausente, erro de permissão/schema) de forma
+idêntica e **100% silenciosa** - exatamente a mesma classe de "erro
+silencioso" que escondeu o bug do `eventos_resultados` por 4 dias até
+o diagnóstico de `4c17876`. Sem isso, nem uma sessão futura com
+credencial real conseguiria diferenciar rapidamente "coletor nunca
+rodou" de "infraestrutura do status quebrada" sem já saber olhar o log
+certo.
+
+Correção implementada (`0ffa117`), reaproveitando o padrão já
+estabelecido em `data/eventos_coleta.py:tabela_eventos_disponivel` -
+nada reinventado:
+
+- `data/coletores_status.py`: nova `tabela_disponivel() -> bool | None`
+  (`True` responde à consulta trivial, `False` cliente existe mas a
+  consulta falha - tabela/schema ausente, RLS, coluna renomeada -
+  `None` Supabase em si fora do ar/sem credencial) + as 3 funções
+  passam a logar a exceção real via `print` (visível no log do
+  Streamlit Cloud, "Manage app") em vez de engolir em silêncio.
+- `data/saude_dados.py`: `diagnostico_infraestrutura()` expõe isso pra
+  UI.
+- `ui/saude_dados_tab.py`: banner `st.error` (tabela
+  ausente/inacessível, com a ação exata - rodar
+  `sql/coletores_status.sql`) ou `st.warning` (Supabase fora do ar) no
+  TOPO da aba, antes da tabela de estados - nunca mais um "Nunca
+  executado" ambíguo sem indicar se a causa é o coletor ou a
+  infraestrutura do próprio status.
+
+### 4. Validação
+
+- 4 testes novos (`tests/test_coletores_status.py` 9/9b/9c, espelhando
+  linha a linha os testes já existentes de
+  `tests/test_eventos_coleta.py` pro mesmo padrão;
+  `tests/test_saude_dados.py` 16) - suite completa **388/388**
+  passando sob Python 3.11.17, `compileall`/`pyflakes` limpos.
+- `streamlit.testing.v1.AppTest` rodado manualmente (não só mock
+  parcial) pra `ui/saude_dados_tab.py` nos 2 cenários reais: cliente
+  Supabase `None` (o caso real deste sandbox, sem `secrets.toml`) ->
+  `st.warning` renderizado, sem exceção; cliente simulando exatamente
+  o erro `PGRST205` em QUALQUER chamada de `.execute()` -> `st.error`
+  com o texto de ação exato, sem exceção, todos os 11 coletores
+  instrumentados corretamente caindo em NUNCA_EXECUTADO/NÃO_COMPROVADO
+  (nenhum falso "OK").
+- `origin/main` sincronizado antes do commit (checado `git fetch` -
+  nenhum commit concorrente) e depois do push.
+
+### 5. Pendência que só o Rodrigo pode resolver (ação exata)
+
+1. Abrir `pregao.streamlit.app` (como admin, aba SAÚDE DOS DADOS) agora
+   que `0ffa117` está em produção (aguardar o redeploy automático do
+   Streamlit Cloud, alguns minutos) e observar qual banner aparece no
+   topo:
+   - **Vermelho** ("Tabela coletores_status não encontrada..."):
+     confirma a hipótese - rodar `sql/coletores_status.sql` no SQL
+     Editor do projeto Supabase (idempotente, não apaga nada) resolve.
+   - **Amarelo** ("Supabase indisponível..."): o `st.secrets` do app no
+     Streamlit Cloud está sem credencial válida de Supabase (ou o
+     projeto Supabase está fora do ar) - conferir em "Manage app" >
+     "Secrets".
+   - **Nenhum banner** e os coletores continuando "Nunca executado":
+     a causa é outra, não coberta por esta hipótese - precisa de
+     acesso direto ao log de produção ("Manage app" > "Logs", procurar
+     por `[coletores_status]`, mensagem de exceção real agora visível
+     graças a esta correção) ou ao SQL Editor do Supabase pra ir além
+     do que é auditável só pelo código a partir de um sandbox sem
+     credencial.
+2. Enquanto isso não for confirmado, o restante do pedido original
+   (auditoria item-a-item A/B/C/D por coletor, validação de
+   `coletor_local.py`/Genial Analisa/XP/Genial Lives, progresso do
+   CALENDÁRIO) continua exatamente como documentado no relatório da
+   seção anterior ("MISSÃO CRÍTICA — COLETORES... relatório final") -
+   nada mudou no código desses 4 pipelines nesta sessão, só a camada de
+   diagnóstico da SAÚDE DOS DADOS.
+
+### 6. Estado final
+
+1 commit novo (`0ffa117`), com teste de regressão real, `origin/main`
+sincronizado antes e depois (checado, nunca houve commit concorrente),
+suite completa `388/388` passando sob Python 3.11.17,
+`compileall`/`pyflakes` limpos. Working tree limpo ao final. Venv de
+teste (`/tmp/claude-.../scratchpad/venv311`) é infraestrutura efêmera
+do container, não commitada. Causa raiz exata (tabela ausente vs.
+credencial ausente vs. outra causa) permanece **não comprovada nesta
+sessão** por limitação de ambiente (sem credencial Supabase de
+produção, rede bloqueada) - o que foi entregue é a correção que torna
+essa causa **diagnosticável em produção pelo próprio Rodrigo em menos
+de 1 minuto**, abrindo a aba, em vez de precisar de outra sessão cloud
+às cegas.
