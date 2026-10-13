@@ -208,9 +208,22 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 30, "instrumentado": True,
     },
     {
-        "nome": "CVM", "fonte": "dados.cvm.gov.br (FCA/IPE)",
+        "nome": "CVM", "fonte": "dados.cvm.gov.br (IPE)",
         "categoria": "CVM", "frequencia_esperada": "sob demanda (cache 6h)",
         "idade_maxima_horas": 30, "instrumentado": True,
+    },
+    {
+        # linha separada (achado real, auditoria missao coletores
+        # 2026-10-13): o FCA (mapa ticker->CNPJ, usado por obter_cnpj/
+        # obter_documentos_cvm) nunca chamava registrar_tentativa - so' o
+        # IPE (acima) chamava. Se o FCA quebrasse isolado (ex: CVM
+        # renomeia a coluna Codigo_Negociacao), obter_cnpj passava a
+        # devolver None pra TODO ticker (CVM tab e CALENDARIO sem
+        # nenhum documento) enquanto este painel continuava mostrando
+        # "CVM: Coleta OK" - ver data/cvm.py:_mapa_ticker_cnpj.
+        "nome": "CVM (FCA)", "fonte": "dados.cvm.gov.br (FCA - mapa ticker->CNPJ)",
+        "categoria": "CVM", "frequencia_esperada": "sob demanda (cache 24h)",
+        "idade_maxima_horas": 48, "instrumentado": True,
     },
     {
         "nome": "Genial Analisa", "fonte": "analisa.genialinvestimentos.com.br",

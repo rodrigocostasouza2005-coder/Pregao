@@ -140,12 +140,32 @@ def _baixar_csv_do_zip(url: str, nome_no_zip: str):
         return None
 
 
+@st.cache_resource(show_spinner=False)
+def _ultimo_mapa_ticker_valido() -> dict:
+    """Ultimo {ticker: cnpj} que o FCA retornou com sucesso (mesmo padrao
+    de data/ibovespa.py:_ultima_composicao_valida) - st.cache_resource =
+    sem TTL, sobrevive entre reruns/chamadas no mesmo processo do
+    servidor. Existe pra corrigir um bug real (achado em auditoria,
+    missao coletores 2026-10-13): sem isso, uma falha TRANSITORIA do FCA
+    bem no momento em que o @st.cache_data(ttl=24h) de _mapa_ticker_cnpj
+    expira ficava "trancada" - a funcao retornava {} e o cache_data
+    guardava esse {} pelas MESMAS 24h de uma resposta boa, derrubando
+    obter_cnpj/obter_documentos_cvm (CVM tab e CALENDARIO) pra TODO
+    ticker por ate 24h mesmo que a CVM voltasse a responder minutos
+    depois - mesma classe de bug ja corrigida em MERCADO/B3 (9d765e9)."""
+    return {}
+
+
 @st.cache_data(ttl=_TTL_MAPA_TICKER, show_spinner="carregando cadastro de tickers da CVM…")
 def _mapa_ticker_cnpj() -> dict:
     """{ticker: cnpj}, construido a partir do FCA (Formulario Cadastral)
     - unica fonte da CVM que liga o codigo de negociacao da B3 ao CNPJ.
     Tenta o ano corrente; se vier vazio (ex: dias de janeiro antes da
-    empresa refazer o FCA do ano novo), cai pro ano anterior."""
+    empresa refazer o FCA do ano novo), cai pro ano anterior. Se os dois
+    anos falharem, reaproveita o ultimo mapa valido desta sessao do
+    servidor (ver _ultimo_mapa_ticker_valido) em vez de {} - so' retorna
+    {} se NUNCA tiver conseguido buscar nenhum mapa real ainda."""
+    cache = _ultimo_mapa_ticker_valido()
     ano = datetime.now(_TZ_SP).year
     for tentativa in (ano, ano - 1):
         df = _baixar_csv_do_zip(
@@ -156,15 +176,38 @@ def _mapa_ticker_cnpj() -> dict:
             continue
         df = df.dropna(subset=["Codigo_Negociacao"])
         if not df.empty:
-            return dict(zip(df["Codigo_Negociacao"].str.strip(), df["CNPJ_Companhia"].str.strip()))
-    return {}
+            mapa = dict(zip(df["Codigo_Negociacao"].str.strip(), df["CNPJ_Companhia"].str.strip()))
+            # registro de SAUDE DOS DADOS (achado real, auditoria missao
+            # coletores 2026-10-13): antes desta instrumentacao, o FCA
+            # nunca chamava registrar_tentativa - so' o IPE chamava (ver
+            # _ipe_ano) - se o FCA quebrasse isolado (ex: CVM renomeia a
+            # coluna Codigo_Negociacao), o painel SAUDE DOS DADOS
+            # continuava mostrando "CVM: Coleta OK" mesmo com obter_cnpj
+            # retornando None pra TODO ticker.
+            registrar_tentativa("CVM (FCA)", "dados.cvm.gov.br (FCA)", execucao_ok=True,
+                                 registros_novos=len(mapa), categoria="CVM")
+            cache.clear()
+            cache.update(mapa)
+            return mapa
+    registrar_tentativa("CVM (FCA)", "dados.cvm.gov.br (FCA)", execucao_ok=False,
+                         erro=f"FCA {ano}/{ano - 1} falhou ou veio vazio/sem Codigo_Negociacao",
+                         categoria="CVM")
+    return dict(cache)
 
 
 def testar_conexao() -> tuple:
     """So' testa se o IPE do ano corrente baixa e tem linhas - usado pelo
-    painel DIAGNOSTICO DE FONTES. Retorna (ok, detalhe)."""
+    painel DIAGNOSTICO DE FONTES. Retorna (ok, detalhe).
+
+    Chama _baixar_csv_do_zip DIRETO (nao _ipe_ano): desde que _ipe_ano
+    passou a reaproveitar o ultimo IPE valido numa falha (ver
+    _ultimo_ipe_valido_por_ano, fix de cache "preso"), ele nao e' mais
+    confiavel pra medir a conexao AGORA - uma falha real ficaria mascarada
+    pelo dado antigo (o diagnostico mostraria "OK" com a fonte fora do
+    ar). Esta funcao existe especificamente pra testar a conexao de
+    verdade, entao precisa do caminho sem fallback/cache."""
     ano = datetime.now(_TZ_SP).year
-    df = _ipe_ano(ano)
+    df = _baixar_csv_do_zip(_URL_IPE.format(ano=ano), f"ipe_cia_aberta_{ano}.csv")
     if df is None or df.empty:
         return False, "download do IPE falhou ou veio vazio"
     return True, f"OK ({len(df)} linhas no IPE de {ano})"
@@ -176,20 +219,41 @@ def obter_cnpj(ticker: str):
     return _mapa_ticker_cnpj().get(ticker.upper())
 
 
+@st.cache_resource(show_spinner=False)
+def _ultimo_ipe_valido_por_ano() -> dict:
+    """{ano: DataFrame} - ultimo IPE que baixou com sucesso, por ano (ver
+    _ultimo_mapa_ticker_valido acima - mesma tecnica/motivo). Existe pra
+    corrigir um bug real (achado em auditoria, missao coletores
+    2026-10-13): sem isso, uma falha TRANSITORIA do IPE bem no momento
+    em que o @st.cache_data(ttl=6h) de _ipe_ano expira ficava "trancada"
+    - a funcao retornava None e o cache_data guardava esse None pelas
+    MESMAS 6h de uma resposta boa, fazendo a aba CVM e o CALENDARIO
+    ficarem sem NENHUM documento daquele ano por ate 6h mesmo que a CVM
+    voltasse a responder minutos depois - mesma classe de bug ja
+    corrigida em MERCADO/B3 (9d765e9)."""
+    return {}
+
+
 @st.cache_data(ttl=_TTL_DOCUMENTOS, show_spinner="consultando documentos da CVM…")
 def _ipe_ano(ano: int):
     """DataFrame bruto do IPE de um ano inteiro (~30-40 mil linhas, todas
-    as companhias), so' com as colunas usadas. None se a fonte falhar.
-    Cacheado por ano - baixado uma vez e reaproveitado pra qualquer
-    ticker (filtrar em memoria e' muito mais barato que uma requisicao
-    por empresa)."""
+    as companhias), so' com as colunas usadas. Cacheado por ano - baixado
+    uma vez e reaproveitado pra qualquer ticker (filtrar em memoria e'
+    muito mais barato que uma requisicao por empresa). Se a fonte falhar,
+    reaproveita o ultimo IPE valido desta sessao do servidor PRO MESMO
+    ANO (ver _ultimo_ipe_valido_por_ano) em vez de None - so' retorna
+    None se NUNCA tiver conseguido baixar o IPE desse ano ainda."""
+    cache = _ultimo_ipe_valido_por_ano()
     df = _baixar_csv_do_zip(_URL_IPE.format(ano=ano), f"ipe_cia_aberta_{ano}.csv")
     if df is None:
         # registro de SAUDE DOS DADOS (ver data/saude_dados.py) - so'
-        # numa execucao real (cache miss), nunca muda o retorno (None)
+        # numa execucao real (cache miss); execucao_ok=False mesmo
+        # quando um IPE antigo (stale) e' devolvido pra quem chama -
+        # a TENTATIVA falhou de verdade, so' amortecemos o impacto pro
+        # usuario, nunca escondemos a falha do painel de saude
         registrar_tentativa("CVM", "dados.cvm.gov.br (IPE)", execucao_ok=False,
                              erro=f"download/parse do zip IPE {ano} falhou", categoria="CVM")
-        return None
+        return cache.get(ano)
     colunas = [
         "CNPJ_Companhia", "Categoria", "Tipo", "Especie", "Assunto",
         "Data_Referencia", "Data_Entrega", "Link_Download",
@@ -197,6 +261,7 @@ def _ipe_ano(ano: int):
     df = df[[c for c in colunas if c in df.columns]]
     registrar_tentativa("CVM", "dados.cvm.gov.br (IPE)", execucao_ok=True,
                          registros_novos=len(df), categoria="CVM")
+    cache[ano] = df
     return df
 
 

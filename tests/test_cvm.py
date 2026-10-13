@@ -13,6 +13,7 @@ EQUITY). Cobre 2 achados reais desta sessao:
 Mocka _documentos_brutos/_mapa_ticker_cnpj diretamente - nunca faz
 chamada de rede. Uso: python tests/test_cvm.py (venv do projeto)."""
 import sys
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -167,6 +168,114 @@ def test_9_documentos_de_links_diferentes_continuam_itens_separados():
         ])
     itens = itens_salvos[0]
     _checar("9 links diferentes continuam 2 itens separados (nao agrupa indevidamente)", len(itens) == 2, f"(itens={itens})")
+
+
+def _limpar_cache_fca_ipe():
+    cvm_mod._mapa_ticker_cnpj.clear()
+    cvm_mod._ultimo_mapa_ticker_valido.clear()
+    cvm_mod._ipe_ano.clear()
+    cvm_mod._ultimo_ipe_valido_por_ano.clear()
+
+
+def test_10_fca_sucesso_registra_tentativa_e_atualiza_cache_de_fallback():
+    _limpar_cache_fca_ipe()
+    import pandas as pd
+
+    df_fca = pd.DataFrame({"Codigo_Negociacao": ["PETR4"], "CNPJ_Companhia": ["33.000.167/0001-01"]})
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=df_fca), \
+         patch.object(cvm_mod, "registrar_tentativa") as mock_reg:
+        mapa = cvm_mod._mapa_ticker_cnpj()
+    _checar("10a mapa tem o ticker esperado", mapa.get("PETR4") == "33.000.167/0001-01", f"(mapa={mapa})")
+    _checar("10b registra CVM (FCA) execucao_ok=True",
+            mock_reg.call_args.args[0] == "CVM (FCA)" and mock_reg.call_args.kwargs.get("execucao_ok") is True,
+            f"(call={mock_reg.call_args})")
+    _checar("10c cache de fallback foi atualizado", cvm_mod._ultimo_mapa_ticker_valido() == mapa)
+
+
+def test_11_fca_falha_apos_sucesso_reaproveita_ultimo_mapa_valido():
+    """Bug real corrigido (auditoria missao coletores, 2026-10-13): mesma
+    classe de bug ja corrigida em MERCADO/B3 (9d765e9) - uma falha
+    TRANSITORIA do FCA bem no momento em que o cache_data de 24h expira
+    nao pode mais travar obter_cnpj em {} (-> None pra TODO ticker) por
+    24h inteiras; deve reaproveitar o ultimo mapa bom."""
+    _limpar_cache_fca_ipe()
+    import pandas as pd
+
+    df_fca = pd.DataFrame({"Codigo_Negociacao": ["VALE3"], "CNPJ_Companhia": ["33.592.510/0001-54"]})
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=df_fca), \
+         patch.object(cvm_mod, "registrar_tentativa"):
+        primeiro = cvm_mod._mapa_ticker_cnpj()
+
+    cvm_mod._mapa_ticker_cnpj.clear()  # simula o TTL de 24h expirando
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=None), \
+         patch.object(cvm_mod, "registrar_tentativa") as mock_reg:
+        segundo = cvm_mod._mapa_ticker_cnpj()
+
+    _checar("11a primeira chamada (sucesso) tem VALE3", "VALE3" in primeiro, f"(primeiro={primeiro})")
+    _checar("11b falha transitoria NAO retorna {} - reaproveita o mapa bom anterior",
+            segundo == primeiro, f"(segundo={segundo}, primeiro={primeiro})")
+    _checar("11c mesmo reaproveitando dado antigo, registra execucao_ok=False (tentativa falhou de verdade)",
+            mock_reg.call_args.kwargs.get("execucao_ok") is False, f"(call={mock_reg.call_args})")
+
+
+def test_12_ipe_falha_apos_sucesso_reaproveita_ultimo_ipe_valido_do_mesmo_ano():
+    """Mesmo bug/fix do teste 11, agora pro IPE (_ipe_ano) - o fallback e'
+    POR ANO (nao um dict global), confirmando que o ano certo e'
+    reaproveitado."""
+    _limpar_cache_fca_ipe()
+    import pandas as pd
+
+    df_ipe_2026 = pd.DataFrame({
+        "CNPJ_Companhia": ["33.000.167/0001-01"], "Categoria": ["Fato Relevante"],
+        "Tipo": ["Fato Relevante"], "Especie": [""], "Assunto": ["Teste"],
+        "Data_Referencia": ["2026-10-01"], "Data_Entrega": ["2026-10-01"], "Link_Download": ["https://x"],
+    })
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=df_ipe_2026), \
+         patch.object(cvm_mod, "registrar_tentativa"):
+        primeiro = cvm_mod._ipe_ano(2026)
+
+    cvm_mod._ipe_ano.clear()  # simula o TTL de 6h expirando
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=None), \
+         patch.object(cvm_mod, "registrar_tentativa") as mock_reg:
+        segundo = cvm_mod._ipe_ano(2026)
+
+    _checar("12a primeira chamada (sucesso) tem 1 linha", primeiro is not None and len(primeiro) == 1)
+    _checar("12b falha transitoria NAO retorna None - reaproveita o IPE bom anterior do MESMO ano",
+            segundo is not None and segundo.equals(primeiro), f"(segundo={segundo})")
+    _checar("12c registra execucao_ok=False (tentativa falhou de verdade, so' o retorno foi amortecido)",
+            mock_reg.call_args.kwargs.get("execucao_ok") is False, f"(call={mock_reg.call_args})")
+
+
+def test_13_ipe_primeira_falha_sem_nenhum_sucesso_anterior_continua_none():
+    """Garante que o fallback nao inventa dado: se NUNCA houve um IPE bom
+    pra esse ano, a falha continua None (nao {} nem DataFrame vazio
+    fabricado)."""
+    _limpar_cache_fca_ipe()
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=None), \
+         patch.object(cvm_mod, "registrar_tentativa"):
+        resultado = cvm_mod._ipe_ano(2026)
+    _checar("13 sem sucesso anterior pra esse ano -> None (nunca inventa)", resultado is None)
+
+
+def test_14_testar_conexao_reflete_falha_real_mesmo_com_fallback_disponivel():
+    """Achado real corrigido junto com o fix de cache-preso (12/13): se
+    testar_conexao() continuasse chamando _ipe_ano (que agora amortece
+    falha com dado antigo), o painel DIAGNOSTICO DE FONTES mostraria
+    "CVM: OK" com a fonte genuinamente fora do ar - por isso
+    testar_conexao usa _baixar_csv_do_zip DIRETO, sem o fallback."""
+    _limpar_cache_fca_ipe()
+    import pandas as pd
+
+    df_ipe = pd.DataFrame({"CNPJ_Companhia": ["x"], "Categoria": ["Fato Relevante"]})
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=df_ipe), \
+         patch.object(cvm_mod, "registrar_tentativa"):
+        cvm_mod._ipe_ano(datetime.now(cvm_mod._TZ_SP).year)  # popula o cache de fallback
+
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=None):
+        ok, detalhe = cvm_mod.testar_conexao()
+
+    _checar("14 testar_conexao detecta a falha real, nao mascarada pelo fallback",
+            ok is False, f"(ok={ok}, detalhe={detalhe})")
 
 
 if __name__ == "__main__":
