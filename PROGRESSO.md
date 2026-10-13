@@ -6122,10 +6122,14 @@ sessão de continuação, que por sua vez eram 384+ no início do dia) -
 17 testes novos no total, todos fim-a-fim/determinísticos, sem rede
 real. `compileall`/`pyflakes` limpos em todo `data/`, `ui/`, `tests/`,
 `app.py`, `config.py`, `auth.py`, `coletor_local.py`, reconfirmado após
-cada commit. 5 commits nesta sessão, cada um com working tree limpo e
-`origin/main` reconfirmado sem commit concorrente antes do push (sem
-force, sem conflito):
-`ccd57bf` → `89d02d7` → `08c3987` → `f32da34` → `2a45fc5` → `bd97a9d`.
+cada commit. 6 commits de código+teste nesta sessão (mais 3 de
+`docs:`), cada um com working tree limpo e `origin/main` reconfirmado
+sem commit concorrente antes do push (sem force, sem conflito):
+`ccd57bf` (MERCADO retry) → `89d02d7` (docs) → `08c3987` (Genial
+Analisa isolamento por item) → `f32da34` (B3/Ibovespa instrumentação)
+→ `2a45fc5` (NEWS TOP MERCADO BR/INTL instrumentação) → `bd97a9d`
+(índices globais/cenário macro instrumentação) → `2933735` (docs) →
+`d222996` (Selic/CDI/Focus instrumentação) → `85fcc15` (docs).
 
 ### 6. O que continua pendente (mesma limitação estrutural de sempre)
 
@@ -6134,8 +6138,63 @@ real (rede bloqueada neste sandbox pra todos os domínios relevantes -
 B3, Genial, Google News, Yahoo Finance, Supabase) nem em produção. O
 que foi comprovado: a lógica está correta sob os cenários reais
 simulados (mock fiel ao formato real de cada fonte, nunca inventado) e
-não há regressão na suite completa. Validação fim-a-fim em produção
-continua exigindo o Rodrigo olhar `pregao.streamlit.app` depois do
-redeploy automático do Streamlit Cloud pegar estes commits - mesma
-orientação já registrada nas seções anteriores (ver CONTINUAÇÃO 2,
-seção 5).
+não há regressão na suite completa (411/411 ao final desta sessão).
+Validação fim-a-fim em produção continua exigindo o Rodrigo olhar
+`pregao.streamlit.app` depois do redeploy automático do Streamlit
+Cloud pegar estes commits - mesma orientação já registrada nas seções
+anteriores (ver CONTINUAÇÃO 2, seção 5).
+
+### 7. Tabela final consolidada (pedido original, "DEFINIÇÃO DE CONCLUÍDO")
+
+Atualiza a tabela da seção "Relatório final por coletor" (acima nesta
+mesma sessão de trabalho de hoje) com o estado depois de TODAS as
+correções de código feitas hoje (sessões anteriores + esta
+continuação). Categorias conforme o pedido original: A=corrigido/
+testado com mock, B=reproduzido como regressão, C=testado contra a
+fonte real, D=persistência+leitura confirmadas em produção.
+
+| Coletor | Correção (acumulado hoje) | Fonte real testada (C) | Persistência confirmada (D) | Interface confirmada | Estado final |
+|---|---|---|---|---|---|
+| **MERCADO** (lote cotações) | Cache preso (`9d765e9`) + retry/curl_cffi (`ccd57bf`, esta sessão) | **Não** - rede bloqueada (`finance.yahoo.com` 403 no proxy) | **Não verificável** (sem Supabase de produção) | **Não** (sem acesso a `pregao.streamlit.app`) | A/B completos; C/D estruturalmente impossíveis desta sandbox |
+| **B3 (composição Ibovespa)** | Cache preso (`9d765e9`, sessão anterior) + instrumentação SAÚDE DOS DADOS nova (`f32da34`, esta sessão) | **Não** - `sistemaswebb3-listados.b3.com.br` bloqueado | **Não verificável** | **Não** | A completo; C/D bloqueados |
+| **MERCADO (Globais)** / **MACRO (Cenário Global)** | Instrumentação SAÚDE DOS DADOS nova pra `_baixar_lote_bruto` (`bd97a9d`, esta sessão) - nunca tinha nenhuma antes | **Não** - mesma rede do MERCADO | **Não verificável** | **Não** | A completo; C/D bloqueados |
+| **MACRO (BCB)** - IPCA/Selic/CDI/Focus | Selic/CDI/Focus ganham linha própria em SAÚDE DOS DADOS (`d222996`, esta sessão) - antes só IPCA representava o bucket inteiro | **Não** - `api.bcb.gov.br`/`olinda.bcb.gov.br` bloqueados | **Não verificável** | **Não** | A completo; C/D bloqueados |
+| **MACRO (ANBIMA)** | Dia malformado isolado (`e04b295`, sessão anterior) - nenhuma mudança nesta sessão | **Não** - `anbima.com.br` bloqueado | **Não verificável** | **Não** | A completo (sessão anterior); C/D bloqueados |
+| **NEWS** (watchlist + TOP MERCADO) | AZUL54 (sessão anterior) + instrumentação watchlist (sessão anterior) + instrumentação TOP MERCADO BR/INTL (`2a45fc5`, esta sessão) | **Não** - `news.google.com` bloqueado | **Não verificável** | **Não** | A completo; C/D bloqueados |
+| **CVM** (IPE/FCA) | Cache preso + documento compartilhado (sessão anterior) - nenhuma mudança nesta sessão | **Não** - `dados.cvm.gov.br` bloqueado | **Não verificável** | **Não** | A completo (sessão anterior); C/D bloqueados |
+| **CALENDÁRIO** | Reverificação de CONFIRMADO + rotação por checkpoint (sessão anterior) - nenhuma mudança nesta sessão | **Não** - depende de RI/NEWS/CVM, todos bloqueados | **Não verificável** | **Não** | A completo (sessão anterior); C/D bloqueados |
+| **Genial Analisa** | **Bug de corretude real corrigido nesta sessão** (`08c3987`): 1 item malformado (ex: rascunho sem título no CMS) derrubava TODA a coleta do dia (3 seções inteiras), não só o item ruim - isolamento por item em `obter_relatorios`/`obter_recomendacoes`/`obter_swing_trade` | **Não** - WAF bloqueia tanto Cloud quanto este sandbox; só `coletor_local.py` na máquina do Rodrigo alcança | **Pendente - só o Rodrigo confirma** | **Pendente - só o Rodrigo confirma** | A completo; C/D exigem o Rodrigo rodar `coletor_local.py` numa execução real e olhar o painel |
+| **XP Investimentos** | Nenhuma correção nova nesta sessão (já auditado, sem bug encontrado) | **Não** - CDN bloqueado | **Pendente - só o Rodrigo confirma** | **Pendente - só o Rodrigo confirma** | Sem mudança; C/D exigem o Rodrigo |
+| **Genial (Lives)** | Nenhuma correção nova nesta sessão (já auditado, sem bug encontrado) | **Não** - YouTube bloqueado no sandbox | **Pendente - só o Rodrigo confirma** | **Pendente - só o Rodrigo confirma** | Sem mudança; C/D exigem o Rodrigo |
+
+**Nenhum coletor atingiu C/D nesta sessão nem em nenhuma sessão
+anterior de hoje** - confirmado de novo, não presumido: a limitação é
+estrutural (política de rede do ambiente cloud, sem exceção pra
+nenhum domínio relevante), não uma falha de investigação. O que FOI
+entregue hoje, cumulativamente: 1 bug de corretude real (Genial
+Analisa perdendo coleta inteira por 1 item ruim), 1 gap de robustez
+real (MERCADO sem retry), e 6 gaps de visibilidade reais em SAÚDE DOS
+DADOS (B3, índices globais, cenário macro, TOP MERCADO BR/INTL,
+Selic/CDI/Focus) - todos com causa-raiz identificada, corrigidos,
+testados (categoria A/B) e commitados. Nenhum dado foi inventado,
+nenhuma execução real foi simulada como se tivesse ocorrido.
+
+**Ações exatas que dependem do Rodrigo** (nenhuma nova desde
+CONTINUAÇÃO 2 - ver lá, seção 5, pro passo a passo completo):
+1. Rodar `sql/coletores_status.sql` no SQL Editor do projeto Supabase
+   de produção (se a aba SAÚDE DOS DADOS mostrar o banner vermelho).
+2. Abrir `pregao.streamlit.app` depois do redeploy pegar os commits
+   de hoje e olhar a aba SAÚDE DOS DADOS - as novas linhas "B3
+   (composição Ibovespa)", "MERCADO (Globais)", "MACRO (Cenário
+   Global)", "MACRO (BCB - Selic/CDI/Focus IPCA/Focus Selic)" devem
+   aparecer na lista (inicialmente "Nunca executado", até a próxima
+   coleta real rodar).
+3. Rodar `coletor_local.py` numa máquina real (fora do bloqueio de
+   WAF/CDN) pra popular Genial Analisa/XP/Genial (Lives)/CALENDÁRIO -
+   nenhuma sessão cloud consegue fazer isso.
+4. Comando pronto pra conferir localmente que o fix do Genial Analisa
+   (item malformado) não quebrou nada antes de confiar na próxima
+   coleta real: `python tests/test_research.py` (ou
+   `pytest tests/test_research.py -v`) na máquina com o `.venv` do
+   projeto - deve mostrar as 3 novas verificações de isolamento por
+   item passando.
