@@ -198,6 +198,20 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 2, "instrumentado": True,
     },
     {
+        # linha nova (achado real, auditoria missao coletores 2026-10-13,
+        # continuacao): data/ibovespa.py:obter_composicao_oficial nunca
+        # chamava registrar_tentativa - alimenta obter_panorama_ibovespa/
+        # altas-baixas/mais-negociados/setorial/treemap (data/mercado.py)
+        # e _nome_empresa do CALENDARIO, mas nao tinha NENHUMA
+        # representacao neste painel (nem falha, nem "nunca executado" -
+        # a linha simplesmente nao existia). idade_maxima_horas bem maior
+        # que o cache (24h, so' muda em rebalanceamento quadrimestral da
+        # B3): atraso curto nao e' sinal real de problema.
+        "nome": "B3 (composição Ibovespa)", "fonte": "sistemaswebb3-listados.b3.com.br",
+        "categoria": "Cotacoes", "frequencia_esperada": "sob demanda (cache 24h)",
+        "idade_maxima_horas": 48, "instrumentado": True,
+    },
+    {
         "nome": "MACRO (BCB)", "fonte": "Banco Central (SGS - IPCA/Selic/CDI)",
         "categoria": "Macro", "frequencia_esperada": "sob demanda (cache 4h)",
         "idade_maxima_horas": 30, "instrumentado": True,

@@ -115,6 +115,37 @@ def test_5_excecao_de_rede_tambem_reaproveita_fallback():
     _checar("5 excecao de rede reaproveita a composicao boa anterior", segundo == primeiro, f"({segundo} vs {primeiro})")
 
 
+def test_6_sucesso_registra_tentativa_ok_em_saude_dos_dados():
+    # bug real corrigido (auditoria missao coletores 2026-10-13,
+    # continuacao): obter_composicao_oficial nunca chamava
+    # registrar_tentativa - a B3 (fonte real de MERCADO/altas-baixas/
+    # setorial/treemap/CALENDARIO) nao tinha NENHUMA representacao em
+    # SAUDE DOS DADOS, nem sucesso nem falha.
+    _limpar_cache()
+    with patch.object(ibovespa_mod, "cffi_requests") as mock_req, \
+         patch.object(ibovespa_mod, "registrar_tentativa") as mock_registrar:
+        mock_req.get.return_value = _resposta_ok([_item("PETR4"), _item("VALE3")])
+        ibovespa_mod.obter_composicao_oficial()
+    _checar("6a registrar_tentativa chamado no sucesso", mock_registrar.called)
+    args, kwargs = mock_registrar.call_args
+    _checar("6b nome do coletor e' 'B3 (composição Ibovespa)'", args[0] == "B3 (composição Ibovespa)", f"(args={args})")
+    _checar("6c execucao_ok=True e registros_novos=2 (nunca conta item vazio como novo)",
+            kwargs.get("execucao_ok") is True and kwargs.get("registros_novos") == 2, f"(kwargs={kwargs})")
+
+
+def test_7_falha_http_registra_tentativa_com_erro_real():
+    _limpar_cache()
+    with patch.object(ibovespa_mod, "cffi_requests") as mock_req, \
+         patch.object(ibovespa_mod, "registrar_tentativa") as mock_registrar:
+        resposta_falha = MagicMock()
+        resposta_falha.status_code = 500
+        mock_req.get.return_value = resposta_falha
+        ibovespa_mod.obter_composicao_oficial()
+    kwargs = mock_registrar.call_args.kwargs
+    _checar("7 HTTP 500 registra execucao_ok=False com o erro real (nunca finge sucesso)",
+            kwargs.get("execucao_ok") is False and "500" in (kwargs.get("erro") or ""), f"(kwargs={kwargs})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

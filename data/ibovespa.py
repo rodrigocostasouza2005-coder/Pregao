@@ -29,6 +29,8 @@ import json
 import streamlit as st
 from curl_cffi import requests as cffi_requests
 
+from data.coletores_status import registrar_tentativa
+
 _URL_BASE = "https://sistemaswebb3-listados.b3.com.br/indexProxy/indexCall/GetPortfolioDay/{}"
 _HEADERS = {"User-Agent": "PregaoApp/0.1 (uso pessoal, nao comercial; contato via github)"}
 _TTL = 24 * 3600
@@ -67,10 +69,23 @@ def obter_composicao_oficial() -> dict:
     real ainda (quem chama so' cai pro fallback estatico curado nesse
     caso extremo). Nunca mostra papel inventado: o que volta aqui e'
     sempre um resultado real de alguma coleta passada, nunca sintetizado."""
+    # registro de SAUDE DOS DADOS (achado real, auditoria missao
+    # coletores 2026-10-13, continuacao): esta funcao nunca chamava
+    # registrar_tentativa - nao existe nenhuma linha "B3 (composicao
+    # Ibovespa)" em data/saude_dados.py:REGISTRO_COLETORES. Se a B3
+    # mudar o formato do endpoint/payload (_montar_url) ou descontinuar
+    # o endpoint, a funcao cai pro fallback silencioso (abaixo) e o app
+    # continua funcionando honestamente - mas SAUDE DOS DADOS nunca
+    # mostrava nada de errado, nem "falha" nem "nunca executado": a
+    # linha simplesmente nao existia no painel. Alimenta
+    # obter_panorama_ibovespa/altas-baixas/mais-negociados/setorial/
+    # treemap (data/mercado.py) e _nome_empresa do CALENDARIO.
     cache = _ultima_composicao_valida()
     try:
         r = cffi_requests.get(_montar_url(), headers=_HEADERS, impersonate="chrome", timeout=15)
         if r.status_code != 200:
+            registrar_tentativa("B3 (composição Ibovespa)", "sistemaswebb3-listados.b3.com.br", execucao_ok=False,
+                                 erro=f"B3 respondeu HTTP {r.status_code}", categoria="Cotacoes")
             return dict(cache)
         dados = r.json()
         resultado = {}
@@ -84,9 +99,15 @@ def obter_composicao_oficial() -> dict:
                 peso = 0.0
             resultado[ticker] = {"nome": (item.get("asset") or "").strip(), "peso_pct": peso}
         if not resultado:
+            registrar_tentativa("B3 (composição Ibovespa)", "sistemaswebb3-listados.b3.com.br", execucao_ok=False,
+                                 erro="B3 respondeu 200 mas sem nenhum papel em 'results'", categoria="Cotacoes")
             return dict(cache)
         cache.clear()
         cache.update(resultado)
+        registrar_tentativa("B3 (composição Ibovespa)", "sistemaswebb3-listados.b3.com.br", execucao_ok=True,
+                             registros_novos=len(resultado), categoria="Cotacoes")
         return resultado
-    except Exception:
+    except Exception as e:
+        registrar_tentativa("B3 (composição Ibovespa)", "sistemaswebb3-listados.b3.com.br", execucao_ok=False,
+                             erro=str(e)[:300], categoria="Cotacoes")
         return dict(cache)
