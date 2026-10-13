@@ -176,6 +176,67 @@ def test_7_cenario_global_sucesso_registra_ok_com_registros_reais():
             mock_reg.call_args.kwargs.get("registros_novos") == len(resultado), f"(resultado={resultado}, call={mock_reg.call_args})")
 
 
+# ============================================================
+# testes 8-11 (gap de escopo ja catalogado em BACKLOG.md, resolvido
+# nesta sessao de continuacao 2026-10-13): Selic/CDI/Focus (IPCA e
+# Selic) ganham linha PROPRIA em SAUDE DOS DADOS - antes, so' IPCA
+# chamava registrar_tentativa (como "ponto representativo" da fonte
+# BCB inteira) e uma falha isolada numa dessas series ficava invisivel
+# enquanto IPCA continuasse OK.
+# ============================================================
+
+def _serie_fake(valor=5.0):
+    return pd.DataFrame({"data": pd.date_range("2026-10-01", periods=2, freq="D"), "valor": [valor, valor]})
+
+
+def test_8_selic_sucesso_registra_linha_propria():
+    macro_mod.obter_selic_meta.clear()
+    with patch.object(macro_mod, "_serie_sgs", return_value=_serie_fake()), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg:
+        df = macro_mod.obter_selic_meta()
+    _checar("8a Selic retorna dado real", df is not None and len(df) == 2, f"(df={df})")
+    _checar("8b registra 'MACRO (BCB - Selic)' execucao_ok=True (linha propria, nao mais so' IPCA)",
+            mock_reg.call_args.args[0] == "MACRO (BCB - Selic)" and mock_reg.call_args.kwargs.get("execucao_ok") is True,
+            f"(call={mock_reg.call_args})")
+
+
+def test_9_selic_falha_isolada_fica_visivel_mesmo_sem_tocar_ipca():
+    macro_mod.obter_selic_meta.clear()
+    with patch.object(macro_mod, "_serie_sgs", side_effect=Exception("BC renomeou o codigo SGS 432")), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg:
+        df = macro_mod.obter_selic_meta()
+    _checar("9a Selic falho -> None (nunca inventa taxa)", df is None)
+    _checar("9b registra 'MACRO (BCB - Selic)' execucao_ok=False com o erro real",
+            mock_reg.call_args.args[0] == "MACRO (BCB - Selic)" and mock_reg.call_args.kwargs.get("execucao_ok") is False
+            and "432" in mock_reg.call_args.kwargs.get("erro", ""), f"(call={mock_reg.call_args})")
+
+
+def test_10_cdi_sucesso_registra_linha_propria():
+    macro_mod.obter_cdi.clear()
+    with patch.object(macro_mod, "_serie_sgs", return_value=_serie_fake()), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg:
+        df = macro_mod.obter_cdi()
+    _checar("10a CDI retorna dado real", df is not None and len(df) == 2, f"(df={df})")
+    _checar("10b registra 'MACRO (BCB - CDI)' execucao_ok=True",
+            mock_reg.call_args.args[0] == "MACRO (BCB - CDI)" and mock_reg.call_args.kwargs.get("execucao_ok") is True,
+            f"(call={mock_reg.call_args})")
+
+
+def test_11_focus_ipca_e_focus_selic_registram_linhas_proprias_e_distintas():
+    macro_mod.obter_focus_ipca.clear()
+    macro_mod.obter_focus_selic.clear()
+    with patch.object(macro_mod, "_focus_multi_ano", return_value=pd.DataFrame({"ano_referencia": [2026]})), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg:
+        macro_mod.obter_focus_ipca()
+        macro_mod.obter_focus_selic()
+    nomes_registrados = [c.args[0] for c in mock_reg.call_args_list]
+    _checar("11a Focus IPCA e Focus Selic registram nomes DIFERENTES (nunca o mesmo nome pros 2 indicadores)",
+            nomes_registrados == ["MACRO (BCB - Focus IPCA)", "MACRO (BCB - Focus Selic)"],
+            f"(nomes={nomes_registrados})")
+    _checar("11b ambos execucao_ok=True (dado real presente)",
+            all(c.kwargs.get("execucao_ok") is True for c in mock_reg.call_args_list))
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

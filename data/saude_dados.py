@@ -221,7 +221,33 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 2, "instrumentado": True,
     },
     {
-        "nome": "MACRO (BCB)", "fonte": "Banco Central (SGS - IPCA/Selic/CDI)",
+        # fonte atualizada (continuacao 2026-10-13): representa so' o
+        # IPCA agora - Selic/CDI/Focus ganharam linha propria abaixo
+        # (gap de escopo ja catalogado em BACKLOG.md, resolvido nesta
+        # sessao). Nome da linha ("MACRO (BCB)") mantido inalterado de
+        # proposito, pra nao perder o historico ja registrado em
+        # producao sob esse nome.
+        "nome": "MACRO (BCB)", "fonte": "Banco Central (SGS - IPCA)",
+        "categoria": "Macro", "frequencia_esperada": "sob demanda (cache 4h)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
+    {
+        "nome": "MACRO (BCB - Selic)", "fonte": "Banco Central (SGS)",
+        "categoria": "Macro", "frequencia_esperada": "sob demanda (cache 4h)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
+    {
+        "nome": "MACRO (BCB - CDI)", "fonte": "Banco Central (SGS)",
+        "categoria": "Macro", "frequencia_esperada": "sob demanda (cache 4h)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
+    {
+        "nome": "MACRO (BCB - Focus IPCA)", "fonte": "Banco Central (Olinda/Expectativas)",
+        "categoria": "Macro", "frequencia_esperada": "sob demanda (cache 4h)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
+    {
+        "nome": "MACRO (BCB - Focus Selic)", "fonte": "Banco Central (Olinda/Expectativas)",
         "categoria": "Macro", "frequencia_esperada": "sob demanda (cache 4h)",
         "idade_maxima_horas": 30, "instrumentado": True,
     },

@@ -71,9 +71,13 @@ def obter_ipca(dias_historico: int = 760) -> pd.DataFrame | None:
         doze_meses = _serie_sgs(_SGS_IPCA_12M, dias_historico).rename(columns={"valor": "ipca_12m_pct"})
         df = pd.merge(mensal, doze_meses, on="data", how="outer").sort_values("data").reset_index(drop=True)
         # registro de SAUDE DOS DADOS (ver data/saude_dados.py) - so'
-        # numa execucao real (cache miss); IPCA e' usado como ponto
-        # representativo da fonte BCB/SGS (CDI/Selic usam o mesmo
-        # _serie_sgs, nao instrumentados individualmente)
+        # numa execucao real (cache miss). Ate' 2026-10-13, "MACRO
+        # (BCB)" era o UNICO registro pra IPCA/Selic/CDI juntos (IPCA
+        # como ponto representativo) - gap de escopo corrigido nesta
+        # sessao: Selic/CDI/Focus agora tem linha propria (ver
+        # obter_selic_meta/obter_cdi/obter_focus_ipca/obter_focus_selic
+        # abaixo), entao uma falha isolada numa dessas series deixa de
+        # ficar escondida atras de um IPCA que continua OK.
         registrar_tentativa("MACRO (BCB)", "Banco Central (SGS)", execucao_ok=True,
                              registros_novos=len(df), categoria="Macro")
         return df
@@ -88,10 +92,22 @@ def obter_selic_meta(dias_historico: int = 400) -> pd.DataFrame | None:
     """Historico da meta Selic definida pelo Copom (% a.a.), cobrindo os
     ultimos `dias_historico` dias corridos. A serie tem um ponto por dia
     (repete o valor vigente entre uma decisao do Copom e outra)."""
+    # registro de SAUDE DOS DADOS (gap de escopo ja catalogado em
+    # BACKLOG.md, resolvido nesta sessao de continuacao 2026-10-13):
+    # antes, so' obter_ipca chamava registrar_tentativa - "MACRO (BCB)"
+    # usava IPCA como ponto representativo da fonte inteira, entao uma
+    # falha ISOLADA da Selic (ex: BC renomeia/descontinua o codigo SGS
+    # 432) nunca aparecia no painel enquanto IPCA continuasse OK. Linha
+    # separada, mesmo padrao ja usado hoje pra CVM (FCA)/NEWS
+    # (watchlist).
     try:
         df = _serie_sgs(_SGS_SELIC_META, dias_historico).rename(columns={"valor": "selic_meta_pct"})
+        registrar_tentativa("MACRO (BCB - Selic)", "Banco Central (SGS)", execucao_ok=True,
+                             registros_novos=len(df), categoria="Macro")
         return df
-    except Exception:
+    except Exception as e:
+        registrar_tentativa("MACRO (BCB - Selic)", "Banco Central (SGS)", execucao_ok=False,
+                             erro=str(e)[:300], categoria="Macro")
         return None
 
 
@@ -100,12 +116,17 @@ def obter_cdi(dias_historico: int = 90) -> pd.DataFrame | None:
     """CDI diario (% a.d.) e CDI anualizado base 252 (% a.a.), lado a lado
     por data, cobrindo os ultimos `dias_historico` dias corridos. None se
     qualquer uma das duas series falhar."""
+    # registro de SAUDE DOS DADOS - mesmo motivo/padrao de obter_selic_meta acima.
     try:
         diario = _serie_sgs(_SGS_CDI_DIARIO, dias_historico).rename(columns={"valor": "cdi_diario_pct"})
         anualizado = _serie_sgs(_SGS_CDI_ANUALIZADO, dias_historico).rename(columns={"valor": "cdi_anualizado_pct"})
         df = pd.merge(diario, anualizado, on="data", how="outer").sort_values("data").reset_index(drop=True)
+        registrar_tentativa("MACRO (BCB - CDI)", "Banco Central (SGS)", execucao_ok=True,
+                             registros_novos=len(df), categoria="Macro")
         return df
-    except Exception:
+    except Exception as e:
+        registrar_tentativa("MACRO (BCB - CDI)", "Banco Central (SGS)", execucao_ok=False,
+                             erro=str(e)[:300], categoria="Macro")
         return None
 
 
@@ -165,7 +186,18 @@ def obter_focus_ipca() -> pd.DataFrame | None:
     """Expectativa de mercado (Focus/BC) pra IPCA do ano corrente e dos
     dois seguintes: mediana, media e numero de respondentes. None se a
     consulta falhar ou nao vier nenhum dado."""
-    return _focus_multi_ano("IPCA")
+    # registro de SAUDE DOS DADOS - mesmo motivo/padrao de
+    # obter_selic_meta/obter_cdi acima. _focus_multi_ano ja isola por
+    # ano (nunca lanca excecao - ver seu docstring/comentario), entao
+    # None aqui so' pode significar "nenhum dos 3 anos teve dado valido".
+    df = _focus_multi_ano("IPCA")
+    if df is None:
+        registrar_tentativa("MACRO (BCB - Focus IPCA)", "Banco Central (Olinda/Expectativas)",
+                             execucao_ok=False, erro="nenhum dos 3 anos teve dado valido", categoria="Macro")
+    else:
+        registrar_tentativa("MACRO (BCB - Focus IPCA)", "Banco Central (Olinda/Expectativas)",
+                             execucao_ok=True, registros_novos=len(df), categoria="Macro")
+    return df
 
 
 @st.cache_data(ttl=_TTL_SERIES, show_spinner="atualizando indicadores macro…")
@@ -173,7 +205,14 @@ def obter_focus_selic() -> pd.DataFrame | None:
     """Expectativa de mercado (Focus/BC) pra Selic (fim de periodo) do ano
     corrente e dos dois seguintes. None se a consulta falhar ou nao vier
     dado."""
-    return _focus_multi_ano("Selic")
+    df = _focus_multi_ano("Selic")
+    if df is None:
+        registrar_tentativa("MACRO (BCB - Focus Selic)", "Banco Central (Olinda/Expectativas)",
+                             execucao_ok=False, erro="nenhum dos 3 anos teve dado valido", categoria="Macro")
+    else:
+        registrar_tentativa("MACRO (BCB - Focus Selic)", "Banco Central (Olinda/Expectativas)",
+                             execucao_ok=True, registros_novos=len(df), categoria="Macro")
+    return df
 
 
 def _numero_br(txt: str) -> float:
