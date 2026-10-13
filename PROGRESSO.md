@@ -6035,11 +6035,107 @@ force), working tree limpo depois. Item correspondente em
 `BACKLOG.md` atualizado de "investigado e não corrigido" pra
 "corrigido" nesta mesma sessão, com a referência ao commit.
 
-### 4. Próximo passo desta sessão de continuação
+### 4. Auditoria dirigida (subagente) - achados e correções
 
-Auditoria em andamento (subagente) nos coletores ainda não revisitados
-nesta rodada especificamente em busca de NOVAS instâncias dos mesmos 3
-padrões de bug já recorrentes hoje (cache que persiste falha, loop sem
-isolamento por item, exceção genérica demais) - resultado a ser
-registrado na próxima seção deste arquivo, só depois de confirmado com
-evidência (nunca antes).
+Subagente auditou (leitura integral de cada função, nunca por trecho)
+os arquivos ainda não revisitados nesta rodada:
+`data/cvm.py`, `data/eventos.py`, `data/eventos_coleta.py`,
+`coletor_local.py`, `data/macro.py` (completo), `data/news.py`,
+`data/news_setores.py`, `data/ibovespa.py`, `data/coletores_status.py`,
+`data/saude_dados.py`, `data/research/genial.py`,
+`data/research/xp.py`, `data/research/genial_lives.py`. Achou 4 bugs
+reais NOVOS (nenhum repete o que já estava catalogado), todos
+corrigidos, testados e commitados nesta mesma sessão:
+
+**a) `data/research/genial.py:obter_relatorios` - 1 item malformado
+derrubava TODA a coleta do dia** (commit `08c3987`) - bug de
+CORRETUDE, não só de telemetria, o mais sério dos 4. As 3 seções do
+JSON `__NEXT_DATA__` (RELATÓRIOS ações/estratégia, MACROECONOMIA,
+NEWSLETTER) eram processadas dentro de UM ÚNICO `try/except` externo,
+acessando `item["titulo"]`/`item["link"]` direto (sem `.get()`). Um
+item incompleto (ex: rascunho sem título ainda publicado no CMS da
+Genial) lançava `KeyError` que escapava pro `try/except` externo e
+descartava TAMBÉM as outras 2 seções que tinham parseado
+perfeitamente. `obter_recomendacoes`/`obter_swing_trade` tinham a
+mesma falha (lista por compreensão com acesso direto a `it["url"]`/
+`it["link"]` dentro de 1 único try). Corrigido isolando por item
+(mesmo padrão já usado em `data/research/genial_lives.py`/
+`data/research/xp.py`) - 1 item ruim agora é pulado, nunca derruba os
+válidos ao lado. 3 novos testes fim-a-fim em `tests/test_research.py`
+(mockando `_buscar_next_data`, sem rede).
+
+**b) `data/ibovespa.py:obter_composicao_oficial` - sem NENHUMA
+representação em SAÚDE DOS DADOS** (commit `f32da34`). Alimenta
+`obter_panorama_ibovespa`/altas-baixas/mais-negociados/setorial/
+treemap (`data/mercado.py`) e `_nome_empresa` do CALENDÁRIO, mas nunca
+chamava `registrar_tentativa` - não existia nenhuma linha "B3" em
+`REGISTRO_COLETORES`. Se a B3 mudasse o formato do endpoint ou o
+descontinuasse, o app continuava degradando honestamente pro fallback
+estático curado, mas o painel nunca mostrava nada de errado (nem
+falha, nem "nunca executado" - a linha simplesmente não existia). Nova
+linha "B3 (composição Ibovespa)" + `registrar_tentativa` nos 4
+caminhos reais (sucesso, HTTP != 200, 200 sem resultados, exceção de
+rede). 2 novos testes em `tests/test_ibovespa.py`.
+
+**c) `data/news.py:obter_top_mercado`/`obter_top_mercado_internacional`
+- sem instrumentação quando o usuário filtra por região** (commit
+`2a45fc5`). Só `obter_top_mercado_tudo` (BR+INTL combinado) chamava
+`registrar_tentativa` - quando o usuário filtra TOP MERCADO por
+"BRASIL" ou "INTERNACIONAL" (`ui/top_mercado_tab.py`), essas 2 funções
+são chamadas DIRETO. Se o pool BR (ou INTL) falhasse isolado nesse
+filtro, a UI avisava certo mas SAÚDE DOS DADOS continuava "NEWS:
+Coleta OK" com base na última execução bem-sucedida de "TUDO" - mesmo
+mecanismo do bug já corrigido hoje em `obter_noticias_watchlist`,
+noutro caminho de código. Corrigido registrando em "NEWS" (mesmo nome/
+categoria - é a mesma fonte, só filtrada) nos 2 caminhos. 3 novos
+testes em `tests/test_news_saude_dados.py`.
+
+**d) `_baixar_lote_bruto` (índices globais/cenário macro global) -
+sem NENHUMA representação em SAÚDE DOS DADOS** (commit `bd97a9d`).
+Usado por 2 features (`data/mercado.py:obter_mercados_globais` e
+`data/macro.py:obter_cenario_global`), mas nenhum dos 2 call-sites
+chamava `registrar_tentativa` (diferente de `_baixar_lote`, já
+instrumentado). Novas linhas "MERCADO (Globais)" e "MACRO (Cenário
+Global)" + registro nos 2 call-sites. 4 novos testes (2 em
+`tests/test_mercado.py`, 2 em `tests/test_macro.py`).
+
+Achado investigado e **não corrigido** (risco teórico, não uma falha
+observável): `data/eventos_coleta.py:coletar_eventos_universo` (linha
+~409) não tem `try/except` por ticker em volta de `coletar_evento`,
+mas todo caminho interno já é protegido (RI/NEWS/CVM/Supabase, cada um
+com seu próprio try/except) - registrado em BACKLOG.md pra referência
+futura, não uma correção pontual necessária hoje.
+
+Arquivos lidos pelo subagente sem achado novo real (confirmado,
+não presumido): `data/cvm.py` (fixes de `185edc5`/`5987a4a`
+completos e corretos), `coletor_local.py`, `data/coletores_status.py`/
+`data/saude_dados.py` (infraestrutura de telemetria em si - nenhum
+bug), `data/research/xp.py` (já isola por item corretamente),
+`data/news_setores.py` (só dados hardcoded, risco estrutural já
+catalogado).
+
+### 5. Validação consolidada desta sessão
+
+Após as 5 correções (MERCADO retry + os 4 achados do subagente):
+suite completa **407/407 testes passando** (de 395 no início desta
+sessão de continuação, que por sua vez eram 384+ no início do dia) -
+17 testes novos no total, todos fim-a-fim/determinísticos, sem rede
+real. `compileall`/`pyflakes` limpos em todo `data/`, `ui/`, `tests/`,
+`app.py`, `config.py`, `auth.py`, `coletor_local.py`, reconfirmado após
+cada commit. 5 commits nesta sessão, cada um com working tree limpo e
+`origin/main` reconfirmado sem commit concorrente antes do push (sem
+force, sem conflito):
+`ccd57bf` → `89d02d7` → `08c3987` → `f32da34` → `2a45fc5` → `bd97a9d`.
+
+### 6. O que continua pendente (mesma limitação estrutural de sempre)
+
+Nenhuma das correções desta sessão pôde ser validada contra a fonte
+real (rede bloqueada neste sandbox pra todos os domínios relevantes -
+B3, Genial, Google News, Yahoo Finance, Supabase) nem em produção. O
+que foi comprovado: a lógica está correta sob os cenários reais
+simulados (mock fiel ao formato real de cada fonte, nunca inventado) e
+não há regressão na suite completa. Validação fim-a-fim em produção
+continua exigindo o Rodrigo olhar `pregao.streamlit.app` depois do
+redeploy automático do Streamlit Cloud pegar estes commits - mesma
+orientação já registrada nas seções anteriores (ver CONTINUAÇÃO 2,
+seção 5).

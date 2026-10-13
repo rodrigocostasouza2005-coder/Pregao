@@ -90,6 +90,46 @@ escondidos):
   real, o Rodrigo precisaria mudar "Network access" nas configurações
   do ambiente (cloud environment → Edit) pra incluir esses domínios -
   decisão dele, não tomada por esta sessão.
+- **CALENDARIO — `coletar_eventos_universo` sem try/except por ticker
+  em volta de `coletar_evento`**
+  PRIORIDADE: BAIXA · IMPACTO: TEÓRICO (nenhuma falha observável hoje)
+  · ESFORÇO: BAIXO
+  Achado do subagente de auditoria (continuação 2026-10-13):
+  `data/eventos_coleta.py:coletar_eventos_universo` (linha ~409) não
+  envolve a chamada a `coletar_evento` num `try/except` por ticker no
+  próprio loop do universo - diferente do padrão (isolamento por item)
+  já aplicado em vários coletores hoje. Não corrigido porque, lendo a
+  função inteira, **todo** caminho interno de `coletar_evento` já é
+  protegido (RI/NEWS/CVM/Supabase, cada um com seu próprio
+  `try/except`) - ou seja, hoje não há nenhum jeito conhecido de um
+  ticker malformado escapar e abortar os outros. Risco é que isso
+  depende inteiramente dessa proteção interna se manter conforme o
+  código evolui (`coletor_local.py` até comenta que "nunca lança
+  exceção", o que é verdade hoje mas não é garantido estruturalmente
+  por um try/except no próprio loop). Registrado pra quando algum dos
+  caminhos internos (RI/NEWS/CVM/Supabase) ganhar um novo código que
+  não respeite essa proteção - adicionar o try/except por item no
+  loop do universo nessa hora, não antes (mudança sem bug real pra
+  corrigir ainda).
+
+## AUDITORIA DIRIGIDA — subagente, continuação 2026-10-13 (achados já corrigidos)
+
+Ver PROGRESSO.md "CONTINUAÇÃO 3" seção 4 pro relatório completo (achado
+por achado, com evidência). Resumo: subagente auditou
+`data/cvm.py`/`data/eventos.py`/`data/eventos_coleta.py`/
+`coletor_local.py`/`data/macro.py`/`data/news.py`/
+`data/news_setores.py`/`data/ibovespa.py`/`data/coletores_status.py`/
+`data/saude_dados.py`/`data/research/genial.py`/`data/research/xp.py`/
+`data/research/genial_lives.py` em busca de novas instâncias dos
+padrões de bug já recorrentes hoje (cache preso, loop sem isolamento
+por item, exceção genérica demais). 4 achados reais, **todos
+corrigidos nesta mesma sessão** (ver commits `08c3987`/`f32da34`/
+`2a45fc5`/`bd97a9d`): Genial Analisa perdia a coleta do dia inteiro por
+1 item malformado; B3 (composição Ibovespa), TOP MERCADO filtrado por
+BR/INTL, e índices globais/cenário macro global (ouro/petróleo/VIX)
+não tinham nenhuma representação em SAÚDE DOS DADOS. Nenhum item
+restou pendente desta auditoria (exceto o item teórico do CALENDARIO
+acima, registrado por precaução, não por bug real).
 
 ## AUDITORIA VISUAL (2026-10-10) — pendências desta rodada
 
