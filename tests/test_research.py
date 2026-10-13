@@ -397,6 +397,85 @@ def test_fallback_7_erro_de_transcript_e_erro_de_ia_tem_motivos_diferentes():
              resultado["motivo_indisponivel"] == "conteúdo muito curto (provavelmente exige login)")
 
 
+def test_genial_obter_relatorios_item_sem_titulo_nao_derruba_as_outras_secoes():
+    # bug real corrigido (auditoria missao coletores 2026-10-13,
+    # continuacao): _item_relatorio acessa item["titulo"]/item["link"]
+    # direto (sem .get) - 1 item incompleto (ex: rascunho sem titulo no
+    # CMS da Genial) lancava KeyError que, antes da correcao, escapava
+    # pro try/except UNICO envolvendo as 3 secoes (RELATORIOS/
+    # MACROECONOMIA/NEWSLETTER) e descartava TAMBEM as outras 2 secoes
+    # que tinham dado valido.
+    next_data = {
+        "props": {"pageProps": {"page": {"sections": [
+            {
+                "type": "CARROSSEL_RELATORIOS",
+                "content": {"items": [
+                    {"titulo": "Relatorio PETR4", "categoria": "Ações", "data": "01/10/2026", "link": "/acoes/PETR4", "analistas": []},
+                    {"categoria": "Ações", "data": "02/10/2026", "link": "/acoes/VALE3", "analistas": []},  # sem "titulo" -> KeyError isolado
+                ]},
+            },
+            {
+                "type": "MACROECONOMIA",
+                "content": {"items": [
+                    {"titulo": "Carta Macro", "data": "03/10/2026", "link": "/macro/1", "analistas": []},  # valido, de secao diferente
+                ]},
+            },
+        ]}}},
+    }
+    with patch.object(genial, "_buscar_next_data", return_value=next_data):
+        genial.obter_relatorios.clear()
+        relatorios = genial.obter_relatorios()
+    tipos = [r["tipo"] for r in (relatorios or [])]
+    _checar("item sem titulo (VALE3) e' pulado, nunca derruba a funcao inteira (nao vira None)",
+            relatorios is not None, f"(relatorios={relatorios})")
+    _checar("item valido da MESMA secao (PETR4/ACOES) sobrevive ao item ruim do lado",
+            "ACOES" in tipos, f"(tipos={tipos})")
+    _checar("secao MACROECONOMIA (sem nenhum item ruim) sobrevive intacta",
+            "MACRO" in tipos, f"(tipos={tipos})")
+    _checar("exatamente 2 relatorios validos (PETR4 + Carta Macro), o item ruim nunca aparece",
+            len(relatorios or []) == 2, f"(relatorios={relatorios})")
+
+
+def test_genial_obter_recomendacoes_item_sem_url_nao_derruba_as_outras():
+    next_data = {
+        "props": {"pageProps": {"page": {"sections": [
+            {
+                "type": "CARROSSEL_PRINCIPAIS_RECOMENDACOES_SETOR",
+                "content": [
+                    {"url": "/acoes/PETR4", "empresaNome": "Petrobras", "recomendacao": "COMPRA"},
+                    {"empresaNome": "Vale", "recomendacao": "MANTER"},  # sem "url" -> KeyError isolado
+                ],
+            },
+        ]}}},
+    }
+    with patch.object(genial, "_buscar_next_data", return_value=next_data):
+        genial.obter_recomendacoes.clear()
+        recomendacoes = genial.obter_recomendacoes()
+    _checar("item sem url e' pulado, PETR4 (valido) sobrevive (nunca vira None por causa do item ruim)",
+            recomendacoes is not None and len(recomendacoes) == 1 and recomendacoes[0]["ticker"] == "PETR4",
+            f"(recomendacoes={recomendacoes})")
+
+
+def test_genial_obter_swing_trade_item_sem_link_nao_derruba_as_outras():
+    next_data = {
+        "props": {"pageProps": {"page": {"sections": [
+            {
+                "type": "SWING_TRADE_E_BANNER",
+                "content": [
+                    {"ticker": "PETR4", "date": "2026-10-01"},  # sem "link" -> KeyError isolado
+                    {"ticker": "VALE3", "date": "2026-10-02", "link": "/swing/vale3"},
+                ],
+            },
+        ]}}},
+    }
+    with patch.object(genial, "_buscar_next_data", return_value=next_data):
+        genial.obter_swing_trade.clear()
+        swing = genial.obter_swing_trade()
+    _checar("item sem link e' pulado, VALE3 (valido) sobrevive (nunca vira None por causa do item ruim)",
+            swing is not None and len(swing) == 1 and swing[0]["ticker"] == "VALE3",
+            f"(swing={swing})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

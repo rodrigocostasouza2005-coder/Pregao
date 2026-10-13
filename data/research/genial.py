@@ -177,6 +177,19 @@ def _item_relatorio(item: dict, tipo: str) -> dict:
     }
 
 
+def _item_newsletter(item: dict) -> dict:
+    return {
+        "casa": "Genial Analisa",
+        "titulo": item["titulo"],
+        "data": _normalizar_data(item.get("data", "")),
+        "autor": "",
+        "tipo": "NEWSLETTER",
+        "setor": "",
+        "tickers": [],
+        "link": _url_absoluta(item["link"]),
+    }
+
+
 @st.cache_data(ttl=TTL_COLETA, show_spinner=False)
 def obter_relatorios() -> list | None:
     """Relatorios de acoes, mercado/estrategia (Expresso Bolsa Semanal,
@@ -187,42 +200,44 @@ def obter_relatorios() -> list | None:
     if data is None:
         return None
     try:
-        relatorios = []
-
-        for secao in _secoes(data):
-            if secao.get("type") != _TIPO_SECAO_RELATORIOS:
-                continue
-            for item in secao.get("content", {}).get("items", []):
-                # as duas secoes de CARROSSEL_RELATORIOS (acoes e mercado)
-                # sao distinguidas pela categoria de cada item, nao pelo
-                # titulo da secao (localizado, mais fragil)
-                tipo = "ACOES" if item.get("categoria") == "Ações" else "ESTRATEGIA"
-                relatorios.append(_item_relatorio(item, tipo))
-
-        for secao in _secoes(data):
-            if secao.get("type") != _TIPO_SECAO_ECONOMIA:
-                continue
-            for item in secao.get("content", {}).get("items", []):
-                relatorios.append(_item_relatorio(item, "MACRO"))
-
-        for secao in _secoes(data):
-            if secao.get("type") != _TIPO_SECAO_NEWSLETTER:
-                continue
-            for item in secao.get("content", {}).get("items", []):
-                relatorios.append({
-                    "casa": "Genial Analisa",
-                    "titulo": item["titulo"],
-                    "data": _normalizar_data(item.get("data", "")),
-                    "autor": "",
-                    "tipo": "NEWSLETTER",
-                    "setor": "",
-                    "tickers": [],
-                    "link": _url_absoluta(item["link"]),
-                })
-
-        return relatorios or None
+        secoes = _secoes(data)
     except Exception:
         return None
+
+    relatorios = []
+    for secao in secoes:
+        tipo_secao = secao.get("type")
+        if tipo_secao not in (_TIPO_SECAO_RELATORIOS, _TIPO_SECAO_ECONOMIA, _TIPO_SECAO_NEWSLETTER):
+            continue
+        for item in secao.get("content", {}).get("items", []):
+            # isolado por item (bug real corrigido, auditoria missao
+            # coletores 2026-10-13, continuacao): _item_relatorio/
+            # _item_newsletter acessam item["titulo"]/item["link"] direto
+            # (sem .get) - 1 item incompleto (ex: rascunho no CMS da
+            # Genial sem titulo ainda) lancava KeyError que escapava pro
+            # try/except ÚNICO que envolvia as 3 secoes inteiras,
+            # descartando TAMBEM as outras 2 secoes que tinham parseado
+            # perfeitamente (ex: MACROECONOMIA e NEWSLETTER do dia,
+            # mesmo so' a secao de ACOES tendo o item ruim). Mesmo padrao
+            # ja usado em data/research/genial_lives.py e
+            # data/research/xp.py - 1 item malformado nunca derruba os
+            # outros que ja parsearam certo.
+            try:
+                if tipo_secao == _TIPO_SECAO_RELATORIOS:
+                    # as duas secoes de CARROSSEL_RELATORIOS (acoes e
+                    # mercado) sao distinguidas pela categoria de cada
+                    # item, nao pelo titulo da secao (localizado, mais
+                    # fragil)
+                    tipo = "ACOES" if item.get("categoria") == "Ações" else "ESTRATEGIA"
+                    relatorios.append(_item_relatorio(item, tipo))
+                elif tipo_secao == _TIPO_SECAO_ECONOMIA:
+                    relatorios.append(_item_relatorio(item, "MACRO"))
+                else:
+                    relatorios.append(_item_newsletter(item))
+            except Exception:
+                continue
+
+    return relatorios or None
 
 
 @st.cache_data(ttl=TTL_COLETA, show_spinner="consultando research (Genial)…")
@@ -234,12 +249,19 @@ def obter_recomendacoes() -> list | None:
     if data is None:
         return None
     try:
-        for secao in _secoes(data):
-            if secao.get("type") != _TIPO_SECAO_RECOMENDACOES:
-                continue
-            itens = secao.get("content") or []
-            return [
-                {
+        secoes = _secoes(data)
+    except Exception:
+        return None
+    for secao in secoes:
+        if secao.get("type") != _TIPO_SECAO_RECOMENDACOES:
+            continue
+        resultado = []
+        for it in secao.get("content") or []:
+            # isolado por item (mesmo achado/padrao de obter_relatorios
+            # acima): it["url"] direto sem .get - 1 recomendacao sem url
+            # nao pode descartar as outras que ja tinham dado valido.
+            try:
+                resultado.append({
                     "ticker": _ticker_da_url_recomendacao(it["url"]),
                     "empresa": (it.get("empresaNome") or "").strip(),
                     "setor": it.get("setor", ""),
@@ -247,12 +269,11 @@ def obter_recomendacoes() -> list | None:
                     "preco_alvo": it.get("preco"),
                     "potencial_pct": it.get("potencial"),
                     "link": _url_absoluta(it["url"]),
-                }
-                for it in itens
-            ] or None
-        return None
-    except Exception:
-        return None
+                })
+            except Exception:
+                continue
+        return resultado or None
+    return None
 
 
 @st.cache_data(ttl=TTL_COLETA, show_spinner="consultando research (Genial)…")
@@ -264,21 +285,26 @@ def obter_swing_trade() -> list | None:
     if data is None:
         return None
     try:
-        for secao in _secoes(data):
-            if secao.get("type") != _TIPO_SECAO_SWING_TRADE:
-                continue
-            itens = secao.get("content") or []
-            return [
-                {
+        secoes = _secoes(data)
+    except Exception:
+        return None
+    for secao in secoes:
+        if secao.get("type") != _TIPO_SECAO_SWING_TRADE:
+            continue
+        resultado = []
+        for it in secao.get("content") or []:
+            # isolado por item (mesmo achado/padrao de obter_relatorios/
+            # obter_recomendacoes acima): it["link"] direto sem .get.
+            try:
+                resultado.append({
                     "ticker": it.get("ticker", ""),
                     "empresa": ((it.get("empresa") or {}).get("nome") or "").strip(),
                     "recomendacao": (it.get("informacoesTicker") or {}).get("recomendacao", ""),
                     "status": (it.get("informacoesTicker") or {}).get("status", ""),
                     "data": _normalizar_data(it.get("date", "")),
                     "link": _url_absoluta(it["link"]),
-                }
-                for it in itens
-            ] or None
-        return None
-    except Exception:
-        return None
+                })
+            except Exception:
+                continue
+        return resultado or None
+    return None
