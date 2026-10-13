@@ -292,14 +292,23 @@ def obter_cenario_global() -> list:
     mecanismo de lote de data/mercado.py:obter_mercados_globais (todos os
     symbols ja vem no formato exato que o yfinance espera, sem sufixo
     '.SA'). [] se o lote falhar."""
+    # registro de SAUDE DOS DADOS (achado real, auditoria missao
+    # coletores 2026-10-13, continuacao): _baixar_lote_bruto nunca
+    # registrava nada - esta funcao e data/mercado.py:
+    # obter_mercados_globais sao os 2 unicos call-sites, nenhum
+    # instrumentado antes desta correcao.
     nomes = list(CENARIO_GLOBAL.keys())
     symbols = tuple(CENARIO_GLOBAL.values())
     df = _baixar_lote_bruto(symbols)
     if df is None:
+        registrar_tentativa("MACRO (Cenário Global)", "yfinance (ouro/petróleo/minério/Treasuries/VIX)",
+                             execucao_ok=False, erro="yf.download retornou vazio (2 tentativas)", categoria="Macro")
         return []
     resultado = []
     for nome, symbol in zip(nomes, symbols):
         linha = _linha_papel(df, nome, symbol)
         if linha:
             resultado.append({"nome": nome, "preco": linha["preco"], "variacao_pct": linha["variacao_pct"]})
+    registrar_tentativa("MACRO (Cenário Global)", "yfinance (ouro/petróleo/minério/Treasuries/VIX)",
+                         execucao_ok=True, registros_novos=len(resultado), categoria="Macro")
     return resultado

@@ -20,6 +20,8 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pandas as pd
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import data.macro as macro_mod
@@ -140,6 +142,38 @@ def test_5_focus_todos_os_anos_malformados_resulta_em_none():
         df = macro_mod._focus_multi_ano("Selic")
 
     _checar("5a todos os 3 anos falhando -> None (nunca inventa expectativa)", df is None)
+
+
+def test_6_cenario_global_lote_falho_registra_falha_em_saude_dos_dados():
+    # bug real corrigido (auditoria missao coletores 2026-10-13,
+    # continuacao): obter_cenario_global usa _baixar_lote_bruto (mesmo
+    # helper de data/mercado.py:obter_mercados_globais) mas nunca
+    # chamava registrar_tentativa - nenhum dos 2 call-sites chamava,
+    # na verdade. Se o lote de ouro/Brent/WTI/minerio/Treasuries/VIX
+    # falhar, a aba MACRO mostrava [] honestamente, mas SAUDE DOS DADOS
+    # nunca sabia (nenhuma linha representava essa fonte).
+    with patch.object(macro_mod, "_baixar_lote_bruto", return_value=None), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg:
+        resultado = macro_mod.obter_cenario_global()
+    _checar("6a lote falho -> [] (nunca inventa cotacao)", resultado == [])
+    _checar("6b registra MACRO (Cenário Global) execucao_ok=False",
+            mock_reg.call_args.args[0] == "MACRO (Cenário Global)" and mock_reg.call_args.kwargs.get("execucao_ok") is False,
+            f"(call={mock_reg.call_args})")
+
+
+def test_7_cenario_global_sucesso_registra_ok_com_registros_reais():
+    idx = pd.date_range("2026-10-01", periods=2, freq="D")
+    df = pd.concat({
+        "GC=F": pd.DataFrame({"Close": [1900.0, 1920.0], "Volume": [0, 0]}, index=idx),  # "Ouro" em config.CENARIO_GLOBAL
+    }, axis=1)
+    with patch.object(macro_mod, "_baixar_lote_bruto", return_value=df), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg:
+        resultado = macro_mod.obter_cenario_global()
+    _checar("7a registra MACRO (Cenário Global) execucao_ok=True",
+            mock_reg.call_args.args[0] == "MACRO (Cenário Global)" and mock_reg.call_args.kwargs.get("execucao_ok") is True,
+            f"(call={mock_reg.call_args})")
+    _checar("7b registros_novos bate com a quantidade real retornada (nunca conta item vazio)",
+            mock_reg.call_args.kwargs.get("registros_novos") == len(resultado), f"(resultado={resultado}, call={mock_reg.call_args})")
 
 
 if __name__ == "__main__":

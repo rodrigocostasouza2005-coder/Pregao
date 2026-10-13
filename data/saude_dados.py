@@ -212,9 +212,28 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 48, "instrumentado": True,
     },
     {
+        # linha nova (achado real, auditoria missao coletores 2026-10-13,
+        # continuacao): data/mercado.py:_baixar_lote_bruto (indices
+        # globais) nunca chamava registrar_tentativa - nenhuma linha
+        # representava essa fonte neste painel.
+        "nome": "MERCADO (Globais)", "fonte": "yfinance (índices globais)",
+        "categoria": "Cotacoes", "frequencia_esperada": "sob demanda (cache 90s)",
+        "idade_maxima_horas": 2, "instrumentado": True,
+    },
+    {
         "nome": "MACRO (BCB)", "fonte": "Banco Central (SGS - IPCA/Selic/CDI)",
         "categoria": "Macro", "frequencia_esperada": "sob demanda (cache 4h)",
         "idade_maxima_horas": 30, "instrumentado": True,
+    },
+    {
+        # linha nova (achado real, auditoria missao coletores 2026-10-13,
+        # continuacao): data/macro.py:obter_cenario_global (ouro/
+        # petroleo/minerio/Treasuries/VIX, mesmo _baixar_lote_bruto de
+        # MERCADO (Globais) acima, symbols diferentes) nunca chamava
+        # registrar_tentativa.
+        "nome": "MACRO (Cenário Global)", "fonte": "yfinance (ouro/petróleo/minério/Treasuries/VIX)",
+        "categoria": "Macro", "frequencia_esperada": "sob demanda (cache 90s)",
+        "idade_maxima_horas": 2, "instrumentado": True,
     },
     {
         "nome": "MACRO (ANBIMA)", "fonte": "ANBIMA (ETTJ - curva pre)",

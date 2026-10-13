@@ -282,9 +282,13 @@ def _baixar_lote_bruto(symbols: tuple) -> pd.DataFrame | None:
     de '000001.SS', virando '000001.SS.SA', symbol invalido).
 
     show_spinner com texto (mesmo achado de obter_panorama_ibovespa acima):
-    unica usuaria desta funcao e' obter_mercados_globais, nunca chamada de
-    dentro de um fragment - seguro mostrar o spinner sem risco de piscar
-    a cada atualizacao automatica.
+    usada por obter_mercados_globais (abaixo) e por
+    data/macro.py:obter_cenario_global (symbols diferentes - chaves de
+    cache de @st.cache_data distintas, sem colisao) - nenhuma das 2 e'
+    chamada de dentro de um fragment, seguro mostrar o spinner sem risco
+    de piscar a cada atualizacao automatica. Nao registra em SAUDE DOS
+    DADOS aqui dentro (generica demais pra saber qual feature esta'
+    chamando) - cada chamador registra o seu proprio nome/categoria.
 
     Mesma tecnica de retry de _baixar_lote (_yf_download_com_retry) -
     sem isso, um bloqueio na primeira tentativa derrubava os indices
@@ -301,14 +305,24 @@ def obter_mercados_globais() -> list:
     """Principais indices globais (config.INDICES_GLOBAIS): preco e
     variacao %, mesmo mecanismo de lote do panorama do Ibovespa. []
     se o lote falhar."""
+    # registro de SAUDE DOS DADOS (achado real, auditoria missao
+    # coletores 2026-10-13, continuacao): _baixar_lote_bruto nunca
+    # registrava nada em nenhum dos 2 call-sites que o usam (aqui e
+    # data/macro.py:obter_cenario_global) - diferente de _baixar_lote
+    # (instrumentado). Se o lote de indices globais falhar, a aba
+    # MERCADO mostrava [] honestamente, mas SAUDE DOS DADOS nunca sabia.
     nomes = list(INDICES_GLOBAIS.keys())
     symbols = tuple(INDICES_GLOBAIS.values())
     df = _baixar_lote_bruto(symbols)
     if df is None:
+        registrar_tentativa("MERCADO (Globais)", "yfinance (índices globais)", execucao_ok=False,
+                             erro="yf.download retornou vazio (2 tentativas)", categoria="Cotacoes")
         return []
     resultado = []
     for nome, symbol in zip(nomes, symbols):
         linha = _linha_papel(df, nome, symbol)
         if linha:
             resultado.append({"nome": nome, "preco": linha["preco"], "variacao_pct": linha["variacao_pct"]})
+    registrar_tentativa("MERCADO (Globais)", "yfinance (índices globais)", execucao_ok=True,
+                         registros_novos=len(resultado), categoria="Cotacoes")
     return resultado

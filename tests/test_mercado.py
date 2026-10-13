@@ -221,6 +221,33 @@ def test_15_baixar_lote_usa_retry_e_registra_sucesso_na_2a_tentativa():
             mock_registrar.call_args.kwargs.get("execucao_ok") is True, f"(call={mock_registrar.call_args})")
 
 
+def test_16_mercados_globais_lote_falho_registra_falha_em_saude_dos_dados():
+    # bug real corrigido (auditoria missao coletores 2026-10-13,
+    # continuacao): obter_mercados_globais usa _baixar_lote_bruto, que
+    # nunca chamava registrar_tentativa em nenhum dos 2 call-sites que o
+    # usam (aqui e data/macro.py:obter_cenario_global) - nenhuma linha
+    # representava essa fonte em SAUDE DOS DADOS.
+    with patch.object(mercado_mod, "_baixar_lote_bruto", return_value=None), \
+         patch.object(mercado_mod, "registrar_tentativa") as mock_registrar:
+        resultado = mercado_mod.obter_mercados_globais()
+    _checar("16a lote falho -> [] (nunca inventa cotacao)", resultado == [])
+    _checar("16b registra MERCADO (Globais) execucao_ok=False",
+            mock_registrar.call_args.args[0] == "MERCADO (Globais)" and mock_registrar.call_args.kwargs.get("execucao_ok") is False,
+            f"(call={mock_registrar.call_args})")
+
+
+def test_17_mercados_globais_sucesso_registra_ok_com_registros_reais():
+    df = _df_simples("^GSPC", [4500.0, 4550.0])
+    with patch.object(mercado_mod, "_baixar_lote_bruto", return_value=df), \
+         patch.object(mercado_mod, "registrar_tentativa") as mock_registrar:
+        resultado = mercado_mod.obter_mercados_globais()
+    _checar("17a registra MERCADO (Globais) execucao_ok=True",
+            mock_registrar.call_args.args[0] == "MERCADO (Globais)" and mock_registrar.call_args.kwargs.get("execucao_ok") is True,
+            f"(call={mock_registrar.call_args})")
+    _checar("17b registros_novos bate com a quantidade real retornada",
+            mock_registrar.call_args.kwargs.get("registros_novos") == len(resultado), f"(resultado={resultado}, call={mock_registrar.call_args})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
