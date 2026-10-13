@@ -56,6 +56,31 @@ def render_saude_dados():
     if st.button("ATUALIZAR", key="saude_dados_atualizar"):
         st.cache_data.clear()
 
+    # Diagnostico de infraestrutura (achado real, missao coletores
+    # 2026-10-13): antes desta checagem, uma tabela `coletores_status`
+    # ausente/inacessivel no Supabase de producao (mesma classe de bug ja'
+    # confirmada em `eventos_resultados`, PGRST205, commit 4c17876) e um
+    # coletor que genuinamente nunca rodou eram 100% indistinguiveis na
+    # UI - os dois apareciam como "Nunca executado"/"Nao comprovado" sem
+    # nenhum aviso de QUAL e' o caso. Mostrado so' quando o diagnostico
+    # falha (nunca um "tudo OK" extra na tela comum).
+    disponivel = saude_dados.diagnostico_infraestrutura()
+    if disponivel is False:
+        st.error(
+            "Tabela **coletores_status** não encontrada ou inacessível no Supabase "
+            "de produção. Os coletores abaixo marcados 'Nunca executado'/'Não "
+            "comprovado' podem estar rodando normalmente por baixo — este painel "
+            "só não consegue LER nem GRAVAR o histórico de tentativas. Ação: rode "
+            "`sql/coletores_status.sql` no SQL Editor do projeto Supabase (migração "
+            "idempotente, não apaga nada existente)."
+        )
+    elif disponivel is None:
+        st.warning(
+            "Supabase indisponível neste momento (sem credencial configurada ou "
+            "banco fora do ar) — não foi possível checar o histórico real de "
+            "tentativas de nenhum coletor."
+        )
+
     painel = saude_dados.obter_painel_saude()
 
     categorias = {}

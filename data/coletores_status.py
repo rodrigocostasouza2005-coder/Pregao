@@ -63,7 +63,13 @@ def registrar_tentativa(
             "ultimo_sucesso_em": ultimo_sucesso_em,
         }).execute()
         return True
-    except Exception:
+    except Exception as e:
+        # log (nunca excecao pro chamador) - visivel no log do Streamlit
+        # Cloud ("Manage app"); achado real 2026-10-13: sem isto, uma
+        # tabela ausente (mesma classe de bug do PGRST205 ja confirmado em
+        # eventos_resultados, 4c17876) fica 100% invisivel - o painel so'
+        # mostra NUNCA_EXECUTADO, indistinguivel de "coletor nunca rodou".
+        print(f"[coletores_status] registrar_tentativa({nome!r}) falhou: {e!r}")
         return False
 
 
@@ -77,7 +83,8 @@ def obter_status(nome: str) -> dict | None:
     try:
         resp = cliente.table(_TABELA).select("*").eq("nome", nome).limit(1).execute()
         return resp.data[0] if resp.data else None
-    except Exception:
+    except Exception as e:
+        print(f"[coletores_status] obter_status({nome!r}) falhou: {e!r}")
         return None
 
 
@@ -90,5 +97,37 @@ def obter_todos_status() -> dict:
     try:
         resp = cliente.table(_TABELA).select("*").execute()
         return {linha["nome"]: linha for linha in (resp.data or [])}
-    except Exception:
+    except Exception as e:
+        print(f"[coletores_status] obter_todos_status() falhou: {e!r}")
         return {}
+
+
+def tabela_disponivel() -> bool | None:
+    """Diagnostico (mesmo padrao de data/eventos_coleta.py:
+    tabela_eventos_disponivel, achado real 2026-10-05: a tabela
+    eventos_resultados nao existia em producao porque sql/eventos.sql
+    nunca tinha sido rodado la' - PGRST205 'Could not find the table' -
+    e tanto a leitura quanto a escrita degradavam em silencio pro mesmo
+    'nada encontrado', escondendo o problema). Aplicado aqui porque a
+    missao de 2026-10-13 encontrou TODOS os coletores instrumentados
+    (sem fallback hibrido) mostrando NUNCA_EXECUTADO simultaneamente em
+    producao - o padrao classico de 'tabela coletores_status tambem
+    nunca migrada', nao de coletores quebrados individualmente.
+
+    True se a tabela responde a uma consulta trivial, False se existir
+    cliente Supabase mas a consulta falhar (tabela/schema ausente, RLS
+    bloqueando, coluna renomeada etc - qualquer erro aqui JA significa
+    que registrar_tentativa/obter_status tambem falham, pelo mesmo
+    motivo), None se o Supabase em si estiver fora do ar
+    (obter_cliente()=None, indistinguivel de 'sem credencial'). So' pra
+    diagnostico/UI (ver ui/saude_dados_tab.py) - nunca usada pelos
+    coletores em si, que continuam degradando com seguranca
+    independente disso."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        cliente.table(_TABELA).select("nome").limit(1).execute()
+        return True
+    except Exception:
+        return False

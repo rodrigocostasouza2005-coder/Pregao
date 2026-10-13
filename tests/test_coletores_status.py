@@ -155,6 +155,36 @@ def test_8_execucao_excecao_no_execute_nunca_propaga():
     _checar("8b obter_status com erro no execute -> None, sem excecao", status is None)
 
 
+def test_9_tabela_disponivel_quando_consulta_trivial_funciona():
+    cliente = _ClienteFake()
+    with patch.object(cs_mod, "obter_cliente", return_value=cliente):
+        disponivel = cs_mod.tabela_disponivel()
+    _checar("9 tabela responde a consulta trivial -> True", disponivel is True)
+
+
+def test_9b_tabela_indisponivel_quando_consulta_falha():
+    cliente = _ClienteFake()
+    cliente.table_original = cliente.table
+
+    def _table_que_falha(nome):
+        tabela = cliente.table_original(nome)
+        tabela.execute = lambda: (_ for _ in ()).throw(
+            Exception("PGRST205: Could not find the table 'public.coletores_status' in the schema cache")
+        )
+        return tabela
+
+    cliente.table = _table_que_falha
+    with patch.object(cs_mod, "obter_cliente", return_value=cliente):
+        disponivel = cs_mod.tabela_disponivel()
+    _checar("9b tabela ausente/erro de schema -> False (distinto de 'Supabase fora do ar')", disponivel is False)
+
+
+def test_9c_supabase_fora_do_ar_retorna_none_nao_false():
+    with patch.object(cs_mod, "obter_cliente", return_value=None):
+        disponivel = cs_mod.tabela_disponivel()
+    _checar("9c Supabase em si fora do ar -> None (distinto de 'tabela ausente')", disponivel is None)
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

@@ -148,6 +148,12 @@ def test_15_painel_excecao_num_leitor_nao_derruba_o_painel():
     _checar("15b todas as entradas ficam NUNCA_EXECUTADO (nao quebra, nao finge sucesso)", all(item["codigo_estado"] == "NUNCA_EXECUTADO" for item in painel))
 
 
+def test_16_diagnostico_infraestrutura_repassa_tabela_disponivel():
+    with patch.object(saude_mod.coletores_status, "tabela_disponivel", return_value=False):
+        resultado = saude_mod.diagnostico_infraestrutura()
+    _checar("16 diagnostico_infraestrutura repassa False (tabela ausente/erro) pra UI reagir", resultado is False)
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
