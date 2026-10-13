@@ -30,24 +30,16 @@ escondidos):
   resolve na prática) continua pendente - mesma limitação estrutural
   de rede de sempre (sem acesso a `*.finance.yahoo.com` deste
   sandbox), registrada na seção de pendências do Rodrigo.
-- **MACRO (BCB) — Selic/CDI/Focus não chamam `registrar_tentativa`
-  individualmente**
-  PRIORIDADE: BAIXA · IMPACTO: BAIXO (UI avisa o usuário corretamente
-  mesmo assim, só o PAINEL de saúde tem o ponto cego) · ESFORÇO: MÉDIO
-  Decisão de escopo já documentada no próprio código
-  (`data/macro.py:73-76`): "IPCA é usado como ponto representativo da
-  fonte BCB/SGS" - só `obter_ipca` registra tentativa; `obter_selic_
-  meta`/`obter_cdi`/`obter_focus_ipca`/`obter_focus_selic` não. Se
-  Selic ou CDI quebrar isoladamente (ex: BC descontinua/renomeia um
-  desses códigos SGS) enquanto IPCA continua OK, o bucket "MACRO (BCB)"
-  mostra "Coleta OK" mesmo assim - a UI (`ui/macro_tab.py`) continua
-  avisando o usuário com `st.warning` quando o dado real falha, então
-  não há dado inventado nem engano pro usuário final, só um ponto
-  cego no painel de monitoramento. Corrigir direito (linhas separadas
-  por sub-série, igual ao que esta sessão fez pra "CVM (FCA)"/"NEWS
-  (watchlist)") é mudança de escopo maior (4 linhas novas em
-  `REGISTRO_COLETORES`), não feita nesta rodada por decisão de
-  priorizar os achados de severidade mais alta primeiro.
+- ~~**MACRO (BCB) — Selic/CDI/Focus não chamam `registrar_tentativa`
+  individualmente**~~ — **corrigido** (sessão 2026-10-13, continuação
+  noturna, commit `d222996`): 4 linhas novas em
+  `REGISTRO_COLETORES`/`data/macro.py` - "MACRO (BCB - Selic)"/
+  "(BCB - CDI)"/"(BCB - Focus IPCA)"/"(BCB - Focus Selic)", cada uma
+  com `registrar_tentativa` própria. "MACRO (BCB)" (nome mantido
+  inalterado, só IPCA agora) deixa de ser o único ponto de registro da
+  fonte BCB inteira. 4 novos testes em `tests/test_macro.py` + suite
+  completa `411/411` (local, `/tmp/venv_test`) + `compileall`/
+  `pyflakes` limpos.
 - **NEWS — `obter_noticias` fora da watchlist agregada sem
   instrumentação de SAÚDE DOS DADOS**
   PRIORIDADE: BAIXA · IMPACTO: BAIXO · ESFORÇO: MÉDIO
