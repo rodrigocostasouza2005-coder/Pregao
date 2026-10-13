@@ -1,12 +1,19 @@
 # -*- coding: utf-8 -*-
-"""Testes de data/macro.py:obter_curva_pre (curva pre/ETTJ, ANBIMA) -
-bug real corrigido (auditoria 2026-10-10): uma resposta NAO-vazia mas
-malformada pra UM dos 7 dias tentados (layout mudou, mensagem de erro/
-manutencao no lugar do CSV) lancava excecao (StopIteration/ValueError)
-de dentro do loop de fallback - como nao havia try/except por iteracao,
-isso escapava pro try/except EXTERNO e abortava a tentativa nos outros
-6 dias, mesmo que algum deles tivesse publicacao valida. Mocka
-_buscar_ettj_anbima - nunca faz chamada de rede.
+"""Testes de data/macro.py: obter_curva_pre (curva pre/ETTJ, ANBIMA) e
+_focus_multi_ano (expectativas Focus/Olinda) - 2 bugs da MESMA classe,
+achados em auditorias diferentes:
+
+- testes 1-3 (2026-10-10): uma resposta NAO-vazia mas malformada pra UM
+  dos 7 dias tentados na ANBIMA (layout mudou, mensagem de erro/
+  manutencao no lugar do CSV) lancava excecao (StopIteration/ValueError)
+  de dentro do loop de fallback - como nao havia try/except por
+  iteracao, isso escapava pro try/except EXTERNO e abortava a tentativa
+  nos outros 6 dias, mesmo que algum deles tivesse publicacao valida.
+- testes 4-5 (2026-10-13, auditoria missao coletores): mesmo padrao no
+  loop de 3 anos do Focus - um erro pontual buscando UM ano abortava os
+  outros 2 anos, mesmo com dado valido.
+
+Mocka _buscar_ettj_anbima/_focus_anual - nunca faz chamada de rede.
 
 Uso: python tests/test_macro.py (python do .venv do projeto)."""
 import sys
@@ -96,6 +103,43 @@ def test_3_dias_vazios_continuam_pulados_normalmente():
 
     _checar("3a acha o CSV valido apos pular os 2 dias vazios", df is not None and len(df) == 2, f"(df={df})")
     _checar("3b tentou exatamente 3 dias (2 vazios + 1 valido, nao os 7)", len(chamadas) == 3, f"(chamadas={chamadas})")
+
+
+def test_4_focus_ano_malformado_nao_aborta_os_outros_anos():
+    """_focus_multi_ano: bug real corrigido (auditoria missao coletores,
+    2026-10-13) - mesma classe de bug do fix ANBIMA (e04b295), so' que no
+    caminho Focus/Olinda. Um erro (HTTPError/KeyError/etc) ao buscar UM
+    dos 3 anos nao pode abortar os outros 2 anos, que tinham dado valido.
+    Mocka _focus_anual - nunca faz chamada de rede."""
+    from datetime import datetime
+
+    ano_atual = datetime.now(macro_mod.TZ).year
+
+    def _fake_focus_anual(indicador, ano, base_calculo=0):
+        if ano == ano_atual + 1:
+            raise ValueError("resposta malformada da Olinda pra esse ano")
+        return {
+            "ano_referencia": ano, "mediana_pct": 4.5, "media_pct": 4.6,
+            "numero_respondentes": 50, "data_calculo": "2026-10-10",
+        }
+
+    with patch.object(macro_mod, "_focus_anual", side_effect=_fake_focus_anual):
+        df = macro_mod._focus_multi_ano("IPCA")
+
+    _checar("4a nao retorna None (2 dos 3 anos tinham dado valido)", df is not None, f"(df={df})")
+    _checar("4b DataFrame tem os 2 anos validos (nao 3, nao 0)", df is not None and len(df) == 2, f"(df={df})")
+    _checar(
+        "4c o ano malformado (ano_atual+1) nao aparece no resultado",
+        df is not None and (ano_atual + 1) not in df["ano_referencia"].tolist(),
+        f"(anos={df['ano_referencia'].tolist() if df is not None else None})",
+    )
+
+
+def test_5_focus_todos_os_anos_malformados_resulta_em_none():
+    with patch.object(macro_mod, "_focus_anual", side_effect=ValueError("sempre falha")):
+        df = macro_mod._focus_multi_ano("Selic")
+
+    _checar("5a todos os 3 anos falhando -> None (nunca inventa expectativa)", df is None)
 
 
 if __name__ == "__main__":

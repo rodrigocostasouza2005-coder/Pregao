@@ -141,17 +141,23 @@ def _focus_anual(indicador: str, ano: int, base_calculo: int = 0) -> dict | None
 
 def _focus_multi_ano(indicador: str, quantidade_anos: int = 3) -> pd.DataFrame | None:
     ano_atual = datetime.now(TZ).year
-    try:
-        linhas = []
-        for ano in range(ano_atual, ano_atual + quantidade_anos):
+    linhas = []
+    for ano in range(ano_atual, ano_atual + quantidade_anos):
+        try:
             linha = _focus_anual(indicador, ano)
-            if linha is not None:
-                linhas.append(linha)
-        if not linhas:
-            return None
-        return pd.DataFrame(linhas)
-    except Exception:
+        except Exception:
+            # bug real corrigido (auditoria missao coletores, 2026-10-13):
+            # mesma classe de bug ja corrigida na ANBIMA (e04b295) - um
+            # erro HTTP/resposta malformada pontual pra UM ano (ex: soluco
+            # transitorio da Olinda) escapava do loop pro try/except
+            # externo e abortava os OUTROS anos tambem, mesmo que
+            # tivessem dado valido. Agora so' pula pro proximo ano.
+            continue
+        if linha is not None:
+            linhas.append(linha)
+    if not linhas:
         return None
+    return pd.DataFrame(linhas)
 
 
 @st.cache_data(ttl=_TTL_SERIES, show_spinner="atualizando indicadores macro…")
