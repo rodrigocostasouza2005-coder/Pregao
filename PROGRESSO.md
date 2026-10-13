@@ -5711,3 +5711,224 @@ produção, rede bloqueada) - o que foi entregue é a correção que torna
 essa causa **diagnosticável em produção pelo próprio Rodrigo em menos
 de 1 minuto**, abrindo a aba, em vez de precisar de outra sessão cloud
 às cegas.
+
+## CONTINUAÇÃO 2 — SAÚDE DOS DADOS distingue tabela ausente de credencial/conexão (2026-10-13)
+
+Sessão autônoma agendada, retomando a tarefa da sessão imediatamente
+anterior, que bateu o limite de uso de 5h da conta depois de só 79s de
+trabalho (não chegou a editar nada - só investigação; `git status`
+confirmado limpo e `HEAD` idêntico a `d853851`, o mesmo commit em que a
+sessão anterior tinha parado). Essa sessão já tinha confirmado 2 coisas
+antes de bater o limite, reaproveitadas aqui sem reauditar do zero:
+
+1. `sql/coletores_status.sql` segue exatamente o mesmo padrão
+   idempotente de `sql/eventos.sql`/`sql/research.sql` - confirmado de
+   novo nesta sessão (seção 3 abaixo), não precisava de correção.
+2. O achado real: `tabela_disponivel()` (`data/coletores_status.py`)
+   tratava QUALQUER exceção (tabela ausente, credencial inválida,
+   timeout de rede) de forma idêntica, sempre devolvendo o mesmo sinal
+   que acende o banner **vermelho** de "tabela ausente" - nunca
+   diferenciando de um problema de credencial/conexão real (que
+   deveria ser **amarelo**). Exatamente o que o Rodrigo apontou na
+   seção 2 do pedido original.
+
+### 1. O que foi corrigido (código)
+
+Investigação adicional feita nesta sessão, antes de editar: instalada a
+versão exata de `postgrest` que `supabase==2.31.0` resolve
+(`postgrest==2.32.0`, pinada em `requirements.txt`) num venv isolado
+(`/tmp/venv_test`, infraestrutura efêmera do container, não comitada) e
+lida a fonte real de `postgrest.exceptions.APIError` - confirma que
+`.code`/`.message`/`.hint`/`.details` vêm direto do corpo JSON de erro
+do Postgrest/Supabase, todos opcionais, sem nenhuma classe de exceção
+estável por tipo de erro (então a distinção tem que ser por texto/
+atributo, nunca por `isinstance`).
+
+Mudanças:
+
+- **`data/coletores_status.py`**: `tabela_disponivel()` deixa de
+  devolver um binário `bool | None`. Nova função `_classificar_erro_tabela`
+  (+ `_texto_erro`, que concatena `str`/`repr` e os atributos
+  `code`/`message`/`details`/`hint` quando existirem) decide entre 3
+  sinais reais, por palavra-chave (mesmo padrão já usado em
+  `data/saude_dados.py:_TERMOS_INDISPONIBILIDADE`):
+  - `TABELA_AUSENTE` - sinais `"pgrst205"` / `"could not find the table"`
+    / `"schema cache"` (erro real já confirmado em produção pra
+    `eventos_resultados`, commit `4c17876`);
+  - `TABELA_CREDENCIAL_OU_CONEXAO` - sinais de auth (`"401"`, `"403"`,
+    `"pgrst301"`, `"jwt"`, `"api key"`, `"unauthorized"`,
+    `"permission denied"`, `"42501"` = `insufficient_privilege` do
+    Postgres, caso alguém configure a chave `anon` em vez da `secret`)
+    e de conexão/rede (`"timeout"`, `"connection"`, `"dns"`, `"ssl"`,
+    etc. - httpx levanta exceção própria aqui, sem `.code`/`.message`,
+    só o texto mesmo);
+  - `TABELA_ERRO_DESCONHECIDO` - nenhum sinal acima bateu; ainda um
+    erro real (nunca "tudo OK"), só sem causa identificável pelo texto.
+
+  `tabela_disponivel()` retorna `True` (ok), um dos 3 valores acima, ou
+  `None` (Supabase em si fora do ar/sem credencial - `obter_cliente()`
+  já devolvia isso antes, inalterado) - e agora também loga a causa
+  real via `print` (visível no log do Streamlit Cloud, "Manage app").
+- **`data/saude_dados.py`**: `diagnostico_infraestrutura()` só repassa
+  o valor (docstring/type hint atualizados pra refletir os 5 estados).
+- **`ui/saude_dados_tab.py`**: banner específico pra cada caso -
+  `st.error` (vermelho) só pra `TABELA_AUSENTE`, com a ação de rodar
+  `sql/coletores_status.sql`; `st.warning` (amarelo) pra
+  `CREDENCIAL_OU_CONEXAO` (ação: conferir `supabase.url`/
+  `supabase.secret_key` nos Secrets - usar a SECRET key, nunca a anon/
+  public), pra `ERRO_DESCONHECIDO` (ação: ver o log real) e pra `None`
+  (mensagem já existente, inalterada).
+
+### 2. Validação (sem rede real - mockando o erro real, nunca presumindo)
+
+- 6 testes novos/reescritos em `tests/test_coletores_status.py`
+  (9/9z/9b/9c/9d/9e/9f): sucesso com histórico vazio (`{}`, não é erro);
+  `TABELA_AUSENTE` com a mensagem PGRST205 real; `None` (Supabase fora
+  do ar); `CREDENCIAL_OU_CONEXAO` com uma mensagem real de "Invalid API
+  key" e com uma mensagem real de timeout de conexão (2 cenários, ambos
+  no mesmo bucket, como o pedido original agrupa "credencial/conexão
+  ruim"); `ERRO_DESCONHECIDO` com uma exceção genérica sem nenhum dos
+  sinais - garante que nunca vira `True` nem reusa os outros 2 sinais
+  sem evidência.
+- Suite completa reinstalada do zero num venv isolado
+  (`/tmp/venv_test`) com as versões EXATAS de `requirements.txt`
+  (`streamlit==1.64.0`, `supabase==2.31.0`, `postgrest==2.32.0`
+  resolvido por ela, etc.) - **30/30 arquivos de teste passando**
+  (todos os `tests/test_*.py`, não só os 2 tocados nesta sessão);
+  `compileall`/`pyflakes` limpos nos arquivos alterados.
+- `streamlit.testing.v1.AppTest` rodado manualmente (não só mock
+  parcial) pros 5 cenários reais de `tabela_disponivel()` mockado -
+  `True`/`TABELA_AUSENTE`/`CREDENCIAL_OU_CONEXAO`/`ERRO_DESCONHECIDO`/
+  `None` - cada um renderiza exatamente o banner esperado (vermelho só
+  no primeiro, amarelo nos outros 3, nenhum no `True`), sem nenhuma
+  exceção em nenhum dos 5.
+- Conectividade real reconfirmada com `curl` (não reaproveitada de
+  sessão anterior sem checar de novo): `pregao.streamlit.app` e
+  `supabase.com` continuam inalcançáveis (timeout de conexão, exit 56),
+  `pypi.org` 200 como controle - mesma política de rede já documentada,
+  agora reconfirmada nesta sessão.
+
+### 3. Migração SQL (`sql/coletores_status.sql`) - estado e instruções exatas
+
+Revisado de novo nesta sessão (não reaberto sem motivo - só confirmado,
+como a sessão anterior já tinha achado): o arquivo é idempotente -
+`create table if not exists`, `create index if not exists`, `create or
+replace function` (a função em si já é idempotente por definição) e
+`drop trigger if exists` antes de recriar o trigger - **nunca** apaga
+nem recria dados existentes, rodar de novo é seguro. RLS fica ativado
+e SEM policy (`alter table ... enable row level security`, sem
+nenhuma `create policy`) - mesmo padrão de `sql/research.sql`/
+`sql/ia_cache.sql`: o backend Python usa a **secret key** (que sempre
+ignora RLS, nunca a anon/public key), então a tabela nunca fica
+pública mesmo sem policy explícita. Nenhuma credencial/token aparece
+no arquivo.
+
+**Ação exata pro Rodrigo** (só necessária se o banner que aparecer em
+produção for o **vermelho**, "Tabela coletores_status não encontrada"):
+
+1. Abrir [supabase.com/dashboard](https://supabase.com/dashboard) e
+   entrar no **mesmo projeto Supabase que `pregao.streamlit.app` usa em
+   produção** (confirmar em "Manage app" → "Secrets" do Streamlit Cloud
+   qual é a `supabase.url` configurada lá, pra garantir que é o projeto
+   certo - não um projeto de teste/dev diferente).
+2. No menu lateral, abrir **SQL Editor** → **New query**.
+3. Copiar o conteúdo INTEIRO de `sql/coletores_status.sql` deste
+   repositório (começa em `-- PREGAO — tabela de SAUDE DOS COLETORES`,
+   termina no `create trigger trg_coletores_status_updated_at ...`) e
+   colar na query nova.
+4. Clicar **Run** (ou Ctrl+Enter). Esperado: "Success. No rows
+   returned." Se der erro, copiar a mensagem exata antes de tentar de
+   novo (não repetir "na sorte").
+5. Confirmar que a tabela existe: no menu lateral, **Table Editor** →
+   procurar `coletores_status` na lista de tabelas do schema `public`.
+   Deve aparecer vazia (0 linhas) na primeira vez, com as colunas
+   `nome`/`fonte`/`categoria`/`execucao_ok`/`persistencia_ok`/`parcial`/
+   `registros_novos`/`ultimo_erro`/`ultima_tentativa_em`/
+   `ultimo_sucesso_em`/`updated_at`.
+6. Rodar a migração NÃO preenche a tabela por si só - ela só passa a
+   existir. Ela se preenche sozinha na próxima vez que cada coletor
+   instrumentado rodar de verdade (abrir a home do app já dispara
+   MERCADO/NEWS; `coletor_local.py` na máquina do Rodrigo dispara
+   Genial Analisa/XP/Genial Lives/CALENDÁRIO - ver seção 5 abaixo).
+
+### 4. Pendência explícita: por que a validação final não pode ser feita deste sandbox
+
+Confirmado de novo nesta sessão (não é suposição recorrente sem
+checagem - `curl` rodado agora mesmo, seção 2 acima): este ambiente não
+tem rede liberada para `pregao.streamlit.app` nem para `*.supabase.co`/
+`supabase.com`, e não tem (nem deveria ter) a `secret_key` de produção
+do Rodrigo nos `st.secrets` daqui. Isso torna **estruturalmente
+impossível**, a partir de qualquer sessão cloud como esta, sem exceção:
+
+- abrir a aba SAÚDE DOS DADOS em `pregao.streamlit.app` de verdade;
+- confirmar qual banner aparece lá (o próprio objetivo desta correção -
+  tornar isso diagnosticável em menos de 1 minuto, sem precisar de mais
+  nenhuma sessão cloud "às cegas");
+- rodar a migração do item 3 no Supabase de produção real;
+- confirmar gravação real de uma tentativa (`registrar_tentativa`) e
+  leitura de volta pelo cliente da aplicação, em produção.
+
+Nenhuma dessas 4 ações foi feita, alegada como feita, ou simulada como
+se fosse produção real nesta sessão - são tecnicamente impossíveis daqui,
+não "não tentadas".
+
+### 5. Pendência que só o Rodrigo pode resolver (ação exata, passo a passo)
+
+1. **Abrir `pregao.streamlit.app`** (como admin), ir na aba **SAÚDE DOS
+   DADOS**, aguardar o redeploy automático do Streamlit Cloud pegar o
+   commit desta sessão (alguns minutos após o push) e **olhar o topo da
+   aba, antes da tabela de coletores**:
+   - **Banner vermelho** ("Tabela coletores_status não encontrada..."):
+     seguir o passo a passo da seção 3 acima (copiar
+     `sql/coletores_status.sql`, rodar no SQL Editor do projeto
+     Supabase de produção certo). Depois de rodar, voltar na aba e
+     clicar **ATUALIZAR** - o banner deve desaparecer (ou, se a causa
+     real era outra além de tabela ausente, aparecer o amarelo de
+     credencial/conexão em vez do vermelho - também é sinal de
+     progresso, não de falha da correção).
+   - **Banner amarelo mencionando "credencial/autorização ou de
+     conexão"**: a tabela já existe, o problema é a API key/role usada.
+     Em "Manage app" → "Secrets", conferir se `supabase.url` aponta pro
+     projeto certo e se `supabase.secret_key` é de fato a **secret
+     key** (Settings → API → "service_role secret" no painel Supabase,
+     **nunca** a "anon public" - essa última não ignora RLS e não tem
+     permissão de escrita na tabela sem policy, que esta tabela não
+     tem de propósito).
+   - **Banner amarelo mencionando "motivo não identificado"**: abrir
+     "Manage app" → "Logs", procurar por
+     `[coletores_status] tabela_disponivel() falhou` - a mensagem
+     completa do erro real agora fica ali, visível (antes desta
+     correção, nenhuma dessas 3 causas aparecia no log, tudo
+     silencioso). Copiar a mensagem e, se quiser, pedir uma próxima
+     sessão investigar com o erro real em mãos.
+   - **Nenhum banner, coletores continuando "Nunca executado"**: a
+     tabela existe e responde (`True`) - nesse caso, o histórico está
+     genuinamente vazio porque nenhum coletor instrumentado rodou
+     ainda com código novo suficiente, ou rodou e falhou antes de
+     chegar em `registrar_tentativa`. Abrir a home do app (dispara
+     MERCADO/NEWS) e checar os Logs por `[coletores_status]`/
+     `[saude_dados]`; pra Genial Analisa/XP/Genial Lives/CALENDÁRIO,
+     depende de rodar `coletor_local.py` numa máquina real (item 2
+     abaixo) - nenhuma sessão cloud roda isso pelo Rodrigo.
+2. **`coletor_local.py`** continua dependendo inteiramente do Rodrigo
+   rodar numa máquina real dele (sem mudança nesta sessão) - é o único
+   jeito de popular o histórico de Genial Analisa/XP/Genial (Lives)/
+   CALENDÁRIO, exatamente como já documentado no relatório anterior.
+3. Critério de aceite do pedido original (seção 5 dele): "o painel só
+   deixa de mostrar 'Nunca executado' quando existir evidência
+   persistida de uma tentativa real" - isso **não muda** com esta
+   correção (que é só o diagnóstico de infraestrutura, não o pipeline
+   dos coletores) e continua dependendo dos passos 1 e 2 acima
+   acontecerem em produção real.
+
+### 6. Estado final
+
+Working tree limpo ao final, commit novo com os testes de regressão,
+`origin/main` sincronizado antes do commit (sem commit concorrente) e
+depois do push. Venv de teste (`/tmp/venv_test`) é infraestrutura
+efêmera do container, não comitada. Causa raiz exata em produção
+(tabela ausente vs. credencial vs. outra) permanece **não comprovada
+nesta sessão**, pela mesma limitação estrutural de ambiente documentada
+na seção 4 - o que foi entregue é a correção que torna essa causa
+diagnosticável corretamente (vermelho vs. amarelo certo, nunca o
+mesmo sinal pros 2 casos) pelo próprio Rodrigo em produção.

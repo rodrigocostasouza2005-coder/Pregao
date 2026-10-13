@@ -252,16 +252,17 @@ REGISTRO_COLETORES = [
 ]
 
 
-def diagnostico_infraestrutura() -> bool | None:
+def diagnostico_infraestrutura() -> bool | str | None:
     """Repassa `coletores_status.tabela_disponivel()` pro uso da UI (ver
     ui/saude_dados_tab.py) - checagem de infraestrutura, separada de
-    `obter_painel_saude()` de proposito: quando ela da' False/None, TODOS
-    os coletores sem fallback hibrido abaixo aparecem NUNCA_EXECUTADO/
-    NAO_COMPROVADO ao mesmo tempo - nao porque pararam de rodar, mas
-    porque o proprio registro de tentativas esta' inacessivel. Sem este
-    diagnostico, as duas causas (coletor realmente nunca rodou vs.
-    infraestrutura de status quebrada) ficam indistinguiveis pra quem le'
-    o painel."""
+    `obter_painel_saude()` de proposito: quando ela da' qualquer coisa
+    diferente de True, TODOS os coletores sem fallback hibrido abaixo
+    aparecem NUNCA_EXECUTADO/NAO_COMPROVADO ao mesmo tempo - nao porque
+    pararam de rodar, mas porque o proprio registro de tentativas esta'
+    inacessivel. Sem este diagnostico, as causas (coletor realmente
+    nunca rodou vs. infraestrutura de status quebrada - e, dentro desse
+    2o caso, tabela ausente vs. credencial/conexao ruim vs. outro motivo,
+    ver tabela_disponivel) ficam indistinguiveis pra quem le' o painel."""
     return coletores_status.tabela_disponivel()
 
 

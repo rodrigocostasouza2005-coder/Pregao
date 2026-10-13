@@ -16,6 +16,61 @@ from data.supabase_client import obter_cliente
 
 _TABELA = "coletores_status"
 
+# Estados possiveis de tabela_disponivel() (achado real 2026-10-13,
+# continuacao: o binario True/False/None original tratava "tabela
+# ausente" e "credencial/conexao invalida" como o MESMO False, acendendo
+# sempre o banner VERMELHO mesmo quando o caso real era amarelo - ver
+# docstring de tabela_disponivel() abaixo).
+TABELA_AUSENTE = "TABELA_AUSENTE"
+TABELA_CREDENCIAL_OU_CONEXAO = "CREDENCIAL_OU_CONEXAO"
+TABELA_ERRO_DESCONHECIDO = "ERRO_DESCONHECIDO"
+
+# Sinais de texto que distinguem a causa real (postgrest-py/supabase-py
+# nao garantem uma classe de excecao estavel por tipo de erro - so' o
+# corpo JSON/mensagem reflete isso de forma consistente; confirmado
+# lendo postgrest.exceptions.APIError==2.32.0: .code/.message/.hint/
+# .details vem direto do JSON de erro do Postgrest, todos opcionais).
+_SINAIS_TABELA_AUSENTE = ("pgrst205", "could not find the table", "schema cache")
+_SINAIS_CREDENCIAL_OU_CONEXAO = (
+    # auth/credencial (Postgrest/Supabase gateway)
+    "401", "403", "pgrst301", "pgrst302", "jwt", "api key", "apikey",
+    "unauthorized", "authentication", "permission denied", "42501",
+    "invalid_grant", "invalid signature",
+    # conexao/rede (httpx levanta excecao propria aqui, sem .code/.message -
+    # so' o texto da excecao mesmo; mesmo vocabulario de
+    # data/saude_dados.py:_TERMOS_INDISPONIBILIDADE)
+    "timeout", "timed out", "conexao", "conexão", "connection", "dns",
+    "ssl", "unreachable", "econnrefused", "name or service not known",
+    "waf", "bloquead",
+)
+
+
+def _texto_erro(erro: Exception) -> str:
+    """Concatena toda informacao textual disponivel na excecao (str/repr
+    e os atributos .code/.message/.details/.hint quando existirem, caso
+    de postgrest.exceptions.APIError) num unico texto em lowercase, pra
+    busca por sinal independente da classe exata da excecao."""
+    partes = [str(erro), repr(erro)]
+    for atributo in ("code", "message", "details", "hint"):
+        valor = getattr(erro, atributo, None)
+        if valor:
+            partes.append(str(valor))
+    return " ".join(partes).lower()
+
+
+def _classificar_erro_tabela(erro: Exception) -> str:
+    """Decide qual das 3 causas reais explica uma falha ao consultar
+    coletores_status (ver tabela_disponivel). Nunca usa isinstance (a
+    biblioteca nao garante uma classe por tipo de erro) - so' o texto
+    real do erro, mesmo padrao de deteccao por palavra-chave ja usado em
+    data/saude_dados.py:_TERMOS_INDISPONIBILIDADE."""
+    texto = _texto_erro(erro)
+    if any(sinal in texto for sinal in _SINAIS_TABELA_AUSENTE):
+        return TABELA_AUSENTE
+    if any(sinal in texto for sinal in _SINAIS_CREDENCIAL_OU_CONEXAO):
+        return TABELA_CREDENCIAL_OU_CONEXAO
+    return TABELA_ERRO_DESCONHECIDO
+
 
 def registrar_tentativa(
     nome: str,
@@ -102,7 +157,7 @@ def obter_todos_status() -> dict:
         return {}
 
 
-def tabela_disponivel() -> bool | None:
+def tabela_disponivel() -> bool | str | None:
     """Diagnostico (mesmo padrao de data/eventos_coleta.py:
     tabela_eventos_disponivel, achado real 2026-10-05: a tabela
     eventos_resultados nao existia em producao porque sql/eventos.sql
@@ -114,14 +169,29 @@ def tabela_disponivel() -> bool | None:
     producao - o padrao classico de 'tabela coletores_status tambem
     nunca migrada', nao de coletores quebrados individualmente.
 
-    True se a tabela responde a uma consulta trivial, False se existir
-    cliente Supabase mas a consulta falhar (tabela/schema ausente, RLS
-    bloqueando, coluna renomeada etc - qualquer erro aqui JA significa
-    que registrar_tentativa/obter_status tambem falham, pelo mesmo
-    motivo), None se o Supabase em si estiver fora do ar
-    (obter_cliente()=None, indistinguivel de 'sem credencial'). So' pra
-    diagnostico/UI (ver ui/saude_dados_tab.py) - nunca usada pelos
-    coletores em si, que continuam degradando com seguranca
+    Retorna um de 5 valores:
+    - True: tabela responde a uma consulta trivial (tudo ok);
+    - TABELA_AUSENTE: existe cliente Supabase mas a consulta falhou com
+      um erro compativel com tabela/schema ausente (ex: PGRST205
+      'Could not find the table') - acao real: rodar
+      sql/coletores_status.sql;
+    - TABELA_CREDENCIAL_OU_CONEXAO: existe cliente mas a consulta falhou
+      com um erro de autenticacao/autorizacao (API key invalida, JWT,
+      RLS bloqueando por role errada) ou de rede/conexao (timeout, DNS,
+      SSL) - DISTINTO de tabela ausente (achado real 2026-10-13,
+      continuacao: antes, isso caia no mesmo False/vermelho que tabela
+      ausente, escondendo que o problema real era credencial/conexao,
+      nao migracao pendente);
+    - TABELA_ERRO_DESCONHECIDO: a consulta falhou por um motivo que nao
+      bate com nenhum dos 2 sinais acima - ainda um erro real (nunca
+      "tudo bem"), so' sem causa identificavel so' pelo texto;
+    - None: o Supabase em si esta' fora do ar/sem credencial nenhuma
+      configurada (obter_cliente()=None).
+
+    Qualquer um dos 3 primeiros ja' significa que
+    registrar_tentativa/obter_status tambem falham, pelo mesmo motivo.
+    So' pra diagnostico/UI (ver ui/saude_dados_tab.py) - nunca usada
+    pelos coletores em si, que continuam degradando com seguranca
     independente disso."""
     cliente = obter_cliente()
     if cliente is None:
@@ -129,5 +199,7 @@ def tabela_disponivel() -> bool | None:
     try:
         cliente.table(_TABELA).select("nome").limit(1).execute()
         return True
-    except Exception:
-        return False
+    except Exception as e:
+        causa = _classificar_erro_tabela(e)
+        print(f"[coletores_status] tabela_disponivel() falhou ({causa}): {e!r}")
+        return causa

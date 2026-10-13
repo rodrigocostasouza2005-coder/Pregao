@@ -155,34 +155,93 @@ def test_8_execucao_excecao_no_execute_nunca_propaga():
     _checar("8b obter_status com erro no execute -> None, sem excecao", status is None)
 
 
-def test_9_tabela_disponivel_quando_consulta_trivial_funciona():
-    cliente = _ClienteFake()
-    with patch.object(cs_mod, "obter_cliente", return_value=cliente):
-        disponivel = cs_mod.tabela_disponivel()
-    _checar("9 tabela responde a consulta trivial -> True", disponivel is True)
-
-
-def test_9b_tabela_indisponivel_quando_consulta_falha():
+def _cliente_cuja_consulta_falha(excecao: Exception) -> "_ClienteFake":
     cliente = _ClienteFake()
     cliente.table_original = cliente.table
 
     def _table_que_falha(nome):
         tabela = cliente.table_original(nome)
-        tabela.execute = lambda: (_ for _ in ()).throw(
-            Exception("PGRST205: Could not find the table 'public.coletores_status' in the schema cache")
-        )
+        tabela.execute = lambda: (_ for _ in ()).throw(excecao)
         return tabela
 
     cliente.table = _table_que_falha
+    return cliente
+
+
+def test_9_tabela_disponivel_quando_consulta_trivial_funciona():
+    # sucesso real: consulta funciona e devolve historico vazio (lista
+    # vazia, sem excecao nenhuma) - distinto de qualquer um dos 3
+    # estados de falha abaixo, e distinto de obter_status/obter_todos_status
+    # tambem nao lancarem excecao pro mesmo cliente (ver tests 5/7).
+    cliente = _ClienteFake()
     with patch.object(cs_mod, "obter_cliente", return_value=cliente):
         disponivel = cs_mod.tabela_disponivel()
-    _checar("9b tabela ausente/erro de schema -> False (distinto de 'Supabase fora do ar')", disponivel is False)
+        vazio = cs_mod.obter_todos_status()
+    _checar("9 tabela responde a consulta trivial -> True", disponivel is True)
+    _checar("9z historico vazio (sem tentativa registrada) nao e' erro -> {}", vazio == {})
+
+
+def test_9b_tabela_ausente_classificada_distinto_de_credencial():
+    # erro real do postgrest-py (APIError==2.32.0): .code='PGRST205',
+    # .message contem "Could not find the table ... in the schema cache"
+    # - mesma assinatura ja' confirmada em producao pra eventos_resultados
+    # (commit 4c17876).
+    erro = Exception("PGRST205: Could not find the table 'public.coletores_status' in the schema cache")
+    cliente = _cliente_cuja_consulta_falha(erro)
+    with patch.object(cs_mod, "obter_cliente", return_value=cliente):
+        disponivel = cs_mod.tabela_disponivel()
+    _checar(
+        "9b tabela ausente/erro de schema -> TABELA_AUSENTE (nunca o mesmo sinal de credencial/conexao)",
+        disponivel == cs_mod.TABELA_AUSENTE,
+    )
 
 
 def test_9c_supabase_fora_do_ar_retorna_none_nao_false():
     with patch.object(cs_mod, "obter_cliente", return_value=None):
         disponivel = cs_mod.tabela_disponivel()
-    _checar("9c Supabase em si fora do ar -> None (distinto de 'tabela ausente')", disponivel is None)
+    _checar("9c Supabase em si fora do ar (sem credencial configurada) -> None (distinto de 'tabela ausente')", disponivel is None)
+
+
+def test_9d_erro_de_credencial_invalida_classificado_distinto_de_tabela_ausente():
+    # achado real (missao 2026-10-13, continuacao): ANTES desta correcao,
+    # esta excecao caia no MESMO sinal de "tabela ausente" (False), fazendo
+    # o painel sugerir rodar sql/coletores_status.sql quando a tabela ja'
+    # existe e o problema real e' a API key/secret_key errada.
+    erro = Exception('{"message":"Invalid API key","hint":"Double check your Supabase `anon` or `service_role` API key."}')
+    cliente = _cliente_cuja_consulta_falha(erro)
+    with patch.object(cs_mod, "obter_cliente", return_value=cliente):
+        disponivel = cs_mod.tabela_disponivel()
+    _checar(
+        "9d erro de credencial invalida -> CREDENCIAL_OU_CONEXAO (nunca TABELA_AUSENTE)",
+        disponivel == cs_mod.TABELA_CREDENCIAL_OU_CONEXAO,
+    )
+
+
+def test_9e_erro_de_conexao_tambem_classificado_como_credencial_ou_conexao():
+    # erro tipico de rede (httpx.ConnectTimeout/ConnectError na vida real,
+    # aqui so' uma Exception generica com o mesmo texto) - mesmo vocabulario
+    # de data/saude_dados.py:_TERMOS_INDISPONIBILIDADE.
+    erro = Exception("httpx.ConnectTimeout: timed out while connecting to Supabase")
+    cliente = _cliente_cuja_consulta_falha(erro)
+    with patch.object(cs_mod, "obter_cliente", return_value=cliente):
+        disponivel = cs_mod.tabela_disponivel()
+    _checar(
+        "9e timeout de conexao -> CREDENCIAL_OU_CONEXAO (agrupado com credencial, nunca TABELA_AUSENTE)",
+        disponivel == cs_mod.TABELA_CREDENCIAL_OU_CONEXAO,
+    )
+
+
+def test_9f_erro_sem_nenhum_sinal_conhecido_fica_erro_desconhecido():
+    # nem "tabela ausente" nem "credencial/conexao" - ainda assim nunca
+    # finge sucesso (True) nem reusa um dos outros 2 sinais sem evidencia.
+    erro = Exception("ValueError inesperado dentro do parser da resposta")
+    cliente = _cliente_cuja_consulta_falha(erro)
+    with patch.object(cs_mod, "obter_cliente", return_value=cliente):
+        disponivel = cs_mod.tabela_disponivel()
+    _checar(
+        "9f erro sem sinal conhecido -> ERRO_DESCONHECIDO (nunca True, nunca os outros 2 sinais)",
+        disponivel == cs_mod.TABELA_ERRO_DESCONHECIDO,
+    )
 
 
 if __name__ == "__main__":

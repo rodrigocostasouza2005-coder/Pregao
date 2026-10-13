@@ -3,6 +3,47 @@
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
+## 2026-10-13 (continuação 2 — SAÚDE DOS DADOS distingue tabela ausente de credencial/conexão)
+
+Sessão autônoma agendada, retomando a sessão anterior (que bateu o
+limite de uso de 5h após só 79s, sem editar nada) e terminando o
+pedido original do Rodrigo (seção 2): o diagnóstico de infraestrutura
+tratava "tabela ausente" e "credencial/conexão inválida" como o MESMO
+sinal binário, acendendo sempre o banner VERMELHO mesmo quando o
+problema real era credencial (que deveria ser AMARELO). Ver PROGRESSO.md
+"CONTINUAÇÃO 2" pro relatório completo, inclusive a ação exata que só o
+Rodrigo pode executar em produção.
+
+- **fix: `data/coletores_status.py`** — `tabela_disponivel()` deixa de
+  ser `bool | None` e passa a classificar a exceção real (texto +
+  `.code`/`.message`/`.details`/`.hint`, mesmo shape de
+  `postgrest.exceptions.APIError` confirmado lendo a lib instalada,
+  versão `2.32.0`) em 1 de 5 resultados: `True` (ok), `TABELA_AUSENTE`
+  (PGRST205/"Could not find the table"), `CREDENCIAL_OU_CONEXAO` (401/
+  403/JWT/API key/RLS/timeout/DNS/SSL), `ERRO_DESCONHECIDO` (nenhum dos
+  sinais acima) ou `None` (Supabase em si fora do ar/sem credencial
+  nenhuma configurada — `obter_cliente()=None`, inalterado).
+- **`ui/saude_dados_tab.py`** — banner específico pra cada um dos 3
+  novos casos de falha (vermelho só pra `TABELA_AUSENTE`; amarelo pra
+  `CREDENCIAL_OU_CONEXAO` com a ação de conferir `supabase.secret_key`
+  nos Secrets do Streamlit Cloud; amarelo pra `ERRO_DESCONHECIDO`
+  apontando pro log real).
+- 6 testes novos/reescritos em `tests/test_coletores_status.py`
+  (9/9b/9c/9d/9e/9f, mock do erro real sem rede) cobrindo os 3 estados
+  de falha + sucesso com histórico vazio; suite completa (30 arquivos
+  de teste) reinstalada com as versões exatas de `requirements.txt`
+  (`streamlit==1.64.0`, `supabase==2.31.0`) e **100% passando**;
+  `compileall`/`pyflakes` limpos; `streamlit.testing.v1.AppTest` rodado
+  manualmente pros 5 cenários reais (`True`/`TABELA_AUSENTE`/
+  `CREDENCIAL_OU_CONEXAO`/`ERRO_DESCONHECIDO`/`None`) — cada um renderiza
+  o banner certo, sem exceção.
+- Reconfirmado com `curl` (não presumido): `pregao.streamlit.app` e
+  `supabase.com` continuam inalcançáveis deste sandbox (`pypi.org` 200
+  como controle) — a mesma limitação de rede já documentada nas sessões
+  anteriores. A validação final em produção (ver seção 5 em
+  PROGRESSO.md) continua **estruturalmente impossível** a partir daqui;
+  é a única pendência real do Rodrigo.
+
 ## 2026-10-13 (continuação — diagnóstico de infraestrutura da SAÚDE DOS DADOS)
 
 Sessão autônoma agendada, continuando a MISSÃO CRÍTICA — COLETORES logo

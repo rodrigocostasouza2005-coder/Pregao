@@ -12,7 +12,7 @@ persistiu, quantos registros novos) - complementares, nao substitutos."""
 
 import streamlit as st
 
-from data import saude_dados
+from data import coletores_status, saude_dados
 
 _COR_POR_ESTADO = {
     "SUCESSO_COM_NOVIDADE": "alta",
@@ -64,15 +64,44 @@ def render_saude_dados():
     # UI - os dois apareciam como "Nunca executado"/"Nao comprovado" sem
     # nenhum aviso de QUAL e' o caso. Mostrado so' quando o diagnostico
     # falha (nunca um "tudo OK" extra na tela comum).
+    #
+    # Continuacao 2026-10-13: `disponivel` deixou de ser um binario
+    # False/None - agora distingue TABELA_AUSENTE (migração pendente,
+    # vermelho) de CREDENCIAL_OU_CONEXAO (tabela pode já existir, erro
+    # é outro - amarelo) de ERRO_DESCONHECIDO (amarelo, causa não
+    # identificável só pelo texto do erro). Antes, os 2 últimos casos
+    # acendiam o MESMO vermelho de "tabela ausente", levando a rodar
+    # uma migração que não resolveria nada.
     disponivel = saude_dados.diagnostico_infraestrutura()
-    if disponivel is False:
+    if disponivel == coletores_status.TABELA_AUSENTE:
         st.error(
-            "Tabela **coletores_status** não encontrada ou inacessível no Supabase "
-            "de produção. Os coletores abaixo marcados 'Nunca executado'/'Não "
-            "comprovado' podem estar rodando normalmente por baixo — este painel "
-            "só não consegue LER nem GRAVAR o histórico de tentativas. Ação: rode "
-            "`sql/coletores_status.sql` no SQL Editor do projeto Supabase (migração "
-            "idempotente, não apaga nada existente)."
+            "Tabela **coletores_status** não encontrada no Supabase de produção "
+            "(erro real do Postgrest compatível com tabela/schema ausente, ex. "
+            "`PGRST205: Could not find the table`). Os coletores abaixo marcados "
+            "'Nunca executado'/'Não comprovado' podem estar rodando normalmente por "
+            "baixo — este painel só não consegue LER nem GRAVAR o histórico de "
+            "tentativas. Ação: copie o conteúdo de `sql/coletores_status.sql` e "
+            "rode no **SQL Editor** do projeto Supabase de produção certo (migração "
+            "idempotente — `create table if not exists`, não apaga nada existente)."
+        )
+    elif disponivel == coletores_status.TABELA_CREDENCIAL_OU_CONEXAO:
+        st.warning(
+            "A consulta à tabela **coletores_status** falhou com um erro de "
+            "**credencial/autorização ou de conexão** (API key inválida/errada, JWT, "
+            "RLS bloqueando por role errada, ou timeout/DNS/SSL) — **não** é tabela "
+            "ausente; rodar a migração não resolve isto. Ação: em 'Manage app' → "
+            "'Secrets' do Streamlit Cloud, confira se `supabase.url` e "
+            "`supabase.secret_key` apontam para o projeto Supabase de produção "
+            "correto e usam a **secret key** (nunca a anon/public key), e confirme "
+            "que o projeto Supabase está no ar."
+        )
+    elif disponivel == coletores_status.TABELA_ERRO_DESCONHECIDO:
+        st.warning(
+            "A consulta à tabela **coletores_status** falhou por um motivo que não "
+            "bate com 'tabela ausente' nem com 'credencial/conexão' — ainda é um "
+            "erro real, só não identificável automaticamente pelo texto. Ação: veja "
+            "o erro completo em 'Manage app' → 'Logs' do Streamlit Cloud, procurando "
+            "por `[coletores_status] tabela_disponivel`."
         )
     elif disponivel is None:
         st.warning(
