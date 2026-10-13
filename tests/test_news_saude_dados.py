@@ -88,6 +88,48 @@ def test_4_watchlist_vazia_nao_registra_nada():
     _checar("4c resultado vazio, sem falha", todas == [] and falhas == [])
 
 
+def test_5_top_mercado_br_pool_falho_registra_falha_em_news():
+    # bug real corrigido (auditoria missao coletores 2026-10-13,
+    # continuacao): obter_top_mercado (BR) e
+    # obter_top_mercado_internacional, chamados direto quando o usuario
+    # filtra TOP MERCADO por regiao (ui/top_mercado_tab.py), nunca
+    # chamavam registrar_tentativa - so' obter_top_mercado_tudo
+    # chamava. Se o pool BR falhasse isolado enquanto o usuario olhava
+    # so' o filtro BRASIL, SAUDE DOS DADOS continuava "NEWS: Coleta OK"
+    # com base na ultima execucao bem-sucedida de "TUDO".
+    news_mod.obter_top_mercado.clear()
+    with patch.object(news_mod, "_coletar_pool_brasil", return_value=({}, False)), \
+         patch.object(news_mod, "registrar_tentativa") as mock_reg:
+        resultado = news_mod.obter_top_mercado()
+    _checar("5a pool BR falho -> None (nunca inventa noticia)", resultado is None)
+    _checar("5b registra NEWS execucao_ok=False (nao fica invisivel pro painel)",
+            mock_reg.call_args.args[0] == "NEWS" and mock_reg.call_args.kwargs.get("execucao_ok") is False,
+            f"(call={mock_reg.call_args})")
+
+
+def test_6_top_mercado_br_sucesso_registra_ok_em_news():
+    news_mod.obter_top_mercado.clear()
+    with patch.object(news_mod, "_coletar_pool_brasil", return_value=({"https://x": {}}, True)), \
+         patch.object(news_mod, "_processar_pool", return_value=[{"importancia": 1, "titulo": "A"}]), \
+         patch.object(news_mod, "registrar_tentativa") as mock_reg:
+        resultado = news_mod.obter_top_mercado()
+    _checar("6a resultado real retornado", resultado == [{"importancia": 1, "titulo": "A"}], f"(resultado={resultado})")
+    _checar("6b registra NEWS execucao_ok=True com registros_novos real",
+            mock_reg.call_args.args[0] == "NEWS" and mock_reg.call_args.kwargs.get("execucao_ok") is True
+            and mock_reg.call_args.kwargs.get("registros_novos") == 1, f"(call={mock_reg.call_args})")
+
+
+def test_7_top_mercado_internacional_pool_falho_registra_falha_em_news():
+    news_mod.obter_top_mercado_internacional.clear()
+    with patch.object(news_mod, "_coletar_pool_internacional", return_value=({}, False)), \
+         patch.object(news_mod, "registrar_tentativa") as mock_reg:
+        resultado = news_mod.obter_top_mercado_internacional()
+    _checar("7a pool INTL falho -> None (nunca inventa noticia)", resultado is None)
+    _checar("7b registra NEWS execucao_ok=False (mesmo mecanismo do pool BR)",
+            mock_reg.call_args.args[0] == "NEWS" and mock_reg.call_args.kwargs.get("execucao_ok") is False,
+            f"(call={mock_reg.call_args})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

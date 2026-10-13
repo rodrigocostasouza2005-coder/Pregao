@@ -983,10 +983,26 @@ def obter_top_mercado(setor: str = "TODOS"):
     _coletar_pool_brasil/news_setores.classificar_setores."""
     entries_por_link, alguma_fonte_ok = _coletar_pool_brasil(setor)
     if not alguma_fonte_ok:
+        # registro de SAUDE DOS DADOS (bug real corrigido, auditoria
+        # missao coletores 2026-10-13, continuacao): so' obter_top_
+        # mercado_tudo chamava registrar_tentativa - quando o usuario
+        # filtra TOP MERCADO por "BRASIL" (ui/top_mercado_tab.py), esta
+        # funcao e' chamada DIRETO, sem passar por obter_top_mercado_
+        # tudo. Se o pool BR falhar isolado nesse filtro, a UI avisava
+        # certo mas SAUDE DOS DADOS continuava "NEWS: Coleta OK" com
+        # base na ultima execucao bem-sucedida de "TUDO" - mesmo
+        # mecanismo do bug ja corrigido em obter_noticias_watchlist, so'
+        # que neste caminho de codigo (filtro de regiao), nao o de
+        # ticker.
+        registrar_tentativa("NEWS", "Google News (BR)", execucao_ok=False,
+                             erro="pool Brasil falhou", categoria="Noticias")
         return None
     resultado = _processar_pool(entries_por_link, setor, "BR")
     resultado.sort(key=lambda n: n["importancia"], reverse=True)
-    return resultado[:_TOP_MERCADO_QTD]
+    resultado = resultado[:_TOP_MERCADO_QTD]
+    registrar_tentativa("NEWS", "Google News (BR)", execucao_ok=True,
+                         registros_novos=len(resultado), categoria="Noticias")
+    return resultado
 
 
 @st.cache_data(ttl=_TTL_COLETA, show_spinner="buscando notícias internacionais…")
@@ -1000,10 +1016,17 @@ def obter_top_mercado_internacional(setor: str = "TODOS"):
     independente do idioma do texto original)."""
     entries_por_link, alguma_fonte_ok = _coletar_pool_internacional(setor)
     if not alguma_fonte_ok:
+        # registro de SAUDE DOS DADOS - mesmo achado/motivo de
+        # obter_top_mercado acima, so' que pro filtro "INTERNACIONAL".
+        registrar_tentativa("NEWS", "Google News (INTL)", execucao_ok=False,
+                             erro="pool Internacional falhou", categoria="Noticias")
         return None
     resultado = _processar_pool(entries_por_link, setor, "INT")
     resultado.sort(key=lambda n: n["importancia"], reverse=True)
-    return resultado[:_TOP_MERCADO_QTD]
+    resultado = resultado[:_TOP_MERCADO_QTD]
+    registrar_tentativa("NEWS", "Google News (INTL)", execucao_ok=True,
+                         registros_novos=len(resultado), categoria="Noticias")
+    return resultado
 
 
 @st.cache_data(ttl=_TTL_COLETA, show_spinner="buscando notícias…")
