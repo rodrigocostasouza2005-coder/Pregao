@@ -11,22 +11,25 @@ tabela por coletor, testes de conectividade real). Itens investigados
 e **deliberadamente não corrigidos agora** (registrados aqui, não
 escondidos):
 
-- **MERCADO — lote de cotações sem retry/backoff**
-  PRIORIDADE: MÉDIA · IMPACTO: MÉDIO (degrada honestamente, nunca
-  inventa preço) · ESFORÇO: MÉDIO
-  `data/mercado.py:_baixar_lote`/`_baixar_lote_bruto` (yfinance em
-  lote, cache 90s) fazem 1 única tentativa, sem retry/backoff nem
-  `curl_cffi` impersonation - diferente de `data/prices.py:
-  _tk_info_com_retry` (2 tentativas, a segunda imitando um browser
-  Chrome), que existe especificamente porque o Yahoo Finance bloqueia
-  mais IP de datacenter (o caso real de produção, Streamlit Cloud).
-  Se o lote bloquear, o painel mostra "—" honestamente (nunca inventa
-  cotação) e fica registrado em SAÚDE DOS DADOS como falha - não é
-  dado inventado nem falso-sucesso, só um gap de robustez. Replicar o
-  padrão de `_tk_info_com_retry` pro lote exigiria confirmar que
-  `yf.download` aceita os mesmos parâmetros de sessão/impersonation
-  que `yf.Ticker()` usa - não testado nesta sessão (sem rede real pra
-  validar).
+- ~~**MERCADO — lote de cotações sem retry/backoff**~~ — **corrigido**
+  (sessão 2026-10-13, continuação noturna, commit `ccd57bf`):
+  `data/mercado.py:_baixar_lote`/`_baixar_lote_bruto` ganharam
+  `_yf_download_com_retry`, mesma técnica de `data/prices.py:
+  _tk_info_com_retry` (1ª tentativa via `curl_cffi` imitando Chrome,
+  2ª com a sessão padrão do yfinance). Confirmado nesta sessão (lendo
+  a assinatura real de `yfinance==1.7.0` instalada num venv isolado,
+  `/tmp/venv_test`, infraestrutura efêmera não comitada) que
+  `yf.download(..., session=...)` aceita e usa a sessão em TODAS as
+  requisições do lote, mesmo com `threads=True` - a dúvida registrada
+  no item original ("não testado") está resolvida. 5 testes novos
+  (`tests/test_mercado.py` 12-15, mockando `yf.download` com
+  `side_effect` pra simular 1ª tentativa bloqueada/2ª ok, as 2
+  falhando, e as 2 vazias) + suite completa `395/395` (local,
+  `/tmp/venv_test`) + `compileall`/`pyflakes` limpos. Validação real
+  em produção (confirmar que o Yahoo de fato bloqueava e que o retry
+  resolve na prática) continua pendente - mesma limitação estrutural
+  de rede de sempre (sem acesso a `*.finance.yahoo.com` deste
+  sandbox), registrada na seção de pendências do Rodrigo.
 - **MACRO (BCB) — Selic/CDI/Focus não chamam `registrar_tentativa`
   individualmente**
   PRIORIDADE: BAIXA · IMPACTO: BAIXO (UI avisa o usuário corretamente

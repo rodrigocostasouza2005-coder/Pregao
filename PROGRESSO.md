@@ -5932,3 +5932,114 @@ nesta sessão**, pela mesma limitação estrutural de ambiente documentada
 na seção 4 - o que foi entregue é a correção que torna essa causa
 diagnosticável corretamente (vermelho vs. amarelo certo, nunca o
 mesmo sinal pros 2 casos) pelo próprio Rodrigo em produção.
+
+## CONTINUAÇÃO 3 — MERCADO ganha retry/backoff (2026-10-13, continuação noturna)
+
+Sessão automática de continuação (pedido original: "trabalhar até
+esgotar as correções e validações viáveis hoje, sem interromper").
+Começou lendo PROGRESSO.md/BACKLOG.md/CHANGELOG.md pra não redescobrir
+o que já estava feito - estado do repositório confirmado limpo e
+sincronizado com `origin/main` (commit `482ef22`, a sessão anterior
+tinha deixado `HEAD` destacada nesse commit; recriada a branch `main`
+local apontando pra lá, sem perda de trabalho).
+
+### 1. O que foi corrigido (código)
+
+Item já registrado em BACKLOG.md como "investigado e deliberadamente
+não corrigido" na rodada anterior, por uma dúvida técnica não
+verificada: **MERCADO — lote de cotações sem retry/backoff**. A dúvida
+registrada era se `yf.download` aceitaria `session=` (impersonation
+via `curl_cffi`, mesma técnica de `data/prices.py:_tk_info_com_retry`)
+do mesmo jeito que `yf.Ticker()` aceita, inclusive com `threads=True`.
+
+Resolvida nesta sessão **lendo o código fonte real** de
+`yfinance==1.7.0` (instalado num venv isolado, `/tmp/venv_test`,
+infraestrutura efêmera do container, não comitada - mesma prática já
+usada em sessões anteriores pra inspecionar `postgrest`):
+`yfinance/multi.py:download()` repassa `session` pra `_download_impl`,
+que usa `YfData(session=session)` - `YfData` é um singleton de
+processo (`yfinance/data.py:SingletonMeta`, "Singleton means one
+session one cookie shared by all threads"), ou seja a mesma sessão
+passada é reutilizada por TODAS as threads do lote, não só a
+primeira. `yfinance/data.py:_set_session` aceita explicitamente sessão
+`curl_cffi` (`is_supported_session`, mensagem de erro cita
+"curl_cffi or requests Session").
+
+Mudança em `data/mercado.py`:
+
+- Nova `_yf_download_com_retry(symbols, period)`: 2 tentativas - 1ª
+  com `cffi_requests.Session(impersonate="chrome")`, 2ª com a sessão
+  padrão (`session=None`) - mesmo padrão e mesmo motivo de
+  `data/prices.py:_tk_info_com_retry` (Yahoo Finance bloqueia mais IP
+  de datacenter que parece script genérico do que IP que parece
+  navegador comum). Propaga a última exceção se as 2 falharem (quem
+  chama decide como registrar em SAÚDE DOS DADOS); devolve
+  `DataFrame` vazio se as 2 responderem vazio - nunca inventa dado.
+- `_baixar_lote` (altas/baixas, termômetro, setorial, treemap,
+  panorama do Ibovespa) e `_baixar_lote_bruto` (mercados globais)
+  passam a chamar esse helper em vez de `yf.download` direto.
+- Bug real que isso corrige: com 1 tentativa só, um bloqueio
+  transitório do Yahoo (comum em IP de datacenter, achado real já
+  documentado em `data/prices.py`) derrubava o painel de MERCADO
+  INTEIRO pelos 90s do TTL do `@st.cache_data` - mesmo quando uma 2ª
+  tentativa, imitando um navegador, teria funcionado. Não é dado
+  inventado (o painel já degradava honestamente, mostrando "—"), mas
+  é uma falha evitável na disponibilidade real do dado.
+- Decisão de escopo: **não** adicionada instrumentação nova de SAÚDE
+  DOS DADOS pra `_baixar_lote_bruto` (mercados globais) - ela não
+  tinha `registrar_tentativa` antes desta sessão e continua sem
+  (nenhuma linha em `REGISTRO_COLETORES` pra "Mercados Globais"); isso
+  é um gap PRÉ-EXISTENTE, fora do escopo do item do BACKLOG (que era
+  especificamente sobre retry/backoff, não sobre instrumentação nova).
+  Registrado aqui pra não ficar escondido, não corrigido por decisão
+  de manter o escopo do fix focado.
+
+### 2. Validação
+
+- 5 testes novos em `tests/test_mercado.py` (12 a 15): 1ª tentativa
+  bloqueada (exceção simulada)/2ª funciona -> retorna o dado da 2ª,
+  nunca propaga a falha da 1ª; confirma exatamente 2 tentativas, a 1ª
+  com sessão `curl_cffi` e a 2ª com `session=None` (prova de que o
+  retry É real, não decorativo); as 2 tentativas falhando -> propaga a
+  exceção real (quem chama registra o erro de verdade, nunca finge
+  sucesso); as 2 tentativas vazias -> `DataFrame` vazio sem exceção;
+  `_baixar_lote` (a função com cache/`registrar_tentativa` de
+  verdade, não só o helper isolado) se recupera de uma 1ª tentativa
+  bloqueada e registra `execucao_ok=True` certo.
+- Suite completa reinstalada do zero em `/tmp/venv_test` com as
+  versões EXATAS de `requirements.txt` - **395/395 testes passando**
+  (todos os `tests/test_*.py`, incluindo os 5 novos; antes desta
+  sessão eram 384+ já registrados). Cada um dos 30 arquivos de teste
+  também roda individualmente sob `python tests/test_X.py` (convenção
+  do projeto) - 30/30 ok. `compileall`/`pyflakes` limpos em todo
+  `data/`, `ui/`, `tests/`, `app.py`, `config.py`, `auth.py`,
+  `coletor_local.py`.
+- **Não validado nesta sessão** (limitação estrutural de ambiente,
+  reconfirmada, não presumida de sessão anterior): se o Yahoo Finance
+  de fato bloqueia o lote em produção (Streamlit Cloud, IP de
+  datacenter) e se o retry de fato resolve isso na prática - exige
+  rede real pra `*.finance.yahoo.com`, que este sandbox não tem (nem
+  teve em nenhuma sessão anterior hoje). O que foi comprovado é que o
+  código agora FAZ a segunda tentativa corretamente (testes 12/15) e
+  que a técnica (`session=` com `curl_cffi`) é suportada pela
+  biblioteca real instalada (leitura de código-fonte, seção 1) - não
+  que ela resolve o bloqueio real do Yahoo (isso só o Rodrigo,
+  olhando produção, pode confirmar).
+
+### 3. Commit e estado final
+
+Commit único `ccd57bf` (`data/mercado.py` + `tests/test_mercado.py`),
+`origin/main` reconfirmado sem commit concorrente antes do push (só a
+sessão anterior, `482ef22`, nada novo). Push direto pra `main` (sem
+force), working tree limpo depois. Item correspondente em
+`BACKLOG.md` atualizado de "investigado e não corrigido" pra
+"corrigido" nesta mesma sessão, com a referência ao commit.
+
+### 4. Próximo passo desta sessão de continuação
+
+Auditoria em andamento (subagente) nos coletores ainda não revisitados
+nesta rodada especificamente em busca de NOVAS instâncias dos mesmos 3
+padrões de bug já recorrentes hoje (cache que persiste falha, loop sem
+isolamento por item, exceção genérica demais) - resultado a ser
+registrado na próxima seção deste arquivo, só depois de confirmado com
+evidência (nunca antes).
