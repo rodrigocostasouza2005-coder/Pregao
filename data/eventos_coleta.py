@@ -46,6 +46,7 @@ de CONFIRMADO via RI nesta primeira versão tende a ser baixa. Decisão
 deliberada: preferir não inventar/adivinhar a URL da subpágina a
 arriscar errado (mesma postura da fase V2 do calendário)."""
 
+import logging
 import re
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -404,22 +405,28 @@ def coletar_eventos_universo(tickers: list, hoje: date = None) -> dict:
     limite = time.monotonic() + _ORCAMENTO_TOTAL_S
     stats = {
         "processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
-        "tempo_esgotado": False, "tabela_disponivel": tabela_eventos_disponivel(),
+        "falhas": 0, "tempo_esgotado": False, "tabela_disponivel": tabela_eventos_disponivel(),
     }
     for ticker in tickers:
         if time.monotonic() > limite:
             stats["tempo_esgotado"] = True
             break
-        evento = coletar_evento(ticker, hoje=hoje)
-        stats["processados"] += 1
-        if evento is None:
-            continue
-        if evento["status"] == STATUS_CONFIRMADO:
-            if salvar_evento_se_mais_confiavel(evento):
-                stats["confirmados"] += 1
-        elif evento["status"] == STATUS_ESTIMADO:
-            if salvar_evento_se_mais_confiavel(evento):
-                stats["estimados"] += 1
-        else:
-            stats["mantidos_prazo_cvm"] += 1
+        try:
+            evento = coletar_evento(ticker, hoje=hoje)
+            if evento is not None:
+                if evento["status"] == STATUS_CONFIRMADO:
+                    if salvar_evento_se_mais_confiavel(evento):
+                        stats["confirmados"] += 1
+                elif evento["status"] == STATUS_ESTIMADO:
+                    if salvar_evento_se_mais_confiavel(evento):
+                        stats["estimados"] += 1
+                else:
+                    stats["mantidos_prazo_cvm"] += 1
+        except Exception:
+            # Um ticker malformado ou uma excecao inesperada nao deve abortar
+            # os demais ativos do universo. A falha fica visivel no log e nas stats.
+            stats["falhas"] += 1
+            logging.exception("Falha ao coletar evento de resultados para %s", ticker)
+        finally:
+            stats["processados"] += 1
     return stats
