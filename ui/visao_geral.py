@@ -53,7 +53,15 @@ def _status_cotacao_indice(cotacao: dict) -> str | None:
         if minutos < 60:
             return f"EM CACHE • {minutos} MIN"
         horas, resto = divmod(minutos, 60)
-        return f"EM CACHE • {horas}H {resto:02d}MIN"
+        idade = f"EM CACHE • {horas}H {resto:02d}MIN"
+        barra_em = cotacao.get("_barra_em")
+        if barra_em:
+            try:
+                data_barra = datetime.fromisoformat(barra_em).strftime("%d/%m")
+                idade += f" • BARRA {data_barra}"
+            except (TypeError, ValueError, OverflowError):
+                pass
+        return idade
     except (TypeError, ValueError, OverflowError):
         return "VALOR EM CACHE"
 
