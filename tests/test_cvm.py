@@ -278,6 +278,29 @@ def test_14_testar_conexao_reflete_falha_real_mesmo_com_fallback_disponivel():
             ok is False, f"(ok={ok}, detalhe={detalhe})")
 
 
+def test_15_documentos_brutos_sem_coluna_tipo_nao_quebra_e_filtra_resultados():
+    """Regressao do bug de 2026-10-13: respostas IPE sem a coluna Tipo
+    nao podem gerar KeyError; categorias de resultados sem classificacao
+    devem ser excluidas, preservando fatos relevantes."""
+    import pandas as pd
+
+    _limpar_cache_fca_ipe()
+    cnpj = "33.000.167/0001-01"
+    df_sem_tipo = pd.DataFrame({
+        "CNPJ_Companhia": [cnpj, cnpj],
+        "Categoria": ["Fato Relevante", "Dados Econômico-Financeiros"],
+        "Assunto": ["Fato relevante de teste", "Resultado sem tipo"],
+    })
+    df_vazio = pd.DataFrame(columns=["CNPJ_Companhia", "Categoria"])
+    with patch.object(cvm_mod, "_ipe_ano", side_effect=[df_sem_tipo, df_vazio]):
+        documentos = cvm_mod._documentos_brutos(cnpj)
+
+    _checar("15a IPE sem coluna Tipo nao gera excecao e retorna documentos", documentos is not None)
+    _checar("15b fato relevante e preservado, resultado sem Tipo e excluido",
+            len(documentos) == 1 and documentos[0]["Categoria"] == "Fato Relevante",
+            f"(documentos={documentos})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
