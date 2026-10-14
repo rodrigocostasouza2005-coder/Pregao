@@ -323,6 +323,20 @@ def obter_mercados_globais() -> list:
         linha = _linha_papel(df, nome, symbol)
         if linha:
             resultado.append({"nome": nome, "preco": linha["preco"], "variacao_pct": linha["variacao_pct"]})
-    registrar_tentativa("MERCADO (Globais)", "yfinance (índices globais)", execucao_ok=True,
-                         registros_novos=len(resultado), categoria="Cotacoes")
+    nome_coletor = "MERCADO (Globais)"
+    fonte = "yfinance (índices globais)"
+    ausentes = [nome for nome, symbol in zip(nomes, symbols)
+                if not _linha_papel(df, nome, symbol)]
+    if not resultado:
+        registrar_tentativa(nome_coletor, fonte, execucao_ok=False,
+                             erro="Lote retornou dados, mas nenhum índice global pôde ser interpretado",
+                             registros_novos=0, categoria="Cotacoes")
+        return []
+    if ausentes:
+        registrar_tentativa(nome_coletor, fonte, execucao_ok=True, parcial=True,
+                             erro="Índices sem dados: " + ", ".join(ausentes),
+                             registros_novos=len(resultado), categoria="Cotacoes")
+    else:
+        registrar_tentativa(nome_coletor, fonte, execucao_ok=True,
+                             registros_novos=len(resultado), categoria="Cotacoes")
     return resultado
