@@ -165,11 +165,16 @@ def processar_monitoramento():
     """Atualiza fontes e avalia as recomendações ativas. Envio fica no worker."""
     snapshot = coletar_carteiras_genial()
     coleta_ok = snapshot is not None
-    if coleta_ok and not salvar_carteiras(snapshot):
-        return {"coleta_ok": False, "alertas_novos": [], "erro": "Falha ao persistir a coleta; monitoramento suspenso para evitar usar recomendações desatualizadas."}
-    recomendacoes = listar_carteiras()
     if not coleta_ok:
         return {"coleta_ok": False, "alertas_novos": [], "erro": "Fonte de recomendações indisponível; monitoramento suspenso para evitar usar carteiras desatualizadas."}
+    # Uma resposta vazia pode indicar mudança no HTML/API ou coleta parcial.
+    # Não desativar a última carteira válida até confirmar que a fonte entregou
+    # uma composição real; isso evita transformar falha de parsing em "zero ativos".
+    if not snapshot:
+        return {"coleta_ok": False, "alertas_novos": [], "erro": "A fonte retornou zero recomendações; snapshot rejeitado e carteiras anteriores preservadas."}
+    if not salvar_carteiras(snapshot):
+        return {"coleta_ok": False, "alertas_novos": [], "erro": "Falha ao persistir a coleta; monitoramento suspenso para evitar usar recomendações desatualizadas."}
+    recomendacoes = listar_carteiras()
     if recomendacoes is None:
         return {"coleta_ok": coleta_ok, "alertas_novos": [], "erro": "Supabase indisponível"}
     tickers = sorted({normalizar_ticker(r.get("ticker")) for r in recomendacoes} - {""})
