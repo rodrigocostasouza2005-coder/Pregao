@@ -688,3 +688,56 @@ button[data-testid^="stBaseButton"] {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--destaque);
 }
+
+
+/* VISAO GERAL: cards de mercado com hierarquia forte e leitura rapida. */
+.card-mercado-agora {
+    min-width: 0;
+    min-height: 5.1rem;
+    padding: 0.55rem 0.6rem 0.5rem;
+    border: 1px solid var(--borda);
+    border-top: 2px solid var(--destaque);
+    background: linear-gradient(155deg, color-mix(in srgb, var(--painel-bg) 94%, var(--destaque)), var(--painel-bg) 72%);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.25rem;
+    transition: border-color 140ms ease, background-color 140ms ease;
+}
+.card-mercado-agora:hover {
+    border-color: var(--destaque);
+    background: color-mix(in srgb, var(--painel-bg) 90%, var(--destaque));
+}
+.card-mercado-rotulo {
+    color: var(--cinza);
+    font-size: 0.65rem;
+    line-height: 1.25;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.card-mercado-valor {
+    color: var(--neutro);
+    font-size: clamp(0.78rem, 1vw, 1rem);
+    font-weight: 600;
+    line-height: 1.25;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.card-mercado-variacao {
+    font-size: 0.72rem;
+    line-height: 1.2;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.card-mercado-valor.indisponivel { color: var(--cinza); }
+@media (max-width: 900px) {
+    .card-mercado-agora {
+        min-height: 4.6rem;
+        padding: 0.45rem 0.5rem;
+    }
+}
