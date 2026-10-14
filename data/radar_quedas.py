@@ -165,8 +165,8 @@ def processar_monitoramento():
     """Atualiza fontes e avalia as recomendações ativas. Envio fica no worker."""
     snapshot = coletar_carteiras_genial()
     coleta_ok = snapshot is not None
-    if coleta_ok:
-        salvar_carteiras(snapshot)
+    if coleta_ok and not salvar_carteiras(snapshot):
+        return {"coleta_ok": False, "alertas_novos": [], "erro": "Falha ao persistir a coleta; monitoramento suspenso para evitar usar recomendações desatualizadas."}
     recomendacoes = listar_carteiras()
     if not coleta_ok:
         return {"coleta_ok": False, "alertas_novos": [], "erro": "Fonte de recomendações indisponível; monitoramento suspenso para evitar usar carteiras desatualizadas."}
