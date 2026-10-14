@@ -82,6 +82,21 @@ def test_3_prazo_cvm_quando_nao_ha_resultado_ainda_entregue():
     _checar("3f empresa vem de _nome_empresa (cascata barata antes do fallback de rede)", evento["empresa"] == "PETROBRAS")
 
 
+def test_evento_persistido_no_passado_nao_some_do_calendario():
+    persistido = {
+        "ticker": "PETR4", "periodo": "3T26", "data_evento": "2026-10-10",
+        "status": STATUS_CONFIRMADO, "fonte": "Petrobras RI",
+        "url_fonte": "https://ri.example.com",
+    }
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \\
+         patch.object(eventos_mod, "_nome_empresa", return_value="PETROBRAS"), \\
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=persistido):
+        evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 13))
+    _checar("data confirmada passada nao e' devolvida como proximo resultado", evento["data"] >= date(2026, 10, 13))
+    _checar("sem resultado protocolado, evento vencido volta ao fallback PRAZO_CVM", evento["status"] == STATUS_PRAZO_CVM)
+    _checar("fallback preserva o periodo pendente", evento["periodo"] == "3T26")
+
+
 def test_resultado_ja_entregue_pula_pro_proximo_trimestre():
     # 3T26 (jul-set) ja' foi entregue -> deve pular pro 4T26 (DFP)
     docs = [_doc_resultado("2026-09-30")]
