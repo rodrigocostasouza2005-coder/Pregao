@@ -168,9 +168,25 @@ def _focus_anual(indicador: str, ano: int, base_calculo: int = 0) -> dict | None
         + "&$top=1&$format=json"
     )
     url = f"{_FOCUS_BASE}?{query}"
-    r = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
-    r.raise_for_status()
-    valores = r.json().get("value", [])
+    # Olinda/Focus tambem apresenta timeouts transitórios. Repetir
+    # somente falhas de rede e HTTP 429/5xx; respostas vazias continuam
+    # sendo "sem dado", nunca substituidas por estimativas.
+    ultima_excecao = None
+    for tentativa in range(3):
+        try:
+            r = requests.get(url, headers=_HEADERS, timeout=(5, 25))
+            r.raise_for_status()
+            valores = r.json().get("value", [])
+            break
+        except requests.RequestException as e:
+            ultima_excecao = e
+            status = getattr(getattr(e, "response", None), "status_code", 0)
+            transitorio = isinstance(e, (requests.Timeout, requests.ConnectionError)) or status in (429, 500, 502, 503, 504)
+            if not transitorio or tentativa == 2:
+                raise
+            time.sleep(1 + tentativa)
+    else:
+        raise ultima_excecao
     if not valores:
         return None
     v = valores[0]

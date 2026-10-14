@@ -326,3 +326,21 @@ def test_16_sgs_erro_http_permanente_nao_faz_retentativas():
         else:
             raise AssertionError("HTTP 404 permanente deveria propagar erro")
     _checar("16a erro HTTP permanente nao repete", get.call_count == 1)
+
+
+def test_17_focus_repete_timeout_transitorio():
+    from unittest.mock import Mock
+    from requests import Timeout
+    ano = macro_mod.datetime.now(macro_mod.TZ).year
+    resposta = Mock()
+    resposta.status_code = 200
+    resposta.raise_for_status.return_value = None
+    resposta.json.return_value = {"value": [{
+        "Mediana": 4.0, "Media": 4.1, "numeroRespondentes": 100,
+        "Data": "2026-10-12"
+    }]}
+    with patch.object(macro_mod.requests, "get", side_effect=[Timeout("lento"), resposta]) as get, \
+         patch.object(macro_mod.time, "sleep"):
+        resultado = macro_mod._focus_anual("IPCA", ano)
+    _checar("17a Focus recupera apos timeout", resultado is not None and resultado["mediana_pct"] == 4.0)
+    _checar("17b Focus repetiu uma vez", get.call_count == 2)
