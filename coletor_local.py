@@ -217,8 +217,9 @@ def main() -> int:
     logger.info(
         f"  eventos de resultado: {stats_eventos['processados']} ticker(s) processado(s), "
         f"{stats_eventos['confirmados']} confirmado(s) novo(s), {stats_eventos['estimados']} estimado(s) novo(s), "
-        f"{stats_eventos['mantidos_prazo_cvm']} sem fonte melhor (prazo CVM)"
-        + (" - tempo esgotado, proximo run continua" if stats_eventos["tempo_esgotado"] else "")
+        f"{stats_eventos['mantidos_prazo_cvm']} sem fonte melhor (prazo CVM), "
+        f"{stats_eventos.get('falhas', 0)} falha(s) por ticker"
+        + (" - TEMPO ESGOTADO: universo incompleto; proximo run continua" if stats_eventos["tempo_esgotado"] else "")
     )
 
     # snapshot do calendario (2026-10-05, ver data/eventos.py): grava o
@@ -276,10 +277,15 @@ def main() -> int:
         stats_eventos["tabela_disponivel"] is not True or not snapshot_ok
     )
     falha_coleta_calendario = bool(stats_eventos.get("falhas", 0))
+    # O Agendador do Windows tambem precisa enxergar execucao parcial:
+    # timeout nao e falha definitiva (a rotacao continua no proximo run),
+    # mas nao pode sair com codigo 0 como se o universo inteiro tivesse sido coberto.
+    coleta_parcial_calendario = bool(stats_eventos.get("tempo_esgotado", False))
     return 1 if (
         any(not info["ok"] for info in resultado.values())
         or falha_persistencia_calendario
         or falha_coleta_calendario
+        or coleta_parcial_calendario
     ) else 0
 
 
