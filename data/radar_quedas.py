@@ -153,7 +153,7 @@ def registrar_alerta(alerta):
                      .eq("ticker", alerta["ticker"]).eq("pregao", alerta["pregao"])
                      .limit(1).execute())
         if existente.data:
-            return True, existente.data[0]["id"]
+            return True, None
         resp = cliente.table("radar_alertas_queda").insert(alerta).execute()
         return bool(resp.data), (resp.data[0].get("id") if resp.data else None)
     except Exception as exc:
