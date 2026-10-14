@@ -48,7 +48,7 @@ def test_monitoramento_nao_usa_carteiras_antigas_quando_fonte_falha():
 def test_monitoramento_para_se_nao_persistir_coleta():
     from unittest.mock import patch
     import data.radar_quedas as radar
-    with patch.object(radar, "coletar_carteiras_genial", return_value=[]), \
+    with patch.object(radar, "coletar_carteiras_genial", return_value=[{"ticker": "PETR4", "carteira": "Top 10"}]), \
          patch.object(radar, "salvar_carteiras", return_value=False), \
          patch.object(radar, "listar_carteiras") as listar, \
          patch.object(radar, "obter_cotacao") as cotacao:
