@@ -255,15 +255,32 @@ def main() -> int:
     if not snapshot_ok:
         _erros_calendario.append("snapshot do calendario nao atualizado (calculo vazio ou Supabase indisponivel)")
         _persistencia_ok_calendario = False
+    # Excecoes isoladas por ticker nao interrompem o universo, mas tambem
+    # nao podem aparecer como coleta completa no painel de saude.
+    if stats_eventos.get("falhas", 0):
+        _erros_calendario.append(
+            f"falha inesperada em {stats_eventos.get('falhas', 0)} ticker(s) do universo"
+        )
+    if stats_eventos["tempo_esgotado"]:
+        _erros_calendario.append("orcamento de tempo esgotado; universo parcialmente processado")
     registrar_tentativa(
         "CALENDARIO", "RI das empresas + NEWS + prazo CVM",
         execucao_ok=True, persistencia_ok=_persistencia_ok_calendario,
         registros_novos=stats_eventos["confirmados"] + stats_eventos["estimados"],
         erro="; ".join(_erros_calendario) or None,
-        parcial=stats_eventos["tempo_esgotado"], categoria="Calendario",
+        parcial=bool(stats_eventos["tempo_esgotado"] or stats_eventos.get("falhas", 0)),
+        categoria="Calendario",
     )
 
-    return 1 if any(not info["ok"] for info in resultado.values()) else 0
+    falha_persistencia_calendario = (
+        stats_eventos["tabela_disponivel"] is not True or not snapshot_ok
+    )
+    falha_coleta_calendario = bool(stats_eventos.get("falhas", 0))
+    return 1 if (
+        any(not info["ok"] for info in resultado.values())
+        or falha_persistencia_calendario
+        or falha_coleta_calendario
+    ) else 0
 
 
 if __name__ == "__main__":
