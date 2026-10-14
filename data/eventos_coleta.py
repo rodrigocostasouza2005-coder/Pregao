@@ -46,6 +46,7 @@ de CONFIRMADO via RI nesta primeira versão tende a ser baixa. Decisão
 deliberada: preferir não inventar/adivinhar a URL da subpágina a
 arriscar errado (mesma postura da fase V2 do calendário)."""
 
+import logging
 import re
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -187,21 +188,32 @@ def tentar_news(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | N
     explicitos."""
     periodo_label = rotulo_periodo(ano, trimestre)
     termo = f"{empresa} resultado {periodo_label} divulgação data"
-    entries = _buscar_feed(termo)
+    try:
+        entries = _buscar_feed(termo)
+    except Exception:
+        # NEWS e' uma fonte secundaria: uma falha de RSS/busca nao pode
+        # abortar o ticker nem impedir o fallback deterministico PRAZO_CVM.
+        logging.exception("Falha na busca NEWS do calendario para %s", ticker)
+        return None
     if not entries:
         return None
-    for entry in entries[:10]:
-        titulo, veiculo = _extrair_veiculo_e_titulo(entry)
-        if not veiculo or not eh_fonte_confiavel(veiculo):
-            continue
-        resumo = re.sub(r"<[^>]+>", " ", entry.get("summary") or "")
-        data_evento = extrair_data_do_periodo(f"{titulo} {resumo}", ano, trimestre)
-        if data_evento is None:
-            continue
-        link = entry.get("link") or ""
-        if not link:
-            continue
-        return _montar_evento(ticker, empresa, ano, trimestre, STATUS_ESTIMADO, data_evento, veiculo, link)
+    try:
+        for entry in entries[:10]:
+            titulo, veiculo = _extrair_veiculo_e_titulo(entry)
+            if not veiculo or not eh_fonte_confiavel(veiculo):
+                continue
+            resumo = re.sub(r"<[^>]+>", " ", entry.get("summary") or "")
+            data_evento = extrair_data_do_periodo(f"{titulo} {resumo}", ano, trimestre)
+            if data_evento is None:
+                continue
+            link = entry.get("link") or ""
+            if not link:
+                continue
+            return _montar_evento(ticker, empresa, ano, trimestre, STATUS_ESTIMADO, data_evento, veiculo, link)
+    except Exception:
+        # Feed malformado tambem e' falha da fonte secundaria, nao motivo
+        # para descartar o fallback de prazo regulatorio deste ticker.
+        logging.exception("Falha ao interpretar NEWS do calendario para %s", ticker)
     return None
 
 
@@ -404,22 +416,28 @@ def coletar_eventos_universo(tickers: list, hoje: date = None) -> dict:
     limite = time.monotonic() + _ORCAMENTO_TOTAL_S
     stats = {
         "processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
-        "tempo_esgotado": False, "tabela_disponivel": tabela_eventos_disponivel(),
+        "falhas": 0, "tempo_esgotado": False, "tabela_disponivel": tabela_eventos_disponivel(),
     }
     for ticker in tickers:
         if time.monotonic() > limite:
             stats["tempo_esgotado"] = True
             break
-        evento = coletar_evento(ticker, hoje=hoje)
-        stats["processados"] += 1
-        if evento is None:
-            continue
-        if evento["status"] == STATUS_CONFIRMADO:
-            if salvar_evento_se_mais_confiavel(evento):
-                stats["confirmados"] += 1
-        elif evento["status"] == STATUS_ESTIMADO:
-            if salvar_evento_se_mais_confiavel(evento):
-                stats["estimados"] += 1
-        else:
-            stats["mantidos_prazo_cvm"] += 1
+        try:
+            evento = coletar_evento(ticker, hoje=hoje)
+            if evento is not None:
+                if evento["status"] == STATUS_CONFIRMADO:
+                    if salvar_evento_se_mais_confiavel(evento):
+                        stats["confirmados"] += 1
+                elif evento["status"] == STATUS_ESTIMADO:
+                    if salvar_evento_se_mais_confiavel(evento):
+                        stats["estimados"] += 1
+                else:
+                    stats["mantidos_prazo_cvm"] += 1
+        except Exception:
+            # Um ticker malformado ou uma excecao inesperada nao deve abortar
+            # os demais ativos do universo. A falha fica visivel no log e nas stats.
+            stats["falhas"] += 1
+            logging.exception("Falha ao coletar evento de resultados para %s", ticker)
+        finally:
+            stats["processados"] += 1
     return stats

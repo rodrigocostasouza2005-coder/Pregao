@@ -164,7 +164,8 @@ def test_6_cenario_global_lote_falho_registra_falha_em_saude_dos_dados():
 def test_7_cenario_global_sucesso_registra_ok_com_registros_reais():
     idx = pd.date_range("2026-10-01", periods=2, freq="D")
     df = pd.concat({
-        "GC=F": pd.DataFrame({"Close": [1900.0, 1920.0], "Volume": [0, 0]}, index=idx),  # "Ouro" em config.CENARIO_GLOBAL
+        symbol: pd.DataFrame({"Close": [1900.0, 1920.0], "Volume": [0, 0]}, index=idx)
+        for symbol in macro_mod.CENARIO_GLOBAL.values()
     }, axis=1)
     with patch.object(macro_mod, "_baixar_lote_bruto", return_value=df), \
          patch.object(macro_mod, "registrar_tentativa") as mock_reg:
@@ -172,8 +173,28 @@ def test_7_cenario_global_sucesso_registra_ok_com_registros_reais():
     _checar("7a registra MACRO (Cenário Global) execucao_ok=True",
             mock_reg.call_args.args[0] == "MACRO (Cenário Global)" and mock_reg.call_args.kwargs.get("execucao_ok") is True,
             f"(call={mock_reg.call_args})")
-    _checar("7b registros_novos bate com a quantidade real retornada (nunca conta item vazio)",
+    _checar("7b registros_novos bate com a quantidade real retornada",
             mock_reg.call_args.kwargs.get("registros_novos") == len(resultado), f"(resultado={resultado}, call={mock_reg.call_args})")
+
+
+def test_13_cenario_global_lote_parcial_nao_finge_sucesso_completo():
+    idx = pd.date_range("2026-10-01", periods=2, freq="D")
+    symbol = next(iter(macro_mod.CENARIO_GLOBAL.values()))
+    df = pd.concat({symbol: pd.DataFrame({"Close": [1900.0, 1920.0], "Volume": [0, 0]}, index=idx)}, axis=1)
+    with patch.object(macro_mod, "_baixar_lote_bruto", return_value=df), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg:
+        resultado = macro_mod.obter_cenario_global()
+    _checar("13a preserva ativos globais que chegaram", len(resultado) == 1)
+    _checar("13b marca resultado parcial", mock_reg.call_args.kwargs.get("parcial") is True)
+    _checar("13c lista os ativos ausentes no motivo", bool(mock_reg.call_args.kwargs.get("erro")))
+
+
+def test_14_cenario_global_sem_ativos_interpretaveis_registra_falha():
+    with patch.object(macro_mod, "_baixar_lote_bruto", return_value=pd.DataFrame()), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg:
+        resultado = macro_mod.obter_cenario_global()
+    _checar("14a nao retorna cotacoes vazias como sucesso", resultado == [])
+    _checar("14b registra falha real", mock_reg.call_args.kwargs.get("execucao_ok") is False)
 
 
 # ============================================================
@@ -237,6 +258,28 @@ def test_11_focus_ipca_e_focus_selic_registram_linhas_proprias_e_distintas():
             all(c.kwargs.get("execucao_ok") is True for c in mock_reg.call_args_list))
 
 
+
+def test_12_focus_ano_com_erro_registra_coleta_parcial():
+    """Preserva anos validos e registra erro isolado como coleta parcial."""
+    macro_mod.obter_focus_ipca.clear()
+    ano_atual = macro_mod.datetime.now(macro_mod.TZ).year
+
+    def _fake_focus_anual(indicador, ano, base_calculo=0):
+        if ano == ano_atual + 1:
+            raise ValueError("Olinda temporariamente indisponivel")
+        return {
+            "ano_referencia": ano, "mediana_pct": 4.5, "media_pct": 4.6,
+            "numero_respondentes": 50, "data_calculo": "2026-10-10",
+        }
+
+    with patch.object(macro_mod, "_focus_anual", side_effect=_fake_focus_anual), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg:
+        df = macro_mod.obter_focus_ipca()
+
+    _checar("12a preserva os anos validos", df is not None and len(df) == 2)
+    _checar("12b sinaliza coleta parcial", mock_reg.call_args.kwargs.get("parcial") is True)
+    _checar("12c preserva motivo da falha", "Olinda temporariamente indisponivel" in mock_reg.call_args.kwargs.get("erro", ""))
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
@@ -250,3 +293,54 @@ if __name__ == "__main__":
         print(f"FALHARAM {len(_FALHAS)}: {_FALHAS}")
         sys.exit(1)
     print("TODOS OS TESTES DE MACRO.PY (CURVA PRE/ANBIMA) PASSARAM")
+
+
+def test_15_sgs_retenta_timeout_transitorio_antes_de_falhar():
+    """Timeout transitório do SGS deve ser repetido e depois aceitar a
+    resposta real; não deve fabricar nem reutilizar dado antigo."""
+    from unittest.mock import Mock
+    from requests import Timeout
+    macro_mod.obter_ipca.clear()
+    resposta = Mock()
+    resposta.status_code = 200
+    resposta.json.return_value = [{"data": "13/10/2026", "valor": "0.48"}]
+    resposta.raise_for_status.return_value = None
+    with patch.object(macro_mod.requests, "get", side_effect=[Timeout("lento"), resposta]) as get, \
+         patch.object(macro_mod.time, "sleep"):
+        df = macro_mod._serie_sgs(433, 30)
+    _checar("15a SGS recupera apos timeout transitorio", df is not None and len(df) == 1)
+    _checar("15b repetiu exatamente uma vez", get.call_count == 2)
+
+
+def test_16_sgs_erro_http_permanente_nao_faz_retentativas():
+    from requests import HTTPError
+    resposta = __import__("unittest.mock", fromlist=["Mock"]).Mock()
+    resposta.status_code = 404
+    resposta.raise_for_status.side_effect = HTTPError("not found")
+    with patch.object(macro_mod.requests, "get", return_value=resposta) as get, \
+         patch.object(macro_mod.time, "sleep"):
+        try:
+            macro_mod._serie_sgs(433, 30)
+        except HTTPError:
+            pass
+        else:
+            raise AssertionError("HTTP 404 permanente deveria propagar erro")
+    _checar("16a erro HTTP permanente nao repete", get.call_count == 1)
+
+
+def test_17_focus_repete_timeout_transitorio():
+    from unittest.mock import Mock
+    from requests import Timeout
+    ano = macro_mod.datetime.now(macro_mod.TZ).year
+    resposta = Mock()
+    resposta.status_code = 200
+    resposta.raise_for_status.return_value = None
+    resposta.json.return_value = {"value": [{
+        "Mediana": 4.0, "Media": 4.1, "numeroRespondentes": 100,
+        "Data": "2026-10-12"
+    }]}
+    with patch.object(macro_mod.requests, "get", side_effect=[Timeout("lento"), resposta]) as get, \
+         patch.object(macro_mod.time, "sleep"):
+        resultado = macro_mod._focus_anual("IPCA", ano)
+    _checar("17a Focus recupera apos timeout", resultado is not None and resultado["mediana_pct"] == 4.0)
+    _checar("17b Focus repetiu uma vez", get.call_count == 2)

@@ -139,6 +139,29 @@ def test_news_sem_resultado_nenhum_retorna_none():
     _checar("busca de noticia sem resultado (None) -> None, nunca quebra", evento is None)
 
 
+def test_news_exception_preserva_fallback_prazo_cvm():
+    """Uma excecao de RSS nao pode pular o fallback final do calendario."""
+    prazo_evento = {
+        "ticker": "PETR4", "empresa": "Petrobras", "periodo": "3T26", "data": date(2026, 11, 14),
+        "horario": None, "status": STATUS_PRAZO_CVM, "fonte": "CVM — prazo regulatório",
+        "origem_url": None, "tipo_evento": "RESULTADO", "coletado_em": datetime.now(timezone.utc),
+    }
+    with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
+         patch.object(coleta_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(coleta_mod, "tentar_ri", return_value=None), \
+         patch.object(coleta_mod, "_buscar_feed", side_effect=RuntimeError("RSS indisponivel")), \
+         patch.object(coleta_mod, "_calcular_proximo_resultado", return_value=prazo_evento):
+        evento = coleta_mod.coletar_evento("PETR4")
+    _checar("excecao NEWS -> continua e retorna PRAZO_CVM, sem perder ticker",
+            evento is not None and evento["status"] == STATUS_PRAZO_CVM, f"(evento={evento})")
+
+
+def test_news_feed_malformado_nao_interrompe_fallback():
+    with patch.object(coleta_mod, "_buscar_feed", return_value=["entrada malformada"]):
+        evento = coleta_mod.tentar_news("PETR4", "Petrobras", 2026, 3)
+    _checar("feed NEWS malformado -> None, sem propagar excecao", evento is None, f"(evento={evento})")
+
+
 # ============================================================
 # coletar_evento: pipeline completo RI->NEWS->PRAZO_CVM
 # ============================================================
@@ -467,3 +490,20 @@ if __name__ == "__main__":
         print(f"FALHARAM {len(_FALHAS)}: {_FALHAS}")
         sys.exit(1)
     print("TODOS OS TESTES DO COLETOR DE EVENTOS PASSARAM")
+
+
+def test_10_falha_em_um_ticker_nao_aborta_o_universo():
+    """Excecao inesperada num ticker e' isolada; os tickers seguintes
+    continuam e a falha fica contabilizada para diagnostico."""
+    evento = _evento(STATUS_PRAZO_CVM, ticker="VALE3")
+    with (
+        patch.object(coleta_mod, "tabela_eventos_disponivel", return_value=True),
+        patch.object(coleta_mod, "coletar_evento", side_effect=[RuntimeError("ticker quebrado"), evento]),
+        patch.object(coleta_mod, "salvar_evento_se_mais_confiavel", return_value=False),
+        patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)),
+        patch.object(coleta_mod, "logging") as mock_logging,
+    ):
+        stats = coleta_mod.coletar_eventos_universo(["BAD1", "VALE3"])
+    _checar("10a processa os dois tickers mesmo com excecao no primeiro", stats["processados"] == 2)
+    _checar("10b contabiliza falha isolada", stats["falhas"] == 1)
+    _checar("10c registra excecao para diagnostico", mock_logging.exception.called)

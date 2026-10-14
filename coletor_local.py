@@ -217,8 +217,9 @@ def main() -> int:
     logger.info(
         f"  eventos de resultado: {stats_eventos['processados']} ticker(s) processado(s), "
         f"{stats_eventos['confirmados']} confirmado(s) novo(s), {stats_eventos['estimados']} estimado(s) novo(s), "
-        f"{stats_eventos['mantidos_prazo_cvm']} sem fonte melhor (prazo CVM)"
-        + (" - tempo esgotado, proximo run continua" if stats_eventos["tempo_esgotado"] else "")
+        f"{stats_eventos['mantidos_prazo_cvm']} sem fonte melhor (prazo CVM), "
+        f"{stats_eventos.get('falhas', 0)} falha(s) por ticker"
+        + (" - TEMPO ESGOTADO: universo incompleto; proximo run continua" if stats_eventos["tempo_esgotado"] else "")
     )
 
     # snapshot do calendario (2026-10-05, ver data/eventos.py): grava o
@@ -255,15 +256,37 @@ def main() -> int:
     if not snapshot_ok:
         _erros_calendario.append("snapshot do calendario nao atualizado (calculo vazio ou Supabase indisponivel)")
         _persistencia_ok_calendario = False
+    # Excecoes isoladas por ticker nao interrompem o universo, mas tambem
+    # nao podem aparecer como coleta completa no painel de saude.
+    if stats_eventos.get("falhas", 0):
+        _erros_calendario.append(
+            f"falha inesperada em {stats_eventos.get('falhas', 0)} ticker(s) do universo"
+        )
+    if stats_eventos["tempo_esgotado"]:
+        _erros_calendario.append("orcamento de tempo esgotado; universo parcialmente processado")
     registrar_tentativa(
         "CALENDARIO", "RI das empresas + NEWS + prazo CVM",
         execucao_ok=True, persistencia_ok=_persistencia_ok_calendario,
         registros_novos=stats_eventos["confirmados"] + stats_eventos["estimados"],
         erro="; ".join(_erros_calendario) or None,
-        parcial=stats_eventos["tempo_esgotado"], categoria="Calendario",
+        parcial=bool(stats_eventos["tempo_esgotado"] or stats_eventos.get("falhas", 0)),
+        categoria="Calendario",
     )
 
-    return 1 if any(not info["ok"] for info in resultado.values()) else 0
+    falha_persistencia_calendario = (
+        stats_eventos["tabela_disponivel"] is not True or not snapshot_ok
+    )
+    falha_coleta_calendario = bool(stats_eventos.get("falhas", 0))
+    # O Agendador do Windows tambem precisa enxergar execucao parcial:
+    # timeout nao e falha definitiva (a rotacao continua no proximo run),
+    # mas nao pode sair com codigo 0 como se o universo inteiro tivesse sido coberto.
+    coleta_parcial_calendario = bool(stats_eventos.get("tempo_esgotado", False))
+    return 1 if (
+        any(not info["ok"] for info in resultado.values())
+        or falha_persistencia_calendario
+        or falha_coleta_calendario
+        or coleta_parcial_calendario
+    ) else 0
 
 
 if __name__ == "__main__":

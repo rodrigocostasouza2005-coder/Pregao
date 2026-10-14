@@ -285,6 +285,13 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 48, "instrumentado": True,
     },
     {
+        # Coleta agregada da watchlist CVM usada na aba CVM/EQUITY; distingue
+        # falha da fonte por ticker e falha de persistência dos documentos.
+        "nome": "CVM (watchlist)", "fonte": "dados.cvm.gov.br (IPE/FCA - documentos por ticker)",
+        "categoria": "CVM", "frequencia_esperada": "sob demanda (cache 6h)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
+    {
         "nome": "Genial Analisa", "fonte": "analisa.genialinvestimentos.com.br",
         "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
         "idade_maxima_horas": 48, "instrumentado": True,
@@ -348,3 +355,43 @@ def obter_painel_saude() -> list:
             "desconhecido": codigo in _ESTADOS_DESCONHECIDO,
         })
     return painel
+
+
+_CAMPOS_OBRIGATORIOS_COLETOR = (
+    "nome", "fonte", "categoria", "frequencia_esperada", "instrumentado",
+)
+_COLETORES_CRITICOS = {
+    "NEWS", "NEWS (watchlist)", "MERCADO", "MACRO (BCB)", "CVM",
+    "CVM (FCA)", "CVM (watchlist)", "CALENDARIO",
+}
+
+
+def auditar_registro_coletores(registro=None) -> list:
+    """Retorna problemas estruturais no inventario, sem rede ou banco."""
+    itens = REGISTRO_COLETORES if registro is None else registro
+    problemas = []
+    nomes = {}
+    for indice, item in enumerate(itens):
+        if not isinstance(item, dict):
+            problemas.append({"codigo": "ITEM_INVALIDO", "coletor": f"#{indice + 1}", "detalhe": "Entrada nao e dicionario."})
+            continue
+        nome = item.get("nome")
+        identificador = str(nome).strip() if nome is not None else f"#{indice + 1}"
+        faltantes = [campo for campo in _CAMPOS_OBRIGATORIOS_COLETOR if campo not in item or item[campo] is None or (isinstance(item[campo], str) and not item[campo].strip())]
+        if faltantes:
+            problemas.append({"codigo": "METADADO_AUSENTE", "coletor": identificador, "detalhe": "Campos ausentes/vazios: " + ", ".join(faltantes)})
+        if nome is not None:
+            chave = str(nome).strip().casefold()
+            if chave in nomes:
+                problemas.append({"codigo": "NOME_DUPLICADO", "coletor": identificador, "detalhe": f"Nome tambem aparece na entrada #{nomes[chave] + 1}."})
+            else:
+                nomes[chave] = indice
+        idade = item.get("idade_maxima_horas")
+        if not isinstance(idade, (int, float)) or isinstance(idade, bool) or idade <= 0:
+            problemas.append({"codigo": "IDADE_MAXIMA_INVALIDA", "coletor": identificador, "detalhe": "idade_maxima_horas deve ser numero positivo."})
+        if "instrumentado" in item and not isinstance(item["instrumentado"], bool):
+            problemas.append({"codigo": "INSTRUMENTACAO_INVALIDA", "coletor": identificador, "detalhe": "instrumentado deve ser booleano."})
+    presentes = {str(item.get("nome", "")).strip() for item in itens if isinstance(item, dict)}
+    for nome in sorted(_COLETORES_CRITICOS - presentes):
+        problemas.append({"codigo": "COLETOR_CRITICO_AUSENTE", "coletor": nome, "detalhe": "Coletor critico esperado nao consta no inventario."})
+    return problemas

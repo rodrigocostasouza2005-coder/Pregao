@@ -237,7 +237,11 @@ def test_16_mercados_globais_lote_falho_registra_falha_em_saude_dos_dados():
 
 
 def test_17_mercados_globais_sucesso_registra_ok_com_registros_reais():
-    df = _df_simples("^GSPC", [4500.0, 4550.0])
+    idx = pd.date_range("2026-10-01", periods=2, freq="D")
+    df = pd.concat({
+        symbol: pd.DataFrame({"Close": [4500.0, 4550.0], "Volume": [0, 0]}, index=idx)
+        for symbol in mercado_mod.INDICES_GLOBAIS.values()
+    }, axis=1)
     with patch.object(mercado_mod, "_baixar_lote_bruto", return_value=df), \
          patch.object(mercado_mod, "registrar_tentativa") as mock_registrar:
         resultado = mercado_mod.obter_mercados_globais()
@@ -246,6 +250,25 @@ def test_17_mercados_globais_sucesso_registra_ok_com_registros_reais():
             f"(call={mock_registrar.call_args})")
     _checar("17b registros_novos bate com a quantidade real retornada",
             mock_registrar.call_args.kwargs.get("registros_novos") == len(resultado), f"(resultado={resultado}, call={mock_registrar.call_args})")
+
+
+def test_18_mercados_globais_parciais_sinalizam_indices_ausentes():
+    symbol = next(iter(mercado_mod.INDICES_GLOBAIS.values()))
+    df = _df_simples(symbol, [4500.0, 4550.0])
+    with patch.object(mercado_mod, "_baixar_lote_bruto", return_value=df), \
+         patch.object(mercado_mod, "registrar_tentativa") as mock_registrar:
+        resultado = mercado_mod.obter_mercados_globais()
+    _checar("18a preserva índice disponível", len(resultado) == 1)
+    _checar("18b marca coleta parcial", mock_registrar.call_args.kwargs.get("parcial") is True)
+    _checar("18c informa os índices ausentes", bool(mock_registrar.call_args.kwargs.get("erro")))
+
+
+def test_19_mercados_globais_sem_indices_interpretaveis_registra_falha():
+    with patch.object(mercado_mod, "_baixar_lote_bruto", return_value=pd.DataFrame()), \
+         patch.object(mercado_mod, "registrar_tentativa") as mock_registrar:
+        resultado = mercado_mod.obter_mercados_globais()
+    _checar("19a não retorna cotação vazia como sucesso", resultado == [])
+    _checar("19b registra falha real", mock_registrar.call_args.kwargs.get("execucao_ok") is False)
 
 
 if __name__ == "__main__":

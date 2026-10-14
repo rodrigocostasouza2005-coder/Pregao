@@ -6,6 +6,7 @@ uma fonte falhar, a funcao retorna None (ou [], pro cenario global) e quem
 chama deve avisar o usuario."""
 
 from datetime import date, datetime, timedelta
+import time
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -50,9 +51,31 @@ def _serie_sgs(codigo: int, dias_historico: int) -> pd.DataFrame:
         _SGS_BASE.format(codigo=codigo)
         + f"?formato=json&dataInicial={inicio.strftime('%d/%m/%Y')}&dataFinal={hoje.strftime('%d/%m/%Y')}"
     )
-    r = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
-    r.raise_for_status()
-    dados = r.json()
+    # O SGS ocasionalmente demora mais que o timeout normal. Repetir
+    # falhas transitórias (timeout, conexão, HTTP 429/5xx) evita marcar
+    # a série como indisponível por uma única resposta lenta. Não repete
+    # erros HTTP permanentes nem altera/estima os dados retornados.
+    ultima_excecao = None
+    for tentativa in range(3):
+        try:
+            r = requests.get(url, headers=_HEADERS, timeout=(5, 25))
+            if r.status_code == 429 or r.status_code >= 500:
+                r.raise_for_status()
+            r.raise_for_status()
+            dados = r.json()
+            break
+        except requests.RequestException as e:
+            ultima_excecao = e
+            transitório = (
+                isinstance(e, (requests.Timeout, requests.ConnectionError))
+                or (getattr(getattr(e, "response", None), "status_code", 0) in (429, 500, 502, 503, 504))
+            )
+            if not transitório or tentativa == 2:
+                raise
+            time.sleep(1 + tentativa)
+    else:
+        raise ultima_excecao
+
     if not dados:
         raise ValueError(f"SGS {codigo} retornou lista vazia")
     df = pd.DataFrame(dados)
@@ -145,9 +168,25 @@ def _focus_anual(indicador: str, ano: int, base_calculo: int = 0) -> dict | None
         + "&$top=1&$format=json"
     )
     url = f"{_FOCUS_BASE}?{query}"
-    r = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
-    r.raise_for_status()
-    valores = r.json().get("value", [])
+    # Olinda/Focus tambem apresenta timeouts transitórios. Repetir
+    # somente falhas de rede e HTTP 429/5xx; respostas vazias continuam
+    # sendo "sem dado", nunca substituidas por estimativas.
+    ultima_excecao = None
+    for tentativa in range(3):
+        try:
+            r = requests.get(url, headers=_HEADERS, timeout=(5, 25))
+            r.raise_for_status()
+            valores = r.json().get("value", [])
+            break
+        except requests.RequestException as e:
+            ultima_excecao = e
+            status = getattr(getattr(e, "response", None), "status_code", 0)
+            transitorio = isinstance(e, (requests.Timeout, requests.ConnectionError)) or status in (429, 500, 502, 503, 504)
+            if not transitorio or tentativa == 2:
+                raise
+            time.sleep(1 + tentativa)
+    else:
+        raise ultima_excecao
     if not valores:
         return None
     v = valores[0]
@@ -163,22 +202,23 @@ def _focus_anual(indicador: str, ano: int, base_calculo: int = 0) -> dict | None
 def _focus_multi_ano(indicador: str, quantidade_anos: int = 3) -> pd.DataFrame | None:
     ano_atual = datetime.now(TZ).year
     linhas = []
+    anos_com_erro = []
     for ano in range(ano_atual, ano_atual + quantidade_anos):
         try:
             linha = _focus_anual(indicador, ano)
-        except Exception:
-            # bug real corrigido (auditoria missao coletores, 2026-10-13):
-            # mesma classe de bug ja corrigida na ANBIMA (e04b295) - um
-            # erro HTTP/resposta malformada pontual pra UM ano (ex: soluco
-            # transitorio da Olinda) escapava do loop pro try/except
-            # externo e abortava os OUTROS anos tambem, mesmo que
-            # tivessem dado valido. Agora so' pula pro proximo ano.
+        except Exception as e:
+            # Isola falha por ano: dados validos dos outros anos continuam
+            # disponiveis, mas a coleta precisa sinalizar que ficou parcial.
+            anos_com_erro.append(f"{ano}: {str(e)[:120]}")
             continue
         if linha is not None:
             linhas.append(linha)
     if not linhas:
         return None
-    return pd.DataFrame(linhas)
+    df = pd.DataFrame(linhas)
+    df.attrs["coleta_parcial"] = bool(anos_com_erro)
+    df.attrs["erro_coleta"] = "; ".join(anos_com_erro)[:300] if anos_com_erro else None
+    return df
 
 
 @st.cache_data(ttl=_TTL_SERIES, show_spinner="atualizando indicadores macro…")
@@ -195,8 +235,10 @@ def obter_focus_ipca() -> pd.DataFrame | None:
         registrar_tentativa("MACRO (BCB - Focus IPCA)", "Banco Central (Olinda/Expectativas)",
                              execucao_ok=False, erro="nenhum dos 3 anos teve dado valido", categoria="Macro")
     else:
+        parcial = bool(df.attrs.get("coleta_parcial", False))
         registrar_tentativa("MACRO (BCB - Focus IPCA)", "Banco Central (Olinda/Expectativas)",
-                             execucao_ok=True, registros_novos=len(df), categoria="Macro")
+                             execucao_ok=True, registros_novos=len(df), categoria="Macro",
+                             parcial=parcial, erro=df.attrs.get("erro_coleta"))
     return df
 
 
@@ -210,8 +252,10 @@ def obter_focus_selic() -> pd.DataFrame | None:
         registrar_tentativa("MACRO (BCB - Focus Selic)", "Banco Central (Olinda/Expectativas)",
                              execucao_ok=False, erro="nenhum dos 3 anos teve dado valido", categoria="Macro")
     else:
+        parcial = bool(df.attrs.get("coleta_parcial", False))
         registrar_tentativa("MACRO (BCB - Focus Selic)", "Banco Central (Olinda/Expectativas)",
-                             execucao_ok=True, registros_novos=len(df), categoria="Macro")
+                             execucao_ok=True, registros_novos=len(df), categoria="Macro",
+                             parcial=parcial, erro=df.attrs.get("erro_coleta"))
     return df
 
 
@@ -348,6 +392,20 @@ def obter_cenario_global() -> list:
         linha = _linha_papel(df, nome, symbol)
         if linha:
             resultado.append({"nome": nome, "preco": linha["preco"], "variacao_pct": linha["variacao_pct"]})
-    registrar_tentativa("MACRO (Cenário Global)", "yfinance (ouro/petróleo/minério/Treasuries/VIX)",
-                         execucao_ok=True, registros_novos=len(resultado), categoria="Macro")
+    fonte = "yfinance (ouro/petróleo/minério/Treasuries/VIX)"
+    nome_coletor = "MACRO (Cenário Global)"
+    ausentes = [nome for nome, symbol in zip(nomes, symbols)
+                if not _linha_papel(df, nome, symbol)]
+    if not resultado:
+        registrar_tentativa(nome_coletor, fonte, execucao_ok=False,
+                             erro="Lote retornou dados, mas nenhum ativo global pôde ser interpretado",
+                             registros_novos=0, categoria="Macro")
+        return []
+    if ausentes:
+        registrar_tentativa(nome_coletor, fonte, execucao_ok=True, parcial=True,
+                             erro="Ativos sem dados: " + ", ".join(ausentes),
+                             registros_novos=len(resultado), categoria="Macro")
+    else:
+        registrar_tentativa(nome_coletor, fonte, execucao_ok=True,
+                             registros_novos=len(resultado), categoria="Macro")
     return resultado
