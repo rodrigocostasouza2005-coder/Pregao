@@ -17,6 +17,7 @@ detalhe de implementacao deste coletor, nao configuracao do app.
 """
 
 import json
+import logging
 import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -768,11 +769,16 @@ def obter_noticias_watchlist(tickers: list) -> tuple:
     todas = []
     falhas = []
     for ticker in tickers:
-        r = obter_noticias(ticker)
-        if r is None:
+        try:
+            r = obter_noticias(ticker)
+            if r is None:
+                falhas.append(ticker)
+                continue
+            todas.extend(r)
+        except Exception:
+            # Falha isolada: um ticker nao pode impedir as noticias dos demais.
             falhas.append(ticker)
-            continue
-        todas.extend(r)
+            logging.exception("Falha ao coletar noticias para %s", ticker)
     todas = _mesclar_entre_tickers(todas)
     todas.sort(key=lambda n: n["data"], reverse=True)
     # registro de SAUDE DOS DADOS (achado real, auditoria missao coletores

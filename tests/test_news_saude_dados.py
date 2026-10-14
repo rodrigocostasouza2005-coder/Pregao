@@ -143,3 +143,15 @@ if __name__ == "__main__":
         print(f"FALHARAM {len(_FALHAS)}: {_FALHAS}")
         sys.exit(1)
     print("TODOS OS TESTES DE SAUDE DOS DADOS (NEWS WATCHLIST) PASSARAM")
+
+
+def test_8_excecao_em_um_ticker_nao_aborta_watchlist():
+    news_mod.obter_noticias.clear()
+    with patch.object(news_mod, "obter_noticias", side_effect=[RuntimeError("falha isolada"), [{"titulo": "Noticia"}]]), \\
+         patch.object(news_mod, "registrar_tentativa") as mock_reg, \\
+         patch.object(news_mod, "logging") as mock_logging:
+        todas, falhas = news_mod.obter_noticias_watchlist(["BAD1", "PETR4"])
+    _checar("8a continua coleta do segundo ticker", len(todas) == 1)
+    _checar("8b marca apenas ticker que falhou", falhas == ["BAD1"])
+    _checar("8c registra falha inesperada no log", mock_logging.exception.called)
+    _checar("8d registra coleta parcial no painel", mock_reg.call_args.kwargs.get("parcial") is True)
