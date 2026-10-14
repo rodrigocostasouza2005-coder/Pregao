@@ -166,7 +166,17 @@ def _universo_rotativo(tickers: list, offset: int = None) -> list:
     if not tickers:
         return []
     if offset is None:
-        offset = _ler_e_avancar_checkpoint(len(tickers))
+        # GitHub Actions reinicia o sistema de arquivos a cada execucao.
+        # O numero sequencial do workflow substitui o checkpoint local
+        # nesse ambiente, mantendo a rotacao entre execucoes na nuvem.
+        numero_execucao_nuvem = os.getenv("GITHUB_RUN_NUMBER")
+        if numero_execucao_nuvem:
+            try:
+                offset = max(0, int(numero_execucao_nuvem) - 1)
+            except (TypeError, ValueError):
+                offset = _ler_e_avancar_checkpoint(len(tickers))
+        else:
+            offset = _ler_e_avancar_checkpoint(len(tickers))
     offset %= len(tickers)
     return tickers[offset:] + tickers[:offset]
 
