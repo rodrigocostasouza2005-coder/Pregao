@@ -618,3 +618,73 @@ table tr:last-child td { border-bottom: none; }
         min-width: 7rem !important;
     }
 }
+
+
+/* polimento visual do terminal (2026-10-14): feedback discreto sem mudar
+   estrutura, dados ou comportamento dos paineis existentes. */
+table tbody tr {
+    transition: background-color 120ms ease;
+}
+table tbody tr:hover td {
+    background-color: color-mix(in srgb, var(--destaque) 7%, transparent);
+}
+table th {
+    background-color: color-mix(in srgb, var(--painel-bg) 88%, var(--destaque));
+}
+table td, table th {
+    transition: background-color 120ms ease;
+}
+
+/* Indicadores nativos do Streamlit: marcador lateral e hierarquia mais
+   clara entre rotulo, valor e variacao, mantendo o visual quadrado do Pregao. */
+[data-testid="stMetric"] {
+    min-width: 0;
+    padding: 0.35rem 0.55rem;
+    border-left: 2px solid var(--borda);
+    background: color-mix(in srgb, var(--painel-bg) 82%, transparent);
+}
+[data-testid="stMetricLabel"] {
+    color: var(--cinza) !important;
+    font-size: 0.68rem !important;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+}
+[data-testid="stMetricValue"] {
+    color: var(--neutro) !important;
+    font-variant-numeric: tabular-nums;
+}
+[data-testid="stMetricDelta"] {
+    font-size: 0.72rem !important;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Feedback de interacao consistente com a paleta ambar. */
+.stButton button,
+.stFormSubmitButton button,
+button[data-testid^="stBaseButton"] {
+    transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+:focus-visible {
+    outline: 1px solid var(--destaque) !important;
+    outline-offset: 2px;
+}
+
+/* Barras de rolagem discretas para tabelas e paineis extensos. */
+* {
+    scrollbar-color: var(--borda) var(--bg);
+    scrollbar-width: thin;
+}
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--borda);
+    border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--destaque);
+}
