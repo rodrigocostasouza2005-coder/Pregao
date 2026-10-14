@@ -467,3 +467,20 @@ if __name__ == "__main__":
         print(f"FALHARAM {len(_FALHAS)}: {_FALHAS}")
         sys.exit(1)
     print("TODOS OS TESTES DO COLETOR DE EVENTOS PASSARAM")
+
+
+def test_10_falha_em_um_ticker_nao_aborta_o_universo():
+    """Excecao inesperada num ticker e' isolada; os tickers seguintes
+    continuam e a falha fica contabilizada para diagnostico."""
+    evento = _evento(STATUS_PRAZO_CVM, ticker="VALE3")
+    with (
+        patch.object(coleta_mod, "tabela_eventos_disponivel", return_value=True),
+        patch.object(coleta_mod, "coletar_evento", side_effect=[RuntimeError("ticker quebrado"), evento]),
+        patch.object(coleta_mod, "salvar_evento_se_mais_confiavel", return_value=False),
+        patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)),
+        patch.object(coleta_mod, "logging") as mock_logging,
+    ):
+        stats = coleta_mod.coletar_eventos_universo(["BAD1", "VALE3"])
+    _checar("10a processa os dois tickers mesmo com excecao no primeiro", stats["processados"] == 2)
+    _checar("10b contabiliza falha isolada", stats["falhas"] == 1)
+    _checar("10c registra excecao para diagnostico", mock_logging.exception.called)
