@@ -48,3 +48,130 @@ def coletar_carteiras_genial():
     """Coleta somente carteiras mensais oficiais e validadas da Genial."""
     return coletar_carteiras()
 
+
+def salvar_carteiras(itens):
+    cliente = obter_cliente()
+    if cliente is None:
+        return False
+    try:
+        if itens:
+            cliente.table("radar_carteiras_recomendadas").upsert(
+                itens, on_conflict="casa,ticker,carteira"
+            ).execute()
+        cliente.table("radar_carteiras_recomendadas").update(
+            {"vigente": False}
+        ).eq("casa", CASA_GENIAL).execute()
+        chaves = {(i["ticker"], i["carteira"]) for i in itens}
+        # Reativa somente as recomendações confirmadas nesta coleta.
+        for ticker, carteira in chaves:
+            cliente.table("radar_carteiras_recomendadas").update(
+                {"vigente": True, "verificado_em": datetime.now(timezone.utc).isoformat(),
+                 "status_coleta": "COLETADO"}
+            ).eq("casa", CASA_GENIAL).eq("ticker", ticker).eq("carteira", carteira).execute()
+        return True
+    except Exception as exc:
+        print(f"[radar_quedas] falha ao persistir carteiras: {exc!r}")
+        return False
+
+
+def listar_carteiras():
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        resp = (cliente.table("radar_carteiras_recomendadas").select("*")
+                .eq("vigente", True).order("casa").execute())
+        return resp.data or []
+    except Exception as exc:
+        print(f"[radar_quedas] falha ao ler carteiras: {exc!r}")
+        return None
+
+
+def avaliar_ticker(ticker, cotacao, recomendacoes, agora=None):
+    """Gera um evento candidato se preço e fechamento anterior forem válidos."""
+    agora = agora or datetime.now(TZ_SP)
+    if not isinstance(cotacao, dict) or cotacao.get("erro"):
+        return None
+    preco = cotacao.get("preco")
+    anterior = cotacao.get("fechamento_anterior")
+    if anterior is None:
+        # O provedor existente expõe previousClose internamente, mas o retorno
+        # padrão não o publica. Não substituímos por preço estimado.
+        return None
+    variacao = calcular_queda(preco, anterior)
+    if variacao is None or not deve_alertar(variacao):
+        return None
+    relacionados = [r for r in recomendacoes if normalizar_ticker(r.get("ticker")) == ticker]
+    if not relacionados:
+        return None
+    return {
+        "ticker": ticker, "empresa": next((r.get("empresa") for r in relacionados if r.get("empresa")), ""),
+        "preco_atual": float(preco), "fechamento_anterior": float(anterior),
+        "variacao_pct": variacao, "cotacao_em": cotacao.get("_coletado_em") or agora.isoformat(),
+        "tipo_cotacao": cotacao.get("tipo_cotacao") or "ATRASADA/PROVEDOR GRATUITO",
+        "pregao": agora.date().isoformat(),
+        "casas": sorted({r.get("casa", "") for r in relacionados if r.get("casa")}),
+        "carteiras": sorted({r.get("carteira", "") for r in relacionados if r.get("carteira")}),
+        "fontes": sorted({r.get("fonte_url", "") for r in relacionados if r.get("fonte_url")}),
+        "status": "PENDENTE_ENVIO",
+    }
+
+
+def registrar_alerta(alerta):
+    """Idempotência no banco por ticker + pregão; não duplica entre carteiras."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return False, None
+    try:
+        existente = (cliente.table("radar_alertas_queda").select("id")
+                     .eq("ticker", alerta["ticker"]).eq("pregao", alerta["pregao"])
+                     .limit(1).execute())
+        if existente.data:
+            return True, None
+        resp = cliente.table("radar_alertas_queda").insert(alerta).execute()
+        return bool(resp.data), (resp.data[0].get("id") if resp.data else None)
+    except Exception as exc:
+        print(f"[radar_quedas] falha ao registrar alerta: {exc!r}")
+        return False, None
+
+
+def processar_monitoramento():
+    """Atualiza fontes e avalia as recomendações ativas. Envio fica no worker."""
+    snapshot = coletar_carteiras_genial()
+    coleta_ok = snapshot is not None
+    if not coleta_ok:
+        return {"coleta_ok": False, "alertas_novos": [], "erro": "Fonte de recomendações indisponível; monitoramento suspenso para evitar usar carteiras desatualizadas."}
+    # Uma resposta vazia pode indicar mudança no HTML/API ou coleta parcial.
+    # Não desativar a última carteira válida até confirmar que a fonte entregou
+    # uma composição real; isso evita transformar falha de parsing em "zero ativos".
+    if not snapshot:
+        return {"coleta_ok": False, "alertas_novos": [], "erro": "A fonte retornou zero recomendações; snapshot rejeitado e carteiras anteriores preservadas."}
+    if not salvar_carteiras(snapshot):
+        return {"coleta_ok": False, "alertas_novos": [], "erro": "Falha ao persistir a coleta; monitoramento suspenso para evitar usar recomendações desatualizadas."}
+    recomendacoes = listar_carteiras()
+    if recomendacoes is None:
+        return {"coleta_ok": coleta_ok, "alertas_novos": [], "erro": "Supabase indisponível"}
+    tickers = sorted({normalizar_ticker(r.get("ticker")) for r in recomendacoes} - {""})
+    novos = []
+    for ticker in tickers:
+        cotacao = obter_cotacao(ticker)
+        alerta = avaliar_ticker(ticker, cotacao, recomendacoes)
+        if alerta:
+            ok, alerta_id = registrar_alerta(alerta)
+            if ok and alerta_id is not None:
+                alerta["id"] = alerta_id
+                novos.append(alerta)
+    return {"coleta_ok": coleta_ok, "alertas_novos": novos, "total_tickers": len(tickers)}
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def alertas_recentes(limite=100):
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        resp = (cliente.table("radar_alertas_queda").select("*")
+                .order("alertado_em", desc=True).limit(int(limite)).execute())
+        return resp.data or []
+    except Exception:
+        return None
