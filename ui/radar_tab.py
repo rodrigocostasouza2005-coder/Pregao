@@ -365,7 +365,7 @@ def render_radar(prefs: dict):
     )
 
     # Radar de quedas em carteiras recomendadas e independente da watchlist.
-    with st.expander("RADAR DE QUEDAS — CARTEIRAS RECOMENDADAS", expanded=True):
+    with st.expander("RADAR DE QUEDAS — RECOMENDAÇÕES MONITORADAS", expanded=True):
         from data.radar_quedas import alertas_recentes
         alertas = alertas_recentes()
         if alertas is None:
