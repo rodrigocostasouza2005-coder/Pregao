@@ -291,25 +291,45 @@ def _documentos_brutos(cnpj: str):
     ano = datetime.now(_TZ_SP).year
     partes = []
     alguma_ok = False
+
     for tentativa in (ano, ano - 1):
         df = _ipe_ano(tentativa)
         if df is None:
             continue
+
+        # Sem as colunas essenciais, nao e possivel filtrar com seguranca.
+        if not {"CNPJ_Companhia", "Categoria"}.issubset(df.columns):
+            continue
+
         alguma_ok = True
-        sub = df[(df["CNPJ_Companhia"] == cnpj) & (df["Categoria"].isin(_CATEGORIAS_RELEVANTES))]
-        # dentro de "Dados Economico-Financeiros", filtra so' os Tipo que
-        # sao resultado de verdade (ver _TIPOS_RESULTADOS) - as outras
-        # categorias nao tem esse problema de granularidade
+        sub = df[
+            (df["CNPJ_Companhia"] == cnpj)
+            & df["Categoria"].isin(_CATEGORIAS_RELEVANTES)
+        ]
+
+        # Dentro de "Dados Economico-Financeiros", filtra apenas tipos
+        # que sao resultados financeiros de verdade.
         eh_resultados = sub["Categoria"] == "Dados Econômico-Financeiros"
-        sub = sub[~eh_resultados | sub["Tipo"].isin(_TIPOS_RESULTADOS)]
+
+        # Algumas respostas/testes nao trazem a coluna Tipo.
+        # Nesse caso, exclui resultados sem classificacao para nao
+        # incluir documentos financeiros indevidos.
+        if "Tipo" in sub.columns:
+            sub = sub[
+                ~eh_resultados | sub["Tipo"].isin(_TIPOS_RESULTADOS)
+            ]
+        else:
+            sub = sub[~eh_resultados]
+
         if not sub.empty:
             partes.append(sub)
+
     if not alguma_ok:
         return None
     if not partes:
         return []
-    return pd.concat(partes).to_dict("records")
 
+    return pd.concat(partes, ignore_index=True).to_dict("records")
 
 @st.cache_data(ttl=_TTL_DOCUMENTOS, show_spinner="consultando documentos da CVM…")
 def obter_documentos_cvm(ticker: str):
