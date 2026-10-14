@@ -6,12 +6,14 @@ Não confunde recomendações genéricas por setor com composição de carteiras
 Falhas de fonte, mês incorreto ou parsing parcial são rejeitados.
 """
 import re
+import time
 import unicodedata
 from datetime import date, datetime, timezone
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi_requests
+import requests as standard_requests
 
 from .base import HEADERS, TIMEOUT, permitido
 
@@ -35,19 +37,68 @@ def _normalizar_texto(valor):
 
 
 def _get(url):
+    """Busca a fonte oficial com tentativas limitadas e clientes alternativos.
+
+    Não retorna HTML vazio como sucesso. Se a rede continuar indisponível,
+    retorna None para que o snapshot seja rejeitado com segurança.
+    """
     if not permitido(url):
+        print(f"[radar_genial] coleta bloqueada pelo robots.txt: {url}")
         return None
-    try:
-        response = cffi_requests.get(
-            url, headers=HEADERS, timeout=TIMEOUT,
-            impersonate="chrome", http_version=__import__(
+
+    tentativas = (
+        ("curl_chrome", lambda: cffi_requests.get(
+            url,
+            headers={
+                **HEADERS,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Referer": BASE_URL + "/",
+            },
+            timeout=(5, 18),
+            impersonate="chrome",
+            http_version=__import__(
                 "curl_cffi.const", fromlist=["CurlHttpVersion"]
             ).CurlHttpVersion.V1_1,
-        )
-        if response.status_code == 200 and response.text:
-            return response.text
-    except Exception as exc:
-        print(f"[radar_genial] falha ao buscar {url}: {exc}")
+        )),
+        ("requests", lambda: standard_requests.get(
+            url,
+            headers={
+                **HEADERS,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Referer": BASE_URL + "/",
+            },
+            timeout=(5, 18),
+        )),
+        ("curl_chrome_retry", lambda: cffi_requests.get(
+            url,
+            headers={
+                **HEADERS,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Referer": BASE_URL + "/",
+            },
+            timeout=(5, 18),
+            impersonate="chrome",
+            http_version=__import__(
+                "curl_cffi.const", fromlist=["CurlHttpVersion"]
+            ).CurlHttpVersion.V1_1,
+        )),
+    )
+    for indice, (nome, requisitar) in enumerate(tentativas, start=1):
+        try:
+            response = requisitar()
+            if response.status_code == 200 and response.text and len(response.text.strip()) > 500:
+                print(f"[radar_genial] fonte acessada via {nome} (tentativa {indice})")
+                return response.text
+            print(f"[radar_genial] resposta HTTP {response.status_code} ou HTML vazio via {nome}: {url}")
+        except Exception as exc:
+            print(f"[radar_genial] tentativa {indice}/3 via {nome} falhou: {type(exc).__name__}: {exc}")
+        if indice < len(tentativas):
+            time.sleep(indice * 2)
+    print(f"[radar_genial] fonte oficial indisponível após {len(tentativas)} tentativas: {url}")
     return None
 
 
