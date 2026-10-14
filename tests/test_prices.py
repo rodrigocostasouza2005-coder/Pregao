@@ -174,6 +174,8 @@ def test_9_cotacao_indice_timeout_cai_pro_ultimo_valor_valido():
         resultado = obter_cotacao_indice(nome, "^TESTEFB")
     _checar("9a timeout com fallback disponivel -> retorna o ultimo valor valido (nao erro)", resultado.get("erro") is None)
     _checar("9b valor do fallback e' o gravado anteriormente", resultado.get("preco") == 105.0, f"(resultado={resultado})")
+    _checar("9c fallback e' explicitamente sinalizado", resultado.get("_fallback_cache") is True)
+    _checar("9d timestamp original e' preservado quando existe", resultado.get("_coletado_em") is None)
 
 
 def test_10_cotacao_indice_timeout_sem_fallback_retorna_erro():
@@ -377,3 +379,22 @@ if __name__ == "__main__":
         print(f"FALHARAM {len(_FALHAS)}: {_FALHAS}")
         sys.exit(1)
     print("TODOS OS TESTES DE TIMEOUT/FALLBACK DE PRICES/MERCADO PASSARAM")
+
+
+def test_17_status_cotacao_indice_sinaliza_idade_do_fallback():
+    """A UI deve identificar valor reaproveitado e nunca renovar sua idade."""
+    antigo = "2026-10-14T15:00:00+00:00"
+    with patch.object(visao_geral_mod, "datetime") as mock_datetime:
+        mock_datetime.now.return_value = datetime.fromisoformat("2026-10-14T17:30:00+00:00")
+        mock_datetime.fromisoformat.side_effect = datetime.fromisoformat
+        status = visao_geral_mod._status_cotacao_indice({
+            "_fallback_cache": True, "_coletado_em": antigo,
+        })
+    _checar("17a fallback antigo mostra idade em horas", status == "EM CACHE • 2H 30MIN", f"(status={status})")
+
+
+def test_18_status_cotacao_indice_nao_marca_coleta_atual_como_cache():
+    _checar("18a coleta atual nao recebe aviso de cache",
+            visao_geral_mod._status_cotacao_indice({"_fallback_cache": False}) is None)
+    _checar("18b fallback legado sem timestamp continua explicito",
+            visao_geral_mod._status_cotacao_indice({"_fallback_cache": True}) == "VALOR EM CACHE")
