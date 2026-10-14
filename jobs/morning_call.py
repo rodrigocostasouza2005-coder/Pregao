@@ -8,7 +8,8 @@ import pandas as pd
 from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta
 from data.mercado import obter_cotacoes_lote
 from data.news import obter_top_mercado_tudo
-from data.prices import obter_cotacao, obter_historico
+from data.prices import obter_cotacao_indice
+from data.supabase_client import obter_cliente
 from jobs.email_utils import enviar_email
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -23,11 +24,13 @@ def _fmt_num(valor, casas=2):
 
 
 def _linha_cotacao(titulo, ticker):
-    cot = obter_cotacao(ticker)
+    cot = obter_cotacao_indice(titulo, ticker)
     if not isinstance(cot, dict) or cot.get("erro"):
         return f"- {titulo}: indisponível ({cot.get('erro', 'sem dado') if isinstance(cot, dict) else 'sem dado'})"
     variacao = cot.get("variacao_pct")
-    return f"- {titulo}: {_fmt_num(cot.get('preco'))}; variação diária: {_fmt_num(variacao)}%"
+    barra = cot.get("_barra_em") or "barra indisponível"
+    coleta = cot.get("_coletado_em") or "coleta indisponível"
+    return f"- {titulo}: {_fmt_num(cot.get('preco'))}; variação da última barra: {_fmt_num(variacao)}%; barra: {barra}; coleta: {coleta}"
 
 
 def montar_morning_call(agora=None):
@@ -90,6 +93,18 @@ def executar():
     agora = datetime.now(TZ_SP)
     texto = montar_morning_call(agora)
     resultado = enviar_email(f"[PREGÃO] Morning Call — {agora.strftime('%d/%m/%Y')}", texto)
+    cliente = obter_cliente()
+    if cliente is not None:
+        try:
+            cliente.table("morning_call_execucoes").insert({
+                "executado_em": agora.isoformat(),
+                "status": "ENVIADO" if resultado["ok"] else "FALHA_ENVIO",
+                "erro": resultado["erro"],
+                "destinatario": __import__("os").getenv("EMAIL_TO", ""),
+                "conteudo": texto,
+            }).execute()
+        except Exception as exc:
+            print(f"[morning_call] falha ao registrar execução: {exc!r}")
     print(f"[morning_call] envio_ok={resultado['ok']} erro={resultado['erro']}")
     return 0 if resultado["ok"] else 1
 
