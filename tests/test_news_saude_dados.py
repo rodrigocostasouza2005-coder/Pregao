@@ -157,3 +157,16 @@ def test_8_excecao_em_um_ticker_nao_aborta_watchlist():
     _checar("8b marca apenas ticker que falhou", falhas == ["BAD1"])
     _checar("8c registra falha inesperada no log", mock_logging.exception.called)
     _checar("8d registra coleta parcial no painel", mock_reg.call_args.kwargs.get("parcial") is True)
+
+
+def test_google_news_feed_repete_timeout_transitorio():
+    from unittest.mock import Mock
+    from requests import Timeout
+    resposta = Mock()
+    resposta.status_code = 200
+    resposta.raise_for_status.return_value = None
+    resposta.content = b'<rss version="2.0"><channel><title>Teste</title><item><title>Resultado</title></item></channel></rss>'
+    with patch.object(news_mod.requests, "get", side_effect=[Timeout("lento"), resposta]) as get, patch.object(news_mod.time, "sleep"):
+        resultado = news_mod._buscar_feed_de_url("https://example.com/feed")
+    _checar("Google News recupera apos timeout", resultado is not None)
+    _checar("Google News repete uma vez", get.call_count == 2)
