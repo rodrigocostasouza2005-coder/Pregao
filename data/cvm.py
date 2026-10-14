@@ -51,6 +51,7 @@ verdade - fica pra depois, nao e' o escopo desta fase.
 """
 
 import io
+import logging
 import re
 import unicodedata
 import zipfile
@@ -167,30 +168,45 @@ def _mapa_ticker_cnpj() -> dict:
     {} se NUNCA tiver conseguido buscar nenhum mapa real ainda."""
     cache = _ultimo_mapa_ticker_valido()
     ano = datetime.now(_TZ_SP).year
+    erros_anos = []
     for tentativa in (ano, ano - 1):
-        df = _baixar_csv_do_zip(
-            _URL_FCA.format(ano=tentativa),
-            f"fca_cia_aberta_valor_mobiliario_{tentativa}.csv",
-        )
-        if df is None or df.empty:
-            continue
-        df = df.dropna(subset=["Codigo_Negociacao"])
-        if not df.empty:
-            mapa = dict(zip(df["Codigo_Negociacao"].str.strip(), df["CNPJ_Companhia"].str.strip()))
-            # registro de SAUDE DOS DADOS (achado real, auditoria missao
-            # coletores 2026-10-13): antes desta instrumentacao, o FCA
-            # nunca chamava registrar_tentativa - so' o IPE chamava (ver
-            # _ipe_ano) - se o FCA quebrasse isolado (ex: CVM renomeia a
-            # coluna Codigo_Negociacao), o painel SAUDE DOS DADOS
-            # continuava mostrando "CVM: Coleta OK" mesmo com obter_cnpj
-            # retornando None pra TODO ticker.
+        try:
+            df = _baixar_csv_do_zip(
+                _URL_FCA.format(ano=tentativa),
+                f"fca_cia_aberta_valor_mobiliario_{tentativa}.csv",
+            )
+            if df is None or df.empty:
+                erros_anos.append(f"{tentativa}: download vazio/falhou")
+                continue
+            obrigatorias = {"Codigo_Negociacao", "CNPJ_Companhia"}
+            ausentes = obrigatorias - set(df.columns)
+            if ausentes:
+                erros_anos.append(f"{tentativa}: colunas ausentes {', '.join(sorted(ausentes))}")
+                continue
+            df = df.dropna(subset=["Codigo_Negociacao", "CNPJ_Companhia"])
+            if df.empty:
+                erros_anos.append(f"{tentativa}: sem tickers/CNPJ validos")
+                continue
+            mapa = dict(zip(df["Codigo_Negociacao"].astype(str).str.strip(),
+                            df["CNPJ_Companhia"].astype(str).str.strip()))
+            mapa = {ticker: cnpj for ticker, cnpj in mapa.items() if ticker and cnpj}
+            if not mapa:
+                erros_anos.append(f"{tentativa}: mapa ticker-CNPJ vazio")
+                continue
+            # Uma resposta malformada de um ano nao pode abortar a tentativa
+            # com o ano anterior: validamos o esquema antes de acessar colunas.
             registrar_tentativa("CVM (FCA)", "dados.cvm.gov.br (FCA)", execucao_ok=True,
-                                 registros_novos=len(mapa), categoria="CVM")
+                                 registros_novos=len(mapa), categoria="CVM",
+                                 parcial=bool(erros_anos),
+                                 erro="; ".join(erros_anos)[:300] if erros_anos else None)
             cache.clear()
             cache.update(mapa)
             return mapa
+        except Exception as e:
+            erros_anos.append(f"{tentativa}: {str(e)[:100]}")
+            continue
     registrar_tentativa("CVM (FCA)", "dados.cvm.gov.br (FCA)", execucao_ok=False,
-                         erro=f"FCA {ano}/{ano - 1} falhou ou veio vazio/sem Codigo_Negociacao",
+                         erro=("FCA sem resposta valida; " + "; ".join(erros_anos))[:300],
                          categoria="CVM")
     return dict(cache)
 
@@ -258,7 +274,19 @@ def _ipe_ano(ano: int):
         "CNPJ_Companhia", "Categoria", "Tipo", "Especie", "Assunto",
         "Data_Referencia", "Data_Entrega", "Link_Download",
     ]
-    df = df[[c for c in colunas if c in df.columns]]
+    obrigatorias = {"CNPJ_Companhia", "Categoria"}
+    ausentes = obrigatorias - set(df.columns)
+    if ausentes:
+        registrar_tentativa("CVM", "dados.cvm.gov.br (IPE)", execucao_ok=False,
+                             erro=f"IPE {ano} sem colunas obrigatorias: {', '.join(sorted(ausentes))}",
+                             categoria="CVM")
+        return cache.get(ano)
+    # Colunas opcionais podem variar entre dumps; criamos-nas vazias para
+    # manter o contrato consumido pelos filtros sem derrubar a coleta toda.
+    for coluna in colunas:
+        if coluna not in df.columns:
+            df[coluna] = None
+    df = df[colunas]
     registrar_tentativa("CVM", "dados.cvm.gov.br (IPE)", execucao_ok=True,
                          registros_novos=len(df), categoria="CVM")
     cache[ano] = df
@@ -291,45 +319,25 @@ def _documentos_brutos(cnpj: str):
     ano = datetime.now(_TZ_SP).year
     partes = []
     alguma_ok = False
-
     for tentativa in (ano, ano - 1):
         df = _ipe_ano(tentativa)
         if df is None:
             continue
-
-        # Sem as colunas essenciais, nao e possivel filtrar com seguranca.
-        if not {"CNPJ_Companhia", "Categoria"}.issubset(df.columns):
-            continue
-
         alguma_ok = True
-        sub = df[
-            (df["CNPJ_Companhia"] == cnpj)
-            & df["Categoria"].isin(_CATEGORIAS_RELEVANTES)
-        ]
-
-        # Dentro de "Dados Economico-Financeiros", filtra apenas tipos
-        # que sao resultados financeiros de verdade.
+        sub = df[(df["CNPJ_Companhia"] == cnpj) & (df["Categoria"].isin(_CATEGORIAS_RELEVANTES))]
+        # dentro de "Dados Economico-Financeiros", filtra so' os Tipo que
+        # sao resultado de verdade (ver _TIPOS_RESULTADOS) - as outras
+        # categorias nao tem esse problema de granularidade
         eh_resultados = sub["Categoria"] == "Dados Econômico-Financeiros"
-
-        # Algumas respostas/testes nao trazem a coluna Tipo.
-        # Nesse caso, exclui resultados sem classificacao para nao
-        # incluir documentos financeiros indevidos.
-        if "Tipo" in sub.columns:
-            sub = sub[
-                ~eh_resultados | sub["Tipo"].isin(_TIPOS_RESULTADOS)
-            ]
-        else:
-            sub = sub[~eh_resultados]
-
+        sub = sub[~eh_resultados | sub["Tipo"].isin(_TIPOS_RESULTADOS)]
         if not sub.empty:
             partes.append(sub)
-
     if not alguma_ok:
         return None
     if not partes:
         return []
+    return pd.concat(partes).to_dict("records")
 
-    return pd.concat(partes, ignore_index=True).to_dict("records")
 
 @st.cache_data(ttl=_TTL_DOCUMENTOS, show_spinner="consultando documentos da CVM…")
 def obter_documentos_cvm(ticker: str):
@@ -396,14 +404,32 @@ def obter_documentos_watchlist(tickers: list) -> tuple:
     todos = []
     falhas = []
     for ticker in tickers:
-        docs = obter_documentos_cvm(ticker)
-        if docs is None:
+        try:
+            docs = obter_documentos_cvm(ticker)
+            if docs is None:
+                falhas.append(ticker)
+                continue
+            todos.extend(docs)
+        except Exception:
+            # Uma resposta malformada ou excecao inesperada por ativo nao
+            # pode interromper a coleta dos demais tickers da watchlist.
             falhas.append(ticker)
-            continue
-        todos.extend(docs)
+            logging.exception("Falha inesperada ao coletar documentos CVM para %s", ticker)
     todos.sort(key=lambda d: d["data"], reverse=True)
+    persistencia_ok = True
     if todos:
-        salvar_documentos(todos)
+        persistencia_ok = salvar_documentos(todos)
+    execucao_ok = len(falhas) < len(tickers)
+    registrar_tentativa(
+        "CVM (watchlist)", "dados.cvm.gov.br (IPE/FCA - documentos por ticker)",
+        execucao_ok=execucao_ok,
+        persistencia_ok=persistencia_ok if execucao_ok else None,
+        registros_novos=len(todos),
+        erro=(f"falha em {len(falhas)}/{len(tickers)} ticker(s): " + ", ".join(falhas[:10]))
+             if falhas else (None if persistencia_ok else "falha ao persistir documentos CVM"),
+        parcial=bool(falhas) and execucao_ok,
+        categoria="CVM",
+    )
     return todos, falhas
 
 
