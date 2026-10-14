@@ -197,18 +197,23 @@ def tentar_news(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | N
         return None
     if not entries:
         return None
-    for entry in entries[:10]:
-        titulo, veiculo = _extrair_veiculo_e_titulo(entry)
-        if not veiculo or not eh_fonte_confiavel(veiculo):
-            continue
-        resumo = re.sub(r"<[^>]+>", " ", entry.get("summary") or "")
-        data_evento = extrair_data_do_periodo(f"{titulo} {resumo}", ano, trimestre)
-        if data_evento is None:
-            continue
-        link = entry.get("link") or ""
-        if not link:
-            continue
-        return _montar_evento(ticker, empresa, ano, trimestre, STATUS_ESTIMADO, data_evento, veiculo, link)
+    try:
+        for entry in entries[:10]:
+            titulo, veiculo = _extrair_veiculo_e_titulo(entry)
+            if not veiculo or not eh_fonte_confiavel(veiculo):
+                continue
+            resumo = re.sub(r"<[^>]+>", " ", entry.get("summary") or "")
+            data_evento = extrair_data_do_periodo(f"{titulo} {resumo}", ano, trimestre)
+            if data_evento is None:
+                continue
+            link = entry.get("link") or ""
+            if not link:
+                continue
+            return _montar_evento(ticker, empresa, ano, trimestre, STATUS_ESTIMADO, data_evento, veiculo, link)
+    except Exception:
+        # Feed malformado tambem e' falha da fonte secundaria, nao motivo
+        # para descartar o fallback de prazo regulatorio deste ticker.
+        logging.exception("Falha ao interpretar NEWS do calendario para %s", ticker)
     return None
 
 
