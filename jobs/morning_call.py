@@ -55,7 +55,16 @@ def montar_morning_call(agora=None):
         try:
             dado = fn()
             if isinstance(dado, pd.DataFrame) and not dado.empty:
-                linhas.append(f"- {nome}: último registro disponível em {dado.index[-1] if hasattr(dado, 'index') else 'data não informada'}")
+                colunas_valor = [col for col in dado.columns if col != "data"]
+                amostra = dado.tail(3)
+                for _, registro in amostra.iterrows():
+                    data_reg = str(registro.get("data", registro.get("ano", "data não informada")))[:10]
+                    valores = []
+                    for coluna in colunas_valor:
+                        valor = registro.get(coluna)
+                        if pd.notna(valor):
+                            valores.append(f"{coluna}={_fmt_num(valor) if isinstance(valor, (int, float)) else str(valor)}")
+                    linhas.append(f"- {nome} ({data_reg}): " + (", ".join(valores) if valores else "sem valor estruturado"))
             else:
                 linhas.append(f"- {nome}: indisponível")
         except Exception:
