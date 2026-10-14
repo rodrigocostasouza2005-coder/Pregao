@@ -51,6 +51,7 @@ verdade - fica pra depois, nao e' o escopo desta fase.
 """
 
 import io
+import logging
 import re
 import unicodedata
 import zipfile
@@ -403,11 +404,17 @@ def obter_documentos_watchlist(tickers: list) -> tuple:
     todos = []
     falhas = []
     for ticker in tickers:
-        docs = obter_documentos_cvm(ticker)
-        if docs is None:
+        try:
+            docs = obter_documentos_cvm(ticker)
+            if docs is None:
+                falhas.append(ticker)
+                continue
+            todos.extend(docs)
+        except Exception:
+            # Uma resposta malformada ou excecao inesperada por ativo nao
+            # pode interromper a coleta dos demais tickers da watchlist.
             falhas.append(ticker)
-            continue
-        todos.extend(docs)
+            logging.exception("Falha inesperada ao coletar documentos CVM para %s", ticker)
     todos.sort(key=lambda d: d["data"], reverse=True)
     if todos:
         salvar_documentos(todos)

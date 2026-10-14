@@ -318,3 +318,14 @@ if __name__ == "__main__":
         print(f"FALHARAM {len(_FALHAS)}: {_FALHAS}")
         sys.exit(1)
     print("TODOS OS TESTES DE DATA/CVM.PY PASSARAM")
+
+
+def test_17_excecao_em_ticker_nao_aborta_watchlist_cvm():
+    doc = {"ticker": "VALE3", "data": "2026-10-13", "tipo": "FATO RELEVANTE", "assunto": "teste"}
+    with patch.object(cvm_mod, "obter_documentos_cvm", side_effect=[RuntimeError("falha isolada"), [doc]]), \\
+         patch.object(cvm_mod, "salvar_documentos", return_value=True), \\
+         patch.object(cvm_mod, "logging") as mock_logging:
+        todos, falhas = cvm_mod.obter_documentos_watchlist(["BAD1", "VALE3"])
+    _checar("17a CVM continua no segundo ticker", len(todos) == 1 and todos[0]["ticker"] == "VALE3")
+    _checar("17b falha do primeiro ticker e reportada", falhas == ["BAD1"])
+    _checar("17c excecao fica registrada no log", mock_logging.exception.called)
