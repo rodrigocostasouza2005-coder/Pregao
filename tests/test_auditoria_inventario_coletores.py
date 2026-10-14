@@ -30,4 +30,4 @@ def test_detecta_idade_maxima_invalida():
 def test_detecta_coletor_critico_removido():
     problemas = saude.auditar_registro_coletores([])
     ausentes = {p["coletor"] for p in problemas if p["codigo"] == "COLETOR_CRITICO_AUSENTE"}
-    assert "NEWS" in ausentes and "MERCADO" in ausentes and "CALENDARIO" in ausentes
+    assert {"NEWS", "NEWS (Brasil)", "NEWS (Internacional)", "NEWS (watchlist)", "MERCADO", "CALENDARIO"} <= ausentes
