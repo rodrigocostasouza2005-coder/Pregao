@@ -11,9 +11,15 @@ def enviar_email(assunto, texto, html=None, destinatario=None):
     senha = os.getenv("SMTP_PASSWORD", "")
     remetente = os.getenv("EMAIL_FROM", usuario).strip()
     destinatario = (destinatario or os.getenv("EMAIL_TO", "")).strip()
-    porta = int(os.getenv("SMTP_PORT", "587"))
+    porta_texto = os.getenv("SMTP_PORT", "587").strip() or "587"
     if not all((host, usuario, senha, remetente, destinatario)):
         return {"ok": False, "erro": "SMTP_HOST, SMTP_USER, SMTP_PASSWORD, EMAIL_FROM e EMAIL_TO precisam estar configurados."}
+    try:
+        porta = int(porta_texto)
+        if not 1 <= porta <= 65535:
+            raise ValueError
+    except ValueError:
+        return {"ok": False, "erro": "SMTP_PORT deve ser uma porta numérica entre 1 e 65535 (padrão 587)."}
     msg = EmailMessage()
     msg["Subject"] = assunto
     msg["From"] = remetente
