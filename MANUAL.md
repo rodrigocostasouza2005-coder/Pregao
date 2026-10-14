@@ -282,3 +282,22 @@ na aba CVM acima). A categoria oficial "Calendário de Eventos
 Corporativos" da CVM não tem campo estruturado com a data do evento em
 si (só a data de protocolo do documento) — por isso o CONFIRMADO/
 ESTIMADO depende de RI/notícia, não de um feed estruturado único.
+
+
+## RADAR DE QUEDAS — CARTEIRAS RECOMENDADAS
+
+O painel RADAR mostra alertas persistidos em `radar_alertas_queda`, consolidados por ticker e pregão, com filtro por ticker, casa e período. A regra é estrita: variação diária menor que -4,00%, usando preço atual e fechamento anterior do provedor. Cotações do Yahoo Finance podem ser atrasadas; a UI exibe a barra/coleta quando disponíveis.
+
+A primeira fonte estruturada conectada é a seção pública de recomendações da Genial. O coletor da Genial pode falhar no Streamlit/GitHub Actions por bloqueio de rede; uma falha não significa carteira vazia. XP, BTG e outras casas não são marcadas como coletadas sem fonte pública estruturada acessível. Datas/validade ficam nulas quando a fonte não as fornece; recomendações não devem ser tratadas como vigentes além da evidência disponível.
+
+## MORNING CALL POR E-MAIL
+
+Job independente `python -m jobs.morning_call`; agenda de dias úteis às 07:00 BRT via `.github/workflows/radar-morning-call.yml`. Consolida cotações históricas disponíveis, indicadores macro e manchetes; se algum dado falhar, marca como indisponível. Os cenários são condicionais e não representam previsão garantida. O conteúdo não depende de carteiras recomendadas nem de alertas.
+
+## Configuração necessária
+
+1. Executar `sql/radar_research.sql` no SQL Editor do Supabase para criar as tabelas de recomendações, alertas e log do Morning Call.
+2. Em GitHub > Settings > Secrets and variables > Actions, configurar `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` e `EMAIL_TO`. Nunca enviar credenciais no chat ou versioná-las.
+3. Rodar o workflow **Radar e Morning Call** manualmente, escolhendo `radar`, `morning_call` ou `ambos`.
+
+Sem migration e secrets, os jobs não conseguem persistir nem enviar e-mails. O agendamento do GitHub Actions é best effort, não um SLA de execução pontual.
