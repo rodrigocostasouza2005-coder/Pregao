@@ -88,8 +88,8 @@ def test_evento_persistido_no_passado_nao_some_do_calendario():
         "status": STATUS_CONFIRMADO, "fonte": "Petrobras RI",
         "url_fonte": "https://ri.example.com",
     }
-    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \\
-         patch.object(eventos_mod, "_nome_empresa", return_value="PETROBRAS"), \\
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(eventos_mod, "_nome_empresa", return_value="PETROBRAS"), \
          patch.object(eventos_mod, "_buscar_evento_persistido", return_value=persistido):
         evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 13))
     _checar("data confirmada passada nao e' devolvida como proximo resultado", evento["data"] >= date(2026, 10, 13))
