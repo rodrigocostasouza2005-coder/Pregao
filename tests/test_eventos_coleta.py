@@ -139,6 +139,23 @@ def test_news_sem_resultado_nenhum_retorna_none():
     _checar("busca de noticia sem resultado (None) -> None, nunca quebra", evento is None)
 
 
+def test_news_exception_preserva_fallback_prazo_cvm():
+    """Uma excecao de RSS nao pode pular o fallback final do calendario."""
+    prazo_evento = {
+        "ticker": "PETR4", "empresa": "Petrobras", "periodo": "3T26", "data": date(2026, 11, 14),
+        "horario": None, "status": STATUS_PRAZO_CVM, "fonte": "CVM — prazo regulatório",
+        "origem_url": None, "tipo_evento": "RESULTADO", "coletado_em": datetime.now(timezone.utc),
+    }
+    with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \\
+         patch.object(coleta_mod, "obter_nome_yf", return_value="Petrobras"), \\
+         patch.object(coleta_mod, "tentar_ri", return_value=None), \\
+         patch.object(coleta_mod, "_buscar_feed", side_effect=RuntimeError("RSS indisponivel")), \\
+         patch.object(coleta_mod, "_calcular_proximo_resultado", return_value=prazo_evento):
+        evento = coleta_mod.coletar_evento("PETR4")
+    _checar("excecao NEWS -> continua e retorna PRAZO_CVM, sem perder ticker",
+            evento is not None and evento["status"] == STATUS_PRAZO_CVM, f"(evento={evento})")
+
+
 # ============================================================
 # coletar_evento: pipeline completo RI->NEWS->PRAZO_CVM
 # ============================================================
