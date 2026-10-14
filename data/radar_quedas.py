@@ -133,7 +133,7 @@ def avaliar_ticker(ticker, cotacao, recomendacoes, agora=None):
     return {
         "ticker": ticker, "empresa": next((r.get("empresa") for r in relacionados if r.get("empresa")), ""),
         "preco_atual": float(preco), "fechamento_anterior": float(anterior),
-        "variacao_pct": variacao, "cotacao_em": cotacao.get("cotacao_em") or agora.isoformat(),
+        "variacao_pct": variacao, "cotacao_em": cotacao.get("_coletado_em") or agora.isoformat(),
         "tipo_cotacao": cotacao.get("tipo_cotacao") or "ATRASADA/PROVEDOR GRATUITO",
         "pregao": agora.date().isoformat(),
         "casas": sorted({r.get("casa", "") for r in relacionados if r.get("casa")}),
@@ -168,6 +168,8 @@ def processar_monitoramento():
     if coleta_ok:
         salvar_carteiras(snapshot)
     recomendacoes = listar_carteiras()
+    if not coleta_ok:
+        return {"coleta_ok": False, "alertas_novos": [], "erro": "Fonte de recomendações indisponível; monitoramento suspenso para evitar usar carteiras desatualizadas."}
     if recomendacoes is None:
         return {"coleta_ok": coleta_ok, "alertas_novos": [], "erro": "Supabase indisponível"}
     tickers = sorted({normalizar_ticker(r.get("ticker")) for r in recomendacoes} - {""})
