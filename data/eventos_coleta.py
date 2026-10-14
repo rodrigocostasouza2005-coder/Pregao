@@ -188,7 +188,13 @@ def tentar_news(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | N
     explicitos."""
     periodo_label = rotulo_periodo(ano, trimestre)
     termo = f"{empresa} resultado {periodo_label} divulgação data"
-    entries = _buscar_feed(termo)
+    try:
+        entries = _buscar_feed(termo)
+    except Exception:
+        # NEWS e' uma fonte secundaria: uma falha de RSS/busca nao pode
+        # abortar o ticker nem impedir o fallback deterministico PRAZO_CVM.
+        logging.exception("Falha na busca NEWS do calendario para %s", ticker)
+        return None
     if not entries:
         return None
     for entry in entries[:10]:
