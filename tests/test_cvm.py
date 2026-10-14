@@ -331,3 +331,44 @@ def test_17_excecao_em_ticker_nao_aborta_watchlist_cvm():
     _checar("17a CVM continua no segundo ticker", len(todos) == 1 and todos[0]["ticker"] == "VALE3")
     _checar("17b falha do primeiro ticker e reportada", falhas == ["BAD1"])
     _checar("17c excecao fica registrada no log", mock_logging.exception.called)
+
+
+def test_9_watchlist_registra_sucesso_e_persistencia():
+    _limpar_cache()
+    documento = {
+        "ticker": "PETR4", "data": "2026-10-13", "tipo": "FATO_RELEVANTE",
+        "tipo_label": "Fato Relevante", "categoria_original": "Fato Relevante",
+        "assunto": "Comunicado teste", "data_referencia": None,
+        "link": "https://cvm.example/doc.pdf", "destaque": True,
+    }
+    with patch.object(cvm_mod, "obter_documentos_cvm", return_value=[documento]), \
+         patch.object(cvm_mod, "salvar_documentos", return_value=True), \
+         patch.object(cvm_mod, "registrar_tentativa") as registrar:
+        documentos, falhas = cvm_mod.obter_documentos_watchlist(["PETR4"])
+    _checar("9a watchlist retorna documento e sem falhas", len(documentos) == 1 and falhas == [])
+    _checar("9b watchlist registra execução e persistência confirmadas",
+            registrar.call_count == 1 and
+            registrar.call_args.kwargs.get("execucao_ok") is True and
+            registrar.call_args.kwargs.get("persistencia_ok") is True and
+            registrar.call_args.kwargs.get("registros_novos") == 1)
+
+
+def test_10_watchlist_registra_coleta_parcial_quando_ticker_falha():
+    _limpar_cache()
+    documento = {
+        "ticker": "PETR4", "data": "2026-10-13", "tipo": "FATO_RELEVANTE",
+        "tipo_label": "Fato Relevante", "categoria_original": "Fato Relevante",
+        "assunto": "Comunicado teste", "data_referencia": None,
+        "link": "https://cvm.example/doc.pdf", "destaque": True,
+    }
+    with patch.object(cvm_mod, "obter_documentos_cvm",
+                      side_effect=lambda ticker: [documento] if ticker == "PETR4" else None), \
+         patch.object(cvm_mod, "salvar_documentos", return_value=True), \
+         patch.object(cvm_mod, "registrar_tentativa") as registrar:
+        documentos, falhas = cvm_mod.obter_documentos_watchlist(["PETR4", "VALE3"])
+    kwargs = registrar.call_args.kwargs
+    _checar("10a preserva documento válido e identifica ticker com falha",
+            len(documentos) == 1 and falhas == ["VALE3"])
+    _checar("10b painel registra coleta parcial, sem chamar de sucesso completo",
+            kwargs.get("execucao_ok") is True and kwargs.get("parcial") is True and
+            "1/2 ticker(s)" in kwargs.get("erro", ""))
