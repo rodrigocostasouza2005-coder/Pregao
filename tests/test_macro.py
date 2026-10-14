@@ -164,7 +164,8 @@ def test_6_cenario_global_lote_falho_registra_falha_em_saude_dos_dados():
 def test_7_cenario_global_sucesso_registra_ok_com_registros_reais():
     idx = pd.date_range("2026-10-01", periods=2, freq="D")
     df = pd.concat({
-        "GC=F": pd.DataFrame({"Close": [1900.0, 1920.0], "Volume": [0, 0]}, index=idx),  # "Ouro" em config.CENARIO_GLOBAL
+        symbol: pd.DataFrame({"Close": [1900.0, 1920.0], "Volume": [0, 0]}, index=idx)
+        for symbol in macro_mod.CENARIO_GLOBAL.values()
     }, axis=1)
     with patch.object(macro_mod, "_baixar_lote_bruto", return_value=df), \
          patch.object(macro_mod, "registrar_tentativa") as mock_reg:
@@ -172,8 +173,28 @@ def test_7_cenario_global_sucesso_registra_ok_com_registros_reais():
     _checar("7a registra MACRO (Cenário Global) execucao_ok=True",
             mock_reg.call_args.args[0] == "MACRO (Cenário Global)" and mock_reg.call_args.kwargs.get("execucao_ok") is True,
             f"(call={mock_reg.call_args})")
-    _checar("7b registros_novos bate com a quantidade real retornada (nunca conta item vazio)",
+    _checar("7b registros_novos bate com a quantidade real retornada",
             mock_reg.call_args.kwargs.get("registros_novos") == len(resultado), f"(resultado={resultado}, call={mock_reg.call_args})")
+
+
+def test_13_cenario_global_lote_parcial_nao_finge_sucesso_completo():
+    idx = pd.date_range("2026-10-01", periods=2, freq="D")
+    symbol = next(iter(macro_mod.CENARIO_GLOBAL.values()))
+    df = pd.concat({symbol: pd.DataFrame({"Close": [1900.0, 1920.0], "Volume": [0, 0]}, index=idx)}, axis=1)
+    with patch.object(macro_mod, "_baixar_lote_bruto", return_value=df), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg:
+        resultado = macro_mod.obter_cenario_global()
+    _checar("13a preserva ativos globais que chegaram", len(resultado) == 1)
+    _checar("13b marca resultado parcial", mock_reg.call_args.kwargs.get("parcial") is True)
+    _checar("13c lista os ativos ausentes no motivo", bool(mock_reg.call_args.kwargs.get("erro")))
+
+
+def test_14_cenario_global_sem_ativos_interpretaveis_registra_falha():
+    with patch.object(macro_mod, "_baixar_lote_bruto", return_value=pd.DataFrame()), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg:
+        resultado = macro_mod.obter_cenario_global()
+    _checar("14a nao retorna cotacoes vazias como sucesso", resultado == [])
+    _checar("14b registra falha real", mock_reg.call_args.kwargs.get("execucao_ok") is False)
 
 
 # ============================================================

@@ -353,6 +353,20 @@ def obter_cenario_global() -> list:
         linha = _linha_papel(df, nome, symbol)
         if linha:
             resultado.append({"nome": nome, "preco": linha["preco"], "variacao_pct": linha["variacao_pct"]})
-    registrar_tentativa("MACRO (Cenário Global)", "yfinance (ouro/petróleo/minério/Treasuries/VIX)",
-                         execucao_ok=True, registros_novos=len(resultado), categoria="Macro")
+    fonte = "yfinance (ouro/petróleo/minério/Treasuries/VIX)"
+    nome_coletor = "MACRO (Cenário Global)"
+    ausentes = [nome for nome, symbol in zip(nomes, symbols)
+                if not _linha_papel(df, nome, symbol)]
+    if not resultado:
+        registrar_tentativa(nome_coletor, fonte, execucao_ok=False,
+                             erro="Lote retornou dados, mas nenhum ativo global pôde ser interpretado",
+                             registros_novos=0, categoria="Macro")
+        return []
+    if ausentes:
+        registrar_tentativa(nome_coletor, fonte, execucao_ok=True, parcial=True,
+                             erro="Ativos sem dados: " + ", ".join(ausentes),
+                             registros_novos=len(resultado), categoria="Macro")
+    else:
+        registrar_tentativa(nome_coletor, fonte, execucao_ok=True,
+                             registros_novos=len(resultado), categoria="Macro")
     return resultado
