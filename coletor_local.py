@@ -272,7 +272,15 @@ def main() -> int:
         categoria="Calendario",
     )
 
-    return 1 if any(not info["ok"] for info in resultado.values()) else 0
+    falha_persistencia_calendario = (
+        stats_eventos["tabela_disponivel"] is not True or not snapshot_ok
+    )
+    falha_coleta_calendario = bool(stats_eventos.get("falhas", 0))
+    return 1 if (
+        any(not info["ok"] for info in resultado.values())
+        or falha_persistencia_calendario
+        or falha_coleta_calendario
+    ) else 0
 
 
 if __name__ == "__main__":
