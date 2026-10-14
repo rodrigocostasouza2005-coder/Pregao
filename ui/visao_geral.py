@@ -35,23 +35,24 @@ def _fmt_pct(valor, prefs):
 
 
 def _card_mercado(rotulo: str, preco, variacao_pct, prefs, casas_preco: int = 2):
+    """Card compacto de mercado com hierarquia visual consistente."""
     if preco is None or variacao_pct is None:
         st.markdown(
-            f"<div style='padding:0.4rem 0.6rem; border:1px solid var(--borda);'>"
-            f"<div class='cinza' style='font-size:0.68rem;'>{rotulo}</div>"
-            f"<div class='cinza' style='font-size:0.95rem;'>—</div></div>",
+            f"<div class='card-mercado-agora'>"
+            f"<div class='card-mercado-rotulo'>{rotulo}</div>"
+            f"<div class='card-mercado-valor indisponivel'>—</div>"
+            f"<div class='card-mercado-variacao cinza'>SEM DADO</div></div>",
             unsafe_allow_html=True,
         )
         return
     cls = "alta" if variacao_pct >= 0 else "baixa"
     st.markdown(
-        f"<div style='padding:0.4rem 0.6rem; border:1px solid var(--borda);'>"
-        f"<div class='cinza' style='font-size:0.68rem;'>{rotulo}</div>"
-        f"<div class='neutro' style='font-size:0.95rem; font-weight:600;'>{config.formatar_numero(preco, casas_preco, prefs['formato_numerico'])}</div>"
-        f"<div class='{cls}' style='font-size:0.78rem;'>{_fmt_pct(variacao_pct, prefs)}</div></div>",
+        f"<div class='card-mercado-agora'>"
+        f"<div class='card-mercado-rotulo'>{rotulo}</div>"
+        f"<div class='card-mercado-valor'>{config.formatar_numero(preco, casas_preco, prefs['formato_numerico'])}</div>"
+        f"<div class='card-mercado-variacao {cls}'>{_fmt_pct(variacao_pct, prefs)}</div></div>",
         unsafe_allow_html=True,
     )
-
 
 def _painel_mercado_agora(prefs):
     st.markdown('<div class="painel-titulo">MERCADO AGORA</div>', unsafe_allow_html=True)
