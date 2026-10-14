@@ -17,6 +17,8 @@ detalhe de implementacao deste coletor, nao configuracao do app.
 """
 
 import json
+import logging
+import time
 import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -431,11 +433,23 @@ def _buscar_feed_de_url(url: str):
     ilegivel) - nunca inventa noticia. Uma busca que respondeu bem mas
     nao achou nada retorna lista vazia, nao None: sao coisas diferentes
     pra interface ("fonte indisponivel" vs "nenhuma noticia encontrada")."""
-    try:
-        r = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
-        r.raise_for_status()
-    except Exception:
-        return None
+    # Google News falha ocasionalmente por timeout/limite temporario.
+    # Repetimos apenas erros transitórios; erro permanente ou XML inválido
+    # continua sendo reportado como indisponibilidade, sem fabricar notícias.
+    for tentativa in range(3):
+        try:
+            r = requests.get(url, headers=_HEADERS, timeout=(5, 20))
+            r.raise_for_status()
+            break
+        except requests.RequestException as e:
+            status = getattr(getattr(e, "response", None), "status_code", 0)
+            transitorio = (
+                isinstance(e, (requests.Timeout, requests.ConnectionError))
+                or status in (429, 500, 502, 503, 504)
+            )
+            if not transitorio or tentativa == 2:
+                return None
+            time.sleep(1 + tentativa)
     feed = feedparser.parse(r.content)
     if feed.bozo and not feed.entries:
         return None
@@ -768,11 +782,16 @@ def obter_noticias_watchlist(tickers: list) -> tuple:
     todas = []
     falhas = []
     for ticker in tickers:
-        r = obter_noticias(ticker)
-        if r is None:
+        try:
+            r = obter_noticias(ticker)
+            if r is None:
+                falhas.append(ticker)
+                continue
+            todas.extend(r)
+        except Exception:
+            # Falha isolada: um ticker nao pode impedir as noticias dos demais.
             falhas.append(ticker)
-            continue
-        todas.extend(r)
+            logging.exception("Falha ao coletar noticias para %s", ticker)
     todas = _mesclar_entre_tickers(todas)
     todas.sort(key=lambda n: n["data"], reverse=True)
     # registro de SAUDE DOS DADOS (achado real, auditoria missao coletores
