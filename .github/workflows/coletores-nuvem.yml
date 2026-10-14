@@ -4,8 +4,7 @@ on:
   schedule:
     # Horário comercial de Brasília (UTC-3): seg-sex, 07:00–20:00.
     # GitHub Actions usa UTC; evita execuções noturnas/fins de semana.
-    - cron: "*/30 10-22 * * 1-5"
-    - cron: "0 23 * * 1-5"
+    - cron: "*/30 10-23 * * 1-5"
   workflow_dispatch:
 
 permissions:
