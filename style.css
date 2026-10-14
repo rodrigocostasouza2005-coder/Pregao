@@ -734,6 +734,13 @@ button[data-testid^="stBaseButton"] {
     font-weight: 600;
     font-variant-numeric: tabular-nums;
 }
+.card-mercado-status {
+    color: var(--cinza);
+    font-size: 0.55rem;
+    line-height: 1.2;
+    letter-spacing: 0.025em;
+    overflow-wrap: anywhere;
+}
 .card-mercado-valor.indisponivel { color: var(--cinza); }
 @media (max-width: 900px) {
     .card-mercado-agora {

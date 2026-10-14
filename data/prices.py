@@ -166,12 +166,21 @@ def obter_cotacao_indice(nome: str, symbol: str) -> dict:
             raise ValueError("fechamento anterior zerado")
         variacao = preco - fechamento_anterior
         variacao_pct = (variacao / fechamento_anterior) * 100
-        resultado = {"nome": nome, "preco": preco, "variacao": variacao, "variacao_pct": variacao_pct, "erro": None}
+        resultado = {
+            "nome": nome,
+            "preco": preco,
+            "variacao": variacao,
+            "variacao_pct": variacao_pct,
+            "erro": None,
+            # Horario da coleta real; nunca renovado quando o valor e reutilizado.
+            "_coletado_em": datetime.now(timezone.utc).isoformat(),
+        }
         cache[nome] = resultado
         return resultado
     except Exception as e:
         if nome in cache:
-            return cache[nome]
+            # Sinaliza explicitamente que a cotacao exibida nao veio desta tentativa.
+            return {**cache[nome], "_fallback_cache": True}
         return {"nome": nome, "erro": str(e)}
 
 
