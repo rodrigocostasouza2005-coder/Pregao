@@ -241,15 +241,19 @@ def _aplicar_bridge(aba_id: str, ids_validos: list, prefs: dict, persistir_fn):
         if pid not in ids_validos or not isinstance(dados, dict):
             continue
         try:
-            w = max(_LARGURA_MINIMA_PCT, min(100.0, float(dados["w"])))
-            h = max(_ALTURA_MINIMA_REM, float(dados["h"]))
+            # Valida os valores brutos antes de limitar dimensões: min/max
+            # podem transformar Infinity em um limite aparentemente válido.
+            x_bruto, y_bruto, w_bruto, h_bruto = (
+                float(dados[chave]) for chave in ("x", "y", "w", "h")
+            )
+            if not all(math.isfinite(v) for v in (x_bruto, y_bruto, w_bruto, h_bruto)):
+                continue
+            w = max(_LARGURA_MINIMA_PCT, min(100.0, w_bruto))
+            h = max(_ALTURA_MINIMA_REM, h_bruto)
             # Limita x pela largura restante: x=95%, w=30% não pode
             # empurrar 25% do painel para fora do workspace.
-            x = max(0.0, min(100.0 - w, float(dados["x"])))
-            y = max(0.0, float(dados["y"]))
-            valores = (x, y, w, h)
-            if not all(math.isfinite(v) for v in valores):
-                continue
+            x = max(0.0, min(100.0 - w, x_bruto))
+            y = max(0.0, y_bruto)
         except (KeyError, TypeError, ValueError, OverflowError):
             continue
         limpo[pid] = {"x": x, "y": y, "w": w, "h": h}
