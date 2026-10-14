@@ -1013,13 +1013,13 @@ def obter_top_mercado(setor: str = "TODOS"):
         # mecanismo do bug ja corrigido em obter_noticias_watchlist, so'
         # que neste caminho de codigo (filtro de regiao), nao o de
         # ticker.
-        registrar_tentativa("NEWS", "Google News (BR)", execucao_ok=False,
+        registrar_tentativa("NEWS (Brasil)", "Google News (BR)", execucao_ok=False,
                              erro="pool Brasil falhou", categoria="Noticias")
         return None
     resultado = _processar_pool(entries_por_link, setor, "BR")
     resultado.sort(key=lambda n: n["importancia"], reverse=True)
     resultado = resultado[:_TOP_MERCADO_QTD]
-    registrar_tentativa("NEWS", "Google News (BR)", execucao_ok=True,
+    registrar_tentativa("NEWS (Brasil)", "Google News (BR)", execucao_ok=True,
                          registros_novos=len(resultado), categoria="Noticias")
     return resultado
 
@@ -1037,13 +1037,13 @@ def obter_top_mercado_internacional(setor: str = "TODOS"):
     if not alguma_fonte_ok:
         # registro de SAUDE DOS DADOS - mesmo achado/motivo de
         # obter_top_mercado acima, so' que pro filtro "INTERNACIONAL".
-        registrar_tentativa("NEWS", "Google News (INTL)", execucao_ok=False,
+        registrar_tentativa("NEWS (Internacional)", "Google News (INTL)", execucao_ok=False,
                              erro="pool Internacional falhou", categoria="Noticias")
         return None
     resultado = _processar_pool(entries_por_link, setor, "INT")
     resultado.sort(key=lambda n: n["importancia"], reverse=True)
     resultado = resultado[:_TOP_MERCADO_QTD]
-    registrar_tentativa("NEWS", "Google News (INTL)", execucao_ok=True,
+    registrar_tentativa("NEWS (Internacional)", "Google News (INTL)", execucao_ok=True,
                          registros_novos=len(resultado), categoria="Noticias")
     return resultado
 
@@ -1059,6 +1059,19 @@ def obter_top_mercado_tudo(setor: str = "TODOS"):
     comparar mais itens a toa. None so se os dois pools falharem."""
     br_entries, br_ok = _coletar_pool_brasil(setor)
     intl_entries, intl_ok = _coletar_pool_internacional(setor)
+    # Registra cada fonte separadamente mesmo na coleta agregada. Sem isso,
+    # uma falha isolada do Brasil ou do pool internacional ficava escondida
+    # dentro do status unico NEWS (BR+INTL), dificultando diagnostico.
+    registrar_tentativa(
+        "NEWS (Brasil)", "Google News (BR)", execucao_ok=br_ok,
+        registros_novos=len(br_entries) if br_ok else 0,
+        erro=None if br_ok else "pool Brasil falhou", categoria="Noticias",
+    )
+    registrar_tentativa(
+        "NEWS (Internacional)", "Google News (INTL)", execucao_ok=intl_ok,
+        registros_novos=len(intl_entries) if intl_ok else 0,
+        erro=None if intl_ok else "pool Internacional falhou", categoria="Noticias",
+    )
     if not br_ok and not intl_ok:
         # registro de SAUDE DOS DADOS (nao faz parte da logica de news em
         # si - ver data/saude_dados.py/coletores_status.py) - so' numa

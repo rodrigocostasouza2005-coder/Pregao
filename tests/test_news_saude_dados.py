@@ -103,7 +103,7 @@ def test_5_top_mercado_br_pool_falho_registra_falha_em_news():
         resultado = news_mod.obter_top_mercado()
     _checar("5a pool BR falho -> None (nunca inventa noticia)", resultado is None)
     _checar("5b registra NEWS execucao_ok=False (nao fica invisivel pro painel)",
-            mock_reg.call_args.args[0] == "NEWS" and mock_reg.call_args.kwargs.get("execucao_ok") is False,
+            mock_reg.call_args.args[0] == "NEWS (Brasil)" and mock_reg.call_args.kwargs.get("execucao_ok") is False,
             f"(call={mock_reg.call_args})")
 
 
@@ -115,7 +115,7 @@ def test_6_top_mercado_br_sucesso_registra_ok_em_news():
         resultado = news_mod.obter_top_mercado()
     _checar("6a resultado real retornado", resultado == [{"importancia": 1, "titulo": "A"}], f"(resultado={resultado})")
     _checar("6b registra NEWS execucao_ok=True com registros_novos real",
-            mock_reg.call_args.args[0] == "NEWS" and mock_reg.call_args.kwargs.get("execucao_ok") is True
+            mock_reg.call_args.args[0] == "NEWS (Brasil)" and mock_reg.call_args.kwargs.get("execucao_ok") is True
             and mock_reg.call_args.kwargs.get("registros_novos") == 1, f"(call={mock_reg.call_args})")
 
 
@@ -126,7 +126,7 @@ def test_7_top_mercado_internacional_pool_falho_registra_falha_em_news():
         resultado = news_mod.obter_top_mercado_internacional()
     _checar("7a pool INTL falho -> None (nunca inventa noticia)", resultado is None)
     _checar("7b registra NEWS execucao_ok=False (mesmo mecanismo do pool BR)",
-            mock_reg.call_args.args[0] == "NEWS" and mock_reg.call_args.kwargs.get("execucao_ok") is False,
+            mock_reg.call_args.args[0] == "NEWS (Internacional)" and mock_reg.call_args.kwargs.get("execucao_ok") is False,
             f"(call={mock_reg.call_args})")
 
 

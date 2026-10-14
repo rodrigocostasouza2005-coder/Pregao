@@ -182,6 +182,16 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 6, "instrumentado": True,
     },
     {
+        "nome": "NEWS (Brasil)", "fonte": "Google News Brasil (RSS de negócios + temas)",
+        "categoria": "Noticias", "frequencia_esperada": "sob demanda (cache 20min)",
+        "idade_maxima_horas": 6, "instrumentado": True,
+    },
+    {
+        "nome": "NEWS (Internacional)", "fonte": "Google News EUA + CNBC/MarketWatch/Yahoo Finance",
+        "categoria": "Noticias", "frequencia_esperada": "sob demanda (cache 20min)",
+        "idade_maxima_horas": 6, "instrumentado": True,
+    },
+    {
         # linha separada (achado real, auditoria missao coletores
         # 2026-10-13): "NEWS" (acima) so' media' obter_top_mercado_tudo -
         # a busca POR TICKER (obter_noticias_watchlist, o que a aba
@@ -361,7 +371,7 @@ _CAMPOS_OBRIGATORIOS_COLETOR = (
     "nome", "fonte", "categoria", "frequencia_esperada", "instrumentado",
 )
 _COLETORES_CRITICOS = {
-    "NEWS", "NEWS (watchlist)", "MERCADO", "MACRO (BCB)", "CVM",
+    "NEWS", "NEWS (Brasil)", "NEWS (Internacional)", "NEWS (watchlist)", "MERCADO", "MACRO (BCB)", "CVM",
     "CVM (FCA)", "CVM (watchlist)", "CALENDARIO",
 }
 
