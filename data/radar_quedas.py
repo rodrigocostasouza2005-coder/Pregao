@@ -27,7 +27,7 @@ def calcular_queda(preco_atual, fechamento_anterior):
         return None
     if atual <= 0 or anterior <= 0:
         return None
-    variacao = (atual / anterior - 1) * 100
+    variacao = round((atual / anterior - 1) * 100, 8)
     return variacao if variacao == variacao and abs(variacao) != float("inf") else None
 
 
