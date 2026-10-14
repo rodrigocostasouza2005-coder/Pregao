@@ -60,9 +60,9 @@ def test_monitoramento_para_se_nao_persistir_coleta():
 def test_monitoramento_rejeita_snapshot_vazio_e_preserva_carteiras():
     from unittest.mock import patch
     import data.radar_quedas as radar
-    with patch.object(radar, "coletar_carteiras_genial", return_value=[]), \\
-         patch.object(radar, "salvar_carteiras") as salvar, \\
-         patch.object(radar, "listar_carteiras") as listar, \\
+    with patch.object(radar, "coletar_carteiras_genial", return_value=[]), \
+         patch.object(radar, "salvar_carteiras") as salvar, \
+         patch.object(radar, "listar_carteiras") as listar, \
          patch.object(radar, "obter_cotacao") as cotacao:
         resultado = radar.processar_monitoramento()
     assert resultado["coleta_ok"] is False
