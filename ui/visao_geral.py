@@ -8,6 +8,8 @@ consulta nova). Onde a função original já é "pesada demais" pra um
 resumo (a lista completa de notícias, por exemplo), usa a mesma função
 de dado com um limite de itens menor, não uma cópia da lógica."""
 
+from datetime import datetime, timezone
+
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -34,14 +36,37 @@ def _fmt_pct(valor, prefs):
     return f"{sinal}{config.formatar_numero(valor, 2, prefs['formato_numerico'])}%"
 
 
-def _card_mercado(rotulo: str, preco, variacao_pct, prefs, casas_preco: int = 2):
-    """Card compacto de mercado com hierarquia visual consistente."""
+def _status_cotacao_indice(cotacao: dict) -> str | None:
+    """Identifica fallback sem confundir hora da tentativa com hora da coleta valida."""
+    if not cotacao.get("_fallback_cache"):
+        return None
+    coletado_em = cotacao.get("_coletado_em")
+    if not coletado_em:
+        return "VALOR EM CACHE"
+    try:
+        instante = datetime.fromisoformat(coletado_em)
+        if instante.tzinfo is None:
+            instante = instante.replace(tzinfo=timezone.utc)
+        minutos = max(0, int((datetime.now(timezone.utc) - instante.astimezone(timezone.utc)).total_seconds() // 60))
+        if minutos < 1:
+            return "EM CACHE • <1 MIN"
+        if minutos < 60:
+            return f"EM CACHE • {minutos} MIN"
+        horas, resto = divmod(minutos, 60)
+        return f"EM CACHE • {horas}H {resto:02d}MIN"
+    except (TypeError, ValueError, OverflowError):
+        return "VALOR EM CACHE"
+
+
+def _card_mercado(rotulo: str, preco, variacao_pct, prefs, casas_preco: int = 2, status: str | None = None):
+    """Card compacto de mercado; cotações reaproveitadas ficam explicitamente sinalizadas."""
+    status_html = f"<div class='card-mercado-status'>{status}</div>" if status else ""
     if preco is None or variacao_pct is None:
         st.markdown(
             f"<div class='card-mercado-agora'>"
             f"<div class='card-mercado-rotulo'>{rotulo}</div>"
             f"<div class='card-mercado-valor indisponivel'>—</div>"
-            f"<div class='card-mercado-variacao cinza'>SEM DADO</div></div>",
+            f"<div class='card-mercado-variacao cinza'>SEM DADO</div>{status_html}</div>",
             unsafe_allow_html=True,
         )
         return
@@ -50,7 +75,7 @@ def _card_mercado(rotulo: str, preco, variacao_pct, prefs, casas_preco: int = 2)
         f"<div class='card-mercado-agora'>"
         f"<div class='card-mercado-rotulo'>{rotulo}</div>"
         f"<div class='card-mercado-valor'>{config.formatar_numero(preco, casas_preco, prefs['formato_numerico'])}</div>"
-        f"<div class='card-mercado-variacao {cls}'>{_fmt_pct(variacao_pct, prefs)}</div></div>",
+        f"<div class='card-mercado-variacao {cls}'>{_fmt_pct(variacao_pct, prefs)}</div>{status_html}</div>",
         unsafe_allow_html=True,
     )
 
@@ -89,9 +114,9 @@ def _painel_mercado_agora(prefs):
     with st.container(key="visao_geral_mercado_agora_cols"):
         cols = st.columns(7)
         with cols[0]:
-            _card_mercado("IBOV", None if ibov.get("erro") else ibov["preco"], None if ibov.get("erro") else ibov["variacao_pct"], prefs, 0)
+            _card_mercado("IBOV", None if ibov.get("erro") else ibov["preco"], None if ibov.get("erro") else ibov["variacao_pct"], prefs, 0, _status_cotacao_indice(ibov))
         with cols[1]:
-            _card_mercado("DÓLAR", None if dolar.get("erro") else dolar["preco"], None if dolar.get("erro") else dolar["variacao_pct"], prefs)
+            _card_mercado("DÓLAR", None if dolar.get("erro") else dolar["preco"], None if dolar.get("erro") else dolar["variacao_pct"], prefs, status=_status_cotacao_indice(dolar))
         with cols[2]:
             _card_mercado("DI (CDI anual.)", cdi_atual, cdi_variacao, prefs)
         with cols[3]:
