@@ -169,13 +169,14 @@ def test_9_cotacao_indice_timeout_cai_pro_ultimo_valor_valido():
     nome = "TESTE_TIMEOUT_INDICE_FALLBACK"
     prices_mod._ultima_cotacao_indice_valida()[nome] = {
         "nome": nome, "preco": 105.0, "variacao": 5.0, "variacao_pct": 5.0, "erro": None,
+        "_coletado_em": "2026-10-14T15:00:00+00:00",
     }
     with patch.object(prices_mod.yf, "Ticker", _TickerTimeout):
         resultado = obter_cotacao_indice(nome, "^TESTEFB")
     _checar("9a timeout com fallback disponivel -> retorna o ultimo valor valido (nao erro)", resultado.get("erro") is None)
     _checar("9b valor do fallback e' o gravado anteriormente", resultado.get("preco") == 105.0, f"(resultado={resultado})")
     _checar("9c fallback e' explicitamente sinalizado", resultado.get("_fallback_cache") is True)
-    _checar("9d timestamp original e' preservado quando existe", resultado.get("_coletado_em") is None)
+    _checar("9d timestamp original e' preservado quando existe", resultado.get("_coletado_em") == "2026-10-14T15:00:00+00:00")
 
 
 def test_10_cotacao_indice_timeout_sem_fallback_retorna_erro():
