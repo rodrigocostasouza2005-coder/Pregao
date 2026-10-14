@@ -278,28 +278,32 @@ def test_14_testar_conexao_reflete_falha_real_mesmo_com_fallback_disponivel():
             ok is False, f"(ok={ok}, detalhe={detalhe})")
 
 
-def test_15_documentos_brutos_sem_coluna_tipo_nao_quebra_e_filtra_resultados():
-    """Regressao do bug de 2026-10-13: respostas IPE sem a coluna Tipo
-    nao podem gerar KeyError; categorias de resultados sem classificacao
-    devem ser excluidas, preservando fatos relevantes."""
-    import pandas as pd
-
+def test_15_fca_ano_malformado_nao_aborta_fallback_para_ano_anterior():
+    """Se o dump do ano corrente vier com esquema inesperado, tenta o ano
+    anterior e sinaliza coleta parcial em vez de abortar com KeyError."""
     _limpar_cache_fca_ipe()
-    cnpj = "33.000.167/0001-01"
-    df_sem_tipo = pd.DataFrame({
-        "CNPJ_Companhia": [cnpj, cnpj],
-        "Categoria": ["Fato Relevante", "Dados Econômico-Financeiros"],
-        "Assunto": ["Fato relevante de teste", "Resultado sem tipo"],
-    })
-    df_vazio = pd.DataFrame(columns=["CNPJ_Companhia", "Categoria"])
-    with patch.object(cvm_mod, "_ipe_ano", side_effect=[df_sem_tipo, df_vazio]):
-        documentos = cvm_mod._documentos_brutos(cnpj)
+    import pandas as pd
+    df_ruim = pd.DataFrame({"Ticker": ["PETR4"], "CNPJ": ["x"]})
+    df_bom = pd.DataFrame({"Codigo_Negociacao": ["VALE3"], "CNPJ_Companhia": ["33.592.510/0001-54"]})
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", side_effect=[df_ruim, df_bom]), \
+         patch.object(cvm_mod, "registrar_tentativa") as mock_reg:
+        mapa = cvm_mod._mapa_ticker_cnpj()
+    _checar("15a esquema ruim do ano corrente nao aborta o fallback", mapa.get("VALE3") == "33.592.510/0001-54", f"(mapa={mapa})")
+    _checar("15b sucesso de fallback fica marcado como parcial",
+            mock_reg.call_args.kwargs.get("parcial") is True, f"(call={mock_reg.call_args})")
 
-    _checar("15a IPE sem coluna Tipo nao gera excecao e retorna documentos", documentos is not None)
-    _checar("15b fato relevante e preservado, resultado sem Tipo e excluido",
-            len(documentos) == 1 and documentos[0]["Categoria"] == "Fato Relevante",
-            f"(documentos={documentos})")
 
+def test_16_ipe_esquema_malformado_nao_aborta_com_keyerror():
+    """Download HTTP bem sucedido mas CSV sem colunas nucleares e falha
+    de parse semantico: retorna fallback do mesmo ano (ou None) e registra erro."""
+    _limpar_cache_fca_ipe()
+    import pandas as pd
+    df_ruim = pd.DataFrame({"Ticker": ["PETR4"], "Assunto": ["x"]})
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=df_ruim), \
+         patch.object(cvm_mod, "registrar_tentativa") as mock_reg:
+        resultado = cvm_mod._ipe_ano(2026)
+    _checar("16a IPE malformado sem cache anterior retorna None, sem excecao", resultado is None, f"(resultado={resultado})")
+    _checar("16b registra falha de execucao", mock_reg.call_args.kwargs.get("execucao_ok") is False, f"(call={mock_reg.call_args})")
 
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
@@ -314,3 +318,57 @@ if __name__ == "__main__":
         print(f"FALHARAM {len(_FALHAS)}: {_FALHAS}")
         sys.exit(1)
     print("TODOS OS TESTES DE DATA/CVM.PY PASSARAM")
+
+
+def test_17_excecao_em_ticker_nao_aborta_watchlist_cvm():
+    doc = {"ticker": "VALE3", "data": "2026-10-13", "tipo": "FATO RELEVANTE", "assunto": "teste"}
+    with (
+        patch.object(cvm_mod, "obter_documentos_cvm", side_effect=[RuntimeError("falha isolada"), [doc]]),
+        patch.object(cvm_mod, "salvar_documentos", return_value=True),
+        patch.object(cvm_mod, "logging") as mock_logging,
+    ):
+        todos, falhas = cvm_mod.obter_documentos_watchlist(["BAD1", "VALE3"])
+    _checar("17a CVM continua no segundo ticker", len(todos) == 1 and todos[0]["ticker"] == "VALE3")
+    _checar("17b falha do primeiro ticker e reportada", falhas == ["BAD1"])
+    _checar("17c excecao fica registrada no log", mock_logging.exception.called)
+
+
+def test_9_watchlist_registra_sucesso_e_persistencia():
+    _limpar_cache()
+    documento = {
+        "ticker": "PETR4", "data": "2026-10-13", "tipo": "FATO_RELEVANTE",
+        "tipo_label": "Fato Relevante", "categoria_original": "Fato Relevante",
+        "assunto": "Comunicado teste", "data_referencia": None,
+        "link": "https://cvm.example/doc.pdf", "destaque": True,
+    }
+    with patch.object(cvm_mod, "obter_documentos_cvm", return_value=[documento]), \
+         patch.object(cvm_mod, "salvar_documentos", return_value=True), \
+         patch.object(cvm_mod, "registrar_tentativa") as registrar:
+        documentos, falhas = cvm_mod.obter_documentos_watchlist(["PETR4"])
+    _checar("9a watchlist retorna documento e sem falhas", len(documentos) == 1 and falhas == [])
+    _checar("9b watchlist registra execução e persistência confirmadas",
+            registrar.call_count == 1 and
+            registrar.call_args.kwargs.get("execucao_ok") is True and
+            registrar.call_args.kwargs.get("persistencia_ok") is True and
+            registrar.call_args.kwargs.get("registros_novos") == 1)
+
+
+def test_10_watchlist_registra_coleta_parcial_quando_ticker_falha():
+    _limpar_cache()
+    documento = {
+        "ticker": "PETR4", "data": "2026-10-13", "tipo": "FATO_RELEVANTE",
+        "tipo_label": "Fato Relevante", "categoria_original": "Fato Relevante",
+        "assunto": "Comunicado teste", "data_referencia": None,
+        "link": "https://cvm.example/doc.pdf", "destaque": True,
+    }
+    with patch.object(cvm_mod, "obter_documentos_cvm",
+                      side_effect=lambda ticker: [documento] if ticker == "PETR4" else None), \
+         patch.object(cvm_mod, "salvar_documentos", return_value=True), \
+         patch.object(cvm_mod, "registrar_tentativa") as registrar:
+        documentos, falhas = cvm_mod.obter_documentos_watchlist(["PETR4", "VALE3"])
+    kwargs = registrar.call_args.kwargs
+    _checar("10a preserva documento válido e identifica ticker com falha",
+            len(documentos) == 1 and falhas == ["VALE3"])
+    _checar("10b painel registra coleta parcial, sem chamar de sucesso completo",
+            kwargs.get("execucao_ok") is True and kwargs.get("parcial") is True and
+            "1/2 ticker(s)" in kwargs.get("erro", ""))
