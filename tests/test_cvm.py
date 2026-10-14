@@ -278,6 +278,33 @@ def test_14_testar_conexao_reflete_falha_real_mesmo_com_fallback_disponivel():
             ok is False, f"(ok={ok}, detalhe={detalhe})")
 
 
+def test_15_fca_ano_malformado_nao_aborta_fallback_para_ano_anterior():
+    """Se o dump do ano corrente vier com esquema inesperado, tenta o ano
+    anterior e sinaliza coleta parcial em vez de abortar com KeyError."""
+    _limpar_cache_fca_ipe()
+    import pandas as pd
+    df_ruim = pd.DataFrame({"Ticker": ["PETR4"], "CNPJ": ["x"]})
+    df_bom = pd.DataFrame({"Codigo_Negociacao": ["VALE3"], "CNPJ_Companhia": ["33.592.510/0001-54"]})
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", side_effect=[df_ruim, df_bom]), \
+         patch.object(cvm_mod, "registrar_tentativa") as mock_reg:
+        mapa = cvm_mod._mapa_ticker_cnpj()
+    _checar("15a esquema ruim do ano corrente nao aborta o fallback", mapa.get("VALE3") == "33.592.510/0001-54", f"(mapa={mapa})")
+    _checar("15b sucesso de fallback fica marcado como parcial",
+            mock_reg.call_args.kwargs.get("parcial") is True, f"(call={mock_reg.call_args})")
+
+
+def test_16_ipe_esquema_malformado_nao_aborta_com_keyerror():
+    """Download HTTP bem sucedido mas CSV sem colunas nucleares e falha
+    de parse semantico: retorna fallback do mesmo ano (ou None) e registra erro."""
+    _limpar_cache_fca_ipe()
+    import pandas as pd
+    df_ruim = pd.DataFrame({"Ticker": ["PETR4"], "Assunto": ["x"]})
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=df_ruim), \
+         patch.object(cvm_mod, "registrar_tentativa") as mock_reg:
+        resultado = cvm_mod._ipe_ano(2026)
+    _checar("16a IPE malformado sem cache anterior retorna None, sem excecao", resultado is None, f"(resultado={resultado})")
+    _checar("16b registra falha de execucao", mock_reg.call_args.kwargs.get("execucao_ok") is False, f"(call={mock_reg.call_args})")
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
