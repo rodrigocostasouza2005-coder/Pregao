@@ -185,12 +185,12 @@ def test_4e_timeout_calendario_retorna_codigo_erro_ao_agendador():
     o Agendador do Windows precisa sinalizar que o universo ficou incompleto."""
     stats = {"processados": 3, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 3,
              "falhas": 0, "tempo_esgotado": True, "tabela_disponivel": True}
-    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \\
-         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \\
-         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \\
-         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \\
-         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats), \\
-         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \\
+    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
          patch.object(coletor_local, "registrar_tentativa"):
         codigo = coletor_local.main()
     _checar("2e timeout -> exit code 1 (execucao incompleta visivel ao Agendador)", codigo == 1,
