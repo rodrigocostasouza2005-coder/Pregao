@@ -257,9 +257,9 @@ def main() -> int:
         _persistencia_ok_calendario = False
     # Excecoes isoladas por ticker nao interrompem o universo, mas tambem
     # nao podem aparecer como coleta completa no painel de saude.
-    if stats_eventos["falhas"]:
+    if stats_eventos.get("falhas", 0):
         _erros_calendario.append(
-            f"falha inesperada em {stats_eventos['falhas']} ticker(s) do universo"
+            f"falha inesperada em {stats_eventos.get('falhas', 0)} ticker(s) do universo"
         )
     if stats_eventos["tempo_esgotado"]:
         _erros_calendario.append("orcamento de tempo esgotado; universo parcialmente processado")
