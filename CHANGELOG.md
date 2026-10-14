@@ -1,5 +1,15 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-14 — Radar de quedas e Morning Call independentes
+
+- Adicionados `data/radar_quedas.py` e `jobs/radar_quedas.py`: consolidação por ticker/pregão, limiar estrito abaixo de -4%, registro persistente e e-mail separado por evento.
+- Adicionado `jobs/morning_call.py`: briefing diário independente, usando cotações, macro e manchetes já existentes; indisponibilidade de fontes é indicada sem inventar números.
+- Adicionado `jobs/email_utils.py`: SMTP configurável apenas por variáveis de ambiente.
+- Adicionada migration `sql/radar_research.sql`, painel de alertas no RADAR e workflow separado `.github/workflows/radar-morning-call.yml`.
+- Limitação: Genial é a única fonte de recomendações estruturadas conectada nesta fase; bloqueios de rede podem impedir atualização. XP/BTG não são considerados fontes confirmadas de carteira.
+- Configuração operacional exige migration Supabase e GitHub Actions secrets SMTP/Supabase; execução e entrega reais só ficam comprovadas após rodar o workflow com credenciais válidas.
+
+
 Entradas curtas por commit, em português simples: o que mudou e por quê.
 Mais recente primeiro.
 
