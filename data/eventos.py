@@ -342,18 +342,28 @@ def calcular_proximo_resultado(
         persistido = _buscar_evento_persistido(ticker, rotulo)
     if persistido is not None:
         try:
-            return {
-                "ticker": ticker,
-                "empresa": empresa,
-                "periodo": rotulo,
-                "data": date.fromisoformat(str(persistido["data_evento"])[:10]),
-                "horario": None,
-                "status": persistido["status"],
-                "fonte": persistido["fonte"],
-                "origem_url": persistido.get("url_fonte"),
-                "tipo_evento": "RESULTADO",
-                "coletado_em": datetime.now(timezone.utc),
-            }
+            data_persistida = date.fromisoformat(str(persistido["data_evento"])[:10])
+            hoje_efetivo = hoje or datetime.now(_TZ_SP).date()
+            status_persistido = persistido["status"]
+            # Um evento persistido no passado nao e' mais um proximo resultado.
+            # Se a empresa ainda nao protocolou o resultado, mantemos o prazo CVM
+            # como fallback ate' a coleta seguinte confirmar/atualizar a data.
+            if (
+                data_persistida >= hoje_efetivo
+                and status_persistido in (STATUS_CONFIRMADO, STATUS_ESTIMADO)
+            ):
+                return {
+                    "ticker": ticker,
+                    "empresa": empresa,
+                    "periodo": rotulo,
+                    "data": data_persistida,
+                    "horario": None,
+                    "status": status_persistido,
+                    "fonte": persistido["fonte"],
+                    "origem_url": persistido.get("url_fonte"),
+                    "tipo_evento": "RESULTADO",
+                    "coletado_em": datetime.now(timezone.utc),
+                }
         except (KeyError, ValueError, TypeError):
             pass  # linha salva malformada - cai pro PRAZO_CVM, nunca quebra
 
