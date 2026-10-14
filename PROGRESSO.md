@@ -6198,3 +6198,7 @@ CONTINUAÇÃO 2 - ver lá, seção 5, pro passo a passo completo):
    `pytest tests/test_research.py -v`) na máquina com o `.venv` do
    projeto - deve mostrar as 3 novas verificações de isolamento por
    item passando.
+
+## 2026-10-14 — Radar de quedas e Morning Call independentes
+
+Implementação preparada em branch própria: monitor de recomendações e e-mail por ticker/pregão; Morning Call diário sem dependência do Radar; SMTP comum configurável por ambiente; log de execução; seção de alertas no RADAR; workflow com agenda e disparo manual. A validação real de entrega depende de executar a migration `sql/radar_research.sql` no Supabase e configurar secrets de GitHub Actions. Fonte estruturada atual: Genial; acesso pode ser bloqueado na nuvem. Não se declara que os e-mails já estão sendo entregues.

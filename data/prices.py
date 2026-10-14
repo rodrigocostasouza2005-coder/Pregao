@@ -115,6 +115,9 @@ def obter_cotacao(ticker: str) -> dict:
         return {
             "ticker": ticker,
             "preco": preco,
+            "fechamento_anterior": fechamento_anterior,
+            "cotacao_em": datetime.now(timezone.utc).isoformat(),
+            "tipo_cotacao": "ATRASADA (Yahoo Finance; atraso pode variar)",
             "variacao": variacao,
             "variacao_pct": variacao_pct,
             "maxima_dia": maxima_dia,
