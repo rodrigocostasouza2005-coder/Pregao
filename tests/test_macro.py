@@ -295,7 +295,7 @@ if __name__ == "__main__":
     print("TODOS OS TESTES DE MACRO.PY (CURVA PRE/ANBIMA) PASSARAM")
 
 
-def test_15_sgs_re tenta_timeout_transitorio_antes_de_falhar():
+def test_15_sgs_retenta_timeout_transitorio_antes_de_falhar():
     """Timeout transitório do SGS deve ser repetido e depois aceitar a
     resposta real; não deve fabricar nem reutilizar dado antigo."""
     from unittest.mock import Mock
