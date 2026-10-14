@@ -156,6 +156,12 @@ def test_news_exception_preserva_fallback_prazo_cvm():
             evento is not None and evento["status"] == STATUS_PRAZO_CVM, f"(evento={evento})")
 
 
+def test_news_feed_malformado_nao_interrompe_fallback():
+    with patch.object(coleta_mod, "_buscar_feed", return_value=["entrada malformada"]):
+        evento = coleta_mod.tentar_news("PETR4", "Petrobras", 2026, 3)
+    _checar("feed NEWS malformado -> None, sem propagar excecao", evento is None, f"(evento={evento})")
+
+
 # ============================================================
 # coletar_evento: pipeline completo RI->NEWS->PRAZO_CVM
 # ============================================================
