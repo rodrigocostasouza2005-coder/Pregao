@@ -268,7 +268,7 @@ def main() -> int:
         execucao_ok=True, persistencia_ok=_persistencia_ok_calendario,
         registros_novos=stats_eventos["confirmados"] + stats_eventos["estimados"],
         erro="; ".join(_erros_calendario) or None,
-        parcial=bool(stats_eventos["tempo_esgotado"] or stats_eventos["falhas"]),
+        parcial=bool(stats_eventos["tempo_esgotado"] or stats_eventos.get("falhas", 0)),
         categoria="Calendario",
     )
 
