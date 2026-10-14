@@ -6,6 +6,7 @@ uma fonte falhar, a funcao retorna None (ou [], pro cenario global) e quem
 chama deve avisar o usuario."""
 
 from datetime import date, datetime, timedelta
+import time
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -50,9 +51,31 @@ def _serie_sgs(codigo: int, dias_historico: int) -> pd.DataFrame:
         _SGS_BASE.format(codigo=codigo)
         + f"?formato=json&dataInicial={inicio.strftime('%d/%m/%Y')}&dataFinal={hoje.strftime('%d/%m/%Y')}"
     )
-    r = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
-    r.raise_for_status()
-    dados = r.json()
+    # O SGS ocasionalmente demora mais que o timeout normal. Repetir
+    # falhas transitórias (timeout, conexão, HTTP 429/5xx) evita marcar
+    # a série como indisponível por uma única resposta lenta. Não repete
+    # erros HTTP permanentes nem altera/estima os dados retornados.
+    ultima_excecao = None
+    for tentativa in range(3):
+        try:
+            r = requests.get(url, headers=_HEADERS, timeout=(5, 25))
+            if r.status_code == 429 or r.status_code >= 500:
+                r.raise_for_status()
+            r.raise_for_status()
+            dados = r.json()
+            break
+        except requests.RequestException as e:
+            ultima_excecao = e
+            transitório = (
+                isinstance(e, (requests.Timeout, requests.ConnectionError))
+                or (getattr(getattr(e, "response", None), "status_code", 0) in (429, 500, 502, 503, 504))
+            )
+            if not transitório or tentativa == 2:
+                raise
+            time.sleep(1 + tentativa)
+    else:
+        raise ultima_excecao
+
     if not dados:
         raise ValueError(f"SGS {codigo} retornou lista vazia")
     df = pd.DataFrame(dados)

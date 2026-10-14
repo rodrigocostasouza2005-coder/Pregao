@@ -293,3 +293,36 @@ if __name__ == "__main__":
         print(f"FALHARAM {len(_FALHAS)}: {_FALHAS}")
         sys.exit(1)
     print("TODOS OS TESTES DE MACRO.PY (CURVA PRE/ANBIMA) PASSARAM")
+
+
+def test_15_sgs_re tenta_timeout_transitorio_antes_de_falhar():
+    """Timeout transitório do SGS deve ser repetido e depois aceitar a
+    resposta real; não deve fabricar nem reutilizar dado antigo."""
+    from unittest.mock import Mock
+    from requests import Timeout
+    macro_mod.obter_ipca.clear()
+    resposta = Mock()
+    resposta.status_code = 200
+    resposta.json.return_value = [{"data": "13/10/2026", "valor": "0.48"}]
+    resposta.raise_for_status.return_value = None
+    with patch.object(macro_mod.requests, "get", side_effect=[Timeout("lento"), resposta]) as get, \
+         patch.object(macro_mod.time, "sleep"):
+        df = macro_mod._serie_sgs(433, 30)
+    _checar("15a SGS recupera apos timeout transitorio", df is not None and len(df) == 1)
+    _checar("15b repetiu exatamente uma vez", get.call_count == 2)
+
+
+def test_16_sgs_erro_http_permanente_nao_faz_retentativas():
+    from requests import HTTPError
+    resposta = __import__("unittest.mock", fromlist=["Mock"]).Mock()
+    resposta.status_code = 404
+    resposta.raise_for_status.side_effect = HTTPError("not found")
+    with patch.object(macro_mod.requests, "get", return_value=resposta) as get, \
+         patch.object(macro_mod.time, "sleep"):
+        try:
+            macro_mod._serie_sgs(433, 30)
+        except HTTPError:
+            pass
+        else:
+            raise AssertionError("HTTP 404 permanente deveria propagar erro")
+    _checar("16a erro HTTP permanente nao repete", get.call_count == 1)
