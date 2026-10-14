@@ -361,7 +361,7 @@ _CAMPOS_OBRIGATORIOS_COLETOR = (
     "nome", "fonte", "categoria", "frequencia_esperada", "instrumentado",
 )
 _COLETORES_CRITICOS = {
-    "NEWS", "NEWS (watchlist)", "MERCADO", "MACRO", "CVM",
+    "NEWS", "NEWS (watchlist)", "MERCADO", "MACRO (BCB)", "CVM",
     "CVM (FCA)", "CVM (watchlist)", "CALENDARIO",
 }
 
