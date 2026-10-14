@@ -180,7 +180,15 @@ def layout_efetivo(aba_id: str, registro: list, prefs: dict, alturas_padrao: dic
     for pid in ordem:
         dados_salvos = salvo.get(pid)
         if _layout_valido(dados_salvos):
-            layout[pid] = {k: float(dados_salvos[k]) for k in ("x", "y", "w", "h")}
+            # Layouts antigos ou valores corrompidos podem ter sido salvos
+            # abaixo dos limites atuais (ex.: painel com altura insuficiente
+            # para o título + conteúdo, cortando os cards do Mercado Agora).
+            # Normaliza também na leitura, não apenas ao terminar o resize.
+            w = max(_LARGURA_MINIMA_PCT, min(100.0, float(dados_salvos["w"])))
+            h = max(_ALTURA_MINIMA_REM, float(dados_salvos["h"]))
+            x = max(0.0, min(100.0 - w, float(dados_salvos["x"])))
+            y = max(0.0, float(dados_salvos["y"]))
+            layout[pid] = {"x": x, "y": y, "w": w, "h": h}
         else:
             altura = alturas_padrao.get(pid, _ALTURA_PADRAO_REM)
             layout[pid] = {
