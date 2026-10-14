@@ -172,6 +172,8 @@ def obter_cotacao_indice(nome: str, symbol: str) -> dict:
             "variacao": variacao,
             "variacao_pct": variacao_pct,
             "erro": None,
+            # Momento em que este dado de mercado aparece no historico da fonte.
+            "_barra_em": hist.index[-1].isoformat() if hasattr(hist.index[-1], "isoformat") else str(hist.index[-1]),
             # Horario da coleta real; nunca renovado quando o valor e reutilizado.
             "_coletado_em": datetime.now(timezone.utc).isoformat(),
         }
