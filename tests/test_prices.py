@@ -390,8 +390,9 @@ def test_17_status_cotacao_indice_sinaliza_idade_do_fallback():
         mock_datetime.fromisoformat.side_effect = datetime.fromisoformat
         status = visao_geral_mod._status_cotacao_indice({
             "_fallback_cache": True, "_coletado_em": antigo,
+            "_barra_em": "2026-10-13T00:00:00-03:00",
         })
-    _checar("17a fallback antigo mostra idade em horas", status == "EM CACHE • 2H 30MIN", f"(status={status})")
+    _checar("17a fallback antigo mostra idade em horas", status == "EM CACHE • 2H 30MIN • BARRA 13/10", f"(status={status})")
 
 
 def test_18_status_cotacao_indice_nao_marca_coleta_atual_como_cache():
@@ -399,3 +400,15 @@ def test_18_status_cotacao_indice_nao_marca_coleta_atual_como_cache():
             visao_geral_mod._status_cotacao_indice({"_fallback_cache": False}) is None)
     _checar("18b fallback legado sem timestamp continua explicito",
             visao_geral_mod._status_cotacao_indice({"_fallback_cache": True}) == "VALOR EM CACHE")
+
+
+def test_19_status_cotacao_indice_mantem_idade_sem_data_da_barra():
+    """Fallbacks legados sem timestamp de candle devem continuar legiveis."""
+    antigo = "2026-10-14T15:00:00+00:00"
+    with patch.object(visao_geral_mod, "datetime") as mock_datetime:
+        mock_datetime.now.return_value = datetime.fromisoformat("2026-10-14T17:30:00+00:00")
+        mock_datetime.fromisoformat.side_effect = datetime.fromisoformat
+        status = visao_geral_mod._status_cotacao_indice({
+            "_fallback_cache": True, "_coletado_em": antigo,
+        })
+    _checar("19a fallback sem data de barra preserva idade", status == "EM CACHE • 2H 30MIN", f"(status={status})")
