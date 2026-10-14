@@ -1,15 +1,13 @@
 import json
 from urllib.error import HTTPError
-from unittest.mock import Mock
+from unittest.mock import MagicMock
 
 from jobs import email_utils
 
 
 def test_resend_envia_texto_e_html(monkeypatch):
-    response = Mock()
+    response = MagicMock()
     response.status = 200
-    response.__enter__ = Mock(return_value=response)
-    response.__exit__ = Mock(return_value=False)
     capturado = {}
 
     def fake_urlopen(request, timeout):
@@ -30,6 +28,7 @@ def test_resend_envia_texto_e_html(monkeypatch):
     assert resultado == {"ok": True, "erro": None}
     assert request.full_url == "https://api.resend.com/emails"
     assert request.get_header("Authorization") == "Bearer re_test_secret"
+    assert capturado["timeout"] == 20
     assert payload["to"] == ["destino@example.com"]
     assert payload["text"] == "Texto"
     assert payload["html"] == "<p>HTML</p>"
