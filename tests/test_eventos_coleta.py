@@ -146,10 +146,10 @@ def test_news_exception_preserva_fallback_prazo_cvm():
         "horario": None, "status": STATUS_PRAZO_CVM, "fonte": "CVM — prazo regulatório",
         "origem_url": None, "tipo_evento": "RESULTADO", "coletado_em": datetime.now(timezone.utc),
     }
-    with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \\
-         patch.object(coleta_mod, "obter_nome_yf", return_value="Petrobras"), \\
-         patch.object(coleta_mod, "tentar_ri", return_value=None), \\
-         patch.object(coleta_mod, "_buscar_feed", side_effect=RuntimeError("RSS indisponivel")), \\
+    with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
+         patch.object(coleta_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(coleta_mod, "tentar_ri", return_value=None), \
+         patch.object(coleta_mod, "_buscar_feed", side_effect=RuntimeError("RSS indisponivel")), \
          patch.object(coleta_mod, "_calcular_proximo_resultado", return_value=prazo_evento):
         evento = coleta_mod.coletar_evento("PETR4")
     _checar("excecao NEWS -> continua e retorna PRAZO_CVM, sem perder ticker",
