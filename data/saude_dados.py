@@ -285,6 +285,13 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 48, "instrumentado": True,
     },
     {
+        # Coleta agregada da watchlist CVM usada na aba CVM/EQUITY; distingue
+        # falha da fonte por ticker e falha de persistência dos documentos.
+        "nome": "CVM (watchlist)", "fonte": "dados.cvm.gov.br (IPE/FCA - documentos por ticker)",
+        "categoria": "CVM", "frequencia_esperada": "sob demanda (cache 6h)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
+    {
         "nome": "Genial Analisa", "fonte": "analisa.genialinvestimentos.com.br",
         "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
         "idade_maxima_horas": 48, "instrumentado": True,

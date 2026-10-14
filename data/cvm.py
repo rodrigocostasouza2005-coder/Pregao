@@ -416,8 +416,20 @@ def obter_documentos_watchlist(tickers: list) -> tuple:
             falhas.append(ticker)
             logging.exception("Falha inesperada ao coletar documentos CVM para %s", ticker)
     todos.sort(key=lambda d: d["data"], reverse=True)
+    persistencia_ok = True
     if todos:
-        salvar_documentos(todos)
+        persistencia_ok = salvar_documentos(todos)
+    execucao_ok = len(falhas) < len(tickers)
+    registrar_tentativa(
+        "CVM (watchlist)", "dados.cvm.gov.br (IPE/FCA - documentos por ticker)",
+        execucao_ok=execucao_ok,
+        persistencia_ok=persistencia_ok if execucao_ok else None,
+        registros_novos=len(todos),
+        erro=(f"falha em {len(falhas)}/{len(tickers)} ticker(s): " + ", ".join(falhas[:10]))
+             if falhas else (None if persistencia_ok else "falha ao persistir documentos CVM"),
+        parcial=bool(falhas) and execucao_ok,
+        categoria="CVM",
+    )
     return todos, falhas
 
 
