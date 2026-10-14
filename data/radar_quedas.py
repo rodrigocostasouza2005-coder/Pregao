@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 from data.prices import obter_cotacao
-from data.research import genial
+from data.research.genial_carteiras import coletar_carteiras
 from data.supabase_client import obter_cliente
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -45,34 +45,8 @@ def normalizar_ticker(valor):
 
 
 def coletar_carteiras_genial():
-    """Snapshot das recomendações estruturadas que a Genial publica.
-
-    A fonte pode estar bloqueada no ambiente de nuvem; None significa falha/
-    indisponibilidade, nunca uma carteira vazia confirmada.
-    """
-    itens = genial.obter_recomendacoes()
-    if itens is None:
-        return None
-    agora = datetime.now(timezone.utc).isoformat()
-    saida = []
-    for item in itens:
-        ticker = normalizar_ticker(item.get("ticker"))
-        if not ticker:
-            continue
-        saida.append({
-            "casa": CASA_GENIAL,
-            "carteira": str(item.get("setor") or "Recomendações Genial"),
-            "ticker": ticker,
-            "empresa": str(item.get("empresa") or ""),
-            "recomendacao": str(item.get("recomendacao") or ""),
-            "preco_alvo": item.get("preco_alvo"),
-            "data_publicacao": item.get("data") or None,
-            "validade_ate": None,
-            "fonte_url": str(item.get("link") or "https://analisa.genialinvestimentos.com.br/"),
-            "verificado_em": agora,
-            "status_coleta": "COLETADO",
-        })
-    return saida
+    """Coleta somente carteiras mensais oficiais e validadas da Genial."""
+    return coletar_carteiras()
 
 
 def salvar_carteiras(itens):
