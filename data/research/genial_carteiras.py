@@ -6,6 +6,7 @@ Não confunde recomendações genéricas por setor com composição de carteiras
 Falhas de fonte, mês incorreto ou parsing parcial são rejeitados.
 """
 import re
+import unicodedata
 from datetime import date, datetime, timezone
 from urllib.parse import urljoin
 
@@ -25,6 +26,12 @@ TICKER_RE = re.compile(r"^([A-Z]{4}\d{1,2})\s*[·|–—-]")
 CARTEIRA_RE = re.compile(r"^Carteira\s+(Ibovespa\s+10\+|Ibovespa\s+5\+|Small Caps\s+8\+|Dividendos\s+5\+)", re.I)
 MIN_CARTEIRAS = 3
 MIN_RECOMENDACOES = 20
+
+
+def _normalizar_texto(valor):
+    """Normaliza acentos e caixa para comparar meses em português."""
+    texto = unicodedata.normalize("NFKD", str(valor or ""))
+    return "".join(ch for ch in texto if not unicodedata.combining(ch)).casefold()
 
 
 def _get(url):
@@ -69,7 +76,7 @@ def parsear_artigo(html, url, hoje=None):
     titulo = soup.find(["h1"])
     titulo_texto = titulo.get_text(" ", strip=True) if titulo else ""
     mes_nome = MESES[hoje.month].capitalize()
-    if mes_nome.casefold() not in titulo_texto.casefold() or str(hoje.year) not in titulo_texto:
+    if _normalizar_texto(mes_nome) not in _normalizar_texto(titulo_texto) or str(hoje.year) not in titulo_texto:
         return None
 
     # Data de publicação precisa ser explícita e pertencer ao mês vigente.
@@ -79,8 +86,8 @@ def parsear_artigo(html, url, hoje=None):
         data_match = re.search(r"Publicado em\s+(\d{2}) de ([A-Za-zçÇ]+) de (\d{4})", html, re.I)
     if data_match:
         dia, mes_extenso, ano = data_match.groups()
-        mapa_meses = {v.casefold(): k for k, v in MESES.items()}
-        mes_publicacao = mapa_meses.get(mes_extenso.casefold())
+        mapa_meses = {_normalizar_texto(v): k for k, v in MESES.items()}
+        mes_publicacao = mapa_meses.get(_normalizar_texto(mes_extenso))
         if not mes_publicacao or int(ano) != hoje.year or mes_publicacao != hoje.month:
             return None
         data_publicacao = f"{ano}-{mes_publicacao:02d}-{int(dia):02d}"
