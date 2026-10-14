@@ -364,9 +364,49 @@ def render_radar(prefs: dict):
         unsafe_allow_html=True,
     )
 
+    # Radar de quedas em carteiras recomendadas e independente da watchlist.
+    with st.expander("RADAR DE QUEDAS — CARTEIRAS RECOMENDADAS", expanded=True):
+        from data.radar_quedas import alertas_recentes
+        alertas = alertas_recentes()
+        if alertas is None:
+            st.caption("Histórico indisponível: confira a conexão e a migration sql/radar_research.sql.")
+        elif not alertas:
+            st.markdown("<div class='radar-vazio'>Nenhum alerta persistido. O monitor só registra quedas diárias abaixo de -4,00% em ativos com recomendação vigente e cotação válida.</div>", unsafe_allow_html=True)
+        else:
+            col_t, col_c, col_p = st.columns([1.3, 1, 1])
+            with col_t:
+                filtro_ticker = st.text_input("Ticker", key="radar_queda_filtro_ticker").strip().upper()
+            with col_c:
+                casas_opcoes = sorted({c for a in alertas for c in (a.get("casas") or [])})
+                filtro_casa = st.selectbox("Casa", ["TODAS"] + casas_opcoes, key="radar_queda_filtro_casa")
+            with col_p:
+                dias = st.selectbox("Período", [1, 7, 30, 90], index=1, format_func=lambda n: f"{n} dia(s)" if n == 1 else f"{n} dias", key="radar_queda_filtro_dias")
+            from datetime import datetime, timedelta
+            from zoneinfo import ZoneInfo
+            limite_data = datetime.now(ZoneInfo("America/Sao_Paulo")).date() - timedelta(days=dias - 1)
+            filtrados = [a for a in alertas
+                         if (not filtro_ticker or filtro_ticker in str(a.get("ticker", "")).upper())
+                         and (filtro_casa == "TODAS" or filtro_casa in (a.get("casas") or []))
+                         and str(a.get("pregao", ""))[:10] >= limite_data.isoformat()]
+            for a in filtrados:
+                variacao = float(a.get("variacao_pct") or 0)
+                cor = "var(--baixa)" if variacao < 0 else "var(--alta)"
+                fontes = " · ".join(f"<a href='{html.escape(u, quote=True)}' target='_blank' rel='noopener'>fonte ↗</a>" for u in (a.get("fontes") or []) if u.startswith("https://"))
+                st.markdown(
+                    f"<div class='radar-alerta'><div class='radar-alerta-topo'>"
+                    f"<span class='radar-ticker'>{html.escape(a.get('ticker', ''))}</span>"
+                    f"<span style='color:{cor}'>{variacao:.2f}%</span></div>"
+                    f"<div class='radar-descricao'>{html.escape(a.get('empresa') or '')} · "
+                    f"R$ {float(a.get('preco_atual') or 0):.2f} | fechamento anterior R$ {float(a.get('fechamento_anterior') or 0):.2f}</div>"
+                    f"<div class='radar-relevancia'>Casas: {html.escape(', '.join(a.get('casas') or []))} · Carteiras: {html.escape(', '.join(a.get('carteiras') or []))}</div>"
+                    f"<div class='radar-meta'>Pregão {html.escape(str(a.get('pregao', ''))[:10])} · cotação {html.escape(str(a.get('cotacao_em', '')))} · {html.escape(a.get('tipo_cotacao') or 'tipo não informado')} · {html.escape(a.get('status') or '')} {fontes}</div></div>",
+                    unsafe_allow_html=True,
+                )
+            if not filtrados:
+                st.caption("Nenhum alerta corresponde aos filtros.")
     watchlist = prefs.get("watchlist") or []
     if not watchlist:
-        st.info("Adicione tickers na watchlist (barra lateral) para o RADAR ter o que analisar.")
+        st.info("Adicione tickers na watchlist (barra lateral) para o restante do RADAR analisar os ativos.")
         return
 
     col_janela, col_escopo = st.columns(2)
