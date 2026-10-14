@@ -163,22 +163,23 @@ def _focus_anual(indicador: str, ano: int, base_calculo: int = 0) -> dict | None
 def _focus_multi_ano(indicador: str, quantidade_anos: int = 3) -> pd.DataFrame | None:
     ano_atual = datetime.now(TZ).year
     linhas = []
+    anos_com_erro = []
     for ano in range(ano_atual, ano_atual + quantidade_anos):
         try:
             linha = _focus_anual(indicador, ano)
-        except Exception:
-            # bug real corrigido (auditoria missao coletores, 2026-10-13):
-            # mesma classe de bug ja corrigida na ANBIMA (e04b295) - um
-            # erro HTTP/resposta malformada pontual pra UM ano (ex: soluco
-            # transitorio da Olinda) escapava do loop pro try/except
-            # externo e abortava os OUTROS anos tambem, mesmo que
-            # tivessem dado valido. Agora so' pula pro proximo ano.
+        except Exception as e:
+            # Isola falha por ano: dados validos dos outros anos continuam
+            # disponiveis, mas a coleta precisa sinalizar que ficou parcial.
+            anos_com_erro.append(f"{ano}: {str(e)[:120]}")
             continue
         if linha is not None:
             linhas.append(linha)
     if not linhas:
         return None
-    return pd.DataFrame(linhas)
+    df = pd.DataFrame(linhas)
+    df.attrs["coleta_parcial"] = bool(anos_com_erro)
+    df.attrs["erro_coleta"] = "; ".join(anos_com_erro)[:300] if anos_com_erro else None
+    return df
 
 
 @st.cache_data(ttl=_TTL_SERIES, show_spinner="atualizando indicadores macro…")
@@ -195,8 +196,10 @@ def obter_focus_ipca() -> pd.DataFrame | None:
         registrar_tentativa("MACRO (BCB - Focus IPCA)", "Banco Central (Olinda/Expectativas)",
                              execucao_ok=False, erro="nenhum dos 3 anos teve dado valido", categoria="Macro")
     else:
+        parcial = bool(df.attrs.get("coleta_parcial", False))
         registrar_tentativa("MACRO (BCB - Focus IPCA)", "Banco Central (Olinda/Expectativas)",
-                             execucao_ok=True, registros_novos=len(df), categoria="Macro")
+                             execucao_ok=True, registros_novos=len(df), categoria="Macro",
+                             parcial=parcial, erro=df.attrs.get("erro_coleta"))
     return df
 
 
@@ -210,8 +213,10 @@ def obter_focus_selic() -> pd.DataFrame | None:
         registrar_tentativa("MACRO (BCB - Focus Selic)", "Banco Central (Olinda/Expectativas)",
                              execucao_ok=False, erro="nenhum dos 3 anos teve dado valido", categoria="Macro")
     else:
+        parcial = bool(df.attrs.get("coleta_parcial", False))
         registrar_tentativa("MACRO (BCB - Focus Selic)", "Banco Central (Olinda/Expectativas)",
-                             execucao_ok=True, registros_novos=len(df), categoria="Macro")
+                             execucao_ok=True, registros_novos=len(df), categoria="Macro",
+                             parcial=parcial, erro=df.attrs.get("erro_coleta"))
     return df
 
 

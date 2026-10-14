@@ -237,6 +237,28 @@ def test_11_focus_ipca_e_focus_selic_registram_linhas_proprias_e_distintas():
             all(c.kwargs.get("execucao_ok") is True for c in mock_reg.call_args_list))
 
 
+
+def test_12_focus_ano_com_erro_registra_coleta_parcial():
+    """Preserva anos validos e registra erro isolado como coleta parcial."""
+    macro_mod.obter_focus_ipca.clear()
+    ano_atual = macro_mod.datetime.now(macro_mod.TZ).year
+
+    def _fake_focus_anual(indicador, ano, base_calculo=0):
+        if ano == ano_atual + 1:
+            raise ValueError("Olinda temporariamente indisponivel")
+        return {
+            "ano_referencia": ano, "mediana_pct": 4.5, "media_pct": 4.6,
+            "numero_respondentes": 50, "data_calculo": "2026-10-10",
+        }
+
+    with patch.object(macro_mod, "_focus_anual", side_effect=_fake_focus_anual), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg:
+        df = macro_mod.obter_focus_ipca()
+
+    _checar("12a preserva os anos validos", df is not None and len(df) == 2)
+    _checar("12b sinaliza coleta parcial", mock_reg.call_args.kwargs.get("parcial") is True)
+    _checar("12c preserva motivo da falha", "Olinda temporariamente indisponivel" in mock_reg.call_args.kwargs.get("erro", ""))
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
