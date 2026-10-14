@@ -113,7 +113,7 @@ def registrar_tentativa(
             "persistencia_ok": bool(persistencia_ok),
             "parcial": bool(parcial),
             "registros_novos": int(registros_novos) if sucesso_agora else 0,
-            "ultimo_erro": None if sucesso_agora else (erro or "erro nao especificado"),
+            "ultimo_erro": ((erro or "coleta parcial") if parcial else None) if sucesso_agora else (erro or "erro nao especificado"),
             "ultima_tentativa_em": agora,
             "ultimo_sucesso_em": ultimo_sucesso_em,
         }).execute()
