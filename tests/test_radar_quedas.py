@@ -30,3 +30,29 @@ def test_alerta_consolida_carteiras():
     from zoneinfo import ZoneInfo
     alerta = avaliar_ticker("PETR4", cot, recs, datetime(2026, 10, 14, 12, tzinfo=ZoneInfo("America/Sao_Paulo")))
     assert alerta and len(alerta["casas"]) == 2 and len(alerta["carteiras"]) == 2
+
+
+
+def test_monitoramento_nao_usa_carteiras_antigas_quando_fonte_falha():
+    from unittest.mock import patch
+    import data.radar_quedas as radar
+    with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
+         patch.object(radar, "listar_carteiras", return_value=[{"ticker": "PETR4"}]), \
+         patch.object(radar, "obter_cotacao") as cotacao:
+        resultado = radar.processar_monitoramento()
+    assert resultado["coleta_ok"] is False
+    assert resultado["alertas_novos"] == []
+    cotacao.assert_not_called()
+
+
+def test_monitoramento_para_se_nao_persistir_coleta():
+    from unittest.mock import patch
+    import data.radar_quedas as radar
+    with patch.object(radar, "coletar_carteiras_genial", return_value=[]), \
+         patch.object(radar, "salvar_carteiras", return_value=False), \
+         patch.object(radar, "listar_carteiras") as listar, \
+         patch.object(radar, "obter_cotacao") as cotacao:
+        resultado = radar.processar_monitoramento()
+    assert resultado["coleta_ok"] is False
+    listar.assert_not_called()
+    cotacao.assert_not_called()
