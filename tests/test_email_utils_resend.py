@@ -8,6 +8,7 @@ from jobs import email_utils
 def test_resend_envia_texto_e_html(monkeypatch):
     response = MagicMock()
     response.status = 200
+    response.__enter__.return_value = response
     capturado = {}
 
     def fake_urlopen(request, timeout):
