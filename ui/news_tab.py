@@ -29,6 +29,7 @@ clique reconstruia todos os widgets da lista do zero, mesmo com os dados
 ja vindo de cache)."""
 
 import html
+import re
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -1002,18 +1003,39 @@ def _renderizar_lista(itens: list, mostrar_ticker: bool, prefixo: str, watchlist
 # acima (wire denso) continuam intocados - usados so' por TOP MERCADO e
 # pelo bloco compacto da aba EQUITY (render_news_ticker).
 
-_TRUNCA_TEASER = 220
+_TRUNCA_TEASER = 320
+_MIN_FRASES_TEASER = 2
+_MAX_FRASES_TEASER = 4
+# separador de fim de frase: pontuacao de frase seguida de espaco - nunca
+# quebra em abreviacao/numero decimal (ex: "R$ 2,3" ou "12h30") porque
+# esses nao terminam em ./!/? seguido de espaco
+_RE_FIM_FRASE = re.compile(r"(?<=[.!?])\s+")
 
 
 def _resumo_teaser(resumo: str, limite: int = _TRUNCA_TEASER) -> str:
-    """Teaser de 2-4 linhas pro card do feed, extraido do primeiro
-    parágrafo do resumo EDITORIAL completo de NEWS (blocos RESUMO/LEITURA
-    DE MERCADO, ver data/news.py:separar_secoes_resumo) - nunca o bloco
-    inteiro (verboso demais pra uma linha de lista; o resumo completo
-    continua disponível no dialog) e nunca a LEITURA DE MERCADO (é
-    interpretação, não o fato em si - não cabe como teaser)."""
+    """Teaser de 2 a 4 frases úteis pro card do feed (pedido: resumo
+    visível no próprio card, nunca um corte bruto no meio de uma frase),
+    extraido do primeiro parágrafo do resumo EDITORIAL completo de NEWS
+    (blocos RESUMO/LEITURA DE MERCADO, ver data/news.py:
+    separar_secoes_resumo) - nunca o bloco inteiro (verboso demais pra
+    uma linha de lista; o resumo completo continua disponível no dialog)
+    e nunca o 2º parágrafo nem a LEITURA DE MERCADO (interpretação, não o
+    fato em si - não cabe como teaser). Acumula frase a frase até
+    _MAX_FRASES_TEASER ou até estourar `limite` (garantindo ao menos
+    _MIN_FRASES_TEASER quando o texto tiver tantas) - só corta no meio de
+    uma frase (via _truncar) se nem a 1ª frase sozinha couber."""
     paragrafos, _ = separar_secoes_resumo(resumo)
-    teaser = paragrafos[0] if paragrafos else resumo.strip()
+    texto = paragrafos[0] if paragrafos else resumo.strip()
+    frases = [f.strip() for f in _RE_FIM_FRASE.split(texto) if f.strip()]
+    if len(frases) <= 1:
+        return _truncar(texto, limite)
+
+    teaser = ""
+    for i, frase in enumerate(frases[:_MAX_FRASES_TEASER]):
+        candidato = f"{teaser} {frase}".strip() if teaser else frase
+        if i >= _MIN_FRASES_TEASER and len(candidato) > limite:
+            break
+        teaser = candidato
     return _truncar(teaser, limite)
 
 

@@ -55,7 +55,17 @@ def chave_research(link: str) -> str:
 # parser novo (_separar_secoes_resumo). O prefixo forca cache MISS pra todo
 # resumo gerado antes desta mudanca - reprocessado uma vez, na primeira
 # visita ao grupo depois do deploy, nunca de novo depois disso.
-_VERSAO_CHAVE_NEWS = "v2"
+#
+# v3 (2026-10-15, reformulacao editorial completa do Market News): o
+# FORMATO (RESUMO:/LEITURA DE MERCADO:) continua igual, mas o CONTEUDO
+# esperado mudou bastante - prompt reescrito com os 4 angulos de
+# prioridade (o que aconteceu/contexto/impacto potencial/o que acompanhar,
+# sem forcar todos), lista explicita de frases proibidas e o gate
+# _resumo_e_generico (ver data/news.py). Resumo v2 ja' cacheado pode ter
+# sido aceito sob a regra antiga (mais permissiva) mesmo sendo generico -
+# bump de versao forca reprocessamento 1x por grupo, mesmo motivo do bump
+# v1->v2 acima.
+_VERSAO_CHAVE_NEWS = "v3"
 
 
 def chave_news(titulo: str, links: tuple) -> str:
