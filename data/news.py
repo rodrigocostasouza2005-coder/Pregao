@@ -1328,6 +1328,50 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
             if imagem:
                 break
 
+    # Alguns publishers publicam a imagem principal apenas em JSON-LD.
+    # Percorre metadados estruturados públicos sem executar scripts.
+    if not imagem:
+        def _urls_imagem_jsonld(obj):
+            achados = []
+            if isinstance(obj, str):
+                return achados
+            if isinstance(obj, list):
+                for item in obj:
+                    achados.extend(_urls_imagem_jsonld(item))
+                return achados
+            if isinstance(obj, dict):
+                for chave in ("image", "thumbnailUrl", "contentUrl", "url", "primaryImageOfPage"):
+                    valor = obj.get(chave)
+                    if isinstance(valor, str):
+                        achados.append(valor)
+                    elif isinstance(valor, (dict, list)):
+                        achados.extend(_urls_imagem_jsonld(valor))
+                for chave, valor in obj.items():
+                    if chave in ("image", "thumbnailUrl", "contentUrl", "url", "primaryImageOfPage"):
+                        continue
+                    if isinstance(valor, (dict, list)):
+                        achados.extend(_urls_imagem_jsonld(valor))
+            return achados
+
+        for script_ld in sopa.select('script[type="application/ld+json"]'):
+            try:
+                estrutura = json.loads(script_ld.string or script_ld.get_text())
+            except (ValueError, TypeError):
+                continue
+            for candidata in _urls_imagem_jsonld(estrutura):
+                from urllib.parse import urljoin
+                imagem = _url_imagem_valida(urljoin(link_real, candidata.strip()))
+                if imagem:
+                    break
+            if imagem:
+                break
+        if not imagem:
+            meta_itemprop = sopa.select_one('[itemprop="image"][content], [itemprop="image"][src]')
+            candidata = (meta_itemprop.get("content") or meta_itemprop.get("src")) if meta_itemprop else None
+            if candidata:
+                from urllib.parse import urljoin
+                imagem = _url_imagem_valida(urljoin(link_real, candidata.strip()))
+
     texto = None
     try:
         bruto = trafilatura.extract(
