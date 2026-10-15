@@ -309,6 +309,57 @@ def test_6a_main_chama_self_test_de_persistencia_antes_de_qualquer_coletor():
     _checar("6a diagnosticar_persistencia chamado exatamente 1x", len(chamadas_diagnostico) == 1, f"({chamadas_diagnostico})")
 
 
+def test_6b_persistencia_quebrada_pula_pregen_de_news_sem_gastar_cota_de_ia():
+    """Regressao real encontrada na auditoria pos-16h: diagnosticar_persistencia()
+    sendo chamado (ver teste 6a) nao bastava por si so' - nada usava o
+    resultado pra EVITAR pregerar_resumos_news, que voltava a queimar
+    cota real do Groq (25 chamadas/execucao) mesmo com a escrita
+    confirmada quebrada. main() precisa pular o pre-processamento
+    inteiro (zero chamadas) quando diagnostico['ok'] for False."""
+    with patch.object(coletor_local, "diagnosticar_persistencia",
+                       return_value={"ok": False, "etapa": "ESCRITA", "detalhe": "new row violates row-level security policy"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news") as mock_pregen, \
+         patch.object(coletor_local, "coletar_eventos_universo",
+                       return_value={"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0, "tempo_esgotado": False, "tabela_disponivel": True}), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa") as mock_reg:
+        codigo = coletor_local.main()
+    _checar("6b pregerar_resumos_news NUNCA chamado (zero cota de IA gasta)", mock_pregen.call_count == 0)
+    kwargs = _kwargs_registrar(mock_reg, "NEWS (resumos)")
+    _checar("6c persistencia_ok=False propagado pro SAUDE DOS DADOS", kwargs.get("persistencia_ok") is False, f"({kwargs})")
+    _checar("6d erro cita a etapa do self-test", "ESCRITA" in (kwargs.get("erro") or ""), f"({kwargs})")
+    _checar("6e registros_novos=0 (nada foi gerado)", kwargs.get("registros_novos") == 0, f"({kwargs})")
+    _checar("6f execucao_ok continua True e exit code nao quebra (soft)", kwargs.get("execucao_ok") is True and codigo == 0,
+            f"(kwargs={kwargs}, codigo={codigo})")
+
+
+def test_6g_persistencia_ok_roda_pregen_normalmente():
+    """Confirma que o guard so' bloqueia quando diagnostico falha - com
+    persistencia OK, pregerar_resumos_news continua rodando normalmente
+    (nenhuma regressao introduzida por este guard)."""
+    stats_news = {"grupos_considerados": 5, "ja_cacheados": 2, "gerados": 3, "falhas": 0, "tempo_esgotado": False}
+    with patch.object(coletor_local, "diagnosticar_persistencia",
+                       return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=stats_news) as mock_pregen, \
+         patch.object(coletor_local, "coletar_eventos_universo",
+                       return_value={"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0, "tempo_esgotado": False, "tabela_disponivel": True}), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa") as mock_reg:
+        coletor_local.main()
+    _checar("6h pregerar_resumos_news chamado normalmente", mock_pregen.call_count == 1)
+    kwargs = _kwargs_registrar(mock_reg, "NEWS (resumos)")
+    _checar("6i persistencia_ok=True", kwargs.get("persistencia_ok") is True, f"({kwargs})")
+    _checar("6j registros_novos reflete o que pregerar_resumos_news devolveu", kwargs.get("registros_novos") == 3, f"({kwargs})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

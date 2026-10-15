@@ -267,16 +267,33 @@ def main() -> int:
     fatia_news = _universo_rotativo(
         list(config.IBOVESPA_SETORES.keys()), arquivo_checkpoint=_ARQUIVO_CHECKPOINT_NEWS,
     )[:_QTD_TICKERS_NEWS_POR_EXECUCAO]
-    stats_news = pregerar_resumos_news(fatia_news)
-    logger.info(
-        f"  resumos de NEWS: {stats_news['grupos_considerados']} grupo(s) considerado(s), "
-        f"{stats_news['ja_cacheados']} ja' cacheado(s), {stats_news['gerados']} gerado(s) agora, "
-        f"{stats_news['falhas']} falha(s)"
-        + (" - orcamento esgotado" if stats_news["tempo_esgotado"] else "")
-    )
+    # Regressao corrigida (2026-10-15, continuacao da auditoria): o
+    # self-test de persistencia (diagnostico, calculado no INICIO de
+    # main()) so' estava sendo LOGADO - nada impedia pregerar_resumos_news
+    # de rodar mesmo com a escrita confirmada quebrada, voltando a queimar
+    # cota real do Groq (25 resumos/execucao) sem conseguir cachear
+    # nenhum, exatamente o bug que a introducao de diagnosticar_persistencia
+    # deveria ter mantido corrigido. So' chama o pre-processamento quando
+    # o self-test confirma escrita+leitura reais ("ok": True).
+    if diagnostico["ok"]:
+        stats_news = pregerar_resumos_news(fatia_news)
+        logger.info(
+            f"  resumos de NEWS: {stats_news['grupos_considerados']} grupo(s) considerado(s), "
+            f"{stats_news['ja_cacheados']} ja' cacheado(s), {stats_news['gerados']} gerado(s) agora, "
+            f"{stats_news['falhas']} falha(s)"
+            + (" - orcamento esgotado" if stats_news["tempo_esgotado"] else "")
+        )
+    else:
+        stats_news = {"grupos_considerados": 0, "ja_cacheados": 0, "gerados": 0, "falhas": 0, "tempo_esgotado": False}
+        logger.warning(
+            f"  resumos de NEWS: pre-processamento pulado - persistencia indisponivel "
+            f"(etapa {diagnostico['etapa']}: {diagnostico['detalhe']}). Zero chamada de IA foi feita."
+        )
     registrar_tentativa(
-        "NEWS (resumos)", "Groq + extração de matéria", execucao_ok=True,
+        "NEWS (resumos)", "Groq + extração de matéria",
+        execucao_ok=True, persistencia_ok=diagnostico["ok"],
         registros_novos=stats_news["gerados"], parcial=bool(stats_news["tempo_esgotado"] or stats_news["falhas"]),
+        erro=None if diagnostico["ok"] else f"persistência indisponível (etapa {diagnostico['etapa']}): {diagnostico['detalhe']}",
         categoria="Noticias",
     )
 
