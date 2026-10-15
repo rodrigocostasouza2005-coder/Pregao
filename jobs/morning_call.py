@@ -56,15 +56,36 @@ def montar_morning_call(agora=None):
         try:
             dado = fn()
             if isinstance(dado, pd.DataFrame) and not dado.empty:
-                colunas_valor = [col for col in dado.columns if col != "data"]
+                # Selic/CDI sao series por "data"; Focus e' 1 linha por ano de
+                # referencia ("ano_referencia", sem coluna "data") - bug real
+                # corrigido (2026-10-15): o codigo so conhecia a coluna "data",
+                # entao toda linha de Focus caia no fallback "data não
+                # informada" truncado em 10 chars ("data não i") e
+                # ano_referencia/numero_respondentes apareciam formatados como
+                # dinheiro (ex: "2.026,00" em vez de "2026").
+                coluna_rotulo = "data" if "data" in dado.columns else (
+                    "ano_referencia" if "ano_referencia" in dado.columns else None
+                )
+                colunas_inteiras = {"ano_referencia", "numero_respondentes"}
+                colunas_valor = [col for col in dado.columns if col != coluna_rotulo]
                 amostra = dado.tail(3)
                 for _, registro in amostra.iterrows():
-                    data_reg = str(registro.get("data", registro.get("ano", "data não informada")))[:10]
+                    bruto_rotulo = registro.get(coluna_rotulo) if coluna_rotulo else None
+                    data_reg = (
+                        f"{int(bruto_rotulo)}" if coluna_rotulo == "ano_referencia" and pd.notna(bruto_rotulo)
+                        else str(bruto_rotulo)[:10] if pd.notna(bruto_rotulo) else "data não informada"
+                    )
                     valores = []
                     for coluna in colunas_valor:
                         valor = registro.get(coluna)
-                        if pd.notna(valor):
-                            valores.append(f"{coluna}={_fmt_num(valor) if isinstance(valor, (int, float)) else str(valor)}")
+                        if not pd.notna(valor):
+                            continue
+                        if coluna in colunas_inteiras:
+                            valores.append(f"{coluna}={int(valor)}")
+                        elif isinstance(valor, (int, float)):
+                            valores.append(f"{coluna}={_fmt_num(valor)}")
+                        else:
+                            valores.append(f"{coluna}={str(valor)[:19]}")
                     linhas.append(f"- {nome} ({data_reg}): " + (", ".join(valores) if valores else "sem valor estruturado"))
             else:
                 linhas.append(f"- {nome}: indisponível")

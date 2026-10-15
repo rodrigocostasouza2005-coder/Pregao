@@ -613,6 +613,12 @@ def test_snap_6_json_roundtrip_preserva_data_e_fontes_alternativas():
 
 
 def test_snap_7_obter_snapshot_supabase_fora_do_ar_retorna_none_sem_quebrar():
+    # Regressao de isolamento (2026-10-15): obter_snapshot_calendario e'
+    # @st.cache_data - sem limpar, um resultado real cacheado por outro
+    # teste/script rodado ANTES na mesma suite (ex: execucao manual do
+    # coletor) faz o mock de obter_cliente abaixo ser ignorado (a funcao
+    # nem chega a executar de novo, so devolve o cache).
+    eventos_mod.obter_snapshot_calendario.clear()
     with patch.object(eventos_mod, "obter_cliente", return_value=None):
         resultado = eventos_mod.obter_snapshot_calendario()
     _checar("snap7 Supabase fora do ar -> None, sem excecao", resultado is None)
