@@ -52,6 +52,7 @@ def test_1a_extrai_texto_e_imagem_do_mesmo_download():
         '"image": "https://veiculo.com/foto.jpg"}'
     )
     with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/materia"), \
+         patch.object(news_mod.requests, "get", side_effect=news_mod.requests.exceptions.ConnectionError("mock: sem rede real no teste")), \
          patch.object(news_mod.trafilatura, "fetch_url", side_effect=_fetch), \
          patch.object(news_mod.trafilatura, "extract", return_value=json_extraido):
         texto, imagem, link_real, motivo = news_mod._extrair_texto_artigo("https://news.google.com/x")
@@ -66,6 +67,7 @@ def test_1a_extrai_texto_e_imagem_do_mesmo_download():
 def test_1b_sem_og_image_no_image_none():
     json_extraido = '{"text": "Outro texto de teste bem longo pra passar do limite minimo exigido pela funcao de extracao de artigo do projeto.", "image": null}'
     with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/materia2"), \
+         patch.object(news_mod.requests, "get", side_effect=news_mod.requests.exceptions.ConnectionError("mock: sem rede real no teste")), \
          patch.object(news_mod.trafilatura, "fetch_url", return_value="<html></html>"), \
          patch.object(news_mod.trafilatura, "extract", return_value=json_extraido):
         texto, imagem, _, _ = news_mod._extrair_texto_artigo("https://news.google.com/y")
@@ -84,6 +86,7 @@ def test_1d_json_malformado_do_extract_nao_quebra():
     """trafilatura.extract pode devolver None ou um JSON invalido (ex:
     versao incompativel) - nunca pode derrubar a extracao do texto."""
     with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/materia3"), \
+         patch.object(news_mod.requests, "get", side_effect=news_mod.requests.exceptions.ConnectionError("mock: sem rede real no teste")), \
          patch.object(news_mod.trafilatura, "fetch_url", return_value="<html></html>"), \
          patch.object(news_mod.trafilatura, "extract", return_value="{nao e json valido"):
         texto, imagem, link_real, motivo = news_mod._extrair_texto_artigo("https://news.google.com/z")
@@ -93,13 +96,21 @@ def test_1d_json_malformado_do_extract_nao_quebra():
 
 
 def test_1e_falha_ao_baixar_pagina():
+    """Regressao 2026-10-15: _extrair_texto_artigo tenta requests.get
+    ANTES do fallback trafilatura.fetch_url - sem mockar requests.get
+    este teste virava teste de integracao de fato (dependia da rede
+    real resolver/recusar o dominio fictício 'veiculo.com'), com motivo
+    nao-deterministico (varia com SSLError/ConnectionError/Timeout real
+    conforme o ambiente). Mocka as duas tentativas de download pra
+    isolar de rede e exercer sempre o mesmo caminho."""
     with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/materia4"), \
+         patch.object(news_mod.requests, "get", side_effect=news_mod.requests.exceptions.ConnectionError("mock: sem rede real no teste")), \
          patch.object(news_mod.trafilatura, "fetch_url", side_effect=Exception("timeout")):
         texto, imagem, link_real, motivo = news_mod._extrair_texto_artigo("https://news.google.com/w")
     _checar("1o erro ao baixar -> texto None", texto is None)
     _checar("1p imagem None", imagem is None)
     _checar("1q link_real preservado mesmo com falha de download", link_real == "https://veiculo.com/materia4")
-    _checar("1r motivo cita o erro de download", "erro ao baixar" in (motivo or ""))
+    _checar("1r motivo cita a falha ao acessar a materia", "acessar a matéria" in (motivo or ""), f"(motivo={motivo!r})")
 
 
 def test_1f_link_nao_resolvido():

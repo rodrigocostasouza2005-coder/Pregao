@@ -30,6 +30,7 @@ import feedparser
 import requests
 import streamlit as st
 import trafilatura
+from bs4 import BeautifulSoup
 
 try:
     from googlenewsdecoder import gnewsdecoder
@@ -1260,40 +1261,163 @@ def _url_imagem_valida(url) -> str | None:
 
 
 def _extrair_texto_artigo(link_google_news: str) -> tuple:
-    """Resolve o link real e extrai texto+imagem com trafilatura (MESMO
-    download, sem nenhuma requisicao de rede extra so' pra foto - a
-    imagem vem do meta og:image da propria pagina, via
-    with_metadata=True). Retorna (texto, imagem, link_real,
-    motivo_falha) - texto=None se o link nao resolveu, o download falhou
-    ou nao sobrou nem um fragmento minimo aproveitavel (ver
-    _MIN_CHARS_FRAGMENTO); imagem=None se a pagina nao declarar uma ou a
-    extracao de metadado falhar (nunca inventada). Um texto entre
-    _MIN_CHARS_FRAGMENTO e _MIN_CHARS_TEXTO ainda volta aqui (nao e'
-    None) - quem chama (obter_resumo_grupo) decide se resume sozinho ou
-    combina com outras fontes do grupo antes de desistir."""
+    """Resolve o link do Google News e tenta extrair o artigo por HTTP
+    explícito antes do extrator. Alguns hosts respondem diferente ao
+    User-Agent padrão do Trafilatura; usamos cabeçalhos de navegador
+    comuns, timeout curto e seguimos redirects HTTP normais. Não tenta
+    contornar paywall/login/captcha. Retorna (texto, imagem, link_real,
+    motivo_falha); nunca inventa conteúdo."""
     link_real = _resolver_link_real(link_google_news)
     if not link_real:
-        return None, None, None, "não foi possível resolver o link original"
-    try:
-        baixado = trafilatura.fetch_url(link_real)
-    except Exception as e:
-        return None, None, link_real, f"erro ao baixar: {e}"
-    if not baixado:
-        return None, None, link_real, "erro ao baixar a página"
+        return None, None, None, "não foi possível resolver o link original do Google News"
 
+    baixado = None
+    motivo_download = None
+    try:
+        with requests.get(
+            link_real,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/128.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+            },
+            timeout=(4, 12),
+            allow_redirects=True,
+        ) as response:
+            response.raise_for_status()
+            tipo = (response.headers.get("Content-Type") or "").lower()
+            if "html" not in tipo and "xhtml" not in tipo:
+                motivo_download = f"o endereço respondeu conteúdo não HTML ({tipo or 'tipo desconhecido'})"
+            else:
+                baixado = response.text
+                link_real = response.url or link_real
+    except requests.RequestException as exc:
+        motivo_download = f"falha HTTP ao acessar a matéria ({type(exc).__name__})"
+    except Exception as exc:
+        motivo_download = f"falha ao baixar a matéria ({type(exc).__name__})"
+
+    # Segundo método de download como fallback, sem burlar controles do site.
+    if not baixado:
+        try:
+            baixado = trafilatura.fetch_url(link_real)
+        except Exception:
+            baixado = None
+    if not baixado:
+        return None, None, link_real, motivo_download or "o site não disponibilizou a página"
+
+    # Parsear os metadados com HTML parser (regex falha quando a ordem
+    # dos atributos muda ou há espaços/aspas diferentes).
+    sopa = BeautifulSoup(baixado, "html.parser")
+    imagem = None
+    for seletor, atributo in (
+        ('meta[property="og:image"]', "content"),
+        ('meta[property="og:image:secure_url"]', "content"),
+        ('meta[name="twitter:image"]', "content"),
+        ('meta[name="twitter:image:src"]', "content"),
+        ('link[rel="image_src"]', "href"),
+    ):
+        meta = sopa.select_one(seletor)
+        candidata = meta.get(atributo) if meta else None
+        if candidata:
+            from urllib.parse import urljoin
+            imagem = _url_imagem_valida(urljoin(link_real, candidata.strip()))
+            if imagem:
+                break
+
+    # Alguns publishers publicam a imagem principal apenas em JSON-LD.
+    # Percorre metadados estruturados públicos sem executar scripts.
+    if not imagem:
+        def _urls_imagem_jsonld(obj):
+            achados = []
+            if isinstance(obj, str):
+                return achados
+            if isinstance(obj, list):
+                for item in obj:
+                    achados.extend(_urls_imagem_jsonld(item))
+                return achados
+            if isinstance(obj, dict):
+                for chave in ("image", "thumbnailUrl", "contentUrl", "url", "primaryImageOfPage"):
+                    valor = obj.get(chave)
+                    if isinstance(valor, str):
+                        achados.append(valor)
+                    elif isinstance(valor, (dict, list)):
+                        achados.extend(_urls_imagem_jsonld(valor))
+                for chave, valor in obj.items():
+                    if chave in ("image", "thumbnailUrl", "contentUrl", "url", "primaryImageOfPage"):
+                        continue
+                    if isinstance(valor, (dict, list)):
+                        achados.extend(_urls_imagem_jsonld(valor))
+            return achados
+
+        for script_ld in sopa.select('script[type="application/ld+json"]'):
+            try:
+                estrutura = json.loads(script_ld.string or script_ld.get_text())
+            except (ValueError, TypeError):
+                continue
+            for candidata in _urls_imagem_jsonld(estrutura):
+                from urllib.parse import urljoin
+                imagem = _url_imagem_valida(urljoin(link_real, candidata.strip()))
+                if imagem:
+                    break
+            if imagem:
+                break
+        if not imagem:
+            meta_itemprop = sopa.select_one('[itemprop="image"][content], [itemprop="image"][src]')
+            candidata = (meta_itemprop.get("content") or meta_itemprop.get("src")) if meta_itemprop else None
+            if candidata:
+                from urllib.parse import urljoin
+                imagem = _url_imagem_valida(urljoin(link_real, candidata.strip()))
+
+    texto = None
     try:
         bruto = trafilatura.extract(
-            baixado, include_comments=False, include_tables=False,
-            with_metadata=True, output_format="json",
+            baixado,
+            include_comments=False,
+            include_tables=False,
+            with_metadata=True,
+            output_format="json",
+            favor_precision=True,
         )
         dados = json.loads(bruto) if bruto else {}
+        texto = (dados.get("text") or "").strip() or None
+        if not imagem:
+            imagem = _url_imagem_valida(dados.get("image"))
     except Exception:
-        dados = {}
-    texto = (dados.get("text") or "").strip() or None
-    imagem = _url_imagem_valida(dados.get("image"))
+        pass
 
+    # Segundo extrator menos restritivo: usa parágrafos de article/main,
+    # remove navegação/rodapé e só aceita texto com tamanho mínimo. Não
+    # contorna paywall nem tenta executar JavaScript.
     if not texto or len(texto) < _MIN_CHARS_FRAGMENTO:
-        return None, imagem, link_real, "conteúdo muito curto (provável paywall/bloqueio)"
+        for seletor in ("article", "main", '[itemprop="articleBody"]'):
+            bloco = sopa.select_one(seletor)
+            if not bloco:
+                continue
+            for ruido in bloco.select("script,style,nav,footer,header,aside,form,button"):
+                ruido.decompose()
+            paragrafos = [
+                p.get_text(" ", strip=True)
+                for p in bloco.select("p")
+                if len(p.get_text(" ", strip=True)) >= 35
+            ]
+            candidato = "\\n\\n".join(paragrafos).strip()
+            if len(candidato) > len(texto or ""):
+                texto = candidato
+            if texto and len(texto) >= _MIN_CHARS_TEXTO:
+                break
+
+    # Não promover meta-description a corpo da matéria: ela é apenas um
+    # resumo curto do publisher e deve continuar identificada como trecho,
+    # nunca como leitura integral.
+    if not texto or len(texto) < _MIN_CHARS_FRAGMENTO:
+        return (
+            None, imagem, link_real,
+            "página acessível, mas sem texto extraível (possível paywall, consentimento, JavaScript ou bloqueio)",
+        )
     return texto, imagem, link_real, None
 
 

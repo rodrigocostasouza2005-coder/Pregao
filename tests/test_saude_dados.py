@@ -8,6 +8,7 @@ e' funcao pura (sem rede/banco) - testada so' com dicts de entrada.
 e os leitores somente-leitura.
 
 Uso: python tests/test_saude_dados.py (python do .venv do projeto)."""
+
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -25,11 +26,6 @@ def _checar(nome, condicao, detalhe=""):
     print(f"[{status}] {nome} {detalhe}")
     if not condicao:
         _FALHAS.append(nome)
-        # 2026-10-10: faz a checagem REALMENTE falhar sob pytest (antes so'
-        # imprimia e guardava em _FALHAS, lido so' pelo runner `__main__` -
-        # sob pytest toda funcao test_* passava mesmo com condicao=False,
-        # a menos que outra linha lancasse excecao por acidente; ver
-        # investigacao registrada no relatorio da auditoria 2026-10-10)
         raise AssertionError(f"{nome} {detalhe}".strip())
 
 
@@ -43,70 +39,138 @@ def test_1_sem_status_e_nunca_executado():
 
 
 def test_2_execucao_ok_sem_sucesso_nunca_e_nao_comprovado():
-    status = {"execucao_ok": False, "persistencia_ok": True, "ultimo_erro": "x", "ultimo_sucesso_em": None}
+    status = {
+        "execucao_ok": False,
+        "persistencia_ok": True,
+        "ultimo_erro": "x",
+        "ultimo_sucesso_em": None,
+    }
     codigo, rotulo = saude_mod.classificar_estado(status)
     _checar("2 nunca teve sucesso -> NAO_COMPROVADO", codigo == "NAO_COMPROVADO")
     _checar("2b rotulo menciona o erro mais recente", "x" in rotulo)
 
 
 def test_3_sucesso_com_novidade():
-    status = {"execucao_ok": True, "persistencia_ok": True, "registros_novos": 5, "ultimo_sucesso_em": _ha(0.1)}
+    status = {
+        "execucao_ok": True,
+        "persistencia_ok": True,
+        "registros_novos": 5,
+        "ultimo_sucesso_em": _ha(0.1),
+    }
     codigo, _ = saude_mod.classificar_estado(status, idade_maxima_horas=6)
-    _checar("3 execucao+persistencia OK e registros_novos>0 -> SUCESSO_COM_NOVIDADE", codigo == "SUCESSO_COM_NOVIDADE")
+    _checar(
+        "3 execucao+persistencia OK e registros_novos>0 -> SUCESSO_COM_NOVIDADE",
+        codigo == "SUCESSO_COM_NOVIDADE",
+    )
 
 
 def test_4_sucesso_sem_novidade():
-    status = {"execucao_ok": True, "persistencia_ok": True, "registros_novos": 0, "ultimo_sucesso_em": _ha(0.1)}
+    status = {
+        "execucao_ok": True,
+        "persistencia_ok": True,
+        "registros_novos": 0,
+        "ultimo_sucesso_em": _ha(0.1),
+    }
     codigo, _ = saude_mod.classificar_estado(status, idade_maxima_horas=6)
-    _checar("4 registros_novos==0 -> SUCESSO_SEM_NOVIDADE", codigo == "SUCESSO_SEM_NOVIDADE")
+    _checar(
+        "4 registros_novos==0 -> SUCESSO_SEM_NOVIDADE",
+        codigo == "SUCESSO_SEM_NOVIDADE",
+    )
 
 
 def test_5_parcial():
-    status = {"execucao_ok": True, "persistencia_ok": True, "registros_novos": 0, "parcial": True, "ultimo_sucesso_em": _ha(0.1)}
+    status = {
+        "execucao_ok": True,
+        "persistencia_ok": True,
+        "registros_novos": 0,
+        "parcial": True,
+        "ultimo_sucesso_em": _ha(0.1),
+    }
     codigo, _ = saude_mod.classificar_estado(status, idade_maxima_horas=6)
     _checar("5 parcial=True -> PARCIAL", codigo == "PARCIAL")
 
 
 def test_6_falha_execucao_generica():
-    status = {"execucao_ok": False, "persistencia_ok": True, "ultimo_erro": "KeyError inesperado", "ultimo_sucesso_em": _ha(1)}
+    status = {
+        "execucao_ok": False,
+        "persistencia_ok": True,
+        "ultimo_erro": "KeyError inesperado",
+        "ultimo_sucesso_em": _ha(1),
+    }
     codigo, rotulo = saude_mod.classificar_estado(status, idade_maxima_horas=6)
     _checar("6 erro sem termo de indisponibilidade -> FALHA_EXECUCAO", codigo == "FALHA_EXECUCAO")
     _checar("6b rotulo cita o erro real", "KeyError" in rotulo)
 
 
 def test_7_fonte_indisponivel():
-    status = {"execucao_ok": False, "persistencia_ok": True, "ultimo_erro": "timeout ao conectar", "ultimo_sucesso_em": _ha(1)}
+    status = {
+        "execucao_ok": False,
+        "persistencia_ok": True,
+        "ultimo_erro": "timeout ao conectar",
+        "ultimo_sucesso_em": _ha(1),
+    }
     codigo, _ = saude_mod.classificar_estado(status, idade_maxima_horas=6)
     _checar("7 erro com 'timeout' -> FONTE_INDISPONIVEL", codigo == "FONTE_INDISPONIVEL")
 
 
 def test_8_falha_persistencia():
-    status = {"execucao_ok": True, "persistencia_ok": False, "ultimo_sucesso_em": _ha(1)}
+    status = {
+        "execucao_ok": True,
+        "persistencia_ok": False,
+        "ultimo_sucesso_em": _ha(1),
+    }
     codigo, _ = saude_mod.classificar_estado(status, idade_maxima_horas=6)
-    _checar("8 execucao OK mas persistencia_ok=False -> FALHA_PERSISTENCIA", codigo == "FALHA_PERSISTENCIA")
+    _checar(
+        "8 execucao OK mas persistencia_ok=False -> FALHA_PERSISTENCIA",
+        codigo == "FALHA_PERSISTENCIA",
+    )
 
 
 def test_9_dados_desatualizados():
-    status = {"execucao_ok": True, "persistencia_ok": True, "registros_novos": 0, "ultimo_sucesso_em": _ha(48)}
+    status = {
+        "execucao_ok": True,
+        "persistencia_ok": True,
+        "registros_novos": 0,
+        "ultimo_sucesso_em": _ha(48),
+    }
     codigo, rotulo = saude_mod.classificar_estado(status, idade_maxima_horas=6)
     _checar("9 ultimo sucesso ha 48h com limite 6h -> DADOS_DESATUALIZADOS", codigo == "DADOS_DESATUALIZADOS")
     _checar("9b rotulo cita a idade aproximada", "48" in rotulo)
 
 
 def test_10_sem_limite_de_idade_nao_marca_desatualizado():
-    status = {"execucao_ok": True, "persistencia_ok": True, "registros_novos": 0, "ultimo_sucesso_em": _ha(1000)}
+    status = {
+        "execucao_ok": True,
+        "persistencia_ok": True,
+        "registros_novos": 0,
+        "ultimo_sucesso_em": _ha(1000),
+    }
     codigo, _ = saude_mod.classificar_estado(status, idade_maxima_horas=None)
-    _checar("10 idade_maxima_horas=None nunca marca desatualizado", codigo == "SUCESSO_SEM_NOVIDADE")
+    _checar(
+        "10 idade_maxima_horas=None nunca marca desatualizado",
+        codigo == "SUCESSO_SEM_NOVIDADE",
+    )
 
 
 def test_11_falha_execucao_tem_prioridade_sobre_desatualizado():
-    status = {"execucao_ok": False, "persistencia_ok": True, "ultimo_erro": "erro generico", "ultimo_sucesso_em": _ha(100)}
+    status = {
+        "execucao_ok": False,
+        "persistencia_ok": True,
+        "ultimo_erro": "erro generico",
+        "ultimo_sucesso_em": _ha(100),
+    }
     codigo, _ = saude_mod.classificar_estado(status, idade_maxima_horas=6)
-    _checar("11 tentativa mais recente falhou -> reporta a falha, nao so' 'desatualizado'", codigo == "FALHA_EXECUCAO")
+    _checar(
+        "11 tentativa mais recente falhou -> reporta a falha, nao so' 'desatualizado'",
+        codigo == "FALHA_EXECUCAO",
+    )
 
 
 def test_12_status_somente_leitura_sem_dado_e_none():
-    _checar("12 _status_somente_leitura(None) -> None", saude_mod._status_somente_leitura(None) is None)
+    _checar(
+        "12 _status_somente_leitura(None) -> None",
+        saude_mod._status_somente_leitura(None) is None,
+    )
 
 
 def test_13_status_somente_leitura_aceita_datetime_e_string():
@@ -119,17 +183,31 @@ def test_13_status_somente_leitura_aceita_datetime_e_string():
 
 
 def test_14_painel_completo_cobre_todos_os_coletores_registrados():
+    # Substitui o leitor de TODOS os coletores para impedir acesso a dados reais.
+    registro_sem_dados = [
+        {**c, "leitor": (lambda: None)}
+        for c in saude_mod.REGISTRO_COLETORES
+    ]
+
     with patch.object(saude_mod.coletores_status, "obter_status", return_value=None):
-        with patch.object(saude_mod, "REGISTRO_COLETORES", [
-            {**c, "leitor": (lambda: None)} if not c["instrumentado"] else c
-            for c in saude_mod.REGISTRO_COLETORES
-        ]):
+        with patch.object(saude_mod, "REGISTRO_COLETORES", registro_sem_dados):
             painel = saude_mod.obter_painel_saude()
+
     nomes_painel = {item["nome"] for item in painel}
-    nomes_registro = {c["nome"] for c in saude_mod.REGISTRO_COLETORES}
-    _checar("14a painel tem 1 entrada por coletor registrado", nomes_painel == nomes_registro)
-    _checar("14b sem nenhum dado disponivel, tudo cai em NUNCA_EXECUTADO", all(item["codigo_estado"] == "NUNCA_EXECUTADO" for item in painel))
-    _checar("14c todos marcados como 'desconhecido' (nao falso-verde)", all(item["desconhecido"] for item in painel))
+    nomes_registro = {c["nome"] for c in registro_sem_dados}
+
+    _checar(
+        "14a painel tem 1 entrada por coletor registrado",
+        nomes_painel == nomes_registro,
+    )
+    _checar(
+        "14b sem nenhum dado disponivel, tudo cai em NUNCA_EXECUTADO",
+        all(item["codigo_estado"] == "NUNCA_EXECUTADO" for item in painel),
+    )
+    _checar(
+        "14c todos marcados como desconhecido (nao falso-verde)",
+        all(item["desconhecido"] for item in painel),
+    )
 
 
 def test_15_painel_excecao_num_leitor_nao_derruba_o_painel():
@@ -141,17 +219,31 @@ def test_15_painel_excecao_num_leitor_nao_derruba_o_painel():
         if not c["instrumentado"]:
             c["leitor"] = _leitor_que_falha
 
-    with patch.object(saude_mod.coletores_status, "obter_status", side_effect=RuntimeError("banco fora do ar")):
+    with patch.object(
+        saude_mod.coletores_status,
+        "obter_status",
+        side_effect=RuntimeError("banco fora do ar"),
+    ):
         with patch.object(saude_mod, "REGISTRO_COLETORES", registro_modificado):
             painel = saude_mod.obter_painel_saude()
-    _checar("15 painel completo mesmo com todo leitor/obter_status lancando excecao", len(painel) == len(registro_modificado))
-    _checar("15b todas as entradas ficam NUNCA_EXECUTADO (nao quebra, nao finge sucesso)", all(item["codigo_estado"] == "NUNCA_EXECUTADO" for item in painel))
+
+    _checar(
+        "15 painel completo mesmo com todo leitor/obter_status lancando excecao",
+        len(painel) == len(registro_modificado),
+    )
+    _checar(
+        "15b todas as entradas ficam NUNCA_EXECUTADO (nao quebra, nao finge sucesso)",
+        all(item["codigo_estado"] == "NUNCA_EXECUTADO" for item in painel),
+    )
 
 
 def test_16_diagnostico_infraestrutura_repassa_tabela_disponivel():
     with patch.object(saude_mod.coletores_status, "tabela_disponivel", return_value=False):
         resultado = saude_mod.diagnostico_infraestrutura()
-    _checar("16 diagnostico_infraestrutura repassa False (tabela ausente/erro) pra UI reagir", resultado is False)
+    _checar(
+        "16 diagnostico_infraestrutura repassa False (tabela ausente/erro) pra UI reagir",
+        resultado is False,
+    )
 
 
 if __name__ == "__main__":
@@ -160,7 +252,7 @@ if __name__ == "__main__":
             try:
                 fn()
             except AssertionError:
-                pass  # ja' registrado em _FALHAS por _checar
+                pass
 
     print()
     if _FALHAS:

@@ -29,9 +29,11 @@ clique reconstruia todos os widgets da lista do zero, mesmo com os dados
 ja vindo de cache)."""
 
 import html
+from io import BytesIO
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+import requests
 import streamlit as st
 
 from data.news import (
@@ -352,6 +354,191 @@ div[class*="st-key-news-live-card-"] {
 }
 .news-secundario b { color: var(--neutro); font-weight: 600; }
 
+/* ---- feed NEWS: hierarquia editorial e leitura mobile ----------------
+   A grade global do Streamlit empilha colunas no celular. Para os cards
+   editoriais, isso separava a miniatura do título e desperdiçava altura;
+   aqui preservamos thumb + conteúdo lado a lado, com o texto usando todo
+   o espaço restante. */
+div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: flex-start !important;
+    gap: 0.7rem !important;
+    overflow: visible !important;
+}
+div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) > div[data-testid="stColumn"]:first-child {
+    flex: 0 0 60px !important;
+    width: 60px !important;
+    min-width: 60px !important;
+}
+div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) > div[data-testid="stColumn"]:last-child {
+    flex: 1 1 0% !important;
+    width: auto !important;
+    min-width: 0 !important;
+}
+.news-item-thumb-wrap {
+    width: 60px;
+    height: 60px;
+}
+.news-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.2rem 0.45rem;
+    font-size: 0.68rem;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+.news-item-meta .selo-tag {
+    flex: 0 0 auto;
+    margin-right: 0.15rem;
+}
+.news-item-meta .w-ticker-tag {
+    margin: 0;
+    padding: 0.02rem 0.28rem;
+    font-size: 0.66rem;
+}
+.news-item-meta .w-abrir-link {
+    white-space: nowrap;
+    font-weight: 600;
+}
+.news-item-resumo {
+    margin-top: 0.42rem;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    opacity: 0.9;
+}
+.news-divider {
+    border-bottom: 1px solid var(--borda);
+    margin: 0.65rem 0 0.8rem;
+    opacity: 0.75;
+}
+/* Headlines mais legíveis, sem transformar cada notícia em um card pesado. */
+div[class*="st-key-news-card-titulo-"] button {
+    font-size: 0.94rem !important;
+    line-height: 1.42 !important;
+    overflow-wrap: anywhere !important;
+}
+div[class*="st-key-news-live-card-"] {
+    padding: 0.55rem 0 0.55rem 0.7rem;
+    margin: 0.15rem 0;
+}
+.news-live-badge {
+    display: inline-block;
+    margin-bottom: 0.2rem;
+}
+/* Capa em fallback: nao reservar um retangulo gigante sem imagem real. */
+.news-capa-fallback { min-height: 0; }
+@media (max-width: 640px) {
+    .news-capa:has(.news-capa-fallback) {
+        height: 64px !important;
+        aspect-ratio: auto !important;
+    }
+    .news-capa:has(.news-capa-fallback) .news-capa-fallback span {
+        font-size: 0.72rem !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) {
+        gap: 0.6rem !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) > div[data-testid="stColumn"]:first-child {
+        flex-basis: 54px !important;
+        width: 54px !important;
+        min-width: 54px !important;
+    }
+    .news-item-thumb-wrap {
+        width: 54px;
+        height: 54px;
+    }
+    div[class*="st-key-news-card-titulo-"] button {
+        font-size: 0.88rem !important;
+        line-height: 1.4 !important;
+    }
+    .news-item-meta {
+        gap: 0.18rem 0.38rem;
+        font-size: 0.65rem;
+        line-height: 1.5;
+    }
+    .news-item-resumo {
+        font-size: 0.75rem;
+        line-height: 1.48;
+        -webkit-line-clamp: 3;
+    }
+    .news-divider {
+        margin: 0.55rem 0 0.7rem;
+    }
+    /* Filtros quebram em linhas sem ultrapassar a largura do viewport. */
+    [data-testid="stButtonGroup"] {
+        max-width: 100%;
+        row-gap: 0.35rem !important;
+    }
+}
+@media (max-width: 380px) {
+    div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) > div[data-testid="stColumn"]:first-child {
+        flex-basis: 46px !important;
+        width: 46px !important;
+        min-width: 46px !important;
+    }
+    .news-item-thumb-wrap {
+        width: 46px;
+        height: 46px;
+    }
+    .news-item-meta { font-size: 0.62rem; }
+}
+/* Modal NOTÍCIA: reduzir altura e espaçamento em celular.
+   O fallback de capa não deve ocupar meia tela quando a fonte não oferece foto. */
+@media (max-width: 640px) {
+    .news-capa {
+        aspect-ratio: auto !important;
+        height: 104px !important;
+        margin-bottom: 0.45rem !important;
+    }
+    .news-capa img { object-fit: cover; }
+    .news-capa-fallback { min-height: 0 !important; }
+    .news-capa-fallback span {
+        font-size: 0.78rem !important;
+        letter-spacing: 0.08em !important;
+    }
+    .news-headline {
+        font-size: 0.98rem !important;
+        line-height: 1.28 !important;
+        margin-bottom: 0.2rem !important;
+    }
+    .news-meta-line {
+        font-size: 0.66rem !important;
+        line-height: 1.4 !important;
+        margin-bottom: 0.4rem !important;
+    }
+    .news-corpo-p {
+        font-size: 0.84rem !important;
+        line-height: 1.48 !important;
+        margin-bottom: 0.48rem !important;
+        max-width: none !important;
+    }
+    .news-parcial-nota {
+        font-size: 0.64rem !important;
+        line-height: 1.4 !important;
+        margin: 0.15rem 0 0.55rem !important;
+    }
+    .news-leitura-wrap {
+        padding-left: 0.5rem !important;
+        margin: 0.25rem 0 0.6rem !important;
+    }
+    .news-leitura-titulo { margin-bottom: 0.15rem !important; }
+    .news-leitura-corpo { font-size: 0.8rem !important; line-height: 1.45 !important; }
+    .news-secundario {
+        margin-top: 0.55rem !important;
+        padding-top: 0.4rem !important;
+        font-size: 0.68rem !important;
+        line-height: 1.5 !important;
+    }
+    div[data-testid="stDialog"] [data-testid="stVerticalBlock"] {
+        gap: 0.45rem !important;
+    }
+}
+@media (max-width: 380px) {
+    .news-capa { height: 82px !important; }
+    .news-corpo-p { font-size: 0.81rem !important; line-height: 1.44 !important; }
+}
 @media (max-width: 480px) {
     .news-capa { aspect-ratio: 4 / 3; }
     .news-headline { font-size: 1rem; }
@@ -487,6 +674,75 @@ def _linha_veiculos(fontes: list) -> str:
     return linha
 
 
+@st.cache_data(ttl=3600, max_entries=80, show_spinner=False)
+def _baixar_imagem_capa(url: str) -> bytes | None:
+    """Baixa a imagem no servidor do Pregão, evitando hotlink/CORS e URLs
+    que o Safari/iOS ou o navegador não conseguem carregar diretamente.
+    Limita tamanho, tempo e tipo de conteúdo; falha vira fallback, nunca
+    derruba a abertura da notícia."""
+    if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+        return None
+    try:
+        with requests.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; PregaoNews/1.0)",
+                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            },
+            timeout=(3.05, 7),
+            stream=True,
+            allow_redirects=True,
+        ) as response:
+            response.raise_for_status()
+            tipo = (response.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if not tipo.startswith("image/"):
+                return None
+            tamanho = response.headers.get("Content-Length")
+            if tamanho and int(tamanho) > 8 * 1024 * 1024:
+                return None
+            partes = []
+            total = 0
+            for parte in response.iter_content(chunk_size=64 * 1024):
+                if not parte:
+                    continue
+                total += len(parte)
+                if total > 8 * 1024 * 1024:
+                    return None
+                partes.append(parte)
+            dados = b"".join(partes)
+            if not dados:
+                return None
+            # Valida que o payload é realmente uma imagem decodificável.
+            from PIL import Image
+            with Image.open(BytesIO(dados)) as img:
+                img.verify()
+            return dados
+    except Exception:
+        return None
+
+
+def _renderizar_capa(imagem: str | None, veiculo_principal: str) -> None:
+    """Renderiza a capa com st.image a partir de bytes baixados pelo backend.
+    Isso evita depender do navegador para acessar o host externo da foto."""
+    marca = veiculo_principal or "NOTÍCIA"
+    dados = _baixar_imagem_capa(imagem) if imagem else None
+    if dados:
+        st.image(dados, use_container_width=True)
+    elif imagem and isinstance(imagem, str) and imagem.startswith(("https://", "http://")):
+        # Segunda via: se o download/validação do proxy falhar (CDN que
+        # rejeita User-Agent ou Content-Type incorreto), deixar o renderer
+        # do Streamlit tentar buscar a URL pública diretamente.
+        try:
+            st.image(imagem, use_container_width=True)
+        except Exception:
+            st.markdown(_capa_html(None, marca), unsafe_allow_html=True)
+    else:
+        st.markdown(
+            _capa_html(None, marca),
+            unsafe_allow_html=True,
+        )
+
+
 def _capa_html(imagem: str | None, veiculo_principal: str) -> str:
     """Capa do modal editorial - imagem real da materia (og:image, ja'
     extraida junto do texto - ver data/news.py:_extrair_texto_artigo,
@@ -592,7 +848,7 @@ def _abrir_card(n: dict, watchlist: list):
         resultado = obter_resumo_grupo(n["titulo"], fontes_ordenadas, titulos_grupo)
 
     veiculo_principal = (n.get("veiculos") or [""])[0]
-    st.markdown(_capa_html(resultado.get("imagem"), veiculo_principal), unsafe_allow_html=True)
+    _renderizar_capa(resultado.get("imagem"), veiculo_principal)
     st.markdown(f"<div class='news-headline'>{html.escape(n['titulo'])}</div>", unsafe_allow_html=True)
     st.markdown(_meta_line_dialog(n), unsafe_allow_html=True)
 
