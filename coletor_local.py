@@ -72,6 +72,7 @@ import config
 from data.coletores_status import registrar_tentativa
 from data.eventos import salvar_snapshot_calendario
 from data.eventos_coleta import coletar_eventos_universo
+from data.ia_cache import TABELA_AUSENTE as _NEWS_TABELA_AUSENTE
 from data.news import pregerar_resumos_news
 from data.research import coletar_todas_disponiveis
 from data.research.historico import coletar_snapshot_genial
@@ -249,15 +250,31 @@ def main() -> int:
         list(config.IBOVESPA_SETORES.keys()), arquivo_checkpoint=_ARQUIVO_CHECKPOINT_NEWS,
     )[:_QTD_TICKERS_NEWS_POR_EXECUCAO]
     stats_news = pregerar_resumos_news(fatia_news)
-    logger.info(
-        f"  resumos de NEWS: {stats_news['grupos_considerados']} grupo(s) considerado(s), "
-        f"{stats_news['ja_cacheados']} ja' cacheado(s), {stats_news['gerados']} gerado(s) agora, "
-        f"{stats_news['falhas']} falha(s)"
-        + (" - orcamento esgotado" if stats_news["tempo_esgotado"] else "")
-    )
+    tabela_news_disponivel = stats_news.get("tabela_disponivel")
+    if tabela_news_disponivel is not True:
+        # tabela ausente/credencial invalida/Supabase fora do ar - pular
+        # ANTES de gastar 1 token de IA (ver docstring de
+        # pregerar_resumos_news) - acao exata pro Rodrigo quando for
+        # TABELA_AUSENTE: SQL Editor do Supabase > colar sql/ia_cache.sql > Run.
+        logger.warning(
+            f"  resumos de NEWS: pre-processamento pulado - tabela resumos_ia_cache "
+            f"indisponivel ({tabela_news_disponivel!r}). "
+            + ("Rode sql/ia_cache.sql no SQL Editor do Supabase (tabela nunca foi criada)."
+               if tabela_news_disponivel == _NEWS_TABELA_AUSENTE
+               else "Confira a credencial/conexao do Supabase (ver SAUDE DOS DADOS).")
+        )
+    else:
+        logger.info(
+            f"  resumos de NEWS: {stats_news['grupos_considerados']} grupo(s) considerado(s), "
+            f"{stats_news['ja_cacheados']} ja' cacheado(s), {stats_news['gerados']} gerado(s) agora, "
+            f"{stats_news['falhas']} falha(s)"
+            + (" - orcamento esgotado" if stats_news["tempo_esgotado"] else "")
+        )
     registrar_tentativa(
-        "NEWS (resumos)", "Groq + extração de matéria", execucao_ok=True,
+        "NEWS (resumos)", "Groq + extração de matéria",
+        execucao_ok=True, persistencia_ok=(tabela_news_disponivel is True),
         registros_novos=stats_news["gerados"], parcial=bool(stats_news["tempo_esgotado"] or stats_news["falhas"]),
+        erro=None if tabela_news_disponivel is True else f"tabela resumos_ia_cache indisponível ({tabela_news_disponivel!r})",
         categoria="Noticias",
     )
 

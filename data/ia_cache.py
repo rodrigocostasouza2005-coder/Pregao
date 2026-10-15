@@ -37,6 +37,72 @@ _ESPERA_TENTATIVAS = 10
 _ESPERA_INTERVALO_S = 1.0
 _ABANDONO_SEGUNDOS = 120  # reserva 'gerando' mais velha que isso e' tratada como processo morto
 
+# Estados de tabela_disponivel() - mesmo padrao de data/coletores_status.py
+# (achado real 2026-10-13: tabela ausente e credencial/RLS invalida
+# degradavam pro MESMO False/None antes, escondendo qual das duas causas
+# era a real). Aplicado aqui em 2026-10-15 depois de confirmar em produção
+# (via leitura direta, read-only) que resumos_ia_cache nao existe no
+# Supabase - sql/ia_cache.sql nunca foi rodado la', apesar da tabela ser
+# usada desde 2026-10-05. Sem este diagnostico, o pre-processamento em
+# lote (ver data/news.py:pregerar_resumos_news) queimava cota real do
+# Groq em TODA execucao do coletor (a cada 30min) sem conseguir cachear
+# nada - cada resumo gerado era descartado em silencio (_salvar_resultado
+# falhava, mas gerar_fn() ja' tinha sido chamado de verdade).
+TABELA_AUSENTE = "TABELA_AUSENTE"
+TABELA_CREDENCIAL_OU_CONEXAO = "CREDENCIAL_OU_CONEXAO"
+TABELA_ERRO_DESCONHECIDO = "ERRO_DESCONHECIDO"
+
+_SINAIS_TABELA_AUSENTE = ("pgrst205", "could not find the table", "schema cache")
+_SINAIS_CREDENCIAL_OU_CONEXAO = (
+    "401", "403", "pgrst301", "pgrst302", "jwt", "api key", "apikey",
+    "unauthorized", "authentication", "permission denied", "42501",
+    "invalid_grant", "invalid signature",
+    "timeout", "timed out", "conexao", "conexão", "connection", "dns",
+    "ssl", "unreachable", "econnrefused", "name or service not known",
+    "waf", "bloquead",
+)
+
+
+def _texto_erro(erro: Exception) -> str:
+    partes = [str(erro), repr(erro)]
+    for atributo in ("code", "message", "details", "hint"):
+        valor = getattr(erro, atributo, None)
+        if valor:
+            partes.append(str(valor))
+    return " ".join(partes).lower()
+
+
+def _classificar_erro_tabela(erro: Exception) -> str:
+    texto = _texto_erro(erro)
+    if any(s in texto for s in _SINAIS_TABELA_AUSENTE):
+        return TABELA_AUSENTE
+    if any(s in texto for s in _SINAIS_CREDENCIAL_OU_CONEXAO):
+        return TABELA_CREDENCIAL_OU_CONEXAO
+    return TABELA_ERRO_DESCONHECIDO
+
+
+def tabela_disponivel() -> bool | str | None:
+    """Diagnostico (nunca usado pelo fluxo normal de obter_resumo_com_cache/
+    obter_varios, que continuam degradando com seguranca independente
+    disso - so' serve pra pregerar_resumos_news decidir se vale a pena
+    gastar cota de IA, e pro SAUDE DOS DADOS mostrar a causa real em vez
+    de 'Supabase indisponível' genérico).
+
+    Retorna True (tabela responde), TABELA_AUSENTE (rodar sql/ia_cache.sql),
+    TABELA_CREDENCIAL_OU_CONEXAO (chave/RLS/rede), TABELA_ERRO_DESCONHECIDO
+    (outro erro real, sem causa identificável pelo texto) ou None (Supabase
+    sem cliente configurado)."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        cliente.table(_TABELA).select("chave_documento").limit(1).execute()
+        return True
+    except Exception as e:
+        causa = _classificar_erro_tabela(e)
+        print(f"[ia_cache] tabela_disponivel() falhou ({causa}): {e!r}")
+        return causa
+
 
 def chave_research(link: str) -> str:
     """Chave de cache pro resumo de UM relatorio/live especifico do
