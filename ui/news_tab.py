@@ -1326,7 +1326,32 @@ def render_news(prefs: dict):
             unsafe_allow_html=True,
         )
 
-        resumos_prontos = obter_resumos_prontos([it["dado"] for it in mostrar if it["tipo_feed"] == "NOTICIA"])
+        noticias_mostradas = [it["dado"] for it in mostrar if it["tipo_feed"] == "NOTICIA"]
+        resumos_prontos = obter_resumos_prontos(noticias_mostradas)
+
+        # O feed antes so mostrava foto/resumo se outro uso ja tivesse
+        # preenchido o cache (normalmente o usuario precisava clicar no
+        # titulo primeiro). Preaquece poucos cards por rerun: aproveita o
+        # mesmo extrator texto+og:image e o cache global existente, sem
+        # disparar dezenas de chamadas de IA ao abrir a aba.
+        limite_preparo = 3
+        preparados = 0
+        for noticia in noticias_mostradas:
+            if noticia["link"] in resumos_prontos:
+                continue
+            if preparados >= limite_preparo:
+                break
+            try:
+                fontes = ordenar_fontes_para_resumo(noticia["fontes"])
+                titulos = tuple(noticia.get("titulos") or (noticia["titulo"],))
+                resultado = obter_resumo_grupo(noticia["titulo"], fontes, titulos)
+                if resultado and (resultado.get("resumo") or resultado.get("imagem")):
+                    resumos_prontos[noticia["link"]] = resultado
+            except Exception:
+                # Falha isolada de uma materia nao pode derrubar o feed.
+                pass
+            preparados += 1
+
         _renderizar_feed_editorial(mostrar, watchlist, resumos_prontos, prefixo="feed")
 
         falta_mostrar = len(candidatos) - len(mostrar)
