@@ -25,6 +25,7 @@ inventa setor)."""
 
 import base64
 import json
+import time
 
 import streamlit as st
 from curl_cffi import requests as cffi_requests
@@ -82,7 +83,13 @@ def obter_composicao_oficial() -> dict:
     # treemap (data/mercado.py) e _nome_empresa do CALENDARIO.
     cache = _ultima_composicao_valida()
     try:
-        r = cffi_requests.get(_montar_url(), headers=_HEADERS, impersonate="chrome", timeout=15)
+        # 1 retry curto pra falha de rede/timeout transitoria (nao pra erro
+        # HTTP explicito, que indica resposta real da B3, nao instabilidade).
+        try:
+            r = cffi_requests.get(_montar_url(), headers=_HEADERS, impersonate="chrome", timeout=15)
+        except (ConnectionError, TimeoutError, OSError):
+            time.sleep(1.5)
+            r = cffi_requests.get(_montar_url(), headers=_HEADERS, impersonate="chrome", timeout=15)
         if r.status_code != 200:
             registrar_tentativa("B3 (composição Ibovespa)", "sistemaswebb3-listados.b3.com.br", execucao_ok=False,
                                  erro=f"B3 respondeu HTTP {r.status_code}", categoria="Cotacoes")

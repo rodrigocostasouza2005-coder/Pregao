@@ -133,6 +133,32 @@ def test_6_sucesso_registra_tentativa_ok_em_saude_dos_dados():
             kwargs.get("execucao_ok") is True and kwargs.get("registros_novos") == 2, f"(kwargs={kwargs})")
 
 
+def test_6b_erro_de_rede_transitorio_se_recupera_na_segunda_tentativa():
+    """2026-10-15: timeout/erro de conexao pontual nao deve cair direto
+    pro fallback se uma 2a tentativa (curta, 1x so') resolver - mesmo
+    espirito do retry ja existente em MERCADO pra lote de cotacoes."""
+    _limpar_cache()
+    with patch.object(ibovespa_mod, "cffi_requests") as mock_req, \
+         patch.object(ibovespa_mod.time, "sleep") as mock_sleep:
+        mock_req.get.side_effect = [OSError("timeout transitorio"), _resposta_ok([_item("PETR4")])]
+        resultado = ibovespa_mod.obter_composicao_oficial()
+    _checar("6b1 recupera na 2a tentativa (nao cai pro fallback vazio)", "PETR4" in resultado, f"(resultado={resultado})")
+    _checar("6b2 fez exatamente 2 chamadas (1 original + 1 retry)", mock_req.get.call_count == 2)
+    _checar("6b3 dormiu entre as tentativas (nao martela a fonte sem esperar)", mock_sleep.called)
+
+
+def test_6c_falha_http_explicita_nao_tenta_retry():
+    """Erro HTTP (ex: 500) e' uma resposta REAL da B3, nao instabilidade
+    de rede - nao faz sentido tentar de novo na mesma execucao."""
+    _limpar_cache()
+    with patch.object(ibovespa_mod, "cffi_requests") as mock_req:
+        resposta_falha = MagicMock()
+        resposta_falha.status_code = 500
+        mock_req.get.return_value = resposta_falha
+        ibovespa_mod.obter_composicao_oficial()
+    _checar("6c so' 1 chamada pra erro HTTP explicito (sem retry desnecessario)", mock_req.get.call_count == 1)
+
+
 def test_7_falha_http_registra_tentativa_com_erro_real():
     _limpar_cache()
     with patch.object(ibovespa_mod, "cffi_requests") as mock_req, \
