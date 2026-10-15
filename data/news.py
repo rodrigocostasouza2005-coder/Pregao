@@ -1366,10 +1366,9 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
             if texto and len(texto) >= _MIN_CHARS_TEXTO:
                 break
 
-    if not texto:
-        descricao = sopa.select_one('meta[name="description"], meta[property="og:description"]')
-        texto = (descricao.get("content") or "").strip() if descricao else None
-
+    # Não promover meta-description a corpo da matéria: ela é apenas um
+    # resumo curto do publisher e deve continuar identificada como trecho,
+    # nunca como leitura integral.
     if not texto or len(texto) < _MIN_CHARS_FRAGMENTO:
         return (
             None, imagem, link_real,
