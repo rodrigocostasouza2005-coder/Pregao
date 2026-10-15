@@ -427,7 +427,16 @@ div[class*="st-key-news-live-card-"] {
     display: inline-block;
     margin-bottom: 0.2rem;
 }
+/* Capa em fallback: nao reservar um retangulo gigante sem imagem real. */
+.news-capa-fallback { min-height: 0; }
 @media (max-width: 640px) {
+    .news-capa:has(.news-capa-fallback) {
+        height: 64px !important;
+        aspect-ratio: auto !important;
+    }
+    .news-capa:has(.news-capa-fallback) .news-capa-fallback span {
+        font-size: 0.72rem !important;
+    }
     div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) {
         gap: 0.6rem !important;
     }
