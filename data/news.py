@@ -30,6 +30,7 @@ import feedparser
 import requests
 import streamlit as st
 import trafilatura
+from bs4 import BeautifulSoup
 
 try:
     from googlenewsdecoder import gnewsdecoder
@@ -1308,6 +1309,26 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
     if not baixado:
         return None, None, link_real, motivo_download or "o site não disponibilizou a página"
 
+    # Parsear os metadados com HTML parser (regex falha quando a ordem
+    # dos atributos muda ou há espaços/aspas diferentes).
+    sopa = BeautifulSoup(baixado, "html.parser")
+    imagem = None
+    for seletor, atributo in (
+        ('meta[property="og:image"]', "content"),
+        ('meta[property="og:image:secure_url"]', "content"),
+        ('meta[name="twitter:image"]', "content"),
+        ('meta[name="twitter:image:src"]', "content"),
+        ('link[rel="image_src"]', "href"),
+    ):
+        meta = sopa.select_one(seletor)
+        candidata = meta.get(atributo) if meta else None
+        if candidata:
+            from urllib.parse import urljoin
+            imagem = _url_imagem_valida(urljoin(link_real, candidata.strip()))
+            if imagem:
+                break
+
+    texto = None
     try:
         bruto = trafilatura.extract(
             baixado,
@@ -1318,28 +1339,37 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
             favor_precision=True,
         )
         dados = json.loads(bruto) if bruto else {}
+        texto = (dados.get("text") or "").strip() or None
+        if not imagem:
+            imagem = _url_imagem_valida(dados.get("image"))
     except Exception:
-        dados = {}
+        pass
 
-    texto = (dados.get("text") or "").strip() or None
-    imagem = _url_imagem_valida(dados.get("image"))
+    # Segundo extrator menos restritivo: usa parágrafos de article/main,
+    # remove navegação/rodapé e só aceita texto com tamanho mínimo. Não
+    # contorna paywall nem tenta executar JavaScript.
+    if not texto or len(texto) < _MIN_CHARS_FRAGMENTO:
+        for seletor in ("article", "main", '[itemprop="articleBody"]'):
+            bloco = sopa.select_one(seletor)
+            if not bloco:
+                continue
+            for ruido in bloco.select("script,style,nav,footer,header,aside,form,button"):
+                ruido.decompose()
+            paragrafos = [
+                p.get_text(" ", strip=True)
+                for p in bloco.select("p")
+                if len(p.get_text(" ", strip=True)) >= 35
+            ]
+            candidato = "\\n\\n".join(paragrafos).strip()
+            if len(candidato) > len(texto or ""):
+                texto = candidato
+            if texto and len(texto) >= _MIN_CHARS_TEXTO:
+                break
 
-    # Trafilatura nem sempre encontra a capa em páginas que usam Open Graph.
-    # Buscar metadados públicos do HTML já baixado; não faz uma segunda chamada.
-    if not imagem and isinstance(baixado, str):
-        for padrao in (
-            r"""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']""",
-            r"""<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']""",
-            r"""<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']""",
-            r"""<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']""",
-        ):
-            achou = re.search(padrao, baixado, flags=re.IGNORECASE)
-            if achou:
-                from urllib.parse import urljoin
-                candidata = urljoin(link_real, achou.group(1).strip())
-                imagem = _url_imagem_valida(candidata)
-                if imagem:
-                    break
+    if not texto:
+        descricao = sopa.select_one('meta[name="description"], meta[property="og:description"]')
+        texto = (descricao.get("content") or "").strip() if descricao else None
+
     if not texto or len(texto) < _MIN_CHARS_FRAGMENTO:
         return (
             None, imagem, link_real,
