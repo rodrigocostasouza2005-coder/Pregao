@@ -32,6 +32,7 @@ sem republicar nem redistribuir o conteudo. Nao generalizar esse padrao
 pra outras fontes sem a mesma decisao explicita."""
 
 import re
+import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -113,11 +114,20 @@ def obter_relatorios() -> list | None:
     respondeu mas nenhum vídeo recente bateu com nenhum programa (normal
     em dias sem Copom/podcast, por exemplo). NÃO checa robots.txt (ver
     ATENÇÃO no topo do módulo - exceção deliberada, pedido explícito)."""
-    try:
-        feed = feedparser.parse(_FEED_URL)
-    except Exception:
-        return None
-    if feed.bozo and not feed.entries:
+    # 1 retry curto: feedparser absorve falha de rede internamente (nunca
+    # lanca excecao por isso - so marca feed.bozo=True com entries=[]),
+    # entao uma instabilidade transitoria de conexao parece identica a
+    # "feed malformado" sem uma 2a tentativa pra diferenciar.
+    for tentativa in range(2):
+        try:
+            feed = feedparser.parse(_FEED_URL)
+        except Exception:
+            feed = None
+        if feed is not None and not (feed.bozo and not feed.entries):
+            break
+        if tentativa == 0:
+            time.sleep(1.5)
+    else:
         return None
 
     relatorios = []
