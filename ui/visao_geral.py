@@ -24,7 +24,7 @@ from ui.mercado_tab import _painel_altas_baixas, _painel_globais, _painel_mais_n
 from ui.news_tab import _injetar_css, _renderizar_lista
 
 _PERIODOS_IBOV = ["1D", "1S", "1M", "3M", "6M", "1A", "5A"]
-_QTD_NOTICIAS = 8
+_QTD_NOTICIAS = 4
 
 
 def _tema_atual(prefs):
@@ -184,11 +184,13 @@ def _painel_ibov_grafico(prefs):
 
 def _painel_noticias_resumo(prefs):
     _injetar_css()
-    st.markdown('<div class="painel-titulo">MARKET NEWS</div>', unsafe_allow_html=True)
+    st.markdown('<div class="painel-titulo">MARKET NEWS <span class="cinza" style="font-size:0.68rem;font-weight:400;">ÚLTIMAS 4</span></div>', unsafe_allow_html=True)
     itens = obter_top_mercado_tudo("TODOS")
     if not itens:
-        st.markdown("<div class='cinza' style='font-size:0.78rem;'>—</div>", unsafe_allow_html=True)
+        st.markdown("<div class='cinza' style='font-size:0.78rem;'>Sem notícias disponíveis.</div>", unsafe_allow_html=True)
         return
+    # A visão geral é um resumo executivo, não o feed completo: quatro manchetes
+    # no máximo, sem texto longo nem contexto extra. O feed completo fica em NEWS.
     _renderizar_lista(itens[:_QTD_NOTICIAS], mostrar_ticker=True, prefixo="vg", watchlist=prefs.get("watchlist") or [])
 
 

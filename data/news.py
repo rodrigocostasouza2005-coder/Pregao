@@ -1323,6 +1323,23 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
 
     texto = (dados.get("text") or "").strip() or None
     imagem = _url_imagem_valida(dados.get("image"))
+
+    # Trafilatura nem sempre encontra a capa em páginas que usam Open Graph.
+    # Buscar metadados públicos do HTML já baixado; não faz uma segunda chamada.
+    if not imagem and isinstance(baixado, str):
+        for padrao in (
+            r"""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']""",
+            r"""<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']""",
+            r"""<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']""",
+            r"""<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']""",
+        ):
+            achou = re.search(padrao, baixado, flags=re.IGNORECASE)
+            if achou:
+                from urllib.parse import urljoin
+                candidata = urljoin(link_real, achou.group(1).strip())
+                imagem = _url_imagem_valida(candidata)
+                if imagem:
+                    break
     if not texto or len(texto) < _MIN_CHARS_FRAGMENTO:
         return (
             None, imagem, link_real,
