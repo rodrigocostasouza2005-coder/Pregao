@@ -1260,40 +1260,74 @@ def _url_imagem_valida(url) -> str | None:
 
 
 def _extrair_texto_artigo(link_google_news: str) -> tuple:
-    """Resolve o link real e extrai texto+imagem com trafilatura (MESMO
-    download, sem nenhuma requisicao de rede extra so' pra foto - a
-    imagem vem do meta og:image da propria pagina, via
-    with_metadata=True). Retorna (texto, imagem, link_real,
-    motivo_falha) - texto=None se o link nao resolveu, o download falhou
-    ou nao sobrou nem um fragmento minimo aproveitavel (ver
-    _MIN_CHARS_FRAGMENTO); imagem=None se a pagina nao declarar uma ou a
-    extracao de metadado falhar (nunca inventada). Um texto entre
-    _MIN_CHARS_FRAGMENTO e _MIN_CHARS_TEXTO ainda volta aqui (nao e'
-    None) - quem chama (obter_resumo_grupo) decide se resume sozinho ou
-    combina com outras fontes do grupo antes de desistir."""
+    """Resolve o link do Google News e tenta extrair o artigo por HTTP
+    explícito antes do extrator. Alguns hosts respondem diferente ao
+    User-Agent padrão do Trafilatura; usamos cabeçalhos de navegador
+    comuns, timeout curto e seguimos redirects HTTP normais. Não tenta
+    contornar paywall/login/captcha. Retorna (texto, imagem, link_real,
+    motivo_falha); nunca inventa conteúdo."""
     link_real = _resolver_link_real(link_google_news)
     if not link_real:
-        return None, None, None, "não foi possível resolver o link original"
+        return None, None, None, "não foi possível resolver o link original do Google News"
+
+    baixado = None
+    motivo_download = None
     try:
-        baixado = trafilatura.fetch_url(link_real)
-    except Exception as e:
-        return None, None, link_real, f"erro ao baixar: {e}"
+        with requests.get(
+            link_real,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/128.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+            },
+            timeout=(4, 12),
+            allow_redirects=True,
+        ) as response:
+            response.raise_for_status()
+            tipo = (response.headers.get("Content-Type") or "").lower()
+            if "html" not in tipo and "xhtml" not in tipo:
+                motivo_download = f"o endereço respondeu conteúdo não HTML ({tipo or 'tipo desconhecido'})"
+            else:
+                baixado = response.text
+                link_real = response.url or link_real
+    except requests.RequestException as exc:
+        motivo_download = f"falha HTTP ao acessar a matéria ({type(exc).__name__})"
+    except Exception as exc:
+        motivo_download = f"falha ao baixar a matéria ({type(exc).__name__})"
+
+    # Segundo método de download como fallback, sem burlar controles do site.
     if not baixado:
-        return None, None, link_real, "erro ao baixar a página"
+        try:
+            baixado = trafilatura.fetch_url(link_real)
+        except Exception:
+            baixado = None
+    if not baixado:
+        return None, None, link_real, motivo_download or "o site não disponibilizou a página"
 
     try:
         bruto = trafilatura.extract(
-            baixado, include_comments=False, include_tables=False,
-            with_metadata=True, output_format="json",
+            baixado,
+            include_comments=False,
+            include_tables=False,
+            with_metadata=True,
+            output_format="json",
+            favor_precision=True,
         )
         dados = json.loads(bruto) if bruto else {}
     except Exception:
         dados = {}
+
     texto = (dados.get("text") or "").strip() or None
     imagem = _url_imagem_valida(dados.get("image"))
-
     if not texto or len(texto) < _MIN_CHARS_FRAGMENTO:
-        return None, imagem, link_real, "conteúdo muito curto (provável paywall/bloqueio)"
+        return (
+            None, imagem, link_real,
+            "página acessível, mas sem texto extraível (possível paywall, consentimento, JavaScript ou bloqueio)",
+        )
     return texto, imagem, link_real, None
 
 
