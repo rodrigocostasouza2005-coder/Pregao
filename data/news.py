@@ -1328,10 +1328,10 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
     # Buscar metadados públicos do HTML já baixado; não faz uma segunda chamada.
     if not imagem and isinstance(baixado, str):
         for padrao in (
-            r'<meta[^>]+property=["\\']og:image["\\'][^>]+content=["\\']([^"\\']+)["\\']',
-            r'<meta[^>]+content=["\\']([^"\\']+)["\\'][^>]+property=["\\']og:image["\\']',
-            r'<meta[^>]+name=["\\']twitter:image["\\'][^>]+content=["\\']([^"\\']+)["\\']',
-            r'<meta[^>]+content=["\\']([^"\\']+)["\\'][^>]+name=["\\']twitter:image["\\']',
+            r"""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']""",
+            r"""<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']""",
+            r"""<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']""",
+            r"""<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']""",
         ):
             achou = re.search(padrao, baixado, flags=re.IGNORECASE)
             if achou:
