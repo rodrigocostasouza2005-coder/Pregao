@@ -113,6 +113,32 @@ def test_1e_falha_ao_baixar_pagina():
     _checar("1r motivo cita a falha ao acessar a materia", "acessar a matéria" in (motivo or ""), f"(motivo={motivo!r})")
 
 
+def test_1g_link_ja_direto_nao_passa_pelo_decoder_do_google():
+    """Regressao 2026-10-15: o pool internacional (MarketWatch/CNBC/etc)
+    le RSS proprio de cada veiculo, cujo link JA e' a URL real - nao um
+    redirect do Google News. gnewsdecoder so entende o formato de
+    redirect do Google e falha (devolve None) pra qualquer outra URL;
+    antes desta correcao isso fazia _resolver_link_real descartar um
+    link perfeitamente usavel, gerando taxa alta e falsa de 'link nao
+    resolvido' so' nessas fontes."""
+    link_direto = "https://www.marketwatch.com/story/exemplo-abc123"
+    with patch.object(news_mod, "gnewsdecoder") as mock_decoder:
+        resultado = news_mod._resolver_link_real(link_direto)
+    _checar("1u link direto (nao news.google.com) retorna sem chamar o decoder",
+            resultado == link_direto, f"(resultado={resultado!r})")
+    _checar("1v decoder do Google nunca e' chamado pra link que nao e' dele",
+            mock_decoder.call_count == 0)
+
+
+def test_1h_link_do_google_news_ainda_usa_o_decoder():
+    link_google = "https://news.google.com/rss/articles/CBMi_exemplo?oc=5"
+    with patch.object(news_mod, "gnewsdecoder", return_value={"success": True, "decoded_url": "https://veiculo.com/real"}) as mock_decoder:
+        resultado = news_mod._resolver_link_real(link_google)
+    _checar("1w link do Google News continua sendo decodificado normalmente",
+            resultado == "https://veiculo.com/real")
+    _checar("1x decoder chamado exatamente 1x pro link do Google", mock_decoder.call_count == 1)
+
+
 def test_1f_link_nao_resolvido():
     with patch.object(news_mod, "_resolver_link_real", return_value=None):
         texto, imagem, link_real, motivo = news_mod._extrair_texto_artigo("https://news.google.com/v")

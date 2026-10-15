@@ -1226,7 +1226,22 @@ def _resolver_link_real(link_google_news: str):
     do Google, sem redirect HTTP de verdade) - gnewsdecoder replica o
     fluxo de decodificacao interno do Google pra achar a URL real do
     veiculo. None se nao conseguir (formato mudou, timeout, decoder
-    indisponivel etc)."""
+    indisponivel etc).
+
+    Nem todo item do feed passa por aqui vindo do Google News: o pool
+    internacional (MarketWatch/CNBC/etc) tambem le RSS proprio de cada
+    veiculo, cujo link ja e' a URL real - gnewsdecoder so entende o
+    formato de redirect do Google e devolve falha pra qualquer outra
+    URL (bug real: media alta de "link nao resolvido" nessas fontes,
+    quando na verdade nunca precisava resolver nada)."""
+    if not link_google_news:
+        return None
+    try:
+        host = urlparse(link_google_news).netloc.lower()
+    except Exception:
+        host = ""
+    if host and "news.google.com" not in host:
+        return link_google_news
     if gnewsdecoder is None:
         return None
     try:
