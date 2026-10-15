@@ -195,7 +195,14 @@ def _reservar_geracao(cliente, chave: str, link_principal: str, origem: str) -> 
             "status": "gerando", "criado_em": _agora_iso(), "atualizado_em": _agora_iso(),
         }).execute()
         return True
-    except Exception:
+    except Exception as e:
+        # achado real 2026-10-15: antes desta linha, uma falha de escrita
+        # aqui era 100% invisivel - gerar_fn() roda (gasta cota de IA de
+        # verdade) mas o resultado nunca e' cacheado, sem NENHUM rastro no
+        # log pra saber o motivo (diferente de tabela_disponivel() acima,
+        # que ja imprimia). So' print, nunca propaga - mantem o
+        # comportamento de sempre (degrada pro gerar_fn() direto).
+        print(f"[ia_cache] _reservar_geracao({chave[:12]}...) falhou: {e!r}")
         return False
 
 
@@ -204,8 +211,13 @@ def _salvar_resultado(cliente, chave: str, resultado: dict, modelo: str):
         cliente.table(_TABELA).update({
             "resultado": resultado, "modelo": modelo, "status": "concluido", "atualizado_em": _agora_iso(),
         }).eq("chave_documento", chave).execute()
-    except Exception:
-        pass  # resumo ja' foi gerado e retornado pra quem pediu - so' o cache que nao gravou, sem problema
+    except Exception as e:
+        # resumo ja' foi gerado e retornado pra quem pediu - so' o cache
+        # que nao gravou, sem problema pro usuario que pediu; mas sem
+        # log nenhum isso ficava indistinguivel de "gravou normalmente"
+        # pra quem olhasse os logs do coletor depois (mesmo achado real
+        # de _reservar_geracao acima).
+        print(f"[ia_cache] _salvar_resultado({chave[:12]}...) falhou: {e!r}")
 
 
 def _liberar_reserva(cliente, chave: str):
