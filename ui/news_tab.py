@@ -475,6 +475,61 @@ div[class*="st-key-news-live-card-"] {
     }
     .news-item-meta { font-size: 0.62rem; }
 }
+/* Modal NOTÍCIA: reduzir altura e espaçamento em celular.
+   O fallback de capa não deve ocupar meia tela quando a fonte não oferece foto. */
+@media (max-width: 640px) {
+    .news-capa {
+        aspect-ratio: auto !important;
+        height: 104px !important;
+        margin-bottom: 0.45rem !important;
+    }
+    .news-capa img { object-fit: cover; }
+    .news-capa-fallback { min-height: 0 !important; }
+    .news-capa-fallback span {
+        font-size: 0.78rem !important;
+        letter-spacing: 0.08em !important;
+    }
+    .news-headline {
+        font-size: 0.98rem !important;
+        line-height: 1.28 !important;
+        margin-bottom: 0.2rem !important;
+    }
+    .news-meta-line {
+        font-size: 0.66rem !important;
+        line-height: 1.4 !important;
+        margin-bottom: 0.4rem !important;
+    }
+    .news-corpo-p {
+        font-size: 0.84rem !important;
+        line-height: 1.48 !important;
+        margin-bottom: 0.48rem !important;
+        max-width: none !important;
+    }
+    .news-parcial-nota {
+        font-size: 0.64rem !important;
+        line-height: 1.4 !important;
+        margin: 0.15rem 0 0.55rem !important;
+    }
+    .news-leitura-wrap {
+        padding-left: 0.5rem !important;
+        margin: 0.25rem 0 0.6rem !important;
+    }
+    .news-leitura-titulo { margin-bottom: 0.15rem !important; }
+    .news-leitura-corpo { font-size: 0.8rem !important; line-height: 1.45 !important; }
+    .news-secundario {
+        margin-top: 0.55rem !important;
+        padding-top: 0.4rem !important;
+        font-size: 0.68rem !important;
+        line-height: 1.5 !important;
+    }
+    div[data-testid="stDialog"] [data-testid="stVerticalBlock"] {
+        gap: 0.45rem !important;
+    }
+}
+@media (max-width: 380px) {
+    .news-capa { height: 82px !important; }
+    .news-corpo-p { font-size: 0.81rem !important; line-height: 1.44 !important; }
+}
 @media (max-width: 480px) {
     .news-capa { aspect-ratio: 4 / 3; }
     .news-headline { font-size: 1rem; }
