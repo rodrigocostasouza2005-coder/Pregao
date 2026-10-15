@@ -352,6 +352,127 @@ div[class*="st-key-news-live-card-"] {
 }
 .news-secundario b { color: var(--neutro); font-weight: 600; }
 
+/* ---- feed NEWS: hierarquia editorial e leitura mobile ----------------
+   A grade global do Streamlit empilha colunas no celular. Para os cards
+   editoriais, isso separava a miniatura do título e desperdiçava altura;
+   aqui preservamos thumb + conteúdo lado a lado, com o texto usando todo
+   o espaço restante. */
+div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: flex-start !important;
+    gap: 0.7rem !important;
+    overflow: visible !important;
+}
+div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) > div[data-testid="stColumn"]:first-child {
+    flex: 0 0 60px !important;
+    width: 60px !important;
+    min-width: 60px !important;
+}
+div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) > div[data-testid="stColumn"]:last-child {
+    flex: 1 1 0% !important;
+    width: auto !important;
+    min-width: 0 !important;
+}
+.news-item-thumb-wrap {
+    width: 60px;
+    height: 60px;
+}
+.news-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.2rem 0.45rem;
+    font-size: 0.68rem;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+.news-item-meta .selo-tag {
+    flex: 0 0 auto;
+    margin-right: 0.15rem;
+}
+.news-item-meta .w-ticker-tag {
+    margin: 0;
+    padding: 0.02rem 0.28rem;
+    font-size: 0.66rem;
+}
+.news-item-meta .w-abrir-link {
+    white-space: nowrap;
+    font-weight: 600;
+}
+.news-item-resumo {
+    margin-top: 0.42rem;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    opacity: 0.9;
+}
+.news-divider {
+    border-bottom: 1px solid var(--borda);
+    margin: 0.65rem 0 0.8rem;
+    opacity: 0.75;
+}
+/* Headlines mais legíveis, sem transformar cada notícia em um card pesado. */
+div[class*="st-key-news-card-titulo-"] button {
+    font-size: 0.94rem !important;
+    line-height: 1.42 !important;
+    overflow-wrap: anywhere !important;
+}
+div[class*="st-key-news-live-card-"] {
+    padding: 0.55rem 0 0.55rem 0.7rem;
+    margin: 0.15rem 0;
+}
+.news-live-badge {
+    display: inline-block;
+    margin-bottom: 0.2rem;
+}
+@media (max-width: 640px) {
+    div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) {
+        gap: 0.6rem !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) > div[data-testid="stColumn"]:first-child {
+        flex-basis: 54px !important;
+        width: 54px !important;
+        min-width: 54px !important;
+    }
+    .news-item-thumb-wrap {
+        width: 54px;
+        height: 54px;
+    }
+    div[class*="st-key-news-card-titulo-"] button {
+        font-size: 0.88rem !important;
+        line-height: 1.4 !important;
+    }
+    .news-item-meta {
+        gap: 0.18rem 0.38rem;
+        font-size: 0.65rem;
+        line-height: 1.5;
+    }
+    .news-item-resumo {
+        font-size: 0.75rem;
+        line-height: 1.48;
+        -webkit-line-clamp: 3;
+    }
+    .news-divider {
+        margin: 0.55rem 0 0.7rem;
+    }
+    /* Filtros quebram em linhas sem ultrapassar a largura do viewport. */
+    [data-testid="stButtonGroup"] {
+        max-width: 100%;
+        row-gap: 0.35rem !important;
+    }
+}
+@media (max-width: 380px) {
+    div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) > div[data-testid="stColumn"]:first-child {
+        flex-basis: 46px !important;
+        width: 46px !important;
+        min-width: 46px !important;
+    }
+    .news-item-thumb-wrap {
+        width: 46px;
+        height: 46px;
+    }
+    .news-item-meta { font-size: 0.62rem; }
+}
 @media (max-width: 480px) {
     .news-capa { aspect-ratio: 4 / 3; }
     .news-headline { font-size: 1rem; }
