@@ -69,7 +69,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import config
-from data.coletores_status import registrar_tentativa
+from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
 from data.eventos import salvar_snapshot_calendario
 from data.eventos_coleta import coletar_eventos_universo
 from data.news import pregerar_resumos_news
@@ -209,6 +209,25 @@ def _universo_rotativo(tickers: list, offset: int = None, arquivo_checkpoint: Pa
 
 def main() -> int:
     logger.info("iniciando coleta local...")
+
+    # Self-test de persistencia ANTES de qualquer coletor (achado real,
+    # auditoria 2026-10-15): sem isso, uma credencial sem privilegio de
+    # escrita (ex: chave publica colada por engano em SUPABASE_SECRET_KEY)
+    # produzia a MESMA excecao "42501" repetida 1x por coletor/tabela, sem
+    # 1 diagnostico claro na raiz. So' loga - nunca aborta a execucao:
+    # a coleta em si (rede/parsing) continua valendo mesmo que a
+    # persistencia esteja quebrada, cada coletor ja degrada essa parte
+    # com seguranca por conta propria (ver docstrings de cada modulo).
+    diagnostico = diagnosticar_persistencia()
+    if diagnostico["ok"]:
+        logger.info("  persistencia (self-test escrita+leitura): OK")
+    else:
+        logger.warning(
+            f"  persistencia (self-test escrita+leitura): FALHOU na etapa "
+            f"{diagnostico['etapa']} - {diagnostico['detalhe']} "
+            "(nenhum coletor desta execucao vai conseguir gravar nada; "
+            "a extracao/parsing continua rodando mesmo assim)"
+        )
 
     resultado = coletar_todas_disponiveis()
     if not resultado:

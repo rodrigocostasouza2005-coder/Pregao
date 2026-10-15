@@ -146,3 +146,22 @@ def test_executar_registra_falha_quando_coleta_falha(monkeypatch):
     assert codigo == 1
     assert chamadas[0][1]["execucao_ok"] is False
     assert chamadas[0][1]["erro"] == "zero recomendações coletadas"
+
+
+def test_executar_chama_self_test_de_persistencia_antes_de_tudo(monkeypatch):
+    """Regressao 2026-10-15 (auditoria do secret errado em producao):
+    executar() precisa rodar o self-test de escrita+leitura ANTES de
+    tentar processar_monitoramento/recuperar pendentes - sem isso, uma
+    credencial sem privilegio so' aparecia como N excecoes "42501"
+    espalhadas, 1 por tabela, sem 1 diagnostico unico na raiz."""
+    chamadas_diagnostico = []
+    monkeypatch.setattr(
+        radar_quedas, "diagnosticar_persistencia",
+        lambda: chamadas_diagnostico.append(1) or {"ok": False, "etapa": "ESCRITA", "detalhe": "x"},
+    )
+    monkeypatch.setattr(radar_quedas, "processar_monitoramento", lambda: {"coleta_ok": False, "alertas_novos": [], "erro": "x"})
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: None)
+
+    radar_quedas.executar()
+
+    assert len(chamadas_diagnostico) == 1

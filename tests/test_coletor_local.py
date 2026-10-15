@@ -287,6 +287,28 @@ def test_5k_news_tempo_esgotado_marca_parcial_mas_nao_falha_exit_code():
             f"(codigo={codigo})")
 
 
+def test_6a_main_chama_self_test_de_persistencia_antes_de_qualquer_coletor():
+    """Regressao 2026-10-15 (auditoria do secret errado em producao):
+    main() precisa rodar diagnosticar_persistencia() ANTES de
+    coletar_todas_disponiveis/coletar_eventos_universo/etc - sem isso, a
+    1a pista de uma credencial sem privilegio de escrita so' aparecia
+    como N excecoes "42501" espalhadas, 1 por coletor, nunca 1
+    diagnostico unico e claro na raiz."""
+    chamadas_diagnostico = []
+    with patch.object(coletor_local, "diagnosticar_persistencia",
+                       side_effect=lambda: chamadas_diagnostico.append(1) or {"ok": False, "etapa": "ESCRITA", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value={"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0, "tempo_esgotado": False, "tabela_disponivel": True}), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa"):
+        coletor_local.main()
+    _checar("6a diagnosticar_persistencia chamado exatamente 1x", len(chamadas_diagnostico) == 1, f"({chamadas_diagnostico})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

@@ -128,6 +128,106 @@ def test_6_obter_status_banco_fora_do_ar_retorna_none():
     _checar("6 banco fora do ar -> obter_status None (nunca excecao)", status is None)
 
 
+# ============================================================
+# diagnosticar_persistencia() - self-test de ESCRITA+LEITURA real
+# (regressao 2026-10-15: distinguir "SELECT passa" de "persistencia
+# funciona de verdade" - ver auditoria da falha 42501 em producao)
+# ============================================================
+
+def test_7_diagnostico_sem_cliente_e_sem_credencial():
+    with patch.object(cs_mod, "obter_cliente", return_value=None):
+        resultado = cs_mod.diagnosticar_persistencia()
+    _checar("7a ok=False quando nao ha cliente", resultado["ok"] is False)
+    _checar("7b etapa=SEM_CREDENCIAL", resultado["etapa"] == "SEM_CREDENCIAL")
+
+
+def test_8_diagnostico_round_trip_completo_e_sucesso():
+    cliente = _ClienteFake()
+    with patch.object(cs_mod, "obter_cliente", return_value=cliente):
+        resultado = cs_mod.diagnosticar_persistencia()
+    _checar("8a ok=True quando escrita e leitura batem", resultado["ok"] is True, f"({resultado})")
+    _checar("8b etapa=OK", resultado["etapa"] == "OK")
+    _checar("8c linha de diagnostico usa nome prefixado com _ (nunca aparece no painel)",
+            "_DIAGNOSTICO_PERSISTENCIA" in cliente.linhas)
+
+
+class _ClienteFalhaEscrita:
+    def table(self, _nome):
+        class _T:
+            def upsert(self, *_a, **_k):
+                raise Exception("new row violates row-level security policy for table \"coletores_status\"")
+        return _T()
+
+
+def test_9_diagnostico_falha_na_escrita_classificada_como_credencial():
+    with patch.object(cs_mod, "obter_cliente", return_value=_ClienteFalhaEscrita()):
+        resultado = cs_mod.diagnosticar_persistencia()
+    _checar("9a ok=False na falha de escrita", resultado["ok"] is False)
+    _checar("9b etapa=ESCRITA", resultado["etapa"] == "ESCRITA")
+    _checar("9c causa classificada como credencial/conexao (42501)",
+            "CREDENCIAL_OU_CONEXAO" in resultado["detalhe"], f"({resultado})")
+
+
+class _ClienteFalhaLeitura:
+    """Escrita (upsert) passa sem excecao; a releitura (select) seguinte
+    falha."""
+    def table(self, _nome):
+        class _T:
+            _tipo = None
+
+            def upsert(self, *_a, **_k):
+                self._tipo = "upsert"
+                return self
+
+            def select(self, *_a, **_k):
+                self._tipo = "select"
+                return self
+
+            def eq(self, *_a, **_k):
+                return self
+
+            def limit(self, *_a, **_k):
+                return self
+
+            def execute(self):
+                if self._tipo == "upsert":
+                    return _Resposta([{"nome": "x"}])
+                raise Exception("timeout ao ler")
+        return _T()
+
+
+def test_10_diagnostico_escrita_ok_mas_leitura_falha():
+    cliente = _ClienteFalhaLeitura()
+    with patch.object(cs_mod, "obter_cliente", return_value=cliente):
+        resultado = cs_mod.diagnosticar_persistencia()
+    _checar("10 etapa=LEITURA quando escrita passa mas a releitura falha", resultado["etapa"] == "LEITURA", f"({resultado})")
+
+
+class _ClienteVerificacaoFalsa:
+    """Simula 'escrita sem excecao mas o valor lido de volta nao bate' -
+    o caso exato que o round-trip precisa pegar e' um SELECT que nunca
+    verificasse o valor real nao pegaria."""
+    def table(self, _nome):
+        class _T:
+            def upsert(self, *_a, **_k):
+                return self
+            def select(self, *_a, **_k):
+                return self
+            def eq(self, *_a, **_k):
+                return self
+            def limit(self, *_a, **_k):
+                return self
+            def execute(self):
+                return _Resposta([{"ultima_tentativa_em": "2000-01-01T00:00:00+00:00"}])
+        return _T()
+
+
+def test_11_diagnostico_detecta_leitura_que_nao_confirma_valor_escrito():
+    with patch.object(cs_mod, "obter_cliente", return_value=_ClienteVerificacaoFalsa()):
+        resultado = cs_mod.diagnosticar_persistencia()
+    _checar("11 etapa=VERIFICACAO quando o valor lido nao confere com o escrito", resultado["etapa"] == "VERIFICACAO", f"({resultado})")
+
+
 def test_7_obter_todos_status_indexado_por_nome():
     cliente = _ClienteFake()
     with patch.object(cs_mod, "obter_cliente", return_value=cliente):

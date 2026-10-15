@@ -36,6 +36,15 @@ _SINAIS_CREDENCIAL_OU_CONEXAO = (
     "401", "403", "pgrst301", "pgrst302", "jwt", "api key", "apikey",
     "unauthorized", "authentication", "permission denied", "42501",
     "invalid_grant", "invalid signature",
+    # RLS (achado real 2026-10-15, auditoria do secret errado em producao):
+    # o texto REAL devolvido pelo Postgres pra uma violacao de RLS e' "new
+    # row violates row-level security policy" - NEM SEMPRE vem acompanhado
+    # do codigo "42501" no texto que chega aqui (depende de qual atributo
+    # da excecao teve o dado); sem este sinal, essa falha (exatamente a que
+    # bloqueou coletores_status/research_itens/calendario_snapshot em
+    # producao) caia em ERRO_DESCONHECIDO, escondendo que a causa real e'
+    # credencial/permissao.
+    "row-level security", "row level security", " rls ",
     # conexao/rede (httpx levanta excecao propria aqui, sem .code/.message -
     # so' o texto da excecao mesmo; mesmo vocabulario de
     # data/saude_dados.py:_TERMOS_INDISPONIBILIDADE)
@@ -126,6 +135,62 @@ def registrar_tentativa(
         # mostra NUNCA_EXECUTADO, indistinguivel de "coletor nunca rodou".
         print(f"[coletores_status] registrar_tentativa({nome!r}) falhou: {e!r}")
         return False
+
+
+_NOME_DIAGNOSTICO = "_DIAGNOSTICO_PERSISTENCIA"
+
+
+def diagnosticar_persistencia() -> dict:
+    """Self-test de ESCRITA+LEITURA real (nao so' SELECT, como
+    tabela_disponivel() abaixo) - achado real (auditoria 2026-10-15):
+    RLS sem policies pode deixar um SELECT passar e so' bloquear
+    INSERT/UPDATE (ou vice-versa, depende da policy); so' confirmar que
+    "a tabela responde" nunca prova que REGISTRAR uma tentativa vai
+    funcionar. Usa uma linha de diagnostico FIXA e reutilizavel (upsert
+    pelo mesmo nome toda vez, nunca cria lixo novo, nunca apaga nada) -
+    nome prefixado com "_" pra nunca aparecer no painel (REGISTRO_
+    COLETORES em data/saude_dados.py nunca lista esse nome).
+
+    Chamado 1x no INICIO de coletor_local.py/jobs/radar_quedas.py/
+    jobs/morning_call.py - se a persistencia estiver quebrada, isso da'
+    1 diagnostico claro na raiz em vez de 1 excecao "42501" repetida
+    por coletor, todas pela MESMA causa.
+
+    Retorna {"ok": bool, "etapa": str, "detalhe": str} - etapa in
+    ("SEM_CREDENCIAL", "CHAVE_PUBLICA", "ESCRITA", "LEITURA",
+    "VERIFICACAO", "OK"). Nunca inclui a chave/segredo em si."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return {
+            "ok": False, "etapa": "SEM_CREDENCIAL",
+            "detalhe": (
+                "obter_cliente() retornou None - SUPABASE_URL/SUPABASE_SECRET_KEY "
+                "ausentes, ou a chave presente e' claramente a chave publica "
+                "(ver log '[supabase_client]' acima pra qual dos dois casos e' este)."
+            ),
+        }
+    marca = datetime.now(timezone.utc).isoformat()
+    try:
+        cliente.table(_TABELA).upsert({
+            "nome": _NOME_DIAGNOSTICO, "fonte": "self-test interno (nao e' um coletor)",
+            "categoria": "_diagnostico", "execucao_ok": True, "persistencia_ok": True,
+            "ultima_tentativa_em": marca, "ultimo_sucesso_em": marca,
+        }).execute()
+    except Exception as e:
+        causa = _classificar_erro_tabela(e)
+        return {"ok": False, "etapa": "ESCRITA", "detalhe": f"{causa}: {e!r}"}
+    try:
+        resp = cliente.table(_TABELA).select("ultima_tentativa_em").eq("nome", _NOME_DIAGNOSTICO).limit(1).execute()
+    except Exception as e:
+        causa = _classificar_erro_tabela(e)
+        return {"ok": False, "etapa": "LEITURA", "detalhe": f"{causa}: {e!r}"}
+    lida = (resp.data or [{}])[0].get("ultima_tentativa_em")
+    if not lida or marca[:19] not in str(lida):
+        return {
+            "ok": False, "etapa": "VERIFICACAO",
+            "detalhe": f"escrita aceita sem excecao mas a leitura de volta nao confirma o valor gravado (esperado prefixo {marca[:19]!r}, lido {lida!r}) - possivel persistencia so' aparente.",
+        }
+    return {"ok": True, "etapa": "OK", "detalhe": "escrita e leitura confirmadas de verdade (round-trip)."}
 
 
 def obter_status(nome: str) -> dict | None:
