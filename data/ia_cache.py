@@ -296,6 +296,13 @@ def obter_resumo_com_cache(chave: str, link_principal: str, origem: str, gerar_f
     definitiva - pode funcionar numa proxima tentativa)."""
     cliente = obter_cliente()
     if cliente is None:
+        # achado real 2026-10-15 (continuacao): este bypass e' silencioso
+        # de proposito (ver docstring), mas descobrir SE ele esta' sendo
+        # tomado (cliente None aqui, mesmo quando outros modulos no MESMO
+        # processo conseguem um cliente valido) e' exatamente o que falta
+        # pra entender por que pregerar_resumos_news gera resumos de
+        # verdade (cota de IA gasta) sem persistir nenhum. So' print.
+        print(f"[ia_cache] obter_resumo_com_cache({chave[:12]}...): obter_cliente() retornou None - caindo pro gerar_fn() direto, sem cache")
         return gerar_fn()
 
     linha = _buscar_linha(cliente, chave)
