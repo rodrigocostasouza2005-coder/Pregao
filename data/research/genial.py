@@ -51,6 +51,23 @@ _TENTATIVAS = [
 # causa disso). Uma vez estourado, para na tentativa atual e desiste.
 _ORCAMENTO_TOTAL_S = 20
 
+# Motivo da ULTIMA falha total de _tentar_buscar (achado real, auditoria
+# 2026-10-15: registrar_tentativa so' recebia "obter_relatorios retornou
+# None apos Xs" - o motivo especifico (timeout vs HTTP/2 reset vs
+# orcamento esgotado) so' aparecia no print(), visivel nos Logs do
+# GitHub Actions/Streamlit Cloud, nunca no painel SAUDE DOS DADOS em si).
+# Modulo tem 1 unica fonte (nao precisa de estado por-chamada/thread-local
+# - mesmo padrao simples que o resto do projeto usa pra isso).
+_ultimo_motivo_falha = None
+
+
+def motivo_ultima_falha() -> str | None:
+    """Detalhe da ultima falha TOTAL de _tentar_buscar (todas as
+    tentativas da lista, ou orcamento esgotado) - None se a ultima
+    chamada teve sucesso ou nenhuma chamada foi feita ainda nesta
+    sessao do processo."""
+    return _ultimo_motivo_falha
+
 
 def _tentar_buscar(url: str, orcamento_s: float = _ORCAMENTO_TOTAL_S):
     """Tenta baixar `url` com cada combinacao de _TENTATIVAS ate uma dar
@@ -58,20 +75,27 @@ def _tentar_buscar(url: str, orcamento_s: float = _ORCAMENTO_TOTAL_S):
     _ORCAMENTO_TOTAL_S) estourar. Retorna (Response, rotulo) ou (None,
     None) se todas falharem/o tempo acabar. print() de cada tentativa -
     visivel nos Logs do Streamlit Cloud."""
+    global _ultimo_motivo_falha
     limite = time.monotonic() + orcamento_s
+    ultimo_erro = None
     for tentativa in _TENTATIVAS:
         if time.monotonic() > limite:
             print("[genial] orçamento de tempo esgotado, parando tentativas")
-            break
+            _ultimo_motivo_falha = f"orçamento de {orcamento_s:.0f}s esgotado antes de tentar todos os perfis; último erro: {ultimo_erro or 'nenhum'}"
+            return None, None
         rotulo = f"impersonate={tentativa.get('impersonate')} http={tentativa.get('http_version', 'auto')}"
         try:
             r = cffi_requests.get(url, headers=HEADERS, timeout=TIMEOUT, **tentativa)
             if r.status_code == 200 and r.text:
                 print(f"[genial] conexao OK ({rotulo})")
+                _ultimo_motivo_falha = None
                 return r, rotulo
+            ultimo_erro = f"{rotulo}: HTTP {r.status_code}"
             print(f"[genial] tentativa falhou ({rotulo}): HTTP {r.status_code}")
         except Exception as e:
+            ultimo_erro = f"{rotulo}: {type(e).__name__}"
             print(f"[genial] tentativa falhou ({rotulo}): {e}")
+    _ultimo_motivo_falha = f"todas as {len(_TENTATIVAS)} tentativas falharam; última: {ultimo_erro or 'nenhum erro capturado'}"
     return None, None
 
 
