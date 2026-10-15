@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from data.coletores_status import registrar_tentativa
 from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta
 from data.mercado import obter_cotacoes_lote
 from data.news import obter_top_mercado_tudo
@@ -103,6 +104,7 @@ def executar():
     texto = montar_morning_call(agora)
     resultado = enviar_email(f"[PREGÃO] Morning Call — {agora.strftime('%d/%m/%Y')}", texto)
     cliente = obter_cliente()
+    persistiu = False
     if cliente is not None:
         try:
             cliente.table("morning_call_execucoes").insert({
@@ -112,9 +114,21 @@ def executar():
                 "destinatario": __import__("os").getenv("EMAIL_TO", ""),
                 "conteudo": texto,
             }).execute()
+            persistiu = True
         except Exception as exc:
             print(f"[morning_call] falha ao registrar execução: {exc!r}")
     print(f"[morning_call] envio_ok={resultado['ok']} erro={resultado['erro']}")
+    # Visibilidade no painel SAÚDE DOS DADOS, mesmo motivo do Radar: sem
+    # isto, o job rodando mas falhando no envio (ou nem rodando mais)
+    # não aparecia em lugar nenhum fora do log do GitHub Actions.
+    registrar_tentativa(
+        "MORNING CALL",
+        "Macro (BCB) + Mercado (yfinance) + NEWS agregados, e-mail (Resend/SMTP)",
+        execucao_ok=resultado["ok"],
+        persistencia_ok=persistiu,
+        erro=resultado["erro"],
+        categoria="Morning Call",
+    )
     return 0 if resultado["ok"] else 1
 
 

@@ -17,3 +17,38 @@ def test_morning_call_independente_sem_news_e_macro():
     assert "CENÁRIOS CONDICIONAIS" in texto
     assert "carteira" not in texto.lower()
     assert "alerta" not in texto.lower()
+
+
+def test_executar_registra_tentativa_no_painel_saude(monkeypatch):
+    """Regressao 2026-10-15: o job rodava no GitHub Actions e persistia em
+    morning_call_execucoes, mas nunca aparecia no painel SAUDE DOS DADOS
+    (nenhuma linha em coletores_status) - sem isso, uma falha de envio so'
+    era visivel no log do Actions, nunca na UI do Pregao."""
+    chamadas = []
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
+    monkeypatch.setattr(mc, "enviar_email", lambda *_a, **_k: {"ok": True, "erro": None})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: None)
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+
+    codigo = mc.executar()
+
+    assert codigo == 0
+    assert len(chamadas) == 1
+    args, kwargs = chamadas[0]
+    assert args[0] == "MORNING CALL"
+    assert kwargs["execucao_ok"] is True
+    assert kwargs["erro"] is None
+
+
+def test_executar_registra_falha_quando_envio_nao_funciona(monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
+    monkeypatch.setattr(mc, "enviar_email", lambda *_a, **_k: {"ok": False, "erro": "Resend HTTP 401"})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: None)
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+
+    codigo = mc.executar()
+
+    assert codigo == 1
+    assert chamadas[0][1]["execucao_ok"] is False
+    assert chamadas[0][1]["erro"] == "Resend HTTP 401"

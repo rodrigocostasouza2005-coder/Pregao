@@ -325,6 +325,24 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 48, "instrumentado": True,
         "leitor": _leitor_hibrido("CALENDARIO", _leitor_calendario()),
     },
+    {
+        # linha nova (auditoria 2026-10-15): jobs/radar_quedas.py (GitHub
+        # Actions, a cada 15min em pregao) nunca chamava registrar_tentativa -
+        # a tabela radar_alertas_queda so' registra ALERTAS de queda, nao a
+        # tentativa de execucao - uma rodada sem queda >4% (sucesso legitimo)
+        # nao deixava rastro nenhum neste painel.
+        "nome": "RADAR DE QUEDAS", "fonte": "Carteiras recomendadas (Genial) + cotacoes",
+        "categoria": "Radar", "frequencia_esperada": ".github/workflows/radar-morning-call.yml, 15min (seg-sex, pregao)",
+        "idade_maxima_horas": 1, "instrumentado": True,
+    },
+    {
+        # linha nova (auditoria 2026-10-15): mesmo gap do RADAR - jobs/
+        # morning_call.py tinha sua propria tabela (morning_call_execucoes)
+        # mas nunca aparecia no painel central.
+        "nome": "MORNING CALL", "fonte": "Macro+Mercado+NEWS agregados, e-mail (Resend/SMTP)",
+        "categoria": "Morning Call", "frequencia_esperada": ".github/workflows/radar-morning-call.yml, diario 07h BRT (seg-sex)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
 ]
 
 

@@ -3,6 +3,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from data.coletores_status import registrar_tentativa
 from data.radar_quedas import processar_monitoramento
 from data.supabase_client import obter_cliente
 from jobs.email_utils import enviar_email
@@ -108,6 +109,21 @@ def executar():
         f"novos={len(resultado.get('alertas_novos', []))} "
         f"pendentes_processados={len(ids_vistos)} entregues={entregues} falhas={falhas} "
         f"erro_coleta={resultado.get('erro', '')}"
+    )
+    # Visibilidade no painel SAÚDE DOS DADOS: sem isto, o Radar podia parar
+    # de rodar (ou falhar silenciosamente) sem nenhuma linha refletindo
+    # isso - a tabela radar_alertas_queda só registra ALERTAS, não a
+    # tentativa de execução em si (uma rodada sem nenhuma queda >4% é
+    # sucesso legítimo e não deixaria rastro nenhum sem isto).
+    registrar_tentativa(
+        "RADAR DE QUEDAS",
+        "Carteiras recomendadas (Genial) + cotações (variação diária)",
+        execucao_ok=bool(resultado.get("coleta_ok")),
+        persistencia_ok=(falhas == 0),
+        registros_novos=len(resultado.get("alertas_novos", [])),
+        erro=resultado.get("erro") or (f"{falhas} alerta(s) sem envio confirmado" if falhas else None),
+        categoria="Radar",
+        parcial=bool(resultado.get("coleta_ok") and falhas > 0),
     )
     # Falha de fonte também deve ser visível como execução falha, mesmo que
     # uma pendência antiga tenha sido entregue nesta rodada.

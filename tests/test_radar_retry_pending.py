@@ -105,3 +105,44 @@ def test_falha_de_email_permanece_reprocessavel(monkeypatch):
     assert cliente.query.update_payload["status"] == "FALHA_ENVIO"
     assert cliente.query.update_payload["erro_envio"] == "SMTP indisponível"
     assert cliente.query.update_payload["email_enviado_em"] is None
+
+
+def test_executar_registra_tentativa_no_painel_saude(monkeypatch):
+    """Regressao 2026-10-15: igual ao Morning Call - radar_alertas_queda
+    so' registra ALERTAS, nao a tentativa de execucao; uma rodada sem
+    nenhuma queda >4% (sucesso legitimo) nao deixava rastro nenhum no
+    painel SAUDE DOS DADOS."""
+    chamadas = []
+    monkeypatch.setattr(
+        radar_quedas,
+        "processar_monitoramento",
+        lambda: {"coleta_ok": True, "alertas_novos": [], "erro": ""},
+    )
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+
+    codigo = radar_quedas.executar()
+
+    assert codigo == 0
+    assert len(chamadas) == 1
+    args, kwargs = chamadas[0]
+    assert args[0] == "RADAR DE QUEDAS"
+    assert kwargs["execucao_ok"] is True
+    assert kwargs["registros_novos"] == 0
+
+
+def test_executar_registra_falha_quando_coleta_falha(monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(
+        radar_quedas,
+        "processar_monitoramento",
+        lambda: {"coleta_ok": False, "alertas_novos": [], "erro": "zero recomendações coletadas"},
+    )
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+
+    codigo = radar_quedas.executar()
+
+    assert codigo == 1
+    assert chamadas[0][1]["execucao_ok"] is False
+    assert chamadas[0][1]["erro"] == "zero recomendações coletadas"
