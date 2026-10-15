@@ -57,6 +57,14 @@ _SINAIS_CREDENCIAL_OU_CONEXAO = (
     "401", "403", "pgrst301", "pgrst302", "jwt", "api key", "apikey",
     "unauthorized", "authentication", "permission denied", "42501",
     "invalid_grant", "invalid signature",
+    # RLS (mesmo achado de data/coletores_status.py, auditoria 2026-10-15
+    # do secret SUPABASE_SECRET_KEY errado em producao): o texto REAL do
+    # Postgres pra violacao de RLS e' "new row violates row-level security
+    # policy" - nem sempre vem com "42501" no texto que chega aqui. Sem
+    # este sinal, essa falha caia em ERRO_DESCONHECIDO, escondendo que a
+    # causa real e' credencial/permissao, nao tabela ausente nem erro
+    # aleatorio.
+    "row-level security", "row level security", " rls ",
     "timeout", "timed out", "conexao", "conexão", "connection", "dns",
     "ssl", "unreachable", "econnrefused", "name or service not known",
     "waf", "bloquead",

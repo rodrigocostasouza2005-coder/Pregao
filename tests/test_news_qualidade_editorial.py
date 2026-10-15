@@ -420,6 +420,20 @@ def test_4c_tabela_disponivel_classifica_credencial_rls_42501():
             resultado == news_mod.ia_cache.TABELA_CREDENCIAL_OU_CONEXAO, f"(resultado={resultado!r})")
 
 
+def test_4c2_tabela_disponivel_classifica_rls_mesmo_sem_codigo_42501_no_texto():
+    """Regressao 2026-10-15: o teste 4c acima so' cobre quando o erro TEM
+    .code='42501' explicito. Nem toda excecao real preserva esse
+    atributo (ex: uma wrapper de rede que so' guarda a mensagem) - sem o
+    sinal "row-level security" na lista, essa mesma falha de RLS virava
+    TABELA_ERRO_DESCONHECIDO em vez de CREDENCIAL_OU_CONEXAO."""
+    erro = Exception('new row violates row-level security policy for table "resumos_ia_cache"')
+    with patch.object(news_mod.ia_cache, "obter_cliente") as mock_obter_cliente:
+        mock_obter_cliente.return_value.table.side_effect = erro
+        resultado = news_mod.ia_cache.tabela_disponivel()
+    _checar("4c2 RLS sem .code -> ainda CREDENCIAL_OU_CONEXAO (nunca ERRO_DESCONHECIDO)",
+            resultado == news_mod.ia_cache.TABELA_CREDENCIAL_OU_CONEXAO, f"(resultado={resultado!r})")
+
+
 def test_4d_tabela_disponivel_erro_desconhecido_quando_nao_bate_nenhum_sinal():
     class _ErroFake(Exception):
         code = "99999"
