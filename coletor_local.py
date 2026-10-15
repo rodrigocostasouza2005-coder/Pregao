@@ -272,9 +272,11 @@ def main() -> int:
     # main()) so' estava sendo LOGADO - nada impedia pregerar_resumos_news
     # de rodar mesmo com a escrita confirmada quebrada, voltando a queimar
     # cota real do Groq (25 resumos/execucao) sem conseguir cachear
-    # nenhum, exatamente o bug que a introducao de diagnosticar_persistencia
-    # deveria ter mantido corrigido. So' chama o pre-processamento quando
-    # o self-test confirma escrita+leitura reais ("ok": True).
+    # nenhum. So' chama o pre-processamento quando o self-test confirma
+    # escrita+leitura reais ("ok": True) - substitui o guard antigo
+    # baseado em ia_cache.tabela_disponivel() (so' um SELECT, que RLS
+    # sem policy deixa passar vazio em vez de erro - nunca detectava
+    # INSERT bloqueado) pelo self-test de escrita+leitura real.
     if diagnostico["ok"]:
         stats_news = pregerar_resumos_news(fatia_news)
         logger.info(

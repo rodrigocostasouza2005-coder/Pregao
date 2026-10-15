@@ -126,7 +126,8 @@ def test_3e_mudanca_de_tamanho_do_universo_nunca_lanca_indexerror():
     _checar("2e offset salvo maior que o novo tamanho -> modulo, nunca IndexError", offset == 0, f"(offset={offset})")
 
 
-_STATS_NEWS_VAZIO = {"grupos_considerados": 0, "ja_cacheados": 0, "gerados": 0, "falhas": 0, "tempo_esgotado": False}
+_STATS_NEWS_VAZIO = {"grupos_considerados": 0, "ja_cacheados": 0, "gerados": 0, "falhas": 0,
+                     "tempo_esgotado": False, "tabela_disponivel": True}
 
 
 def _rodar_main_mockado(stats_eventos: dict, snapshot_ok: bool, stats_news: dict = None):
@@ -249,7 +250,8 @@ def test_5a_news_usa_checkpoint_proprio_nao_o_do_calendario():
 
 
 def test_5f_registra_saude_dados_news_resumos():
-    stats_news = {"grupos_considerados": 8, "ja_cacheados": 3, "gerados": 5, "falhas": 0, "tempo_esgotado": False}
+    stats_news = {"grupos_considerados": 8, "ja_cacheados": 3, "gerados": 5, "falhas": 0,
+                  "tempo_esgotado": False, "tabela_disponivel": True}
     stats_eventos = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
                       "tempo_esgotado": False, "tabela_disponivel": True}
     with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
@@ -269,7 +271,8 @@ def test_5f_registra_saude_dados_news_resumos():
 
 
 def test_5k_news_tempo_esgotado_marca_parcial_mas_nao_falha_exit_code():
-    stats_news = {"grupos_considerados": 20, "ja_cacheados": 0, "gerados": 25, "falhas": 0, "tempo_esgotado": True}
+    stats_news = {"grupos_considerados": 20, "ja_cacheados": 0, "gerados": 25, "falhas": 0,
+                  "tempo_esgotado": True, "tabela_disponivel": True}
     stats_eventos = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
                       "tempo_esgotado": False, "tabela_disponivel": True}
     with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
