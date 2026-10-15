@@ -1134,39 +1134,83 @@ _MARCADOR_LEITURA = "LEITURA DE MERCADO:"
 # explicito sobre IMPACTO/PRÓXIMOS PASSOS (so' reacao/evento que a fonte
 # relatou como JA' acontecido, nunca previsao) continua, agora embutido nas
 # regras do bloco RESUMO em vez de serem campos proprios.
+#
+# v3 (2026-10-15, reformulacao editorial completa - ver _resumo_e_generico
+# e _VERSAO_CHAVE_NEWS): o formato RESUMO/LEITURA DE MERCADO continua
+# (fica o parser de _separar_secoes_resumo intacto), mas o conteudo
+# esperado DENTRO do bloco RESUMO agora segue 4 angulos de prioridade
+# (o que aconteceu/contexto/impacto potencial/o que acompanhar) SEM forcar
+# os 4 pra toda materia - uma nota curta so' precisa do primeiro. Lista
+# explicita de frases proibidas (achado real: o modelo recorria a
+# generalidades tipo "o mercado segue atento" quando o texto fonte era
+# curto, em vez de admitir honestamente que a materia tinha pouca
+# informacao) - complementada pelo gate automatico _resumo_e_generico, que
+# descarta e tenta outra fonte/fallback se o modelo nao seguir a regra.
+_ANGULOS_PRIORIDADE_RESUMO = (
+    "1) O QUE ACONTECEU - fato concreto, números, empresas e decisões "
+    "citados pela fonte.\n"
+    "2) CONTEXTO - o que levou ao acontecimento e o que já era conhecido "
+    "antes, SE a fonte der essa informação.\n"
+    "3) IMPACTO POTENCIAL - implicações pra receita/margem/lucro/dívida/"
+    "fluxo de caixa/valuation/mercado, SE a fonte discutir isso (direto "
+    "ou com base em dados que ela mesma cita).\n"
+    "4) O QUE ACOMPANHAR - próximos resultados/indicadores/decisões/riscos "
+    "relevantes, SE a fonte citar algo concreto (data, evento, prazo)."
+)
+
+_FRASES_PROIBIDAS_RESUMO = (
+    "\"o mercado segue atento\", \"é importante acompanhar os próximos "
+    "movimentos\", \"o cenário pode impactar investidores\", \"resta saber "
+    "como o mercado vai reagir\", \"vale a pena acompanhar de perto\", "
+    "\"os investidores devem ficar de olho\" e qualquer outra frase que "
+    "poderia ser colada em QUALQUER notícia de mercado sem mudar nada"
+)
+
 _PROMPT_SISTEMA_RESUMO = (
-    "Você é um editor financeiro que escreve, em português, um resumo "
-    "editorial de uma matéria do mercado financeiro brasileiro pra um "
-    "terminal de investimentos - SEMPRE com suas próprias palavras, nunca "
-    "copie frases literais nem reproduza parágrafos inteiros do texto "
-    "original. O texto fornecido foi extraído automaticamente de uma página "
-    "web e pode conter trechos de menu, anúncio ou navegação misturados - "
-    "ignore esse ruído e resuma só o conteúdo jornalístico.\n\n"
+    "Você é um editor financeiro que escreve, em português brasileiro "
+    "natural, preciso e profissional, um resumo editorial de uma matéria "
+    "do mercado financeiro pra um terminal de investimentos - sempre com "
+    "suas próprias palavras, nunca copie frases literais nem reproduza "
+    "parágrafos inteiros do texto original, e NUNCA repita a manchete só "
+    "com outras palavras (o leitor já viu a manchete; o resumo precisa "
+    "agregar informação nova). O texto fornecido foi extraído "
+    "automaticamente de uma página web e pode conter trechos de menu, "
+    "anúncio ou navegação misturados - ignore esse ruído e resuma só o "
+    "conteúdo jornalístico.\n\n"
     "Formato de saída, EXATAMENTE nesta estrutura (sem nenhum outro texto "
     "antes ou depois):\n\n"
     f"{_MARCADOR_RESUMO}\n"
-    "<3 a 5 parágrafos curtos, cada um separado por uma linha em branco>\n\n"
+    "<1 a 5 parágrafos curtos, cada um separado por uma linha em branco>\n\n"
     f"{_MARCADOR_LEITURA}\n"
     "<parágrafo curto, só se houver base - ver regra abaixo>\n\n"
     f"REGRAS DO BLOCO {_MARCADOR_RESUMO}\n"
-    "- Primeiro parágrafo: contexto e o acontecimento principal.\n"
-    "- Parágrafos seguintes: números/evidências que a fonte cita, "
-    "desdobramentos que a fonte relata, e - só quando a PRÓPRIA FONTE "
-    "relata como já tendo acontecido (ex: 'as ações caíram 3% após o "
-    "anúncio') - uma reação de mercado já observada; NUNCA sua previsão do "
-    "que pode/deve acontecer.\n"
+    "- Priorize, NESTA ORDEM e só quando a fonte sustentar cada um (nunca "
+    f"force os 4 pra toda matéria):\n{_ANGULOS_PRIORIDADE_RESUMO}\n"
+    "- Uma reação de mercado (preço, volume, etc.) só entra quando a "
+    "PRÓPRIA FONTE relata como já tendo acontecido (ex: 'as ações caíram "
+    "3% após o anúncio') - nunca sua previsão do que pode/deve acontecer.\n"
     "- Um evento futuro só entra se tiver data ou ação EXPLÍCITA na fonte "
-    "(ex: 'resultado sai dia 12') - nunca uma recomendação genérica tipo "
-    "'investidores devem acompanhar o cenário'.\n"
+    "(ex: 'resultado sai dia 12') - nunca uma recomendação genérica.\n"
+    "- Diferencie sempre fato confirmado de interpretação analítica - "
+    "nunca apresente uma hipótese/opinião do texto como se fosse um fato "
+    "confirmado.\n"
+    "- NUNCA afirme que a notícia é positiva ou negativa pra uma ação sem "
+    "explicar a lógica e as condições dessa leitura (ex: não basta dizer "
+    "'é positivo pro papel' - diga o quê, concretamente, torna isso "
+    "positivo, segundo a própria fonte).\n"
     "- O TAMANHO é proporcional à quantidade de informação no texto: texto "
-    "curto (nota rápida, 1-2 parágrafos de fonte) gera resumo de 1-2 "
-    "parágrafos só - NUNCA infle com conteúdo inventado pra preencher mais "
-    "parágrafos. Nunca invente números, datas, citações ou fatos que não "
-    "estejam no texto fornecido.\n"
-    "- Nunca apresente uma causa->consequência entre dois fatos que a fonte "
-    "não conectou explicitamente, nunca atribua uma expectativa/consenso de "
-    "mercado que a fonte não cite, nunca trate uma hipótese/opinião do "
-    "texto como se fosse um fato confirmado.\n\n"
+    "curto (nota rápida, 1-2 parágrafos de fonte) gera resumo de 1 "
+    "parágrafo curto só - NUNCA infle com conteúdo inventado ou com "
+    "generalidades pra preencher mais parágrafos. Se a matéria não "
+    "oferecer informação suficiente, escreva um resumo curto e honesto "
+    "reconhecendo a limitação (ex: o que SE sabe, por pouco que seja) em "
+    "vez de preencher espaço com frases vagas. Nunca invente números, "
+    "datas, citações, causalidade, consenso de analistas, preço-alvo ou "
+    "fatos que não estejam no texto fornecido.\n"
+    "- Nunca apresente uma causa->consequência entre dois fatos que a "
+    "fonte não conectou explicitamente, nunca atribua uma expectativa/"
+    "consenso de mercado que a fonte não cite.\n"
+    f"- NUNCA use frases genéricas de preenchimento, como {_FRASES_PROIBIDAS_RESUMO}.\n\n"
     f"REGRAS DO BLOCO {_MARCADOR_LEITURA}\n"
     "- Só escreva este bloco se houver base real no texto pra discutir "
     "relevância pro investidor: por que a notícia pode importar, quais "
@@ -1183,25 +1227,31 @@ _PROMPT_SISTEMA_RESUMO = (
 )
 
 _PROMPT_SISTEMA_RESUMO_MANCHETES = (
-    "Você é um editor financeiro que escreve, em português, um resumo "
-    "editorial de um fato do mercado financeiro brasileiro a partir SÓ das "
-    "manchetes de várias fontes sobre o mesmo fato - não teve acesso ao "
-    "texto completo de nenhuma matéria (todas bloquearam o download). "
-    "SEMPRE com suas próprias palavras.\n\n"
+    "Você é um editor financeiro que escreve, em português brasileiro "
+    "natural e profissional, um resumo editorial de um fato do mercado "
+    "financeiro a partir SÓ das manchetes de várias fontes sobre o mesmo "
+    "fato - não teve acesso ao texto completo de nenhuma matéria (todas "
+    "bloquearam o download). SEMPRE com suas próprias palavras, e NUNCA "
+    "apenas reescreva a manchete principal com outras palavras.\n\n"
     "Formato de saída, EXATAMENTE nesta estrutura (sem nenhum outro texto "
     "antes ou depois):\n\n"
     f"{_MARCADOR_RESUMO}\n"
     "<1 a 3 parágrafos curtos, separados por linha em branco>\n\n"
     f"{_MARCADOR_LEITURA}\n"
     "<parágrafo curto, só se houver base clara nas manchetes>\n\n"
-    "Como só tem as manchetes (não o texto completo), vá direto ao que elas "
-    "revelam - nunca invente número, data ou fato que não esteja nelas. Uma "
-    "reação de mercado só conta se alguma manchete relatar como já "
-    "acontecida (nunca sua previsão); um próximo passo só conta se alguma "
-    "manchete citar um evento futuro explícito. Nunca conecte duas "
-    "manchetes com uma relação de causa->consequência que nenhuma delas "
-    f"afirma. Se não houver base pro bloco {_MARCADOR_LEITURA}, OMITA O "
-    f"BLOCO INTEIRO (não escreva {_MARCADOR_LEITURA} nem 'não informado'). "
+    "Como só tem as manchetes (não o texto completo), vá direto ao que "
+    "elas revelam (o que aconteceu, e contexto/impacto SE alguma manchete "
+    "der essa informação) - nunca invente número, data ou fato que não "
+    "esteja nelas. Uma reação de mercado só conta se alguma manchete "
+    "relatar como já acontecida (nunca sua previsão); um próximo passo só "
+    "conta se alguma manchete citar um evento futuro explícito. Nunca "
+    "conecte duas manchetes com uma relação de causa->consequência que "
+    "nenhuma delas afirma, e nunca afirme que o fato é positivo/negativo "
+    "pra uma ação sem que alguma manchete sustente essa leitura. Se a "
+    f"informação for pouca, prefira um resumo curto e honesto. NUNCA use "
+    f"frases genéricas de preenchimento, como {_FRASES_PROIBIDAS_RESUMO}. "
+    f"Se não houver base pro bloco {_MARCADOR_LEITURA}, OMITA O BLOCO "
+    f"INTEIRO (não escreva {_MARCADOR_LEITURA} nem 'não informado'). "
     "Se as manchetes não derem pra montar nem o RESUMO, responda "
     "exatamente: SEM_CONTEUDO"
 )
@@ -1275,6 +1325,92 @@ def _url_imagem_valida(url) -> str | None:
     return url if url.startswith("http://") or url.startswith("https://") else None
 
 
+# --- Imagens: descartar logo/favicon/placeholder ANTES de aceitar --------
+# achado real (auditoria 2026-10-15): og:image de muitos publishers
+# brasileiros aponta pro logo do veiculo (nao pra capa da materia) quando
+# a pagina nao tem foto editorial propria - o filtro antigo so checava
+# "e' uma URL http(s) valida", entao qualquer logo passava como se fosse
+# a foto da noticia. Os padroes abaixo sao heuristica por NOME DE ARQUIVO
+# (sem rede extra - o mesmo motivo de so' usar o download ja' feito pro
+# texto, ver _extrair_texto_artigo) - cobre os casos mais comuns
+# (logo.png, favicon.ico, og-default.jpg, placeholder-foto.svg etc), nao
+# e' exaustivo por natureza (nao da pra detectar logo "generico" so pelo
+# nome do arquivo em 100% dos casos).
+_PADROES_IMAGEM_GENERICA = (
+    "logo", "favicon", "icon-", "-icon", "sprite", "placeholder",
+    "default-image", "default_image", "og-default", "og_default",
+    "share-image-default", "social-default", "avatar-padrao", "sem-foto",
+    "noimage", "no-image", "apple-touch-icon",
+)
+
+
+def _imagem_parece_generica(url: str) -> bool:
+    """True se o CAMINHO da URL (sem acento/minusculo) bater com um
+    padrao conhecido de logo/favicon/placeholder - nunca mexe na query
+    string (irrelevante pro nome do arquivo em si)."""
+    caminho = _sem_acento(urlparse(url).path)
+    return any(p in caminho for p in _PADROES_IMAGEM_GENERICA)
+
+
+# dimensao minima aceita quando a PROPRIA pagina declara og:image:width/
+# height (SVG de logo/ícone de compartilhamento social costuma vir bem
+# pequeno, ex: 96x96 ou 120x120 - foto editorial de verdade quase sempre
+# passa de 300px de largura). So' usado quando o meta existe: ausencia de
+# largura/altura declarada NAO rejeita a imagem (muitos publishers nao
+# declaram, seria descartar foto valida por falta de metadado opcional).
+_LARGURA_MINIMA_IMAGEM_EDITORIAL = 200
+
+
+def _extrair_dimensao_declarada(sopa, seletor_largura: str, seletor_altura: str) -> tuple:
+    def _valor(seletor):
+        meta = sopa.select_one(seletor)
+        bruto = meta.get("content") if meta else None
+        try:
+            return int(str(bruto).strip())
+        except (TypeError, ValueError):
+            return None
+    return _valor(seletor_largura), _valor(seletor_altura)
+
+
+# --- Imagens: confirmar via rede (so' quando validar_imagem=True) --------
+# NUNCA chamado no caminho padrao de _extrair_texto_artigo/
+# _gerar_resumo_grupo (violaria a regra "zero requisicao de rede extra so
+# pra imagem", ver docstring de _gerar_resumo_grupo) - so' usado pelo
+# PRE-PROCESSAMENTO em lote (pregerar_resumos_news), que ja' tem
+# orcamento proprio de tempo/rede reservado pra isso (ver seção 5 do
+# pedido: "testar se a URL realmente retorna uma imagem utilizável").
+def _url_imagem_utilizavel(url: str) -> bool:
+    """HEAD curto (GET como fallback, pra servidor que nao suporta HEAD)
+    confirmando que a URL responde com Content-Type de imagem de verdade
+    e um tamanho minimo (descarta pixel de rastreio/ícone disfarçado de
+    foto) - nunca baixa o corpo inteiro (so' cabecalhos, ou um stream que
+    fecha logo apos ler o cabecalho). Qualquer falha (timeout, erro HTTP,
+    tipo errado) -> False, nunca lança exceção pra quem chama."""
+    if not url or not isinstance(url, str):
+        return False
+    try:
+        r = requests.head(url, headers=_HEADERS, timeout=(3, 5), allow_redirects=True)
+        if r.status_code >= 400 or r.status_code == 405 or not r.headers.get("Content-Type"):
+            r = requests.get(url, headers=_HEADERS, timeout=(3, 5), stream=True)
+        if r.status_code >= 400:
+            return False
+        tipo = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if not tipo.startswith("image/"):
+            return False
+        tamanho = r.headers.get("Content-Length")
+        if tamanho is not None:
+            try:
+                if int(tamanho) < 1024:  # provavel icone/pixel de rastreio, nao foto editorial
+                    return False
+            except ValueError:
+                pass
+        return True
+    except requests.RequestException:
+        return False
+    except Exception:
+        return False
+
+
 def _extrair_texto_artigo(link_google_news: str) -> tuple:
     """Resolve o link do Google News e tenta extrair o artigo por HTTP
     explícito antes do extrator. Alguns hosts respondem diferente ao
@@ -1328,6 +1464,20 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
     # dos atributos muda ou há espaços/aspas diferentes).
     sopa = BeautifulSoup(baixado, "html.parser")
     imagem = None
+
+    def _candidata_imagem(url_bruta):
+        """URL absoluta + descarta logo/favicon/placeholder por padrao de
+        nome (ver _imagem_parece_generica) - usado pelos 3 blocos de
+        extração abaixo (meta tags, JSON-LD, itemprop)."""
+        if not url_bruta:
+            return None
+        from urllib.parse import urljoin
+        candidata_abs = urljoin(link_real, url_bruta.strip())
+        validada = _url_imagem_valida(candidata_abs)
+        if not validada or _imagem_parece_generica(validada):
+            return None
+        return validada
+
     for seletor, atributo in (
         ('meta[property="og:image"]', "content"),
         ('meta[property="og:image:secure_url"]', "content"),
@@ -1337,11 +1487,20 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
     ):
         meta = sopa.select_one(seletor)
         candidata = meta.get(atributo) if meta else None
-        if candidata:
-            from urllib.parse import urljoin
-            imagem = _url_imagem_valida(urljoin(link_real, candidata.strip()))
-            if imagem:
-                break
+        imagem = _candidata_imagem(candidata)
+        if imagem:
+            break
+
+    # og:image:width (quando a PROPRIA pagina declara) descarta miniatura/
+    # icone de compartilhamento social disfarçado de capa (ex: 120x120) -
+    # ausencia do meta NUNCA rejeita a imagem (so' filtra quando a pagina
+    # de fato declarou uma dimensao pequena demais pra ser foto editorial).
+    if imagem:
+        largura, _altura = _extrair_dimensao_declarada(
+            sopa, 'meta[property="og:image:width"]', 'meta[property="og:image:height"]'
+        )
+        if largura is not None and largura < _LARGURA_MINIMA_IMAGEM_EDITORIAL:
+            imagem = None
 
     # Alguns publishers publicam a imagem principal apenas em JSON-LD.
     # Percorre metadados estruturados públicos sem executar scripts.
@@ -1374,8 +1533,7 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
             except (ValueError, TypeError):
                 continue
             for candidata in _urls_imagem_jsonld(estrutura):
-                from urllib.parse import urljoin
-                imagem = _url_imagem_valida(urljoin(link_real, candidata.strip()))
+                imagem = _candidata_imagem(candidata)
                 if imagem:
                     break
             if imagem:
@@ -1383,9 +1541,7 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
         if not imagem:
             meta_itemprop = sopa.select_one('[itemprop="image"][content], [itemprop="image"][src]')
             candidata = (meta_itemprop.get("content") or meta_itemprop.get("src")) if meta_itemprop else None
-            if candidata:
-                from urllib.parse import urljoin
-                imagem = _url_imagem_valida(urljoin(link_real, candidata.strip()))
+            imagem = _candidata_imagem(candidata)
 
     texto = None
     try:
@@ -1400,7 +1556,9 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
         dados = json.loads(bruto) if bruto else {}
         texto = (dados.get("text") or "").strip() or None
         if not imagem:
-            imagem = _url_imagem_valida(dados.get("image"))
+            candidata_trafilatura = _url_imagem_valida(dados.get("image"))
+            if candidata_trafilatura and not _imagem_parece_generica(candidata_trafilatura):
+                imagem = candidata_trafilatura
     except Exception:
         pass
 
@@ -1548,6 +1706,50 @@ def separar_secoes_resumo(resumo: str) -> tuple:
     return paragrafos, leitura
 
 
+# --- Gate de qualidade: rejeitar resumo generico (v3, 2026-10-15) -------
+# o prompt (_PROMPT_SISTEMA_RESUMO/_MANCHETES) já pede pra NUNCA usar
+# frases de preenchimento nem parafrasear a manchete - isto aqui é a rede
+# de segurança automática pros casos em que o modelo não obedece (achado
+# real: Groq free tier ocasionalmente ignora regra de prompt sob texto-
+# fonte pobre). Resumo reprovado NUNCA é cacheado nem devolvido como
+# sucesso - _gerar_resumo_grupo trata como falha dessa fonte/caminho e
+# segue pro próximo fallback, exatamente como uma falha de extração.
+_FRASES_GENERICAS_PROIBIDAS = (
+    "o mercado segue atento", "mercado segue atento",
+    "e importante acompanhar os proximos movimentos",
+    "importante acompanhar os proximos movimentos",
+    "o cenario pode impactar investidores", "cenario pode impactar investidores",
+    "resta saber como o mercado vai reagir",
+    "vale a pena acompanhar de perto",
+    "os investidores devem ficar de olho", "investidores devem ficar de olho",
+    "e preciso acompanhar os desdobramentos",
+    "o mercado deve reagir", "fique atento aos proximos passos",
+)
+
+
+def _resumo_e_generico(resumo: str, titulo: str) -> bool:
+    """True quando o CORPO do resumo (bloco RESUMO, sem a LEITURA DE
+    MERCADO) é, na prática, preenchimento vazio: ou contém uma das frases
+    proibidas (ver _FRASES_GENERICAS_PROIBIDAS), ou é, em essência, a
+    MESMA manchete com outras palavras (sobreposição de tokens altíssima
+    e sem palavra nova relevante) - os dois sintomas que o prompt proíbe
+    explicitamente mas que um modelo às vezes ainda produz sob texto-
+    fonte pobre. Nunca lança excecao (resumo/titulo vazios -> False, não
+    é "genérico", é "vazio" - tratado em outro lugar)."""
+    if not resumo or not titulo:
+        return False
+    paragrafos, _ = separar_secoes_resumo(resumo)
+    corpo = _sem_acento(" ".join(paragrafos))
+    if any(f in corpo for f in _FRASES_GENERICAS_PROIBIDAS):
+        return True
+    tokens_corpo = _tokens_similaridade(" ".join(paragrafos), "")
+    tokens_titulo = _tokens_similaridade(titulo, "")
+    if tokens_titulo and len(tokens_corpo) <= len(tokens_titulo) + 3:
+        if _similaridade(tokens_corpo, tokens_titulo) >= 0.85:
+            return True
+    return False
+
+
 def _combinar_fragmentos(fragmentos: list, titulos_unicos: tuple) -> str:
     """Junta pedaços curtos de texto de fontes diferentes do grupo (cada
     um curto demais sozinho pra resumir, ver _MIN_CHARS_TEXTO) com as
@@ -1571,7 +1773,7 @@ def _resumir_das_manchetes(titulo: str, titulos: tuple) -> tuple:
     return _chamar_groq(_PROMPT_SISTEMA_RESUMO_MANCHETES, prompt_usuario)
 
 
-def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()) -> dict:
+def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (), validar_imagem: bool = False) -> dict:
     """Resumo de um GRUPO de noticias (mesmo fato, possivelmente varias
     fontes) - tenta cada fonte do grupo, na ordem recebida (ver
     ordenar_fontes_para_resumo), ate uma dar certo: resolve o link real,
@@ -1602,7 +1804,14 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
     combinados de VARIAS fontes, ou so'-manchetes) fica None de proposito
     - misturar texto de paginas diferentes e' aceitavel pro resumo
     (sintese), mas escolher a foto de UMA dessas paginas pra representar
-    o grupo inteiro seria arbitrario."""
+    o grupo inteiro seria arbitrario.
+
+    validar_imagem=True (so' usado pelo PRE-PROCESSAMENTO em lote, ver
+    pregerar_resumos_news): confirma por rede (_url_imagem_utilizavel)
+    que a imagem escolhida realmente responde como foto antes de
+    devolver/cachear - default False preserva o comportamento de sempre
+    (zero requisicao de rede extra) pro caminho sob-demanda (clique no
+    card abre o modal)."""
     # qual modelo Groq de fato gera o resumo - usado so' como metadado de
     # auditoria/debug na coluna "modelo" do cache global (data/ia_cache.py:
     # resumos_ia_cache); diferente do research, o NEWS nao tem fallback de
@@ -1625,7 +1834,16 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
             fragmentos_curtos.append(texto)
             continue
         resumo, motivo_groq = _resumir_com_groq(texto, titulo)
+        if resumo and _resumo_e_generico(resumo, titulo):
+            # modelo nao seguiu a regra do prompt (preenchimento generico
+            # ou mera parafrase da manchete) - nunca cacheia isso como
+            # sucesso; tenta a proxima fonte do grupo, exatamente como se
+            # esta fonte tivesse falhado.
+            ultimo_motivo = "resumo gerado era genérico/sem informação específica (descartado)"
+            resumo = None
         if resumo:
+            if validar_imagem and imagem and not _url_imagem_utilizavel(imagem):
+                imagem = None
             return {"resumo": resumo, "link_original": link_real, "imagem": imagem,
                     "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": False}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
@@ -1645,6 +1863,9 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
     if fragmentos_curtos:
         texto_combinado = _combinar_fragmentos(fragmentos_curtos, titulos_unicos)
         resumo, motivo_groq = _resumir_com_groq(texto_combinado, titulo)
+        if resumo and _resumo_e_generico(resumo, titulo):
+            ultimo_motivo = "resumo gerado era genérico/sem informação específica (descartado)"
+            resumo = None
         if resumo:
             return {"resumo": resumo, "link_original": None, "imagem": None,
                     "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": True}
@@ -1654,6 +1875,9 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
 
     if len(titulos_unicos) >= 2:
         resumo, motivo_groq = _resumir_das_manchetes(titulo, titulos_unicos)
+        if resumo and _resumo_e_generico(resumo, titulo):
+            ultimo_motivo = "resumo gerado era genérico/sem informação específica (descartado)"
+            resumo = None
         if resumo:
             return {"resumo": resumo, "link_original": None, "imagem": None,
                     "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": True}
@@ -1664,7 +1888,7 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
     return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": ultimo_motivo}
 
 
-def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()) -> dict:
+def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (), validar_imagem: bool = False) -> dict:
     """Resumo de um GRUPO de noticias - ver _gerar_resumo_grupo pro
     fluxo de geracao de verdade (inalterado). Esta funcao so' embrulha
     com o cache GLOBAL do Supabase (data/ia_cache.py): cache hit (outro
@@ -1672,13 +1896,16 @@ def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()
     gera e persiste pra todos os usuarios reutilizarem depois. Chave de
     cache = titulo+conjunto de links das fontes do grupo (ver
     ia_cache.chave_news) - nunca so' o ticker, e muda se uma fonte nova
-    entrar no grupo (tratado como documento diferente de proposito)."""
+    entrar no grupo (tratado como documento diferente de proposito).
+
+    validar_imagem: repassado pra _gerar_resumo_grupo - so' True quando
+    quem chama e' o pre-processamento em lote (pregerar_resumos_news)."""
     links = tuple(link for _, link in fontes_ordenadas)
     chave = ia_cache.chave_news(titulo, links)
     link_principal = fontes_ordenadas[0][1] if fontes_ordenadas else None
     return ia_cache.obter_resumo_com_cache(
         chave, link_principal, "news",
-        lambda: _gerar_resumo_grupo(titulo, fontes_ordenadas, titulos),
+        lambda: _gerar_resumo_grupo(titulo, fontes_ordenadas, titulos, validar_imagem=validar_imagem),
     )
 
 
@@ -1702,3 +1929,110 @@ def obter_resumos_prontos(grupos: list) -> dict:
         return {}
     encontrados = ia_cache.obter_varios(list(link_por_chave.keys()))
     return {link_por_chave[chave]: resultado for chave, resultado in encontrados.items()}
+
+
+# --- Pre-processamento em lote (reformulacao editorial, 2026-10-15) -----
+#
+# Problema que isto resolve (ver secao 4 do pedido): o feed editorial so'
+# mostra resumo/foto quando algum USUARIO ja' abriu aquele grupo antes
+# (obter_resumos_prontos so' LE o que ja' esta' cacheado, nunca gera - ver
+# acima); sem pre-processamento, a imensa maioria dos cards novos aparece
+# so' com manchete+metadados ate' alguem clicar. A solucao escolhida e' a
+# mais simples que se encaixa na arquitetura ja existente: reaproveitar o
+# COLETOR PERIODICO que ja roda a cada 30min no GitHub Actions
+# (coletor_local.py, ver .github/workflows/coletores-nuvem.yml) - ja' tem
+# as credenciais do Supabase, ja' roda fora de qualquer sessao Streamlit
+# e ja' usa o MESMO padrao de orcamento de tempo + rotacao de universo
+# (ver data/eventos_coleta.py:coletar_eventos_universo). Nao criamos fila/
+# worker novo nem infra separada - so' mais um passo dentro do coletor que
+# ja existe, chamando a MESMA obter_resumo_grupo que o clique no card ja
+# usa (cache-safe, protegido contra geracao duplicada concorrente - ver
+# data/ia_cache.py).
+#
+# Universo coberto por execucao, nesta ordem de prioridade:
+# 1. TOP MERCADO (BRASIL+INTERNACIONAL, ja' ranqueado por importancia e
+#    limitado a _TOP_MERCADO_QTD=20 itens) - e' o feed GLOBAL que todo
+#    usuario ve, maior retorno por resumo gerado.
+# 2. Noticias de uma FATIA ROTATIVA do universo de tickers (quem chama
+#    passa a fatia - ver coletor_local.py:_universo_rotativo - cobrindo o
+#    universo inteiro ao longo de varias execucoes, mesmo padrao do
+#    CALENDARIO).
+#
+# Nunca gera 2x o mesmo grupo (dedup por chave de cache ANTES de chamar a
+# IA) e nunca re-gera um grupo ja' cacheado por um usuario entre 2
+# execucoes do coletor (checa ia_cache.obter_varios antes). Orcamento de
+# tempo E contagem maxima de resumos por execucao (cota do Groq free tier
+# e' compartilhada com o research) - nunca roda indefinidamente.
+_ORCAMENTO_PREGERAR_RESUMOS_S = 4 * 60
+_MAX_RESUMOS_POR_EXECUCAO = 25
+
+
+def pregerar_resumos_news(tickers_universo: list) -> dict:
+    """Gera (e cacheia globalmente) os resumos/imagens ainda FALTANTES do
+    TOP MERCADO + da fatia de tickers recebida - chamado so' pelo coletor
+    periodico (coletor_local.py), nunca pelo app Streamlit em si (que so'
+    LE cache, ver obter_resumos_prontos/render_news). validar_imagem=True
+    aqui (unico chamador que usa isso) - o orcamento extra de rede pra
+    confirmar a foto so' vale a pena pro conteudo que vai ficar visivel
+    pra TODOS os usuarios, nao pro clique individual sob demanda.
+
+    Retorna stats: {"grupos_considerados", "ja_cacheados", "gerados",
+    "falhas", "tempo_esgotado"} - nunca lança excecao (falha isolada de 1
+    grupo/ticker nao aborta os demais, ver try/except por item)."""
+    limite = time.monotonic() + _ORCAMENTO_PREGERAR_RESUMOS_S
+    stats = {"grupos_considerados": 0, "ja_cacheados": 0, "gerados": 0, "falhas": 0, "tempo_esgotado": False}
+
+    grupos = []
+    try:
+        grupos.extend(obter_top_mercado_tudo("TODOS") or [])
+    except Exception:
+        logging.exception("pregerar_resumos_news: falha ao coletar TOP MERCADO")
+
+    for ticker in tickers_universo:
+        if time.monotonic() > limite:
+            stats["tempo_esgotado"] = True
+            break
+        try:
+            r = obter_noticias(ticker)
+            if r:
+                grupos.extend(r)
+        except Exception:
+            stats["falhas"] += 1
+            logging.exception("pregerar_resumos_news: falha ao coletar noticias de %s", ticker)
+
+    # dedup por chave de cache (um mesmo fato pode aparecer no TOP
+    # MERCADO E na busca por ticker) - mais recente primeiro, ja' e' a
+    # ordem devolvida por obter_noticias/obter_top_mercado_tudo
+    pendentes = []
+    vistos = set()
+    for g in grupos:
+        fontes_ordenadas = ordenar_fontes_para_resumo(g["fontes"])
+        links = tuple(link for _, link in fontes_ordenadas)
+        chave = ia_cache.chave_news(g["titulo"], links)
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        pendentes.append((chave, g, fontes_ordenadas))
+
+    stats["grupos_considerados"] = len(pendentes)
+    if not pendentes:
+        return stats
+
+    ja_prontos = ia_cache.obter_varios([chave for chave, _, _ in pendentes])
+    stats["ja_cacheados"] = len(ja_prontos)
+
+    for chave, g, fontes_ordenadas in pendentes:
+        if chave in ja_prontos:
+            continue
+        if stats["gerados"] >= _MAX_RESUMOS_POR_EXECUCAO or time.monotonic() > limite:
+            stats["tempo_esgotado"] = True
+            break
+        try:
+            titulos_grupo = tuple(g.get("titulos") or [g["titulo"]])
+            obter_resumo_grupo(g["titulo"], fontes_ordenadas, titulos_grupo, validar_imagem=True)
+            stats["gerados"] += 1
+        except Exception:
+            stats["falhas"] += 1
+            logging.exception("pregerar_resumos_news: falha ao gerar resumo de '%s'", g.get("titulo"))
+
+    return stats

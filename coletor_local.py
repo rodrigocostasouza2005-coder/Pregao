@@ -72,6 +72,7 @@ import config
 from data.coletores_status import registrar_tentativa
 from data.eventos import salvar_snapshot_calendario
 from data.eventos_coleta import coletar_eventos_universo
+from data.news import pregerar_resumos_news
 from data.research import coletar_todas_disponiveis
 from data.research.historico import coletar_snapshot_genial
 from data.research.store import apagar_itens_antigos
@@ -101,35 +102,60 @@ logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 
 _ARQUIVO_CHECKPOINT_CALENDARIO = Path(__file__).parent / "coletor_local_checkpoint_calendario.txt"
+# checkpoint PROPRIO do pre-processamento de resumos de NEWS (ver
+# pregerar_resumos_news) - arquivo separado do CALENDARIO acima, pra cada
+# rotacao avancar no seu proprio ritmo (sao universos/custos diferentes:
+# CALENDARIO processa RI+NEWS+CVM por ticker, NEWS so' busca o feed e
+# gera resumo quando falta - nao faz sentido acoplar os 2 offsets a um
+# so' arquivo).
+_ARQUIVO_CHECKPOINT_NEWS = Path(__file__).parent / "coletor_local_checkpoint_news.txt"
+# fatia de tickers processada por execucao pelo pre-processamento de NEWS
+# (ver pregerar_resumos_news) - cada busca por ticker e' uma chamada de
+# rede (RSS do Google News), mais potencialmente varias chamadas ao Groq;
+# um numero modesto aqui mantem a execucao de 30min previsivel mesmo
+# somada aos outros passos do coletor.
+_QTD_TICKERS_NEWS_POR_EXECUCAO = 15
 
 
-def _ler_e_avancar_checkpoint(tamanho_universo: int) -> int:
+def _ler_e_avancar_checkpoint(tamanho_universo: int, arquivo: Path = None) -> int:
     """Le o ultimo offset usado (arquivo local, 1 inteiro) pra ESTA
     execucao e ja' avanca +1 (mod tamanho_universo) pra' PROXIMA - um
     contador persistido que sempre avanca +1 cobre o universo INTEIRO em
     exatamente `tamanho_universo` execucoes, pra QUALQUER tamanho de
     universo. Arquivo ausente/corrompido -> comeca do offset 0 (nunca
     lanca excecao - pior caso e' repetir o mesmo offset 1x, nao travar a
-    coleta)."""
+    coleta).
+
+    `arquivo` (default None -> _ARQUIVO_CHECKPOINT_CALENDARIO): permite
+    rotacionar universos diferentes com checkpoints independentes (ver
+    _ARQUIVO_CHECKPOINT_NEWS) sem duplicar esta funcao - resolvido DENTRO
+    do corpo (nao como valor default do parametro) de proposito, pra
+    continuar respeitando um patch.object(coletor_local,
+    "_ARQUIVO_CHECKPOINT_CALENDARIO", ...) nos testes, que so' funciona
+    se a funcao ler o atributo do MODULO a cada chamada."""
+    arquivo = arquivo if arquivo is not None else _ARQUIVO_CHECKPOINT_CALENDARIO
     try:
-        offset_atual = int(_ARQUIVO_CHECKPOINT_CALENDARIO.read_text(encoding="utf-8").strip())
+        offset_atual = int(arquivo.read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
         offset_atual = 0
     tamanho_universo = max(tamanho_universo, 1)
     offset_atual %= tamanho_universo
     proximo = (offset_atual + 1) % tamanho_universo
     try:
-        _ARQUIVO_CHECKPOINT_CALENDARIO.write_text(str(proximo), encoding="utf-8")
+        arquivo.write_text(str(proximo), encoding="utf-8")
     except OSError:
         pass  # nao essencial - pior caso, repete o mesmo offset na proxima execucao
     return offset_atual
 
 
-def _universo_rotativo(tickers: list, offset: int = None) -> list:
+def _universo_rotativo(tickers: list, offset: int = None, arquivo_checkpoint: Path = None) -> list:
     """Rotaciona o ponto de partida do universo via um CHECKPOINT
     PERSISTIDO (arquivo local, ver _ler_e_avancar_checkpoint) - `offset`
     explicito e' so' pra teste deterministico; em producao (offset=None)
-    usa o checkpoint real.
+    usa o checkpoint real. `arquivo_checkpoint` (default None ->
+    _ARQUIVO_CHECKPOINT_CALENDARIO, ver _ler_e_avancar_checkpoint) deixa
+    outro universo (ex: NEWS, ver pregerar_resumos_news) rotacionar com
+    seu PROPRIO checkpoint, independente do CALENDARIO.
 
     Bug real corrigido (2026-10-09, FASE 8): coletar_eventos_universo tem
     orcamento de tempo fixo (eventos_coleta._ORCAMENTO_TOTAL_S = 5min) e
@@ -174,9 +200,9 @@ def _universo_rotativo(tickers: list, offset: int = None) -> list:
             try:
                 offset = max(0, int(numero_execucao_nuvem) - 1)
             except (TypeError, ValueError):
-                offset = _ler_e_avancar_checkpoint(len(tickers))
+                offset = _ler_e_avancar_checkpoint(len(tickers), arquivo_checkpoint)
         else:
-            offset = _ler_e_avancar_checkpoint(len(tickers))
+            offset = _ler_e_avancar_checkpoint(len(tickers), arquivo_checkpoint)
     offset %= len(tickers)
     return tickers[offset:] + tickers[:offset]
 
@@ -211,6 +237,29 @@ def main() -> int:
         logger.info("  historico de recomendacoes: fonte indisponivel (WAF/rede) ou nenhuma recomendacao retornada")
     else:
         logger.info(f"  historico de recomendacoes: {n_comparados} ticker(s) comparado(s), {n_mudancas} mudanca(s) real(is) registrada(s)")
+
+    # pre-processamento dos resumos editoriais de NEWS (reformulacao
+    # 2026-10-15, ver data/news.py:pregerar_resumos_news) - cobre o TOP
+    # MERCADO (global) + uma fatia rotativa do universo de tickers, pra o
+    # feed editorial ja' chegar com resumo/foto pronto pro usuario, sem
+    # depender de alguem ter clicado no card antes. Checkpoint PROPRIO
+    # (_ARQUIVO_CHECKPOINT_NEWS, nao o do CALENDARIO) - universos e custo
+    # por item diferentes, cada rotacao avanca no seu ritmo.
+    fatia_news = _universo_rotativo(
+        list(config.IBOVESPA_SETORES.keys()), arquivo_checkpoint=_ARQUIVO_CHECKPOINT_NEWS,
+    )[:_QTD_TICKERS_NEWS_POR_EXECUCAO]
+    stats_news = pregerar_resumos_news(fatia_news)
+    logger.info(
+        f"  resumos de NEWS: {stats_news['grupos_considerados']} grupo(s) considerado(s), "
+        f"{stats_news['ja_cacheados']} ja' cacheado(s), {stats_news['gerados']} gerado(s) agora, "
+        f"{stats_news['falhas']} falha(s)"
+        + (" - orcamento esgotado" if stats_news["tempo_esgotado"] else "")
+    )
+    registrar_tentativa(
+        "NEWS (resumos)", "Groq + extração de matéria", execucao_ok=True,
+        registros_novos=stats_news["gerados"], parcial=bool(stats_news["tempo_esgotado"] or stats_news["falhas"]),
+        categoria="Noticias",
+    )
 
     # datas reais de resultado (RI->NEWS->PRAZO_CVM, 2026-10-02) - ver
     # data/eventos_coleta.py. Orcamento proprio de tempo (5min), pode nao

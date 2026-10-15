@@ -126,7 +126,10 @@ def test_3e_mudanca_de_tamanho_do_universo_nunca_lanca_indexerror():
     _checar("2e offset salvo maior que o novo tamanho -> modulo, nunca IndexError", offset == 0, f"(offset={offset})")
 
 
-def _rodar_main_mockado(stats_eventos: dict, snapshot_ok: bool):
+_STATS_NEWS_VAZIO = {"grupos_considerados": 0, "ja_cacheados": 0, "gerados": 0, "falhas": 0, "tempo_esgotado": False}
+
+
+def _rodar_main_mockado(stats_eventos: dict, snapshot_ok: bool, stats_news: dict = None):
     """Roda coletor_local.main() com toda dependencia de rede/Supabase
     mockada - retorna os kwargs da chamada registrar_tentativa('CALENDARIO', ...).
     resultado/historico vazios de proposito (nao e' o que este teste cobre)."""
@@ -134,12 +137,20 @@ def _rodar_main_mockado(stats_eventos: dict, snapshot_ok: bool):
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=stats_news or _STATS_NEWS_VAZIO), \
          patch.object(coletor_local, "coletar_eventos_universo", return_value=stats_eventos), \
          patch.object(coletor_local, "salvar_snapshot_calendario", return_value=snapshot_ok), \
          patch.object(coletor_local, "registrar_tentativa") as mock_reg:
         coletor_local.main()
     for args, kwargs in mock_reg.call_args_list:
         if args[0] == "CALENDARIO":
+            return kwargs
+    return None
+
+
+def _kwargs_registrar(mock_reg, nome: str):
+    for args, kwargs in mock_reg.call_args_list:
+        if args[0] == nome:
             return kwargs
     return None
 
@@ -189,11 +200,90 @@ def test_4e_timeout_calendario_retorna_codigo_erro_ao_agendador():
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO), \
          patch.object(coletor_local, "coletar_eventos_universo", return_value=stats), \
          patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
          patch.object(coletor_local, "registrar_tentativa"):
         codigo = coletor_local.main()
     _checar("2e timeout -> exit code 1 (execucao incompleta visivel ao Agendador)", codigo == 1,
+            f"(codigo={codigo})")
+
+
+# ============================================================
+# pre-processamento de NEWS (reformulacao editorial, 2026-10-15, ver
+# data/news.py:pregerar_resumos_news) - checkpoint PROPRIO (nao o do
+# CALENDARIO) e registro de SAUDE DOS DADOS.
+# ============================================================
+
+def test_5a_news_usa_checkpoint_proprio_nao_o_do_calendario():
+    """_universo_rotativo e' chamado 2x dentro de main() (CALENDARIO e
+    NEWS) - cada chamada precisa passar o arquivo de checkpoint certo,
+    nunca os dois com o mesmo (senao as 2 rotacoes andam acopladas sem
+    necessidade - ver docstring de _universo_rotativo)."""
+    stats = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
+              "tempo_esgotado": False, "tabela_disponivel": True}
+    chamadas = []
+
+    def _fake_rotativo(tickers, offset=None, arquivo_checkpoint=None):
+        chamadas.append(arquivo_checkpoint)
+        return [f"T{i}" for i in range(30)]  # universo grande o bastante pra testar o corte
+
+    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "_universo_rotativo", side_effect=_fake_rotativo), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO) as mock_pregen, \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa"):
+        coletor_local.main()
+    _checar("5a 2 chamadas de _universo_rotativo (CALENDARIO + NEWS)", len(chamadas) == 2, f"(chamadas={chamadas})")
+    _checar("5b uma delas usa o checkpoint do NEWS", coletor_local._ARQUIVO_CHECKPOINT_NEWS in chamadas,
+            f"(chamadas={chamadas})")
+    _checar("5c a outra usa o checkpoint do CALENDARIO (ou o default None)",
+            any(c != coletor_local._ARQUIVO_CHECKPOINT_NEWS for c in chamadas), f"(chamadas={chamadas})")
+    _checar("5d pregerar_resumos_news foi chamado exatamente 1x", mock_pregen.call_count == 1)
+    _checar("5e pregerar_resumos_news recebeu exatamente _QTD_TICKERS_NEWS_POR_EXECUCAO tickers (universo fake tem 30)",
+            len(mock_pregen.call_args[0][0]) == coletor_local._QTD_TICKERS_NEWS_POR_EXECUCAO,
+            f"(recebido={len(mock_pregen.call_args[0][0])})")
+
+
+def test_5f_registra_saude_dados_news_resumos():
+    stats_news = {"grupos_considerados": 8, "ja_cacheados": 3, "gerados": 5, "falhas": 0, "tempo_esgotado": False}
+    stats_eventos = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
+                      "tempo_esgotado": False, "tabela_disponivel": True}
+    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=stats_news), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats_eventos), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa") as mock_reg:
+        coletor_local.main()
+    kwargs = _kwargs_registrar(mock_reg, "NEWS (resumos)")
+    _checar("5g registrar_tentativa('NEWS (resumos)', ...) foi chamado", kwargs is not None)
+    _checar("5h registros_novos reflete 'gerados'", kwargs.get("registros_novos") == 5, f"({kwargs})")
+    _checar("5i execucao_ok=True (pre-processamento nunca derruba o coletor)", kwargs.get("execucao_ok") is True)
+    _checar("5j parcial=False (nem tempo esgotado nem falha)", kwargs.get("parcial") is False, f"({kwargs})")
+
+
+def test_5k_news_tempo_esgotado_marca_parcial_mas_nao_falha_exit_code():
+    stats_news = {"grupos_considerados": 20, "ja_cacheados": 0, "gerados": 25, "falhas": 0, "tempo_esgotado": True}
+    stats_eventos = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
+                      "tempo_esgotado": False, "tabela_disponivel": True}
+    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=stats_news), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats_eventos), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa") as mock_reg:
+        codigo = coletor_local.main()
+    kwargs = _kwargs_registrar(mock_reg, "NEWS (resumos)")
+    _checar("5l orcamento de NEWS esgotado -> parcial=True", kwargs.get("parcial") is True, f"({kwargs})")
+    _checar("5m mas isso NUNCA derruba o exit code do coletor (pre-processamento e' soft)", codigo == 0,
             f"(codigo={codigo})")
 
 
