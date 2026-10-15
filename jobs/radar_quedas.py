@@ -3,7 +3,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from data.coletores_status import registrar_tentativa
+from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
 from data.radar_quedas import processar_monitoramento
 from data.supabase_client import obter_cliente
 from jobs.email_utils import enviar_email
@@ -77,6 +77,18 @@ def _enviar_alerta(cliente, alerta):
 
 
 def executar():
+    # Self-test de escrita+leitura ANTES de tentar persistir qualquer
+    # coisa (mesmo motivo de coletor_local.py: 1 diagnostico claro na
+    # raiz em vez de N excecoes "42501" repetidas, uma por tabela).
+    diagnostico = diagnosticar_persistencia()
+    if diagnostico["ok"]:
+        print("[radar_quedas] persistencia (self-test escrita+leitura): OK")
+    else:
+        print(
+            f"[radar_quedas] persistencia (self-test escrita+leitura): FALHOU "
+            f"na etapa {diagnostico['etapa']} - {diagnostico['detalhe']}"
+        )
+
     resultado = processar_monitoramento()
     cliente = obter_cliente()
     if cliente is None:

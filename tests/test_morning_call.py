@@ -81,3 +81,18 @@ def test_executar_registra_falha_quando_envio_nao_funciona(monkeypatch):
     assert codigo == 1
     assert chamadas[0][1]["execucao_ok"] is False
     assert chamadas[0][1]["erro"] == "Resend HTTP 401"
+
+
+def test_executar_chama_self_test_de_persistencia_antes_de_tudo(monkeypatch):
+    chamadas_diagnostico = []
+    monkeypatch.setattr(
+        mc, "diagnosticar_persistencia",
+        lambda: chamadas_diagnostico.append(1) or {"ok": True, "etapa": "OK", "detalhe": ""},
+    )
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
+    monkeypatch.setattr(mc, "enviar_email", lambda *_a, **_k: {"ok": True, "erro": None})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: None)
+
+    mc.executar()
+
+    assert len(chamadas_diagnostico) == 1

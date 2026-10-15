@@ -69,10 +69,9 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import config
-from data.coletores_status import registrar_tentativa
+from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
 from data.eventos import salvar_snapshot_calendario
 from data.eventos_coleta import coletar_eventos_universo
-from data.ia_cache import TABELA_AUSENTE as _NEWS_TABELA_AUSENTE
 from data.news import pregerar_resumos_news
 from data.research import coletar_todas_disponiveis
 from data.research.historico import coletar_snapshot_genial
@@ -211,6 +210,25 @@ def _universo_rotativo(tickers: list, offset: int = None, arquivo_checkpoint: Pa
 def main() -> int:
     logger.info("iniciando coleta local...")
 
+    # Self-test de persistencia ANTES de qualquer coletor (achado real,
+    # auditoria 2026-10-15): sem isso, uma credencial sem privilegio de
+    # escrita (ex: chave publica colada por engano em SUPABASE_SECRET_KEY)
+    # produzia a MESMA excecao "42501" repetida 1x por coletor/tabela, sem
+    # 1 diagnostico claro na raiz. So' loga - nunca aborta a execucao:
+    # a coleta em si (rede/parsing) continua valendo mesmo que a
+    # persistencia esteja quebrada, cada coletor ja degrada essa parte
+    # com seguranca por conta propria (ver docstrings de cada modulo).
+    diagnostico = diagnosticar_persistencia()
+    if diagnostico["ok"]:
+        logger.info("  persistencia (self-test escrita+leitura): OK")
+    else:
+        logger.warning(
+            f"  persistencia (self-test escrita+leitura): FALHOU na etapa "
+            f"{diagnostico['etapa']} - {diagnostico['detalhe']} "
+            "(nenhum coletor desta execucao vai conseguir gravar nada; "
+            "a extracao/parsing continua rodando mesmo assim)"
+        )
+
     resultado = coletar_todas_disponiveis()
     if not resultado:
         logger.info("nenhuma casa disponivel pra coletar (ver CASAS em data/research/__init__.py)")
@@ -249,32 +267,35 @@ def main() -> int:
     fatia_news = _universo_rotativo(
         list(config.IBOVESPA_SETORES.keys()), arquivo_checkpoint=_ARQUIVO_CHECKPOINT_NEWS,
     )[:_QTD_TICKERS_NEWS_POR_EXECUCAO]
-    stats_news = pregerar_resumos_news(fatia_news)
-    tabela_news_disponivel = stats_news.get("tabela_disponivel")
-    if tabela_news_disponivel is not True:
-        # tabela ausente/credencial invalida/Supabase fora do ar - pular
-        # ANTES de gastar 1 token de IA (ver docstring de
-        # pregerar_resumos_news) - acao exata pro Rodrigo quando for
-        # TABELA_AUSENTE: SQL Editor do Supabase > colar sql/ia_cache.sql > Run.
-        logger.warning(
-            f"  resumos de NEWS: pre-processamento pulado - tabela resumos_ia_cache "
-            f"indisponivel ({tabela_news_disponivel!r}). "
-            + ("Rode sql/ia_cache.sql no SQL Editor do Supabase (tabela nunca foi criada)."
-               if tabela_news_disponivel == _NEWS_TABELA_AUSENTE
-               else "Confira a credencial/conexao do Supabase (ver SAUDE DOS DADOS).")
-        )
-    else:
+    # Regressao corrigida (2026-10-15, continuacao da auditoria): o
+    # self-test de persistencia (diagnostico, calculado no INICIO de
+    # main()) so' estava sendo LOGADO - nada impedia pregerar_resumos_news
+    # de rodar mesmo com a escrita confirmada quebrada, voltando a queimar
+    # cota real do Groq (25 resumos/execucao) sem conseguir cachear
+    # nenhum. So' chama o pre-processamento quando o self-test confirma
+    # escrita+leitura reais ("ok": True) - substitui o guard antigo
+    # baseado em ia_cache.tabela_disponivel() (so' um SELECT, que RLS
+    # sem policy deixa passar vazio em vez de erro - nunca detectava
+    # INSERT bloqueado) pelo self-test de escrita+leitura real.
+    if diagnostico["ok"]:
+        stats_news = pregerar_resumos_news(fatia_news)
         logger.info(
             f"  resumos de NEWS: {stats_news['grupos_considerados']} grupo(s) considerado(s), "
             f"{stats_news['ja_cacheados']} ja' cacheado(s), {stats_news['gerados']} gerado(s) agora, "
             f"{stats_news['falhas']} falha(s)"
             + (" - orcamento esgotado" if stats_news["tempo_esgotado"] else "")
         )
+    else:
+        stats_news = {"grupos_considerados": 0, "ja_cacheados": 0, "gerados": 0, "falhas": 0, "tempo_esgotado": False}
+        logger.warning(
+            f"  resumos de NEWS: pre-processamento pulado - persistencia indisponivel "
+            f"(etapa {diagnostico['etapa']}: {diagnostico['detalhe']}). Zero chamada de IA foi feita."
+        )
     registrar_tentativa(
         "NEWS (resumos)", "Groq + extração de matéria",
-        execucao_ok=True, persistencia_ok=(tabela_news_disponivel is True),
+        execucao_ok=True, persistencia_ok=diagnostico["ok"],
         registros_novos=stats_news["gerados"], parcial=bool(stats_news["tempo_esgotado"] or stats_news["falhas"]),
-        erro=None if tabela_news_disponivel is True else f"tabela resumos_ia_cache indisponível ({tabela_news_disponivel!r})",
+        erro=None if diagnostico["ok"] else f"persistência indisponível (etapa {diagnostico['etapa']}): {diagnostico['detalhe']}",
         categoria="Noticias",
     )
 

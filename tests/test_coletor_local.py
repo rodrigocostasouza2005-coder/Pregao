@@ -134,7 +134,8 @@ def _rodar_main_mockado(stats_eventos: dict, snapshot_ok: bool, stats_news: dict
     """Roda coletor_local.main() com toda dependencia de rede/Supabase
     mockada - retorna os kwargs da chamada registrar_tentativa('CALENDARIO', ...).
     resultado/historico vazios de proposito (nao e' o que este teste cobre)."""
-    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -197,7 +198,8 @@ def test_4e_timeout_calendario_retorna_codigo_erro_ao_agendador():
     o Agendador do Windows precisa sinalizar que o universo ficou incompleto."""
     stats = {"processados": 3, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 3,
              "falhas": 0, "tempo_esgotado": True, "tabela_disponivel": True}
-    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -229,7 +231,8 @@ def test_5a_news_usa_checkpoint_proprio_nao_o_do_calendario():
         chamadas.append(arquivo_checkpoint)
         return [f"T{i}" for i in range(30)]  # universo grande o bastante pra testar o corte
 
-    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "_universo_rotativo", side_effect=_fake_rotativo), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -254,7 +257,8 @@ def test_5f_registra_saude_dados_news_resumos():
                   "tempo_esgotado": False, "tabela_disponivel": True}
     stats_eventos = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
                       "tempo_esgotado": False, "tabela_disponivel": True}
-    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -275,7 +279,8 @@ def test_5k_news_tempo_esgotado_marca_parcial_mas_nao_falha_exit_code():
                   "tempo_esgotado": True, "tabela_disponivel": True}
     stats_eventos = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
                       "tempo_esgotado": False, "tabela_disponivel": True}
-    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -290,32 +295,77 @@ def test_5k_news_tempo_esgotado_marca_parcial_mas_nao_falha_exit_code():
             f"(codigo={codigo})")
 
 
-def test_5n_tabela_resumos_ia_cache_ausente_registra_persistencia_falsa_sem_gastar_cota():
-    """Achado real 2026-10-15: resumos_ia_cache nunca foi criada em
-    produção - pregerar_resumos_news (mockado aqui) já aborta sem gastar
-    cota de IA e devolve tabela_disponivel=TABELA_AUSENTE; main() precisa
-    propagar isso pro SAUDE DOS DADOS (persistencia_ok=False, erro
-    citando a tabela) em vez de registrar como sucesso silencioso."""
-    stats_news = {"grupos_considerados": 0, "ja_cacheados": 0, "gerados": 0, "falhas": 0,
-                  "tempo_esgotado": False, "tabela_disponivel": "TABELA_AUSENTE"}
-    stats_eventos = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
-                      "tempo_esgotado": False, "tabela_disponivel": True}
-    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+def test_6a_main_chama_self_test_de_persistencia_antes_de_qualquer_coletor():
+    """Regressao 2026-10-15 (auditoria do secret errado em producao):
+    main() precisa rodar diagnosticar_persistencia() ANTES de
+    coletar_todas_disponiveis/coletar_eventos_universo/etc - sem isso, a
+    1a pista de uma credencial sem privilegio de escrita so' aparecia
+    como N excecoes "42501" espalhadas, 1 por coletor, nunca 1
+    diagnostico unico e claro na raiz."""
+    chamadas_diagnostico = []
+    with patch.object(coletor_local, "diagnosticar_persistencia",
+                       side_effect=lambda: chamadas_diagnostico.append(1) or {"ok": False, "etapa": "ESCRITA", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
-         patch.object(coletor_local, "pregerar_resumos_news", return_value=stats_news), \
-         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats_eventos), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value={"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0, "tempo_esgotado": False, "tabela_disponivel": True}), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa"):
+        coletor_local.main()
+    _checar("6a diagnosticar_persistencia chamado exatamente 1x", len(chamadas_diagnostico) == 1, f"({chamadas_diagnostico})")
+
+
+def test_6b_persistencia_quebrada_pula_pregen_de_news_sem_gastar_cota_de_ia():
+    """Regressao real encontrada na auditoria pos-16h: diagnosticar_persistencia()
+    sendo chamado (ver teste 6a) nao bastava por si so' - nada usava o
+    resultado pra EVITAR pregerar_resumos_news, que voltava a queimar
+    cota real do Groq (25 chamadas/execucao) mesmo com a escrita
+    confirmada quebrada. main() precisa pular o pre-processamento
+    inteiro (zero chamadas) quando diagnostico['ok'] for False."""
+    with patch.object(coletor_local, "diagnosticar_persistencia",
+                       return_value={"ok": False, "etapa": "ESCRITA", "detalhe": "new row violates row-level security policy"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news") as mock_pregen, \
+         patch.object(coletor_local, "coletar_eventos_universo",
+                       return_value={"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0, "tempo_esgotado": False, "tabela_disponivel": True}), \
          patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
          patch.object(coletor_local, "registrar_tentativa") as mock_reg:
         codigo = coletor_local.main()
+    _checar("6b pregerar_resumos_news NUNCA chamado (zero cota de IA gasta)", mock_pregen.call_count == 0)
     kwargs = _kwargs_registrar(mock_reg, "NEWS (resumos)")
-    _checar("5n persistencia_ok=False quando a tabela esta ausente", kwargs.get("persistencia_ok") is False, f"({kwargs})")
-    _checar("5o erro cita a tabela ausente", "resumos_ia_cache" in (kwargs.get("erro") or ""), f"({kwargs})")
-    _checar("5p registros_novos=0 (nada foi gerado - abortou antes)", kwargs.get("registros_novos") == 0, f"({kwargs})")
-    _checar("5q execucao_ok continua True (nunca derruba o coletor)", kwargs.get("execucao_ok") is True)
-    _checar("5r tabela ausente nao derruba o exit code do coletor (soft, mesmo padrao de historico de recomendacoes)",
-            codigo == 0, f"(codigo={codigo})")
+    _checar("6c persistencia_ok=False propagado pro SAUDE DOS DADOS", kwargs.get("persistencia_ok") is False, f"({kwargs})")
+    _checar("6d erro cita a etapa do self-test", "ESCRITA" in (kwargs.get("erro") or ""), f"({kwargs})")
+    _checar("6e registros_novos=0 (nada foi gerado)", kwargs.get("registros_novos") == 0, f"({kwargs})")
+    _checar("6f execucao_ok continua True e exit code nao quebra (soft)", kwargs.get("execucao_ok") is True and codigo == 0,
+            f"(kwargs={kwargs}, codigo={codigo})")
+
+
+def test_6g_persistencia_ok_roda_pregen_normalmente():
+    """Confirma que o guard so' bloqueia quando diagnostico falha - com
+    persistencia OK, pregerar_resumos_news continua rodando normalmente
+    (nenhuma regressao introduzida por este guard)."""
+    stats_news = {"grupos_considerados": 5, "ja_cacheados": 2, "gerados": 3, "falhas": 0, "tempo_esgotado": False}
+    with patch.object(coletor_local, "diagnosticar_persistencia",
+                       return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=stats_news) as mock_pregen, \
+         patch.object(coletor_local, "coletar_eventos_universo",
+                       return_value={"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0, "tempo_esgotado": False, "tabela_disponivel": True}), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa") as mock_reg:
+        coletor_local.main()
+    _checar("6h pregerar_resumos_news chamado normalmente", mock_pregen.call_count == 1)
+    kwargs = _kwargs_registrar(mock_reg, "NEWS (resumos)")
+    _checar("6i persistencia_ok=True", kwargs.get("persistencia_ok") is True, f"({kwargs})")
+    _checar("6j registros_novos reflete o que pregerar_resumos_news devolveu", kwargs.get("registros_novos") == 3, f"({kwargs})")
 
 
 if __name__ == "__main__":

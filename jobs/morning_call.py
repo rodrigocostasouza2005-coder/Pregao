@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from data.coletores_status import registrar_tentativa
+from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
 from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta
 from data.mercado import obter_cotacoes_lote
 from data.news import obter_top_mercado_tudo
@@ -121,6 +121,18 @@ def montar_morning_call(agora=None):
 
 
 def executar():
+    # Self-test de escrita+leitura ANTES do envio (mesmo motivo de
+    # coletor_local.py/jobs/radar_quedas.py: diagnostico claro na raiz
+    # em vez de uma falha de persistencia sem explicacao).
+    diagnostico = diagnosticar_persistencia()
+    if diagnostico["ok"]:
+        print("[morning_call] persistencia (self-test escrita+leitura): OK")
+    else:
+        print(
+            f"[morning_call] persistencia (self-test escrita+leitura): FALHOU "
+            f"na etapa {diagnostico['etapa']} - {diagnostico['detalhe']}"
+        )
+
     agora = datetime.now(TZ_SP)
     texto = montar_morning_call(agora)
     resultado = enviar_email(f"[PREGÃO] Morning Call — {agora.strftime('%d/%m/%Y')}", texto)
