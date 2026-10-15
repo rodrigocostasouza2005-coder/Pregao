@@ -58,3 +58,19 @@ Preencher `.streamlit/secrets.toml` (veja `secrets.toml.example`) com as credenc
 ## Resiliência
 
 Se alguma fonte de dados falhar (yfinance, Supabase, Genial/XP, CVM, Groq), aparece um aviso no painel ou o último dado válido conhecido é reaproveitado — o resto do app continua funcionando. O projeto nunca inventa um valor quando a fonte real não responde.
+
+
+## E-mails automatizados (Radar e Morning Call)
+
+Os envios aceitam dois provedores. Para usar a API do Resend (sem senha SMTP), configure em **GitHub → Settings → Secrets and variables → Actions**:
+
+- `EMAIL_PROVIDER=resend`
+- `RESEND_API_KEY`: chave secreta gerada na conta Resend
+- `EMAIL_FROM`: remetente/domínio autorizado e verificado no Resend
+- `EMAIL_TO`: endereço que receberá os alertas e o Morning Call
+
+A chave deve ser criada no painel do Resend e salva diretamente como GitHub Secret; não a coloque no código nem em mensagens. O remetente precisa estar autorizado/verificado pelo Resend, conforme as regras da conta. Não é necessário configurar `SMTP_PASSWORD` quando `EMAIL_PROVIDER=resend`.
+
+Para manter o provedor SMTP existente, use `EMAIL_PROVIDER=smtp` (ou deixe a variável ausente) e configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` e `EMAIL_TO`.
+
+A troca de provedor não altera a lógica do Radar nem do Morning Call. Os envios só serão efetivos depois que os secrets e um remetente autorizado estiverem configurados.
