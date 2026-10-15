@@ -29,9 +29,11 @@ clique reconstruia todos os widgets da lista do zero, mesmo com os dados
 ja vindo de cache)."""
 
 import html
+from io import BytesIO
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+import requests
 import streamlit as st
 
 from data.news import (
@@ -608,6 +610,67 @@ def _linha_veiculos(fontes: list) -> str:
     return linha
 
 
+@st.cache_data(ttl=3600, max_entries=80, show_spinner=False)
+def _baixar_imagem_capa(url: str) -> bytes | None:
+    """Baixa a imagem no servidor do Pregão, evitando hotlink/CORS e URLs
+    que o Safari/iOS ou o navegador não conseguem carregar diretamente.
+    Limita tamanho, tempo e tipo de conteúdo; falha vira fallback, nunca
+    derruba a abertura da notícia."""
+    if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+        return None
+    try:
+        with requests.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; PregaoNews/1.0)",
+                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            },
+            timeout=(3.05, 7),
+            stream=True,
+            allow_redirects=True,
+        ) as response:
+            response.raise_for_status()
+            tipo = (response.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if not tipo.startswith("image/"):
+                return None
+            tamanho = response.headers.get("Content-Length")
+            if tamanho and int(tamanho) > 8 * 1024 * 1024:
+                return None
+            partes = []
+            total = 0
+            for parte in response.iter_content(chunk_size=64 * 1024):
+                if not parte:
+                    continue
+                total += len(parte)
+                if total > 8 * 1024 * 1024:
+                    return None
+                partes.append(parte)
+            dados = b"".join(partes)
+            if not dados:
+                return None
+            # Valida que o payload é realmente uma imagem decodificável.
+            from PIL import Image
+            with Image.open(BytesIO(dados)) as img:
+                img.verify()
+            return dados
+    except Exception:
+        return None
+
+
+def _renderizar_capa(imagem: str | None, veiculo_principal: str) -> None:
+    """Renderiza a capa com st.image a partir de bytes baixados pelo backend.
+    Isso evita depender do navegador para acessar o host externo da foto."""
+    marca = veiculo_principal or "NOTÍCIA"
+    dados = _baixar_imagem_capa(imagem) if imagem else None
+    if dados:
+        st.image(dados, use_container_width=True)
+    else:
+        st.markdown(
+            _capa_html(None, marca),
+            unsafe_allow_html=True,
+        )
+
+
 def _capa_html(imagem: str | None, veiculo_principal: str) -> str:
     """Capa do modal editorial - imagem real da materia (og:image, ja'
     extraida junto do texto - ver data/news.py:_extrair_texto_artigo,
@@ -713,7 +776,7 @@ def _abrir_card(n: dict, watchlist: list):
         resultado = obter_resumo_grupo(n["titulo"], fontes_ordenadas, titulos_grupo)
 
     veiculo_principal = (n.get("veiculos") or [""])[0]
-    st.markdown(_capa_html(resultado.get("imagem"), veiculo_principal), unsafe_allow_html=True)
+    _renderizar_capa(resultado.get("imagem"), veiculo_principal)
     st.markdown(f"<div class='news-headline'>{html.escape(n['titulo'])}</div>", unsafe_allow_html=True)
     st.markdown(_meta_line_dialog(n), unsafe_allow_html=True)
 
