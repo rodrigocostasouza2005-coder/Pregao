@@ -728,6 +728,14 @@ def _renderizar_capa(imagem: str | None, veiculo_principal: str) -> None:
     dados = _baixar_imagem_capa(imagem) if imagem else None
     if dados:
         st.image(dados, use_container_width=True)
+    elif imagem and isinstance(imagem, str) and imagem.startswith(("https://", "http://")):
+        # Segunda via: se o download/validação do proxy falhar (CDN que
+        # rejeita User-Agent ou Content-Type incorreto), deixar o renderer
+        # do Streamlit tentar buscar a URL pública diretamente.
+        try:
+            st.image(imagem, use_container_width=True)
+        except Exception:
+            st.markdown(_capa_html(None, marca), unsafe_allow_html=True)
     else:
         st.markdown(
             _capa_html(None, marca),
