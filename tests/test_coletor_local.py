@@ -134,7 +134,8 @@ def _rodar_main_mockado(stats_eventos: dict, snapshot_ok: bool, stats_news: dict
     """Roda coletor_local.main() com toda dependencia de rede/Supabase
     mockada - retorna os kwargs da chamada registrar_tentativa('CALENDARIO', ...).
     resultado/historico vazios de proposito (nao e' o que este teste cobre)."""
-    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -197,7 +198,8 @@ def test_4e_timeout_calendario_retorna_codigo_erro_ao_agendador():
     o Agendador do Windows precisa sinalizar que o universo ficou incompleto."""
     stats = {"processados": 3, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 3,
              "falhas": 0, "tempo_esgotado": True, "tabela_disponivel": True}
-    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -229,7 +231,8 @@ def test_5a_news_usa_checkpoint_proprio_nao_o_do_calendario():
         chamadas.append(arquivo_checkpoint)
         return [f"T{i}" for i in range(30)]  # universo grande o bastante pra testar o corte
 
-    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "_universo_rotativo", side_effect=_fake_rotativo), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -254,7 +257,8 @@ def test_5f_registra_saude_dados_news_resumos():
                   "tempo_esgotado": False, "tabela_disponivel": True}
     stats_eventos = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
                       "tempo_esgotado": False, "tabela_disponivel": True}
-    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -275,7 +279,8 @@ def test_5k_news_tempo_esgotado_marca_parcial_mas_nao_falha_exit_code():
                   "tempo_esgotado": True, "tabela_disponivel": True}
     stats_eventos = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
                       "tempo_esgotado": False, "tabela_disponivel": True}
-    with patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
