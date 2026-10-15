@@ -294,6 +294,7 @@ def test_3a_dedup_entre_top_mercado_e_busca_por_ticker():
     with patch.object(news_mod, "obter_top_mercado_tudo", return_value=[grupo]), \
          patch.object(news_mod, "obter_noticias", return_value=[grupo]), \
          patch.object(news_mod.ia_cache, "obter_varios", return_value={}), \
+         patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
          patch.object(news_mod, "obter_resumo_grupo", side_effect=_fake_obter_resumo_grupo):
         stats = news_mod.pregerar_resumos_news(["PETR4"])
     _checar("3a 1 grupo considerado (dedup pelo mesmo link/título)", stats["grupos_considerados"] == 1, f"({stats})")
@@ -310,6 +311,7 @@ def test_3d_grupo_ja_cacheado_nunca_chama_a_ia_de_novo():
     with patch.object(news_mod, "obter_top_mercado_tudo", return_value=[grupo]), \
          patch.object(news_mod, "obter_noticias", return_value=[]), \
          patch.object(news_mod.ia_cache, "obter_varios", return_value={chave: {"resumo": "já cacheado"}}), \
+         patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
          patch.object(news_mod, "obter_resumo_grupo") as mock_gerar:
         stats = news_mod.pregerar_resumos_news([])
     _checar("3e grupo já cacheado -> 0 chamadas de IA", mock_gerar.call_count == 0)
@@ -325,6 +327,7 @@ def test_3g_respeita_contagem_maxima_de_resumos_por_execucao():
     with patch.object(news_mod, "obter_top_mercado_tudo", return_value=grupos), \
          patch.object(news_mod, "obter_noticias", return_value=[]), \
          patch.object(news_mod.ia_cache, "obter_varios", return_value={}), \
+         patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
          patch.object(news_mod, "obter_resumo_grupo", side_effect=_fake_obter_resumo_grupo) as mock_gerar:
         stats = news_mod.pregerar_resumos_news([])
     _checar("3h nunca gera mais que _MAX_RESUMOS_POR_EXECUCAO por execução",
@@ -341,6 +344,7 @@ def test_3j_respeita_orcamento_de_tempo():
     with patch.object(news_mod, "obter_top_mercado_tudo", return_value=grupos), \
          patch.object(news_mod, "obter_noticias", return_value=[]), \
          patch.object(news_mod.ia_cache, "obter_varios", return_value={}), \
+         patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
          patch.object(news_mod, "obter_resumo_grupo", side_effect=_fake_obter_resumo_grupo) as mock_gerar, \
          patch.object(news_mod.time, "monotonic", side_effect=[0.0] + [10 ** 9] * 20):
         stats = news_mod.pregerar_resumos_news([])
@@ -359,6 +363,7 @@ def test_3m_falha_isolada_em_1_ticker_nao_aborta_os_demais():
     with patch.object(news_mod, "obter_top_mercado_tudo", return_value=[]), \
          patch.object(news_mod, "obter_noticias", side_effect=_fake_obter_noticias), \
          patch.object(news_mod.ia_cache, "obter_varios", return_value={}), \
+         patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
          patch.object(news_mod, "obter_resumo_grupo", return_value={"resumo": "RESUMO:\nTexto.", "imagem": None, "motivo_indisponivel": None}):
         stats = news_mod.pregerar_resumos_news(["QUEBRA3", "OK4"])
     _checar("3n 1 falha registrada (ticker QUEBRA3)", stats["falhas"] == 1, f"({stats})")
@@ -368,9 +373,102 @@ def test_3m_falha_isolada_em_1_ticker_nao_aborta_os_demais():
 def test_3p_top_mercado_indisponivel_nao_quebra_o_pregen():
     with patch.object(news_mod, "obter_top_mercado_tudo", side_effect=RuntimeError("fonte fora do ar")), \
          patch.object(news_mod, "obter_noticias", return_value=[]), \
-         patch.object(news_mod.ia_cache, "obter_varios", return_value={}):
+         patch.object(news_mod.ia_cache, "obter_varios", return_value={}), \
+         patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True):
         stats = news_mod.pregerar_resumos_news([])
     _checar("3q TOP MERCADO indisponível -> nunca lança exceção, 0 grupos", stats["grupos_considerados"] == 0, f"({stats})")
+
+
+# ============================================================
+# 4. ia_cache.tabela_disponivel() + abort antecipado do pregen
+#    (achado real 2026-10-15: resumos_ia_cache nunca foi criada em
+#    produção - sql/ia_cache.sql nunca rodou lá - e sem esta checagem
+#    pregerar_resumos_news gastava cota REAL do Groq em toda execução do
+#    coletor sem conseguir cachear nada, porque a escrita falhava depois
+#    do gerar_fn() já ter rodado de verdade).
+# ============================================================
+
+def test_4a_tabela_disponivel_true_quando_consulta_responde():
+    with patch.object(news_mod.ia_cache, "obter_cliente") as mock_obter_cliente:
+        mock_cliente = mock_obter_cliente.return_value
+        mock_cliente.table.return_value.select.return_value.limit.return_value.execute.return_value = None
+        resultado = news_mod.ia_cache.tabela_disponivel()
+    _checar("4a consulta trivial bem-sucedida -> True", resultado is True)
+
+
+def test_4b_tabela_disponivel_classifica_tabela_ausente_pgrst205():
+    class _ErroFake(Exception):
+        code = "PGRST205"
+        message = "Could not find the table 'public.resumos_ia_cache' in the schema cache"
+
+    with patch.object(news_mod.ia_cache, "obter_cliente") as mock_obter_cliente:
+        mock_obter_cliente.return_value.table.side_effect = _ErroFake()
+        resultado = news_mod.ia_cache.tabela_disponivel()
+    _checar("4b PGRST205/'could not find the table' -> TABELA_AUSENTE",
+            resultado == news_mod.ia_cache.TABELA_AUSENTE, f"(resultado={resultado!r})")
+
+
+def test_4c_tabela_disponivel_classifica_credencial_rls_42501():
+    class _ErroFake(Exception):
+        code = "42501"
+        message = 'new row violates row-level security policy for table "resumos_ia_cache"'
+
+    with patch.object(news_mod.ia_cache, "obter_cliente") as mock_obter_cliente:
+        mock_obter_cliente.return_value.table.side_effect = _ErroFake()
+        resultado = news_mod.ia_cache.tabela_disponivel()
+    _checar("4c erro 42501 (RLS) -> TABELA_CREDENCIAL_OU_CONEXAO",
+            resultado == news_mod.ia_cache.TABELA_CREDENCIAL_OU_CONEXAO, f"(resultado={resultado!r})")
+
+
+def test_4d_tabela_disponivel_erro_desconhecido_quando_nao_bate_nenhum_sinal():
+    class _ErroFake(Exception):
+        code = "99999"
+        message = "alguma falha sem sinal conhecido"
+
+    with patch.object(news_mod.ia_cache, "obter_cliente") as mock_obter_cliente:
+        mock_obter_cliente.return_value.table.side_effect = _ErroFake()
+        resultado = news_mod.ia_cache.tabela_disponivel()
+    _checar("4d erro sem sinal conhecido -> TABELA_ERRO_DESCONHECIDO",
+            resultado == news_mod.ia_cache.TABELA_ERRO_DESCONHECIDO, f"(resultado={resultado!r})")
+
+
+def test_4e_tabela_disponivel_none_quando_supabase_sem_cliente():
+    with patch.object(news_mod.ia_cache, "obter_cliente", return_value=None):
+        resultado = news_mod.ia_cache.tabela_disponivel()
+    _checar("4e sem cliente configurado -> None (nunca lança exceção)", resultado is None)
+
+
+def test_4f_pregen_aborta_sem_gastar_nenhuma_chamada_de_ia_quando_tabela_ausente():
+    grupo = _grupo_fake("Fato qualquer", "https://veiculo.com/fato")
+    with patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=news_mod.ia_cache.TABELA_AUSENTE), \
+         patch.object(news_mod, "obter_top_mercado_tudo", return_value=[grupo]) as mock_top, \
+         patch.object(news_mod, "obter_noticias") as mock_noticias, \
+         patch.object(news_mod, "obter_resumo_grupo") as mock_gerar:
+        stats = news_mod.pregerar_resumos_news(["PETR4"])
+    _checar("4g pregen devolve a causa exata em stats['tabela_disponivel']",
+            stats["tabela_disponivel"] == news_mod.ia_cache.TABELA_AUSENTE, f"({stats})")
+    _checar("4h NUNCA busca TOP MERCADO (evita trabalho inútil)", mock_top.call_count == 0)
+    _checar("4i NUNCA busca noticia por ticker", mock_noticias.call_count == 0)
+    _checar("4j ZERO chamada de IA (o ponto inteiro desta checagem)", mock_gerar.call_count == 0)
+    _checar("4k stats continua com os outros campos zerados, nunca None/ausente",
+            stats["grupos_considerados"] == 0 and stats["gerados"] == 0, f"({stats})")
+
+
+def test_4l_pregen_roda_normalmente_quando_tabela_disponivel():
+    """Confirma que o guard so' bloqueia quando tabela_disponivel() NAO
+    e' True - com a tabela disponivel, o fluxo de sempre continua
+    (nenhuma regressao introduzida pelo guard)."""
+    grupo = _grupo_fake("Fato normal", "https://veiculo.com/normal")
+    with patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
+         patch.object(news_mod, "obter_top_mercado_tudo", return_value=[grupo]), \
+         patch.object(news_mod, "obter_noticias", return_value=[]), \
+         patch.object(news_mod.ia_cache, "obter_varios", return_value={}), \
+         patch.object(news_mod, "obter_resumo_grupo",
+                       return_value={"resumo": "RESUMO:\nTexto.", "imagem": None, "motivo_indisponivel": None}) as mock_gerar:
+        stats = news_mod.pregerar_resumos_news([])
+    _checar("4m tabela disponivel -> stats['tabela_disponivel'] is True", stats["tabela_disponivel"] is True)
+    _checar("4n processamento normal continua (1 grupo gerado)", stats["gerados"] == 1, f"({stats})")
+    _checar("4o IA foi chamada normalmente", mock_gerar.call_count == 1)
 
 
 if __name__ == "__main__":

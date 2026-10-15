@@ -1977,10 +1977,27 @@ def pregerar_resumos_news(tickers_universo: list) -> dict:
     pra TODOS os usuarios, nao pro clique individual sob demanda.
 
     Retorna stats: {"grupos_considerados", "ja_cacheados", "gerados",
-    "falhas", "tempo_esgotado"} - nunca lança excecao (falha isolada de 1
-    grupo/ticker nao aborta os demais, ver try/except por item)."""
-    limite = time.monotonic() + _ORCAMENTO_PREGERAR_RESUMOS_S
+    "falhas", "tempo_esgotado", "tabela_disponivel"} - nunca lança
+    excecao (falha isolada de 1 grupo/ticker nao aborta os demais, ver
+    try/except por item).
+
+    Confere ia_cache.tabela_disponivel() ANTES de buscar qualquer
+    noticia ou gastar 1 token de IA (achado real 2026-10-15: a tabela
+    resumos_ia_cache nunca foi criada em produção - sql/ia_cache.sql
+    nunca rodou lá - e sem esta checagem o pré-processamento gerava 25
+    resumos de verdade (cota real do Groq) TODA execução do coletor
+    [30min] sem conseguir cachear nenhum: cada resultado era descartado
+    em silêncio porque a escrita no Supabase falhava depois do gerar_fn()
+    já ter rodado. Nunca bloqueia o caminho sob-demanda (clique no card) -
+    só este pré-processamento em lote, que só vale a pena gastar cota se
+    o resultado puder ser reaproveitado por todos os usuários depois."""
     stats = {"grupos_considerados": 0, "ja_cacheados": 0, "gerados": 0, "falhas": 0, "tempo_esgotado": False}
+    disponivel = ia_cache.tabela_disponivel()
+    stats["tabela_disponivel"] = disponivel
+    if disponivel is not True:
+        return stats
+
+    limite = time.monotonic() + _ORCAMENTO_PREGERAR_RESUMOS_S
 
     grupos = []
     try:
