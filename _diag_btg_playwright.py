@@ -28,6 +28,7 @@ import json
 import sys
 import time
 
+import requests
 from playwright.sync_api import sync_playwright
 
 PAGINA_RESEARCH = "https://www.btgpactual.com/acoes/ultimos-relatorios"
@@ -102,6 +103,42 @@ def _tentativa(n: int, *, forcar_http1: bool, so_api: bool) -> dict:
     return resultado
 
 
+def _teste_plain_requests() -> dict:
+    """2a rodada real confirmou api_lives_status=200 mesmo SEM navegador
+    (so_api=True) - ou seja, essa API especifica pode nao ter bot-detection
+    NENHUM. Testa aqui com `requests` puro (sem curl_cffi, sem Playwright -
+    fingerprint de TLS padrao do Python) pra confirmar isso de vez: se
+    passar, a conclusao e' que e' uma API publica comum, sem Akamai na
+    frente, e Playwright/curl_cffi nem seriam necessarios pra ela. Tambem
+    tenta 3 variacoes de path/params pra procurar um endpoint de LISTAGEM
+    DE RELATORIOS ESCRITOS (nao lives) - a sessao anterior so' tinha
+    adivinhado 'ALL' sem confirmar se e' o nome certo do recurso."""
+    resultado = {}
+    tentativas = {
+        "lives_plain_requests": API_LIVES,
+        "all_plain_requests": API_ALL,
+        "medias_sem_segmento": (
+            "https://content.btgpactual.com/api/research/public-router/media-research"
+            "/api/media-research/public/v1/medias?pageNumber=1&pageSize=5"
+        ),
+        "medias_type_report": (
+            "https://content.btgpactual.com/api/research/public-router/media-research"
+            "/api/media-research/public/v1/medias?type=REPORT&pageNumber=1&pageSize=5"
+        ),
+        "medias_report_segmento": (
+            "https://content.btgpactual.com/api/research/public-router/media-research"
+            "/api/media-research/public/v1/medias/REPORT?pageNumber=1&pageSize=5"
+        ),
+    }
+    for rotulo, url in tentativas.items():
+        try:
+            r = requests.get(url, headers={"User-Agent": UA, "Accept": "application/json"}, timeout=15)
+            resultado[rotulo] = {"status": r.status_code, "corpo_preview": r.text[:200]}
+        except Exception as e:
+            resultado[rotulo] = {"erro": f"{type(e).__name__}: {e}"}
+    return resultado
+
+
 if __name__ == "__main__":
     # bateria de hipoteses, nao so repeticao da mesma tentativa: (1) igual
     # a 1a rodada (controle), (2) forcando HTTP/1.1 (testa se o sintoma e'
@@ -117,5 +154,8 @@ if __name__ == "__main__":
     for r in resultados:
         print("[diag-btg]", json.dumps(r, ensure_ascii=False))
     sucesso = any(r.get("api_lives_status") == 200 or r.get("api_all_status") == 200 for r in resultados)
-    print(f"[diag-btg] RESUMO: sucesso_em_pelo_menos_1_tentativa={sucesso}")
+    print(f"[diag-btg] RESUMO (playwright): sucesso_em_pelo_menos_1_tentativa={sucesso}")
+
+    print("[diag-btg] (plain requests, sem Playwright/curl_cffi, procurando endpoint de relatorios)")
+    print("[diag-btg]", json.dumps(_teste_plain_requests(), ensure_ascii=False))
     sys.exit(0)
