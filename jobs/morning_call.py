@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Morning Call factual independente de carteiras e do Radar de quedas."""
+import hashlib
 import html as _html_escape
 import os
 import re
@@ -19,6 +20,7 @@ from data.mercado import obter_cotacoes_lote
 from data.news import obter_top_mercado_tudo
 from data.prices import obter_cotacao_indice
 from data.supabase_client import obter_cliente
+from data.user_prefs import listar_assinantes_morning_call
 from jobs.email_utils import enviar_email
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -240,11 +242,18 @@ def gerar_preview(agora=None):
     """Gera o Morning Call COMPLETO (mesmo texto que seria enviado) e
     valida o conteúdo, SEM NUNCA chamar jobs.email_utils.enviar_email -
     modo de teste explícito pedido pra conferir o e-mail de verdade
-    (assunto, destinatário configurado, todas as seções obrigatórias)
-    sem disparo real nem dependência de nenhum secret de e-mail estar
-    configurado (EMAIL_PROVIDER/EMAIL_FROM/RESEND_API_KEY/etc podem
-    estar todos ausentes - gerar_preview nunca olha pra eles alem de
-    ler EMAIL_TO so' pra informar qual destinatario SERIA usado).
+    (assunto, todas as seções obrigatórias, quantos assinantes ativos
+    receberiam) sem disparo real nem dependência de nenhum secret de
+    e-mail estar configurado (EMAIL_PROVIDER/EMAIL_FROM/RESEND_API_KEY/
+    etc podem estar todos ausentes - gerar_preview nunca olha pra eles).
+
+    "destinatario" aqui é só o EMAIL_TO legado (usado pelo caminho
+    administrativo/teste manual, nunca pelos assinantes reais - ver
+    enviar_teste); "total_assinantes_ativos" é a contagem REAL (lida do
+    Supabase via listar_assinantes_morning_call) de quem receberia o
+    envio automático agora - 0 tanto se não há nenhum opt-in quanto se
+    o Supabase estiver indisponível (não dá pra distinguir os dois sem
+    uma segunda leitura; ver executar() pro log que diferencia).
 
     Uso manual: `python -c "from jobs.morning_call import gerar_preview;
     p = gerar_preview(); print(p['texto']); print(p['valido'],
@@ -252,16 +261,18 @@ def gerar_preview(agora=None):
     tests/test_morning_call.py) pra validar as 6 seções obrigatórias
     (SECOES_OBRIGATORIAS) sempre com enviar_email mockado/nunca chamado.
 
-    Retorna {"assunto", "destinatario", "texto", "secoes_faltantes",
-    "valido"} - "valido" é True só se TODAS as SECOES_OBRIGATORIAS
-    aparecem no texto gerado; nunca garante que o provedor de e-mail
-    aceitaria o envio, só que o CONTEÚDO está completo."""
+    Retorna {"assunto", "destinatario", "total_assinantes_ativos",
+    "texto", "secoes_faltantes", "valido"} - "valido" é True só se
+    TODAS as SECOES_OBRIGATORIAS aparecem no texto gerado; nunca
+    garante que o provedor de e-mail aceitaria o envio, só que o
+    CONTEÚDO está completo."""
     agora = agora or datetime.now(TZ_SP)
     texto = montar_morning_call(agora)
     faltantes = [secao for secao in SECOES_OBRIGATORIAS if secao not in texto]
     return {
         "assunto": _assunto(agora),
         "destinatario": os.getenv("EMAIL_TO", "").strip(),
+        "total_assinantes_ativos": len(listar_assinantes_morning_call()),
         "texto": texto,
         "html": montar_morning_call_html(texto),
         "secoes_faltantes": faltantes,
@@ -269,14 +280,26 @@ def gerar_preview(agora=None):
     }
 
 
-def _ja_enviado_hoje(cliente, agora) -> bool:
+def _hash_destinatario(email: str) -> str:
+    """Identificador curto e irreversível (sha256[:10]) de um e-mail, só
+    pra correlacionar linhas de log da MESMA execução sem nunca expor o
+    e-mail completo em stdout/log do GitHub Actions (exigência
+    explícita da missão - o e-mail completo só existe na coluna
+    `destinatario` do próprio Supabase, nunca em log de texto)."""
+    return hashlib.sha256((email or "").strip().lower().encode("utf-8")).hexdigest()[:10]
+
+
+def _ja_enviado_hoje(cliente, agora, destinatario: str) -> bool:
     """True se já existe um registro status="ENVIADO" em
-    morning_call_execucoes com executado_em no MESMO dia (fuso
-    America/Sao_Paulo) de `agora` - usado por executar() pra nunca
-    disparar um e-mail duplicado num reenvio manual (ex: "Re-run failed
-    jobs" no GitHub Actions re-rodando um job que na verdade já tinha
-    enviado com sucesso antes, ou um operador rodando o script à mão
-    2x no mesmo dia).
+    morning_call_execucoes PRA ESSE `destinatario` com executado_em no
+    MESMO dia (fuso America/Sao_Paulo) de `agora` - usado por
+    executar() pra nunca disparar um e-mail duplicado pro MESMO
+    assinante num reenvio manual (ex: "Re-run failed jobs" no GitHub
+    Actions re-rodando um job que já tinha entregue com sucesso pra
+    alguns assinantes, ou um operador rodando o script à mão 2x no
+    mesmo dia) - a verificação é por destinatário, não mais global:
+    um assinante que falhou continua elegível pra retry no mesmo dia
+    mesmo que outro já tenha recebido com sucesso.
 
     cliente=None (Supabase fora do ar/sem credencial) -> False: a
     VERIFICAÇÃO em si falhando nunca BLOQUEIA o envio - mesmo espírito
@@ -292,6 +315,7 @@ def _ja_enviado_hoje(cliente, agora) -> bool:
             cliente.table("morning_call_execucoes")
             .select("id")
             .eq("status", "ENVIADO")
+            .eq("destinatario", destinatario)
             .gte("executado_em", inicio_dia_utc.isoformat())
             .limit(1)
             .execute()
@@ -300,6 +324,32 @@ def _ja_enviado_hoje(cliente, agora) -> bool:
     except Exception as exc:
         print(f"[morning_call] falha ao verificar envio duplicado (seguindo com o envio): {exc!r}")
         return False
+
+
+def enviar_teste(destinatario_teste: str, agora=None) -> dict:
+    """Envio ADMINISTRATIVO/manual pra UM único destinatário fixo,
+    passado explicitamente por quem chama - nunca usa
+    listar_assinantes_morning_call nem a lista real de assinantes, e
+    NUNCA grava em morning_call_execucoes (não deve contaminar a
+    idempotência diária de nenhum assinante real nem ser contado como
+    envio automático nas métricas de executar()). Separação exigida
+    pela missão: teste/validação manual vs. envio automático aos
+    assinantes.
+
+    Uso manual (nunca disparar para a lista de assinantes - só pra 1
+    endereço de teste autorizado):
+    `python -c "from jobs.morning_call import enviar_teste; \
+    print(enviar_teste('seu-email-de-teste@exemplo.com'))"`"""
+    destinatario_teste = (destinatario_teste or "").strip()
+    if not destinatario_teste:
+        return {"ok": False, "erro": "destinatario_teste é obrigatório."}
+    agora = agora or datetime.now(TZ_SP)
+    texto = montar_morning_call(agora)
+    resultado = enviar_email(
+        _assunto(agora), texto, html=montar_morning_call_html(texto), destinatario=destinatario_teste,
+    )
+    print(f"[morning_call] envio de TESTE administrativo (nao e' assinante real) ok={resultado['ok']} erro={resultado['erro']}")
+    return resultado
 
 
 def executar():
@@ -318,46 +368,110 @@ def executar():
     agora = datetime.now(TZ_SP)
     cliente = obter_cliente()
 
-    # Idempotencia: um retry manual (ou "Re-run failed jobs" no GitHub
-    # Actions) rodando executar() de novo no MESMO dia depois de um
-    # ENVIADO com sucesso anterior nao deve mandar e-mail duplicado.
-    # Nao e' um erro - e' o comportamento esperado, por isso retorna 0
-    # (sucesso) em vez de 1.
-    if _ja_enviado_hoje(cliente, agora):
+    # Destinatarios dinamicos: todo usuario autenticado com a preferencia
+    # 'morning_call_email_ativo'=True em user_prefs E e-mail valido (ver
+    # data/user_prefs.py:listar_assinantes_morning_call) - já vem
+    # deduplicado por e-mail. NUNCA usa EMAIL_TO como lista de
+    # assinantes (EMAIL_TO so' existe pra jobs/email_utils.py decidir um
+    # destinatario quando nenhum e' passado explicitamente - aqui
+    # SEMPRE passamos destinatario=email por assinante).
+    assinantes = listar_assinantes_morning_call(cliente)
+    if not assinantes:
+        print(
+            "[morning_call] nenhum assinante ativo nesta execução (nenhum usuário "
+            "com a preferência ligada e e-mail válido, ou Supabase indisponível) "
+            "- nada a enviar."
+        )
+        registrar_tentativa(
+            "MORNING CALL",
+            "Macro (BCB) + Mercado (yfinance) + NEWS agregados, e-mail (Resend) por assinante",
+            execucao_ok=True,
+            persistencia_ok=(cliente is not None),
+            erro=None,
+            categoria="Morning Call",
+        )
+        return 0
+
+    # Idempotencia POR ASSINANTE: um retry manual (ou "Re-run failed
+    # jobs" no GitHub Actions) rodando executar() de novo no MESMO dia
+    # não deve duplicar e-mail pra quem já recebeu com sucesso hoje, mas
+    # continua elegível quem ainda não recebeu/falhou antes.
+    pendentes = [email for email in assinantes if not _ja_enviado_hoje(cliente, agora, email)]
+    if not pendentes:
         print(
             f"[morning_call] Morning Call de {agora.strftime('%d/%m/%Y')} já foi ENVIADO "
-            "anteriormente hoje - pulando novo envio (retry/re-run, não é erro)."
+            f"hoje pra todos os {len(assinantes)} assinante(s) ativo(s) - pulando "
+            "novo envio (retry/re-run, não é erro)."
+        )
+        registrar_tentativa(
+            "MORNING CALL",
+            "Macro (BCB) + Mercado (yfinance) + NEWS agregados, e-mail (Resend) por assinante",
+            execucao_ok=True,
+            persistencia_ok=True,
+            erro=None,
+            categoria="Morning Call",
         )
         return 0
 
     texto = montar_morning_call(agora)
-    resultado = enviar_email(_assunto(agora), texto, html=montar_morning_call_html(texto))
-    persistiu = False
-    if cliente is not None:
-        try:
-            cliente.table("morning_call_execucoes").insert({
-                "executado_em": agora.isoformat(),
-                "status": "ENVIADO" if resultado["ok"] else "FALHA_ENVIO",
-                "erro": resultado["erro"],
-                "destinatario": os.getenv("EMAIL_TO", ""),
-                "conteudo": texto,
-            }).execute()
-            persistiu = True
-        except Exception as exc:
-            print(f"[morning_call] falha ao registrar execução: {exc!r}")
-    print(f"[morning_call] envio_ok={resultado['ok']} erro={resultado['erro']}")
+    html = montar_morning_call_html(texto)
+    assunto = _assunto(agora)
+
+    enviados = 0
+    falhas = 0
+    persistencia_ok = True
+    algum_erro = None
+    for email in pendentes:
+        # Uma falha de envio/persistência PARA UM assinante nunca pode
+        # impedir a tentativa pros demais - cada iteração é independente
+        # (mesmo espírito de salvar_carteiras/processar_monitoramento em
+        # data/radar_quedas.py: falha parcial nunca é reportada como
+        # sucesso total nem interrompe o laço).
+        resultado = enviar_email(assunto, texto, html=html, destinatario=email)
+        status = "ENVIADO" if resultado["ok"] else "FALHA_ENVIO"
+        if resultado["ok"]:
+            enviados += 1
+        else:
+            falhas += 1
+            algum_erro = algum_erro or resultado["erro"]
+        if cliente is not None:
+            try:
+                cliente.table("morning_call_execucoes").insert({
+                    "executado_em": agora.isoformat(),
+                    "status": status,
+                    "erro": resultado["erro"],
+                    "destinatario": email,
+                    "conteudo": texto,
+                }).execute()
+            except Exception as exc:
+                persistencia_ok = False
+                print(
+                    f"[morning_call] destinatario={_hash_destinatario(email)} "
+                    f"envio_ok={resultado['ok']} mas falhou ao registrar execução: {exc!r}"
+                )
+        print(f"[morning_call] destinatario={_hash_destinatario(email)} envio_ok={resultado['ok']} erro={resultado['erro']}")
+
+    pulados = len(assinantes) - len(pendentes)
+    print(
+        f"[morning_call] assinantes_ativos={len(assinantes)} enviados={enviados} "
+        f"falhas={falhas} ja_enviados_hoje={pulados}"
+    )
     # Visibilidade no painel SAÚDE DOS DADOS, mesmo motivo do Radar: sem
     # isto, o job rodando mas falhando no envio (ou nem rodando mais)
-    # não aparecia em lugar nenhum fora do log do GitHub Actions.
+    # não aparecia em lugar nenhum fora do log do GitHub Actions. Uma
+    # falha parcial (alguns assinantes falharam, outros não) nunca é
+    # reportada como sucesso total: execucao_ok só é True se NENHUM
+    # assinante elegível falhou.
     registrar_tentativa(
         "MORNING CALL",
-        "Macro (BCB) + Mercado (yfinance) + NEWS agregados, e-mail (Resend/SMTP)",
-        execucao_ok=resultado["ok"],
-        persistencia_ok=persistiu,
-        erro=resultado["erro"],
+        "Macro (BCB) + Mercado (yfinance) + NEWS agregados, e-mail (Resend) por assinante",
+        execucao_ok=(falhas == 0),
+        persistencia_ok=persistencia_ok,
+        erro=algum_erro,
         categoria="Morning Call",
+        parcial=bool(enviados and falhas),
     )
-    return 0 if resultado["ok"] else 1
+    return 0 if falhas == 0 else 1
 
 
 if __name__ == "__main__":

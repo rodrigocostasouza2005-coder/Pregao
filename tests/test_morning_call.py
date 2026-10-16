@@ -62,6 +62,7 @@ def test_executar_registra_tentativa_no_painel_saude(monkeypatch):
     monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
     monkeypatch.setattr(mc, "enviar_email", lambda *_a, **_k: {"ok": True, "erro": None})
     monkeypatch.setattr(mc, "obter_cliente", lambda: None)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda *_a, **_k: ["assinante@exemplo.com"])
     monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
 
     codigo = mc.executar()
@@ -79,6 +80,7 @@ def test_executar_registra_falha_quando_envio_nao_funciona(monkeypatch):
     monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
     monkeypatch.setattr(mc, "enviar_email", lambda *_a, **_k: {"ok": False, "erro": "Resend HTTP 401"})
     monkeypatch.setattr(mc, "obter_cliente", lambda: None)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda *_a, **_k: ["assinante@exemplo.com"])
     monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
 
     codigo = mc.executar()
@@ -97,10 +99,30 @@ def test_executar_chama_self_test_de_persistencia_antes_de_tudo(monkeypatch):
     monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
     monkeypatch.setattr(mc, "enviar_email", lambda *_a, **_k: {"ok": True, "erro": None})
     monkeypatch.setattr(mc, "obter_cliente", lambda: None)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda *_a, **_k: ["assinante@exemplo.com"])
 
     mc.executar()
 
     assert len(chamadas_diagnostico) == 1
+
+
+def test_executar_sem_nenhum_assinante_ativo_nao_tenta_enviar(monkeypatch):
+    """Sem nenhum usuário com a preferência ligada (ou todos com e-mail
+    inválido), executar() não deve nem montar o texto nem chamar
+    enviar_email - não é um erro, é o estado normal "ninguém se
+    inscreveu ainda"."""
+    chamadas_envio = []
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: object())
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda *_a, **_k: [])
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("não deveria montar texto sem assinante")))
+    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: None)
+
+    codigo = mc.executar()
+
+    assert codigo == 0
+    assert chamadas_envio == []
 
 
 # ---------------------------------------------------------------------
@@ -236,50 +258,67 @@ def test_gerar_preview_marca_invalido_quando_falta_secao_obrigatoria():
 # ---------------------------------------------------------------------
 
 def _cliente_fake_com_resultado(linhas):
+    """Fake pra _ja_enviado_hoje: select(...).eq("status",...).eq("destinatario",...).gte(...).limit(...).execute()."""
     resp = MagicMock()
     resp.data = linhas
     cliente = MagicMock()
-    cliente.table.return_value.select.return_value.eq.return_value.gte.return_value.limit.return_value.execute.return_value = resp
+    (
+        cliente.table.return_value.select.return_value.eq.return_value
+        .eq.return_value.gte.return_value.limit.return_value.execute.return_value
+    ) = resp
     return cliente
 
 
-def test_ja_enviado_hoje_true_quando_ha_registro_enviado_no_dia():
+def test_ja_enviado_hoje_true_quando_ha_registro_enviado_no_dia_pro_mesmo_destinatario():
     cliente = _cliente_fake_com_resultado([{"id": 1}])
     agora = datetime(2026, 10, 16, 9, tzinfo=TZ_SP)
-    assert mc._ja_enviado_hoje(cliente, agora) is True
+    assert mc._ja_enviado_hoje(cliente, agora, "assinante@exemplo.com") is True
     cliente.table.assert_called_with("morning_call_execucoes")
     cliente.table.return_value.select.return_value.eq.assert_called_with("status", "ENVIADO")
+    cliente.table.return_value.select.return_value.eq.return_value.eq.assert_called_with(
+        "destinatario", "assinante@exemplo.com",
+    )
 
 
 def test_ja_enviado_hoje_false_quando_nao_ha_registro():
     cliente = _cliente_fake_com_resultado([])
     agora = datetime(2026, 10, 16, 9, tzinfo=TZ_SP)
-    assert mc._ja_enviado_hoje(cliente, agora) is False
+    assert mc._ja_enviado_hoje(cliente, agora, "assinante@exemplo.com") is False
 
 
 def test_ja_enviado_hoje_false_sem_cliente_supabase():
-    assert mc._ja_enviado_hoje(None, datetime(2026, 10, 16, 9, tzinfo=TZ_SP)) is False
+    assert mc._ja_enviado_hoje(None, datetime(2026, 10, 16, 9, tzinfo=TZ_SP), "assinante@exemplo.com") is False
 
 
 def test_ja_enviado_hoje_false_quando_consulta_lanca_excecao():
     cliente = MagicMock()
     cliente.table.side_effect = RuntimeError("Supabase fora do ar")
-    assert mc._ja_enviado_hoje(cliente, datetime(2026, 10, 16, 9, tzinfo=TZ_SP)) is False
+    assert mc._ja_enviado_hoje(cliente, datetime(2026, 10, 16, 9, tzinfo=TZ_SP), "assinante@exemplo.com") is False
 
 
-def test_executar_pula_envio_quando_ja_enviado_hoje_regressao_retry_duplicado(monkeypatch):
+def test_hash_destinatario_nunca_expoe_o_email_e_e_estavel():
+    h1 = mc._hash_destinatario("Assinante@Exemplo.com")
+    h2 = mc._hash_destinatario("assinante@exemplo.com")
+    assert h1 == h2, "hash deveria ser case-insensitive (mesmo e-mail normalizado)"
+    assert "assinante" not in h1 and "exemplo" not in h1
+    assert len(h1) == 10
+
+
+def test_executar_pula_envio_quando_todos_ja_enviados_hoje_regressao_retry_duplicado(monkeypatch):
     """Regressão: um retry manual (ou "Re-run failed jobs" no GitHub
     Actions) rodando executar() de novo no MESMO dia depois de um
-    ENVIADO com sucesso anterior NÃO pode mandar e-mail duplicado."""
+    ENVIADO com sucesso anterior NÃO pode mandar e-mail duplicado pro
+    MESMO assinante."""
     cliente = _cliente_fake_com_resultado([{"id": 1}])
     chamadas_envio = []
     chamadas_registro = []
 
     def _montar_nao_deveria_ser_chamado(*_a, **_k):
-        raise AssertionError("não deveria montar o texto quando já foi enviado hoje")
+        raise AssertionError("não deveria montar o texto quando já foi enviado hoje pra todos")
 
     monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
     monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda *_a, **_k: ["assinante@exemplo.com"])
     monkeypatch.setattr(mc, "montar_morning_call", _montar_nao_deveria_ser_chamado)
     monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
     monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: chamadas_registro.append((a, k)))
@@ -298,6 +337,7 @@ def test_executar_envia_normalmente_quando_nao_enviado_ainda_hoje(monkeypatch):
 
     monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
     monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda *_a, **_k: ["assinante@exemplo.com"])
     monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
     monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
     monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: None)
@@ -306,6 +346,7 @@ def test_executar_envia_normalmente_quando_nao_enviado_ainda_hoje(monkeypatch):
 
     assert codigo == 0
     assert len(chamadas_envio) == 1
+    assert chamadas_envio[0][1].get("destinatario") == "assinante@exemplo.com"
     cliente.table.return_value.insert.assert_called_once()
 
 
@@ -318,6 +359,7 @@ def test_executar_envia_versao_html_junto_da_versao_texto(monkeypatch):
 
     monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
     monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda *_a, **_k: ["assinante@exemplo.com"])
     monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "1. MERCADOS\n- Ibovespa: 140.000")
     monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
     monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: None)
@@ -328,6 +370,100 @@ def test_executar_envia_versao_html_junto_da_versao_texto(monkeypatch):
     _args, kwargs = chamadas_envio[0]
     assert kwargs.get("html"), "enviar_email foi chamado sem a versão HTML"
     assert "<h2" in kwargs["html"]
+
+
+# ---------------------------------------------------------------------
+# MÚLTIPLOS ASSINANTES: dedupe, falha parcial, separação do envio de
+# teste administrativo - consentimento explícito por usuário (missão
+# "Morning Call: consentimento e destinatários").
+# ---------------------------------------------------------------------
+
+def test_executar_envia_pra_varios_assinantes_e_dedupe_ja_vem_da_listagem(monkeypatch):
+    """listar_assinantes_morning_call já devolve e-mails deduplicados -
+    executar() precisa enviar exatamente 1 vez por e-mail distinto da
+    lista, nunca reenviar pro mesmo endereço na mesma execução."""
+    cliente = _cliente_fake_com_resultado([])
+    chamadas_envio = []
+
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
+    monkeypatch.setattr(
+        mc, "listar_assinantes_morning_call",
+        lambda *_a, **_k: ["a@exemplo.com", "b@exemplo.com"],
+    )
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
+    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: None)
+
+    codigo = mc.executar()
+
+    assert codigo == 0
+    destinatarios = sorted(k.get("destinatario") for _a, k in chamadas_envio)
+    assert destinatarios == ["a@exemplo.com", "b@exemplo.com"]
+
+
+def test_executar_falha_pra_um_assinante_nao_impede_envio_aos_demais(monkeypatch):
+    """Falha de envio pra UM assinante (ex: Resend rejeitou aquele
+    endereço) não pode interromper o laço nem impedir que os demais
+    recebam - e a execução não pode ser relatada como sucesso total
+    (registrar_tentativa precisa ver execucao_ok=False)."""
+    cliente = _cliente_fake_com_resultado([])
+    chamadas_envio = []
+    chamadas_registro = []
+
+    def _enviar(_assunto, _texto, html=None, destinatario=None):
+        chamadas_envio.append(destinatario)
+        if destinatario == "falha@exemplo.com":
+            return {"ok": False, "erro": "Resend HTTP 422"}
+        return {"ok": True, "erro": None}
+
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
+    monkeypatch.setattr(
+        mc, "listar_assinantes_morning_call",
+        lambda *_a, **_k: ["falha@exemplo.com", "ok@exemplo.com"],
+    )
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
+    monkeypatch.setattr(mc, "enviar_email", _enviar)
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: chamadas_registro.append((a, k)))
+
+    codigo = mc.executar()
+
+    # os DOIS devem ter sido tentados (a falha de um não cancela o outro):
+    assert sorted(chamadas_envio) == ["falha@exemplo.com", "ok@exemplo.com"]
+    # falha parcial não pode ser sucesso total nem no retorno nem no painel:
+    assert codigo == 1
+    assert chamadas_registro[0][1]["execucao_ok"] is False
+    assert chamadas_registro[0][1]["parcial"] is True
+
+
+def test_enviar_teste_usa_destinatario_fixo_e_nunca_consulta_assinantes(monkeypatch):
+    """Envio administrativo/manual (enviar_teste) é inteiramente
+    separado do automático: nunca chama listar_assinantes_morning_call
+    nem grava em morning_call_execucoes (não pode contaminar a
+    idempotência diária de nenhum assinante real nem contar como envio
+    de assinante)."""
+    chamadas_envio = []
+
+    def _assinantes_nao_deveria_ser_chamado(*_a, **_k):
+        raise AssertionError("enviar_teste nunca deve consultar a lista de assinantes")
+
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", _assinantes_nao_deveria_ser_chamado)
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
+    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
+
+    resultado = mc.enviar_teste("admin-teste@exemplo.com")
+
+    assert resultado == {"ok": True, "erro": None}
+    assert len(chamadas_envio) == 1
+    assert chamadas_envio[0][1].get("destinatario") == "admin-teste@exemplo.com"
+
+
+def test_enviar_teste_sem_destinatario_retorna_erro_sem_enviar(monkeypatch):
+    monkeypatch.setattr(mc, "enviar_email", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("não deveria enviar sem destinatário")))
+    resultado = mc.enviar_teste("")
+    assert resultado["ok"] is False
+    assert "obrigat" in resultado["erro"].lower()
 
 
 def test_montar_morning_call_html_contem_as_mesmas_secoes_do_texto():
