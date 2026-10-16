@@ -1,6 +1,9 @@
 name: DIAG temporario - paths alternativos research
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - diag/research-alt-paths-probe-20261016
 
 permissions:
   contents: read
