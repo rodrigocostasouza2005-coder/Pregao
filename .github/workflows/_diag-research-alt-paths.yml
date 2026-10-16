@@ -15,13 +15,17 @@ jobs:
     steps:
       - name: Testar paths estaticos (sitemap/feed/robots) - BTG/XP/Genial
         run: |
+          set +e
           UA="PregaoApp/0.1 (uso pessoal, nao comercial; contato via github)"
           testar() {
             url="$1"
+            : > /tmp/body.txt
             echo "=== $url ==="
-            code=$(curl -s -o /tmp/body.txt -w "%{http_code}" --max-time 15 -A "$UA" "$url" || echo "ERR")
-            echo "status: $code"
-            head -c 400 /tmp/body.txt
+            code=$(curl -s -o /tmp/body.txt -w "%{http_code}" --max-time 15 -A "$UA" "$url" 2>/tmp/err.txt)
+            rc=$?
+            echo "curl_exit: $rc  http_status: $code"
+            if [ -s /tmp/err.txt ]; then echo "curl_stderr: $(cat /tmp/err.txt)"; fi
+            head -c 400 /tmp/body.txt 2>/dev/null
             echo ""
             echo "---"
           }
