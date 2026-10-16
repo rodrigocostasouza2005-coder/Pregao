@@ -173,4 +173,15 @@ if __name__ == "__main__":
             print(r.text)
         except Exception as e:
             print(f"[diag-btg] erro status={status}: {type(e).__name__}: {e}")
+
+    # robots.txt dos 2 dominios envolvidos - decide se o endpoint publico
+    # confirmado (medias/lives) e' consistente com o que o proprio BTG
+    # permite pra bots, antes de considerar usa-lo em producao.
+    for dominio in ("www.btgpactual.com", "content.btgpactual.com"):
+        try:
+            r = requests.get(f"https://{dominio}/robots.txt", headers={"User-Agent": UA}, timeout=10)
+            print(f"[diag-btg] robots.txt {dominio}: HTTP {r.status_code}")
+            print(r.text[:1500])
+        except Exception as e:
+            print(f"[diag-btg] erro robots.txt {dominio}: {type(e).__name__}: {e}")
     sys.exit(0)
