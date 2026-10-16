@@ -98,7 +98,7 @@ def _tentar_requisitar(url: str, params: dict, timeout: float = TIMEOUT):
             ultimo_erro = f"{rotulo}: HTTP {r.status_code}"
             print(f"[xp] tentativa falhou ({rotulo}): HTTP {r.status_code}")
         except Exception as e:
-            ultimo_erro = f"{rotulo}: {type(e).__name__}"
+            ultimo_erro = f"{rotulo}: {type(e).__name__}: {e}"
             print(f"[xp] tentativa falhou ({rotulo}): {e}")
     _ultimo_motivo_falha = f"as {len(tentativas)} tentativas falharam; última: {ultimo_erro or 'nenhum erro capturado'}"
     return None, None

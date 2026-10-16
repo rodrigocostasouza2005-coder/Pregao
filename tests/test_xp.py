@@ -37,6 +37,24 @@ def test_http_403_nas_2_tentativas_retorna_none_e_motivo_cita_403():
     assert "403" in motivo
 
 
+def test_excecao_de_conexao_preserva_mensagem_especifica_no_motivo():
+    """Bug real (auditoria 2026-10-16): ultimo_erro so' guardava
+    type(e).__name__ ('Exception'), descartando a mensagem real da
+    excecao (ex: 'TLS handshake falhou') - o motivo exposto pro painel
+    SAUDE DOS DADOS ficava indistinguivel de qualquer outra falha
+    generica, mesmo quando as 2 estrategias davam erros bem diferentes
+    um do outro."""
+    xp_mod._ultimo_motivo_falha = None
+    with patch.object(xp_mod, "cffi_requests") as mock_cffi, \
+         patch.object(xp_mod, "plain_requests") as mock_plain:
+        mock_cffi.get.side_effect = Exception("TLS handshake falhou de verdade")
+        mock_plain.get.side_effect = Exception("connection refused pelo CDN")
+        r, rotulo = xp_mod._tentar_requisitar("https://conteudos.xpi.com.br/x", {})
+    assert r is None and rotulo is None
+    motivo = xp_mod.motivo_ultima_falha()
+    assert "connection refused pelo CDN" in motivo
+
+
 def test_sucesso_no_fallback_requests_puro_apos_curl_cffi_falhar():
     xp_mod._ultimo_motivo_falha = "falha anterior"
     with patch.object(xp_mod, "cffi_requests") as mock_cffi, \

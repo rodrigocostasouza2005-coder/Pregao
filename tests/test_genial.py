@@ -48,7 +48,13 @@ def test_sucesso_na_primeira_tentativa_zera_o_motivo_de_falha_anterior():
 
 def test_http_2_reset_e_registrado_como_motivo_quando_todas_falham():
     """Sintoma real observado em producao: conexao chega no servidor mas
-    e' resetada no HTTP/2 (comportamento de WAF/Akamai, nao timeout)."""
+    e' resetada no HTTP/2 (comportamento de WAF/Akamai, nao timeout).
+    A mensagem especifica da excecao (nao so' o nome da classe) precisa
+    sobreviver at'e o motivo exposto pro painel SAUDE DOS DADOS - regra
+    bug real (auditoria 2026-10-16): ultimo_erro so' guardava
+    type(e).__name__ ('Exception'), descartando o texto 'HTTP/2 stream
+    reset by server' que e' exatamente o motivo que esta PR existe pra
+    expor."""
     genial_mod._ultimo_motivo_falha = None
     with patch.object(genial_mod, "cffi_requests") as mock_req:
         mock_req.get.side_effect = Exception("HTTP/2 stream 1 reset by server (error 0x2 INTERNAL_ERROR)")
@@ -56,6 +62,7 @@ def test_http_2_reset_e_registrado_como_motivo_quando_todas_falham():
     assert r is None
     motivo = genial_mod.motivo_ultima_falha()
     assert "Exception" in motivo and "tentativas falharam" in motivo
+    assert "HTTP/2 stream 1 reset by server" in motivo
 
 
 def test_http_nao_200_tambem_conta_como_tentativa_falha():
