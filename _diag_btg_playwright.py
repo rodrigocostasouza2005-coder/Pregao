@@ -158,4 +158,19 @@ if __name__ == "__main__":
 
     print("[diag-btg] (plain requests, sem Playwright/curl_cffi, procurando endpoint de relatorios)")
     print("[diag-btg]", json.dumps(_teste_plain_requests(), ensure_ascii=False))
+
+    # schema completo (sem truncar em 200 chars) de uma pagina maior, pra
+    # desenhar o parser do coletor real com os campos reais, nao suposicao.
+    # Tambem testa outros valores de "status" (so' LIVE foi confirmado
+    # antes) - pra saber se da pra listar programas passados (historico),
+    # nao so' o que esta ao vivo agora mesmo.
+    base_sem_status = API_LIVES.split("?")[0]
+    for status in ("LIVE", "FINISHED", "PAST", "SCHEDULED", "ALL"):
+        url = f"{base_sem_status}?status={status}&pageNumber=1&pageSize=5"
+        try:
+            r = requests.get(url, headers={"User-Agent": UA, "Accept": "application/json"}, timeout=15)
+            print(f"[diag-btg] SCHEMA status={status}: HTTP {r.status_code}")
+            print(r.text)
+        except Exception as e:
+            print(f"[diag-btg] erro status={status}: {type(e).__name__}: {e}")
     sys.exit(0)
