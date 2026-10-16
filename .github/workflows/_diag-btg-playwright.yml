@@ -9,6 +9,16 @@ name: "[diagnostico temporario] BTG Playwright"
 
 on:
   workflow_dispatch:
+  # workflow_dispatch so' e' reconhecido pela API depois que o arquivo
+  # existe na branch padrao (main) - como este workflow e' so' pra
+  # investigar nesta branch (sem merge ainda), tambem dispara por push
+  # NESTA branch especifica, que funciona em qualquer branch.
+  push:
+    branches:
+      - "feat/research-btg-xp-genial-fontes-alternativas-20261016"
+    paths:
+      - "_diag_btg_playwright.py"
+      - ".github/workflows/_diag-btg-playwright.yml"
 
 permissions:
   contents: read
