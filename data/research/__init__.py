@@ -93,6 +93,37 @@ CASAS = [
         "extrator_texto": genial_lives.obter_texto_transcricao,
     },
     {
+        # Investigado de novo em 2026-10-16 (sessao dedicada a BTG/XP/
+        # Genial) - a suposicao antiga ("precisa de Playwright pra passar
+        # do desafio JS") foi TESTADA DE VERDADE (nao so' suposta) contra
+        # os endpoints reais, em runner do GitHub Actions (mesmo tipo de
+        # rede/IP que a producao usa, via workflow_dispatch/push numa
+        # branch de diagnostico, depois removido): Chromium headless NAO
+        # passa da pagina www.btgpactual.com/acoes/ultimos-relatorios (que
+        # e' onde o JS client-side faria as chamadas de API de
+        # relatorios) - net::ERR_HTTP2_PROTOCOL_ERROR em todas as
+        # tentativas, e forcar HTTP/1.1 (que resolveu esse MESMO sintoma
+        # pra Genial, ver genial.py) so' trocou o erro por timeout de 30s,
+        # nunca carregou. 8 tentativas reais ao todo (2 execucoes x 4
+        # variacoes), 0 sucesso - nao e' "nao tentamos", e' "tentamos e
+        # nao passa", de forma repetida.
+        #
+        # A API publica identificada em sessao anterior (BACKLOG.md,
+        # content.btgpactual.com/.../medias/lives) respondeu 200 com dados
+        # reais - MAS e' so' o status de LIVE STREAMING agora mesmo (0 ou
+        # 1 resultado tipico, sem texto/setor/ticker), nao relatorios
+        # escritos; confirmado SEM bot-detection nenhum (nem curl_cffi
+        # precisou - 'requests' puro com TLS padrao ja' funciona, e
+        # robots.txt de content.btgpactual.com permite tudo). O endpoint
+        # de LISTAGEM DE RELATORIOS nunca foi confirmado: a suposicao
+        # antiga ("ALL?...") deu 404 "Not Found" limpo (pagina de erro
+        # JSON normal, nao desafio/bloqueio) - e' o endpoint errado, nao
+        # bloqueado; outras 3 variacoes tentadas (sem segmento, ?type=
+        # REPORT, /REPORT) deram o mesmo 404 limpo. Achar o endpoint
+        # certo exigiria ler o bundle JS da propria pagina pra mapear as
+        # rotas reais - exatamente a pagina que esta bloqueada acima.
+        # Como a API de lives nao serve o proposito (nao e' "research") e
+        # nao ha' endpoint de relatorios confirmado, mantido indisponivel.
         "id": "btg",
         "nome": "BTG Research",
         "ativa_por_padrao": False,
@@ -100,8 +131,12 @@ CASAS = [
         "obter_relatorios": None,
         "extrator_texto": None,
         "motivo_indisponivel": (
-            "API interna identificada, mas bloqueada por bot-detection (Akamai) - "
-            "precisa de navegador real (Playwright/Chromium) pra passar do desafio JS."
+            "Pagina de relatorios (www.btgpactual.com) bloqueada pra navegador "
+            "automatizado mesmo com Chromium/Playwright real (testado, nao suposto: "
+            "net::ERR_HTTP2_PROTOCOL_ERROR/timeout, 0/8 tentativas passaram) - sem "
+            "ela nao da pra mapear o endpoint real de LISTAGEM DE RELATORIOS "
+            "(a API publica confirmada, content.btgpactual.com/.../medias/lives, "
+            "so' traz status de live streaming agora mesmo, nao relatorios escritos)."
         ),
     },
 ]
