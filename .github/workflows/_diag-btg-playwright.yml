@@ -1,0 +1,36 @@
+name: "[diagnostico temporario] BTG Playwright"
+
+# Workflow DIAGNOSTICO, nao faz parte da suite de producao - so dispatch
+# manual, usado pra testar (com evidencia real de runner ubuntu-latest,
+# mesmo tipo de rede que a producao usa) se Playwright/Chromium headless
+# passa do desafio JS da Akamai na API de research do BTG. Ver
+# _diag_btg_playwright.py. Removido depois que a investigacao terminar
+# (nao fica na branch principal).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar playwright
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright==1.48.0
+
+      - name: Instalar Chromium (com deps de sistema)
+        run: python -m playwright install --with-deps chromium
+
+      - name: Rodar diagnostico (3 tentativas)
+        run: python _diag_btg_playwright.py
