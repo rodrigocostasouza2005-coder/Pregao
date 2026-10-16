@@ -18,10 +18,52 @@ from data.mercado import (
     CAMPO_VARIACAO_POR_JANELA, obter_altas_baixas, obter_desempenho_setorial,
     obter_mais_negociados, obter_mercados_globais, obter_panorama_ibovespa, obter_termometro,
 )
+from data.prices import obter_cotacao_indice
 from ui import graficos, workspace
 
 _JANELAS_DESEMPENHO = ["DIA", "SEMANA", "MÊS"]
 _JANELA_ROTULO_PARA_CHAVE = {"DIA": "dia", "SEMANA": "semana", "MÊS": "mes"}
+
+# --- ranking de retornos (MAIORES ALTAS/BAIXAS), estilo "member ranked
+# returns" de terminal financeiro - linha de controles inline (periodo/
+# quantidade/setor, efeito imediato, sem formulario separado - pedido
+# explicito do Rodrigo) + lista unica numerada (melhores primeiro,
+# subtitulo, depois piores) com barra horizontal por linha, escala
+# independente por grupo (altas/baixas) com referencia de zero na borda
+# junto da coluna central. Dado 100% real (data/mercado.py, mesma fonte
+# de sempre) - nenhum valor inventado aqui, so' filtro/corte/apresentacao.
+_QTD_RANKING_OPCOES = ["5", "10", "15", "20"]
+_QTD_RANKING_PADRAO = "10"
+_POOL_RANKING = 60  # busca um pool grande (maioria do Ibovespa) pra filtro de setor nao esvaziar a lista
+
+
+def _nome_papel(ticker: str) -> str:
+    """Nome curto curado (config.NOMES_ATIVOS_BUSCA/TICKER_NOME) - string
+    vazia (nao o ticker repetido) se nao houver curadoria pra esse papel,
+    pra nunca inventar nome de empresa."""
+    return config.NOMES_ATIVOS_BUSCA.get(ticker) or config.TICKER_NOME.get(ticker) or ""
+
+
+def _ir_para_equity(ticker: str, prefs: dict):
+    """Callback (on_click) do botao de ticker do ranking - reaproveita o
+    MESMO mecanismo de navegacao da busca global (app.py:_ir_com_ticker):
+    troca a secao ativa pra EQUITY com esse ticker pre-selecionado.
+    Precisa ser on_click (nao escrita direta no corpo do script): o
+    segmented_control da navegacao (key="secao_ativa") ja foi instanciado
+    mais acima no MESMO run (MERCADO/VISAO GERAL renderizam depois do nav
+    no app.py) - escrever na chave de um widget depois dele ja ter sido
+    instanciado neste run derruba com StreamlitWidgetAlreadyInstantiatedError;
+    um callback de on_click roda ANTES do proximo rerun começar, entao o
+    valor novo já está lá quando o nav for instanciado de novo."""
+    if "EQUITY" not in (prefs.get("abas_visiveis") or []):
+        st.toast("A aba EQUITY está escondida nas suas preferências (CONFIG).", icon="⚠️")
+        return
+    if ticker not in prefs["watchlist"]:
+        prefs["watchlist"].append(ticker)
+    st.session_state["secao_ativa"] = "EQUITY"
+    st.session_state["secao_ativa_valido"] = "EQUITY"
+    st.session_state["ticker_selecionado"] = ticker
+    st.session_state["ticker_selecionado_valido"] = ticker
 
 
 def _tema_atual(prefs):
@@ -125,33 +167,140 @@ def _painel_termometro(prefs):
     return True
 
 
-def _tabela_papeis(papeis, prefs, titulo, campo="variacao_pct"):
-    st.markdown(f"<div class='cinza' style='font-size:0.72rem; text-transform:uppercase; margin-bottom:0.2rem;'>{titulo}</div>", unsafe_allow_html=True)
-    if not papeis:
-        st.markdown("<div class='cinza' style='font-size:0.78rem;'>—</div>", unsafe_allow_html=True)
-        return
-    linhas = "".join(
-        f"<tr><td style='padding:0.15rem 0.4rem 0.15rem 0;'>{p['ticker']}</td>"
-        f"<td style='padding:0.15rem 0.4rem; text-align:right;' class='neutro'>R$ {config.formatar_numero(p['preco'], 2, prefs['formato_numerico'])}</td>"
-        f"<td style='padding:0.15rem 0 0.15rem 0.4rem; text-align:right;' class='{'alta' if p[campo] >= 0 else 'baixa'}'>{_fmt_pct(p[campo], prefs)}</td></tr>"
-        for p in papeis
+def _linha_ranking(numero: int, p: dict, campo: str, prefs: dict, max_pos: float, max_neg_abs: float):
+    """Uma linha do ranking unico: barra negativa (so' se p[campo]<0) |
+    numero | botao do ticker (navega pra EQUITY, mesmo mecanismo da busca
+    global) | nome + retorno | barra positiva (so' se p[campo]>0). Escala
+    de cada barra e' relativa ao MAIOR valor do PROPRIO grupo (altas entre
+    si, baixas entre si) - referencia de zero sempre na borda junto da
+    coluna central, como no terminal de referencia."""
+    valor = p[campo]
+    cls = "alta" if valor >= 0 else "baixa"
+    cor_var = "var(--alta)" if valor >= 0 else "var(--baixa)"
+    largura_pos = min(100.0, (valor / max_pos * 100.0)) if valor > 0 and max_pos > 0 else 0.0
+    largura_neg = min(100.0, (abs(valor) / max_neg_abs * 100.0)) if valor < 0 and max_neg_abs > 0 else 0.0
+    nome = _nome_papel(p["ticker"])
+
+    col_barra_neg, col_num, col_ticker, col_nome_valor, col_barra_pos = st.columns(
+        [0.20, 0.06, 0.15, 0.37, 0.22], gap="small",
     )
-    st.markdown(
-        f"<table style='width:100%; font-size:0.8rem; border-collapse:collapse;'>{linhas}</table>",
-        unsafe_allow_html=True,
-    )
+    with col_barra_neg:
+        st.markdown(
+            f"<div class='rank-barra-trilho'><div class='rank-barra-fill rank-barra-neg' "
+            f"style='width:{largura_neg:.1f}%;'></div></div>",
+            unsafe_allow_html=True,
+        )
+    with col_num:
+        st.markdown(f"<div class='rank-numero'>{numero}</div>", unsafe_allow_html=True)
+    with col_ticker:
+        st.button(
+            p["ticker"], key=f"rank_ticker_{numero}_{p['ticker']}", width="stretch",
+            on_click=_ir_para_equity, args=(p["ticker"], prefs),
+            help=f"Abrir {p['ticker']} em EQUITY",
+        )
+    with col_nome_valor:
+        st.markdown(
+            f"<div class='rank-nome-valor'><span class='rank-nome' title='{html.escape(nome or p['ticker'])}'>"
+            f"{html.escape(nome) if nome else '&nbsp;'}</span>"
+            f"<span class='rank-valor' style='color:{cor_var};'>{_fmt_pct(valor, prefs)}</span></div>",
+            unsafe_allow_html=True,
+        )
+    with col_barra_pos:
+        st.markdown(
+            f"<div class='rank-barra-trilho'><div class='rank-barra-fill rank-barra-pos' "
+            f"style='width:{largura_pos:.1f}%;'></div></div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _subtitulo_ranking(texto: str):
+    st.markdown(f"<div class='rank-subtitulo'>{texto}</div>", unsafe_allow_html=True)
 
 
 def _painel_altas_baixas(prefs):
     st.markdown('<div class="painel-titulo">MAIORES ALTAS/BAIXAS</div>', unsafe_allow_html=True)
-    janela = _seletor_janela("altas_baixas")
+
+    # cabecalho do indice (IBOVESPA + cotacao + variacao) - mesma funcao ja
+    # usada no header/VISAO GERAL (data/prices.py:obter_cotacao_indice),
+    # so' reaproveitada aqui, nenhuma chamada nova a fonte externa alem da
+    # que ja existia.
+    ibov = obter_cotacao_indice("IBOVESPA", config.SIMBOLO_IBOVESPA)
+    if not ibov.get("erro"):
+        cls_ibov = "alta" if ibov["variacao_pct"] >= 0 else "baixa"
+        st.markdown(
+            f"<div class='rank-header-indice'>"
+            f"<span class='rank-header-indice-nome'>IBOVESPA</span>"
+            f"<span class='rank-header-indice-valor'>{config.formatar_numero(ibov['preco'], 0, prefs['formato_numerico'])}</span>"
+            f"<span class='{cls_ibov}' style='font-weight:600;'>{_fmt_pct(ibov['variacao_pct'], prefs)}</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    # linha de controles inline (efeito imediato, sem formulario separado) -
+    # periodo (ja existia), quantidade por grupo e filtro de setor (novos,
+    # so' recorte/filtro sobre o mesmo dado de obter_altas_baixas).
+    col_periodo, col_qtd, col_setor = st.columns([0.22, 0.22, 0.56], gap="small")
+    with col_periodo:
+        janela = _seletor_janela("altas_baixas")
+    with col_qtd:
+        padrao_qtd, mem_qtd = _escolha_estavel_mercado("altas_baixas_qtd", _QTD_RANKING_OPCOES, _QTD_RANKING_PADRAO)
+        sel_qtd = st.segmented_control(
+            "Qtd/grupo", _QTD_RANKING_OPCOES, default=padrao_qtd,
+            label_visibility="collapsed", key="mercado_altas_baixas_qtd",
+        )
+        qtd_rotulo = sel_qtd or padrao_qtd
+        st.session_state[mem_qtd] = qtd_rotulo
+        qtd = int(qtd_rotulo)
+
     campo = CAMPO_VARIACAO_POR_JANELA[janela]
-    altas, baixas = obter_altas_baixas(10, janela)
-    c1, c2 = st.columns(2)
-    with c1:
-        _tabela_papeis(altas, prefs, "Maiores altas", campo)
-    with c2:
-        _tabela_papeis(baixas, prefs, "Maiores baixas", campo)
+    altas_pool, baixas_pool = obter_altas_baixas(_POOL_RANKING, janela)
+    setores_disponiveis = ["TODOS"] + sorted({p["setor"] for p in altas_pool + baixas_pool})
+    with col_setor:
+        padrao_setor, mem_setor = _escolha_estavel_mercado("altas_baixas_setor", setores_disponiveis, "TODOS")
+        sel_setor = st.pills(
+            "Setor", setores_disponiveis, default=padrao_setor, selection_mode="single",
+            label_visibility="collapsed", key="mercado_altas_baixas_setor",
+        )
+        setor = sel_setor or padrao_setor
+        st.session_state[mem_setor] = setor
+
+    if setor != "TODOS":
+        altas_pool = [p for p in altas_pool if p["setor"] == setor]
+        baixas_pool = [p for p in baixas_pool if p["setor"] == setor]
+
+    composicao = obter_composicao_oficial()
+    total_universo = len(composicao) if composicao else len(config.IBOVESPA_SETORES)
+    st.markdown(
+        f"<div class='cinza' style='font-size:0.68rem; margin:0.3rem 0 0.5rem 0;'>"
+        f"UNIVERSO: IBOVESPA · {total_universo} PAPÉIS"
+        + (f" · SETOR: {setor}" if setor != "TODOS" else "")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    altas = altas_pool[:qtd]
+    baixas = list(reversed(baixas_pool[:qtd]))  # menor queda primeiro, maior queda por ultimo (mesma ordem do terminal de referencia)
+
+    if not altas and not baixas:
+        rotulo_setor = "" if setor == "TODOS" else f" no setor {setor}"
+        st.markdown(f"<div class='cinza' style='font-size:0.78rem;'>Nenhum papel com dado válido{rotulo_setor} nesta janela.</div>", unsafe_allow_html=True)
+        return
+
+    max_pos = max((p[campo] for p in altas), default=0.0) or 1.0
+    max_neg_abs = max((abs(p[campo]) for p in baixas), default=0.0) or 1.0
+
+    with st.container(key="mercado_ranking_lista"):
+        numero = 1
+        if altas:
+            _subtitulo_ranking("MAIORES ALTAS")
+            for p in altas:
+                _linha_ranking(numero, p, campo, prefs, max_pos, max_neg_abs)
+                numero += 1
+        if baixas:
+            _subtitulo_ranking("MAIORES BAIXAS")
+            for p in baixas:
+                _linha_ranking(numero, p, campo, prefs, max_pos, max_neg_abs)
+                numero += 1
 
 
 def _painel_mais_negociados(prefs):
