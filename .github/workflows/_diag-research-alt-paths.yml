@@ -1,0 +1,47 @@
+name: DIAG temporario - paths alternativos research
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Testar paths estaticos (sitemap/feed/robots) - BTG/XP/Genial
+        run: |
+          UA="PregaoApp/0.1 (uso pessoal, nao comercial; contato via github)"
+          testar() {
+            url="$1"
+            echo "=== $url ==="
+            code=$(curl -s -o /tmp/body.txt -w "%{http_code}" --max-time 15 -A "$UA" "$url" || echo "ERR")
+            echo "status: $code"
+            head -c 400 /tmp/body.txt
+            echo ""
+            echo "---"
+          }
+
+          echo "############ ROBOTS.TXT ############"
+          testar "https://analisa.genialinvestimentos.com.br/robots.txt"
+          testar "https://conteudos.xpi.com.br/robots.txt"
+          testar "https://www.btgpactual.com/robots.txt"
+
+          echo "############ GENIAL ANALISA ############"
+          testar "https://analisa.genialinvestimentos.com.br/sitemap.xml"
+          testar "https://analisa.genialinvestimentos.com.br/feed"
+          testar "https://analisa.genialinvestimentos.com.br/feed/"
+          testar "https://analisa.genialinvestimentos.com.br/rss"
+
+          echo "############ XP INVESTIMENTOS ############"
+          testar "https://conteudos.xpi.com.br/sitemap.xml"
+          testar "https://conteudos.xpi.com.br/sitemap_index.xml"
+          testar "https://conteudos.xpi.com.br/feed/"
+          testar "https://conteudos.xpi.com.br/wp-json/"
+
+          echo "############ BTG RESEARCH ############"
+          testar "https://www.btgpactual.com/sitemap.xml"
+          testar "https://www.btgpactual.com/acoes/sitemap.xml"
+          testar "https://www.btgpactual.com/feed"
+          testar "https://content.btgpactual.com/api/research/public-router/media-research/api/media-research/public/v1/medias/lives?status=FINISHED&pageNumber=1&pageSize=5"
