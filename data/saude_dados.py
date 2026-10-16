@@ -340,7 +340,7 @@ REGISTRO_COLETORES = [
         # morning_call.py tinha sua propria tabela (morning_call_execucoes)
         # mas nunca aparecia no painel central.
         "nome": "MORNING CALL", "fonte": "Macro+Mercado+NEWS agregados, e-mail (Resend/SMTP)",
-        "categoria": "Morning Call", "frequencia_esperada": ".github/workflows/radar-morning-call.yml, diario 07h BRT (seg-sex)",
+        "categoria": "Morning Call", "frequencia_esperada": ".github/workflows/radar-morning-call.yml, diario 08h BRT (seg-sex)",
         "idade_maxima_horas": 30, "instrumentado": True,
     },
 ]

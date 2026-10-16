@@ -1,12 +1,21 @@
 name: Radar e Morning Call
 
+# Conversão de horário: Brasil (America/Sao_Paulo) NÃO tem mais horário de
+# verão desde 2019 (Decreto 9.772/2019 extinguiu o horário de verão
+# federal) - BRT = UTC-3 o ano inteiro, sem exceção sazonal. GitHub
+# Actions agenda `schedule` sempre em UTC, então toda conversão abaixo é
+# fixa (hora BRT + 3 = hora UTC), nunca precisa de ajuste por época do ano.
+
 on:
   schedule:
-    # B3: 10:00-17:00 BRT = 13:00-20:00 UTC, weekdays. Every 15 minutes.
+    # RADAR DE QUEDAS: pregão regular da B3, 10:00-17:00 BRT = 13:00-20:00
+    # UTC, seg-sex. A cada 15 min durante o pregão + 1 rodada de fechamento
+    # as 20:00 UTC (17:00 BRT).
     - cron: "*/15 13-19 * * 1-5"
     - cron: "0 20 * * 1-5"
-    # Morning Call at 07:00 BRT on weekdays.
-    - cron: "0 10 * * 1-5"
+    # MORNING CALL: 08:00 BRT (antes da abertura do pregão) = 11:00 UTC,
+    # seg-sex. 08:00 + 3h = 11:00 UTC (BRT = UTC-3 fixo, ver nota acima).
+    - cron: "0 11 * * 1-5"
   workflow_dispatch:
     inputs:
       job:
@@ -17,13 +26,14 @@ on:
           - ambos
           - radar
           - morning_call
+      teste:
+        description: "Morning Call: enviar como TESTE (não conta como envio oficial do dia, nunca bloqueado por deduplicação, assunto marcado [TESTE])"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
-
-concurrency:
-  group: pregao-radar-morning-call
-  cancel-in-progress: false
 
 jobs:
   radar:
@@ -32,6 +42,13 @@ jobs:
       || github.event_name == 'workflow_dispatch' && (inputs.job == 'radar' || inputs.job == 'ambos')
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    # Concorrência isolada do morning-call: uma rodada de 15 em 15 min não
+    # deve nunca atrasar/pular o envio do Morning Call (nem o contrário).
+    # cancel-in-progress=false: nunca cancela uma coleta em andamento, só
+    # evita 2 coletas do Radar simultâneas (enfileira a próxima).
+    concurrency:
+      group: pregao-radar
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -62,10 +79,17 @@ jobs:
         run: python -m jobs.radar_quedas
   morning-call:
     if: >-
-      github.event_name == 'schedule' && github.event.schedule == '0 10 * * 1-5'
+      github.event_name == 'schedule' && github.event.schedule == '0 11 * * 1-5'
       || github.event_name == 'workflow_dispatch' && (inputs.job == 'morning_call' || inputs.job == 'ambos')
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    # Grupo próprio (ver comentário no job "radar"): nunca enfileirado
+    # atrás de uma coleta do Radar em andamento. cancel-in-progress=false
+    # evita 2 envios do Morning Call simultâneos sem cancelar um envio em
+    # andamento (poderia deixar o e-mail em estado indefinido).
+    concurrency:
+      group: pregao-morning-call
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -86,4 +110,12 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          # Execução agendada (cron) é sempre o envio oficial do dia
+          # (MODO AGENDADO - dedup por pregão, ver jobs/morning_call.py).
+          # Um workflow_dispatch manual só vira TESTE se o input "teste"
+          # for explicitamente marcado; sem isso, um disparo manual
+          # continua valendo como o envio oficial (ex: reexecução depois
+          # de uma falha agendada), do contrário o dia ficaria sem
+          # Morning Call nenhum.
+          MORNING_CALL_MODO: ${{ (github.event_name == 'workflow_dispatch' && inputs.teste == true) && 'TESTE' || 'AGENDADO' }}
         run: python -m jobs.morning_call
