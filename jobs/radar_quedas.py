@@ -129,13 +129,16 @@ def executar():
     # sucesso legítimo e não deixaria rastro nenhum sem isto).
     registrar_tentativa(
         "RADAR DE QUEDAS",
-        "Carteiras recomendadas (Genial) + cotações (variação diária)",
+        "Carteiras recomendadas (Genial + Safra) + cotações (variação diária)",
         execucao_ok=bool(resultado.get("coleta_ok")),
         persistencia_ok=(falhas == 0),
         registros_novos=len(resultado.get("alertas_novos", [])),
         erro=resultado.get("erro") or (f"{falhas} alerta(s) sem envio confirmado" if falhas else None),
         categoria="Radar",
-        parcial=bool(resultado.get("coleta_ok") and falhas > 0),
+        # Parcial tanto por falha de ENVIO (falhas>0) quanto por falha de
+        # COLETA numa fonte só (resultado["erro"] setado mesmo com
+        # coleta_ok=True - ver processar_monitoramento: "Execução parcial: ...").
+        parcial=bool(resultado.get("coleta_ok")) and bool(falhas or resultado.get("erro")),
     )
     # Falha de fonte também deve ser visível como execução falha, mesmo que
     # uma pendência antiga tenha sido entregue nesta rodada.

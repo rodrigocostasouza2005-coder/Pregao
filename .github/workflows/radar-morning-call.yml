@@ -5,8 +5,9 @@ on:
     # B3: 10:00-17:00 BRT = 13:00-20:00 UTC, weekdays. Every 15 minutes.
     - cron: "*/15 13-19 * * 1-5"
     - cron: "0 20 * * 1-5"
-    # Morning Call at 07:00 BRT on weekdays.
-    - cron: "0 10 * * 1-5"
+    # Morning Call at 08:00 BRT (America/Sao_Paulo, UTC-3, sem horário de
+    # verão desde 2019) on weekdays. 08:00 BRT = 11:00 UTC.
+    - cron: "0 11 * * 1-5"
   workflow_dispatch:
     inputs:
       job:
@@ -62,7 +63,7 @@ jobs:
         run: python -m jobs.radar_quedas
   morning-call:
     if: >-
-      github.event_name == 'schedule' && github.event.schedule == '0 10 * * 1-5'
+      github.event_name == 'schedule' && github.event.schedule == '0 11 * * 1-5'
       || github.event_name == 'workflow_dispatch' && (inputs.job == 'morning_call' || inputs.job == 'ambos')
     runs-on: ubuntu-latest
     timeout-minutes: 12

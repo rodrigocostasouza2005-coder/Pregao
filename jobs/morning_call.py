@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Morning Call factual independente de carteiras e do Radar de quedas."""
+import html as _html_escape
 import os
+import re
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -194,6 +196,42 @@ def montar_morning_call(agora=None):
     return "\n".join(linhas)
 
 
+_RE_URL = re.compile(r"(https?://[^\s<>()]+)")
+_RE_TITULO_SECAO = re.compile(r"^\d+\.\s")
+
+
+def montar_morning_call_html(texto: str) -> str:
+    """Converte o TEXTO já montado por montar_morning_call() num HTML
+    simples compatível com a maioria dos clientes de e-mail: títulos de
+    seção numerados (ex: "1. MERCADOS") viram <h2>, demais linhas não
+    vazias viram parágrafos, URLs cruas (ex: link de notícia) viram
+    links clicáveis. Nunca reconsulta os provedores - só reformata o
+    MESMO texto (garante que a versão HTML e a versão texto simples
+    nunca divergem em conteúdo, só em apresentação, exigido pelo
+    enviar_email(texto, html=...) de jobs/email_utils.py)."""
+    linhas_html = []
+    for linha in texto.splitlines():
+        linha = linha.strip()
+        if not linha:
+            continue
+        escapada = _RE_URL.sub(
+            lambda m: f'<a href="{m.group(1)}">{m.group(1)}</a>',
+            _html_escape.escape(linha),
+        )
+        if _RE_TITULO_SECAO.match(linha) or linha in ("LIMITAÇÕES",):
+            linhas_html.append(f"<h2 style='margin:18px 0 6px 0;font-size:16px'>{escapada}</h2>")
+        else:
+            linhas_html.append(f"<p style='margin:0 0 4px 0'>{escapada}</p>")
+    corpo = "\n".join(linhas_html)
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'></head>"
+        "<body style='font-family:Arial,Helvetica,sans-serif;font-size:14px;"
+        "color:#111;max-width:680px;margin:0 auto'>"
+        f"{corpo}"
+        "</body></html>"
+    )
+
+
 def _assunto(agora):
     return f"[PREGÃO] Morning Call — {agora.strftime('%d/%m/%Y')}"
 
@@ -225,6 +263,7 @@ def gerar_preview(agora=None):
         "assunto": _assunto(agora),
         "destinatario": os.getenv("EMAIL_TO", "").strip(),
         "texto": texto,
+        "html": montar_morning_call_html(texto),
         "secoes_faltantes": faltantes,
         "valido": not faltantes,
     }
@@ -292,7 +331,7 @@ def executar():
         return 0
 
     texto = montar_morning_call(agora)
-    resultado = enviar_email(_assunto(agora), texto)
+    resultado = enviar_email(_assunto(agora), texto, html=montar_morning_call_html(texto))
     persistiu = False
     if cliente is not None:
         try:
