@@ -436,6 +436,12 @@ PREFS_PADRAO = {
     "ticker_tape_modo": "ANIMADO",
     "ticker_tape_velocidade": "NORMAL",
     "research_casas_ativas": ["genial", "genial_lives"],
+    # Opt-in explicito pra receber o Morning Call por e-mail (ver
+    # jobs/morning_call.py:_listar_assinantes e ui CONFIG, secao
+    # NOTIFICACOES) - default DESLIGADO: sem essa flag true, nenhum
+    # usuario (novo ou existente antes desta mudanca) recebe e-mail
+    # automatico, nunca presume consentimento.
+    "morning_call_email_ativo": False,
     # ordem/visibilidade/tamanho dos paineis dentro de cada aba que adota
     # o sistema de paineis registrados (ver ui/paineis.py) -
     # {aba_id: [painel_id, ...]} pra ordem e tamanho, {aba_id: [painel_id
