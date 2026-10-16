@@ -3,7 +3,7 @@
 import html as _html_escape
 import os
 import re
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -19,6 +19,7 @@ from data.mercado import obter_cotacoes_lote
 from data.news import obter_top_mercado_tudo
 from data.prices import obter_cotacao_indice
 from data.supabase_client import obter_cliente
+from data.user_prefs import listar_assinantes_morning_call
 from jobs.email_utils import enviar_email
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -232,36 +233,50 @@ def montar_morning_call_html(texto: str) -> str:
     )
 
 
-def _assunto(agora):
-    return f"[PREGÃO] Morning Call — {agora.strftime('%d/%m/%Y')}"
+def _assunto(agora, teste=False):
+    prefixo = "[TESTE] " if teste else ""
+    return f"{prefixo}[PREGÃO] Morning Call — {agora.strftime('%d/%m/%Y')}"
 
 
-def gerar_preview(agora=None):
-    """Gera o Morning Call COMPLETO (mesmo texto que seria enviado) e
+def gerar_preview(agora=None, destinatario_teste=None):
+    """Gera o Morning Call COMPLETO (mesmo texto/HTML que seria enviado) e
     valida o conteúdo, SEM NUNCA chamar jobs.email_utils.enviar_email -
     modo de teste explícito pedido pra conferir o e-mail de verdade
-    (assunto, destinatário configurado, todas as seções obrigatórias)
-    sem disparo real nem dependência de nenhum secret de e-mail estar
-    configurado (EMAIL_PROVIDER/EMAIL_FROM/RESEND_API_KEY/etc podem
-    estar todos ausentes - gerar_preview nunca olha pra eles alem de
-    ler EMAIL_TO so' pra informar qual destinatario SERIA usado).
+    (assunto, destinatários reais, todas as seções obrigatórias) sem
+    disparo real nem dependência de nenhum secret de e-mail estar
+    configurado.
+
+    `destinatario_teste` (opcional): se passado, "destinatarios" no
+    retorno é só esse endereço (mesmo contrato de executar() - nunca
+    lista os assinantes reais junto de um teste). Sem ele, lista os
+    assinantes opt-in de verdade (ver data/user_prefs.py:
+    listar_assinantes_morning_call) - só LEITURA, nunca escreve nem
+    envia nada.
 
     Uso manual: `python -c "from jobs.morning_call import gerar_preview;
     p = gerar_preview(); print(p['texto']); print(p['valido'],
-    p['secoes_faltantes'])"`. Usado por testes (ver
-    tests/test_morning_call.py) pra validar as 6 seções obrigatórias
-    (SECOES_OBRIGATORIAS) sempre com enviar_email mockado/nunca chamado.
+    p['destinatarios'])"`. Usado por testes (ver tests/test_morning_call.py)
+    pra validar as 6 seções obrigatórias (SECOES_OBRIGATORIAS) sempre com
+    enviar_email mockado/nunca chamado.
 
-    Retorna {"assunto", "destinatario", "texto", "secoes_faltantes",
-    "valido"} - "valido" é True só se TODAS as SECOES_OBRIGATORIAS
-    aparecem no texto gerado; nunca garante que o provedor de e-mail
-    aceitaria o envio, só que o CONTEÚDO está completo."""
+    Retorna {"assunto", "destinatarios", "destinatarios_banco_disponivel",
+    "texto", "html", "secoes_faltantes", "valido"} - "valido" é True só se
+    TODAS as SECOES_OBRIGATORIAS aparecem no texto gerado; nunca garante
+    que o provedor de e-mail aceitaria o envio, só que o CONTEÚDO está
+    completo."""
     agora = agora or datetime.now(TZ_SP)
     texto = montar_morning_call(agora)
     faltantes = [secao for secao in SECOES_OBRIGATORIAS if secao not in texto]
+    if destinatario_teste:
+        destinatarios, banco_disponivel = [destinatario_teste], True
+    else:
+        assinantes = listar_assinantes_morning_call()
+        destinatarios = [a["email"] for a in assinantes] if assinantes is not None else []
+        banco_disponivel = assinantes is not None
     return {
-        "assunto": _assunto(agora),
-        "destinatario": os.getenv("EMAIL_TO", "").strip(),
+        "assunto": _assunto(agora, teste=bool(destinatario_teste)),
+        "destinatarios": destinatarios,
+        "destinatarios_banco_disponivel": banco_disponivel,
         "texto": texto,
         "html": montar_morning_call_html(texto),
         "secoes_faltantes": faltantes,
@@ -269,40 +284,84 @@ def gerar_preview(agora=None):
     }
 
 
-def _ja_enviado_hoje(cliente, agora) -> bool:
-    """True se já existe um registro status="ENVIADO" em
-    morning_call_execucoes com executado_em no MESMO dia (fuso
-    America/Sao_Paulo) de `agora` - usado por executar() pra nunca
-    disparar um e-mail duplicado num reenvio manual (ex: "Re-run failed
-    jobs" no GitHub Actions re-rodando um job que na verdade já tinha
-    enviado com sucesso antes, ou um operador rodando o script à mão
-    2x no mesmo dia).
+def _ja_enviado_hoje_para(cliente, destinatario: str, pregao_referencia: str) -> bool:
+    """True se já existe um registro status="ENVIADO", modo="AGENDADO"
+    em morning_call_execucoes pra ESTE destinatario neste dia de
+    referência (fuso America/Sao_Paulo) - usado por executar() pra nunca
+    disparar um e-mail duplicado pro MESMO assinante num reenvio manual
+    (ex: "Re-run failed jobs" no GitHub Actions re-rodando um job que na
+    verdade já tinha entregue a esse assinante, ou 2 execuções
+    concorrentes). Reforçado também no banco por um índice único parcial
+    (ver sql/morning_call_assinantes.sql) - esta checagem é a camada
+    rápida/early-exit, o índice é quem garante de verdade mesmo sob
+    concorrência real.
+
+    Nunca olha envios modo="TESTE": um teste pro mesmo endereço no mesmo
+    dia nunca bloqueia (nem conta como) o envio AGENDADO real.
 
     cliente=None (Supabase fora do ar/sem credencial) -> False: a
     VERIFICAÇÃO em si falhando nunca BLOQUEIA o envio - mesmo espírito
     de degradação do resto do arquivo (melhor um e-mail duplicado raro
     do que nenhum e-mail em um dia em que o Supabase esteja fora do
-    ar). Mesma lógica se a própria consulta lançar excecao."""
+    ar). Mesma lógica se a própria consulta lançar exceção (ex: migration
+    de sql/morning_call_assinantes.sql ainda não rodou em produção e a
+    coluna pregao_referencia não existe - degrada SEM proteção de
+    duplicata em vez de travar o envio inteiro)."""
     if cliente is None:
         return False
-    inicio_dia_br = datetime.combine(agora.date(), time.min, tzinfo=TZ_SP)
-    inicio_dia_utc = inicio_dia_br.astimezone(timezone.utc)
     try:
         resp = (
             cliente.table("morning_call_execucoes")
             .select("id")
             .eq("status", "ENVIADO")
-            .gte("executado_em", inicio_dia_utc.isoformat())
+            .eq("modo", "AGENDADO")
+            .eq("destinatario", destinatario)
+            .eq("pregao_referencia", pregao_referencia)
             .limit(1)
             .execute()
         )
         return bool(resp.data)
     except Exception as exc:
-        print(f"[morning_call] falha ao verificar envio duplicado (seguindo com o envio): {exc!r}")
+        print(f"[morning_call] falha ao verificar envio duplicado pra {destinatario}: {exc!r}")
         return False
 
 
-def executar():
+def _registrar_execucao(cliente, agora, pregao_referencia, destinatario, destinatario_sub, modo, resultado, texto):
+    if cliente is None:
+        return False
+    try:
+        cliente.table("morning_call_execucoes").insert({
+            "executado_em": agora.isoformat(),
+            "status": "ENVIADO" if resultado["ok"] else "FALHA_ENVIO",
+            "erro": resultado["erro"],
+            "destinatario": destinatario,
+            "destinatario_sub": destinatario_sub,
+            "pregao_referencia": pregao_referencia,
+            "modo": modo,
+            "conteudo": texto,
+        }).execute()
+        return True
+    except Exception as exc:
+        print(f"[morning_call] falha ao registrar execução ({destinatario}): {exc!r}")
+        return False
+
+
+def executar(destinatario_teste=None):
+    """Modo AGENDADO (padrão, destinatario_teste=None): envia o Morning
+    Call pra TODOS os assinantes opt-in (ver data/user_prefs.py:
+    listar_assinantes_morning_call) - nunca um destinatário fixo. Cada
+    assinante tem idempotência própria (não duplica se já recebeu hoje)
+    e falha isolada (um endereço inválido/bounce não derruba os outros).
+
+    Modo TESTE (destinatario_teste="algum@email"): envia só pra ESSE
+    endereço explícito, nunca consulta nem itera os assinantes reais -
+    uso manual/validação (ver workflow_dispatch input `teste_destinatario`
+    em .github/workflows/radar-morning-call.yml). NÃO chama
+    registrar_tentativa(): um teste manual não pode sobrescrever o status
+    real do último envio AGENDADO no painel SAÚDE DOS DADOS (achado real
+    2026-10-16: exatamente isso aconteceu com o RADAR DE QUEDAS quando
+    uma execução de teste de outra branch rodou depois da execução real
+    e sobrescreveu a linha de status)."""
     # Self-test de escrita+leitura ANTES do envio (mesmo motivo de
     # coletor_local.py/jobs/radar_quedas.py: diagnostico claro na raiz
     # em vez de uma falha de persistencia sem explicacao).
@@ -317,48 +376,78 @@ def executar():
 
     agora = datetime.now(TZ_SP)
     cliente = obter_cliente()
+    pregao_referencia = agora.date().isoformat()
 
-    # Idempotencia: um retry manual (ou "Re-run failed jobs" no GitHub
-    # Actions) rodando executar() de novo no MESMO dia depois de um
-    # ENVIADO com sucesso anterior nao deve mandar e-mail duplicado.
-    # Nao e' um erro - e' o comportamento esperado, por isso retorna 0
-    # (sucesso) em vez de 1.
-    if _ja_enviado_hoje(cliente, agora):
-        print(
-            f"[morning_call] Morning Call de {agora.strftime('%d/%m/%Y')} já foi ENVIADO "
-            "anteriormente hoje - pulando novo envio (retry/re-run, não é erro)."
+    if destinatario_teste:
+        texto = montar_morning_call(agora)
+        html = montar_morning_call_html(texto)
+        resultado = enviar_email(_assunto(agora, teste=True), texto, html=html, destinatario=destinatario_teste)
+        _registrar_execucao(cliente, agora, pregao_referencia, destinatario_teste, None, "TESTE", resultado, texto)
+        print(f"[morning_call] TESTE para {destinatario_teste}: envio_ok={resultado['ok']} erro={resultado['erro']}")
+        return 0 if resultado["ok"] else 1
+
+    # Checa os assinantes ANTES de montar o conteudo: sem isso, toda
+    # execucao batia em todos os provedores (mercado/macro/news) mesmo
+    # quando ninguem ia receber nada (zero assinantes), desperdicando
+    # chamadas de rede a toa.
+    assinantes = listar_assinantes_morning_call()
+    if assinantes is None:
+        print("[morning_call] não foi possível consultar os assinantes (Supabase indisponível) - nenhum e-mail enviado.")
+        registrar_tentativa(
+            "MORNING CALL",
+            "Assinantes opt-in (user_prefs) + macro/mercado/news agregados, e-mail (Resend/SMTP)",
+            execucao_ok=False, persistencia_ok=False,
+            erro="Não foi possível consultar os assinantes opt-in (Supabase indisponível).",
+            categoria="Morning Call",
+        )
+        return 1
+    if not assinantes:
+        print("[morning_call] nenhum assinante optou por receber o Morning Call hoje - nada a enviar (não é erro).")
+        registrar_tentativa(
+            "MORNING CALL",
+            "Assinantes opt-in (user_prefs) + macro/mercado/news agregados, e-mail (Resend/SMTP)",
+            execucao_ok=True, persistencia_ok=diagnostico["ok"], registros_novos=0,
+            categoria="Morning Call",
         )
         return 0
 
     texto = montar_morning_call(agora)
-    resultado = enviar_email(_assunto(agora), texto, html=montar_morning_call_html(texto))
-    persistiu = False
-    if cliente is not None:
-        try:
-            cliente.table("morning_call_execucoes").insert({
-                "executado_em": agora.isoformat(),
-                "status": "ENVIADO" if resultado["ok"] else "FALHA_ENVIO",
-                "erro": resultado["erro"],
-                "destinatario": os.getenv("EMAIL_TO", ""),
-                "conteudo": texto,
-            }).execute()
-            persistiu = True
-        except Exception as exc:
-            print(f"[morning_call] falha ao registrar execução: {exc!r}")
-    print(f"[morning_call] envio_ok={resultado['ok']} erro={resultado['erro']}")
+    html = montar_morning_call_html(texto)
+    assunto = _assunto(agora)
+    entregues = falhas = pulados = 0
+    for assinante in assinantes:
+        destinatario = assinante["email"]
+        if _ja_enviado_hoje_para(cliente, destinatario, pregao_referencia):
+            pulados += 1
+            continue
+        resultado = enviar_email(assunto, texto, html=html, destinatario=destinatario)
+        _registrar_execucao(cliente, agora, pregao_referencia, destinatario, assinante["sub"], "AGENDADO", resultado, texto)
+        if resultado["ok"]:
+            entregues += 1
+        else:
+            falhas += 1
+            print(f"[morning_call] falha ao enviar pra {destinatario}: {resultado['erro']}")
+
+    print(
+        f"[morning_call] assinantes={len(assinantes)} entregues={entregues} "
+        f"falhas={falhas} pulados_ja_enviados_hoje={pulados}"
+    )
     # Visibilidade no painel SAÚDE DOS DADOS, mesmo motivo do Radar: sem
     # isto, o job rodando mas falhando no envio (ou nem rodando mais)
     # não aparecia em lugar nenhum fora do log do GitHub Actions.
     registrar_tentativa(
         "MORNING CALL",
-        "Macro (BCB) + Mercado (yfinance) + NEWS agregados, e-mail (Resend/SMTP)",
-        execucao_ok=resultado["ok"],
-        persistencia_ok=persistiu,
-        erro=resultado["erro"],
+        "Assinantes opt-in (user_prefs) + macro/mercado/news agregados, e-mail (Resend/SMTP)",
+        execucao_ok=(falhas == 0 or entregues > 0),
+        persistencia_ok=diagnostico["ok"],
+        registros_novos=entregues,
+        erro=(f"{falhas} falha(s) de {len(assinantes)} assinante(s)" if falhas else None),
         categoria="Morning Call",
+        parcial=bool(falhas and entregues),
     )
-    return 0 if resultado["ok"] else 1
+    return 1 if (falhas and not entregues) else 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(executar())
+    _destinatario_teste = os.getenv("MORNING_CALL_TESTE_PARA", "").strip() or None
+    raise SystemExit(executar(destinatario_teste=_destinatario_teste))

@@ -1019,6 +1019,11 @@ if secao_atual == "CONFIG":
                                                index=["ANIMADO", "FIXO"].index(prefs["ticker_tape_modo"]))
                 novo_tape_velocidade = st.selectbox("VELOCIDADE DO LETREIRO", list(config.VELOCIDADES_TICKER_TAPE.keys()),
                                                      index=list(config.VELOCIDADES_TICKER_TAPE.keys()).index(prefs["ticker_tape_velocidade"]))
+                novo_morning_call_email = st.checkbox(
+                    "RECEBER MORNING CALL POR E-MAIL", value=prefs.get("morning_call_email", False),
+                    help="Briefing diário (mercados, macro, agenda, notícias) às 08h de Brasília, "
+                         "segunda a sexta. Desmarque a qualquer momento pra cancelar o recebimento.",
+                )
 
             novas_abas = st.multiselect(
                 "ABAS VISÍVEIS (a ordem de seleção define a ordem de exibição)",
@@ -1078,6 +1083,7 @@ if secao_atual == "CONFIG":
                     "atualizacao_intervalo": config.INTERVALOS_ATUALIZACAO[novo_rotulo_intervalo],
                     "ticker_tape_modo": novo_tape_modo,
                     "ticker_tape_velocidade": novo_tape_velocidade,
+                    "morning_call_email": novo_morning_call_email,
                     "ordem_paineis": {
                         **(prefs.get("ordem_paineis") or {}),
                         "MERCADO": nova_ordem_mercado,

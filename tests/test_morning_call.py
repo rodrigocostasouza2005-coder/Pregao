@@ -62,6 +62,8 @@ def test_executar_registra_tentativa_no_painel_saude(monkeypatch):
     monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
     monkeypatch.setattr(mc, "enviar_email", lambda *_a, **_k: {"ok": True, "erro": None})
     monkeypatch.setattr(mc, "obter_cliente", lambda: None)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda: [{"sub": "s1", "email": "a@b.com"}])
+    monkeypatch.setattr(mc, "_ja_enviado_hoje_para", lambda *a, **k: False)
     monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
 
     codigo = mc.executar()
@@ -79,13 +81,15 @@ def test_executar_registra_falha_quando_envio_nao_funciona(monkeypatch):
     monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
     monkeypatch.setattr(mc, "enviar_email", lambda *_a, **_k: {"ok": False, "erro": "Resend HTTP 401"})
     monkeypatch.setattr(mc, "obter_cliente", lambda: None)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda: [{"sub": "s1", "email": "a@b.com"}])
+    monkeypatch.setattr(mc, "_ja_enviado_hoje_para", lambda *a, **k: False)
     monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
 
     codigo = mc.executar()
 
     assert codigo == 1
     assert chamadas[0][1]["execucao_ok"] is False
-    assert chamadas[0][1]["erro"] == "Resend HTTP 401"
+    assert chamadas[0][1]["erro"] == "1 falha(s) de 1 assinante(s)"
 
 
 def test_executar_chama_self_test_de_persistencia_antes_de_tudo(monkeypatch):
@@ -97,6 +101,8 @@ def test_executar_chama_self_test_de_persistencia_antes_de_tudo(monkeypatch):
     monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
     monkeypatch.setattr(mc, "enviar_email", lambda *_a, **_k: {"ok": True, "erro": None})
     monkeypatch.setattr(mc, "obter_cliente", lambda: None)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda: [])
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: None)
 
     mc.executar()
 
@@ -210,6 +216,7 @@ def test_gerar_preview_contem_todas_as_secoes_obrigatorias_sem_enviar_email():
          patch.object(mc, "obter_focus_selic", return_value=None), \
          patch.object(mc, "obter_top_mercado_tudo", return_value=[{"titulo": "Manchete X", "link": "https://exemplo.com/x"}]), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[_evento_exemplo(data=agora.date())]), \
+         patch.object(mc, "listar_assinantes_morning_call", return_value=[{"sub": "s1", "email": "a@b.com"}]), \
          patch.object(mc, "enviar_email", enviar_email_mock):
         preview = mc.gerar_preview(agora)
 
@@ -219,115 +226,244 @@ def test_gerar_preview_contem_todas_as_secoes_obrigatorias_sem_enviar_email():
     for secao in mc.SECOES_OBRIGATORIAS:
         assert secao in preview["texto"]
     assert preview["assunto"] == "[PREGÃO] Morning Call — 14/10/2026"
+    assert preview["destinatarios"] == ["a@b.com"]
+    assert preview["destinatarios_banco_disponivel"] is True
     assert "Manchete X" in preview["texto"]
     assert "https://exemplo.com/x" in preview["texto"]
 
 
 def test_gerar_preview_marca_invalido_quando_falta_secao_obrigatoria():
     agora = datetime(2026, 10, 14, 7, tzinfo=TZ_SP)
-    with patch.object(mc, "montar_morning_call", return_value="MORNING CALL — texto incompleto sem as seções"):
+    with patch.object(mc, "montar_morning_call", return_value="MORNING CALL — texto incompleto sem as seções"), \
+         patch.object(mc, "listar_assinantes_morning_call", return_value=[]):
         preview = mc.gerar_preview(agora)
     assert preview["valido"] is False
     assert "1. MERCADOS" in preview["secoes_faltantes"]
+
+
+def test_gerar_preview_com_destinatario_teste_nunca_lista_assinantes_reais():
+    """Mission: modo de teste pra 1 destinatário explícito, nunca mistura
+    com os assinantes opt-in de verdade."""
+    chamada_assinantes = MagicMock(side_effect=AssertionError("preview de teste não deveria consultar os assinantes reais"))
+    agora = datetime(2026, 10, 14, 7, tzinfo=TZ_SP)
+    with patch.object(mc, "montar_morning_call", return_value="texto"), \
+         patch.object(mc, "listar_assinantes_morning_call", chamada_assinantes):
+        preview = mc.gerar_preview(agora, destinatario_teste="teste@exemplo.com")
+    assert preview["destinatarios"] == ["teste@exemplo.com"]
+    assert preview["assunto"].startswith("[TESTE]")
+    chamada_assinantes.assert_not_called()
 
 
 # ---------------------------------------------------------------------
 # IDEMPOTÊNCIA / DUPLICATA - item 3 da missão.
 # ---------------------------------------------------------------------
 
-def _cliente_fake_com_resultado(linhas):
+def _cliente_fake_dedup(resultado_data):
     resp = MagicMock()
-    resp.data = linhas
+    resp.data = resultado_data
     cliente = MagicMock()
-    cliente.table.return_value.select.return_value.eq.return_value.gte.return_value.limit.return_value.execute.return_value = resp
+    (cliente.table.return_value.select.return_value.eq.return_value
+        .eq.return_value.eq.return_value.eq.return_value.limit.return_value
+        .execute.return_value) = resp
     return cliente
 
 
-def test_ja_enviado_hoje_true_quando_ha_registro_enviado_no_dia():
-    cliente = _cliente_fake_com_resultado([{"id": 1}])
-    agora = datetime(2026, 10, 16, 9, tzinfo=TZ_SP)
-    assert mc._ja_enviado_hoje(cliente, agora) is True
+def test_ja_enviado_hoje_para_true_quando_ha_registro():
+    cliente = _cliente_fake_dedup([{"id": 1}])
+    assert mc._ja_enviado_hoje_para(cliente, "a@b.com", "2026-10-16") is True
     cliente.table.assert_called_with("morning_call_execucoes")
-    cliente.table.return_value.select.return_value.eq.assert_called_with("status", "ENVIADO")
 
 
-def test_ja_enviado_hoje_false_quando_nao_ha_registro():
-    cliente = _cliente_fake_com_resultado([])
-    agora = datetime(2026, 10, 16, 9, tzinfo=TZ_SP)
-    assert mc._ja_enviado_hoje(cliente, agora) is False
+def test_ja_enviado_hoje_para_false_quando_nao_ha_registro():
+    cliente = _cliente_fake_dedup([])
+    assert mc._ja_enviado_hoje_para(cliente, "a@b.com", "2026-10-16") is False
 
 
-def test_ja_enviado_hoje_false_sem_cliente_supabase():
-    assert mc._ja_enviado_hoje(None, datetime(2026, 10, 16, 9, tzinfo=TZ_SP)) is False
+def test_ja_enviado_hoje_para_false_sem_cliente_supabase():
+    assert mc._ja_enviado_hoje_para(None, "a@b.com", "2026-10-16") is False
 
 
-def test_ja_enviado_hoje_false_quando_consulta_lanca_excecao():
+def test_ja_enviado_hoje_para_false_quando_consulta_lanca_excecao():
+    """Degrada sem proteção de duplicata (nunca bloqueia o envio) se a
+    consulta falhar - inclusive se a migration sql/morning_call_assinantes.sql
+    ainda não tiver rodado em produção (coluna pregao_referencia ausente)."""
     cliente = MagicMock()
     cliente.table.side_effect = RuntimeError("Supabase fora do ar")
-    assert mc._ja_enviado_hoje(cliente, datetime(2026, 10, 16, 9, tzinfo=TZ_SP)) is False
+    assert mc._ja_enviado_hoje_para(cliente, "a@b.com", "2026-10-16") is False
 
 
-def test_executar_pula_envio_quando_ja_enviado_hoje_regressao_retry_duplicado(monkeypatch):
+def _patch_base_executar(monkeypatch, cliente=None, assinantes=(), ja_enviado=False, envio_ok=True):
+    registros = []
+    envios = []
+    inserts = []
+    cliente = cliente if cliente is not None else MagicMock()
+    cliente.table.return_value.insert.side_effect = lambda payload: inserts.append(payload) or MagicMock()
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda: list(assinantes) if assinantes is not None else None)
+    monkeypatch.setattr(mc, "_ja_enviado_hoje_para", lambda *a, **k: ja_enviado)
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "1. MERCADOS\n- Ibovespa: 140.000")
+    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: envios.append((a, k)) or {"ok": envio_ok, "erro": None if envio_ok else "falha simulada"})
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: registros.append(k))
+    return {"registros": registros, "envios": envios, "inserts": inserts, "cliente": cliente}
+
+
+def test_executar_pula_assinante_que_ja_recebeu_hoje_regressao_retry_duplicado(monkeypatch):
     """Regressão: um retry manual (ou "Re-run failed jobs" no GitHub
     Actions) rodando executar() de novo no MESMO dia depois de um
-    ENVIADO com sucesso anterior NÃO pode mandar e-mail duplicado."""
-    cliente = _cliente_fake_com_resultado([{"id": 1}])
-    chamadas_envio = []
-    chamadas_registro = []
+    ENVIADO com sucesso anterior pra um assinante NÃO pode mandar e-mail
+    duplicado pra ele."""
+    estado = _patch_base_executar(
+        monkeypatch, assinantes=[{"sub": "s1", "email": "a@b.com"}], ja_enviado=True,
+    )
+    codigo = mc.executar()
+    assert codigo == 0
+    assert estado["envios"] == []
+    assert estado["inserts"] == []
 
-    def _montar_nao_deveria_ser_chamado(*_a, **_k):
-        raise AssertionError("não deveria montar o texto quando já foi enviado hoje")
 
+def test_executar_envia_pra_assinante_novo_e_persiste_com_sub_e_modo(monkeypatch):
+    estado = _patch_base_executar(
+        monkeypatch, assinantes=[{"sub": "s1", "email": "a@b.com"}], ja_enviado=False,
+    )
+    codigo = mc.executar()
+    assert codigo == 0
+    assert len(estado["envios"]) == 1
+    _args, kwargs = estado["envios"][0]
+    assert kwargs.get("destinatario") == "a@b.com"
+    assert len(estado["inserts"]) == 1
+    assert estado["inserts"][0]["destinatario"] == "a@b.com"
+    assert estado["inserts"][0]["destinatario_sub"] == "s1"
+    assert estado["inserts"][0]["modo"] == "AGENDADO"
+    assert estado["registros"][0]["execucao_ok"] is True
+
+
+def test_executar_envia_pra_multiplos_assinantes_isolando_falha_de_um_deles(monkeypatch):
+    """Item 5 da missão: falha parcial e múltiplos usuários - um
+    destinatário com erro não pode impedir o envio aos outros."""
+    cliente = MagicMock()
+    inserts = []
+    cliente.table.return_value.insert.side_effect = lambda payload: inserts.append(payload) or MagicMock()
+    resultados_por_email = {
+        "ok@exemplo.com": {"ok": True, "erro": None},
+        "falha@exemplo.com": {"ok": False, "erro": "Resend HTTP 422: endereço inválido"},
+    }
     monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
     monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
-    monkeypatch.setattr(mc, "montar_morning_call", _montar_nao_deveria_ser_chamado)
-    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
-    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: chamadas_registro.append((a, k)))
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda: [
+        {"sub": "s1", "email": "ok@exemplo.com"}, {"sub": "s2", "email": "falha@exemplo.com"},
+    ])
+    monkeypatch.setattr(mc, "_ja_enviado_hoje_para", lambda *a, **k: False)
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "1. MERCADOS\n- x")
+    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: resultados_por_email[k["destinatario"]])
+    registros = []
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: registros.append(k))
 
     codigo = mc.executar()
 
-    assert codigo == 0
-    assert chamadas_envio == []
-    # o insert de uma NOVA linha ENVIADO nunca deve ter sido tentado:
-    cliente.table.return_value.insert.assert_not_called()
+    assert codigo == 0  # pelo menos 1 entregue -> não é falha total
+    assert len(inserts) == 2
+    status_por_destinatario = {i["destinatario"]: i["status"] for i in inserts}
+    assert status_por_destinatario["ok@exemplo.com"] == "ENVIADO"
+    assert status_por_destinatario["falha@exemplo.com"] == "FALHA_ENVIO"
+    assert registros[0]["parcial"] is True
+    assert registros[0]["registros_novos"] == 1
 
 
-def test_executar_envia_normalmente_quando_nao_enviado_ainda_hoje(monkeypatch):
-    cliente = _cliente_fake_com_resultado([])
-    chamadas_envio = []
-
-    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
-    monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
-    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
-    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
-    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: None)
-
+def test_executar_todos_os_assinantes_falham_retorna_erro(monkeypatch):
+    estado = _patch_base_executar(
+        monkeypatch, assinantes=[{"sub": "s1", "email": "a@b.com"}], ja_enviado=False, envio_ok=False,
+    )
     codigo = mc.executar()
+    assert codigo == 1
+    assert estado["registros"][0]["execucao_ok"] is False
 
+
+def test_executar_sem_assinantes_nao_envia_nada_e_nao_e_erro(monkeypatch):
+    """Item 2 da missão: destinatário fixo removido - zero assinantes
+    opt-in é um estado legítimo, nunca um erro."""
+    chamada_montar = MagicMock(side_effect=AssertionError("não deveria montar o conteúdo sem nenhum assinante"))
+    estado = _patch_base_executar(monkeypatch, assinantes=[])
+    monkeypatch.setattr(mc, "montar_morning_call", chamada_montar)
+    codigo = mc.executar()
     assert codigo == 0
-    assert len(chamadas_envio) == 1
-    cliente.table.return_value.insert.assert_called_once()
+    assert estado["envios"] == []
+    chamada_montar.assert_not_called()
+    assert estado["registros"][0]["execucao_ok"] is True
+
+
+def test_executar_assinantes_indisponivel_retorna_erro_e_nao_monta_conteudo(monkeypatch):
+    chamada_montar = MagicMock(side_effect=AssertionError("não deveria montar o conteúdo sem saber quem são os assinantes"))
+    estado = _patch_base_executar(monkeypatch, assinantes=None)
+    monkeypatch.setattr(mc, "montar_morning_call", chamada_montar)
+    codigo = mc.executar()
+    assert codigo == 1
+    chamada_montar.assert_not_called()
+    assert estado["registros"][0]["execucao_ok"] is False
 
 
 def test_executar_envia_versao_html_junto_da_versao_texto(monkeypatch):
     """Mission: 'Produza HTML compatível com clientes de e-mail e uma
     alternativa em texto simples' - enviar_email precisa receber html=
     não vazio, nunca só o texto puro."""
-    cliente = _cliente_fake_com_resultado([])
-    chamadas_envio = []
-
-    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
-    monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
-    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "1. MERCADOS\n- Ibovespa: 140.000")
-    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
-    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: None)
-
+    estado = _patch_base_executar(monkeypatch, assinantes=[{"sub": "s1", "email": "a@b.com"}])
     mc.executar()
-
-    assert len(chamadas_envio) == 1
-    _args, kwargs = chamadas_envio[0]
+    assert len(estado["envios"]) == 1
+    _args, kwargs = estado["envios"][0]
     assert kwargs.get("html"), "enviar_email foi chamado sem a versão HTML"
     assert "<h2" in kwargs["html"]
+
+
+# ---------------------------------------------------------------------
+# MODO TESTE - item 4 da missão: 1 destinatário explícito, nunca dispara
+# pros assinantes opt-in reais.
+# ---------------------------------------------------------------------
+
+def test_executar_modo_teste_envia_so_pro_destinatario_explicito_nunca_assinantes(monkeypatch):
+    chamada_assinantes = MagicMock(side_effect=AssertionError("modo teste não deveria consultar os assinantes reais"))
+    cliente = MagicMock()
+    inserts = []
+    cliente.table.return_value.insert.side_effect = lambda payload: inserts.append(payload) or MagicMock()
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", chamada_assinantes)
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "1. MERCADOS\n- x")
+    envios = []
+    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: envios.append((a, k)) or {"ok": True, "erro": None})
+    registros = []
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: registros.append(k))
+
+    codigo = mc.executar(destinatario_teste="rodrigo@exemplo.com")
+
+    assert codigo == 0
+    chamada_assinantes.assert_not_called()
+    assert len(envios) == 1
+    assert envios[0][1]["destinatario"] == "rodrigo@exemplo.com"
+    assert "[TESTE]" in envios[0][0][0]  # assunto marcado
+    assert len(inserts) == 1
+    assert inserts[0]["modo"] == "TESTE"
+    assert inserts[0]["destinatario"] == "rodrigo@exemplo.com"
+    # modo TESTE não pode sobrescrever o status real do SAÚDE DOS DADOS
+    # (achado real 2026-10-16: um teste de outra branch sobrescreveu o
+    # status do RADAR DE QUEDAS por ter rodado depois da execução real).
+    assert registros == []
+
+
+def test_executar_modo_teste_nao_bloqueia_nem_e_bloqueado_pelo_dedup_agendado(monkeypatch):
+    """Um teste pro mesmo endereço no mesmo dia nunca verifica (nem
+    conta pra) a idempotência do envio AGENDADO real."""
+    chamada_dedup = MagicMock(side_effect=AssertionError("modo teste não deveria checar idempotência do AGENDADO"))
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: MagicMock())
+    monkeypatch.setattr(mc, "_ja_enviado_hoje_para", chamada_dedup)
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
+    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: {"ok": True, "erro": None})
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: None)
+
+    codigo = mc.executar(destinatario_teste="rodrigo@exemplo.com")
+
+    assert codigo == 0
+    chamada_dedup.assert_not_called()
 
 
 def test_montar_morning_call_html_contem_as_mesmas_secoes_do_texto():

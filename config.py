@@ -453,6 +453,11 @@ PREFS_PADRAO = {
     # reaproveita ordem_paineis/paineis_visiveis de cima pra ordem e
     # visibilidade, so' posicao/tamanho livre e' novo.
     "layout_paineis_livre": {},
+    # opt-in explicito (2026-10-16): usuario precisa marcar pra receber o
+    # Morning Call por e-mail (08h BRT, seg-sex) - nunca um destinatario
+    # fixo/implicito. Mesmo botao desmarca = cancela o recebimento
+    # (ver jobs/morning_call.py:listar_assinantes / app.py, aba CONFIG).
+    "morning_call_email": False,
 }
 
 # --- Periodos intradiarios (candles de minutos, tratados a parte em
