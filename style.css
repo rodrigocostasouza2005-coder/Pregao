@@ -914,6 +914,119 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
     }
 }
 
+/* RANKING DE RETORNOS (MAIORES ALTAS/BAIXAS, ui/mercado_tab.py) - lista
+   unica numerada com barra horizontal por linha (verde/vermelho), escala
+   por grupo com referencia de zero na borda junto da coluna central -
+   linguagem visual de terminal financeiro (ranking de performance). */
+.rank-header-indice {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin: -0.1rem 0 0.5rem 0;
+}
+.rank-header-indice-nome {
+    color: var(--cinza);
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.rank-header-indice-valor {
+    color: var(--neutro);
+    font-size: 0.95rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.rank-subtitulo {
+    color: var(--cinza);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--borda);
+    padding: 0.5rem 0 0.2rem 0;
+    margin-bottom: 0.15rem;
+}
+.rank-numero {
+    color: var(--cinza);
+    font-size: 0.7rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    padding-top: 0.3rem;
+}
+.rank-nome-valor {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-width: 0;
+    padding-top: 0.2rem;
+}
+.rank-nome {
+    color: var(--cinza);
+    font-size: 0.74rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.rank-valor {
+    font-size: 0.78rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.rank-barra-trilho {
+    height: 10px;
+    width: 100%;
+    margin-top: 0.35rem;
+    background: color-mix(in srgb, var(--borda) 35%, transparent);
+}
+.rank-barra-fill {
+    height: 100%;
+}
+.rank-barra-pos {
+    background: var(--alta);
+    margin-left: 0;
+}
+.rank-barra-neg {
+    background: var(--baixa);
+    margin-left: auto;
+}
+/* ticker do ranking: o botao nativo do Streamlit ja' sai ambar (ver regra
+   generica .stButton button acima) - so' aperta o padding/altura pra
+   encaixar na densidade de linha do ranking (1 linha por papel). */
+.st-key-mercado_ranking_lista .stButton button {
+    padding: 0.1rem 0.4rem !important;
+    min-height: 22px !important;
+    font-size: 0.76rem !important;
+    font-weight: 600;
+}
+.st-key-mercado_ranking_lista [data-testid="stVerticalBlock"] { gap: 0.05rem; }
+
+/* Mobile: a regra generica de mobile (acima) empilha QUALQUER
+   st.columns em 100% de largura - pro ranking isso destruiria a barra
+   (ficaria uma faixa cheia embaixo do texto, sem leitura nenhuma).
+   Mesma tecnica de escape ja usada em .st-key-visao_geral_mercado_agora_cols:
+   mantem as 5 colunas lado a lado, so' encolhe gap/fonte. */
+@media (max-width: 640px) {
+    .st-key-mercado_ranking_lista div[data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        column-gap: 0.25rem !important;
+    }
+    .st-key-mercado_ranking_lista div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        flex: 1 1 auto !important;
+        width: auto !important;
+        min-width: 0 !important;
+    }
+    .rank-nome { font-size: 0.68rem; }
+    .rank-valor { font-size: 0.72rem; }
+    .rank-numero { font-size: 0.64rem; }
+    .st-key-mercado_ranking_lista .stButton button {
+        padding: 0.05rem 0.25rem !important;
+        font-size: 0.68rem !important;
+    }
+}
+
 /* Celulares muito estreitos: reduzir apenas espaçamentos, nunca os dados. */
 @media (max-width: 380px) {
     .block-container {
