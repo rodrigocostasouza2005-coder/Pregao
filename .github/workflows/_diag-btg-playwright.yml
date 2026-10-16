@@ -37,7 +37,7 @@ jobs:
       - name: Instalar playwright
         run: |
           python -m pip install --upgrade pip
-          pip install playwright==1.48.0
+          pip install playwright==1.48.0 requests
 
       - name: Instalar Chromium (com deps de sistema)
         run: python -m playwright install --with-deps chromium
