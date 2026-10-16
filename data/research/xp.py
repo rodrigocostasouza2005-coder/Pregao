@@ -25,7 +25,16 @@ recomendadas (carteira-*) ficam de fora de proposito, nao sao "relatorio":
 
 Resumo: NUNCA contorna o paywall. O texto usado pro resumo e' so o trecho
 de content.rendered ANTES do marcador "paywall-gateway" (ver
-obter_texto_aberto) - nunca baixa a pagina publica do relatorio em si."""
+obter_texto_aberto) - nunca baixa a pagina publica do relatorio em si.
+
+Busca por via alternativa (2026-10-16): sem WebFetch/curl de verdade pra
+conteudos.xpi.com.br (fora do allowlist de rede deste ambiente - nem
+resolve DNS), a verificacao foi via busca na web (WebSearch); nao achou
+nenhum feed RSS, sitemap ou API publica alternativa documentada pra XP
+research - a API wp-json/wp/v2 (ja' usada aqui) continua sendo a unica
+via conhecida. Nao ha' achado novo; o bloqueio de IP/geo documentado
+acima permanece a causa real (confirmada em sessoes anteriores, dentro E
+fora do sandbox)."""
 
 import re
 

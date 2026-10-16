@@ -3,12 +3,17 @@
 import html as html_lib
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+import config
 from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
+from data.eventos import (
+    STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_LABEL, STATUS_PRAZO_CVM,
+    calcular_calendario_cacheado,
+)
 from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta
 from data.news import obter_top_mercado_tudo
 from data.prices import obter_cotacao_indice
@@ -18,10 +23,12 @@ from jobs.email_utils import enviar_email
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 
 # Modo da execução: AGENDADO (cron, 08h BRT seg-sex - só 1 envio "oficial"
-# por pregão) ou TESTE (workflow_dispatch manual, nunca conta pra
-# deduplicação do envio agendado nem pode ser confundido com ele no
-# histórico). Lido do ambiente (GitHub Actions passa via env no step) -
-# nunca lido de secrets, não é informação sensível.
+# por pregão) ou TESTE (workflow_dispatch manual com o input "teste", ou
+# gerar_preview() que nunca envia nada). TESTE nunca conta pra
+# deduplicação do envio agendado (_ja_enviado_hoje) nem pode ser
+# confundido com ele no histórico (coluna "modo" em
+# morning_call_execucoes). Lido do ambiente (GitHub Actions passa via env
+# no step) - nunca lido de secrets, não é informação sensível.
 MODO_AGENDADO = "AGENDADO"
 MODO_TESTE = "TESTE"
 
@@ -29,6 +36,28 @@ MODO_TESTE = "TESTE"
 def _modo_execucao() -> str:
     valor = os.getenv("MORNING_CALL_MODO", MODO_AGENDADO).strip().upper()
     return valor if valor in (MODO_AGENDADO, MODO_TESTE) else MODO_AGENDADO
+
+
+# Secoes que TODO Morning Call gerado precisa conter - usado por
+# gerar_preview() pra validar o conteudo sem depender de nenhum secret de
+# e-mail estar configurado (ver docstring de gerar_preview). Se o nome de
+# uma secao mudar aqui, mudar junto em montar_morning_call.
+SECOES_OBRIGATORIAS = (
+    "1. RESUMO EXECUTIVO",
+    "2. BRASIL",
+    "3. EXTERIOR",
+    "4. AGENDA DE HOJE",
+    "5. EMPRESAS E SETORES",
+    "6. TENDÊNCIAS E RISCOS A ACOMPANHAR",
+    "LIMITAÇÕES",
+    "FONTES",
+)
+
+_NOTA_STATUS_EVENTO = {
+    STATUS_PRAZO_CVM: "prazo MÁXIMO regulatório da CVM (Instrução CVM 480/2009) — NÃO é uma data anunciada pela empresa.",
+    STATUS_CONFIRMADO: "data CONFIRMADA pela própria empresa/fonte oficial.",
+    STATUS_ESTIMADO: "data ESTIMADA por fonte externa — ainda não confirmada pela empresa.",
+}
 
 
 def _fmt_num(valor, casas=2):
@@ -82,15 +111,65 @@ def _linhas_noticias(itens, limite):
     return out
 
 
+def _linha_evento(evento):
+    status = evento.get("status")
+    rotulo_status = STATUS_LABEL.get(status, status or "status desconhecido")
+    nota_status = _NOTA_STATUS_EVENTO.get(status, "nível de confiabilidade da data não identificado.")
+    horario = evento.get("horario")
+    sufixo_horario = f" às {horario}" if horario else " (sem horário divulgado)"
+    empresa = evento.get("empresa") or evento.get("ticker") or "Empresa não identificada"
+    tipo = evento.get("tipo_evento") or "EVENTO"
+    periodo = f" {evento['periodo']}" if evento.get("periodo") else ""
+    return (
+        f"- {empresa} ({evento.get('ticker', '?')}): {tipo}{periodo}{sufixo_horario} "
+        f"— {rotulo_status}: {nota_status}"
+    )
+
+
+def _secao_agenda(agora):
+    """Eventos do CALENDÁRIO (data/eventos.py) com data=hoje (fuso
+    America/Sao_Paulo) - hoje só resultados corporativos (ITR/DFP), ver
+    docstring do módulo pra por quê não há CONFIRMADO/ESTIMADO de fontes
+    adicionais ainda. Usa calcular_calendario_cacheado (mesma função que
+    ui/calendario_tab.py usa) pra ler o snapshot já persistido pelo
+    coletor em vez de recalcular o universo inteiro (CVM) a cada envio -
+    só recalcula ao vivo os tickers que por algum motivo não estiverem
+    no snapshot (ver docstring da função).
+
+    Igual às outras seções (ver EMPRESAS E SETORES/BRASIL/EXTERIOR):
+    qualquer falha cai num fallback textual, nunca quebra o e-mail
+    inteiro. Ausência real de evento hoje também é dita explicitamente,
+    nunca omitida em silêncio."""
+    linhas = [
+        "", "4. AGENDA DE HOJE",
+        "Eventos do calendário de resultados corporativos (CVM) com data de hoje; "
+        "o status indica o quão confiável é a data (veja a nota em cada linha).",
+    ]
+    try:
+        tickers = list(config.IBOVESPA_SETORES.keys())
+        eventos = calcular_calendario_cacheado(tickers, hoje=agora.date())
+        eventos_hoje = [e for e in eventos if e.get("data") == agora.date()]
+        if not eventos_hoje:
+            linhas.append("- Nenhum evento relevante identificado para hoje.")
+        else:
+            eventos_hoje.sort(key=lambda e: (e.get("horario") or "99:99", e.get("ticker") or ""))
+            for evento in eventos_hoje:
+                linhas.append(_linha_evento(evento))
+    except Exception:
+        linhas.append("- Agenda do dia indisponível nesta execução.")
+    return linhas
+
+
 def montar_morning_call(agora=None):
     """Monta texto sem IA: cada número é lido dos provedores existentes.
 
     Estrutura pedida (cabeçalho · resumo executivo · Brasil · Exterior ·
-    Empresas e setores · Tendências e riscos · Limitações · Fontes) - sem
-    IA: cada linha vem de um provedor já usado em outra aba do PREGÃO
-    (data/prices.py, data/macro.py, data/news.py). Notícias já chegam
-    classificadas por região ("BR"/"INT") e por ticker detectado no
-    título (data/news.py:_processar_pool) - reaproveitado aqui, nunca
+    Agenda de hoje · Empresas e setores · Tendências e riscos ·
+    Limitações · Fontes) - sem IA: cada linha vem de um provedor já usado
+    em outra aba do PREGÃO (data/prices.py, data/macro.py, data/news.py,
+    data/eventos.py). Notícias já chegam classificadas por região
+    ("BR"/"INT") e por ticker detectado no título
+    (data/news.py:_processar_pool) - reaproveitado aqui, nunca
     reclassificado com regra própria. Seção/indicador indisponível diz
     isso explicitamente; nunca omitido em silêncio nem substituído por
     número estimado."""
@@ -111,13 +190,13 @@ def montar_morning_call(agora=None):
         "sem horário de verão desde 2019) · período analisado: última barra/leitura "
         "disponível em cada fonte (ver horário por linha abaixo) · fontes consultadas: "
         "Yahoo Finance (cotações), Banco Central do Brasil/Boletim Focus (indicadores), "
-        "Google News (notícias) - detalhe completo na seção FONTES.",
+        "CVM (agenda de resultados), Google News (notícias) - detalhe completo na seção FONTES.",
         "",
         "1. RESUMO EXECUTIVO",
         _bullet_variacao("Ibovespa", cot_ibov),
         _bullet_variacao("Dólar (USD/BRL)", cot_dolar),
-        "- Detalhamento completo de mercados, macro, notícias e riscos nas seções abaixo; "
-        "nenhum número deste resumo substitui a conferência na fonte original.",
+        "- Detalhamento completo de mercados, macro, agenda, notícias e riscos nas seções "
+        "abaixo; nenhum número deste resumo substitui a conferência na fonte original.",
         "",
         "2. BRASIL",
         linha_ibov,
@@ -196,7 +275,9 @@ def montar_morning_call(agora=None):
     else:
         linhas.append("- Nenhuma manchete internacional nesta coleta.")
 
-    linhas += ["", "4. EMPRESAS E SETORES"]
+    linhas += _secao_agenda(agora)
+
+    linhas += ["", "5. EMPRESAS E SETORES"]
     if noticias_erro:
         linhas.append(f"- Notícias indisponíveis nesta execução ({noticias_erro}).")
     elif noticias_br_empresa:
@@ -208,7 +289,7 @@ def montar_morning_call(agora=None):
         )
 
     linhas += [
-        "", "5. TENDÊNCIAS E RISCOS A ACOMPANHAR",
+        "", "6. TENDÊNCIAS E RISCOS A ACOMPANHAR",
         "- [INTERPRETAÇÃO] Risco global: acompanhe a direção dos futuros americanos, dólar e "
         "commodities; confirme os movimentos nas fontes originais.",
         "- [INTERPRETAÇÃO] Brasil: observe juros futuros, câmbio e notícias fiscais/políticas; "
@@ -224,6 +305,7 @@ def montar_morning_call(agora=None):
         "", "FONTES",
         "- Cotações: Yahoo Finance (yfinance) - dados podem ter atraso conforme o provedor.",
         "- Indicadores macro: Banco Central do Brasil (Selic/CDI) e Boletim Focus (BCB).",
+        "- Agenda de resultados: CVM (Instrução CVM 480/2009) - ver nota de confiabilidade em cada linha.",
         "- Notícias: Google News (agregador); veículo original e link de cada manchete nas seções acima.",
     ]
     return "\n".join(linhas)
@@ -283,27 +365,75 @@ def montar_morning_call_html(texto: str) -> str:
     return "\n".join(partes)
 
 
-def _ja_enviado_hoje(cliente, pregao: str) -> bool:
-    """True só se já existe um envio AGENDADO (não TESTE) com status
-    ENVIADO pra esse pregão - usado pra nunca duplicar o Morning Call
-    oficial do dia num retry/reexecução. Nunca bloqueia o envio por
-    engano: se a consulta falhar (ex: coluna 'pregao'/'modo' ainda não
-    migrada via sql/radar_research.sql), assume que não foi enviado
-    ainda, só loga - o self-test de persistência em executar() já cobre
-    o diagnóstico de schema ausente."""
+def _assunto(agora):
+    return f"[PREGÃO] Morning Call — {agora.strftime('%d/%m/%Y')}"
+
+
+def gerar_preview(agora=None):
+    """Gera o Morning Call COMPLETO (mesmo texto que seria enviado) e
+    valida o conteúdo, SEM NUNCA chamar jobs.email_utils.enviar_email -
+    modo de teste explícito pedido pra conferir o e-mail de verdade
+    (assunto, destinatário configurado, todas as seções obrigatórias)
+    sem disparo real nem dependência de nenhum secret de e-mail estar
+    configurado (EMAIL_PROVIDER/EMAIL_FROM/RESEND_API_KEY/etc podem
+    estar todos ausentes - gerar_preview nunca olha pra eles alem de
+    ler EMAIL_TO so' pra informar qual destinatario SERIA usado).
+
+    Uso manual: `python -c "from jobs.morning_call import gerar_preview;
+    p = gerar_preview(); print(p['texto']); print(p['valido'],
+    p['secoes_faltantes'])"`. Usado por testes (ver
+    tests/test_morning_call.py) pra validar as SECOES_OBRIGATORIAS
+    sempre com enviar_email mockado/nunca chamado.
+
+    Retorna {"assunto", "destinatario", "texto", "secoes_faltantes",
+    "valido"} - "valido" é True só se TODAS as SECOES_OBRIGATORIAS
+    aparecem no texto gerado; nunca garante que o provedor de e-mail
+    aceitaria o envio, só que o CONTEÚDO está completo."""
+    agora = agora or datetime.now(TZ_SP)
+    texto = montar_morning_call(agora)
+    faltantes = [secao for secao in SECOES_OBRIGATORIAS if secao not in texto]
+    return {
+        "assunto": _assunto(agora),
+        "destinatario": os.getenv("EMAIL_TO", "").strip(),
+        "texto": texto,
+        "secoes_faltantes": faltantes,
+        "valido": not faltantes,
+    }
+
+
+def _ja_enviado_hoje(cliente, agora) -> bool:
+    """True se já existe um registro modo="AGENDADO" + status="ENVIADO"
+    em morning_call_execucoes com executado_em no MESMO dia (fuso
+    America/Sao_Paulo) de `agora` - usado por executar() pra nunca
+    disparar um e-mail duplicado num reenvio manual (ex: "Re-run failed
+    jobs" no GitHub Actions re-rodando um job que na verdade já tinha
+    enviado com sucesso antes, ou um operador rodando o script à mão
+    2x no mesmo dia). O filtro por modo="AGENDADO" garante que um envio
+    de TESTE anterior no mesmo dia nunca bloqueia o envio oficial.
+
+    cliente=None (Supabase fora do ar/sem credencial) -> False: a
+    VERIFICAÇÃO em si falhando nunca BLOQUEIA o envio - mesmo espírito
+    de degradação do resto do arquivo (melhor um e-mail duplicado raro
+    do que nenhum e-mail em um dia em que o Supabase esteja fora do
+    ar). Mesma lógica se a própria consulta lançar excecao, inclusive se
+    a coluna "modo" ainda não tiver sido migrada (sql/radar_research.sql)."""
+    if cliente is None:
+        return False
+    inicio_dia_br = datetime.combine(agora.date(), time.min, tzinfo=TZ_SP)
+    inicio_dia_utc = inicio_dia_br.astimezone(timezone.utc)
     try:
         resp = (
             cliente.table("morning_call_execucoes")
             .select("id")
-            .eq("pregao", pregao)
-            .eq("modo", MODO_AGENDADO)
             .eq("status", "ENVIADO")
+            .eq("modo", MODO_AGENDADO)
+            .gte("executado_em", inicio_dia_utc.isoformat())
             .limit(1)
             .execute()
         )
         return bool(resp.data)
     except Exception as exc:
-        print(f"[morning_call] falha ao checar envio duplicado (assumindo não enviado): {exc!r}")
+        print(f"[morning_call] falha ao verificar envio duplicado (seguindo com o envio): {exc!r}")
         return False
 
 
@@ -322,30 +452,26 @@ def executar():
 
     agora = datetime.now(TZ_SP)
     modo = _modo_execucao()
-    pregao = agora.date().isoformat()
     cliente = obter_cliente()
 
-    # Retry controlado sem duplicar envio: só se aplica ao envio AGENDADO
-    # (workflow_dispatch com job='morning_call' e teste explícito usa
-    # MODO_TESTE e nunca é bloqueado por isto nem conta pra deduplicação
-    # do envio oficial do dia).
-    if modo == MODO_AGENDADO and cliente is not None and _ja_enviado_hoje(cliente, pregao):
-        motivo = f"Morning Call de {pregao} já enviado com sucesso nesta execução agendada; envio ignorado para não duplicar."
-        print(f"[morning_call] {motivo}")
-        registrar_tentativa(
-            "MORNING CALL",
-            "Macro (BCB) + Mercado (yfinance) + NEWS agregados, e-mail (Resend/SMTP)",
-            execucao_ok=True,
-            persistencia_ok=True,
-            registros_novos=0,
-            erro=None,
-            categoria="Morning Call",
+    # Idempotencia: um retry manual (ou "Re-run failed jobs" no GitHub
+    # Actions) rodando executar() de novo no MESMO dia depois de um
+    # ENVIADO AGENDADO com sucesso anterior nao deve mandar e-mail
+    # duplicado. So' se aplica ao envio AGENDADO - um workflow_dispatch
+    # com o input "teste" usa MODO_TESTE e nunca e' bloqueado por isto
+    # nem conta pra deduplicacao do envio oficial do dia. Nao e' um erro
+    # - e' o comportamento esperado, por isso retorna 0 (sucesso) em vez
+    # de 1.
+    if modo == MODO_AGENDADO and _ja_enviado_hoje(cliente, agora):
+        print(
+            f"[morning_call] Morning Call de {agora.strftime('%d/%m/%Y')} já foi ENVIADO "
+            "(AGENDADO) anteriormente hoje - pulando novo envio (retry/re-run, não é erro)."
         )
         return 0
 
     texto = montar_morning_call(agora)
     html_corpo = montar_morning_call_html(texto)
-    assunto = f"[PREGÃO] Morning Call — {agora.strftime('%d/%m/%Y')}"
+    assunto = _assunto(agora)
     if modo == MODO_TESTE:
         assunto += " [TESTE]"
     resultado = enviar_email(assunto, texto, html=html_corpo)
@@ -354,7 +480,6 @@ def executar():
         try:
             cliente.table("morning_call_execucoes").insert({
                 "executado_em": agora.isoformat(),
-                "pregao": pregao,
                 "modo": modo,
                 "status": "ENVIADO" if resultado["ok"] else "FALHA_ENVIO",
                 "erro": resultado["erro"],
@@ -370,7 +495,7 @@ def executar():
     # não aparecia em lugar nenhum fora do log do GitHub Actions.
     registrar_tentativa(
         "MORNING CALL",
-        "Macro (BCB) + Mercado (yfinance) + NEWS agregados, e-mail (Resend/SMTP)",
+        "Macro (BCB) + Mercado (yfinance) + Agenda (CVM) + NEWS agregados, e-mail (Resend/SMTP)",
         execucao_ok=resultado["ok"],
         persistencia_ok=persistiu,
         erro=resultado["erro"],

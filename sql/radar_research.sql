@@ -57,14 +57,11 @@ create index if not exists idx_morning_call_execucoes_em
 alter table morning_call_execucoes enable row level security;
 
 -- Migration aditiva (2026-10-16): diferencia execução AGENDADA (cron
--- 08h BRT) de envio de TESTE (workflow_dispatch manual), e amarra cada
--- execução ao pregão (data BRT) que ela cobre. O índice único garante
--- que só existe 1 envio AGENDADO com sucesso por pregão - um retry/
--- reexecução do mesmo dia nunca duplica o e-mail oficial (jobs/
--- morning_call.py:_ja_enviado_hoje confere isso antes de enviar).
--- Envios de TESTE nunca contam pra essa deduplicação.
+-- 08h BRT) de envio de TESTE (workflow_dispatch manual com o input
+-- "teste", ou jobs/morning_call.py:gerar_preview). A deduplicação do
+-- envio oficial do dia (jobs/morning_call.py:_ja_enviado_hoje, já
+-- existente desde o PR da AGENDA DE HOJE/preview/idempotência) agora
+-- também filtra por modo='AGENDADO' - um envio de TESTE no mesmo dia
+-- nunca conta como o envio oficial nem bloqueia o envio AGENDADO
+-- seguinte.
 alter table morning_call_execucoes add column if not exists modo text not null default 'AGENDADO';
-alter table morning_call_execucoes add column if not exists pregao date;
-create unique index if not exists idx_morning_call_unico_agendado_por_pregao
-  on morning_call_execucoes (pregao)
-  where modo = 'AGENDADO' and status = 'ENVIADO';
