@@ -46,9 +46,17 @@ UA = (
 )
 
 
-def _tentativa(n: int) -> dict:
+def _tentativa(n: int, *, forcar_http1: bool, so_api: bool) -> dict:
+    """`forcar_http1`: lanca o Chromium com --disable-http2 (1a rodada real
+    deu net::ERR_HTTP2_PROTOCOL_ERROR - mesma familia de sintoma que
+    genial.py ja documentou pro WAF da Genial; testa se forcar HTTP/1.1,
+    que resolveu pra Genial, tambem resolve aqui). `so_api`: pula a
+    navegacao na pagina www.btgpactual.com e chama as APIs (dominio
+    content.btgpactual.com, separado) direto, sem passar por cookies/
+    sensor nenhum - testa se o host da API reage diferente do host do
+    site principal."""
     t0 = time.monotonic()
-    chamadas_rede = []  # requests/responses relevantes observadas durante a navegacao real
+    chamadas_rede = []
 
     def _on_response(resp):
         if "public-router" in resp.url or "media-research" in resp.url:
@@ -57,23 +65,27 @@ def _tentativa(n: int) -> dict:
             except Exception:
                 pass
 
-    resultado = {"tentativa": n}
+    resultado = {"tentativa": n, "forcar_http1": forcar_http1, "so_api": so_api}
+    args = ["--disable-http2"] if forcar_http1 else []
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=True, args=args)
             try:
                 contexto = browser.new_context(user_agent=UA, locale="pt-BR")
                 pagina = contexto.new_page()
                 pagina.on("response", _on_response)
 
-                pagina.goto(PAGINA_RESEARCH, wait_until="networkidle", timeout=30000)
-                resultado["pagina_status"] = "carregou"
-                resultado["chamadas_rede_observadas"] = chamadas_rede
+                if not so_api:
+                    try:
+                        pagina.goto(PAGINA_RESEARCH, wait_until="networkidle", timeout=30000)
+                        resultado["pagina_status"] = "carregou"
+                    except Exception as e:
+                        resultado["pagina_erro"] = f"{type(e).__name__}: {e}"
+                    resultado["chamadas_rede_observadas"] = chamadas_rede
 
-                # depois da navegacao real (cookies/sensor da Akamai ja
-                # setados pelo contexto), tenta as 2 APIs diretamente DENTRO
-                # do mesmo contexto do browser (mesmas cookies, mesmo TLS de
-                # Chrome real - nao e' um client HTTP separado)
+                # tenta as 2 APIs diretamente DENTRO do mesmo contexto do
+                # browser (mesmas cookies se a navegacao acima rodou, mesmo
+                # TLS/HTTP de Chrome real - nao e' um client HTTP separado)
                 for rotulo, url in (("lives", API_LIVES), ("all", API_ALL)):
                     try:
                         r = contexto.request.get(url, timeout=15000)
@@ -91,7 +103,17 @@ def _tentativa(n: int) -> dict:
 
 
 if __name__ == "__main__":
-    resultados = [_tentativa(i) for i in range(1, 4)]
+    # bateria de hipoteses, nao so repeticao da mesma tentativa: (1) igual
+    # a 1a rodada (controle), (2) forcando HTTP/1.1 (testa se o sintoma e'
+    # igual ao da Genial, contornavel), (3)+(4) direto na API sem passar
+    # pela home (testa se o host da API reage diferente do www).
+    plano = [
+        {"forcar_http1": False, "so_api": False},
+        {"forcar_http1": True, "so_api": False},
+        {"forcar_http1": False, "so_api": True},
+        {"forcar_http1": True, "so_api": True},
+    ]
+    resultados = [_tentativa(i + 1, **cfg) for i, cfg in enumerate(plano)]
     for r in resultados:
         print("[diag-btg]", json.dumps(r, ensure_ascii=False))
     sucesso = any(r.get("api_lives_status") == 200 or r.get("api_all_status") == 200 for r in resultados)
