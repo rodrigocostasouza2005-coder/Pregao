@@ -1,22 +1,37 @@
 # -*- coding: utf-8 -*-
 """Radar persistente de quedas em carteiras recomendadas.
 
-Fonte estruturada habilitada nesta primeira versão: recomendações públicas
-estruturadas da Genial. Outras casas só entram quando houver coletor de
-carteiras públicas acessível e dados de validade confiáveis.
+Fontes estruturadas habilitadas: recomendações públicas da Genial Analisa
+e a carteira mensal pública "Top 10 Ações" da Safra Corretora (2026-10-16
+- ver data/research/safra_carteiras.py pra evidência real de que essa
+fonte é acessível, diferente de Genial/XP/BTG, bloqueadas na borda
+Akamai mesmo fora do sandbox). Cada casa é tratada de forma INDEPENDENTE
+em processar_monitoramento(): uma fonte bloqueada nunca invalida nem
+desativa as recomendações vigentes de outra fonte que respondeu
+normalmente. Outras casas só entram quando houver coletor de carteiras
+públicas acessível e dados de validade confiáveis.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 from data.prices import obter_cotacao
-from data.research.genial_carteiras import coletar_carteiras
+from data.research.genial_carteiras import coletar_carteiras as _coletar_genial
+from data.research.safra_carteiras import coletar_carteiras as _coletar_safra
 from data.supabase_client import obter_cliente
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 LIMIAR_VARIACAO = -4.0
+# Carteiras aqui sao produtos MENSAIS (Genial/Safra) - uma linha "vigente"
+# cuja ultima confirmacao real (verificado_em) passou desse limite quer
+# dizer que a fonte ficou fora do ar por tempo demais pra continuar
+# confiando nela como "carteira atual" (ver listar_carteiras). Folga de
+# ~10 dias alem do ciclo mensal de 30/31 dias pra nao expirar por um
+# fim de semana prolongado ou alguns dias de bloqueio pontual da fonte.
+IDADE_MAXIMA_CARTEIRA_DIAS = 40
 CASA_GENIAL = "Genial Analisa"
+CASA_SAFRA = "Safra Corretora"
 
 
 def calcular_queda(preco_atual, fechamento_anterior):
@@ -46,10 +61,18 @@ def normalizar_ticker(valor):
 
 def coletar_carteiras_genial():
     """Coleta somente carteiras mensais oficiais e validadas da Genial."""
-    return coletar_carteiras()
+    return _coletar_genial()
 
 
-def salvar_carteiras(itens):
+def coletar_carteiras_safra():
+    """Coleta a carteira mensal pública "Top 10 Ações" da Safra Corretora."""
+    return _coletar_safra()
+
+
+def salvar_carteiras(casa, itens):
+    """Upsert + reativação ESCOPADOS a uma única casa - uma falha ou
+    ausência de outra casa nunca desativa as recomendações vigentes
+    desta (ver processar_monitoramento, que chama isto por fonte)."""
     cliente = obter_cliente()
     if cliente is None:
         return False
@@ -60,31 +83,55 @@ def salvar_carteiras(itens):
             ).execute()
         cliente.table("radar_carteiras_recomendadas").update(
             {"vigente": False}
-        ).eq("casa", CASA_GENIAL).execute()
+        ).eq("casa", casa).execute()
         chaves = {(i["ticker"], i["carteira"]) for i in itens}
         # Reativa somente as recomendações confirmadas nesta coleta.
         for ticker, carteira in chaves:
             cliente.table("radar_carteiras_recomendadas").update(
                 {"vigente": True, "verificado_em": datetime.now(timezone.utc).isoformat(),
                  "status_coleta": "COLETADO"}
-            ).eq("casa", CASA_GENIAL).eq("ticker", ticker).eq("carteira", carteira).execute()
+            ).eq("casa", casa).eq("ticker", ticker).eq("carteira", carteira).execute()
         return True
     except Exception as exc:
-        print(f"[radar_quedas] falha ao persistir carteiras: {exc!r}")
+        print(f"[radar_quedas] falha ao persistir carteiras ({casa}): {exc!r}")
         return False
 
 
+def _carteira_expirada(linha, agora=None):
+    """True se `verificado_em` da linha passou de IDADE_MAXIMA_CARTEIRA_DIAS
+    - a fonte confirmou essa recomendação pela última vez há tempo demais
+    pra continuar tratando como carteira atual (ver constante acima).
+    Campo ausente/malformado -> False (fail open, mesmo espírito do resto
+    do projeto: nunca trava por um dado opcional malformado)."""
+    agora = agora or datetime.now(timezone.utc)
+    verificado = linha.get("verificado_em")
+    if not verificado:
+        return False
+    try:
+        quando = datetime.fromisoformat(str(verificado).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return (agora - quando) > timedelta(days=IDADE_MAXIMA_CARTEIRA_DIAS)
+
+
 def listar_carteiras():
+    """Recomendações vigentes (todas as casas), excluindo as EXPIRADAS
+    (ver _carteira_expirada) - uma carteira mensal cuja fonte parou de
+    confirmar há tempo demais não é apresentada como atual, mesmo que a
+    flag `vigente` no banco ainda esteja True (ela só vira False quando a
+    PRÓPRIA fonte confirma uma mudança - ver salvar_carteiras)."""
     cliente = obter_cliente()
     if cliente is None:
         return None
     try:
         resp = (cliente.table("radar_carteiras_recomendadas").select("*")
                 .eq("vigente", True).order("casa").execute())
-        return resp.data or []
+        linhas = resp.data or []
     except Exception as exc:
         print(f"[radar_quedas] falha ao ler carteiras: {exc!r}")
         return None
+    agora = datetime.now(timezone.utc)
+    return [linha for linha in linhas if not _carteira_expirada(linha, agora)]
 
 
 def avaliar_ticker(ticker, cotacao, recomendacoes, agora=None):
@@ -107,7 +154,7 @@ def avaliar_ticker(ticker, cotacao, recomendacoes, agora=None):
     return {
         "ticker": ticker, "empresa": next((r.get("empresa") for r in relacionados if r.get("empresa")), ""),
         "preco_atual": float(preco), "fechamento_anterior": float(anterior),
-        "variacao_pct": variacao, "cotacao_em": cotacao.get("_coletado_em") or agora.isoformat(),
+        "variacao_pct": variacao, "cotacao_em": cotacao.get("cotacao_em") or agora.isoformat(),
         "tipo_cotacao": cotacao.get("tipo_cotacao") or "ATRASADA/PROVEDOR GRATUITO",
         "pregao": agora.date().isoformat(),
         "casas": sorted({r.get("casa", "") for r in relacionados if r.get("casa")}),
@@ -136,21 +183,49 @@ def registrar_alerta(alerta):
 
 
 def processar_monitoramento():
-    """Atualiza fontes e avalia as recomendações ativas. Envio fica no worker."""
-    snapshot = coletar_carteiras_genial()
-    coleta_ok = snapshot is not None
-    if not coleta_ok:
-        return {"coleta_ok": False, "alertas_novos": [], "erro": "Fonte de recomendações indisponível; monitoramento suspenso para evitar usar carteiras desatualizadas."}
-    # Uma resposta vazia pode indicar mudança no HTML/API ou coleta parcial.
-    # Não desativar a última carteira válida até confirmar que a fonte entregou
-    # uma composição real; isso evita transformar falha de parsing em "zero ativos".
-    if not snapshot:
-        return {"coleta_ok": False, "alertas_novos": [], "erro": "A fonte retornou zero recomendações; snapshot rejeitado e carteiras anteriores preservadas."}
-    if not salvar_carteiras(snapshot):
-        return {"coleta_ok": False, "alertas_novos": [], "erro": "Falha ao persistir a coleta; monitoramento suspenso para evitar usar recomendações desatualizadas."}
+    """Atualiza cada fonte de carteira de forma INDEPENDENTE e avalia as
+    recomendações vigentes resultantes. Envio fica no worker.
+
+    coleta_ok=True se PELO MENOS UMA fonte persistiu uma composição
+    válida nesta execução (ver `status_fontes` no retorno pro detalhe por
+    casa) - uma fonte bloqueada/vazia/com falha de persistência NUNCA
+    impede a avaliação das recomendações de outra fonte que respondeu
+    normalmente, nem desativa as recomendações vigentes da própria fonte
+    que falhou agora (permanecem vigentes até ELA MESMA confirmar uma
+    mudança real numa execução futura - mesmo motivo de salvar_carteiras
+    só desativar/reativar pela própria casa). Só retorna coleta_ok=False
+    (monitoramento totalmente suspenso) quando TODAS as fontes
+    configuradas falharem/forem rejeitadas nesta execução."""
+    status_fontes = {}
+    pelo_menos_uma_ok = False
+    for casa, coletor in ((CASA_GENIAL, coletar_carteiras_genial), (CASA_SAFRA, coletar_carteiras_safra)):
+        snapshot = coletor()
+        if snapshot is None:
+            status_fontes[casa] = "fonte indisponível"
+            continue
+        # Uma resposta vazia pode indicar mudança no HTML/PDF ou coleta
+        # parcial. Não desativa a última carteira válida DESTA casa até
+        # confirmar que a fonte entregou uma composição real; isso evita
+        # transformar falha de parsing em "zero ativos".
+        if not snapshot:
+            status_fontes[casa] = "snapshot vazio, rejeitado (carteira anterior preservada)"
+            continue
+        if not salvar_carteiras(casa, snapshot):
+            status_fontes[casa] = "falha ao persistir (carteira anterior preservada)"
+            continue
+        status_fontes[casa] = f"ok ({len(snapshot)} recomendações)"
+        pelo_menos_uma_ok = True
+
+    resumo_fontes = "; ".join(f"{casa}: {status}" for casa, status in status_fontes.items())
+    if not pelo_menos_uma_ok:
+        return {
+            "coleta_ok": False, "alertas_novos": [],
+            "erro": f"Todas as fontes de recomendações indisponíveis ou rejeitadas nesta execução. {resumo_fontes}",
+            "fontes": status_fontes,
+        }
     recomendacoes = listar_carteiras()
     if recomendacoes is None:
-        return {"coleta_ok": coleta_ok, "alertas_novos": [], "erro": "Supabase indisponível"}
+        return {"coleta_ok": True, "alertas_novos": [], "erro": f"Supabase indisponível para leitura. {resumo_fontes}", "fontes": status_fontes}
     tickers = sorted({normalizar_ticker(r.get("ticker")) for r in recomendacoes} - {""})
     novos = []
     for ticker in tickers:
@@ -161,7 +236,12 @@ def processar_monitoramento():
             if ok and alerta_id is not None:
                 alerta["id"] = alerta_id
                 novos.append(alerta)
-    return {"coleta_ok": coleta_ok, "alertas_novos": novos, "total_tickers": len(tickers)}
+    parcial = any(not status.startswith("ok") for status in status_fontes.values())
+    return {
+        "coleta_ok": True, "alertas_novos": novos, "total_tickers": len(tickers),
+        "fontes": status_fontes,
+        "erro": (f"Execução parcial: {resumo_fontes}" if parcial else None),
+    }
 
 
 @st.cache_data(ttl=60, show_spinner=False)

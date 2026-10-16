@@ -331,7 +331,7 @@ REGISTRO_COLETORES = [
         # a tabela radar_alertas_queda so' registra ALERTAS de queda, nao a
         # tentativa de execucao - uma rodada sem queda >4% (sucesso legitimo)
         # nao deixava rastro nenhum neste painel.
-        "nome": "RADAR DE QUEDAS", "fonte": "Carteiras recomendadas (Genial) + cotacoes",
+        "nome": "RADAR DE QUEDAS", "fonte": "Carteiras recomendadas (Genial + Safra) + cotacoes",
         "categoria": "Radar", "frequencia_esperada": ".github/workflows/radar-morning-call.yml, 15min (seg-sex, pregao)",
         "idade_maxima_horas": 1, "instrumentado": True,
     },

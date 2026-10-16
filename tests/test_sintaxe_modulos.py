@@ -23,7 +23,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 _RAIZ = Path(__file__).parent.parent
-_IGNORAR_DIRS = {".git", ".venv", "venv", "__pycache__", "node_modules"}
+# ".claude" (2026-10-16): worktrees de outras sessoes/agentes do Claude
+# Code ficam em .claude/worktrees/... - tooling state, nunca codigo do
+# projeto; sem isso, uma copia antiga/em-progresso de um arquivo dentro
+# de um worktree orfao quebrava esta checagem com um SyntaxError que nao
+# tem nada a ver com o codigo real do Pregao.
+_IGNORAR_DIRS = {".git", ".venv", "venv", "__pycache__", "node_modules", ".claude"}
 
 _FALHAS = []
 

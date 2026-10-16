@@ -92,7 +92,9 @@ def _detalhe_bloqueio_cdn(corpo: str) -> str:
     Reference ID (e o IP bloqueado, se presente) pra log - informacao que
     o Rodrigo precisa pra abrir chamado em bloqueio-cdn@xpi.com.br (canal
     que a propria pagina de bloqueio informa). "" se o corpo nao tiver
-    esse formato (403 de outra causa)."""
+    esse formato (403 de outra causa) ou nao for texto (ex: resposta
+    mockada em teste sem `.text` definido - nunca lanca excecao)."""
+    corpo = corpo if isinstance(corpo, str) else ""
     m_ref = _REGEX_REFERENCE_ID.search(corpo or "")
     if not m_ref:
         return ""

@@ -307,3 +307,67 @@ def test_executar_envia_normalmente_quando_nao_enviado_ainda_hoje(monkeypatch):
     assert codigo == 0
     assert len(chamadas_envio) == 1
     cliente.table.return_value.insert.assert_called_once()
+
+
+def test_executar_envia_versao_html_junto_da_versao_texto(monkeypatch):
+    """Mission: 'Produza HTML compatível com clientes de e-mail e uma
+    alternativa em texto simples' - enviar_email precisa receber html=
+    não vazio, nunca só o texto puro."""
+    cliente = _cliente_fake_com_resultado([])
+    chamadas_envio = []
+
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "1. MERCADOS\n- Ibovespa: 140.000")
+    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: None)
+
+    mc.executar()
+
+    assert len(chamadas_envio) == 1
+    _args, kwargs = chamadas_envio[0]
+    assert kwargs.get("html"), "enviar_email foi chamado sem a versão HTML"
+    assert "<h2" in kwargs["html"]
+
+
+def test_montar_morning_call_html_contem_as_mesmas_secoes_do_texto():
+    texto = (
+        "MORNING CALL — 16/10/2026\n"
+        "1. MERCADOS\n- Ibovespa: 140.000\n"
+        "4. NOTÍCIAS\n- Manchete com link — https://exemplo.com/a?x=1&y=2\n"
+        "LIMITAÇÕES\n- Conteúdo informativo."
+    )
+    html_gerado = mc.montar_morning_call_html(texto)
+    assert "<h2" in html_gerado and "1. MERCADOS" in html_gerado
+    assert "LIMITAÇÕES" in html_gerado
+    # URL crua vira link clicável, preservando o destino real.
+    assert '<a href="https://exemplo.com/a?x=1&amp;y=2">' in html_gerado
+
+
+def test_montar_morning_call_html_escapa_conteudo_perigoso():
+    """Título/manchete de notícia é texto de fonte externa - nunca pode
+    injetar HTML/script no e-mail gerado."""
+    texto = "4. NOTÍCIAS\n- <script>alert(1)</script> & \"aspas\""
+    html_gerado = mc.montar_morning_call_html(texto)
+    assert "<script>" not in html_gerado
+    assert "&lt;script&gt;" in html_gerado
+
+
+def test_montar_morning_call_nao_quebra_numa_segunda_feira_apos_fim_de_semana():
+    """Mission: 'Determine corretamente o último pregão encerrado,
+    inclusive às segundas-feiras e após feriados' - o conteúdo nunca
+    assume 'ontem foi dia útil': cada seção já lê o que o provedor
+    devolveu (última barra real/cache real), sem recalcular datas aqui."""
+    segunda = datetime(2026, 10, 19, 7, tzinfo=TZ_SP)  # 19/10/2026 é segunda-feira
+    assert segunda.weekday() == 0
+    with patch.object(mc, "_linha_cotacao", side_effect=lambda nome, ticker: f"- {nome}: indisponível"), \
+         patch.object(mc, "obter_selic_meta", return_value=None), \
+         patch.object(mc, "obter_cdi", return_value=None), \
+         patch.object(mc, "obter_focus_ipca", return_value=None), \
+         patch.object(mc, "obter_focus_selic", return_value=None), \
+         patch.object(mc, "obter_top_mercado_tudo", return_value=[]), \
+         patch.object(mc, "calcular_calendario_cacheado", return_value=[]):
+        texto = mc.montar_morning_call(segunda)
+    assert "19/10/2026" in texto
+    faltantes = [secao for secao in mc.SECOES_OBRIGATORIAS if secao not in texto]
+    assert not faltantes
