@@ -7,3 +7,4 @@ cache/*.json
 preview_macro.py
 coletor_local.log*
 coletor_local_checkpoint_calendario.txt
+coletor_local_checkpoint_news.txt

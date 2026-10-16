@@ -25,7 +25,22 @@ recomendadas (carteira-*) ficam de fora de proposito, nao sao "relatorio":
 
 Resumo: NUNCA contorna o paywall. O texto usado pro resumo e' so o trecho
 de content.rendered ANTES do marcador "paywall-gateway" (ver
-obter_texto_aberto) - nunca baixa a pagina publica do relatorio em si."""
+obter_texto_aberto) - nunca baixa a pagina publica do relatorio em si.
+
+Achado real (auditoria 2026-10-16, rodando AMBAS as tentativas de
+`_tentar_requisitar` direto da maquina real do Rodrigo, fora de qualquer
+sandbox): o 403 nao e' do WordPress nem reage a User-Agent/TLS - e' um
+bloqueio de BORDA do Akamai por IP/reputacao (confirmado pelo cabecalho
+de resposta `edge-rsp-blk: true` e por uma pagina HTML "Acesso Bloqueado"
+com Reference ID + IP bloqueado, que a propria XP devolve). Como e' um
+controle anti-bot de borda (nao um erro de implementacao), NAO HA
+correcao de codigo legitima aqui - tentar mais combinacoes de
+User-Agent/TLS seria bypass de anti-bot, fora do que este projeto faz.
+A pagina de bloqueio da XP fornece o canal oficial de resolucao (ver
+`_detalhe_bloqueio_cdn` abaixo): e-mail bloqueio-cdn@xpi.com.br com o
+Reference ID exibido no log. Sem isso, o sintoma fica indistinguivel de
+"ainda testando User-Agent" - a informacao de contato estava so' no
+corpo da resposta, nunca chegava no log."""
 
 import re
 
@@ -56,6 +71,31 @@ _TICKER_CLASSE = re.compile(r"^tag-([a-z]{4}\d{1,2})$")
 
 _MARCADOR_PAYWALL = "paywall-gateway"
 
+# pagina HTML "Acesso Bloqueado" que o Akamai (CDN da XP) devolve pra IP
+# bloqueado por reputacao - ver achado 2026-10-16 na docstring do modulo.
+# So' casa com ESSE bloqueio especifico (tem Reference ID); um 403 de
+# outra causa (ex: WAF generico sem essa pagina) nao bate no regex e
+# _detalhe_bloqueio_cdn devolve "" - nunca inventa um Reference ID.
+_REGEX_REFERENCE_ID = re.compile(r"Reference ID:\s*</strong>\s*([\w.]+)|Reference ID:\s*([\w.]+)")
+_REGEX_IP_BLOQUEADO = re.compile(r"Endere[^<]*IP:\s*(?:</strong>)?\s*([\d.]+)")
+
+
+def _detalhe_bloqueio_cdn(corpo: str) -> str:
+    """Se `corpo` for a pagina 'Acesso Bloqueado' do Akamai, extrai o
+    Reference ID (e o IP bloqueado, se presente) pra log - informacao que
+    o Rodrigo precisa pra abrir chamado em bloqueio-cdn@xpi.com.br (canal
+    que a propria pagina de bloqueio informa). "" se o corpo nao tiver
+    esse formato (403 de outra causa)."""
+    m_ref = _REGEX_REFERENCE_ID.search(corpo or "")
+    if not m_ref:
+        return ""
+    ref = m_ref.group(1) or m_ref.group(2)
+    m_ip = _REGEX_IP_BLOQUEADO.search(corpo or "")
+    detalhe = f"Reference ID {ref}"
+    if m_ip:
+        detalhe += f", IP bloqueado {m_ip.group(1)}"
+    return f" - bloqueio de borda do CDN (Akamai): {detalhe}. Pedir desbloqueio em bloqueio-cdn@xpi.com.br"
+
 
 def _tentar_requisitar(url: str, params: dict, timeout: float = TIMEOUT):
     """Tenta buscar `url` de duas formas ate uma dar certo (200): primeiro
@@ -79,7 +119,8 @@ def _tentar_requisitar(url: str, params: dict, timeout: float = TIMEOUT):
             if r.status_code == 200:
                 print(f"[xp] conexao OK ({rotulo})")
                 return r, rotulo
-            print(f"[xp] tentativa falhou ({rotulo}): HTTP {r.status_code}")
+            detalhe = _detalhe_bloqueio_cdn(r.text) if r.status_code == 403 else ""
+            print(f"[xp] tentativa falhou ({rotulo}): HTTP {r.status_code}{detalhe}")
         except Exception as e:
             print(f"[xp] tentativa falhou ({rotulo}): {e}")
     return None, None
