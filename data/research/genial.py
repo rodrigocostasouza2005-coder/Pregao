@@ -93,7 +93,7 @@ def _tentar_buscar(url: str, orcamento_s: float = _ORCAMENTO_TOTAL_S):
             ultimo_erro = f"{rotulo}: HTTP {r.status_code}"
             print(f"[genial] tentativa falhou ({rotulo}): HTTP {r.status_code}")
         except Exception as e:
-            ultimo_erro = f"{rotulo}: {type(e).__name__}"
+            ultimo_erro = f"{rotulo}: {type(e).__name__}: {e}"
             print(f"[genial] tentativa falhou ({rotulo}): {e}")
     _ultimo_motivo_falha = f"todas as {len(_TENTATIVAS)} tentativas falharam; última: {ultimo_erro or 'nenhum erro capturado'}"
     return None, None
