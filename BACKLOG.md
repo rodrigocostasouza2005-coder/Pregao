@@ -508,13 +508,34 @@ tinha sido limpo. Confirmado lendo o código atual (não só memória):
   breakpoint, tema).
 
 ## Research
-- BTG Research: API pública em
-  `https://content.btgpactual.com/api/research/public-router/<servico>/api/<servico>/public/v1/...`
-  (ex. que funciona: `.../media-research/.../medias/lives?status=LIVE&pageNumber=1&pageSize=8`).
-  A lista de relatórios (requisição "ALL?pageNumber=1&pageSize=9&channel=...")
-  deu 404 na home e não apareceu em /acoes/ultimos-relatorios; pode ser
-  restrita a clientes. Próximo passo: procurar "public-router" nos bundles
-  JS para mapear as rotas, ou testar a área aberta content.btgpactual.us.
+- BTG Research: investigado de novo em 2026-10-16 (ver motivo_indisponivel
+  em `data/research/__init__.py` pro resumo real) - testado DE VERDADE
+  (nao so' suposto) em runner do GitHub Actions (mesma rede/IP que a
+  producao usa): Chromium/Playwright headless NAO passa da pagina
+  `www.btgpactual.com/acoes/ultimos-relatorios` (net::ERR_HTTP2_PROTOCOL_
+  ERROR em todas as tentativas; forcar HTTP/1.1, que resolve esse MESMO
+  sintoma pra Genial, so' trocou por timeout - 0/8 tentativas passaram
+  em 2 execucoes separadas). A API pública em
+  `https://content.btgpactual.com/api/research/public-router/media-research/api/media-research/public/v1/medias/lives?status=LIVE&pageNumber=1&pageSize=8`
+  respondeu 200 com dados reais e CONFIRMADO SEM bot-detection nenhum
+  (nem curl_cffi precisou - `requests` puro com TLS padrao funciona,
+  robots.txt de content.btgpactual.com permite tudo) - mas e' so' status
+  de LIVE STREAMING agora mesmo (tipicamente 0 ou 1 resultado, sem texto/
+  setor/ticker), nao relatórios escritos; os outros valores de `status`
+  (FINISHED/PAST/SCHEDULED/ALL) dão 404 (openresty), então não dá pra
+  listar histórico de lives por essa via. O endpoint de LISTAGEM DE
+  RELATÓRIOS continua não encontrado: a tentativa anterior ("ALL?...")
+  dá 404 limpo (JSON de erro normal, não bloqueio) - é o endpoint
+  errado, não bloqueado; mais 3 variações tentadas (`medias` sem
+  segmento, `?type=REPORT`, `/REPORT`) deram o mesmo 404 limpo. Achar o
+  endpoint certo exigiria ler o bundle JS da própria página de
+  relatórios pra mapear as rotas reais - exatamente a página que está
+  bloqueada pra automação. Como a API de lives não serve o propósito
+  (não é "research" escrito) e não há endpoint de relatórios confirmado,
+  `disponivel` continua `False` - a diferença desta rodada é que a causa
+  registrada agora é a real (testada), não mais a suposição antiga
+  ("precisa so' de Playwright pra passar do desafio JS", que a evidência
+  real desta sessão contradiz).
 - XP Investimentos: implementada (`data/research/xp.py`), API pública do
   WordPress (`conteudos.xpi.com.br/wp-json/wp/v2/{rel-acoes-fund,
   rel-artigo-aloc,rel-acoes-tec}`). IP deste sandbox de dev é bloqueado

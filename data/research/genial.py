@@ -20,7 +20,18 @@ servidor (diferente do sandbox de dev, que bloqueia o dominio inteiro
 antes disso) mas e' derrubada especificamente no HTTP/2. _tentar_buscar
 tenta uma sequencia de combinacoes (comecando por forcar HTTP/1.1) ate
 uma funcionar, e imprime qual funcionou/falhou - aparece nos Logs do
-Streamlit Cloud e no painel DIAGNOSTICO DE FONTES (CONFIG)."""
+Streamlit Cloud e no painel DIAGNOSTICO DE FONTES (CONFIG).
+
+Busca por via alternativa (2026-10-16): sem WebFetch/curl de verdade pra
+analisa.genialinvestimentos.com.br (fora do allowlist de rede deste
+ambiente - nem resolve DNS), a verificacao foi via busca na web
+(WebSearch); nao achou nenhum feed RSS, sitemap ou API publica
+alternativa pro conteudo da Genial Analisa - so' achou a propria home e
+o disclaimer (que proibe reproducao/redistribuicao do conteudo sem
+autorizacao previa por escrito, o que tambem descarta usar um agregador
+de terceiro como substituto legitimo). O parsing do __NEXT_DATA__ da
+home (ja' implementado aqui) continua sendo a unica via conhecida; o
+bloqueio de WAF documentado acima permanece a causa real."""
 
 import json
 import re
