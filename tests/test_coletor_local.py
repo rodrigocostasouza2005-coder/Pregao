@@ -6,7 +6,6 @@ registro de SAUDE DOS DADOS do CALENDARIO, auditoria 2026-10-10 - ver
 docstring do bloco de registrar_tentativa dentro de main()).
 
 Uso: python tests/test_coletor_local.py (python do .venv do projeto)."""
-import os
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -213,34 +212,44 @@ def test_4e_timeout_calendario_retorna_codigo_erro_ao_agendador():
             f"(codigo={codigo})")
 
 
-def _codigo_main_com_research_falhando(github_actions: str):
+def _rodar_main_etapas(etapas: str, research_ok: bool = True):
+    """Roda main(etapas) com research falhando ou nao e calendario OK;
+    retorna (codigo, mock_research, mock_eventos) pra checar o que rodou."""
     stats = {"processados": 3, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 3,
              "falhas": 0, "tempo_esgotado": False, "tabela_disponivel": True}
-    resultado = {"Genial Analisa": {"ok": False, "coletados": 0},
-                 "XP Investimentos": {"ok": False, "coletados": 0}}
-    with patch.dict(os.environ, {"GITHUB_ACTIONS": github_actions}), \
-         patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
-         patch.object(coletor_local, "coletar_todas_disponiveis", return_value=resultado), \
+    resultado = {"Genial Analisa": {"ok": research_ok, "coletados": 0}}
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value=resultado) as mock_research, \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
          patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO), \
-         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats) as mock_eventos, \
          patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
          patch.object(coletor_local, "registrar_tentativa"):
-        return coletor_local.main()
+        codigo = coletor_local.main(etapas)
+    return codigo, mock_research, mock_eventos
 
 
-def test_4f_research_bloqueado_no_github_actions_nao_derruba_exit_code():
-    """Genial/XP bloqueiam IP de datacenter: no GitHub Actions isso e' o
-    estado normal e nao pode deixar todo run vermelho (e-mail de falha a
-    cada 30min). Na maquina local continua sendo exit 1."""
-    codigo_nuvem = _codigo_main_com_research_falhando("true")
-    _checar("2f GitHub Actions + research falhando + resto OK -> exit 0", codigo_nuvem == 0,
-            f"(codigo={codigo_nuvem})")
-    codigo_local = _codigo_main_com_research_falhando("")
-    _checar("2f maquina local + research falhando -> exit 1 (como antes)", codigo_local == 1,
-            f"(codigo={codigo_local})")
+def test_4f_etapas_separam_research_do_resto():
+    """research (runner self-hosted, IP residencial) e nuvem (GitHub
+    Actions comum) rodam metades disjuntas; tudo (Agendador) roda as 2."""
+    codigo, mock_research, mock_eventos = _rodar_main_etapas("nuvem", research_ok=False)
+    _checar("2f nuvem nao toca research", not mock_research.called)
+    _checar("2f nuvem roda calendario", mock_eventos.called)
+    _checar("2f nuvem com calendario OK -> exit 0", codigo == 0, f"(codigo={codigo})")
+
+    codigo, mock_research, mock_eventos = _rodar_main_etapas("research", research_ok=False)
+    _checar("2f research roda as casas", mock_research.called)
+    _checar("2f research nao toca calendario", not mock_eventos.called)
+    _checar("2f research com casa falhando -> exit 1", codigo == 1, f"(codigo={codigo})")
+
+    codigo, mock_research, mock_eventos = _rodar_main_etapas("tudo", research_ok=False)
+    _checar("2f tudo roda research E calendario", mock_research.called and mock_eventos.called)
+    _checar("2f tudo com casa falhando -> exit 1 (como antes)", codigo == 1, f"(codigo={codigo})")
+
+    codigo, _, _ = _rodar_main_etapas("tudo", research_ok=True)
+    _checar("2f tudo com tudo OK -> exit 0", codigo == 0, f"(codigo={codigo})")
 
 
 # ============================================================

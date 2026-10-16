@@ -21,32 +21,41 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: pregao-radar-morning-call
-  cancel-in-progress: false
-
 jobs:
   radar:
     if: >-
+      github.repository == 'rodrigocostasouza2005-coder/Pregao' && (
       github.event_name == 'schedule' && (github.event.schedule == '*/15 13-19 * * 1-5' || github.event.schedule == '0 20 * * 1-5')
-      || github.event_name == 'workflow_dispatch' && (inputs.job == 'radar' || inputs.job == 'ambos')
-    runs-on: ubuntu-latest
+      || github.event_name == 'workflow_dispatch' && (inputs.job == 'radar' || inputs.job == 'ambos'))
+    # A carteira recomendada da Genial so' responde de rede residencial
+    # (11/11 execucoes no ubuntu-latest falharam por timeout) - roda no
+    # runner self-hosted do PC de casa, ver coletores-casa.yml (mesmas
+    # regras de seguranca: so' schedule/workflow_dispatch neste arquivo).
+    runs-on: [self-hosted, pregao-casa]
     timeout-minutes: 12
+    # concurrency por job (nao por workflow): com o PC desligado o radar
+    # fica na fila, e isso nao pode segurar o Morning Call, que roda na nuvem.
+    concurrency:
+      group: pregao-radar
+      cancel-in-progress: false
+    # Mesmo esquema de Python do coletores-casa.yml (Windows, shell cmd,
+    # venv persistente compartilhado no PC de casa).
+    defaults:
+      run:
+        shell: cmd
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements.txt
-      - run: pip install -r requirements.txt
+      - name: Preparar Python (venv persistente no PC)
+        run: python -m venv "${{ runner.tool_cache }}\venv-pregao"
+      - name: Instalar dependencias
+        run: |
+          "${{ runner.tool_cache }}\venv-pregao\Scripts\python.exe" -m pip install --disable-pip-version-check -q -r requirements.txt
       - name: Validar credenciais Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          test -n "$SUPABASE_URL" || (echo "::error::Configure SUPABASE_URL em Actions secrets"; exit 1)
-          test -n "$SUPABASE_SECRET_KEY" || (echo "::error::Configure SUPABASE_SECRET_KEY em Actions secrets"; exit 1)
+          "${{ runner.tool_cache }}\venv-pregao\Scripts\python.exe" -m jobs.checar_env SUPABASE_URL SUPABASE_SECRET_KEY
       - name: Monitorar quedas em carteiras
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -59,13 +68,18 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
-        run: python -m jobs.radar_quedas
+          PYTHONUTF8: "1"
+        run: |
+          "${{ runner.tool_cache }}\venv-pregao\Scripts\python.exe" -m jobs.radar_quedas
   morning-call:
     if: >-
       github.event_name == 'schedule' && github.event.schedule == '0 10 * * 1-5'
       || github.event_name == 'workflow_dispatch' && (inputs.job == 'morning_call' || inputs.job == 'ambos')
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    concurrency:
+      group: pregao-morning-call
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

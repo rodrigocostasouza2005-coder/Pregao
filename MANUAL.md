@@ -301,3 +301,39 @@ Job independente `python -m jobs.morning_call`; agenda de dias úteis às 07:00 
 3. Rodar o workflow **Radar e Morning Call** manualmente, escolhendo `radar`, `morning_call` ou `ambos`.
 
 Sem migration e secrets, os jobs não conseguem persistir nem enviar e-mails. O agendamento do GitHub Actions é best effort, não um SLA de execução pontual.
+
+## Runner no PC de casa (Genial, XP e Radar)
+
+Genial Analisa, XP, Genial (Lives) e a carteira recomendada da Genial (usada pelo RADAR) bloqueiam acesso vindo de servidor (GitHub Actions, Streamlit Cloud): timeout, HTTP 403 ou conexão resetada em todas as execuções. Por isso essas coletas rodam num **runner self-hosted** instalado no PC de casa (internet residencial). O GitHub continua agendando, guardando os logs e mandando os e-mails; só a execução acontece no PC.
+
+Divisão atual:
+
+| Workflow | Onde roda | O quê |
+|---|---|---|
+| `coletores-nuvem.yml` | nuvem (`ubuntu-latest`) | resumos de NEWS + CALENDÁRIO (`coletor_local.py --etapas nuvem`) |
+| `coletores-casa.yml` | PC de casa (`pregao-casa`) | research Genial/XP/Lives + histórico de recomendações (`--etapas research`), de hora em hora em dias úteis |
+| `radar-morning-call.yml` → `radar` | PC de casa (`pregao-casa`) | Radar de quedas |
+| `radar-morning-call.yml` → `morning-call` | nuvem | Morning Call |
+
+Se o PC estiver desligado, os jobs de casa ficam na fila (só 1 pendente por workflow) e rodam quando o runner voltar. NEWS, CALENDÁRIO e Morning Call não dependem do PC.
+
+### Instalação (uma vez, Windows)
+
+1. **Python 3.12** instalado pelo python.org, com a opção *Add python.exe to PATH* marcada. Confira no PowerShell: `python --version`.
+2. No GitHub: repositório → **Settings → Actions → Runners → New self-hosted runner** → **Windows / x64**. A página mostra os comandos de download e configuração com um token temporário; rode-os no PowerShell numa pasta própria (ex.: `C:\actions-runner`).
+3. Durante o `config.cmd`:
+   - *runner group*: Enter (padrão);
+   - *name*: qualquer (ex.: `pc-casa`);
+   - **labels: `pregao-casa`** (obrigatório, é por ele que os workflows acham o PC);
+   - *work folder*: Enter;
+   - *run as service*: **N**.
+4. Inicie com `run.cmd` (deve aparecer `Listening for Jobs`). Para iniciar sozinho quando você entrar no Windows: `Win+R` → `shell:startup` → crie ali um atalho para `C:\actions-runner\run.cmd`.
+5. Teste: **Actions → Coletores em casa (research) → Run workflow**. Na primeira vez ele cria o venv e instala as dependências (alguns minutos); depois é rápido.
+
+### Segurança (repositório público)
+
+Com o repositório público, qualquer pessoa pode abrir um PR, e um PR pode tentar mandar um job para o runner do PC. Para bloquear:
+
+- **Settings → Actions → General → "Approval for running fork pull request workflows from contributors" → "Require approval for all external contributors"**. Assim nenhum workflow de PR de terceiro roda sem você aprovar. Não aprove execução de PR de quem você não conhece.
+- Os workflows que usam `pregao-casa` só disparam por agenda ou manualmente (`schedule`/`workflow_dispatch`). Nunca adicione `pull_request` ou `push` neles.
+- Alternativa mais forte: tornar o repositório privado (o Streamlit Community Cloud funciona com repositório privado; o plano gratuito do GitHub dá 2.000 min/mês de Actions na nuvem para repositório privado, e os minutos do runner de casa não contam).

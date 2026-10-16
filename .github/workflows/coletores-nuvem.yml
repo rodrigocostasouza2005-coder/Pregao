@@ -39,13 +39,11 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: |
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SECRET_KEY" ]; then
-            echo "::error::Configure SUPABASE_URL e SUPABASE_SECRET_KEY em Settings > Secrets and variables > Actions."
-            exit 1
-          fi
+        run: python -m jobs.checar_env SUPABASE_URL SUPABASE_SECRET_KEY
 
-      - name: Executar coletores
+      # Research (Genial/XP/Lives) NAO roda aqui: essas fontes bloqueiam IP
+      # de datacenter - ficam no runner self-hosted (coletores-casa.yml).
+      - name: Executar coletores (NEWS + CALENDARIO)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -59,4 +57,4 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
           PYTHONUNBUFFERED: "1"
-        run: python coletor_local.py
+        run: python coletor_local.py --etapas nuvem
