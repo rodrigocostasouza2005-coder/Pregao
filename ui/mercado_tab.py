@@ -112,8 +112,10 @@ def _layout_grafico_escuro(fig, tema, altura=340):
         margin=dict(l=10, r=10, t=10, b=10),
         showlegend=False,
     )
-    fig.update_xaxes(gridcolor="#1A1A1A")
-    fig.update_yaxes(gridcolor="#1A1A1A")
+    # tema["borda"] (nao "#1A1A1A" fixo, achado da auditoria visual
+    # 2026-10-16): acompanha o tema CLARO tambem, nao so' os temas escuros.
+    fig.update_xaxes(gridcolor=tema["borda"])
+    fig.update_yaxes(gridcolor=tema["borda"])
 
 
 def _painel_termometro(prefs):
@@ -167,29 +169,31 @@ def _painel_termometro(prefs):
     return True
 
 
-def _linha_ranking(numero: int, p: dict, campo: str, prefs: dict, max_pos: float, max_neg_abs: float):
-    """Uma linha do ranking unico: barra negativa (so' se p[campo]<0) |
-    numero | botao do ticker (navega pra EQUITY, mesmo mecanismo da busca
-    global) | nome + retorno | barra positiva (so' se p[campo]>0). Escala
-    de cada barra e' relativa ao MAIOR valor do PROPRIO grupo (altas entre
-    si, baixas entre si) - referencia de zero sempre na borda junto da
-    coluna central, como no terminal de referencia."""
+def _linha_ranking(numero: int, p: dict, campo: str, prefs: dict, max_abs: float):
+    """Uma linha do ranking unico: numero | botao do ticker (navega pra
+    EQUITY, mesmo mecanismo da busca global) | nome + retorno | barra
+    horizontal unica, crescendo a partir do zero (borda esquerda da
+    coluna da barra), colorida conforme o sinal. Escala relativa ao
+    MAIOR valor absoluto do PROPRIO grupo (altas entre si, baixas entre
+    si) - cada linha chamada aqui pertence a UM grupo so' (ver
+    _painel_altas_baixas: altas e baixas sao secoes separadas, cada uma
+    com seu subtitulo), entao nunca precisa reservar espaco pra uma
+    barra no sentido contrario que nunca vai aparecer naquela secao.
+    REDESENHADO (auditoria visual 2026-10-16): a versao anterior
+    reservava DUAS colunas de barra (positiva E negativa) em TODA linha,
+    mas cada linha so' preenche uma delas (alta preenche so' a positiva,
+    baixa so' a negativa) - a outra ficava sempre vazia, desperdicando
+    ~20% da largura da linha em trilho cinza sem funcao nenhuma. Uma
+    unica coluna de barra (maior, mais precisa) elimina essa area morta."""
     valor = p[campo]
-    cls = "alta" if valor >= 0 else "baixa"
+    cls_barra = "rank-barra-pos" if valor >= 0 else "rank-barra-neg"
     cor_var = "var(--alta)" if valor >= 0 else "var(--baixa)"
-    largura_pos = min(100.0, (valor / max_pos * 100.0)) if valor > 0 and max_pos > 0 else 0.0
-    largura_neg = min(100.0, (abs(valor) / max_neg_abs * 100.0)) if valor < 0 and max_neg_abs > 0 else 0.0
+    largura = min(100.0, (abs(valor) / max_abs * 100.0)) if max_abs > 0 else 0.0
     nome = _nome_papel(p["ticker"])
 
-    col_barra_neg, col_num, col_ticker, col_nome_valor, col_barra_pos = st.columns(
-        [0.20, 0.06, 0.15, 0.37, 0.22], gap="small",
+    col_num, col_ticker, col_nome_valor, col_barra = st.columns(
+        [0.06, 0.14, 0.38, 0.42], gap="small",
     )
-    with col_barra_neg:
-        st.markdown(
-            f"<div class='rank-barra-trilho'><div class='rank-barra-fill rank-barra-neg' "
-            f"style='width:{largura_neg:.1f}%;'></div></div>",
-            unsafe_allow_html=True,
-        )
     with col_num:
         st.markdown(f"<div class='rank-numero'>{numero}</div>", unsafe_allow_html=True)
     with col_ticker:
@@ -205,10 +209,10 @@ def _linha_ranking(numero: int, p: dict, campo: str, prefs: dict, max_pos: float
             f"<span class='rank-valor' style='color:{cor_var};'>{_fmt_pct(valor, prefs)}</span></div>",
             unsafe_allow_html=True,
         )
-    with col_barra_pos:
+    with col_barra:
         st.markdown(
-            f"<div class='rank-barra-trilho'><div class='rank-barra-fill rank-barra-pos' "
-            f"style='width:{largura_pos:.1f}%;'></div></div>",
+            f"<div class='rank-barra-trilho'><div class='rank-barra-fill {cls_barra}' "
+            f"style='width:{largura:.1f}%;'></div></div>",
             unsafe_allow_html=True,
         )
 
@@ -294,12 +298,12 @@ def _painel_altas_baixas(prefs):
         if altas:
             _subtitulo_ranking("MAIORES ALTAS")
             for p in altas:
-                _linha_ranking(numero, p, campo, prefs, max_pos, max_neg_abs)
+                _linha_ranking(numero, p, campo, prefs, max_pos)
                 numero += 1
         if baixas:
             _subtitulo_ranking("MAIORES BAIXAS")
             for p in baixas:
-                _linha_ranking(numero, p, campo, prefs, max_pos, max_neg_abs)
+                _linha_ranking(numero, p, campo, prefs, max_neg_abs)
                 numero += 1
 
 

@@ -480,6 +480,35 @@ table tr:last-child td { border-bottom: none; }
    proprio st.container(border=True) */
 [data-testid="stFragment"] { margin: 0 !important; padding: 0 !important; }
 
+/* st.tabs (so' usado em SISTEMA, aba admin - ver ui/sistema_tab.py) -----------
+   achado da auditoria visual 2026-10-16: nenhuma regra existia pra esse
+   widget em todo o projeto - era o UNICO lugar do app com a cor padrao
+   do BaseWeb (vermelho/rosa) em vez da paleta ambar/verde/vermelho-de-
+   sinal do terminal, uma mistura de padroes visiveis so' pro admin. */
+[data-testid="stTabs"] [data-baseweb="tab-list"] {
+    gap: 0.3rem;
+    border-bottom: 1px solid var(--borda);
+}
+[data-testid="stTabs"] button[data-baseweb="tab"] {
+    color: var(--cinza) !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 0.78rem !important;
+    letter-spacing: 0.04em;
+    background-color: transparent !important;
+}
+[data-testid="stTabs"] button[data-baseweb="tab"]:hover {
+    color: var(--destaque) !important;
+}
+[data-testid="stTabs"] button[aria-selected="true"] {
+    color: var(--destaque) !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+    background-color: var(--destaque) !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab-border"] {
+    background-color: var(--borda) !important;
+}
+
 /* radio (usado apenas onde segmented_control nao se aplica) ------------------------- */
 .stRadio label p { color: var(--neutro) !important; font-size: 0.8rem !important; }
 
@@ -710,7 +739,12 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
     padding: 0.32rem 0.45rem 0.38rem;
     border: 1px solid var(--borda);
     border-top: 2px solid var(--destaque);
-    background: linear-gradient(155deg, color-mix(in srgb, var(--painel-bg) 94%, var(--destaque)), var(--painel-bg) 72%);
+    /* fundo chapado, nao mais gradiente decorativo (achado da auditoria
+       visual 2026-10-16: o terminal de referencia nao usa gradiente em
+       nenhum card/painel - a borda superior ambar ja' basta pra marcar
+       "isto e' um indicador de destaque", sem precisar de um degrade
+       atras do texto). */
+    background: var(--painel-bg);
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
@@ -916,8 +950,15 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
 
 /* RANKING DE RETORNOS (MAIORES ALTAS/BAIXAS, ui/mercado_tab.py) - lista
    unica numerada com barra horizontal por linha (verde/vermelho), escala
-   por grupo com referencia de zero na borda junto da coluna central -
-   linguagem visual de terminal financeiro (ranking de performance). */
+   por grupo (altas entre si, baixas entre si) com zero sempre na borda
+   esquerda da propria coluna da barra - linguagem visual de terminal
+   financeiro (ranking de performance). REDESENHADO (auditoria visual
+   2026-10-16): a versao anterior reservava 2 colunas de barra (pos/neg)
+   em toda linha pra simular um eixo central, mas MAIORES ALTAS e MAIORES
+   BAIXAS sao secoes separadas (cada uma 100% de um so' sinal) - a coluna
+   do lado que nunca preenchia ficava sempre vazia, ~20% da linha
+   desperdicado em trilho sem funcao. Agora e' 1 coluna de barra so' (ver
+   ui/mercado_tab.py:_linha_ranking), maior e mais precisa. */
 .rank-header-indice {
     display: flex;
     align-items: baseline;
@@ -986,11 +1027,9 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
 }
 .rank-barra-pos {
     background: var(--alta);
-    margin-left: 0;
 }
 .rank-barra-neg {
     background: var(--baixa);
-    margin-left: auto;
 }
 /* ticker do ranking: o botao nativo do Streamlit ja' sai ambar (ver regra
    generica .stButton button acima) - so' aperta o padding/altura pra
@@ -1007,7 +1046,8 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
    st.columns em 100% de largura - pro ranking isso destruiria a barra
    (ficaria uma faixa cheia embaixo do texto, sem leitura nenhuma).
    Mesma tecnica de escape ja usada em .st-key-visao_geral_mercado_agora_cols:
-   mantem as 5 colunas lado a lado, so' encolhe gap/fonte. */
+   mantem as 4 colunas (numero/ticker/nome+valor/barra) lado a lado,
+   so' encolhe gap/fonte. */
 @media (max-width: 640px) {
     .st-key-mercado_ranking_lista div[data-testid="stHorizontalBlock"] {
         flex-wrap: nowrap !important;
