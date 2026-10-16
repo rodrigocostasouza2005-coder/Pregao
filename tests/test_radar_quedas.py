@@ -71,3 +71,98 @@ def test_monitoramento_rejeita_snapshot_vazio_e_preserva_carteiras():
     salvar.assert_not_called()
     listar.assert_not_called()
     cotacao.assert_not_called()
+
+
+def test_avaliar_ticker_cotacao_com_erro_nao_gera_alerta_falso():
+    """Ausência/erro de cotação nunca equivale a variação zero nem a
+    queda - não há como calcular a variação, então não há alerta."""
+    recs = [{"ticker": "PETR4", "casa": "Genial Analisa", "carteira": "X", "fonte_url": "https://x"}]
+    cot = {"erro": "symbol não encontrado"}
+    assert avaliar_ticker("PETR4", cot, recs) is None
+
+
+def test_avaliar_ticker_sem_fechamento_anterior_nao_gera_alerta_falso():
+    """Cotação atrasada/sem referência de fechamento anterior - sem
+    referência válida, não há como calcular a variação diária real."""
+    recs = [{"ticker": "PETR4", "casa": "Genial Analisa", "carteira": "X", "fonte_url": "https://x"}]
+    cot = {"preco": 90.0, "fechamento_anterior": None}
+    assert avaliar_ticker("PETR4", cot, recs) is None
+
+
+def test_avaliar_ticker_queda_exata_5_por_cento_dispara():
+    recs = [{"ticker": "PETR4", "casa": "Genial Analisa", "carteira": "X", "fonte_url": "https://x"}]
+    cot = {"preco": 95.0, "fechamento_anterior": 100.0, "_coletado_em": "2026-10-16T14:00:00+00:00"}
+    alerta = avaliar_ticker("PETR4", cot, recs)
+    assert alerta is not None
+    assert round(alerta["variacao_pct"], 2) == -5.0
+
+
+class _FakeQuery:
+    """Dublê mínimo de uma query do cliente Supabase pra testar
+    registrar_alerta sem rede: encadeia select/eq/limit/insert/execute
+    como o client real, mas devolve dados controlados pelo teste."""
+
+    def __init__(self, select_rows=None, insert_raises=None, insert_rows=None):
+        self.select_rows = select_rows if select_rows is not None else []
+        self.insert_raises = insert_raises
+        self.insert_rows = insert_rows if insert_rows is not None else []
+        self.inserted_payload = None
+        self._modo = None
+
+    def select(self, *_a):
+        self._modo = "select"
+        return self
+
+    def eq(self, *_a, **_k):
+        return self
+
+    def limit(self, *_a):
+        return self
+
+    def insert(self, payload):
+        self._modo = "insert"
+        self.inserted_payload = payload
+        return self
+
+    def execute(self):
+        if self._modo == "insert":
+            if self.insert_raises is not None:
+                raise self.insert_raises
+            return type("R", (), {"data": self.insert_rows})()
+        return type("R", (), {"data": self.select_rows})()
+
+
+class _FakeCliente:
+    def __init__(self, query):
+        self._query = query
+
+    def table(self, _nome):
+        return self._query
+
+
+def test_registrar_alerta_idempotente_quando_ja_existe(monkeypatch):
+    """Duas execuções idênticas (mesmo ticker + mesmo pregão) nunca
+    duplicam o alerta - registrar_alerta confere antes de inserir."""
+    import data.radar_quedas as radar
+    query = _FakeQuery(select_rows=[{"id": 42}])
+    monkeypatch.setattr(radar, "obter_cliente", lambda: _FakeCliente(query))
+
+    ok, alerta_id = radar.registrar_alerta({"ticker": "PETR4", "pregao": "2026-10-16"})
+
+    assert ok is True
+    assert alerta_id is None  # já existia - não é um novo id gerado agora
+    assert query._modo == "select"  # nunca chegou a tentar inserir de novo
+
+
+def test_registrar_alerta_falha_de_persistencia_retorna_false(monkeypatch):
+    """Falha ao gravar (ex: RLS/conexão) é reportada como falha, nunca
+    como sucesso silencioso - quem chama conta isso como alerta não
+    persistido."""
+    import data.radar_quedas as radar
+    query = _FakeQuery(select_rows=[], insert_raises=Exception("conexão perdida"))
+    monkeypatch.setattr(radar, "obter_cliente", lambda: _FakeCliente(query))
+
+    ok, alerta_id = radar.registrar_alerta({"ticker": "VALE3", "pregao": "2026-10-16"})
+
+    assert ok is False
+    assert alerta_id is None
