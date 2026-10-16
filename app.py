@@ -788,8 +788,13 @@ if secao_atual == "EQUITY":
                         margin=dict(l=10, r=10, t=10, b=10),
                         legend=dict(orientation="h", yanchor="bottom", y=1.01, font=dict(size=10)),
                     )
-                    fig.update_xaxes(gridcolor="#1A1A1A")
-                    fig.update_yaxes(gridcolor="#1A1A1A")
+                    # tema["borda"] (nao "#1A1A1A" fixo, achado da
+                    # auditoria visual 2026-10-16): no tema CLARO (fundo
+                    # claro), um grid quase-preto fixo ficava bem mais
+                    # proeminente do que a grade sutil pretendida - cada
+                    # tema ja' calibra sua propria cor de borda sutil.
+                    fig.update_xaxes(gridcolor=tema["borda"])
+                    fig.update_yaxes(gridcolor=tema["borda"])
 
                 if df is None:
                     if eh_intraday:

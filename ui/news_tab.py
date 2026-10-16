@@ -149,7 +149,7 @@ div[class*="st-key-top-manchete-"] button p {
     text-overflow:ellipsis !important;
 }
 
-.w-divider { border-bottom:1px solid #1A1A1A; margin:0.1rem 0 0.25rem 0; }
+.w-divider { border-bottom:1px solid var(--borda); margin:0.1rem 0 0.25rem 0; }
 
 .w-veic-link { color:var(--destaque) !important; text-decoration:none !important; font-size:0.82rem; opacity:0.85; }
 .w-veic-link:hover { opacity:1; text-decoration:underline !important; }
@@ -214,7 +214,7 @@ div[class*="st-key-top-manchete-"] button p {
    logica do .w-divider acima), foto pequena (ajuda a identificar a
    materia, nunca domina o conteudo) e hierarquia por tamanho/peso de
    fonte, nao por caixa colorida. */
-.news-divider { border-bottom: 1px solid #1A1A1A; margin: 0.35rem 0 0.7rem 0; }
+.news-divider { border-bottom: 1px solid var(--borda); margin: 0.35rem 0 0.7rem 0; }
 .news-item-thumb-wrap {
     position: relative; width: 60px; height: 60px; flex: 0 0 60px;
     border: 1px solid var(--borda); background: var(--painel-bg); overflow: hidden;

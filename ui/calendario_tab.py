@@ -450,7 +450,12 @@ def _grade_calendario(semanas: list, eventos_por_data: dict, mes_referencia, dia
         chave_sel = f"cal_cel_{dia_selecionado.isoformat()}"
         regras.append(
             f".st-key-{chave_sel} {{ border-color: var(--destaque) !important; "
-            f"background-color: rgba(255,160,40,0.08) !important; }}"
+            # color-mix (nao rgba fixo): acompanha --destaque em qualquer
+            # tema (AMBAR/FOSFORO/AZUL/CLARO - ver config.TEMAS), nao so'
+            # o ambar padrao (achado da auditoria visual 2026-10-16: valor
+            # fixo deixava o dia selecionado sempre ambar mesmo em temas
+            # onde --destaque e' outra cor).
+            f"background-color: color-mix(in srgb, var(--destaque) 8%, transparent) !important; }}"
             f".st-key-{chave_sel} button {{ color: var(--destaque) !important; }}"
         )
     st.markdown(f"<style>{' '.join(regras)}</style>", unsafe_allow_html=True)

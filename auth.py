@@ -100,7 +100,10 @@ div[class*="st-key-login-google-btn"] button::before {{
     background-image:url("{_ICONE_GOOGLE}"); background-size:contain; background-repeat:no-repeat;
 }}
 div[class*="st-key-login-google-btn"] button:hover {{
-    border-color:var(--destaque) !important; background-color:#111111 !important;
+    /* var(--bg), nao #111111 fixo (achado da auditoria visual
+       2026-10-16): o tema CLARO tem fundo claro (#F5F5F0) - um hover
+       preto fixo quebrava contraste/legibilidade so' nesse tema. */
+    border-color:var(--destaque) !important; background-color:var(--bg) !important;
 }}
 .login-cta-micro {{ color:var(--cinza); font-size:0.7rem; text-align:center; }}
 .login-cta-micro-sep {{ margin:0 0.4rem; opacity:0.5; }}
