@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Configuracoes globais do PREGAO: tickers padrao, temas, preferencias, paths."""
 
+import os
 from pathlib import Path
 
 # --- Paths -------------------------------------------------------------
@@ -388,20 +389,34 @@ def obter_modelo_groq_fallback() -> str:
 
 def obter_credenciais_groq() -> tuple:
     """(api_key, modelo) do Groq, lidos num lugar so' - usado por
-    data/research/resumir.py e data/news.py. api_key: st.secrets["groq"]
-    ["api_key"], com fallback pra st.secrets["GROQ_API_KEY"] na raiz
-    (configuracao de uma linha so, sem precisar da secao [groq]). modelo:
-    st.secrets["groq"]["modelo"] ou GROQ_MODELO_PADRAO. api_key vem None
-    se nao configurada em lugar nenhum - quem chama mostra "resumo
-    indisponível (GROQ_API_KEY não configurada)" e segue sem quebrar."""
+    data/research/resumir.py e data/news.py. api_key: variavel de
+    ambiente GROQ_API_KEY (tarefas externas sem Streamlit, ex: GitHub
+    Actions via coletor_local.py/pregerar_resumos_news), com fallback
+    pra st.secrets["groq"]["api_key"] ou st.secrets["GROQ_API_KEY"] na
+    raiz (configuracao do app Streamlit). modelo: st.secrets["groq"]
+    ["modelo"] ou GROQ_MODELO_PADRAO. api_key vem None se nao
+    configurada em lugar nenhum - quem chama mostra "resumo
+    indisponível (GROQ_API_KEY não configurada)" e segue sem quebrar.
+
+    Achado real 2026-10-15 (continuacao da auditoria de persistencia):
+    esta funcao so' lia st.secrets - igual a data/supabase_client.py
+    ANTES de ganhar o fallback de variavel de ambiente (ver
+    obter_cliente() la', mesmo padrao aplicado aqui agora). Sem isso,
+    pregerar_resumos_news no GitHub Actions gerava "25 gerado(s) agora"
+    (nenhuma excecao, so' resumo=None silencioso) sem jamais conseguir
+    uma api_key de verdade, mesmo que o secret GROQ_API_KEY estivesse
+    configurado no repositorio - a variavel de ambiente passada pelo
+    workflow nunca era lida."""
+    api_key = os.getenv("GROQ_API_KEY", "").strip() or None
+    modelo = None
     try:
         import streamlit as st
         secao_groq = st.secrets.get("groq", {})
-        api_key = secao_groq.get("api_key") or st.secrets.get("GROQ_API_KEY")
-        modelo = secao_groq.get("modelo") or GROQ_MODELO_PADRAO
-        return api_key, modelo
+        api_key = api_key or secao_groq.get("api_key") or st.secrets.get("GROQ_API_KEY")
+        modelo = secao_groq.get("modelo")
     except Exception:
-        return None, GROQ_MODELO_PADRAO
+        pass
+    return api_key, (modelo or GROQ_MODELO_PADRAO)
 
 # --- Preferencias padrao (usuario novo ou banco fora do ar) -------------
 PREFS_PADRAO = {

@@ -2046,7 +2046,16 @@ def pregerar_resumos_news(tickers_universo: list) -> dict:
             break
         try:
             titulos_grupo = tuple(g.get("titulos") or [g["titulo"]])
-            obter_resumo_grupo(g["titulo"], fontes_ordenadas, titulos_grupo, validar_imagem=True)
+            resultado = obter_resumo_grupo(g["titulo"], fontes_ordenadas, titulos_grupo, validar_imagem=True)
+            # diagnostico temporario (2026-10-15): "gerados" conta toda
+            # TENTATIVA sem excecao, nao so' sucesso real - uma falha
+            # legitima do Groq (cota/extracao) devolve resumo=None SEM
+            # lancar excecao, entao nunca aparecia aqui nem em _falhas.
+            # Imprime so' quando resumo=None, pra confirmar se e' isso
+            # (motivo_indisponivel real) que explica "gerado mas nada
+            # cacheado", em vez de um bug de escrita silenciosa.
+            if not resultado.get("resumo"):
+                print(f"[pregerar_resumos_news] '{g['titulo'][:50]}' sem resumo: {resultado.get('motivo_indisponivel')!r}")
             stats["gerados"] += 1
         except Exception:
             stats["falhas"] += 1

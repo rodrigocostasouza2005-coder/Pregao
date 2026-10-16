@@ -56,6 +56,19 @@ _TICKER_CLASSE = re.compile(r"^tag-([a-z]{4}\d{1,2})$")
 
 _MARCADOR_PAYWALL = "paywall-gateway"
 
+# Mesmo padrao/motivo de data/research/genial.py:_ultimo_motivo_falha -
+# registrar_tentativa so' recebia "obter_relatorios retornou None", sem
+# o 403/bloqueio especifico que so' aparecia no print() (visivel nos
+# Logs, nunca no painel SAUDE DOS DADOS).
+_ultimo_motivo_falha = None
+
+
+def motivo_ultima_falha() -> str | None:
+    """Detalhe da ultima falha TOTAL de _tentar_requisitar - None se a
+    ultima chamada teve sucesso ou nenhuma chamada foi feita ainda
+    nesta sessao do processo."""
+    return _ultimo_motivo_falha
+
 
 def _tentar_requisitar(url: str, params: dict, timeout: float = TIMEOUT):
     """Tenta buscar `url` de duas formas ate uma dar certo (200): primeiro
@@ -64,6 +77,7 @@ def _tentar_requisitar(url: str, params: dict, timeout: float = TIMEOUT):
     json (contorna bloqueio que reaja ao UA identificado em vez do TLS).
     Retorna (Response, rotulo) ou (None, None) se as duas falharem.
     print() de cada tentativa - visivel nos Logs do Streamlit Cloud."""
+    global _ultimo_motivo_falha
     tentativas = [
         ("curl_cffi+UA-identificado", lambda: cffi_requests.get(
             url, headers=HEADERS, params=params, impersonate="chrome", timeout=timeout,
@@ -73,15 +87,20 @@ def _tentar_requisitar(url: str, params: dict, timeout: float = TIMEOUT):
             params=params, timeout=timeout,
         )),
     ]
+    ultimo_erro = None
     for rotulo, fazer_requisicao in tentativas:
         try:
             r = fazer_requisicao()
             if r.status_code == 200:
                 print(f"[xp] conexao OK ({rotulo})")
+                _ultimo_motivo_falha = None
                 return r, rotulo
+            ultimo_erro = f"{rotulo}: HTTP {r.status_code}"
             print(f"[xp] tentativa falhou ({rotulo}): HTTP {r.status_code}")
         except Exception as e:
+            ultimo_erro = f"{rotulo}: {type(e).__name__}: {e}"
             print(f"[xp] tentativa falhou ({rotulo}): {e}")
+    _ultimo_motivo_falha = f"as {len(tentativas)} tentativas falharam; última: {ultimo_erro or 'nenhum erro capturado'}"
     return None, None
 
 
