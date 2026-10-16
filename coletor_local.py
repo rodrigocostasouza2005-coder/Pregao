@@ -41,8 +41,10 @@ pythonw coletor_local.py (mesma coisa, sem abrir janela de console - e' o
 que o Agendador de Tarefas usa, ver PROGRESSO.md). Saida: exit code 0 se
 todas as casas disponiveis coletaram OK, 1 se alguma falhou (util pro
 Agendador de Tarefas registrar erro no historico da tarefa sem precisar
-ler o log). Log gravado em coletor_local.log (raiz do projeto, ao lado
-deste arquivo) - com pythonw nao tem console nenhum, entao o arquivo e' o
+ler o log). No GitHub Actions, falha de casa de research (bloqueio de IP
+de datacenter) so' vira aviso, nao exit 1 - ver fim de main().
+Log gravado em coletor_local.log (raiz do projeto, ao lado deste
+arquivo) - com pythonw nao tem console nenhum, entao o arquivo e' o
 UNICO jeito de conferir depois o que aconteceu numa execucao passada.
 Rotaciona sozinho (1MB x 3 arquivos) pra nao crescer sem limite com
 execucoes a cada 30min.
@@ -378,8 +380,24 @@ def main() -> int:
     # timeout nao e falha definitiva (a rotacao continua no proximo run),
     # mas nao pode sair com codigo 0 como se o universo inteiro tivesse sido coberto.
     coleta_parcial_calendario = bool(stats_eventos.get("tempo_esgotado", False))
+    # Genial/XP bloqueiam IP de datacenter (WAF/403) - no GitHub Actions a
+    # falha de research e' o estado normal, nao defeito do coletor. Se ela
+    # derrubasse o exit code, TODA execucao na nuvem (a cada 30min) saia
+    # vermelha e mandava e-mail de "All jobs have failed", escondendo
+    # falha real de calendario/persistencia no meio do ruido. Na nuvem
+    # vira so' aviso (anotacao amarela no run); a SAUDE DOS DADOS continua
+    # registrando a falha normalmente. Na maquina local (Agendador do
+    # Windows) continua contando como erro, como antes.
+    casas_com_falha = [nome for nome, info in resultado.items() if not info["ok"]]
+    falha_research = bool(casas_com_falha)
+    if falha_research and os.getenv("GITHUB_ACTIONS") == "true":
+        print(
+            f"::warning::research indisponivel a partir do GitHub Actions "
+            f"(provavel bloqueio de IP de datacenter): {', '.join(casas_com_falha)}"
+        )
+        falha_research = False
     return 1 if (
-        any(not info["ok"] for info in resultado.values())
+        falha_research
         or falha_persistencia_calendario
         or falha_coleta_calendario
         or coleta_parcial_calendario
