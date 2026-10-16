@@ -40,7 +40,14 @@ A pagina de bloqueio da XP fornece o canal oficial de resolucao (ver
 `_detalhe_bloqueio_cdn` abaixo): e-mail bloqueio-cdn@xpi.com.br com o
 Reference ID exibido no log. Sem isso, o sintoma fica indistinguivel de
 "ainda testando User-Agent" - a informacao de contato estava so' no
-corpo da resposta, nunca chegava no log."""
+corpo da resposta, nunca chegava no log.
+
+Busca por via alternativa (2026-10-16, sessao separada): sem WebFetch/
+curl de verdade pra conteudos.xpi.com.br (fora do allowlist de rede
+daquele ambiente - nem resolve DNS), a verificacao foi via busca na web
+(WebSearch); nao achou nenhum feed RSS, sitemap ou API publica
+alternativa documentada pra XP research - a API wp-json/wp/v2 (ja' usada
+aqui) continua sendo a unica via conhecida."""
 
 import re
 
@@ -97,6 +104,21 @@ def _detalhe_bloqueio_cdn(corpo: str) -> str:
     return f" - bloqueio de borda do CDN (Akamai): {detalhe}. Pedir desbloqueio em bloqueio-cdn@xpi.com.br"
 
 
+# Mesmo padrao/motivo de data/research/genial.py:_ultimo_motivo_falha -
+# registrar_tentativa so' recebia "obter_relatorios retornou None", sem
+# o 403/bloqueio especifico (agora incluindo o Reference ID do Akamai
+# quando presente, ver _detalhe_bloqueio_cdn) que so' aparecia no
+# print() (visivel nos Logs, nunca no painel SAUDE DOS DADOS).
+_ultimo_motivo_falha = None
+
+
+def motivo_ultima_falha() -> str | None:
+    """Detalhe da ultima falha TOTAL de _tentar_requisitar - None se a
+    ultima chamada teve sucesso ou nenhuma chamada foi feita ainda
+    nesta sessao do processo."""
+    return _ultimo_motivo_falha
+
+
 def _tentar_requisitar(url: str, params: dict, timeout: float = TIMEOUT):
     """Tenta buscar `url` de duas formas ate uma dar certo (200): primeiro
     curl_cffi impersonate="chrome" (contorna bloqueio por fingerprint de
@@ -104,6 +126,7 @@ def _tentar_requisitar(url: str, params: dict, timeout: float = TIMEOUT):
     json (contorna bloqueio que reaja ao UA identificado em vez do TLS).
     Retorna (Response, rotulo) ou (None, None) se as duas falharem.
     print() de cada tentativa - visivel nos Logs do Streamlit Cloud."""
+    global _ultimo_motivo_falha
     tentativas = [
         ("curl_cffi+UA-identificado", lambda: cffi_requests.get(
             url, headers=HEADERS, params=params, impersonate="chrome", timeout=timeout,
@@ -113,16 +136,21 @@ def _tentar_requisitar(url: str, params: dict, timeout: float = TIMEOUT):
             params=params, timeout=timeout,
         )),
     ]
+    ultimo_erro = None
     for rotulo, fazer_requisicao in tentativas:
         try:
             r = fazer_requisicao()
             if r.status_code == 200:
                 print(f"[xp] conexao OK ({rotulo})")
+                _ultimo_motivo_falha = None
                 return r, rotulo
             detalhe = _detalhe_bloqueio_cdn(r.text) if r.status_code == 403 else ""
+            ultimo_erro = f"{rotulo}: HTTP {r.status_code}{detalhe}"
             print(f"[xp] tentativa falhou ({rotulo}): HTTP {r.status_code}{detalhe}")
         except Exception as e:
+            ultimo_erro = f"{rotulo}: {type(e).__name__}: {e}"
             print(f"[xp] tentativa falhou ({rotulo}): {e}")
+    _ultimo_motivo_falha = f"as {len(tentativas)} tentativas falharam; última: {ultimo_erro or 'nenhum erro capturado'}"
     return None, None
 
 

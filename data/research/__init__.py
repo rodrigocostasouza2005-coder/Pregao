@@ -58,6 +58,12 @@ CASAS = [
         # nao tenta mais coletar essa casa - so le o que o
         # coletor_local.py (fora do Cloud) ja tiver salvo no Supabase.
         "tentar_coleta_automatica": False,
+        # achado real (auditoria 2026-10-15): sem isso, SAUDE DOS DADOS
+        # so mostrava "obter_relatorios retornou None apos Xs" - o motivo
+        # especifico (timeout/HTTP-2-reset/orcamento esgotado) so
+        # aparecia no print(), nunca no painel. Opcional - casas sem essa
+        # chave continuam exatamente como antes.
+        "motivo_falha": genial.motivo_ultima_falha,
     },
     {
         "id": "xp",
@@ -68,6 +74,7 @@ CASAS = [
         "obter_relatorios": xp.obter_relatorios,
         "extrator_texto": xp.obter_texto_aberto,  # nunca baixa a pagina publica (paywall)
         "tentar_coleta_automatica": False,  # idem Genial - bloqueada no Cloud (403), ver coletor_local.py
+        "motivo_falha": xp.motivo_ultima_falha,
     },
     {
         # Ligada em 2026-09-28 a pedido explicito do Rodrigo ("quero a
@@ -86,6 +93,37 @@ CASAS = [
         "extrator_texto": genial_lives.obter_texto_transcricao,
     },
     {
+        # Investigado de novo em 2026-10-16 (sessao dedicada a BTG/XP/
+        # Genial) - a suposicao antiga ("precisa de Playwright pra passar
+        # do desafio JS") foi TESTADA DE VERDADE (nao so' suposta) contra
+        # os endpoints reais, em runner do GitHub Actions (mesmo tipo de
+        # rede/IP que a producao usa, via workflow_dispatch/push numa
+        # branch de diagnostico, depois removido): Chromium headless NAO
+        # passa da pagina www.btgpactual.com/acoes/ultimos-relatorios (que
+        # e' onde o JS client-side faria as chamadas de API de
+        # relatorios) - net::ERR_HTTP2_PROTOCOL_ERROR em todas as
+        # tentativas, e forcar HTTP/1.1 (que resolveu esse MESMO sintoma
+        # pra Genial, ver genial.py) so' trocou o erro por timeout de 30s,
+        # nunca carregou. 8 tentativas reais ao todo (2 execucoes x 4
+        # variacoes), 0 sucesso - nao e' "nao tentamos", e' "tentamos e
+        # nao passa", de forma repetida.
+        #
+        # A API publica identificada em sessao anterior (BACKLOG.md,
+        # content.btgpactual.com/.../medias/lives) respondeu 200 com dados
+        # reais - MAS e' so' o status de LIVE STREAMING agora mesmo (0 ou
+        # 1 resultado tipico, sem texto/setor/ticker), nao relatorios
+        # escritos; confirmado SEM bot-detection nenhum (nem curl_cffi
+        # precisou - 'requests' puro com TLS padrao ja' funciona, e
+        # robots.txt de content.btgpactual.com permite tudo). O endpoint
+        # de LISTAGEM DE RELATORIOS nunca foi confirmado: a suposicao
+        # antiga ("ALL?...") deu 404 "Not Found" limpo (pagina de erro
+        # JSON normal, nao desafio/bloqueio) - e' o endpoint errado, nao
+        # bloqueado; outras 3 variacoes tentadas (sem segmento, ?type=
+        # REPORT, /REPORT) deram o mesmo 404 limpo. Achar o endpoint
+        # certo exigiria ler o bundle JS da propria pagina pra mapear as
+        # rotas reais - exatamente a pagina que esta bloqueada acima.
+        # Como a API de lives nao serve o proposito (nao e' "research") e
+        # nao ha' endpoint de relatorios confirmado, mantido indisponivel.
         "id": "btg",
         "nome": "BTG Research",
         "ativa_por_padrao": False,
@@ -93,8 +131,12 @@ CASAS = [
         "obter_relatorios": None,
         "extrator_texto": None,
         "motivo_indisponivel": (
-            "API interna identificada, mas bloqueada por bot-detection (Akamai) - "
-            "precisa de navegador real (Playwright/Chromium) pra passar do desafio JS."
+            "Pagina de relatorios (www.btgpactual.com) bloqueada pra navegador "
+            "automatizado mesmo com Chromium/Playwright real (testado, nao suposto: "
+            "net::ERR_HTTP2_PROTOCOL_ERROR/timeout, 0/8 tentativas passaram) - sem "
+            "ela nao da pra mapear o endpoint real de LISTAGEM DE RELATORIOS "
+            "(a API publica confirmada, content.btgpactual.com/.../medias/lives, "
+            "so' traz status de live streaming agora mesmo, nao relatorios escritos)."
         ),
     },
 ]
@@ -123,9 +165,19 @@ def coletar_casa(casa: dict) -> tuple[int, bool]:
     # a coleta standalone (coletor_local.py, via coletar_todas_disponiveis).
     if itens is None:
         print(f"[research] coleta {casa['nome']} falhou apos {duracao:.1f}s")
+        motivo_especifico = None
+        obter_motivo = casa.get("motivo_falha")
+        if obter_motivo is not None:
+            try:
+                motivo_especifico = obter_motivo()
+            except Exception:
+                motivo_especifico = None
+        erro = f"obter_relatorios retornou None apos {duracao:.1f}s"
+        if motivo_especifico:
+            erro = f"{erro}; {motivo_especifico}"
         registrar_tentativa(
             casa["nome"], casa.get("fonte", casa["nome"]), execucao_ok=False,
-            erro=f"obter_relatorios retornou None apos {duracao:.1f}s", categoria="Research",
+            erro=erro, categoria="Research",
         )
         return 0, False
     ok = store.salvar_itens(itens)
