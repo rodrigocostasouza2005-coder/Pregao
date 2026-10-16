@@ -49,6 +49,14 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          # GROQ_API_KEY e' opcional de proposito (nao entra na checagem
+          # "Validar configuracao segura" acima) - sem ela,
+          # config.obter_credenciais_groq() devolve None e todo resumo de
+          # IA (pregerar_resumos_news) degrada pra "indisponivel" com
+          # seguranca, sem quebrar o resto da coleta. Configure em
+          # Settings > Secrets and variables > Actions pra habilitar a
+          # pre-geracao de resumos de NEWS na nuvem.
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
           PYTHONUNBUFFERED: "1"
         run: python coletor_local.py
