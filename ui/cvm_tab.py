@@ -95,10 +95,15 @@ _CSS_CVM = """
 }
 .cvm-tipo-destaque { background:var(--destaque); color:var(--bg); }
 .cvm-tipo-normal { background:transparent; color:var(--cinza); border:1px solid var(--borda); }
-.cvm-divider { border-bottom:1px solid #1A1A1A; margin:0.15rem 0; }
+/* var(--borda), nao #1A1A1A fixo (achado da 2a passada da auditoria
+   visual 2026-10-17, mesmo padrao ja corrigido em ui/news_tab.py) -
+   #1A1A1A quase-invisivel so' funciona nos temas escuros. */
+.cvm-divider { border-bottom:1px solid var(--borda); margin:0.15rem 0; }
 
 div[class*="st-key-cvm-row-"] { border-radius:3px; transition:background-color 0.1s ease; }
-div[class*="st-key-cvm-row-"]:hover { background-color:rgba(255,160,40,0.06); }
+/* color-mix (nao rgba fixo, achado da auditoria visual 2026-10-16):
+   acompanha --destaque em qualquer tema, nao so' o ambar padrao. */
+div[class*="st-key-cvm-row-"]:hover { background-color:color-mix(in srgb, var(--destaque) 6%, transparent); }
 div[class*="st-key-cvm-row-"] { padding:0.28rem 0.3rem; }
 div[class*="st-key-cvm-row-"] [data-testid="stHorizontalBlock"] { overflow-x:hidden; }
 

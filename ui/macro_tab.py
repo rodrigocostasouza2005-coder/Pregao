@@ -78,8 +78,10 @@ def _layout_grafico_escuro(fig, tema, altura=380):
         margin=dict(l=10, r=10, t=10, b=10),
         legend=dict(orientation="h", yanchor="bottom", y=1.01, font=dict(size=10)),
     )
-    fig.update_xaxes(gridcolor="#1A1A1A")
-    fig.update_yaxes(gridcolor="#1A1A1A")
+    # tema["borda"] (nao "#1A1A1A" fixo, achado da auditoria visual
+    # 2026-10-16): acompanha o tema CLARO tambem, nao so' os temas escuros.
+    fig.update_xaxes(gridcolor=tema["borda"])
+    fig.update_yaxes(gridcolor=tema["borda"])
 
 
 def _escolha_estavel_macro(chave_widget, opcoes, padrao):
@@ -274,7 +276,7 @@ def _painel_ipca(prefs):
     )
 
     _layout_grafico_escuro(fig, tema)
-    fig.update_yaxes(title_text="Mensal (%)", secondary_y=False, gridcolor="#1A1A1A")
+    fig.update_yaxes(title_text="Mensal (%)", secondary_y=False, gridcolor=tema["borda"])
 
     # eixo do 12m com range fixo (nao autorange): sem isso, o shape da
     # meta (1.5 a 4.5) entra no calculo do autorange do Plotly junto com
@@ -284,7 +286,7 @@ def _painel_ipca(prefs):
     teto = max(6.0, float(df["ipca_12m_pct"].max()) + 1.0, META_IPCA_CENTRO + META_IPCA_TOLERANCIA + 1.0)
     ticks_1_5 = [v * 1.5 for v in range(0, 20) if piso - 0.01 <= v * 1.5 <= teto + 0.01]
     fig.update_yaxes(
-        title_text="12 meses (%)", secondary_y=True, gridcolor="#1A1A1A",
+        title_text="12 meses (%)", secondary_y=True, gridcolor=tema["borda"],
         range=[piso, teto], tickvals=ticks_1_5,
     )
 

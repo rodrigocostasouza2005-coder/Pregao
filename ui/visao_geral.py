@@ -176,8 +176,10 @@ def _painel_ibov_grafico(prefs):
         font=dict(color=tema["cinza"], family="IBM Plex Mono", size=11),
         height=320, margin=dict(l=10, r=10, t=10, b=10), showlegend=False,
     )
-    fig.update_xaxes(gridcolor="#1A1A1A")
-    fig.update_yaxes(gridcolor="#1A1A1A")
+    # tema["borda"] (nao "#1A1A1A" fixo, achado da auditoria visual
+    # 2026-10-16): acompanha o tema CLARO tambem, nao so' os temas escuros.
+    fig.update_xaxes(gridcolor=tema["borda"])
+    fig.update_yaxes(gridcolor=tema["borda"])
     chave = graficos.zoom_key("vg_ibov", periodo)
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave)
 
