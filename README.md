@@ -62,18 +62,21 @@ Se alguma fonte de dados falhar (yfinance, Supabase, Genial/XP, CVM, Groq), apar
 
 ## E-mails automatizados (Radar e Morning Call)
 
-Os envios aceitam dois provedores. Para usar a API do Resend (sem senha SMTP), configure em **GitHub → Settings → Secrets and variables → Actions**:
+Os envios aceitam três provedores, escolhidos por `EMAIL_PROVIDER`. Configure em **GitHub → Settings → Secrets and variables → Actions**:
 
-- `EMAIL_PROVIDER=resend`
+**`EMAIL_PROVIDER=brevo`** (recomendado quando o remetente é um e-mail comum, ex. Gmail, sem domínio próprio) — Brevo verifica o remetente só com um código de 6 dígitos enviado pro próprio e-mail, sem exigir DNS. Free tier: 300 e-mails/dia, sem expiração.
+- `BREVO_API_KEY`: chave gerada em app.brevo.com (SMTP & API → API Keys)
+- `EMAIL_FROM`: o e-mail verificado na conta Brevo (Senders → Add a sender → confirmar o código recebido)
+- `EMAIL_TO`: endereço fixo usado pelo Radar de quedas e pelo envio administrativo/teste manual do Morning Call — **não é a lista de destinatários do envio automático do Morning Call** (ver abaixo)
+
+**`EMAIL_PROVIDER=resend`** (exige domínio próprio verificado por DNS):
 - `RESEND_API_KEY`: chave secreta gerada na conta Resend
-- `EMAIL_FROM`: remetente/domínio autorizado e verificado no Resend
-- `EMAIL_TO`: endereço fixo usado pelo Radar de quedas e pelo envio administrativo/teste manual do Morning Call (`jobs.morning_call.enviar_teste`) — **não é mais a lista de destinatários do envio automático do Morning Call** (ver abaixo)
+- `EMAIL_FROM`: remetente de um domínio autorizado e verificado no Resend (não aceita domínios de provedor gratuito como gmail.com)
+- `EMAIL_TO`: mesmo uso acima
 
-A chave deve ser criada no painel do Resend e salva diretamente como GitHub Secret; não a coloque no código nem em mensagens. O remetente precisa estar autorizado/verificado pelo Resend, conforme as regras da conta. Não é necessário configurar `SMTP_PASSWORD` quando `EMAIL_PROVIDER=resend`.
+**`EMAIL_PROVIDER=smtp`** (ou deixe a variável ausente — é o default): configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` (senha de app, se o provedor exigir 2FA), `EMAIL_FROM` e `EMAIL_TO`.
 
-Para manter o provedor SMTP existente, use `EMAIL_PROVIDER=smtp` (ou deixe a variável ausente) e configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` e `EMAIL_TO`.
-
-A troca de provedor não altera a lógica do Radar nem do Morning Call. Os envios só serão efetivos depois que os secrets e um remetente autorizado estiverem configurados.
+Nenhuma chave/senha deve ir pro código nem em mensagens — sempre via GitHub Secret. A troca de provedor não altera a lógica do Radar nem do Morning Call. Os envios só serão efetivos depois que os secrets e um remetente verificado estiverem configurados.
 
 ### Destinatários do Morning Call automático (opt-in por usuário)
 

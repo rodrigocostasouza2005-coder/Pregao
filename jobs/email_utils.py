@@ -1,11 +1,55 @@
 # -*- coding: utf-8 -*-
-"""Entrega de e-mail via Resend API ou SMTP, configurada por ambiente."""
+"""Entrega de e-mail via Resend API, Brevo API ou SMTP, configurada por ambiente."""
 import json
 import os
 import smtplib
 from email.message import EmailMessage
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+
+def _enviar_brevo(assunto, texto, html, remetente, destinatario, api_key):
+    """Brevo (ex-Sendinblue): só exige o remetente verificado por codigo de
+    6 digitos enviado pro proprio e-mail (sem DNS/dominio proprio, ao
+    contrario do Resend) - ver developers.brevo.com/docs/send-a-transactional-email.
+    Free tier: 300 e-mails/dia, sem expiracao."""
+    payload = {
+        "sender": {"email": remetente},
+        "to": [{"email": destinatario}],
+        "subject": assunto,
+        "textContent": texto,
+    }
+    if html:
+        payload["htmlContent"] = html
+    request = Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "api-key": api_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Pregao/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            if not 200 <= response.status < 300:
+                return {"ok": False, "erro": f"Brevo retornou HTTP {response.status}."}
+        return {"ok": True, "erro": None}
+    except HTTPError as exc:
+        # Não devolver headers/request: eles podem conter a chave de API.
+        detalhe = ""
+        try:
+            corpo = json.loads(exc.read().decode("utf-8"))
+            detalhe = str(corpo.get("message") or corpo.get("code") or "")[:300]
+        except Exception:
+            pass
+        return {"ok": False, "erro": f"Brevo HTTP {exc.code}" + (f": {detalhe}" if detalhe else "")}
+    except (URLError, TimeoutError, OSError) as exc:
+        return {"ok": False, "erro": f"Falha de conexão com Brevo: {type(exc).__name__}"}
+    except Exception as exc:
+        return {"ok": False, "erro": f"Falha no envio via Brevo: {type(exc).__name__}"}
 
 
 def _enviar_resend(assunto, texto, html, remetente, destinatario, api_key):
@@ -62,8 +106,14 @@ def enviar_email(assunto, texto, html=None, destinatario=None):
             return {"ok": False, "erro": "RESEND_API_KEY precisa estar configurada para EMAIL_PROVIDER=resend."}
         return _enviar_resend(assunto, texto, html, remetente, destinatario, api_key)
 
+    if provedor == "brevo":
+        api_key = os.getenv("BREVO_API_KEY", "").strip()
+        if not api_key:
+            return {"ok": False, "erro": "BREVO_API_KEY precisa estar configurada para EMAIL_PROVIDER=brevo."}
+        return _enviar_brevo(assunto, texto, html, remetente, destinatario, api_key)
+
     if provedor != "smtp":
-        return {"ok": False, "erro": "EMAIL_PROVIDER deve ser 'smtp' ou 'resend'."}
+        return {"ok": False, "erro": "EMAIL_PROVIDER deve ser 'smtp', 'resend' ou 'brevo'."}
 
     host = os.getenv("SMTP_HOST", "").strip()
     senha = os.getenv("SMTP_PASSWORD", "")
