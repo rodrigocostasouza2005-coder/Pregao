@@ -6249,3 +6249,26 @@ PR aberto: [#40](https://github.com/rodrigocostasouza2005-coder/Pregao/pull/40) 
 1. Configurar os 4 secrets de e-mail ausentes no GitHub (ver acima) - sem isso, zero e-mail sai (Radar E Morning Call).
 2. Decidir se/quando instalar o runner self-hosted do PR #37 (exige acesso físico ao PC + revisão de segurança antes do merge).
 3. Mesmas pendências de XP/Genial já registradas na entrada anterior (Reference ID da XP, contato Genial) - não mudaram.
+
+## 2026-10-17 — Consolidação do consentimento do Morning Call (PRs #41 + #42 concorrentes)
+
+Pedido explícito do Rodrigo: durante a madrugada, auditar os dois PRs concorrentes que implementavam o mesmo pedido (consentimento individual por e-mail no Morning Call, cada um de uma sessão diferente) e consolidar numa única implementação, sem mergear nenhum dos dois originais, sem tocar no Radar/coletores/PR #37, sem rodar migration em produção, sem inventar secret, sem enviar e-mail real em massa.
+
+**Comparação real (não presumida)**, nos 12 critérios pedidos - nenhum dos dois PRs era estritamente superior:
+- **PR #41** ganhava em: toggle inline com efeito imediato (bate com a preferência de UX já registrada do Rodrigo - controle no próprio elemento, sem botão SALVAR separado, ver [[feedback_inline_controls]]), validação de formato de e-mail + dedupe + paginação na listagem de assinantes, **zero migration de schema necessária** (funciona no banco atual, hoje), e logs já sem PII (hash sha256[:10] do e-mail, nunca o e-mail em texto puro).
+- **PR #42** (meu, sessão anterior) ganhava em: semântica de falha segura quando o Supabase cai (`None` explícito, distinto de "ninguém assinou") e modo de teste disparável remotamente via `workflow_dispatch` (o `enviar_teste()` do #41 só era alcançável rodando Python local com secrets configurados - sem fio nenhum até o GitHub Actions).
+- Achado real do #42 que o #41 NÃO tinha e que era um problema de verdade: meu próprio PR#42 vazava e-mail em texto puro num `print()` de erro - só percebido ao reler o próprio código lado a lado com o #41 durante esta auditoria.
+
+**Decisão**: base = PR #41 (menos risco operacional, já sem a brecha de PII, migration zero). Portados de volta só os 2 pontos reais do #42:
+1. `data/user_prefs.py:listar_assinantes_morning_call()` agora devolve `None` (falha real) em vez de `[]` quando o Supabase está indisponível - a versão do #41 deixava uma queda real do banco indistinguível de "dia tranquilo, ninguém assinou" no painel SAÚDE DOS DADOS (`execucao_ok` sempre `True`, escondendo o problema por tempo indefinido). `executar()`/`gerar_preview()` atualizados pra tratar os dois casos de forma diferente.
+2. Novo input `teste_destinatario` em `workflow_dispatch` → env `MORNING_CALL_TESTE_PARA` → `jobs/morning_call.py:__main__` chama `enviar_teste()` em vez de `executar()` quando preenchido - agora disparável direto do GitHub Actions, sem precisar rodar nada local.
+
+**Ajuste adicional, achado durante a validação (não pedido explicitamente, mas justificado e documentado)**: o código de saída do processo não falha mais o job inteiro numa falha de UM destinatário entre vários - só numa perda TOTAL (zero sucessos). Com o critério antigo (`falhas==0`), um único e-mail com bounce permanente marcaria o job como "falho" todo santo dia mesmo entregando certinho pros demais - fadiga de alerta real (ninguém mais olha pra um job que "sempre falha"). A falha parcial continua 100% rastreável no painel interno (`parcial=True`, `execucao_ok=False`), só não dispara mais o alarme externo do Actions por um problema de 1 destinatário.
+
+**Migration do PR #42 (constraint único no banco) deliberadamente NÃO trazida pro consolidado**: o workflow já serializa execuções via `concurrency: group: pregao-radar-morning-call` (nível do workflow inteiro, cobre radar+morning-call juntos) - o cenário de corrida que a constraint evitaria (2 execuções concorrentes duplicando envio pro mesmo assinante) já não acontece na prática nesse pipeline. Adicionar uma migration pendente só pra defesa em profundidade não se justificou frente ao ganho real de "zero passo manual" do design do #41.
+
+**PRs #41 e #42 não foram mergeados nem fechados** - ficam como estão pra revisão/decisão do Rodrigo; só a branch nova (`feat/morning-call-consolidado-20261017`, PR #44) recebeu os commits de consolidação. PR #38 segue `CONFLICTING` com `main` (sem mudança desde a entrada anterior) - só reconfirmado, não mexido. PR #43 (outra sessão, auditoria visual de ranking/tema) apareceu durante a madrugada - fora de escopo desta tarefa, não investigado.
+
+**Testes**: 621 passed (suíte completa, incluindo Radar - sem regressão). Cobre os 9 cenários pedidos: consentimento/sem consentimento, Supabase indisponível (em `user_prefs` e em `executar`), lista vazia, duplicados, falha parcial isolada, reexecução sem duplicar, modo de teste isolado e agora disparável remoto, compatibilidade com o workflow (cron/condições `if:` consistentes). Nenhum e-mail real foi enviado, nenhuma migration foi executada em produção, nenhum secret foi configurado com valor inventado.
+
+PR aberto: [#44](https://github.com/rodrigocostasouza2005-coder/Pregao/pull/44), CI verde, não mergeado - decisão do Rodrigo.
