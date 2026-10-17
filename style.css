@@ -991,7 +991,6 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
     font-size: 0.7rem;
     text-align: right;
     font-variant-numeric: tabular-nums;
-    padding-top: 0.3rem;
 }
 .rank-nome-valor {
     display: flex;
@@ -999,7 +998,6 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
     justify-content: space-between;
     gap: 0.5rem;
     min-width: 0;
-    padding-top: 0.2rem;
 }
 .rank-nome {
     color: var(--cinza);
@@ -1019,7 +1017,12 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
 .rank-barra-trilho {
     height: 10px;
     width: 100%;
-    margin-top: 0.35rem;
+    /* sem margin-top fixo (removido na 2a passada da auditoria visual
+       2026-10-17): a linha agora usa vertical_alignment="center" (ver
+       ui/mercado_tab.py:_linha_ranking) - o proprio flexbox centraliza a
+       barra de 10px dentro da altura real da linha, auto-adaptavel a
+       qualquer preferencia de FONTE, em vez de uma folga fixa calibrada
+       so' pra 1 tamanho. */
     background: color-mix(in srgb, var(--borda) 35%, transparent);
 }
 .rank-barra-fill {
@@ -1039,6 +1042,12 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
     min-height: 22px !important;
     font-size: 0.76rem !important;
     font-weight: 600;
+    /* ticker nao tem espaco (sem ponto de quebra de linha natural) -
+       ellipsis de seguranca (2a passada da auditoria visual 2026-10-17)
+       pro raro caso de um ticker futuro mais largo que a coluna. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .st-key-mercado_ranking_lista [data-testid="stVerticalBlock"] { gap: 0.05rem; }
 
