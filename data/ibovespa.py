@@ -83,11 +83,21 @@ def obter_composicao_oficial() -> dict:
     # treemap (data/mercado.py) e _nome_empresa do CALENDARIO.
     cache = _ultima_composicao_valida()
     try:
-        # 1 retry curto pra falha de rede/timeout transitoria (nao pra erro
-        # HTTP explicito, que indica resposta real da B3, nao instabilidade).
+        # 1 retry curto (backoff 1.5s) pra falha transitoria: erro de
+        # rede/timeout OU HTTP 5xx/429 (achado real 2026-10-17 - auditoria
+        # SAUDE DOS DADOS: a B3 respondeu HTTP 500 nesta janela e voltou a
+        # responder 200 com a composicao completa minutos depois, no mesmo
+        # endpoint/payload, sem nenhuma mudanca de codigo - evidencia de
+        # instabilidade pontual do lado da B3, nao de erro de requisicao.
+        # Ate aqui so' se repetia erro de rede/timeout; um 500/502/503/504
+        # explicito ia direto pro fallback cacheado sem nenhuma segunda
+        # tentativa, mesmo sendo o padrao classico de instabilidade
+        # transitoria de servidor).
         try:
             r = cffi_requests.get(_montar_url(), headers=_HEADERS, impersonate="chrome", timeout=15)
-        except (ConnectionError, TimeoutError, OSError):
+            if r.status_code in (429, 500, 502, 503, 504):
+                raise RuntimeError(f"HTTP {r.status_code}")
+        except (ConnectionError, TimeoutError, OSError, RuntimeError):
             time.sleep(1.5)
             r = cffi_requests.get(_montar_url(), headers=_HEADERS, impersonate="chrome", timeout=15)
         if r.status_code != 200:
