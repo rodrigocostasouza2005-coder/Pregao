@@ -40,18 +40,19 @@ escondidos):
   fonte BCB inteira. 4 novos testes em `tests/test_macro.py` + suite
   completa `411/411` (local, `/tmp/venv_test`) + `compileall`/
   `pyflakes` limpos.
-- **NEWS — `obter_noticias` fora da watchlist agregada sem
-  instrumentação de SAÚDE DOS DADOS**
-  PRIORIDADE: BAIXA · IMPACTO: BAIXO · ESFORÇO: MÉDIO
-  Esta sessão instrumentou `obter_noticias_watchlist` (o que a aba
-  NOTÍCIAS de verdade usa pra montar o feed agregado). `ui/
-  research_tab.py`, `ui/calendario_tab.py` e a visão de ticker único
-  em `ui/news_tab.py` chamam `obter_noticias(ticker)` DIRETO, sem
-  passar por esse registro - se a busca por ticker quebrar bem no
-  momento em que só esses 3 consumidores estão ativos (watchlist
-  nunca chamada na mesma execução), o painel não capta a falha. Gap
-  menor (a watchlist agregada, o caminho mais usado, já está coberta),
-  registrado pra uma rodada futura.
+- ~~**NEWS — `obter_noticias` fora da watchlist agregada sem
+  instrumentação de SAÚDE DOS DADOS**~~ — **corrigido** (sessão
+  2026-10-17): `data/news.py:obter_noticias(ticker)` passou a chamar
+  `registrar_tentativa` direto (3 pontos: falha de busca, sucesso sem
+  item relevante, sucesso com resultado real) sob o nome "NEWS (ticker
+  único)" — linha nova em `REGISTRO_COLETORES` (`data/saude_dados.py`),
+  mesmo critério de nomenclatura de "NEWS (watchlist)"/"MACRO (BCB -
+  Selic)" (nome por caminho de código, não por aba da UI). Cobre `ui/
+  research_tab.py`, `ui/calendario_tab.py` e a visão de ticker único em
+  `ui/news_tab.py`, que chamam `obter_noticias(ticker)` DIRETO sem
+  passar por `obter_noticias_watchlist`. 3 testes novos (`tests/
+  test_news_saude_dados.py` 9-11) + suite completa `602/602` +
+  `py_compile` limpo.
 - **NEWS — listas de ticker 100% hardcoded (risco estrutural de
   recorrência)**
   PRIORIDADE: MÉDIA (nunca vai "terminar" - é uma classe de risco, não

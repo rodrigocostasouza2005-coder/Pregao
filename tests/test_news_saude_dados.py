@@ -9,10 +9,19 @@ continuava mostrando "NEWS: Coleta OK" com a aba principal vazia.
 Corrigido com uma linha separada ("NEWS (watchlist)", mesma categoria
 Noticias) - ver REGISTRO_COLETORES em data/saude_dados.py.
 
+test_9 em diante: instrumentacao de data/news.py:obter_noticias(ticker)
+em si (BACKLOG.md "NEWS - obter_noticias fora da watchlist agregada sem
+instrumentacao de SAUDE DOS DADOS") - ui/research_tab.py, ui/
+calendario_tab.py e a visao de ticker unico de ui/news_tab.py chamam
+obter_noticias(ticker) DIRETO (sem passar por obter_noticias_watchlist);
+nome separado ("NEWS (ticker único)") pro mesmo motivo de "NEWS
+(watchlist)" acima.
+
 Mocka obter_noticias/registrar_tentativa - nunca faz chamada de rede.
 
 Uso: python tests/test_news_saude_dados.py (venv)."""
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -170,3 +179,59 @@ def test_google_news_feed_repete_timeout_transitorio():
         resultado = news_mod._buscar_feed_de_url("https://example.com/feed")
     _checar("Google News recupera apos timeout", resultado is not None)
     _checar("Google News repete uma vez", get.call_count == 2)
+
+
+def test_9_obter_noticias_busca_falha_registra_falha_sem_propagar():
+    """_buscar_feed so' devolve None numa falha real de requisicao (ver
+    docstring de _buscar_feed_de_url) - nunca lanca excecao pro caller;
+    obter_noticias precisa manter esse contrato (retornar None) E
+    registrar a falha em "NEWS (ticker único)", sem o caller (ui/
+    research_tab.py etc.) precisar de try/except."""
+    news_mod.obter_noticias.clear()
+    with patch.object(news_mod, "_buscar_feed", return_value=None), \
+         patch.object(news_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(news_mod, "registrar_tentativa") as mock_reg:
+        resultado = news_mod.obter_noticias("PETR4")
+    _checar("9a busca falhou -> None (nunca inventa noticia, nunca propaga excecao)", resultado is None)
+    _checar("9b registra NEWS (ticker único) execucao_ok=False",
+            mock_reg.call_args.args[0] == "NEWS (ticker único)" and mock_reg.call_args.kwargs.get("execucao_ok") is False,
+            f"(call={mock_reg.call_args})")
+
+
+def test_10_obter_noticias_sem_item_relevante_registra_sucesso_zero():
+    """Fonte respondeu mas sem noticia nenhuma pro papel (lista vazia,
+    nao None - ver docstring de obter_noticias): ainda e' sucesso de
+    execucao, so' sem novidade - registros_novos deve bater com 0."""
+    news_mod.obter_noticias.clear()
+    with patch.object(news_mod, "_buscar_feed", return_value=[]), \
+         patch.object(news_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(news_mod, "registrar_tentativa") as mock_reg:
+        resultado = news_mod.obter_noticias("PETR4")
+    _checar("10a fonte respondeu sem noticia -> lista vazia (nao None)", resultado == [])
+    _checar("10b registra NEWS (ticker único) execucao_ok=True com registros_novos=0",
+            mock_reg.call_args.args[0] == "NEWS (ticker único)" and mock_reg.call_args.kwargs.get("execucao_ok") is True
+            and mock_reg.call_args.kwargs.get("registros_novos") == 0, f"(call={mock_reg.call_args})")
+
+
+def test_11_obter_noticias_sucesso_com_noticia_registra_contagem_real():
+    """registros_novos registrado precisa bater com a contagem REAL do
+    resultado devolvido pro caller - nao um valor fixo/estimado."""
+    news_mod.obter_noticias.clear()
+    agora = datetime.now(timezone.utc)
+    published_parsed = (agora.year, agora.month, agora.day, agora.hour, agora.minute, agora.second, 0, 0, 0)
+    entry = {
+        "title": "PETR4 anuncia resultado forte do trimestre - InfoMoney",
+        "link": "https://infomoney.com.br/noticia-1",
+        "published_parsed": published_parsed,
+        "source": {"title": "InfoMoney", "href": "https://infomoney.com.br"},
+    }
+    with patch.object(news_mod, "_buscar_feed", return_value=[entry]), \
+         patch.object(news_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(news_mod, "documento_confirmador", return_value=None), \
+         patch.object(news_mod, "registrar_tentativa") as mock_reg:
+        resultado = news_mod.obter_noticias("PETR4")
+    _checar("11a retorna 1 noticia real (grupo relevante)", resultado is not None and len(resultado) == 1, f"(resultado={resultado})")
+    _checar("11b registra NEWS (ticker único) execucao_ok=True com contagem real",
+            mock_reg.call_args.args[0] == "NEWS (ticker único)" and mock_reg.call_args.kwargs.get("execucao_ok") is True
+            and mock_reg.call_args.kwargs.get("registros_novos") == len(resultado),
+            f"(call={mock_reg.call_args}, resultado={resultado})")

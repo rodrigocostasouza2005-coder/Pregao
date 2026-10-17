@@ -203,6 +203,22 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 6, "instrumentado": True,
     },
     {
+        # linha nova (BACKLOG.md "NEWS - obter_noticias fora da watchlist
+        # agregada sem instrumentacao de SAUDE DOS DADOS"): data/news.py:
+        # obter_noticias(ticker) e' chamado DIRETO (sem passar por
+        # obter_noticias_watchlist) por ui/research_tab.py, ui/
+        # calendario_tab.py e a visao de ticker unico de ui/news_tab.py -
+        # se quebrasse isolado bem no momento em que so' esses 3
+        # consumidores estao ativos, SAUDE DOS DADOS nao captava. Nome
+        # separado de "NEWS (watchlist)" de proposito, mesmo os dois
+        # chamando literalmente a mesma funcao (ver docstring de
+        # obter_noticias em data/news.py) - evita que o upsert de um
+        # caminho sobrescreva o status do outro.
+        "nome": "NEWS (ticker único)", "fonte": "Google News (busca por ticker)",
+        "categoria": "Noticias", "frequencia_esperada": "sob demanda (cache 20min)",
+        "idade_maxima_horas": 6, "instrumentado": True,
+    },
+    {
         "nome": "MERCADO", "fonte": "yfinance (cotacoes em lote)",
         "categoria": "Cotacoes", "frequencia_esperada": "sob demanda (cache 90s)",
         "idade_maxima_horas": 2, "instrumentado": True,
@@ -389,8 +405,8 @@ _CAMPOS_OBRIGATORIOS_COLETOR = (
     "nome", "fonte", "categoria", "frequencia_esperada", "instrumentado",
 )
 _COLETORES_CRITICOS = {
-    "NEWS", "NEWS (Brasil)", "NEWS (Internacional)", "NEWS (watchlist)", "MERCADO", "MACRO (BCB)", "CVM",
-    "CVM (FCA)", "CVM (watchlist)", "CALENDARIO",
+    "NEWS", "NEWS (Brasil)", "NEWS (Internacional)", "NEWS (watchlist)", "NEWS (ticker único)",
+    "MERCADO", "MACRO (BCB)", "CVM", "CVM (FCA)", "CVM (watchlist)", "CALENDARIO",
 }
 
 

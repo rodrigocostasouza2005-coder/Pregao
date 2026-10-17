@@ -660,7 +660,22 @@ def obter_noticias(ticker: str):
     sem isso, cobertura que so' usa o ticker/nome originais (ex: "MELI"
     ou "Mercado Livre" pra' MELI34) nunca aparecia, porque a busca so'
     tentava o nome legal em ingles do yfinance + o ticker da B3, que quase
-    nunca aparecem assim no noticiario de verdade."""
+    nunca aparecem assim no noticiario de verdade.
+
+    Registro de SAUDE DOS DADOS (achado real, auditoria missao coletores
+    2026-10-13, continuacao - BACKLOG.md "NEWS - obter_noticias fora da
+    watchlist agregada sem instrumentacao"): obter_noticias_watchlist ja'
+    registra "NEWS (watchlist)" agregando TODOS os tickers de uma
+    execucao, mas ui/research_tab.py, ui/calendario_tab.py e a visao de
+    ticker unico de ui/news_tab.py chamam esta funcao DIRETO, sem passar
+    por aquele agregador - se a busca por ticker quebrasse isolada bem no
+    momento em que so' esses 3 consumidores estao ativos (watchlist nunca
+    chamada na mesma execucao), SAUDE DOS DADOS nao captava a falha.
+    Nome separado ("NEWS (ticker unico)", mesmo criterio de
+    obter_top_mercado/obter_top_mercado_internacional acima: cada
+    registram sua propria fonte mesmo quando tambem sao chamados por um
+    agregador que registra a parte - redundancia aceita de proposito, o
+    upsert por nome so' reflete a tentativa mais recente)."""
     nome = obter_nome_yf(ticker)
     aliases = tuple(config.TICKER_ALIASES.get(ticker, []))
     termos = [f'"{nome}" {ticker}' if nome else ticker]
@@ -679,10 +694,14 @@ def obter_noticias(ticker: str):
                 entries_por_link[link] = e
 
     if not alguma_busca_respondeu:
+        registrar_tentativa("NEWS (ticker único)", "Google News (busca por ticker)", execucao_ok=False,
+                             erro=f"busca falhou para {ticker}", categoria="Noticias")
         return None
 
     itens = [i for i in (_montar_item(e, ticker, nome, aliases) for e in entries_por_link.values()) if i]
     if not itens:
+        registrar_tentativa("NEWS (ticker único)", "Google News (busca por ticker)", execucao_ok=True,
+                             registros_novos=0, categoria="Noticias")
         return []
 
     resultado = []
@@ -726,6 +745,8 @@ def obter_noticias(ticker: str):
         })
 
     resultado.sort(key=lambda n: n["data"], reverse=True)
+    registrar_tentativa("NEWS (ticker único)", "Google News (busca por ticker)", execucao_ok=True,
+                         registros_novos=len(resultado), categoria="Noticias")
     return resultado
 
 
