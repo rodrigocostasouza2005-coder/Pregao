@@ -3,7 +3,7 @@
 Call (opt-in explícito) e persistência da preferência (round-trip no
 Supabase) - ver missão "Morning Call: consentimento e destinatários".
 """
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import data.user_prefs as user_prefs
 
@@ -105,8 +105,21 @@ def test_cliente_none_retorna_none_sem_lancar_excecao():
     "ninguem assinou ainda": quem chama (jobs/morning_call.py:executar)
     precisa poder distinguir os 2 pra nao reportar uma falha de infra
     como sucesso silencioso (ver tests/test_morning_call.py:
-    test_executar_com_supabase_indisponivel_nao_mascara_falha_como_sucesso)."""
-    assert user_prefs.listar_assinantes_morning_call(None) is None
+    test_executar_com_supabase_indisponivel_nao_mascara_falha_como_sucesso).
+
+    Achado real na revisão final (2026-10-17): passar cliente=None como
+    PARÂMETRO não testa de verdade "Supabase indisponível" - a função
+    cai no fallback `obter_cliente()` quando o parâmetro é None (ver
+    código), que numa máquina com .streamlit/secrets.toml real (ex:
+    ambiente de dev) retorna um cliente de verdade, consulta o Supabase
+    de PRODUÇÃO de verdade, e só "passa" por coincidência (hoje,
+    zero assinantes reais) - nunca exercitou o branch `if cliente is
+    None: return None`. Só passava sempre em CI (sem secrets.toml lá) e
+    só por acaso localmente. Mocka obter_cliente() pra testar o estado
+    de verdade, independente do ambiente."""
+    with patch.object(user_prefs, "obter_cliente", return_value=None):
+        assert user_prefs.listar_assinantes_morning_call() is None
+        assert user_prefs.listar_assinantes_morning_call(None) is None
 
 
 def test_falha_na_consulta_retorna_none_sem_lancar_excecao():
