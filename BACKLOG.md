@@ -272,6 +272,22 @@ deste sandbox, registrados aqui pra o Rodrigo confirmar em produção:
   externos (CDN de veículo de notícia) — nunca foi possível confirmar
   visualmente uma og:image REAL carregando no modal. Precisa abrir
   NOTÍCIAS em produção e clicar numa matéria com foto conhecida.
+  **Atualização 2026-10-17** (auditoria do bug "imagens dos cards não
+  exibem corretamente"): rastreando o fluxo completo, a causa mais
+  provável encontrada (com evidência de código, não suposição) foi um
+  User-Agent auto-identificado como bot nas 2 chamadas de rede ligadas
+  a imagem (`data/news.py:_url_imagem_utilizavel` e
+  `ui/news_tab.py:_baixar_imagem_capa`) — diferente do download do
+  ARTIGO, que já usa UA de navegador real precisamente porque hosts
+  bloqueiam bot conhecido; CDN de imagem de veículo BR costuma aplicar
+  o mesmo bloqueio. Corrigido (UA de navegador real nos 2 pontos +
+  `referrerpolicy='no-referrer'` no thumb do feed e na 2ª via da capa,
+  que fazem hotlink direto do navegador) e coberto por
+  `tests/test_news_imagem_cards.py` (16 casos, só mock). Esta pendência
+  específica (confirmar visualmente uma foto real carregando em produção)
+  **continua aberta** — ainda sem browser real disponível neste
+  sandbox; o que mudou é que a causa mais provável já foi corrigida no
+  código, em vez de só o fallback visual (`onerror`) estar certo.
 - **Formato RESUMO/LEITURA DE MERCADO com o Groq real**: o prompt novo
   (`data/news.py:_PROMPT_SISTEMA_RESUMO`) só foi testado com mocks
   (`_chamar_groq` nunca foi chamado de verdade nesta sessão, sem

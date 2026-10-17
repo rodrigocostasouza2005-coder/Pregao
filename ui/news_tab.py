@@ -675,6 +675,26 @@ def _linha_veiculos(fontes: list) -> str:
     return linha
 
 
+# bug real encontrado nesta auditoria (2026-10-17): o UA usado aqui
+# ("...PregaoNews/1.0)") se auto-identifica como bot pra qualquer CDN de
+# imagem que faça fingerprint de User-Agent (comum em WAF de veiculo BR,
+# ex: glbimg/imguol) - a mesma classe de bloqueio que já forçou o
+# download do ARTIGO (ver data/news.py:_extrair_texto_artigo) a usar um
+# UA de navegador real em vez do UA educado padrão do projeto. Troca
+# pro mesmo UA de navegador real (replicado também em
+# data/news.py:_HEADERS_IMAGEM, usado pela validação em lote) em vez de
+# inventar um terceiro UA diferente pra cada chamada relacionada a
+# imagem.
+_HEADERS_IMAGEM_CAPA = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/128.0.0.0 Safari/537.36"
+    ),
+    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+}
+
+
 @st.cache_data(ttl=3600, max_entries=80, show_spinner=False)
 def _baixar_imagem_capa(url: str) -> bytes | None:
     """Baixa a imagem no servidor do Pregão, evitando hotlink/CORS e URLs
@@ -686,10 +706,7 @@ def _baixar_imagem_capa(url: str) -> bytes | None:
     try:
         with requests.get(
             url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (compatible; PregaoNews/1.0)",
-                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            },
+            headers=_HEADERS_IMAGEM_CAPA,
             timeout=(3.05, 7),
             stream=True,
             allow_redirects=True,
@@ -753,13 +770,22 @@ def _capa_html(imagem: str | None, veiculo_principal: str) -> str:
     de imagens que pareça ser da matéria). Mesmo padrão de
     irmão-oculto de _thumb_html: a imagem some e o fallback (já no DOM,
     só oculto) aparece, se o link quebrar/expirar no navegador - quem
-    faz a troca é o listener global de injetar_fallback_imagem()."""
+    faz a troca é o listener global de injetar_fallback_imagem().
+
+    So' usado como SEGUNDA via (_renderizar_capa ja' baixa a imagem no
+    servidor antes - ver _baixar_imagem_capa); aqui o navegador busca a
+    URL direto, por isso referrerpolicy='no-referrer': bloqueio de
+    hotlink por Referer (comum em CDN de veiculo BR) costuma liberar
+    requisicao SEM referer e so' bloquear quando o referer aponta pra
+    um dominio estranho - sem custo nenhum quando o host nao valida
+    referer."""
     marca = html.escape(veiculo_principal or "NOTÍCIA")
     if not imagem:
         return f"<div class='news-capa'><div class='news-capa-fallback'><span>{marca}</span></div></div>"
     return (
         "<div class='news-capa'>"
-        f"<img src='{html.escape(imagem)}' loading='lazy' decoding='async' alt=''>"
+        f"<img src='{html.escape(imagem)}' loading='lazy' decoding='async' "
+        "referrerpolicy='no-referrer' alt=''>"
         f"<div class='news-capa-fallback' style='display:none;'><span>{marca}</span></div>"
         "</div>"
     )
@@ -1059,13 +1085,22 @@ def _thumb_html(imagem: str | None, iniciais: str) -> str:
     se a imagem faltar OU falhar ao carregar no navegador - quem troca
     pro fallback e' o listener global injetado por
     injetar_fallback_imagem() (ver mais abaixo), nunca deixa um icone de
-    imagem quebrada no feed."""
+    imagem quebrada no feed.
+
+    Diferente da capa do modal (_renderizar_capa), o thumb do feed NUNCA
+    baixa a imagem no servidor (proibido por design - zero requisicao de
+    rede por card, ver docstring de data/news.py:obter_resumos_prontos,
+    20-50 cards por pagina tornariam isso lento/serial); o navegador
+    busca a URL direto, por isso referrerpolicy='no-referrer' (achado
+    real desta auditoria 2026-10-17: alguns CDNs de veiculo BR bloqueiam
+    por Referer estranho mas liberam sem referer nenhum - sem custo
+    quando o host nao faz esse tipo de checagem)."""
     marca = html.escape((iniciais or "?")[:2].upper())
     if not imagem:
         return f"<div class='news-item-thumb-wrap'><div class='news-item-thumb-fallback'>{marca}</div></div>"
     return (
         "<div class='news-item-thumb-wrap'>"
-        f"<img src='{html.escape(imagem)}' loading='lazy' alt=''>"
+        f"<img src='{html.escape(imagem)}' loading='lazy' referrerpolicy='no-referrer' alt=''>"
         f"<div class='news-item-thumb-fallback' style='display:none;'>{marca}</div>"
         "</div>"
     )
