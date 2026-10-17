@@ -67,10 +67,16 @@ Os envios aceitam dois provedores. Para usar a API do Resend (sem senha SMTP), c
 - `EMAIL_PROVIDER=resend`
 - `RESEND_API_KEY`: chave secreta gerada na conta Resend
 - `EMAIL_FROM`: remetente/domínio autorizado e verificado no Resend
-- `EMAIL_TO`: endereço que receberá os alertas e o Morning Call
+- `EMAIL_TO`: endereço fixo usado pelo Radar de quedas e pelo envio administrativo/teste manual do Morning Call (`jobs.morning_call.enviar_teste`) — **não é mais a lista de destinatários do envio automático do Morning Call** (ver abaixo)
 
 A chave deve ser criada no painel do Resend e salva diretamente como GitHub Secret; não a coloque no código nem em mensagens. O remetente precisa estar autorizado/verificado pelo Resend, conforme as regras da conta. Não é necessário configurar `SMTP_PASSWORD` quando `EMAIL_PROVIDER=resend`.
 
 Para manter o provedor SMTP existente, use `EMAIL_PROVIDER=smtp` (ou deixe a variável ausente) e configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` e `EMAIL_TO`.
 
 A troca de provedor não altera a lógica do Radar nem do Morning Call. Os envios só serão efetivos depois que os secrets e um remetente autorizado estiverem configurados.
+
+### Destinatários do Morning Call automático (opt-in por usuário)
+
+O envio diário automático do Morning Call (`jobs/morning_call.py:executar`, workflow `.github/workflows/radar-morning-call.yml`) **não usa mais `EMAIL_TO` como lista de assinantes**. Em vez disso, ele busca em `user_prefs` (Supabase) todo usuário autenticado (login Google) que tenha explicitamente ativado o toggle **"RECEBER MORNING CALL POR E-MAIL"** na aba CONFIG do app, com e-mail em formato válido — deduplicado por e-mail. O default dessa preferência é **desligado**: sem esse opt-in explícito, nenhum usuário (novo ou já existente) recebe e-mail automático. Uma falha de envio para um assinante não impede a tentativa para os demais, nem é reportada como sucesso total no painel SAÚDE DOS DADOS. Logs de execução referenciam cada destinatário só por um hash curto (nunca o e-mail completo).
+
+`EMAIL_TO` continua existindo só para dois usos administrativos: os alertas do Radar de quedas e um envio de teste manual do Morning Call (`python -c "from jobs.morning_call import enviar_teste; print(enviar_teste('seu-email-de-teste@exemplo.com'))"`) — nunca dispara para a lista real de assinantes.

@@ -18,6 +18,12 @@ on:
           - ambos
           - radar
           - morning_call
+      teste_destinatario:
+        description: >-
+          (opcional, só pro Morning Call) envia só um e-mail de TESTE pra
+          este endereço - nunca dispara pros assinantes opt-in reais
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -87,4 +93,13 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          # Destinatarios reais do envio AGENDADO vem dos assinantes
+          # opt-in (user_prefs), nunca de um EMAIL_TO fixo - ver
+          # data/user_prefs.py:listar_assinantes_morning_call.
+          # MORNING_CALL_TESTE_PARA so' existe em disparo manual
+          # (workflow_dispatch) com o input teste_destinatario
+          # preenchido; em qualquer outro caso (cron, ou dispatch sem o
+          # campo) fica vazio e o job roda em modo AGENDADO normal (ver
+          # jobs/morning_call.py:__main__).
+          MORNING_CALL_TESTE_PARA: ${{ inputs.teste_destinatario }}
         run: python -m jobs.morning_call

@@ -983,6 +983,40 @@ if secao_atual == "CONFIG":
     with st.container(border=True):
         st.markdown('<div class="painel-titulo">CONFIG</div>', unsafe_allow_html=True)
 
+        # Notificação por e-mail do Morning Call: toggle INLINE com efeito
+        # imediato, fora do formulário em lote abaixo - mesmo padrão já
+        # usado pro tamanho/visibilidade de painel (ui/paineis.py,
+        # _controle_rapido_painel), pedido do Rodrigo (2026-09-26) de
+        # nunca exigir um botão "SALVAR" separado pra uma preferência
+        # simples de sim/não. Default sempre DESLIGADO (config.PREFS_PADRAO
+        # - ver data/user_prefs.py): sem esse opt-in explícito, o usuário
+        # nunca entra na lista de assinantes do envio automático (ver
+        # jobs/morning_call.py:listar_assinantes_morning_call).
+        st.markdown(
+            "<div class='cinza' style='font-size:0.68rem; margin-bottom:0.3rem;'>NOTIFICAÇÕES</div>",
+            unsafe_allow_html=True,
+        )
+        morning_call_email_ativo = st.toggle(
+            "RECEBER MORNING CALL POR E-MAIL",
+            value=prefs.get("morning_call_email_ativo", False),
+            help=(
+                "Envia o briefing diário (mercados, macro, agenda, notícias) por "
+                f"e-mail às 08h BRT, em dias úteis, para {usuario['email']}. "
+                "Pode ser desligado a qualquer momento - efeito imediato."
+            ),
+            key="toggle_morning_call_email",
+        )
+        if morning_call_email_ativo != prefs.get("morning_call_email_ativo", False):
+            prefs["morning_call_email_ativo"] = morning_call_email_ativo
+            if _persistir_prefs():
+                st.toast(
+                    "Preferência de Morning Call por e-mail salva." if morning_call_email_ativo
+                    else "Você não vai mais receber o Morning Call por e-mail.",
+                )
+            else:
+                st.warning("Preferência aplicada nesta sessão (banco indisponível, não foi salva).")
+            st.rerun()
+
         with st.form("form_config"):
             c1, c2 = st.columns(2)
             with c1:
