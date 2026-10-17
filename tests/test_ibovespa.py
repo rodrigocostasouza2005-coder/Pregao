@@ -147,16 +147,36 @@ def test_6b_erro_de_rede_transitorio_se_recupera_na_segunda_tentativa():
     _checar("6b3 dormiu entre as tentativas (nao martela a fonte sem esperar)", mock_sleep.called)
 
 
-def test_6c_falha_http_explicita_nao_tenta_retry():
-    """Erro HTTP (ex: 500) e' uma resposta REAL da B3, nao instabilidade
-    de rede - nao faz sentido tentar de novo na mesma execucao."""
+def test_6c_falha_http_5xx_tenta_retry_curto():
+    """Achado real 2026-10-17 (auditoria SAUDE DOS DADOS): a B3 respondeu
+    HTTP 500 numa janela e voltou a responder 200 minutos depois, mesmo
+    endpoint/payload - instabilidade transitoria de servidor, nao erro
+    de requisicao. HTTP 500/502/503/504/429 agora ganha a MESMA 1 retry
+    curta (backoff 1.5s) que erro de rede/timeout ja tinha."""
     _limpar_cache()
-    with patch.object(ibovespa_mod, "cffi_requests") as mock_req:
+    with patch.object(ibovespa_mod, "cffi_requests") as mock_req, \
+         patch.object(ibovespa_mod.time, "sleep") as mock_sleep:
         resposta_falha = MagicMock()
         resposta_falha.status_code = 500
         mock_req.get.return_value = resposta_falha
         ibovespa_mod.obter_composicao_oficial()
-    _checar("6c so' 1 chamada pra erro HTTP explicito (sem retry desnecessario)", mock_req.get.call_count == 1)
+    _checar("6c1 faz 2 chamadas pra HTTP 500 (1 original + 1 retry)", mock_req.get.call_count == 2)
+    _checar("6c2 dormiu entre as tentativas", mock_sleep.called)
+
+
+def test_6d_falha_http_5xx_se_recupera_na_segunda_tentativa():
+    """Reproduz o caso real: 1o HTTP 500, 2a tentativa volta 200 com a
+    composicao completa - nao deve cair pro fallback cacheado."""
+    _limpar_cache()
+    with patch.object(ibovespa_mod, "cffi_requests") as mock_req, \
+         patch.object(ibovespa_mod.time, "sleep") as mock_sleep:
+        resposta_falha = MagicMock()
+        resposta_falha.status_code = 500
+        mock_req.get.side_effect = [resposta_falha, _resposta_ok([_item("PETR4")])]
+        resultado = ibovespa_mod.obter_composicao_oficial()
+    _checar("6d1 recupera na 2a tentativa apos HTTP 500", "PETR4" in resultado, f"(resultado={resultado})")
+    _checar("6d2 fez exatamente 2 chamadas", mock_req.get.call_count == 2)
+    _checar("6d3 dormiu entre as tentativas", mock_sleep.called)
 
 
 def test_7_falha_http_registra_tentativa_com_erro_real():
