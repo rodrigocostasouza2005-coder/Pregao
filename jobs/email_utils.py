@@ -92,7 +92,18 @@ def _enviar_resend(assunto, texto, html, remetente, destinatario, api_key):
 
 
 def enviar_email(assunto, texto, html=None, destinatario=None):
-    provedor = os.getenv("EMAIL_PROVIDER", "smtp").strip().lower()
+    # (os.getenv(chave) or "smtp"), nao os.getenv(chave, "smtp") - achado
+    # real (auditoria pos-merge 2026-10-17, run 39073788370): no GitHub
+    # Actions, um "env:" que referencia um secret INEXISTENTE define a
+    # variavel como string VAZIA, nao a deixa ausente - os.getenv(chave,
+    # default) so' usa o default quando a chave esta' TOTALMENTE fora de
+    # os.environ, entao uma EMAIL_PROVIDER="" (secret nao configurado)
+    # devolvia "" em vez de cair no default "smtp", e "".strip().lower()
+    # caia no branch de erro "deve ser 'smtp', 'resend' ou 'brevo'" -
+    # mesma classe de problema que SMTP_PORT ja' tratava corretamente
+    # algumas linhas abaixo (`os.getenv("SMTP_PORT", "587").strip() or
+    # "587"`).
+    provedor = (os.getenv("EMAIL_PROVIDER") or "smtp").strip().lower()
     usuario = os.getenv("SMTP_USER", "").strip()
     remetente = os.getenv("EMAIL_FROM", usuario).strip()
     destinatario = (destinatario or os.getenv("EMAIL_TO", "")).strip()
