@@ -635,7 +635,11 @@ def executar():
         categoria="Morning Call",
         parcial=bool(enviados and falhas),
     )
-    return 0 if falhas == 0 else 1
+    # Job do GitHub Actions só fica vermelho em perda TOTAL (zero
+    # sucessos) - uma falha isolada (ex: 1 endereço com bounce
+    # permanente) não deve gerar alerta a cada execução; o painel
+    # SAÚDE DOS DADOS já mostra a falha parcial via `parcial=True` acima.
+    return 1 if (falhas and not enviados) else 0
 
 
 def _main() -> int:

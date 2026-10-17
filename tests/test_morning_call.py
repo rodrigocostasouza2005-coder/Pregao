@@ -565,8 +565,11 @@ def test_executar_envia_pra_varios_assinantes_e_dedupe_ja_vem_da_listagem(monkey
 def test_executar_falha_pra_um_assinante_nao_impede_envio_aos_demais(monkeypatch):
     """Falha de envio pra UM assinante (ex: Resend rejeitou aquele
     endereço) não pode interromper o laço nem impedir que os demais
-    recebam - e a execução não pode ser relatada como sucesso total
-    (registrar_tentativa precisa ver execucao_ok=False)."""
+    recebam. A execução não pode ser relatada como sucesso total no
+    painel SAÚDE DOS DADOS (execucao_ok=False, parcial=True), mas o
+    código de saída do processo continua 0 - falha parcial isolada não
+    deve deixar o job do GitHub Actions vermelho a cada execução (só
+    perda TOTAL, zero sucessos, deve)."""
     cliente = _cliente_fake_com_resultado([])
     chamadas_envio = []
     chamadas_registro = []
@@ -591,10 +594,32 @@ def test_executar_falha_pra_um_assinante_nao_impede_envio_aos_demais(monkeypatch
 
     # os DOIS devem ter sido tentados (a falha de um não cancela o outro):
     assert sorted(chamadas_envio) == ["falha@exemplo.com", "ok@exemplo.com"]
-    # falha parcial não pode ser sucesso total nem no retorno nem no painel:
-    assert codigo == 1
+    # falha parcial não é sucesso total no painel, mas não derruba o job:
+    assert codigo == 0
     assert chamadas_registro[0][1]["execucao_ok"] is False
     assert chamadas_registro[0][1]["parcial"] is True
+
+
+def test_executar_falha_pra_todos_os_assinantes_retorna_codigo_de_erro(monkeypatch):
+    """Perda TOTAL (nenhum assinante elegível recebeu) é o único caso em
+    que o processo deve sair com código != 0 - é a situação real que
+    merece deixar o job do GitHub Actions vermelho."""
+    cliente = _cliente_fake_com_resultado([])
+
+    def _enviar(_assunto, _texto, html=None, destinatario=None):
+        return {"ok": False, "erro": "Resend HTTP 500"}
+
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
+    monkeypatch.setattr(
+        mc, "listar_assinantes_morning_call",
+        lambda *_a, **_k: ["a@exemplo.com", "b@exemplo.com"],
+    )
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
+    monkeypatch.setattr(mc, "enviar_email", _enviar)
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: None)
+
+    assert mc.executar() == 1
 
 
 def test_executar_nunca_loga_email_completo_em_texto_puro(monkeypatch, capsys):
