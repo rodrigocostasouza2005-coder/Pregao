@@ -46,7 +46,7 @@ def email_valido(email: str) -> bool:
     return bool(_RE_EMAIL_VALIDO.match((email or "").strip()))
 
 
-def listar_assinantes_morning_call(cliente=None) -> list[str]:
+def listar_assinantes_morning_call(cliente=None) -> list[str] | None:
     """E-mails (minusculos, deduplicados) de usuarios com a preferencia
     'morning_call_email_ativo'=True em user_prefs E e-mail em formato
     valido - usado por jobs/morning_call.py pra decidir quem recebe o
@@ -57,12 +57,18 @@ def listar_assinantes_morning_call(cliente=None) -> list[str]:
     _TAMANHO_PAGINA_ASSINANTES linhas - continua funcionando mesmo se a
     tabela user_prefs crescer bem alem de uma unica pagina default do
     PostgREST. cliente=None (chamador pode passar um cliente ja' obtido
-    pra nao abrir 2 conexoes) -> obtem um sozinho; Supabase indisponivel
-    ou qualquer falha na consulta -> [] (nunca inventa assinante, nunca
-    quebra o job - mesmo espirito de obter_prefs/salvar_prefs acima)."""
+    pra nao abrir 2 conexoes) -> obtem um sozinho.
+
+    None (nao []) se Supabase estiver indisponivel ou a consulta lancar
+    excecao - quem chama (jobs/morning_call.py:executar) NUNCA deve
+    tratar None como "ninguem assinou": enviaria pra zero pessoas e
+    reportaria sucesso quando na verdade a causa foi uma falha de
+    infraestrutura. Lista [] e' o caso real "ninguem assinou ainda",
+    distinto de "nao deu pra saber" - distincao trazida da comparacao
+    com o PR concorrente #42 durante a consolidacao (2026-10-17)."""
     cliente = cliente if cliente is not None else obter_cliente()
     if cliente is None:
-        return []
+        return None
     assinantes = {}
     try:
         inicio = 0
@@ -88,5 +94,5 @@ def listar_assinantes_morning_call(cliente=None) -> list[str]:
             inicio += _TAMANHO_PAGINA_ASSINANTES
     except Exception as exc:
         print(f"[user_prefs] falha ao listar assinantes do Morning Call: {exc!r}")
-        return []
+        return None
     return sorted(assinantes.keys())

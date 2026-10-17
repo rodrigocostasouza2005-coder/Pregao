@@ -100,14 +100,19 @@ def test_paginacao_percorre_todas_as_paginas_ate_a_ultima_incompleta():
     assert cliente.table.return_value.select.return_value.range.return_value.execute.call_count == 2
 
 
-def test_cliente_none_retorna_lista_vazia_sem_lancar_excecao():
-    assert user_prefs.listar_assinantes_morning_call(None) == []
+def test_cliente_none_retorna_none_sem_lancar_excecao():
+    """None (nao []) - Supabase indisponivel e' um estado DIFERENTE de
+    "ninguem assinou ainda": quem chama (jobs/morning_call.py:executar)
+    precisa poder distinguir os 2 pra nao reportar uma falha de infra
+    como sucesso silencioso (ver tests/test_morning_call.py:
+    test_executar_com_supabase_indisponivel_nao_mascara_falha_como_sucesso)."""
+    assert user_prefs.listar_assinantes_morning_call(None) is None
 
 
-def test_falha_na_consulta_retorna_lista_vazia_sem_lancar_excecao():
+def test_falha_na_consulta_retorna_none_sem_lancar_excecao():
     cliente = MagicMock()
     cliente.table.side_effect = RuntimeError("Supabase fora do ar")
-    assert user_prefs.listar_assinantes_morning_call(cliente) == []
+    assert user_prefs.listar_assinantes_morning_call(cliente) is None
 
 
 # ---------------------------------------------------------------------

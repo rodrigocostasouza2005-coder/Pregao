@@ -4,7 +4,7 @@ import hashlib
 import html as _html_escape
 import os
 import re
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -16,7 +16,6 @@ from data.eventos import (
     calcular_calendario_cacheado,
 )
 from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta
-from data.mercado import obter_cotacoes_lote
 from data.news import obter_top_mercado_tudo
 from data.prices import obter_cotacao_indice
 from data.supabase_client import obter_cliente
@@ -24,19 +23,28 @@ from data.user_prefs import listar_assinantes_morning_call
 from jobs.email_utils import enviar_email
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
-TICKERS_REFERENCIA = ["^BVSP", "USDBRL=X", "ES=F", "NQ=F", "GC=F", "BZ=F"]
 
 # Secoes que TODO Morning Call gerado precisa conter - usado por
 # gerar_preview() pra validar o conteudo sem depender de nenhum secret de
-# e-mail estar configurado (ver docstring de gerar_preview). Se a secao de
-# AGENDA/NOTICIAS/etc mudar de nome aqui, mudar junto em montar_morning_call.
+# e-mail estar configurado (ver docstring de gerar_preview). Se o nome de
+# uma secao mudar aqui, mudar junto em montar_morning_call.
+#
+# Estrutura editorial (2026-10-17, reconciliacao #38 x main pos-#40):
+# RESUMO EXECUTIVO / BRASIL / EXTERIOR separados / AGENDA DE HOJE (CVM,
+# preservada do #40) / EMPRESAS E SETORES / TENDENCIAS E RISCOS (marcadas
+# [INTERPRETACAO], nunca confundidas com fato) / LIMITACOES / FONTES -
+# exigencia editorial explicita do Rodrigo, recuperada do PR #38 (que
+# ficou tecnicamente obsoleto apos o PR #40, mas tinha essa estrutura que
+# nenhum outro PR implementou).
 SECOES_OBRIGATORIAS = (
-    "1. MERCADOS",
-    "2. MACRO BRASIL",
-    "3. AGENDA DE HOJE",
-    "4. NOTÍCIAS",
-    "5. CENÁRIOS CONDICIONAIS",
+    "1. RESUMO EXECUTIVO",
+    "2. BRASIL",
+    "3. EXTERIOR",
+    "4. AGENDA DE HOJE",
+    "5. EMPRESAS E SETORES",
+    "6. TENDÊNCIAS E RISCOS A ACOMPANHAR",
     "LIMITAÇÕES",
+    "FONTES",
 )
 
 _NOTA_STATUS_EVENTO = {
@@ -53,14 +61,48 @@ def _fmt_num(valor, casas=2):
         return "indisponível"
 
 
-def _linha_cotacao(titulo, ticker):
+def _obter_cotacao_fmt(titulo, ticker):
+    """Busca a cotação 1x e devolve (dict bruto, linha de texto) - o dict
+    bruto alimenta o RESUMO EXECUTIVO (_bullet_variacao) sem precisar
+    buscar de novo (mesmo cache de 30s de obter_cotacao_indice, mas evita
+    2 chamadas na mesma execução por clareza)."""
     cot = obter_cotacao_indice(titulo, ticker)
     if not isinstance(cot, dict) or cot.get("erro"):
-        return f"- {titulo}: indisponível ({cot.get('erro', 'sem dado') if isinstance(cot, dict) else 'sem dado'})"
+        erro = cot.get("erro", "sem dado") if isinstance(cot, dict) else "sem dado"
+        return cot, f"- {titulo}: indisponível ({erro})"
     variacao = cot.get("variacao_pct")
     barra = cot.get("_barra_em") or "barra indisponível"
     coleta = cot.get("_coletado_em") or "coleta indisponível"
-    return f"- {titulo}: {_fmt_num(cot.get('preco'))}; variação da última barra: {_fmt_num(variacao)}%; barra: {barra}; coleta: {coleta}"
+    linha = f"- {titulo}: {_fmt_num(cot.get('preco'))}; variação da última barra: {_fmt_num(variacao)}%; barra: {barra}; coleta: {coleta}"
+    return cot, linha
+
+
+def _bullet_variacao(nome, cot):
+    """Bullet factual (nunca interpretativo) pro RESUMO EXECUTIVO - só
+    direção e magnitude já calculadas por data/prices.py, nunca um
+    número novo."""
+    if not isinstance(cot, dict) or cot.get("erro"):
+        return f"- {nome}: dado indisponível nesta execução."
+    variacao = cot.get("variacao_pct")
+    if variacao is None:
+        return f"- {nome}: sem variação calculável nesta execução."
+    if variacao > 0:
+        direcao = "alta"
+    elif variacao < 0:
+        direcao = "queda"
+    else:
+        direcao = "estável"
+    return f"- {nome}: {direcao} de {_fmt_num(abs(variacao))}% na última barra disponível."
+
+
+def _linhas_noticias(itens, limite):
+    out = []
+    for item in itens[:limite]:
+        titulo = str(item.get("titulo") or "").strip()
+        link = str(item.get("link") or "").strip()
+        if titulo:
+            out.append(f"- {titulo}" + (f" — {link}" if link else ""))
+    return out
 
 
 def _linha_evento(evento):
@@ -86,13 +128,17 @@ def _secao_agenda(agora):
     ui/calendario_tab.py usa) pra ler o snapshot já persistido pelo
     coletor em vez de recalcular o universo inteiro (CVM) a cada envio -
     só recalcula ao vivo os tickers que por algum motivo não estiverem
-    no snapshot (ver docstring da função).
+    no snapshot (ver docstring da função). Preservada tal como veio do
+    PR #40 - base técnica desta seção não mudou na reconciliação
+    editorial, só a numeração ("3." -> "4.", por entrarem RESUMO
+    EXECUTIVO/BRASIL/EXTERIOR na frente).
 
-    Igual às outras seções (ver NOTÍCIAS acima): qualquer falha cai num
-    fallback textual, nunca quebra o e-mail inteiro. Ausência real de
-    evento hoje também é dita explicitamente, nunca omitida em silêncio."""
+    Igual às outras seções (ver BRASIL/EXTERIOR/EMPRESAS E SETORES):
+    qualquer falha cai num fallback textual, nunca quebra o e-mail
+    inteiro. Ausência real de evento hoje também é dita explicitamente,
+    nunca omitida em silêncio."""
     linhas = [
-        "", "3. AGENDA DE HOJE",
+        "", "4. AGENDA DE HOJE",
         "Eventos do calendário de resultados corporativos (CVM) com data de hoje; "
         "o status indica o quão confiável é a data (veja a nota em cada linha).",
     ]
@@ -112,21 +158,47 @@ def _secao_agenda(agora):
 
 
 def montar_morning_call(agora=None):
-    """Monta texto sem IA: cada número é lido dos provedores existentes."""
+    """Monta texto sem IA: cada número é lido dos provedores existentes.
+
+    Estrutura editorial (cabeçalho · resumo executivo · Brasil · Exterior
+    · Agenda de hoje · Empresas e setores · Tendências e riscos ·
+    Limitações · Fontes) - sem IA: cada linha vem de um provedor já usado
+    em outra aba do PREGÃO (data/prices.py, data/macro.py, data/news.py,
+    data/eventos.py). Notícias já chegam classificadas por região
+    ("BR"/"INT") e por ticker detectado no título
+    (data/news.py:_processar_pool) - reaproveitado aqui, nunca
+    reclassificado com regra própria: BR com ticker reconhecido vai pra
+    EMPRESAS E SETORES, BR sem ticker fica em BRASIL, INT fica em
+    EXTERIOR. Seção/indicador indisponível diz isso explicitamente;
+    nunca omitido em silêncio nem substituído por número estimado."""
     agora = agora or datetime.now(TZ_SP)
+
+    cot_ibov, linha_ibov = _obter_cotacao_fmt("Ibovespa", "^BVSP")
+    cot_dolar, linha_dolar = _obter_cotacao_fmt("Dólar (USD/BRL)", "USDBRL=X")
+    _, linha_sp = _obter_cotacao_fmt("S&P 500 futuro", "ES=F")
+    _, linha_nasdaq = _obter_cotacao_fmt("Nasdaq futuro", "NQ=F")
+    _, linha_ouro = _obter_cotacao_fmt("Ouro", "GC=F")
+    _, linha_petroleo = _obter_cotacao_fmt("Petróleo Brent", "BZ=F")
+
     linhas = [
         f"MORNING CALL — {agora.strftime('%d/%m/%Y')}",
         "Pregão | Briefing informativo baseado nos últimos dados disponíveis",
         "",
-        "1. MERCADOS",
-        _linha_cotacao("Ibovespa", "^BVSP"),
-        _linha_cotacao("Dólar (USD/BRL)", "USDBRL=X"),
-        _linha_cotacao("S&P 500 futuro", "ES=F"),
-        _linha_cotacao("Nasdaq futuro", "NQ=F"),
-        _linha_cotacao("Ouro", "GC=F"),
-        _linha_cotacao("Petróleo Brent", "BZ=F"),
+        f"Gerado em {agora.strftime('%d/%m/%Y %H:%M')} (horário de Brasília, UTC-3 fixo - "
+        "sem horário de verão desde 2019) · período analisado: última barra/leitura "
+        "disponível em cada fonte (ver horário por linha abaixo) · fontes consultadas: "
+        "Yahoo Finance (cotações), Banco Central do Brasil/Boletim Focus (indicadores), "
+        "CVM (agenda de resultados), Google News (notícias) - detalhe completo na seção FONTES.",
         "",
-        "2. MACRO BRASIL",
+        "1. RESUMO EXECUTIVO",
+        _bullet_variacao("Ibovespa", cot_ibov),
+        _bullet_variacao("Dólar (USD/BRL)", cot_dolar),
+        "- Detalhamento completo de mercados, macro, agenda, notícias e riscos nas seções "
+        "abaixo; nenhum número deste resumo substitui a conferência na fonte original.",
+        "",
+        "2. BRASIL",
+        linha_ibov,
+        linha_dolar,
     ]
     for nome, fn in (("Selic", obter_selic_meta), ("CDI", obter_cdi),
                      ("Focus IPCA", obter_focus_ipca), ("Focus Selic", obter_focus_selic)):
@@ -168,74 +240,137 @@ def montar_morning_call(agora=None):
                 linhas.append(f"- {nome}: indisponível")
         except Exception:
             linhas.append(f"- {nome}: indisponível")
-    linhas += _secao_agenda(agora)
-    linhas += ["", "4. NOTÍCIAS", "Manchetes disponíveis; confira as fontes originais antes de tomar decisões."]
+
+    # Noticias: mesma coleta (data/news.py), nunca refeita/reclassificada
+    # com regra propria - so' separa por regiao/tickers que o coletor ja'
+    # calcula (BR com ticker reconhecido -> EMPRESAS E SETORES; BR sem
+    # ticker -> macro Brasil; INT -> EXTERIOR).
+    noticias_erro = None
+    noticias_br_macro, noticias_br_empresa, noticias_intl = [], [], []
     try:
         noticias = obter_top_mercado_tudo()
-        if isinstance(noticias, tuple):
-            candidatos = [item for grupo in noticias if isinstance(grupo, list) for item in grupo]
-        elif isinstance(noticias, list):
-            candidatos = noticias
-        else:
-            candidatos = []
-        for item in candidatos[:12]:
-            titulo = str(item.get("titulo") or item.get("title") or "").strip()
-            link = str(item.get("link") or item.get("url") or "").strip()
-            if titulo:
-                linhas.append(f"- {titulo}" + (f" — {link}" if link else ""))
-    except Exception:
-        linhas.append("- Notícias indisponíveis nesta execução.")
+        candidatos = noticias if isinstance(noticias, list) else []
+        for item in candidatos:
+            if item.get("regiao") == "BR":
+                (noticias_br_empresa if item.get("tickers") else noticias_br_macro).append(item)
+            else:
+                noticias_intl.append(item)
+    except Exception as exc:
+        noticias_erro = f"{type(exc).__name__}: {exc}"
+
+    if noticias_erro:
+        linhas.append(f"- Notícias indisponíveis nesta execução ({noticias_erro}).")
+    elif noticias_br_macro:
+        linhas += _linhas_noticias(noticias_br_macro, 8)
+    else:
+        linhas.append("- Nenhuma manchete macro do Brasil nesta coleta.")
+
+    linhas += ["", "3. EXTERIOR", linha_sp, linha_nasdaq, linha_ouro, linha_petroleo]
+    if noticias_erro:
+        linhas.append(f"- Notícias indisponíveis nesta execução ({noticias_erro}).")
+    elif noticias_intl:
+        linhas += _linhas_noticias(noticias_intl, 8)
+    else:
+        linhas.append("- Nenhuma manchete internacional nesta coleta.")
+
+    linhas += _secao_agenda(agora)
+
+    linhas += ["", "5. EMPRESAS E SETORES"]
+    if noticias_erro:
+        linhas.append(f"- Notícias indisponíveis nesta execução ({noticias_erro}).")
+    elif noticias_br_empresa:
+        linhas += _linhas_noticias(noticias_br_empresa, 10)
+    else:
+        linhas.append(
+            "- Empresas e Setores: sem fatos relevantes confirmados nesta sessão "
+            "(nenhuma manchete desta coleta trouxe um ticker identificável; ver "
+            "BRASIL/EXTERIOR para o noticiário macro coletado)."
+        )
+
     linhas += [
-        "", "5. CENÁRIOS CONDICIONAIS",
-        "- Risco global: acompanhe a direção dos futuros americanos, dólar e commodities; confirme os movimentos nas fontes originais.",
-        "- Brasil: observe juros futuros, câmbio e notícias fiscais/políticas; o efeito depende da surpresa frente às expectativas.",
-        "- Empresas: valide comunicados oficiais e resultados antes de atribuir causalidade a movimentos de preço.",
+        "", "6. TENDÊNCIAS E RISCOS A ACOMPANHAR",
+        "- [INTERPRETAÇÃO] Risco global: acompanhe a direção dos futuros americanos, dólar e "
+        "commodities; confirme os movimentos nas fontes originais.",
+        "- [INTERPRETAÇÃO] Brasil: observe juros futuros, câmbio e notícias fiscais/políticas; "
+        "o efeito depende da surpresa frente às expectativas.",
+        "- [INTERPRETAÇÃO] Empresas: valide comunicados oficiais e resultados antes de "
+        "atribuir causalidade a movimentos de preço.",
         "", "LIMITAÇÕES",
         "- Fontes gratuitas podem ter atraso e indisponibilidade; este briefing não garante cotação em tempo real.",
         "- Não foram incluídos preços ou fatos que não puderam ser confirmados nesta execução.",
+        "- Linhas marcadas [INTERPRETAÇÃO] são leitura de cenário, não fato nem previsão garantida; "
+        "o restante do conteúdo é dado reportado pelas fontes citadas.",
         "- Conteúdo informativo, não constitui recomendação de investimento.",
+        "", "FONTES",
+        "- Cotações: Yahoo Finance (yfinance) - dados podem ter atraso conforme o provedor.",
+        "- Indicadores macro: Banco Central do Brasil (Selic/CDI) e Boletim Focus (BCB).",
+        "- Agenda de resultados: CVM (Instrução CVM 480/2009) - ver nota de confiabilidade em cada linha.",
+        "- Notícias: Google News (agregador); veículo original e link de cada manchete nas seções acima.",
     ]
     return "\n".join(linhas)
 
 
-_RE_URL = re.compile(r"(https?://[^\s<>()]+)")
+_URL_RE = re.compile(r'(https?://[^\s<>"]+)')
 _RE_TITULO_SECAO = re.compile(r"^\d+\.\s")
 
 
+def _linkificar(texto_escapado: str) -> str:
+    return _URL_RE.sub(lambda m: f'<a href="{m.group(1)}">{m.group(1)}</a>', texto_escapado)
+
+
 def montar_morning_call_html(texto: str) -> str:
-    """Converte o TEXTO já montado por montar_morning_call() num HTML
-    simples compatível com a maioria dos clientes de e-mail: títulos de
-    seção numerados (ex: "1. MERCADOS") viram <h2>, demais linhas não
-    vazias viram parágrafos, URLs cruas (ex: link de notícia) viram
-    links clicáveis. Nunca reconsulta os provedores - só reformata o
-    MESMO texto (garante que a versão HTML e a versão texto simples
-    nunca divergem em conteúdo, só em apresentação, exigido pelo
-    enviar_email(texto, html=...) de jobs/email_utils.py)."""
-    linhas_html = []
-    for linha in texto.splitlines():
-        linha = linha.strip()
+    """HTML mínimo gerado a partir do MESMO texto simples (fonte única -
+    nunca reconsulta nem reformula dado), compatível com clientes de
+    e-mail comuns: só tags básicas (h1/h2/p/ul/li/a) com estilo inline,
+    sem CSS externo/JS. Links (incluindo os das manchetes, reaproveitados
+    de data/news.py) continuam clicáveis; nenhum conteúdo novo é
+    adicionado - texto e HTML nunca divergem em conteúdo, só em
+    apresentação (exigido pelo enviar_email(texto, html=...) de
+    jobs/email_utils.py)."""
+    linhas = texto.split("\n")
+    partes = [
+        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
+        'color:#1a1a1a;line-height:1.5;max-width:640px;margin:0 auto;">'
+    ]
+    buffer_lista: list = []
+
+    def fechar_lista():
+        if buffer_lista:
+            partes.append("<ul>" + "".join(buffer_lista) + "</ul>")
+            buffer_lista.clear()
+
+    for i, linha in enumerate(linhas):
+        linha = linha.rstrip()
         if not linha:
+            fechar_lista()
             continue
-        escapada = _RE_URL.sub(
-            lambda m: f'<a href="{m.group(1)}">{m.group(1)}</a>',
-            _html_escape.escape(linha),
-        )
-        if _RE_TITULO_SECAO.match(linha) or linha in ("LIMITAÇÕES",):
-            linhas_html.append(f"<h2 style='margin:18px 0 6px 0;font-size:16px'>{escapada}</h2>")
-        else:
-            linhas_html.append(f"<p style='margin:0 0 4px 0'>{escapada}</p>")
-    corpo = "\n".join(linhas_html)
-    return (
-        "<!doctype html><html><head><meta charset='utf-8'></head>"
-        "<body style='font-family:Arial,Helvetica,sans-serif;font-size:14px;"
-        "color:#111;max-width:680px;margin:0 auto'>"
-        f"{corpo}"
-        "</body></html>"
-    )
+        if i == 0:
+            partes.append(f"<h1 style=\"font-size:18px;margin-bottom:4px;\">{_html_escape.escape(linha)}</h1>")
+            continue
+        if i == 1:
+            partes.append(f"<p style=\"color:#555;margin-top:0;\">{_html_escape.escape(linha)}</p>")
+            continue
+        if _RE_TITULO_SECAO.match(linha) or linha in ("LIMITAÇÕES", "FONTES"):
+            fechar_lista()
+            partes.append(
+                f"<h2 style=\"font-size:15px;border-top:1px solid #ddd;padding-top:8px;\">"
+                f"{_html_escape.escape(linha)}</h2>"
+            )
+            continue
+        if linha.startswith("- "):
+            buffer_lista.append(f"<li>{_linkificar(_html_escape.escape(linha[2:]))}</li>")
+            continue
+        fechar_lista()
+        partes.append(f"<p>{_linkificar(_html_escape.escape(linha))}</p>")
+
+    fechar_lista()
+    partes.append("</div>")
+    return "\n".join(partes)
 
 
-def _assunto(agora):
-    return f"[PREGÃO] Morning Call — {agora.strftime('%d/%m/%Y')}"
+def _assunto(agora, teste=False):
+    prefixo = "[TESTE] " if teste else ""
+    return f"{prefixo}[PREGÃO] Morning Call — {agora.strftime('%d/%m/%Y')}"
 
 
 def gerar_preview(agora=None):
@@ -247,32 +382,34 @@ def gerar_preview(agora=None):
     e-mail estar configurado (EMAIL_PROVIDER/EMAIL_FROM/RESEND_API_KEY/
     etc podem estar todos ausentes - gerar_preview nunca olha pra eles).
 
-    "destinatario" aqui é só o EMAIL_TO legado (usado pelo caminho
-    administrativo/teste manual, nunca pelos assinantes reais - ver
-    enviar_teste); "total_assinantes_ativos" é a contagem REAL (lida do
-    Supabase via listar_assinantes_morning_call) de quem receberia o
-    envio automático agora - 0 tanto se não há nenhum opt-in quanto se
-    o Supabase estiver indisponível (não dá pra distinguir os dois sem
-    uma segunda leitura; ver executar() pro log que diferencia).
+    "destinatario" aqui é só o EMAIL_TO legado (usado pelo Radar de
+    Quedas e por fallback de jobs/email_utils.py, nunca pelos assinantes
+    reais do Morning Call - ver enviar_teste); "total_assinantes_ativos"
+    é a contagem REAL (lida do Supabase via listar_assinantes_morning_call)
+    de quem receberia o envio automático agora - 0 tanto se não há
+    nenhum opt-in quanto se o Supabase estiver indisponível (não dá pra
+    distinguir os dois aqui sem mudar o contrato de retorno; ver
+    executar() pro log que diferencia de verdade os dois casos).
 
     Uso manual: `python -c "from jobs.morning_call import gerar_preview;
     p = gerar_preview(); print(p['texto']); print(p['valido'],
     p['secoes_faltantes'])"`. Usado por testes (ver
-    tests/test_morning_call.py) pra validar as 6 seções obrigatórias
-    (SECOES_OBRIGATORIAS) sempre com enviar_email mockado/nunca chamado.
+    tests/test_morning_call.py) pra validar as SECOES_OBRIGATORIAS
+    sempre com enviar_email mockado/nunca chamado.
 
     Retorna {"assunto", "destinatario", "total_assinantes_ativos",
-    "texto", "secoes_faltantes", "valido"} - "valido" é True só se
-    TODAS as SECOES_OBRIGATORIAS aparecem no texto gerado; nunca
+    "texto", "html", "secoes_faltantes", "valido"} - "valido" é True só
+    se TODAS as SECOES_OBRIGATORIAS aparecem no texto gerado; nunca
     garante que o provedor de e-mail aceitaria o envio, só que o
     CONTEÚDO está completo."""
     agora = agora or datetime.now(TZ_SP)
     texto = montar_morning_call(agora)
     faltantes = [secao for secao in SECOES_OBRIGATORIAS if secao not in texto]
+    assinantes = listar_assinantes_morning_call()
     return {
         "assunto": _assunto(agora),
         "destinatario": os.getenv("EMAIL_TO", "").strip(),
-        "total_assinantes_ativos": len(listar_assinantes_morning_call()),
+        "total_assinantes_ativos": len(assinantes or []),
         "texto": texto,
         "html": montar_morning_call_html(texto),
         "secoes_faltantes": faltantes,
@@ -334,19 +471,24 @@ def enviar_teste(destinatario_teste: str, agora=None) -> dict:
     idempotência diária de nenhum assinante real nem ser contado como
     envio automático nas métricas de executar()). Separação exigida
     pela missão: teste/validação manual vs. envio automático aos
-    assinantes.
+    assinantes. Assunto marcado com "[TESTE]" (ver _assunto) pra nunca
+    ser confundido pelo destinatário com o envio oficial do dia.
 
     Uso manual (nunca disparar para a lista de assinantes - só pra 1
     endereço de teste autorizado):
     `python -c "from jobs.morning_call import enviar_teste; \
-    print(enviar_teste('seu-email-de-teste@exemplo.com'))"`"""
+    print(enviar_teste('seu-email-de-teste@exemplo.com'))"`
+
+    Também acionável via GitHub Actions (workflow_dispatch, input
+    `teste_destinatario`) - ver .github/workflows/radar-morning-call.yml
+    e o bloco __main__ deste módulo (env MORNING_CALL_TESTE_PARA)."""
     destinatario_teste = (destinatario_teste or "").strip()
     if not destinatario_teste:
         return {"ok": False, "erro": "destinatario_teste é obrigatório."}
     agora = agora or datetime.now(TZ_SP)
     texto = montar_morning_call(agora)
     resultado = enviar_email(
-        _assunto(agora), texto, html=montar_morning_call_html(texto), destinatario=destinatario_teste,
+        _assunto(agora, teste=True), texto, html=montar_morning_call_html(texto), destinatario=destinatario_teste,
     )
     print(f"[morning_call] envio de TESTE administrativo (nao e' assinante real) ok={resultado['ok']} erro={resultado['erro']}")
     return resultado
@@ -375,16 +517,36 @@ def executar():
     # assinantes (EMAIL_TO so' existe pra jobs/email_utils.py decidir um
     # destinatario quando nenhum e' passado explicitamente - aqui
     # SEMPRE passamos destinatario=email por assinante).
+    #
+    # None (nao []) diferencia "Supabase indisponivel" (falha real de
+    # infra - nunca reportar como sucesso silencioso) de "ninguem
+    # assinou ainda" (estado normal) - distincao trazida da comparacao
+    # com o PR #42 concorrente durante a consolidacao (2026-10-17).
     assinantes = listar_assinantes_morning_call(cliente)
-    if not assinantes:
+    if assinantes is None:
         print(
-            "[morning_call] nenhum assinante ativo nesta execução (nenhum usuário "
-            "com a preferência ligada e e-mail válido, ou Supabase indisponível) "
-            "- nada a enviar."
+            "[morning_call] não foi possível consultar os assinantes opt-in "
+            "(Supabase indisponível) - nenhum e-mail enviado nesta execução."
         )
         registrar_tentativa(
             "MORNING CALL",
-            "Macro (BCB) + Mercado (yfinance) + NEWS agregados, e-mail (Resend) por assinante",
+            "Resumo executivo + Brasil/Exterior + Agenda (CVM) + Empresas e Setores "
+            "+ NEWS agregados, e-mail (Resend) por assinante",
+            execucao_ok=False,
+            persistencia_ok=False,
+            erro="Não foi possível consultar os assinantes opt-in (Supabase indisponível).",
+            categoria="Morning Call",
+        )
+        return 1
+    if not assinantes:
+        print(
+            "[morning_call] nenhum assinante ativo nesta execução (nenhum usuário "
+            "com a preferência ligada e e-mail válido) - nada a enviar."
+        )
+        registrar_tentativa(
+            "MORNING CALL",
+            "Resumo executivo + Brasil/Exterior + Agenda (CVM) + Empresas e Setores "
+            "+ NEWS agregados, e-mail (Resend) por assinante",
             execucao_ok=True,
             persistencia_ok=(cliente is not None),
             erro=None,
@@ -405,7 +567,8 @@ def executar():
         )
         registrar_tentativa(
             "MORNING CALL",
-            "Macro (BCB) + Mercado (yfinance) + NEWS agregados, e-mail (Resend) por assinante",
+            "Resumo executivo + Brasil/Exterior + Agenda (CVM) + Empresas e Setores "
+            "+ NEWS agregados, e-mail (Resend) por assinante",
             execucao_ok=True,
             persistencia_ok=True,
             erro=None,
@@ -464,7 +627,8 @@ def executar():
     # assinante elegível falhou.
     registrar_tentativa(
         "MORNING CALL",
-        "Macro (BCB) + Mercado (yfinance) + NEWS agregados, e-mail (Resend) por assinante",
+        "Resumo executivo + Brasil/Exterior + Agenda (CVM) + Empresas e Setores "
+        "+ NEWS agregados, e-mail (Resend) por assinante",
         execucao_ok=(falhas == 0),
         persistencia_ok=persistencia_ok,
         erro=algum_erro,
@@ -474,5 +638,25 @@ def executar():
     return 0 if falhas == 0 else 1
 
 
+def _main() -> int:
+    """Dispatch do entrypoint de linha de comando - função própria (em
+    vez de lógica solta dentro de `if __name__ == "__main__":`) só pra
+    ficar testável via chamada direta (ver tests/test_morning_call.py),
+    sem precisar reexecutar o módulo inteiro com runpy.
+
+    Disparo manual isolado via GitHub Actions (workflow_dispatch, input
+    "teste_destinatario") ou shell local - nunca acionado pelo cron (ver
+    .github/workflows/radar-morning-call.yml, que só preenche
+    MORNING_CALL_TESTE_PARA quando o input foi explicitamente usado).
+    Preenchido -> enviar_teste() (isolado, nunca toca assinantes reais
+    nem morning_call_execucoes); vazio (cron ou dispatch sem o campo)
+    -> executar() normal, pros assinantes opt-in reais."""
+    destinatario_teste = os.getenv("MORNING_CALL_TESTE_PARA", "").strip()
+    if destinatario_teste:
+        resultado_teste = enviar_teste(destinatario_teste)
+        return 0 if resultado_teste["ok"] else 1
+    return executar()
+
+
 if __name__ == "__main__":
-    raise SystemExit(executar())
+    raise SystemExit(_main())
