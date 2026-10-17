@@ -251,9 +251,10 @@ def gerar_preview(agora=None):
     administrativo/teste manual, nunca pelos assinantes reais - ver
     enviar_teste); "total_assinantes_ativos" é a contagem REAL (lida do
     Supabase via listar_assinantes_morning_call) de quem receberia o
-    envio automático agora - 0 tanto se não há nenhum opt-in quanto se
-    o Supabase estiver indisponível (não dá pra distinguir os dois sem
-    uma segunda leitura; ver executar() pro log que diferencia).
+    envio automático agora. "assinantes_banco_disponivel" distingue "0
+    porque ninguém optou" (True) de "0 porque não deu pra consultar"
+    (False, Supabase indisponível) - ver docstring de
+    data/user_prefs.py:listar_assinantes_morning_call.
 
     Uso manual: `python -c "from jobs.morning_call import gerar_preview;
     p = gerar_preview(); print(p['texto']); print(p['valido'],
@@ -262,17 +263,19 @@ def gerar_preview(agora=None):
     (SECOES_OBRIGATORIAS) sempre com enviar_email mockado/nunca chamado.
 
     Retorna {"assunto", "destinatario", "total_assinantes_ativos",
-    "texto", "secoes_faltantes", "valido"} - "valido" é True só se
-    TODAS as SECOES_OBRIGATORIAS aparecem no texto gerado; nunca
-    garante que o provedor de e-mail aceitaria o envio, só que o
-    CONTEÚDO está completo."""
+    "assinantes_banco_disponivel", "texto", "secoes_faltantes",
+    "valido"} - "valido" é True só se TODAS as SECOES_OBRIGATORIAS
+    aparecem no texto gerado; nunca garante que o provedor de e-mail
+    aceitaria o envio, só que o CONTEÚDO está completo."""
     agora = agora or datetime.now(TZ_SP)
     texto = montar_morning_call(agora)
     faltantes = [secao for secao in SECOES_OBRIGATORIAS if secao not in texto]
+    assinantes = listar_assinantes_morning_call()
     return {
         "assunto": _assunto(agora),
         "destinatario": os.getenv("EMAIL_TO", "").strip(),
-        "total_assinantes_ativos": len(listar_assinantes_morning_call()),
+        "total_assinantes_ativos": len(assinantes) if assinantes is not None else 0,
+        "assinantes_banco_disponivel": assinantes is not None,
         "texto": texto,
         "html": montar_morning_call_html(texto),
         "secoes_faltantes": faltantes,
@@ -376,11 +379,32 @@ def executar():
     # destinatario quando nenhum e' passado explicitamente - aqui
     # SEMPRE passamos destinatario=email por assinante).
     assinantes = listar_assinantes_morning_call(cliente)
+    # None (achado real na consolidacao 2026-10-17, ver docstring de
+    # listar_assinantes_morning_call) e' FALHA REAL - Supabase
+    # indisponivel/consulta quebrou, nao da pra saber quem assinou.
+    # Precisa ficar DISTINTO de "consultei e ninguem assinou" ([]):
+    # tratar os dois como a mesma coisa (como a versao anterior fazia)
+    # deixava uma queda real do banco indistinguivel de um dia tranquilo
+    # no painel SAUDE DOS DADOS (execucao_ok sempre True, escondendo o
+    # problema por tempo indefinido).
+    if assinantes is None:
+        print(
+            "[morning_call] não foi possível consultar os assinantes (Supabase "
+            "indisponível ou consulta falhou) - nenhum e-mail enviado."
+        )
+        registrar_tentativa(
+            "MORNING CALL",
+            "Macro (BCB) + Mercado (yfinance) + NEWS agregados, e-mail (Resend) por assinante",
+            execucao_ok=False,
+            persistencia_ok=False,
+            erro="Não foi possível consultar os assinantes opt-in (Supabase indisponível).",
+            categoria="Morning Call",
+        )
+        return 1
     if not assinantes:
         print(
             "[morning_call] nenhum assinante ativo nesta execução (nenhum usuário "
-            "com a preferência ligada e e-mail válido, ou Supabase indisponível) "
-            "- nada a enviar."
+            "com a preferência ligada e e-mail válido) - nada a enviar."
         )
         registrar_tentativa(
             "MORNING CALL",
@@ -471,8 +495,32 @@ def executar():
         categoria="Morning Call",
         parcial=bool(enviados and falhas),
     )
-    return 0 if falhas == 0 else 1
+    # Codigo de saida != execucao_ok: execucao_ok (painel SAUDE DOS
+    # DADOS) continua exigindo falhas==0 pra "perfeito". O codigo de
+    # saida do PROCESSO (o que o GitHub Actions usa pra marcar o job
+    # vermelho/notificar) so' falha quando a execucao foi uma PERDA
+    # TOTAL (zero sucessos apesar de ter pendente) - achado real na
+    # consolidacao 2026-10-17: com falhas==0 como unico criterio, 1
+    # endereco com bounce permanente entre varios assinantes marcava o
+    # job inteiro como falho TODO santo dia, mesmo entregando certinho
+    # pros demais - fadiga de alerta real (ninguem mais olha pra "job
+    # falhou" se ele sempre falha). A falha parcial continua 100%
+    # visivel no painel (parcial=True acima), so' nao dispara o
+    # alarme externo do Actions pra um problema que e' so' de 1
+    # destinatario.
+    return 1 if (falhas and not enviados) else 0
 
 
 if __name__ == "__main__":
+    # MORNING_CALL_TESTE_PARA (opcional): só existe quando disparado
+    # manualmente via workflow_dispatch com o input teste_destinatario
+    # preenchido (ver .github/workflows/radar-morning-call.yml) - chama
+    # enviar_teste() em vez de executar(), pra validar o envio real sem
+    # tocar na lista de assinantes nem na idempotência diária deles. Em
+    # qualquer outro caso (cron, ou dispatch sem o campo) a variável vem
+    # vazia e o job roda em modo AGENDADO normal.
+    _destinatario_teste = os.getenv("MORNING_CALL_TESTE_PARA", "").strip()
+    if _destinatario_teste:
+        _resultado_teste = enviar_teste(_destinatario_teste)
+        raise SystemExit(0 if _resultado_teste["ok"] else 1)
     raise SystemExit(executar())

@@ -49,3 +49,15 @@ def test_cron_do_schedule_bate_com_a_condicao_if_do_job_morning_call():
         f"o if: do job morning-call compara contra {m.group(1)!r}, que não está "
         f"em on.schedule ({crons_declarados!r}) - job nunca dispara sozinho"
     )
+
+
+def test_input_teste_destinatario_declarado_e_fiado_na_env_do_job():
+    """O modo de teste remoto (jobs.morning_call.enviar_teste) só é
+    alcançável via GitHub Actions se o input existir em
+    workflow_dispatch.inputs E o job morning-call passar ele adiante
+    pro processo Python via env - um dos dois faltando deixa o recurso
+    "existir" só no código, inacessível de fora sem rodar localmente."""
+    texto = _conteudo()
+    assert "teste_destinatario:" in texto.split("workflow_dispatch:", 1)[1].split("permissions:", 1)[0]
+    bloco_job = texto.split("morning-call:", 1)[1]
+    assert "MORNING_CALL_TESTE_PARA: ${{ inputs.teste_destinatario }}" in bloco_job

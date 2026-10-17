@@ -3,7 +3,7 @@
 Call (opt-in explícito) e persistência da preferência (round-trip no
 Supabase) - ver missão "Morning Call: consentimento e destinatários".
 """
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import data.user_prefs as user_prefs
 
@@ -100,14 +100,26 @@ def test_paginacao_percorre_todas_as_paginas_ate_a_ultima_incompleta():
     assert cliente.table.return_value.select.return_value.range.return_value.execute.call_count == 2
 
 
-def test_cliente_none_retorna_lista_vazia_sem_lancar_excecao():
-    assert user_prefs.listar_assinantes_morning_call(None) == []
+def test_sem_cliente_e_supabase_indisponivel_retorna_none_nao_lista_vazia():
+    """Achado real na consolidação (2026-10-17): a versão anterior
+    devolvia [] tanto pra "Supabase indisponível" quanto pra "ninguém
+    assinou" - uma queda real do banco ficava indistinguível de um dia
+    tranquilo no painel SAÚDE DOS DADOS (execucao_ok sempre True).
+    None precisa ser o sinal de falha real; [] só quando a consulta
+    funcionou e genuinamente não há ninguém. Mocka obter_cliente() pra
+    simular Supabase indisponível de verdade (passar cliente=None
+    como parâmetro sozinho não testa isso - cai no fallback real de
+    obter_cliente(), que pode achar um Supabase de verdade configurado
+    no ambiente de teste)."""
+    with patch.object(user_prefs, "obter_cliente", return_value=None):
+        assert user_prefs.listar_assinantes_morning_call() is None
+        assert user_prefs.listar_assinantes_morning_call(None) is None
 
 
-def test_falha_na_consulta_retorna_lista_vazia_sem_lancar_excecao():
+def test_falha_na_consulta_retorna_none_sem_lancar_excecao():
     cliente = MagicMock()
     cliente.table.side_effect = RuntimeError("Supabase fora do ar")
-    assert user_prefs.listar_assinantes_morning_call(cliente) == []
+    assert user_prefs.listar_assinantes_morning_call(cliente) is None
 
 
 # ---------------------------------------------------------------------

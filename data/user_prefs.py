@@ -46,7 +46,7 @@ def email_valido(email: str) -> bool:
     return bool(_RE_EMAIL_VALIDO.match((email or "").strip()))
 
 
-def listar_assinantes_morning_call(cliente=None) -> list[str]:
+def listar_assinantes_morning_call(cliente=None) -> list[str] | None:
     """E-mails (minusculos, deduplicados) de usuarios com a preferencia
     'morning_call_email_ativo'=True em user_prefs E e-mail em formato
     valido - usado por jobs/morning_call.py pra decidir quem recebe o
@@ -57,12 +57,23 @@ def listar_assinantes_morning_call(cliente=None) -> list[str]:
     _TAMANHO_PAGINA_ASSINANTES linhas - continua funcionando mesmo se a
     tabela user_prefs crescer bem alem de uma unica pagina default do
     PostgREST. cliente=None (chamador pode passar um cliente ja' obtido
-    pra nao abrir 2 conexoes) -> obtem um sozinho; Supabase indisponivel
-    ou qualquer falha na consulta -> [] (nunca inventa assinante, nunca
-    quebra o job - mesmo espirito de obter_prefs/salvar_prefs acima)."""
+    pra nao abrir 2 conexoes) -> obtem um sozinho.
+
+    None (achado real na consolidacao 2026-10-17: versao anterior
+    devolvia [] tanto pra "Supabase indisponivel" quanto pra "ninguem
+    assinou", o que deixava uma QUEDA REAL do banco indistinguivel de
+    um dia tranquilo no painel SAUDE DOS DADOS - execucao_ok continuava
+    True todo santo dia mesmo com o banco fora do ar, escondendo o
+    problema por tempo indefinido) se Supabase indisponivel/sem
+    credencial ou a consulta falhar - DIFERENTE de [] (lista vazia de
+    verdade: consulta funcionou, ninguem optou). Quem chama
+    (jobs/morning_call.py:executar) PRECISA tratar os dois casos de
+    forma diferente: None e' falha real (nao enviar nada, reportar
+    execucao_ok=False), [] e' sucesso sem destinatarios (nao enviar
+    nada, reportar execucao_ok=True)."""
     cliente = cliente if cliente is not None else obter_cliente()
     if cliente is None:
-        return []
+        return None
     assinantes = {}
     try:
         inicio = 0
@@ -88,5 +99,5 @@ def listar_assinantes_morning_call(cliente=None) -> list[str]:
             inicio += _TAMANHO_PAGINA_ASSINANTES
     except Exception as exc:
         print(f"[user_prefs] falha ao listar assinantes do Morning Call: {exc!r}")
-        return []
+        return None
     return sorted(assinantes.keys())

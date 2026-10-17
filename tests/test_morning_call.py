@@ -125,6 +125,28 @@ def test_executar_sem_nenhum_assinante_ativo_nao_tenta_enviar(monkeypatch):
     assert chamadas_envio == []
 
 
+def test_executar_assinantes_indisponivel_e_falha_real_nao_sucesso_vazio(monkeypatch):
+    """Achado real na consolidação (2026-10-17): None (Supabase
+    indisponível/consulta falhou) precisa ser tratado como FALHA, nunca
+    como "ninguém assinou" - os dois eram indistinguíveis antes, o que
+    deixava uma queda real do banco invisível no painel SAÚDE DOS DADOS
+    (execucao_ok sempre True, todo dia, mesmo com o Supabase fora do
+    ar)."""
+    chamada_montar = MagicMock(side_effect=AssertionError("não deveria montar o conteúdo sem saber quem são os assinantes"))
+    registros = []
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: None)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda *_a, **_k: None)
+    monkeypatch.setattr(mc, "montar_morning_call", chamada_montar)
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: registros.append(k))
+
+    codigo = mc.executar()
+
+    assert codigo == 1
+    chamada_montar.assert_not_called()
+    assert registros[0]["execucao_ok"] is False
+
+
 # ---------------------------------------------------------------------
 # AGENDA DE HOJE (data/eventos.py) - item 1 da missão.
 # ---------------------------------------------------------------------
@@ -232,6 +254,7 @@ def test_gerar_preview_contem_todas_as_secoes_obrigatorias_sem_enviar_email():
          patch.object(mc, "obter_focus_selic", return_value=None), \
          patch.object(mc, "obter_top_mercado_tudo", return_value=[{"titulo": "Manchete X", "link": "https://exemplo.com/x"}]), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[_evento_exemplo(data=agora.date())]), \
+         patch.object(mc, "listar_assinantes_morning_call", return_value=["a@exemplo.com", "b@exemplo.com"]), \
          patch.object(mc, "enviar_email", enviar_email_mock):
         preview = mc.gerar_preview(agora)
 
@@ -241,16 +264,30 @@ def test_gerar_preview_contem_todas_as_secoes_obrigatorias_sem_enviar_email():
     for secao in mc.SECOES_OBRIGATORIAS:
         assert secao in preview["texto"]
     assert preview["assunto"] == "[PREGÃO] Morning Call — 14/10/2026"
+    assert preview["total_assinantes_ativos"] == 2
+    assert preview["assinantes_banco_disponivel"] is True
     assert "Manchete X" in preview["texto"]
     assert "https://exemplo.com/x" in preview["texto"]
 
 
 def test_gerar_preview_marca_invalido_quando_falta_secao_obrigatoria():
     agora = datetime(2026, 10, 14, 7, tzinfo=TZ_SP)
-    with patch.object(mc, "montar_morning_call", return_value="MORNING CALL — texto incompleto sem as seções"):
+    with patch.object(mc, "montar_morning_call", return_value="MORNING CALL — texto incompleto sem as seções"), \
+         patch.object(mc, "listar_assinantes_morning_call", return_value=[]):
         preview = mc.gerar_preview(agora)
     assert preview["valido"] is False
     assert "1. MERCADOS" in preview["secoes_faltantes"]
+
+
+def test_gerar_preview_distingue_zero_assinantes_de_banco_indisponivel():
+    """0 assinantes por "ninguém optou" e 0 por "não deu pra consultar"
+    não podem parecer a mesma coisa num preview manual."""
+    agora = datetime(2026, 10, 14, 7, tzinfo=TZ_SP)
+    with patch.object(mc, "montar_morning_call", return_value="texto completo o bastante"), \
+         patch.object(mc, "listar_assinantes_morning_call", return_value=None):
+        preview = mc.gerar_preview(agora)
+    assert preview["total_assinantes_ativos"] == 0
+    assert preview["assinantes_banco_disponivel"] is False
 
 
 # ---------------------------------------------------------------------
@@ -405,8 +442,15 @@ def test_executar_envia_pra_varios_assinantes_e_dedupe_ja_vem_da_listagem(monkey
 def test_executar_falha_pra_um_assinante_nao_impede_envio_aos_demais(monkeypatch):
     """Falha de envio pra UM assinante (ex: Resend rejeitou aquele
     endereço) não pode interromper o laço nem impedir que os demais
-    recebam - e a execução não pode ser relatada como sucesso total
-    (registrar_tentativa precisa ver execucao_ok=False)."""
+    recebam - e a execução não pode ser relatada como sucesso TOTAL no
+    painel (registrar_tentativa precisa ver execucao_ok=False,
+    parcial=True). O CÓDIGO DE SAÍDA do processo, porém, é 0 (não falha
+    o job do GitHub Actions): achado real na consolidação 2026-10-17 -
+    um único endereço com bounce permanente faria o job "falhar" todo
+    santo dia mesmo entregando certinho pros demais, gerando fadiga de
+    alerta. A falha continua 100% rastreável no painel (parcial=True),
+    só não dispara o alarme externo do Actions pra um problema de 1
+    destinatário só."""
     cliente = _cliente_fake_com_resultado([])
     chamadas_envio = []
     chamadas_registro = []
@@ -431,10 +475,26 @@ def test_executar_falha_pra_um_assinante_nao_impede_envio_aos_demais(monkeypatch
 
     # os DOIS devem ter sido tentados (a falha de um não cancela o outro):
     assert sorted(chamadas_envio) == ["falha@exemplo.com", "ok@exemplo.com"]
-    # falha parcial não pode ser sucesso total nem no retorno nem no painel:
-    assert codigo == 1
+    # pelo menos 1 entregue -> processo sai 0 (não alarma o Actions);
+    # painel continua honesto (execucao_ok=False, parcial=True):
+    assert codigo == 0
     assert chamadas_registro[0][1]["execucao_ok"] is False
     assert chamadas_registro[0][1]["parcial"] is True
+
+
+def test_executar_todos_os_assinantes_pendentes_falham_retorna_erro(monkeypatch):
+    """Perda TOTAL (zero sucessos) é a única situação em que o código de
+    saída do processo precisa ser 1 - aí sim o job do GitHub Actions deve
+    aparecer como falho."""
+    cliente = _cliente_fake_com_resultado([])
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda *_a, **_k: ["a@exemplo.com", "b@exemplo.com"])
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
+    monkeypatch.setattr(mc, "enviar_email", lambda *_a, **_k: {"ok": False, "erro": "Resend HTTP 500"})
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: None)
+
+    assert mc.executar() == 1
 
 
 def test_enviar_teste_usa_destinatario_fixo_e_nunca_consulta_assinantes(monkeypatch):
