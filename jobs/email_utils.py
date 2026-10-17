@@ -92,9 +92,22 @@ def _enviar_resend(assunto, texto, html, remetente, destinatario, api_key):
 
 
 def enviar_email(assunto, texto, html=None, destinatario=None):
-    provedor = os.getenv("EMAIL_PROVIDER", "smtp").strip().lower()
+    # Bug real (achado 2026-10-17, 1a execucao que passou da checagem de
+    # EMAIL_FROM/EMAIL_TO): os.getenv(key, default) so' usa o default
+    # quando a chave esta' AUSENTE do ambiente - no GitHub Actions,
+    # `env: EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER }}` com o secret
+    # NAO configurado ainda define a variavel, so' que com valor ""
+    # (presente, vazia) - entao o default "smtp" nunca era aplicado,
+    # provedor virava "" e caia no erro "deve ser smtp/resend/brevo"
+    # mesmo sem ninguem ter configurado EMAIL_PROVIDER=qualquer-coisa-
+    # invalida de proposito. `or` cobre os dois casos (ausente E vazia).
+    provedor = (os.getenv("EMAIL_PROVIDER") or "smtp").strip().lower()
     usuario = os.getenv("SMTP_USER", "").strip()
-    remetente = os.getenv("EMAIL_FROM", usuario).strip()
+    # Mesma classe de bug do provedor acima: EMAIL_FROM "presente mas
+    # vazio" (secret nao configurado no GitHub Actions) nao pode travar
+    # o fallback pro SMTP_USER - os.getenv(key, default) so' aplicaria
+    # o default se a chave estivesse AUSENTE, nao vazia.
+    remetente = (os.getenv("EMAIL_FROM") or usuario).strip()
     destinatario = (destinatario or os.getenv("EMAIL_TO", "")).strip()
 
     if not remetente or not destinatario:

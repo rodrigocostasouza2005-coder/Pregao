@@ -54,3 +54,52 @@ def test_porta_smtp_invalida_retorna_erro_claro(monkeypatch):
 
     assert resultado["ok"] is False
     assert "SMTP_PORT" in resultado["erro"]
+
+
+def test_email_provider_vazio_nao_ausente_ainda_usa_smtp_por_padrao(monkeypatch):
+    """Bug real (2026-10-17, 1a execução em produção que passou da
+    checagem de EMAIL_FROM/EMAIL_TO): no GitHub Actions,
+    `env: EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER }}` com o secret
+    NÃO configurado define a variável com valor "" (presente, vazia) -
+    não AUSENTE. `os.getenv(chave, default)` só aplica o default quando
+    a chave está ausente do ambiente, nunca quando só está vazia -
+    então EMAIL_PROVIDER="" nunca caía no default "smtp", virava "" e
+    o envio falhava com "EMAIL_PROVIDER deve ser 'smtp', 'resend' ou
+    'brevo'" mesmo sem ninguém ter configurado nada inválido de
+    propósito. Nenhum teste anterior pegou isso porque sempre deixava
+    EMAIL_FROM/EMAIL_TO vazios juntos, o que retorna mais cedo (ver
+    test_porta_smtp_vazia_usa_padrao_587 acima) e nunca alcançava essa
+    linha."""
+    monkeypatch.setenv("EMAIL_PROVIDER", "")  # como fica no Actions quando o secret não existe
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_PORT", "587")
+    monkeypatch.setenv("SMTP_USER", "sender@example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "")  # só pra provar que chegou no branch smtp, não travou antes
+    monkeypatch.setenv("EMAIL_FROM", "sender@example.com")
+    monkeypatch.setenv("EMAIL_TO", "recipient@example.com")
+
+    resultado = enviar_email("teste", "corpo")
+
+    assert resultado["ok"] is False
+    assert "SMTP_PASSWORD" in resultado["erro"], (
+        f"esperava cair no branch smtp (erro de SMTP_PASSWORD ausente), "
+        f"mas caiu em: {resultado['erro']!r}"
+    )
+
+
+def test_email_from_vazio_nao_ausente_ainda_cai_pro_smtp_user(monkeypatch):
+    """Mesma classe de bug, pro fallback EMAIL_FROM -> SMTP_USER."""
+    monkeypatch.setenv("EMAIL_PROVIDER", "smtp")
+    monkeypatch.setenv("EMAIL_FROM", "")  # presente, vazio - não ausente
+    monkeypatch.setenv("SMTP_USER", "sender@example.com")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_PORT", "587")
+    monkeypatch.setenv("SMTP_PASSWORD", "")
+    monkeypatch.setenv("EMAIL_TO", "recipient@example.com")
+
+    resultado = enviar_email("teste", "corpo")
+
+    # Se o fallback pro SMTP_USER não tivesse funcionado, teria parado
+    # mais cedo com "EMAIL_FROM e EMAIL_TO precisam estar configurados".
+    assert resultado["erro"] != "EMAIL_FROM e EMAIL_TO precisam estar configurados."
+    assert "SMTP_PASSWORD" in resultado["erro"]
