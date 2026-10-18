@@ -298,6 +298,7 @@ def test_indicador_macro_indisponivel_mostra_motivo_sem_inventar_valor():
     texto = _plano(_texto(PdfReader(io.BytesIO(pdf_mod.gerar_pdf(edicao)))))
     assert "Indisponível (Selic meta, CDI): SGS 432: o Banco Central respondeu com página de erro HTML" in texto
     assert "15,00% a.a." not in texto
+    assert "indisponíve l" not in texto and "indisponíve\nl" not in texto
 
 
 def test_nota_de_mercados_explica_sessao_e_dolar(tipica):

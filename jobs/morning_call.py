@@ -480,15 +480,34 @@ def _montar_anexo_pdf(agora):
     anexo, nunca deixar a falha da apresentação em PDF impedir o e-mail
     (que é o canal garantido)."""
     try:
-        pdf_bytes = gerar_pdf(montar_edicao(agora))
+        edicao = montar_edicao(agora)
+        pdf_bytes = gerar_pdf(edicao)
     except Exception as exc:
         print(f"[morning_call] geração do PDF editorial falhou (enviando sem anexo): {exc!r}")
         return None
+    radar = edicao.get("radar") if isinstance(edicao, dict) else None
     return {
         "nome": f"pregao-morning-call-{agora.strftime('%Y-%m-%d')}.pdf",
         "conteudo": pdf_bytes,
         "tipo_mime": "application/pdf",
+        # nomes dos setores do radar QUE ESTÃO no PDF anexo (chamada no e-mail);
+        # jobs/email_utils.py só lê nome/conteudo/tipo_mime
+        "radar_setores": [b.get("nome") for b in (radar or {}).get("setores") or [] if b.get("nome")],
     }
+
+
+def _com_chamada_radar(texto, anexo_pdf):
+    """Chamada curta do radar setorial no e-mail, antes de LIMITAÇÕES -
+    só quando o PDF com o radar foi de fato anexado (nunca anuncia o que
+    não está no anexo)."""
+    setores = (anexo_pdf or {}).get("radar_setores") or []
+    if not setores:
+        return texto
+    chamada = ("- [RADAR SETORIAL] No PDF anexo: " + ", ".join(setores)
+               + " - o que aconteceu, por que importa e o que acompanhar em cada setor, com as fontes.")
+    if "\nLIMITAÇÕES" in texto:
+        return texto.replace("\nLIMITAÇÕES", "\n" + chamada + "\n\nLIMITAÇÕES", 1)
+    return texto + "\n\n" + chamada
 
 
 def gerar_preview(agora=None):
@@ -604,8 +623,8 @@ def enviar_teste(destinatario_teste: str, agora=None) -> dict:
     if not destinatario_teste:
         return {"ok": False, "erro": "destinatario_teste é obrigatório."}
     agora = agora or datetime.now(TZ_SP)
-    texto = montar_morning_call(agora)
     anexo_pdf = _montar_anexo_pdf(agora)
+    texto = _com_chamada_radar(montar_morning_call(agora), anexo_pdf)
     resultado = enviar_email(
         _assunto(agora, teste=True), texto, html=montar_morning_call_html(texto), destinatario=destinatario_teste,
         anexos=[anexo_pdf] if anexo_pdf else None,
@@ -696,10 +715,10 @@ def executar():
         )
         return 0
 
-    texto = montar_morning_call(agora)
+    anexo_pdf = _montar_anexo_pdf(agora)
+    texto = _com_chamada_radar(montar_morning_call(agora), anexo_pdf)
     html = montar_morning_call_html(texto)
     assunto = _assunto(agora)
-    anexo_pdf = _montar_anexo_pdf(agora)
 
     enviados = 0
     falhas = 0

@@ -228,6 +228,8 @@ def _estilos():
     estilo("aviso", fontName=F["PregaoSerifItalico"], fontSize=9.4, leading=12.9, textColor=CINZA)
     estilo("tabela", fontName=F["PregaoSans"], fontSize=8, leading=10.2)
     estilo("tabela_num", fontName=F["PregaoMono"], fontSize=8, leading=10.2, alignment=TA_RIGHT)
+    estilo("tabela_num_texto", fontName=F["PregaoSans"], fontSize=8, leading=10.2, alignment=TA_RIGHT,
+           textColor=CINZA)
     estilo("tabela_cab", fontName=F["PregaoSansMedia"], fontSize=6.6, leading=8.4, textColor=CINZA)
     estilo("tabela_cab_num", fontName=F["PregaoSansMedia"], fontSize=6.6, leading=8.4, textColor=CINZA,
            alignment=TA_RIGHT)
@@ -839,6 +841,73 @@ def _editoria(nome, chave, itens, erro, agora, estilos, registro, excluir=None, 
 
 
 # ============================================================
+# Radar setorial
+# ============================================================
+
+def _fato_radar(fonte, estilos):
+    """'VALOR ECONÔMICO (16/10): “manchete”.' - veículo com link."""
+    link = str(fonte.get("link") or "")
+    veiculo = _t(str(fonte.get("veiculo") or "").upper())
+    if link.startswith(("http://", "https://")):
+        veiculo = f'<a href="{escape(link, {'"': "&quot;"})}" color="#3B3835"><u>{veiculo}</u></a>'
+    data = fonte.get("data")
+    quando = f" ({data.strftime('%d/%m')})" if hasattr(data, "strftime") else ""
+    titulo = _t(str(fonte.get("titulo") or "").rstrip(" ."))
+    return Paragraph(f'<font name="{F["PregaoSansMedia"]}" size="7">{veiculo}</font>{quando}: '
+                     f'\u201c{titulo}\u201d.', estilos["corpo_estreito"])
+
+
+def _bloco_radar(bloco, estilos):
+    def rotulo(texto):
+        return Paragraph(texto, estilos["subtitulo_secao"])
+
+    flows = [Paragraph(_t(bloco.get("nome")), estilos["manchete"]),
+             rotulo("O QUE ACONTECEU")]
+    flows += [_fato_radar(f, estilos) for f in bloco.get("fontes") or []]
+    flows += [rotulo("POR QUE IMPORTA"),
+              Paragraph(_t(bloco.get("por_que_importa")), estilos["corpo_estreito"]),
+              rotulo("EMPRESAS E ATIVOS RELACIONADOS"),
+              Paragraph(_t(bloco.get("empresas")), estilos["corpo_estreito"]),
+              rotulo("O QUE ACOMPANHAR"),
+              Paragraph(_t(bloco.get("acompanhar")), estilos["corpo_estreito"]),
+              Spacer(1, 6)]
+    return Grupo(flows)
+
+
+def _radar(edicao, estilos, registro):
+    """Quatro setores em rodízio (data/radar_setorial.py). Fato (manchetes
+    com veículo e data) separado de contexto (textos fixos do catálogo).
+    Sem radar ou sem setor com evidência: diz isso, não preenche."""
+    if "radar" not in edicao:
+        return []
+    radar = edicao.get("radar")
+    cabecalho = CabecalhoEditoria("Radar setorial", "radar", registro)
+    setores = (radar or {}).get("setores") or []
+    if not setores:
+        aviso = ("Radar setorial indisponível nesta edição." if radar is None else
+                 "Nenhum setor do rodízio teve notícias suficientes de fontes verificáveis nesta edição.")
+        return [CondPageBreak(80), KeepTogether([cabecalho, Paragraph(aviso, estilos["aviso"])]), Spacer(1, 16)]
+    explicacao = Paragraph(
+        "Quatro setores por edição, em rodízio. \u201cO que aconteceu\u201d reproduz manchetes publicadas, "
+        "com veículo e data; \u201cPor que importa\u201d e \u201cO que acompanhar\u201d são contexto "
+        "explicativo fixo do Pregão. Não é recomendação de compra ou venda.", estilos["nota"])
+    unidades = []
+    for n, bloco in enumerate(setores):
+        if n:
+            unidades.append(Filete(antes=4, depois=8))
+        unidades.append(_bloco_radar(bloco, estilos))
+    flows = [CondPageBreak(ESPACO_MIN_EDITORIA), KeepTogether([cabecalho, explicacao, Spacer(1, 6)]),
+             Colunas(unidades)]
+    excluidos = (radar or {}).get("excluidos") or []
+    if excluidos:
+        nomes = ", ".join(_t(e.get("nome")) for e in excluidos)
+        flows.append(Paragraph(f"Fora desta edição por falta de notícias verificáveis suficientes: {nomes}.",
+                               estilos["nota"]))
+    flows.append(Spacer(1, 16))
+    return flows
+
+
+# ============================================================
 # Mercados (dados) e agenda
 # ============================================================
 
@@ -913,9 +982,12 @@ def _tabela_macro(linhas_macro, estilos):
                Paragraph("VALOR", estilos["tabela_cab_num"])]]
     for linha in linhas_macro:
         referencia = str(linha.get("referencia") or "—")
+        # "indisponível" em fonte de texto: na mono da coluna numérica a
+        # palavra quebrava em duas linhas ("indisponíve / l") na edição real
+        estilo_valor = "tabela_num" if linha.get("valor") is not None else "tabela_num_texto"
         linhas.append([Paragraph(_t(linha.get("indicador")), estilos["tabela"]),
                        Paragraph(_t(referencia), estilos["tabela"]),
-                       Paragraph(_t(_valor_macro(linha)), estilos["tabela_num"])])
+                       Paragraph(_t(_valor_macro(linha)), estilos[estilo_valor])])
     tabela = Table(linhas, colWidths=[None, 30 * MM, 22 * MM], hAlign="LEFT")
     tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE))
     return tabela
@@ -1362,6 +1434,7 @@ def _montar(edicao, registro, paginas_indice, paginas=None):
     historia += _editoria("Mundo", "exterior", exterior.get("noticias"), exterior.get("noticias_erro"),
                           agora, estilos, registro, excluir=manchete,
                           edicao_janela=edicao.get("janela_noticias"))
+    historia += _radar(edicao, estilos, registro)
     historia += _mercados(edicao, estilos, registro)
     historia += _agenda(edicao, estilos, registro)
     if not colofao_na_capa:
@@ -1372,7 +1445,7 @@ def _montar(edicao, registro, paginas_indice, paginas=None):
 
 
 _NOMES_INDICE = (("brasil", "Brasil"), ("empresas", "Empresas e setores"), ("exterior", "Mundo"),
-                 ("mercados", "Mercados"), ("agenda", "Agenda do dia"))
+                 ("radar", "Radar setorial"), ("mercados", "Mercados"), ("agenda", "Agenda do dia"))
 
 
 def gerar_pdf(edicao: dict, registro: dict = None) -> bytes:
