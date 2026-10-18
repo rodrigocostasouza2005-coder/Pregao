@@ -68,10 +68,13 @@ abas em toda rerun. 11 seções visíveis ao usuário comum + 2 restritas a admi
 `jobs/morning_call.py` + `jobs/morning_call_pdf.py` + `data/morning_call_editorial.py`
 (briefing diário por e-mail/PDF), `jobs/radar_quedas.py` (worker do Radar).
 
-**Testes:** 890 testes passando nesta branch após a 2ª rodada (PRs #75-78,
-seção 13) — 881 ao final da 1ª rodada (depois do merge com o trabalho
-concorrente de `origin/main`, baseline 776 antes do merge, 681 no início
-desta sessão), todos via `pytest`, sem Playwright/browser real no CI (ver
+**Testes:** cada PR desta auditoria (#70, #75-79) é uma branch independente
+a partir do `main` mais recente no momento, com sua própria suíte completa
+passando (variando de 889 a 891 conforme a base de `main` em cada branch —
+ver seção 13 pra lista); 881 ao final da 1ª rodada no PR #70 (depois do
+merge com o trabalho concorrente de `origin/main`, baseline 776 antes do
+merge, 681 no início desta sessão), todos via `pytest`, sem Playwright/
+browser real no CI (ver
 seção 12, limitações).
 
 ---
@@ -450,7 +453,8 @@ leitura de todos os arquivos de UI — os únicos símbolos usados são `●`/`�
 | 10 | CONFIG × popover "⚙": controle de painel duplicado | P2 | Baixo | Médio (remover sem substituto quebra reordenar) | Documentado |
 | 11 | RESEARCH: resumo de IA sem rótulo visual | P2 | Baixo | Baixo (mesmo princípio do #7, não replicado ainda) | Documentado |
 | 12 | NEWS: área de clique "↗ abrir" pequena em mobile | P2 | Baixo | Reavaliado — risco subjetivo, sem evidência concreta (seção 13) | Descartado por falta de evidência |
-| 13 | Demais achados P2/P3 da seção 9 | P2/P3 | Variável | — | Documentado |
+| 13 | NEWS: `_truncar` cortava manchete/teaser no meio de uma palavra | **P2** | Baixo | Baixo (isolado, testado, validado visualmente) | **Feito** (PR #79, seção 13) |
+| 14 | Demais achados P2/P3 da seção 9 | P2/P3 | Variável | — | Documentado |
 
 ---
 
@@ -510,6 +514,7 @@ aplicável) e validado visualmente onde havia componente visual novo:
 | #76 | MERCADO/VISÃO GERAL: painel MAIS NEGOCIADOS (mesma função, 2 abas) sem nenhum jeito de ir do ticker até EQUITY — `<td>` cru, nem falsa affordance, simplesmente sem destino | P1 | `ui/mercado_tab.py` |
 | #77 | CVM: modal de documento mostra resumo gerado por IA sob rótulo só "Resumo", sem indicar que é sintetizado por IA — mesmo princípio de risco do achado P0 do Morning Call (seção 5.B) | P2 | `ui/cvm_tab.py` |
 | #78 | `ui/workspace.py` sem nenhum teste automatizado (achado P2 original) — cobertura adicionada pras garantias de robustez já documentadas no próprio código (normalização de dado corrompido, rejeição de `Infinity`/`NaN`) | P2 | `tests/test_workspace.py` (só teste, zero mudança de comportamento) |
+| #79 | NEWS: `_truncar` cortava manchete/teaser no meio de uma palavra (contagem de caracteres pura, sem fronteira de palavra) — "...aprovação unanime..." virava "...aprovação u…" | P2 | `ui/news_tab.py` |
 
 Cada PR é independente e isolado (nenhum arquivo em comum entre eles, nem
 com o PR #70), para não bloquear um no outro nem competir com as 4 outras
