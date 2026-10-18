@@ -393,6 +393,139 @@ def test_6g_persistencia_ok_roda_pregen_normalmente():
     _checar("6j registros_novos reflete o que pregerar_resumos_news devolveu", kwargs.get("registros_novos") == 3, f"({kwargs})")
 
 
+# ============================================================
+# _falha_critica/exit code do bloco de research (auditoria 2026-10-18):
+# antes, QUALQUER casa de research falhando marcava exit code 1, mesmo
+# bloqueio externo cronico e ja documentado (Akamai na Genial/XP) -
+# o workflow 'Coletores na nuvem' e o Agendador do Windows apareciam
+# sempre com erro mesmo sem nenhuma regressao real. Ver
+# coletor_local._falha_critica e data.research._classificar_falha.
+# ============================================================
+
+def _rodar_main_com_resultado_research(resultado: dict) -> int:
+    """Roda main() com CALENDARIO/NEWS "limpos" (sem contribuir pro exit
+    code) e o resultado de coletar_todas_disponiveis() fixado em
+    `resultado` - isola o efeito do bloco de research no exit code
+    final. Retorna o exit code de main()."""
+    stats_eventos = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
+                      "falhas": 0, "tempo_esgotado": False, "tabela_disponivel": True}
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value=resultado), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats_eventos), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa"):
+        return coletor_local.main()
+
+
+def test_7a_falha_critica_sucesso_nunca_e_critica():
+    _checar("7a ok=True -> nunca critica", coletor_local._falha_critica({"ok": True, "categoria_falha": None}) is False)
+
+
+def test_7b_falha_critica_sem_categoria_falha_e_critica():
+    _checar("7b ok=False sem categoria_falha -> critica", coletor_local._falha_critica({"ok": False, "categoria_falha": None}) is True)
+
+
+def test_7c_falha_critica_bloqueio_externo_conhecido_nao_e_critica():
+    _checar("7c ok=False com 'bloqueio_externo_conhecido' -> nao critica", coletor_local._falha_critica({"ok": False, "categoria_falha": "bloqueio_externo_conhecido"}) is False)
+
+
+def test_7d_falha_critica_categoria_erro_e_critica():
+    _checar("7d ok=False com categoria 'erro' -> critica", coletor_local._falha_critica({"ok": False, "categoria_falha": "erro"}) is True)
+
+
+def test_8a_xp_bloqueio_conhecido_resto_ok_exit_0():
+    """Item 1 da missao: XP falhando com o padrao de bloqueio externo
+    conhecido, resto das casas OK -> exit code 0."""
+    resultado = {
+        "XP Investimentos": {"coletados": 0, "ok": False, "categoria_falha": "bloqueio_externo_conhecido"},
+        "BTG Pactual Research": {"coletados": 26, "ok": True, "categoria_falha": None},
+        "Genial (Lives)": {"coletados": 6, "ok": True, "categoria_falha": None},
+    }
+    codigo = _rodar_main_com_resultado_research(resultado)
+    _checar("8a XP bloqueada (conhecido) + resto OK -> exit 0", codigo == 0, f"(codigo={codigo})")
+
+
+def test_8b_genial_analisa_bloqueio_conhecido_resto_ok_exit_0():
+    """Item 2 da missao: mesmo principio aplicado a Genial Analisa."""
+    resultado = {
+        "Genial Analisa": {"coletados": 0, "ok": False, "categoria_falha": "bloqueio_externo_conhecido"},
+        "BTG Pactual Research": {"coletados": 26, "ok": True, "categoria_falha": None},
+    }
+    codigo = _rodar_main_com_resultado_research(resultado)
+    _checar("8b Genial Analisa bloqueada (conhecido) + resto OK -> exit 0", codigo == 0, f"(codigo={codigo})")
+
+
+def test_8c_xp_erro_novo_tipo_http_500_exit_1():
+    """Item 3 da missao: XP com um erro DIFERENTE do padrao Akamai
+    conhecido (ex: comecou a devolver HTTP 500) -> categoria 'erro' ->
+    exit code 1, sinalizando a mudanca em vez de mascarar."""
+    resultado = {
+        "XP Investimentos": {"coletados": 0, "ok": False, "categoria_falha": "erro"},
+        "BTG Pactual Research": {"coletados": 26, "ok": True, "categoria_falha": None},
+    }
+    codigo = _rodar_main_com_resultado_research(resultado)
+    _checar("8c XP com erro novo (nao-Akamai) -> exit 1", codigo == 1, f"(codigo={codigo})")
+
+
+def test_8d_genial_lives_falha_generica_sem_classificacao_exit_1():
+    """Item 4 da missao: Genial Lives falhando com motivo generico/nao
+    classificado (categoria_falha ausente no resultado, igual
+    coletar_todas_disponiveis produz quando a casa nao expoe
+    'categoria_falha') -> exit code 1."""
+    resultado = {
+        "Genial (Lives)": {"coletados": 0, "ok": False, "categoria_falha": "erro"},
+        "BTG Pactual Research": {"coletados": 26, "ok": True, "categoria_falha": None},
+    }
+    codigo = _rodar_main_com_resultado_research(resultado)
+    _checar("8d Genial Lives falha generica -> exit 1", codigo == 1, f"(codigo={codigo})")
+
+
+def test_8e_falha_de_persistencia_sempre_exit_1_independente_da_classificacao():
+    """Item 5 da missao: falha de persistencia (itens coletados,
+    'salvou=False') tem que SEMPRE derrubar o exit code, independente de
+    qualquer classificacao de erro de coleta - aqui simulada com
+    categoria_falha='erro' (o valor real que coletar_todas_disponiveis
+    produziria pra essa casa, ja' que o FETCH teve sucesso - ver
+    test_research_classificacao_falha.py:test_2d, que prova isso usando
+    o modulo xp.py de verdade)."""
+    resultado = {
+        "XP Investimentos": {"coletados": 5, "ok": False, "categoria_falha": "erro"},
+    }
+    codigo = _rodar_main_com_resultado_research(resultado)
+    _checar("8e falha de persistencia -> exit 1", codigo == 1, f"(codigo={codigo})")
+
+
+def test_8f_todas_as_casas_falham_so_com_bloqueio_externo_conhecido_exit_0():
+    """Item 7 da missao: TODAS as casas falhando, mas EXCLUSIVAMENTE com
+    motivo classificado como bloqueio externo ja documentado -> exit
+    code 0, coerente com a politica definida (nenhuma regressao real,
+    so' os bloqueios cronicos de sempre)."""
+    resultado = {
+        "XP Investimentos": {"coletados": 0, "ok": False, "categoria_falha": "bloqueio_externo_conhecido"},
+        "Genial Analisa": {"coletados": 0, "ok": False, "categoria_falha": "bloqueio_externo_conhecido"},
+    }
+    codigo = _rodar_main_com_resultado_research(resultado)
+    _checar("8f todas bloqueadas (conhecido) -> exit 0", codigo == 0, f"(codigo={codigo})")
+
+
+def test_8g_sucesso_do_btg_e_outras_casas_sem_regressao_exit_0():
+    """Item 8 da missao: caminho feliz (BTG implementado nesta auditoria
+    + XP/Genial Analisa bloqueadas como sempre + Genial Lives OK) ->
+    exit 0, sem regressao no caso tipico de producao."""
+    resultado = {
+        "BTG Pactual Research": {"coletados": 26, "ok": True, "categoria_falha": None},
+        "Genial (Lives)": {"coletados": 6, "ok": True, "categoria_falha": None},
+        "XP Investimentos": {"coletados": 0, "ok": False, "categoria_falha": "bloqueio_externo_conhecido"},
+        "Genial Analisa": {"coletados": 0, "ok": False, "categoria_falha": "bloqueio_externo_conhecido"},
+    }
+    codigo = _rodar_main_com_resultado_research(resultado)
+    _checar("8g caminho tipico de producao -> exit 0", codigo == 0, f"(codigo={codigo})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

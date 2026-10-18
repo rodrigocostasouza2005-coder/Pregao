@@ -387,11 +387,36 @@ def main() -> int:
     # mas nao pode sair com codigo 0 como se o universo inteiro tivesse sido coberto.
     coleta_parcial_calendario = bool(stats_eventos.get("tempo_esgotado", False))
     return 1 if (
-        any(not info["ok"] for info in resultado.values())
+        any(_falha_critica(info) for info in resultado.values())
         or falha_persistencia_calendario
         or falha_coleta_calendario
         or coleta_parcial_calendario
     ) else 0
+
+
+def _falha_critica(info: dict) -> bool:
+    """Decide se a falha de UMA casa de research deve, por si so',
+    derrubar o exit code deste script (ver fim de main()). Achado real
+    (auditoria 2026-10-18): antes, QUALQUER casa falhando marcava exit
+    code 1 - como XP/Genial Analisa tem bloqueio de borda (Akamai) cronico
+    e ja' documentado desde pelo menos 24/09, o Agendador do Windows e o
+    workflow 'Coletores na nuvem' apareciam sempre com erro mesmo quando
+    nada de novo quebrou (BTG/Genial Lives/NEWS/CALENDARIO funcionando
+    normalmente) - nao dava pra distinguir visualmente 'nada novo
+    quebrou' de 'uma regressao real aconteceu' sem abrir o log.
+
+    Regra (pedido explicito, nao e' flag estatico por casa): uma falha so'
+    deixa de contar pro exit code quando resultado[nome]['categoria_falha']
+    (calculada em data/research/_classificar_falha, lendo o motivo REAL
+    da falha ESPECIFICA que aconteceu agora) for exatamente a string
+    'bloqueio_externo_conhecido' - motivo ausente/generico, erro novo
+    (ex: a XP comecar a devolver HTTP 500 em vez do 403 do Akamai) ou
+    falha de persistencia (ok=False com itens coletados, 'salvou=False')
+    sempre contam como falha critica. Isso nunca silencia uma casa
+    inteira: se o MOTIVO mudar, a classificacao muda com ele."""
+    if info["ok"]:
+        return False
+    return info.get("categoria_falha") != "bloqueio_externo_conhecido"
 
 
 if __name__ == "__main__":
