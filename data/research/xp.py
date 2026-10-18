@@ -61,7 +61,23 @@ alternativa legitima: nao existe outro subdominio fora dessa mesma zona
 de bloqueio conhecido. Nenhuma tentativa de bypass foi feita (sem
 rotacao de IP, sem fingerprint novo contra o MESMO dominio) - so' um
 teste de reachability contra um alvo DIFERENTE (a raiz do dominio), o
-que e' legitimo."""
+que e' legitimo.
+
+Busca por via alternativa, 3a rodada (2026-10-18, mesma sessao que
+investigou a Genial de novo - ver genial.py pro detalhe completo dos 4
+caminhos testados la): pro caso da XP, a busca achou materias de
+TERCEIROS (InfoMoney, que pertence ao grupo XP) comentando a visao dos
+analistas da XP sobre tickers especificos (ex: recomendacao/preco-alvo
+citados em texto jornalistico). Descartado como alternativa: e' a
+InfoMoney reportando SOBRE a XP, nao o relatorio original da XP (origem
+teria que ser registrada como "InfoMoney", nao "XP Investimentos" -
+misturaria as duas) - e esse tipo de conteudo (noticia que cita um
+ticker) e' o que o coletor de NEWS deveria cobrir, se o ticker estiver
+no universo, nao uma funcao nova deste modulo. Nenhum feed/sitemap/API
+alternativa fora do dominio ja bloqueado foi encontrado. Conclusao
+inalterada: bloqueio de borda do Akamai continua sendo a causa real, e'
+uma conclusao fundamentada (varios caminhos reais testados ao longo de 3
+rodadas), nao "nao tentamos"."""
 
 import re
 
