@@ -238,6 +238,17 @@ def test_filtro_descarta_loteria_e_mantem_noticia_com_palavra_parecida():
     assert [i["titulo"] for i in ed.filtrar_noticias(itens, agora)] == ["Quinta-feira tem dados de inflação nos EUA"]
 
 
+def test_filtro_descarta_carta_de_leitor_em_primeira_pessoa():
+    """Caso real (Mundo, 18/10/2026): colunas de aconselhamento do MarketWatch."""
+    agora = datetime(2026, 10, 19, 7, tzinfo=TZ_SP)
+    d = "2026-10-18T12:00:00-03:00"
+    itens = [{"titulo": "I\u2019m 63 and diagnosed with lymphoma. Should I take my Social Security next year?",
+              "data": d, "importancia": 9},
+             {"titulo": "I'm 64 with two sons, but only one works in the family business", "data": d, "importancia": 8},
+             {"titulo": "Microsoft pulls plug on Nscale data centre deal", "data": d, "importancia": 1}]
+    assert [i["titulo"] for i in ed.filtrar_noticias(itens, agora)] == ["Microsoft pulls plug on Nscale data centre deal"]
+
+
 def test_filtro_remove_duplicata_do_mesmo_fato_mantendo_a_mais_importante():
     """Caso real de 18/10/2026: duas manchetes do mesmo fechamento."""
     agora = datetime(2026, 10, 19, 7, tzinfo=TZ_SP)
