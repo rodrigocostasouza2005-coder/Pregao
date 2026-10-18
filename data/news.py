@@ -569,6 +569,44 @@ def _extrair_entidades(titulo: str) -> set:
     return entidades
 
 
+# Verbos/termos de movimento que toda manchete de fechamento tem - não
+# servem pra dizer que duas manchetes falam do MESMO ativo.
+_TOKENS_MOVIMENTO = {
+    "alta", "altas", "queda", "quedas", "sobe", "sobem", "subiu", "cai", "caem", "caiu", "fecha", "fecham",
+    "fechou", "abre", "abrem", "avanca", "avancou", "recua", "recuou", "hoje", "dia", "sessao", "pregao",
+    "mercado", "mercados", "semana", "pontos", "mil", "valoriza", "desvaloriza", "ganho", "perda",
+}
+
+
+def _mesmo_numero_mesmo_assunto(g: dict, item: dict) -> bool:
+    """Regra 2b: mesmo percentual citado + ao menos uma palavra de conteúdo
+    em comum (fora termos de movimento) + direção não contraditória.
+    Caso real (Morning Call de 18/10/2026): "IBOVESPA fecha hoje com alta
+    de 0,54%" e "Ibovespa sobe 0,54% com apoio de ações do petróleo..."
+    ficaram em grupos separados - "ibovespa" está em _ENTIDADE_IGNORAR
+    (termo de mercado), e a similaridade de tokens ficava abaixo do
+    limiar porque um título é bem mais longo que o outro."""
+    pcts_item = item.get("_pcts")
+    if pcts_item is None:
+        pcts_item = _percentuais(item["titulo"])
+    if not pcts_item:
+        return False
+    conteudo_item = item["_tokens_sim"] - _TOKENS_MOVIMENTO
+    d_item = _direcao_mercado(item["titulo"])
+    # compara com CADA título do grupo (não com a união do grupo): senão um
+    # grupo grande acumula percentuais e palavras e passa a atrair tudo
+    for titulo, tokens in zip(g["titulos"], g["_tokens_sim_todos"]):
+        if not (pcts_item & _percentuais(titulo)):
+            continue
+        if not (conteudo_item & (tokens - _TOKENS_MOVIMENTO)):
+            continue
+        d_titulo = _direcao_mercado(titulo)
+        if d_item and d_titulo and d_item != d_titulo:
+            continue
+        return True
+    return False
+
+
 def _mesmo_grupo(g: dict, item: dict, entidades_item: set) -> bool:
     """Decide se `item` entra no grupo `g` - 3 regras, na ordem:
     1. titulo identico (sem acento) SEMPRE junta, mesmo fora da janela de
@@ -592,8 +630,18 @@ def _mesmo_grupo(g: dict, item: dict, entidades_item: set) -> bool:
     if horas_diff <= _JANELA_HORAS_ENTIDADE and g["_entidades"] & entidades_item:
         return True
 
+    if horas_diff <= _JANELA_HORAS_ENTIDADE and _mesmo_numero_mesmo_assunto(g, item):
+        return True
+
+    # a similaridade continua sobre todos os tokens, mas exige ao menos uma
+    # palavra de CONTEÚDO em comum (fora termos de movimento como "fecha",
+    # "alta", "sobe"): "Ibovespa fecha em alta" e "Dólar fecha em alta"
+    # davam 2/3 de sobreposição só com "fecha"+"alta" e viravam o mesmo
+    # fato. Esta regra só pode SEPARAR grupos, nunca juntar novos.
+    conteudo_item = item["_tokens_sim"] - _TOKENS_MOVIMENTO
     if dias_diff <= _JANELA_DIAS_GRUPO and any(
         _similaridade(tokens, item["_tokens_sim"]) >= _LIMIAR_SIMILARIDADE
+        and bool((tokens - _TOKENS_MOVIMENTO) & conteudo_item)
         for tokens in g["_tokens_sim_todos"]
     ):
         return True
@@ -611,6 +659,7 @@ def _agrupar(itens: list) -> list:
     grupos = []
     for item in itens:
         entidades_item = _extrair_entidades(item["titulo"])
+        item["_pcts"] = _percentuais(item["titulo"])
         grupo = next((g for g in grupos if _mesmo_grupo(g, item, entidades_item)), None)
         if grupo:
             grupo["fontes"].append({"veiculo": item["veiculo"], "link": item["link"]})
