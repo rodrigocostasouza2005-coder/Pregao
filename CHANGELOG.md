@@ -1,5 +1,69 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-18 — fix: imagens ilustrativas erradas nos cards de NEWS (3 causas reais, não geração por IA)
+
+Bug reportado pelo Rodrigo: card da Vale (VALE3, minério de ferro,
+expansão de cobre) mostrando uma imagem que não é a foto da matéria.
+Confirmado primeiro que **não existe geração de imagem por IA em
+nenhum lugar do projeto** (buscado o codebase inteiro por qualquer
+integração de geração de imagem - nenhuma encontrada). Rastreando o
+cache de produção (`resumos_ia_cache`) e reprocessando os casos reais
+com o pipeline atual, encontradas 3 causas reais e distintas - todas em
+`data/news.py:_extrair_texto_artigo`, nenhuma delas geração sintética,
+todas "imagem real hospedada pelo veículo, mas não é a foto da
+matéria":
+
+1. **Foto de banco de imagens re-hospedada**: `spacemoney.com.br`
+   publica uma foto do Pexels (`thumbnailUrl` do JSON-LD) no próprio
+   domínio como se fosse a capa - passava em todos os filtros
+   anteriores (URL válida, não bate padrão de logo/favicon). Fix:
+   `_PADROES_IMAGEM_GENERICA` ganhou os nomes de banco de imagens mais
+   comuns (pexels, unsplash, shutterstock, istockphoto, gettyimages,
+   depositphotos, 123rf, vecteezy, pixabay, dreamstime, adobestock,
+   freepik) - o nome do arquivo preserva o padrão do banco de origem
+   mesmo após o re-upload.
+2. **Chave "url" do JSON-LD tratada como imagem**: o node `WebPage` do
+   `@graph` (padrão Yoast SEO, usado por vários publishers BR) tem uma
+   chave `"url"` genérica apontando pro link da PRÓPRIA página -
+   `_urls_imagem_jsonld` tratava isso como candidata a imagem,
+   fazendo `imagem` virar a MESMA URL do artigo (nunca uma imagem de
+   verdade). Removida "url" da lista de chaves candidatas -
+   `contentUrl`/`primaryImageOfPage`/`image`/`thumbnailUrl` continuam
+   (são específicas de imagem, sem essa ambiguidade).
+3. **Logo da organização tratado como imagem**: o node `Organization`
+   do mesmo `@graph` tem um `"logo"` inline (ImageObject com
+   `contentUrl` de verdade) com a MARCA do veículo - a varredura
+   catch-all recursava pra dentro e aceitava o logo do site como foto
+   da matéria. `"logo"`/`"publisher"`/`"author"` agora nunca são
+   percorridas nessa varredura (são sempre identidade de marca/pessoa,
+   nunca o conteúdo visual da própria matéria).
+
+Durante a investigação, o fallback de imagem lazy-loaded adicionado
+ontem (ver entrada "2ª passada" abaixo) também mostrou uma lacuna: sem
+checar a dimensão declarada da própria `<img>`, um avatar de autor
+40x40 era aceito antes de qualquer foto de capa real dentro do bloco
+principal. Corrigido com o mesmo limiar já usado pro `og:image:width`
+(`_LARGURA_MINIMA_IMAGEM_EDITORIAL`), lendo o atributo `width` da
+própria tag.
+
+**`data/news.py`** — `_PADROES_IMAGEM_GENERICA` (+ bancos de imagens,
++ "default"/"avatar"), `_urls_imagem_jsonld` (remove "url", exclui
+"logo"/"publisher"/"author" da varredura catch-all), fallback de
+imagem lazy-loaded (guarda de dimensão via atributo `width` da tag).
+
+Testes novos: `tests/test_news_qualidade_editorial.py` (+6 casos) -
+banco de imagens rejeitado por nome (isolado e ponta a ponta), "url"
+do WebPage nunca vira imagem, logo da Organization nunca vira imagem,
+avatar pequeno é pulado em favor da foto real seguinte.
+
+Confirmado ponta a ponta contra o artigo real do spacemoney.com.br que
+originou o relato (Vale Base Metals/Exiro Nickel/Thompson): antes dos
+3 fixes, `imagem` passava por pexels → URL da própria página → logo do
+site, nessa ordem, conforme cada bloqueio anterior era corrigido;
+depois dos 3, `imagem` corretamente vira `None` (este artigo
+específico não tem foto editorial própria - nenhuma das 3 imagens
+"reais" encontradas era a foto da matéria).
+
 ## 2026-10-17 (2ª passada) — correção da causa raiz real do bug de imagens dos cards
 
 Retomando a investigação abaixo (que já deixava em aberto "confirmar
