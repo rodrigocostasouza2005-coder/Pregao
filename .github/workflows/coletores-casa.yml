@@ -1,0 +1,70 @@
+name: Coletores em casa (research)
+
+# Genial Analisa, XP e Genial (Lives) bloqueiam IP de datacenter (GitHub
+# Actions / Streamlit Cloud): timeout, HTTP 403 ou conexao resetada em
+# 100% das execucoes na nuvem. Este workflow roda no runner self-hosted
+# instalado no PC de casa (rede residencial), com o label "pregao-casa" -
+# ver MANUAL.md, secao "Runner no PC de casa".
+#
+# SEGURANCA (repositorio publico): este workflow so' dispara por agenda ou
+# manualmente pelo dono. NUNCA adicione pull_request/push aqui - isso
+# deixaria codigo de PR de terceiros rodar no PC de casa.
+#
+# Se o PC estiver desligado, o job fica na fila e roda quando o runner
+# voltar (a concurrency abaixo mantem so' 1 pendente, sem acumular).
+
+on:
+  schedule:
+    # Dias uteis, 07:15-19:15 de Brasilia (UTC-3), de hora em hora - o
+    # app so' considera research "velho" depois de 30min e as casas
+    # publicam poucas vezes por dia; 1x/hora sobra.
+    - cron: "15 10-22 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coletores-casa
+  cancel-in-progress: false
+
+jobs:
+  research:
+    if: github.repository == 'rodrigocostasouza2005-coder/Pregao'
+    runs-on: [self-hosted, pregao-casa]
+    timeout-minutes: 20
+    # Runner do PC de casa e' Windows: shell cmd + Python ja' instalado no
+    # PC (o mesmo do README), num venv persistente fora do checkout - sem
+    # actions/setup-python, que no Windows self-hosted pede admin pra
+    # instalar Python. pip so' baixa algo quando requirements.txt muda.
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar Python (venv persistente no PC)
+        run: python -m venv "${{ runner.tool_cache }}\venv-pregao"
+
+      - name: Instalar dependencias
+        run: |
+          "${{ runner.tool_cache }}\venv-pregao\Scripts\python.exe" -m pip install --disable-pip-version-check -q -r requirements.txt
+
+      - name: Validar configuracao segura
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          "${{ runner.tool_cache }}\venv-pregao\Scripts\python.exe" -m jobs.checar_env SUPABASE_URL SUPABASE_SECRET_KEY
+
+      - name: Executar coletores de research (Genial/XP/Lives)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+          PYTHONUNBUFFERED: "1"
+          PYTHONUTF8: "1"
+        run: |
+          "${{ runner.tool_cache }}\venv-pregao\Scripts\python.exe" coletor_local.py --etapas research

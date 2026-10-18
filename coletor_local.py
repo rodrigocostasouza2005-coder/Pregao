@@ -41,8 +41,11 @@ pythonw coletor_local.py (mesma coisa, sem abrir janela de console - e' o
 que o Agendador de Tarefas usa, ver PROGRESSO.md). Saida: exit code 0 se
 todas as casas disponiveis coletaram OK, 1 se alguma falhou (util pro
 Agendador de Tarefas registrar erro no historico da tarefa sem precisar
-ler o log). Log gravado em coletor_local.log (raiz do projeto, ao lado
-deste arquivo) - com pythonw nao tem console nenhum, entao o arquivo e' o
+ler o log). `--etapas research|nuvem` roda so' uma metade (ver main()):
+research precisa de IP residencial (runner self-hosted no PC de casa),
+o resto roda no GitHub Actions comum.
+Log gravado em coletor_local.log (raiz do projeto, ao lado deste
+arquivo) - com pythonw nao tem console nenhum, entao o arquivo e' o
 UNICO jeito de conferir depois o que aconteceu numa execucao passada.
 Rotaciona sozinho (1MB x 3 arquivos) pra nao crescer sem limite com
 execucoes a cada 30min.
@@ -207,28 +210,12 @@ def _universo_rotativo(tickers: list, offset: int = None, arquivo_checkpoint: Pa
     return tickers[offset:] + tickers[:offset]
 
 
-def main() -> int:
-    logger.info("iniciando coleta local...")
-
-    # Self-test de persistencia ANTES de qualquer coletor (achado real,
-    # auditoria 2026-10-15): sem isso, uma credencial sem privilegio de
-    # escrita (ex: chave publica colada por engano em SUPABASE_SECRET_KEY)
-    # produzia a MESMA excecao "42501" repetida 1x por coletor/tabela, sem
-    # 1 diagnostico claro na raiz. So' loga - nunca aborta a execucao:
-    # a coleta em si (rede/parsing) continua valendo mesmo que a
-    # persistencia esteja quebrada, cada coletor ja degrada essa parte
-    # com seguranca por conta propria (ver docstrings de cada modulo).
-    diagnostico = diagnosticar_persistencia()
-    if diagnostico["ok"]:
-        logger.info("  persistencia (self-test escrita+leitura): OK")
-    else:
-        logger.warning(
-            f"  persistencia (self-test escrita+leitura): FALHOU na etapa "
-            f"{diagnostico['etapa']} - {diagnostico['detalhe']} "
-            "(nenhum coletor desta execucao vai conseguir gravar nada; "
-            "a extracao/parsing continua rodando mesmo assim)"
-        )
-
+def _coletar_research() -> bool:
+    """Casas de research (Genial/XP/Lives) + limpeza + historico de
+    recomendacoes da Genial. Essas fontes bloqueiam IP de datacenter
+    (GitHub Actions/Streamlit Cloud) - so' funcionam de rede residencial,
+    por isso rodam no runner self-hosted (ver .github/workflows/
+    coletores-casa.yml). Retorna True se alguma casa falhou."""
     resultado = coletar_todas_disponiveis()
     if not resultado:
         logger.info("nenhuma casa disponivel pra coletar (ver CASAS em data/research/__init__.py)")
@@ -257,6 +244,14 @@ def main() -> int:
     else:
         logger.info(f"  historico de recomendacoes: {n_comparados} ticker(s) comparado(s), {n_mudancas} mudanca(s) real(is) registrada(s)")
 
+    return any(not info["ok"] for info in resultado.values())
+
+
+def _coletar_news_e_calendario(diagnostico: dict) -> bool:
+    """Resumos de NEWS + eventos/snapshot do CALENDARIO - fontes que
+    funcionam de qualquer rede (rodam no GitHub Actions comum, ver
+    .github/workflows/coletores-nuvem.yml). Retorna True se houve falha
+    de persistencia/coleta ou execucao parcial do calendario."""
     # pre-processamento dos resumos editoriais de NEWS (reformulacao
     # 2026-10-15, ver data/news.py:pregerar_resumos_news) - cobre o TOP
     # MERCADO (global) + uma fatia rotativa do universo de tickers, pra o
@@ -378,13 +373,57 @@ def main() -> int:
     # timeout nao e falha definitiva (a rotacao continua no proximo run),
     # mas nao pode sair com codigo 0 como se o universo inteiro tivesse sido coberto.
     coleta_parcial_calendario = bool(stats_eventos.get("tempo_esgotado", False))
-    return 1 if (
-        any(not info["ok"] for info in resultado.values())
-        or falha_persistencia_calendario
+    return (
+        falha_persistencia_calendario
         or falha_coleta_calendario
         or coleta_parcial_calendario
-    ) else 0
+    )
+
+
+ETAPAS = ("tudo", "research", "nuvem")
+
+
+def main(etapas: str = "tudo") -> int:
+    """etapas: "tudo" (padrao - Agendador do Windows), "research" (so'
+    _coletar_research, runner self-hosted em rede residencial) ou "nuvem"
+    (so' _coletar_news_e_calendario, GitHub Actions comum)."""
+    if etapas not in ETAPAS:
+        raise ValueError(f"etapas invalidas: {etapas!r} (use uma de {ETAPAS})")
+    logger.info("iniciando coleta local...")
+
+    # Self-test de persistencia ANTES de qualquer coletor (achado real,
+    # auditoria 2026-10-15): sem isso, uma credencial sem privilegio de
+    # escrita (ex: chave publica colada por engano em SUPABASE_SECRET_KEY)
+    # produzia a MESMA excecao "42501" repetida 1x por coletor/tabela, sem
+    # 1 diagnostico claro na raiz. So' loga - nunca aborta a execucao:
+    # a coleta em si (rede/parsing) continua valendo mesmo que a
+    # persistencia esteja quebrada, cada coletor ja degrada essa parte
+    # com seguranca por conta propria (ver docstrings de cada modulo).
+    diagnostico = diagnosticar_persistencia()
+    if diagnostico["ok"]:
+        logger.info("  persistencia (self-test escrita+leitura): OK")
+    else:
+        logger.warning(
+            f"  persistencia (self-test escrita+leitura): FALHOU na etapa "
+            f"{diagnostico['etapa']} - {diagnostico['detalhe']} "
+            "(nenhum coletor desta execucao vai conseguir gravar nada; "
+            "a extracao/parsing continua rodando mesmo assim)"
+        )
+
+    falhou = False
+    if etapas in ("tudo", "research"):
+        falhou = _coletar_research() or falhou
+    if etapas in ("tudo", "nuvem"):
+        falhou = _coletar_news_e_calendario(diagnostico) or falhou
+    return 1 if falhou else 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    import argparse
+
+    _parser = argparse.ArgumentParser(description="Coletor do PREGAO")
+    _parser.add_argument(
+        "--etapas", choices=ETAPAS, default="tudo",
+        help="tudo (padrao), research (precisa de IP residencial) ou nuvem (NEWS + CALENDARIO)",
+    )
+    sys.exit(main(_parser.parse_args().etapas))
