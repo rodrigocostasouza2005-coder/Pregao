@@ -16,11 +16,13 @@ from data.eventos import (
     calcular_calendario_cacheado,
 )
 from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta
+from data.morning_call_editorial import montar_edicao
 from data.news import obter_top_mercado_tudo
 from data.prices import obter_cotacao_indice
 from data.supabase_client import obter_cliente
 from data.user_prefs import listar_assinantes_morning_call
 from jobs.email_utils import enviar_email
+from jobs.morning_call_pdf import gerar_pdf
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 
@@ -312,31 +314,61 @@ def montar_morning_call(agora=None):
 
 _URL_RE = re.compile(r'(https?://[^\s<>"]+)')
 _RE_TITULO_SECAO = re.compile(r"^\d+\.\s")
+_RE_TAG_BULLET = re.compile(r"^\[([^\]]+)\]\s*(.*)$")
+
+# Identidade visual do Morning Call (mesma paleta/tipografia do PDF
+# editorial - jobs/morning_call_pdf.py - pra coerência visual entre as
+# 2 versões): azul-marinho + branco quente + cinza editorial + âmbar de
+# destaque; serifada pra manchetes/título, sans-serif pro corpo. Só
+# fontes web-safe (sem @font-face: clientes de e-mail bloqueiam fonte
+# externa) e só estilo inline (sem <style>: Gmail/Outlook descartam ou
+# reinterpretam bloco <style> de formas inconsistentes).
+_AZUL_MARINHO = "#0E1B2E"
+_BRANCO_QUENTE = "#F7F3ED"
+_CINZA_EDITORIAL = "#4A4F57"
+_AMBAR = "#E8762C"
+_CINZA_FUNDO = "#EFEAE2"
+_CINZA_BORDA = "#D9D4CC"
+_SERIF = "Georgia,'Times New Roman',Times,serif"
+_SANS = "Arial,Helvetica,sans-serif"
 
 
 def _linkificar(texto_escapado: str) -> str:
-    return _URL_RE.sub(lambda m: f'<a href="{m.group(1)}">{m.group(1)}</a>', texto_escapado)
+    return _URL_RE.sub(
+        lambda m: f'<a href="{m.group(1)}" style="color:{_AMBAR};text-decoration:underline;">{m.group(1)}</a>',
+        texto_escapado,
+    )
 
 
 def montar_morning_call_html(texto: str) -> str:
-    """HTML mínimo gerado a partir do MESMO texto simples (fonte única -
-    nunca reconsulta nem reformula dado), compatível com clientes de
-    e-mail comuns: só tags básicas (h1/h2/p/ul/li/a) com estilo inline,
-    sem CSS externo/JS. Links (incluindo os das manchetes, reaproveitados
+    """HTML gerado a partir do MESMO texto simples (fonte única - nunca
+    reconsulta nem reformula dado), com apresentação editorial (mesma
+    identidade visual do PDF - jobs/morning_call_pdf.py: azul-marinho +
+    âmbar + serifada/sans-serif), compatível com clientes de e-mail
+    comuns: tabela única pra centralizar a largura de leitura (técnica
+    padrão pra Outlook, que ignora `margin:auto` em bloco solto), só
+    tags básicas (h1/h2/p/ul/li/a/table) com estilo inline, sem CSS
+    externo/JS/<style>. Links (incluindo os das manchetes, reaproveitados
     de data/news.py) continuam clicáveis; nenhum conteúdo novo é
     adicionado - texto e HTML nunca divergem em conteúdo, só em
     apresentação (exigido pelo enviar_email(texto, html=...) de
-    jobs/email_utils.py)."""
+    jobs/email_utils.py).
+
+    Linhas marcadas "[TAG] resto do texto" (hoje só "[INTERPRETAÇÃO]",
+    emitidas por montar_morning_call em TENDÊNCIAS E RISCOS) ganham um
+    chip âmbar - mesma distinção visual FATO x INTERPRETAÇÃO do PDF,
+    lida do PRÓPRIO texto (nenhuma reclassificação nova feita aqui)."""
     linhas = texto.split("\n")
-    partes = [
-        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
-        'color:#1a1a1a;line-height:1.5;max-width:640px;margin:0 auto;">'
-    ]
+    conteudo: list = []
     buffer_lista: list = []
 
     def fechar_lista():
         if buffer_lista:
-            partes.append("<ul>" + "".join(buffer_lista) + "</ul>")
+            conteudo.append(
+                f'<ul style="margin:0 0 16px 0;padding:0 0 0 20px;font-family:{_SANS};'
+                f'font-size:14px;line-height:1.6;color:{_AZUL_MARINHO};">'
+                + "".join(buffer_lista) + "</ul>"
+            )
             buffer_lista.clear()
 
     for i, linha in enumerate(linhas):
@@ -345,32 +377,118 @@ def montar_morning_call_html(texto: str) -> str:
             fechar_lista()
             continue
         if i == 0:
-            partes.append(f"<h1 style=\"font-size:18px;margin-bottom:4px;\">{_html_escape.escape(linha)}</h1>")
+            conteudo.append(
+                f'<h1 style="margin:0;padding:0;font-family:{_SERIF};font-size:24px;'
+                f'font-weight:bold;color:{_BRANCO_QUENTE};">{_html_escape.escape(linha)}</h1>'
+            )
             continue
         if i == 1:
-            partes.append(f"<p style=\"color:#555;margin-top:0;\">{_html_escape.escape(linha)}</p>")
+            conteudo.append(
+                f'<p style="margin:16px 0 0 0;font-family:{_SANS};font-size:13px;'
+                f'font-style:italic;color:{_CINZA_EDITORIAL};">{_html_escape.escape(linha)}</p>'
+            )
             continue
         if _RE_TITULO_SECAO.match(linha) or linha in ("LIMITAÇÕES", "FONTES"):
             fechar_lista()
-            partes.append(
-                f"<h2 style=\"font-size:15px;border-top:1px solid #ddd;padding-top:8px;\">"
-                f"{_html_escape.escape(linha)}</h2>"
+            conteudo.append(
+                f'<h2 style="margin:28px 0 14px 0;padding:10px 16px;background-color:{_AZUL_MARINHO};'
+                f'border-left:5px solid {_AMBAR};font-family:{_SERIF};font-size:14px;'
+                f'font-weight:bold;letter-spacing:1px;text-transform:uppercase;'
+                f'color:{_BRANCO_QUENTE};">{_html_escape.escape(linha)}</h2>'
             )
             continue
         if linha.startswith("- "):
-            buffer_lista.append(f"<li>{_linkificar(_html_escape.escape(linha[2:]))}</li>")
+            item = linha[2:]
+            tag_match = _RE_TAG_BULLET.match(item)
+            if tag_match:
+                rotulo, resto = tag_match.group(1), tag_match.group(2)
+                chip = (
+                    f'<span style="display:inline-block;background-color:{_AMBAR};color:{_BRANCO_QUENTE};'
+                    f'font-family:{_SANS};font-size:10px;font-weight:bold;letter-spacing:0.5px;'
+                    f'padding:1px 6px;border-radius:3px;margin-right:6px;">'
+                    f'{_html_escape.escape(rotulo)}</span>'
+                )
+                texto_item = (
+                    f'<span style="font-style:italic;color:{_CINZA_EDITORIAL};">'
+                    f'{_linkificar(_html_escape.escape(resto))}</span>'
+                )
+                buffer_lista.append(f"<li>{chip}{texto_item}</li>")
+            else:
+                buffer_lista.append(f"<li>{_linkificar(_html_escape.escape(item))}</li>")
             continue
         fechar_lista()
-        partes.append(f"<p>{_linkificar(_html_escape.escape(linha))}</p>")
+        conteudo.append(
+            f'<p style="margin:0 0 20px 0;padding-bottom:12px;border-bottom:1px solid {_CINZA_BORDA};'
+            f'font-family:{_SANS};font-size:11px;color:{_CINZA_EDITORIAL};">'
+            f'{_linkificar(_html_escape.escape(linha))}</p>'
+        )
 
     fechar_lista()
-    partes.append("</div>")
-    return "\n".join(partes)
+
+    return (
+        '<!doctype html>'
+        '<html lang="pt-BR">'
+        '<head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0"></head>'
+        f'<body style="margin:0;padding:0;background-color:{_CINZA_FUNDO};">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'style="background-color:{_CINZA_FUNDO};">'
+        '<tr><td align="center" style="padding:24px 12px;">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'style="max-width:640px;width:100%;background-color:{_BRANCO_QUENTE};">'
+        '<tr><td style="padding:0;">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
+        f'<tr><td style="background-color:{_AZUL_MARINHO};padding:22px 28px 20px 28px;">'
+        f'<span style="font-family:{_SERIF};font-size:18px;font-weight:bold;color:{_AMBAR};'
+        f'letter-spacing:1px;">PREGÃO</span>'
+        f'<span style="font-family:{_SANS};font-size:10px;color:{_BRANCO_QUENTE};'
+        f'letter-spacing:3px;padding-left:10px;">MORNING CALL</span>'
+        '</td></tr>'
+        '<tr><td style="padding:0 28px 22px 28px;">' + "".join(conteudo[:1]) + '</td></tr>'
+        f'<tr><td style="padding:0 0 3px 0;background-color:{_AMBAR};font-size:1px;line-height:1px;">&nbsp;</td></tr>'
+        '<tr><td style="padding:24px 28px 28px 28px;">' + "".join(conteudo[1:]) + '</td></tr>'
+        '</table>'
+        '</td></tr>'
+        '</table>'
+        '</td></tr>'
+        '</table>'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'style="background-color:{_CINZA_FUNDO};">'
+        '<tr><td align="center" style="padding:0 12px 28px 12px;">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'style="max-width:640px;width:100%;">'
+        f'<tr><td align="center" style="font-family:{_SANS};font-size:10px;color:{_CINZA_EDITORIAL};'
+        'padding-top:4px;">PREGÃO · Terminal de Mercado · Conteúdo informativo, não constitui '
+        'recomendação de investimento.</td></tr>'
+        '</table>'
+        '</td></tr>'
+        '</table>'
+        '</body></html>'
+    )
 
 
 def _assunto(agora, teste=False):
     prefixo = "[TESTE] " if teste else ""
     return f"{prefixo}[PREGÃO] Morning Call — {agora.strftime('%d/%m/%Y')}"
+
+
+def _montar_anexo_pdf(agora):
+    """PDF editorial (data/morning_call_editorial.py + jobs/morning_call_pdf.py)
+    montado 1x por execução, nunca por assinante - mesmo texto/dado do
+    e-mail, camada de apresentação separada. Qualquer falha (dado ou
+    ReportLab) devolve None - quem chama decide degradar pra envio sem
+    anexo, nunca deixar a falha da apresentação em PDF impedir o e-mail
+    (que é o canal garantido)."""
+    try:
+        pdf_bytes = gerar_pdf(montar_edicao(agora))
+    except Exception as exc:
+        print(f"[morning_call] geração do PDF editorial falhou (enviando sem anexo): {exc!r}")
+        return None
+    return {
+        "nome": f"pregao-morning-call-{agora.strftime('%Y-%m-%d')}.pdf",
+        "conteudo": pdf_bytes,
+        "tipo_mime": "application/pdf",
+    }
 
 
 def gerar_preview(agora=None):
@@ -487,8 +605,10 @@ def enviar_teste(destinatario_teste: str, agora=None) -> dict:
         return {"ok": False, "erro": "destinatario_teste é obrigatório."}
     agora = agora or datetime.now(TZ_SP)
     texto = montar_morning_call(agora)
+    anexo_pdf = _montar_anexo_pdf(agora)
     resultado = enviar_email(
         _assunto(agora, teste=True), texto, html=montar_morning_call_html(texto), destinatario=destinatario_teste,
+        anexos=[anexo_pdf] if anexo_pdf else None,
     )
     print(f"[morning_call] envio de TESTE administrativo (nao e' assinante real) ok={resultado['ok']} erro={resultado['erro']}")
     return resultado
@@ -579,6 +699,7 @@ def executar():
     texto = montar_morning_call(agora)
     html = montar_morning_call_html(texto)
     assunto = _assunto(agora)
+    anexo_pdf = _montar_anexo_pdf(agora)
 
     enviados = 0
     falhas = 0
@@ -590,7 +711,10 @@ def executar():
         # (mesmo espírito de salvar_carteiras/processar_monitoramento em
         # data/radar_quedas.py: falha parcial nunca é reportada como
         # sucesso total nem interrompe o laço).
-        resultado = enviar_email(assunto, texto, html=html, destinatario=email)
+        resultado = enviar_email(
+            assunto, texto, html=html, destinatario=email,
+            anexos=[anexo_pdf] if anexo_pdf else None,
+        )
         status = "ENVIADO" if resultado["ok"] else "FALHA_ENVIO"
         if resultado["ok"]:
             enviados += 1

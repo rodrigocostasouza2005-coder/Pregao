@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Entrega de e-mail via Resend API, Brevo API ou SMTP, configurada por ambiente."""
+import base64
 import json
 import os
 import smtplib
@@ -8,7 +9,26 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-def _enviar_brevo(assunto, texto, html, remetente, destinatario, api_key):
+def _anexos_base64(anexos):
+    """Normaliza `anexos` (lista de {"nome", "conteudo" (bytes), "tipo_mime"})
+    pra uma lista de dicts com o conteudo em base64 - formato aceito tanto
+    pelo Resend quanto pelo Brevo (so' muda o nome das chaves, aplicado por
+    quem chama). None/lista vazia -> lista vazia, nunca quebra o envio por
+    causa de um anexo ausente/opcional."""
+    out = []
+    for anexo in anexos or []:
+        conteudo = anexo.get("conteudo")
+        if not conteudo:
+            continue
+        out.append({
+            "nome": anexo.get("nome") or "anexo",
+            "tipo_mime": anexo.get("tipo_mime") or "application/octet-stream",
+            "base64": base64.b64encode(conteudo).decode("ascii"),
+        })
+    return out
+
+
+def _enviar_brevo(assunto, texto, html, remetente, destinatario, api_key, anexos=None):
     """Brevo (ex-Sendinblue): só exige o remetente verificado por codigo de
     6 digitos enviado pro proprio e-mail (sem DNS/dominio proprio, ao
     contrario do Resend) - ver developers.brevo.com/docs/send-a-transactional-email.
@@ -21,6 +41,11 @@ def _enviar_brevo(assunto, texto, html, remetente, destinatario, api_key):
     }
     if html:
         payload["htmlContent"] = html
+    anexos_b64 = _anexos_base64(anexos)
+    if anexos_b64:
+        payload["attachment"] = [
+            {"name": a["nome"], "content": a["base64"]} for a in anexos_b64
+        ]
     request = Request(
         "https://api.brevo.com/v3/smtp/email",
         data=json.dumps(payload).encode("utf-8"),
@@ -52,7 +77,7 @@ def _enviar_brevo(assunto, texto, html, remetente, destinatario, api_key):
         return {"ok": False, "erro": f"Falha no envio via Brevo: {type(exc).__name__}"}
 
 
-def _enviar_resend(assunto, texto, html, remetente, destinatario, api_key):
+def _enviar_resend(assunto, texto, html, remetente, destinatario, api_key, anexos=None):
     payload = {
         "from": remetente,
         "to": [destinatario],
@@ -61,6 +86,11 @@ def _enviar_resend(assunto, texto, html, remetente, destinatario, api_key):
     }
     if html:
         payload["html"] = html
+    anexos_b64 = _anexos_base64(anexos)
+    if anexos_b64:
+        payload["attachments"] = [
+            {"filename": a["nome"], "content": a["base64"]} for a in anexos_b64
+        ]
     request = Request(
         "https://api.resend.com/emails",
         data=json.dumps(payload).encode("utf-8"),
@@ -91,7 +121,12 @@ def _enviar_resend(assunto, texto, html, remetente, destinatario, api_key):
         return {"ok": False, "erro": f"Falha no envio via Resend: {type(exc).__name__}"}
 
 
-def enviar_email(assunto, texto, html=None, destinatario=None):
+def enviar_email(assunto, texto, html=None, destinatario=None, anexos=None):
+    """`anexos` (opcional): lista de {"nome": str, "conteudo": bytes,
+    "tipo_mime": str} - ex. o PDF editorial do Morning Call
+    (jobs/morning_call_pdf.py). Anexo ausente/None nunca muda o
+    comportamento de quem já chamava enviar_email sem esse parâmetro
+    (ex. jobs/radar_quedas.py)."""
     # Bug real (achado 2026-10-17, 1a execucao que passou da checagem de
     # EMAIL_FROM/EMAIL_TO): os.getenv(key, default) so' usa o default
     # quando a chave esta' AUSENTE do ambiente - no GitHub Actions,
@@ -117,13 +152,13 @@ def enviar_email(assunto, texto, html=None, destinatario=None):
         api_key = os.getenv("RESEND_API_KEY", "").strip()
         if not api_key:
             return {"ok": False, "erro": "RESEND_API_KEY precisa estar configurada para EMAIL_PROVIDER=resend."}
-        return _enviar_resend(assunto, texto, html, remetente, destinatario, api_key)
+        return _enviar_resend(assunto, texto, html, remetente, destinatario, api_key, anexos)
 
     if provedor == "brevo":
         api_key = os.getenv("BREVO_API_KEY", "").strip()
         if not api_key:
             return {"ok": False, "erro": "BREVO_API_KEY precisa estar configurada para EMAIL_PROVIDER=brevo."}
-        return _enviar_brevo(assunto, texto, html, remetente, destinatario, api_key)
+        return _enviar_brevo(assunto, texto, html, remetente, destinatario, api_key, anexos)
 
     if provedor != "smtp":
         return {"ok": False, "erro": "EMAIL_PROVIDER deve ser 'smtp', 'resend' ou 'brevo'."}
@@ -146,6 +181,16 @@ def enviar_email(assunto, texto, html=None, destinatario=None):
     msg.set_content(texto)
     if html:
         msg.add_alternative(html, subtype="html")
+    for anexo in anexos or []:
+        conteudo = anexo.get("conteudo")
+        if not conteudo:
+            continue
+        tipo_mime = anexo.get("tipo_mime") or "application/octet-stream"
+        maintype, _, subtype = tipo_mime.partition("/")
+        msg.add_attachment(
+            conteudo, maintype=maintype or "application", subtype=subtype or "octet-stream",
+            filename=anexo.get("nome") or "anexo",
+        )
     try:
         with smtplib.SMTP(host, porta, timeout=20) as smtp:
             smtp.starttls()
