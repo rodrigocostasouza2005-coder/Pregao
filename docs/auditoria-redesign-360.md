@@ -20,6 +20,20 @@ Os achados **novos** desta sessão (confirmados por leitura direta do código em
 Os que viraram correção de verdade nesta sessão estão marcados **[IMPLEMENTADO]**
 com o commit correspondente.
 
+**Nota sobre trabalho concorrente:** este repositório tem múltiplas sessões
+Claude trabalhando em paralelo (confirmado por `.claude/worktrees/` e por
+commits novos aparecendo em `origin/main` durante esta própria auditoria). Uma
+dessas sessões reescreveu `data/morning_call_editorial.py` e
+`jobs/morning_call_pdf.py` quase por completo (PDF "redesenhado como jornal
+econômico", 8 commits, fontes próprias embutidas em `assets/fonts/`) **durante
+o tempo em que esta auditoria estava em andamento**. O achado P0 original desta
+auditoria (tag FATO aplicada a resumo de IA) foi corrigido por mim primeiro,
+mas a reescrita concorrente superou essa correção com um mecanismo mais
+rigoroso (ver seção 5.B) — resolvido fazendo merge de `origin/main` nesta
+branch e descartando meu patch pontual em favor da versão mais nova e mais
+completa. Isso é esperado e tratado como parte normal do processo, não como
+erro — registrado aqui por transparência.
+
 ---
 
 ## 1. Inventário real (matriz de cobertura)
@@ -54,9 +68,11 @@ abas em toda rerun. 11 seções visíveis ao usuário comum + 2 restritas a admi
 `jobs/morning_call.py` + `jobs/morning_call_pdf.py` + `data/morning_call_editorial.py`
 (briefing diário por e-mail/PDF), `jobs/radar_quedas.py` (worker do Radar).
 
-**Testes:** 49 arquivos, 776 testes (baseline desta sessão, depois dos
-testes novos — ver seção 9), todos via `pytest`, sem Playwright/browser real
-no CI (ver seção 12, limitações).
+**Testes:** 881 testes passando no estado final desta branch (depois do merge
+com o trabalho concorrente de `origin/main` — baseline era 776 antes do merge,
+681 no início desta sessão, antes mesmo dos 2 commits de teste novos desta
+auditoria), todos via `pytest`, sem Playwright/browser real no CI (ver
+seção 12, limitações).
 
 ---
 
@@ -190,26 +206,47 @@ na seção 5.C do briefing original.
   na tela) — mesmo padrão de risco do achado P0 corrigido no Morning Call (ver
   seção 7).
 
-### B. Morning Call — achado P0 confirmado e corrigido
+### B. Morning Call — achado P0 confirmado, corrigido, depois superado por reescrita concorrente mais rigorosa
 
-**[IMPLEMENTADO]** commit `ba0f620`. `data/morning_call_editorial.py:_cards_empresas`
-aplicava a tag `FATO` ao card inteiro mesmo quando `resumo` (texto sintetizado
-por IA via `data/news.py:obter_resumos_prontos`) substituía o título literal no
-PDF — confirmado lendo `jobs/morning_call_pdf.py:588-590`
-(`texto = card.get("resumo") or card.get("titulo")`, mas a tag chip desenhada
-era sempre a de `card.get("tag")`, que ficava `FATO`). Um briefing diário real,
-por e-mail e PDF, rotulando síntese de IA como fato apurado — exatamente a
-mistura que a missão original do módulo (ver docstring) diz que nunca pode
-acontecer.
+**[IMPLEMENTADO, depois substituído — ver nota de trabalho concorrente no topo
+do documento]**. No estado do código no início desta auditoria,
+`data/morning_call_editorial.py:_cards_empresas` aplicava a tag `FATO` ao card
+inteiro mesmo quando `resumo` (texto sintetizado por IA via
+`data/news.py:obter_resumos_prontos`) substituía o título literal no PDF —
+confirmado lendo `jobs/morning_call_pdf.py` na época (`texto = card.get("resumo")
+or card.get("titulo")`, mas a tag chip desenhada era sempre `FATO`). Um
+briefing diário real, por e-mail e PDF, rotulando síntese de IA como fato
+apurado — exatamente a mistura que a missão original do módulo (ver docstring)
+diz que nunca pode acontecer. Corrigi isso no commit `ba0f620` (nova tag
+`SÍNTESE`, 2 testes novos).
 
-Corrigido com nova tag `SÍNTESE` (cor própria no PDF, nota de limitações
-atualizada), aplicada só quando `resumo` existe; card sem resumo continua
-`FATO` normalmente. 2 testes novos (`tests/test_morning_call_editorial.py`)
-cobrindo os dois casos.
+**Enquanto esta auditoria estava em andamento**, uma sessão concorrente
+reescreveu o módulo quase por completo (PDF "redesenhado como jornal
+econômico" — 8 commits em `origin/main`, incluindo tipografia própria embutida
+em `assets/fonts/`). A nova versão de `_item_fato` (`data/morning_call_editorial.py`)
+resolve o mesmo problema de raiz de um jeito mais rigoroso que o meu patch:
+separa o texto do modelo em duas partes via `separar_secoes_resumo` — bloco
+RESUMO (síntese ancorada nas fontes) e bloco LEITURA DE MERCADO (interpretação/
+opinião do modelo) — e **descarta a LEITURA DE MERCADO inteira**, nunca
+publicada em lugar nenhum do jornal; só o bloco RESUMO (ainda ancorado em
+fonte identificada) chega ao PDF, sob a tag `FATO`. É uma decisão editorial
+documentada (`data/morning_call_editorial.py`, docstring de `_item_fato`:
+"o PDF publica fato com fonte, não opinião gerada"), não um descuido — mais
+forte que relabelar com uma tag nova, porque remove a opinião do modelo em vez
+de só identificá-la.
 
-O e-mail em texto simples (`jobs/morning_call.py`) **não tem esse bug** — a
-seção EMPRESAS E SETORES ali é só lista de manchetes, sem campo `resumo`
-anexado (pipeline totalmente separado do PDF).
+Ao fazer merge de `origin/main` nesta branch, descartei meu patch pontual
+(`TAG_SINTESE`) em favor dessa versão mais nova e mais completa — manter os
+dois juntos não faria sentido (a função `_cards_empresas` que meu patch
+alterava nem existe mais; virou `_item_fato`, com assinatura e comportamento
+diferentes). Os 2 testes que eu tinha escrito pra `TAG_SINTESE`/`_cards_empresas`
+foram removidos (testavam uma função que não existe mais); a nova versão trouxe
+sua própria cobertura de teste para `_item_fato`/`separar_secoes_resumo`.
+
+**Resultado líquido:** o achado P0 original está corrigido em `main` — só não
+pela minha correção especificamente, e sim por uma mais completa que chegou
+em paralelo. Commit `ba0f620` continua no histórico desta branch por
+transparência, mas seu efeito foi substituído pelo merge em `e451dda`.
 
 ### C. SAÚDE DOS DADOS — referência de honestidade, não achado
 
@@ -386,7 +423,7 @@ leitura de todos os arquivos de UI — os únicos símbolos usados são `●`/`�
 | VISÃO GERAL | Ticker da watchlist clicável (P1) + bug de mobile corrigido | — |
 | RADAR | — (já redesenhado antes desta auditoria) | `.rq-ticker` sem destino (P1) |
 | Header global | Atalho CTRL K real (P2) | Tabela comparativa de EQUITY com ticker clicável *na própria aba* (P2) |
-| Morning Call (PDF/e-mail) | Tag FATO incorreta em resumo de IA (P0) | — |
+| Morning Call (PDF/e-mail) | Tag FATO incorreta em resumo de IA (P0) — corrigida por mim, depois superada por reescrita concorrente mais rigorosa do mesmo problema (ver seção 5.B) | — |
 | RESEARCH | — | Vigente vs. antigo sem diferenciação visual (P1); 2 padrões de interação no mesmo feed (P2); tipografia ad-hoc (P2) |
 | CVM | — | Resumo de IA sem rótulo visual (P2) |
 | NEWS | — | Link "↗ abrir" perto demais do botão-título em mobile (P2); 2 estilos de card coexistindo (P2) |
@@ -401,7 +438,7 @@ leitura de todos os arquivos de UI — os únicos símbolos usados são `●`/`�
 
 | # | Achado | Prioridade | Esforço | Risco de implementar | Status |
 |---|---|---|---|---|---|
-| 1 | Morning Call: síntese de IA rotulada como FATO | **P0** | Baixo | Baixo (isolado, testado) | **Feito** |
+| 1 | Morning Call: síntese de IA rotulada como FATO | **P0** | Baixo | Baixo (isolado, testado) | **Feito** (corrigido por mim, `ba0f620`; depois superado por reescrita concorrente mais rigorosa do mesmo problema — resultado líquido em `main` continua corrigido, ver seção 5.B) |
 | 2 | Watchlist (VISÃO GERAL): ticker sem destino | **P1** | Baixo | Baixo (isolado, testado, validado visualmente) | **Feito** |
 | 3 | CTRL K decorativo, sem atalho real | P2 | Baixo | Baixo (validado com Playwright antes de integrar) | **Feito** |
 | 4 | Radar: `.rq-ticker` sem destino nas tabelas densas | P1 | Médio | Médio (componente redesenhado horas antes; densidade em jogo) | Documentado |
