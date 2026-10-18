@@ -16,8 +16,10 @@ from data.eventos import (
     calcular_calendario_cacheado,
 )
 from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta
-from data.morning_call_editorial import montar_edicao
-from data.news import obter_top_mercado_tudo
+from data.morning_call_editorial import (
+    _macro_rows, _referencia_cotacao, filtrar_noticias, montar_edicao, nota_sessao,
+)
+from data.news import obter_top_mercado, obter_top_mercado_internacional
 from data.prices import obter_cotacao_indice
 from data.supabase_client import obter_cliente
 from data.user_prefs import listar_assinantes_morning_call
@@ -73,9 +75,12 @@ def _obter_cotacao_fmt(titulo, ticker):
         erro = cot.get("erro", "sem dado") if isinstance(cot, dict) else "sem dado"
         return cot, f"- {titulo}: indisponível ({erro})"
     variacao = cot.get("variacao_pct")
-    barra = cot.get("_barra_em") or "barra indisponível"
-    coleta = cot.get("_coletado_em") or "coleta indisponível"
-    linha = f"- {titulo}: {_fmt_num(cot.get('preco'))}; variação da última barra: {_fmt_num(variacao)}%; barra: {barra}; coleta: {coleta}"
+    # mesma referência do PDF (data/morning_call_editorial.py): horário do
+    # último negócio em Brasília ou "fech. dd/mm" - antes saía o índice cru
+    # da barra diária ("2026-10-16T00:00:00-04:00"), meia-noite do fuso da bolsa
+    referencia, _sessao = _referencia_cotacao(cot)
+    linha = (f"- {titulo}: {_fmt_num(cot.get('preco'))}; variação sobre o fechamento anterior: "
+             f"{_fmt_num(variacao)}%; referência: {referencia or 'indisponível'}")
     return cot, linha
 
 
@@ -94,7 +99,39 @@ def _bullet_variacao(nome, cot):
         direcao = "queda"
     else:
         direcao = "estável"
-    return f"- {nome}: {direcao} de {_fmt_num(abs(variacao))}% na última barra disponível."
+    return f"- {nome}: {direcao} de {_fmt_num(abs(variacao))}% na última sessão disponível."
+
+
+def _noticias_por_regiao():
+    """Pools Brasil e internacional coletados SEPARADOS (mesmas funções das
+    abas BRASIL/INTERNACIONAL do app) - o ranking combinado
+    (obter_top_mercado_tudo) cortava o top 20 de BR+INT juntos, e num dia
+    de muito noticiário no Brasil a seção EXTERIOR saía vazia (edição de
+    18/10/2026). Uma região que falha vira um marcador de erro na lista;
+    as duas falhando, lança exceção (seção diz que a coleta falhou)."""
+    itens, erros = [], 0
+    for regiao, fn in (("BR", obter_top_mercado), ("INT", obter_top_mercado_internacional)):
+        try:
+            resultado = fn()
+        except Exception as exc:
+            resultado, motivo = None, f"{type(exc).__name__}: {exc}"
+        else:
+            motivo = "coleta do Google News falhou nesta execução"
+        if resultado is None:
+            erros += 1
+            itens.append({"_erro_regiao": regiao, "erro": motivo})
+        else:
+            itens += [{**i, "regiao": i.get("regiao") or regiao} for i in resultado]
+    if erros == 2:
+        raise RuntimeError("coleta do Google News falhou para Brasil e exterior")
+    return itens
+
+
+def _marca_erro(item, erros):
+    if "_erro_regiao" in item:
+        erros[item["_erro_regiao"]] = item.get("erro")
+        return True
+    return False
 
 
 def _linhas_noticias(itens, limite):
@@ -195,6 +232,12 @@ def montar_morning_call(agora=None):
         "1. RESUMO EXECUTIVO",
         _bullet_variacao("Ibovespa", cot_ibov),
         _bullet_variacao("Dólar (USD/BRL)", cot_dolar),
+    ]
+    sessao = nota_sessao([{"sessao": _referencia_cotacao(c)[1]} for c in (cot_ibov, cot_dolar)
+                          if isinstance(c, dict) and not c.get("erro")], agora)
+    if sessao:
+        linhas.append(f"- {sessao}")
+    linhas += [
         "- Detalhamento completo de mercados, macro, agenda, notícias e riscos nas seções "
         "abaixo; nenhum número deste resumo substitui a conferência na fonte original.",
         "",
@@ -202,56 +245,32 @@ def montar_morning_call(agora=None):
         linha_ibov,
         linha_dolar,
     ]
-    for nome, fn in (("Selic", obter_selic_meta), ("CDI", obter_cdi),
-                     ("Focus IPCA", obter_focus_ipca), ("Focus Selic", obter_focus_selic)):
-        try:
-            dado = fn()
-            if isinstance(dado, pd.DataFrame) and not dado.empty:
-                # Selic/CDI sao series por "data"; Focus e' 1 linha por ano de
-                # referencia ("ano_referencia", sem coluna "data") - bug real
-                # corrigido (2026-10-15): o codigo so conhecia a coluna "data",
-                # entao toda linha de Focus caia no fallback "data não
-                # informada" truncado em 10 chars ("data não i") e
-                # ano_referencia/numero_respondentes apareciam formatados como
-                # dinheiro (ex: "2.026,00" em vez de "2026").
-                coluna_rotulo = "data" if "data" in dado.columns else (
-                    "ano_referencia" if "ano_referencia" in dado.columns else None
-                )
-                colunas_inteiras = {"ano_referencia", "numero_respondentes"}
-                colunas_valor = [col for col in dado.columns if col != coluna_rotulo]
-                amostra = dado.tail(3)
-                for _, registro in amostra.iterrows():
-                    bruto_rotulo = registro.get(coluna_rotulo) if coluna_rotulo else None
-                    data_reg = (
-                        f"{int(bruto_rotulo)}" if coluna_rotulo == "ano_referencia" and pd.notna(bruto_rotulo)
-                        else str(bruto_rotulo)[:10] if pd.notna(bruto_rotulo) else "data não informada"
-                    )
-                    valores = []
-                    for coluna in colunas_valor:
-                        valor = registro.get(coluna)
-                        if not pd.notna(valor):
-                            continue
-                        if coluna in colunas_inteiras:
-                            valores.append(f"{coluna}={int(valor)}")
-                        elif isinstance(valor, (int, float)):
-                            valores.append(f"{coluna}={_fmt_num(valor)}")
-                        else:
-                            valores.append(f"{coluna}={str(valor)[:19]}")
-                    linhas.append(f"- {nome} ({data_reg}): " + (", ".join(valores) if valores else "sem valor estruturado"))
-            else:
-                linhas.append(f"- {nome}: indisponível")
-        except Exception:
-            linhas.append(f"- {nome}: indisponível")
+    # Mesmas linhas normalizadas do PDF (data/morning_call_editorial.py:
+    # _macro_rows) - antes o e-mail listava os nomes crus das colunas
+    # ("mediana_pct=5,22; media_pct=...; numero_respondentes=144") e as 3
+    # linhas do Focus (até o ano corrente + 2). Provedores passados daqui
+    # pra continuar sendo os deste módulo.
+    for linha in _macro_rows(agora, provedores={
+            "selic": obter_selic_meta, "cdi": obter_cdi,
+            "focus_ipca": obter_focus_ipca, "focus_selic": obter_focus_selic}):
+        if linha.get("valor") is None:
+            linhas.append(f"- {linha['indicador']}: indisponível ({linha.get('erro') or 'sem dado'})")
+            continue
+        texto = f"- {linha['indicador']} ({linha['referencia']}): {_fmt_num(linha['valor'])}{linha['unidade']}"
+        if linha.get("detalhe"):
+            texto += f" — mediana de {linha['detalhe']}" if linha["indicador"].startswith("Focus") else f" — {linha['detalhe']}"
+        linhas.append(texto)
 
     # Noticias: mesma coleta (data/news.py), nunca refeita/reclassificada
     # com regra propria - so' separa por regiao/tickers que o coletor ja'
     # calcula (BR com ticker reconhecido -> EMPRESAS E SETORES; BR sem
     # ticker -> macro Brasil; INT -> EXTERIOR).
     noticias_erro = None
+    erros_regiao = {}
     noticias_br_macro, noticias_br_empresa, noticias_intl = [], [], []
     try:
-        noticias = obter_top_mercado_tudo()
-        candidatos = noticias if isinstance(noticias, list) else []
+        candidatos = filtrar_noticias(
+            [i for i in _noticias_por_regiao() if not _marca_erro(i, erros_regiao)], agora)
         for item in candidatos:
             if item.get("regiao") == "BR":
                 (noticias_br_empresa if item.get("tickers") else noticias_br_macro).append(item)
@@ -262,6 +281,8 @@ def montar_morning_call(agora=None):
 
     if noticias_erro:
         linhas.append(f"- Notícias indisponíveis nesta execução ({noticias_erro}).")
+    elif erros_regiao.get("BR"):
+        linhas.append(f"- Notícias do Brasil indisponíveis nesta execução ({erros_regiao['BR']}).")
     elif noticias_br_macro:
         linhas += _linhas_noticias(noticias_br_macro, 8)
     else:
@@ -270,6 +291,8 @@ def montar_morning_call(agora=None):
     linhas += ["", "3. EXTERIOR", linha_sp, linha_nasdaq, linha_ouro, linha_petroleo]
     if noticias_erro:
         linhas.append(f"- Notícias indisponíveis nesta execução ({noticias_erro}).")
+    elif erros_regiao.get("INT"):
+        linhas.append(f"- Notícias internacionais indisponíveis nesta execução ({erros_regiao['INT']}).")
     elif noticias_intl:
         linhas += _linhas_noticias(noticias_intl, 8)
     else:

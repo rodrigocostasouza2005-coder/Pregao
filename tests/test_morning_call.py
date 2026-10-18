@@ -38,7 +38,7 @@ def test_morning_call_independente_sem_news_e_macro():
          patch.object(mc, "obter_cdi", return_value=None), \
          patch.object(mc, "obter_focus_ipca", return_value=None), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
-         patch.object(mc, "obter_top_mercado_tudo", return_value=[]), \
+         patch.object(mc, "_noticias_por_regiao", return_value=[]), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[]):
         texto = mc.montar_morning_call(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
     assert "MORNING CALL" in texto
@@ -64,7 +64,7 @@ def test_resumo_executivo_reporta_direcao_sem_inventar_numero():
          patch.object(mc, "obter_cdi", return_value=None), \
          patch.object(mc, "obter_focus_ipca", return_value=None), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
-         patch.object(mc, "obter_top_mercado_tudo", return_value=[]), \
+         patch.object(mc, "_noticias_por_regiao", return_value=[]), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[]):
         texto = mc.montar_morning_call(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
     assert "Ibovespa: alta de 1,23%" in texto
@@ -77,16 +77,16 @@ def test_noticias_classificadas_por_regiao_e_ticker_em_secoes_separadas():
     fica em EXTERIOR. Nenhuma reclassificação própria, nenhum link
     inventado - o link vem direto do item de data/news.py."""
     noticias = [
-        {"titulo": "PETR4 anuncia dividendo", "link": "https://x/1", "regiao": "BR", "tickers": ["PETR4"]},
-        {"titulo": "Governo anuncia pacote fiscal", "link": "https://x/2", "regiao": "BR", "tickers": []},
-        {"titulo": "Fed sinaliza postura sobre juros", "link": "https://x/3", "regiao": "INT", "tickers": []},
+        {"titulo": "PETR4 anuncia dividendo", "link": "https://x/1", "data": "2026-10-14T06:30:00-03:00", "regiao": "BR", "tickers": ["PETR4"]},
+        {"titulo": "Governo anuncia pacote fiscal", "link": "https://x/2", "data": "2026-10-14T06:30:00-03:00", "regiao": "BR", "tickers": []},
+        {"titulo": "Fed sinaliza postura sobre juros", "link": "https://x/3", "data": "2026-10-14T06:30:00-03:00", "regiao": "INT", "tickers": []},
     ]
     with patch.object(mc, "_obter_cotacao_fmt", side_effect=_COT_INDISPONIVEL), \
          patch.object(mc, "obter_selic_meta", return_value=None), \
          patch.object(mc, "obter_cdi", return_value=None), \
          patch.object(mc, "obter_focus_ipca", return_value=None), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
-         patch.object(mc, "obter_top_mercado_tudo", return_value=noticias), \
+         patch.object(mc, "_noticias_por_regiao", return_value=noticias), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[]):
         texto = mc.montar_morning_call(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
 
@@ -110,8 +110,8 @@ def test_empresas_e_setores_some_fatos_relevantes_quando_sem_noticia_com_ticker(
          patch.object(mc, "obter_cdi", return_value=None), \
          patch.object(mc, "obter_focus_ipca", return_value=None), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
-         patch.object(mc, "obter_top_mercado_tudo", return_value=[
-             {"titulo": "Governo anuncia pacote fiscal", "link": "https://x/2", "regiao": "BR", "tickers": []},
+         patch.object(mc, "_noticias_por_regiao", return_value=[
+             {"titulo": "Governo anuncia pacote fiscal", "link": "https://x/2", "data": "2026-10-14T06:30:00-03:00", "regiao": "BR", "tickers": []},
          ]), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[]):
         texto = mc.montar_morning_call(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
@@ -124,14 +124,14 @@ def test_noticia_duplicada_na_mesma_coleta_nao_repete_na_secao():
     - montar_morning_call nunca deve reintroduzir duplicata ao
     particionar por seção (cada item aparece exatamente 1x no texto)."""
     noticias = [
-        {"titulo": "Fed sinaliza postura sobre juros", "link": "https://x/3", "regiao": "INT", "tickers": []},
+        {"titulo": "Fed sinaliza postura sobre juros", "link": "https://x/3", "data": "2026-10-14T06:30:00-03:00", "regiao": "INT", "tickers": []},
     ]
     with patch.object(mc, "_obter_cotacao_fmt", side_effect=_COT_INDISPONIVEL), \
          patch.object(mc, "obter_selic_meta", return_value=None), \
          patch.object(mc, "obter_cdi", return_value=None), \
          patch.object(mc, "obter_focus_ipca", return_value=None), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
-         patch.object(mc, "obter_top_mercado_tudo", return_value=noticias), \
+         patch.object(mc, "_noticias_por_regiao", return_value=noticias), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[]):
         texto = mc.montar_morning_call(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
     assert texto.count("Fed sinaliza postura sobre juros") == 1
@@ -146,7 +146,7 @@ def test_noticias_indisponiveis_cai_no_fallback_textual_em_todas_as_secoes():
          patch.object(mc, "obter_cdi", return_value=None), \
          patch.object(mc, "obter_focus_ipca", return_value=None), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
-         patch.object(mc, "obter_top_mercado_tudo", side_effect=RuntimeError("Google News fora do ar")), \
+         patch.object(mc, "_noticias_por_regiao", side_effect=RuntimeError("Google News fora do ar")), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[]):
         texto = mc.montar_morning_call(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
     assert texto.count("Notícias indisponíveis nesta execução") == 3
@@ -161,8 +161,8 @@ def test_html_preserva_links_e_estrutura_minima():
          patch.object(mc, "obter_focus_ipca", return_value=None), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[]), \
-         patch.object(mc, "obter_top_mercado_tudo", return_value=[
-             {"titulo": "Manchete X", "link": "https://exemplo.com/a", "regiao": "INT", "tickers": []},
+         patch.object(mc, "_noticias_por_regiao", return_value=[
+             {"titulo": "Manchete X", "link": "https://exemplo.com/a", "data": "2026-10-14T06:30:00-03:00", "regiao": "INT", "tickers": []},
          ]):
         texto = mc.montar_morning_call(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
     corpo_html = mc.montar_morning_call_html(texto)
@@ -195,15 +195,16 @@ def test_focus_usa_ano_referencia_como_rotulo_sem_formatar_como_dinheiro():
          patch.object(mc, "obter_cdi", return_value=None), \
          patch.object(mc, "obter_focus_ipca", return_value=focus_ipca), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
-         patch.object(mc, "obter_top_mercado_tudo", return_value=[]), \
+         patch.object(mc, "_noticias_por_regiao", return_value=[]), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[]):
         texto = mc.montar_morning_call(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
     assert "data não i" not in texto
-    assert "Focus IPCA (2026):" in texto
-    assert "Focus IPCA (2027):" in texto
     assert "2.026,00" not in texto
-    assert "numero_respondentes=144" in texto
-    assert "mediana_pct=5,22" in texto
+    # mesmas linhas normalizadas do PDF: ano no rótulo, data do boletim,
+    # valor com unidade - nunca o nome cru das colunas
+    assert "Focus IPCA 2026 (boletim 09/10/2026): 5,22% — mediana de 144 respondentes" in texto
+    assert "Focus IPCA 2027 (boletim 09/10/2026): 4,30%" in texto
+    assert "numero_respondentes" not in texto and "mediana_pct" not in texto and "media_pct" not in texto
 
 
 # ---------------------------------------------------------------------
@@ -240,7 +241,7 @@ def test_agenda_lista_evento_de_hoje_com_nota_de_prazo_cvm():
          patch.object(mc, "obter_cdi", return_value=None), \
          patch.object(mc, "obter_focus_ipca", return_value=None), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
-         patch.object(mc, "obter_top_mercado_tudo", return_value=[]), \
+         patch.object(mc, "_noticias_por_regiao", return_value=[]), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[evento_hoje]):
         texto = mc.montar_morning_call(agora)
     assert "4. AGENDA DE HOJE" in texto
@@ -261,7 +262,7 @@ def test_agenda_ignora_evento_de_outro_dia():
          patch.object(mc, "obter_cdi", return_value=None), \
          patch.object(mc, "obter_focus_ipca", return_value=None), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
-         patch.object(mc, "obter_top_mercado_tudo", return_value=[]), \
+         patch.object(mc, "_noticias_por_regiao", return_value=[]), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[evento_futuro]):
         texto = mc.montar_morning_call(agora)
     assert "Nenhum evento relevante identificado para hoje." in texto
@@ -275,7 +276,7 @@ def test_agenda_sem_nenhum_evento_diz_isso_explicitamente():
          patch.object(mc, "obter_cdi", return_value=None), \
          patch.object(mc, "obter_focus_ipca", return_value=None), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
-         patch.object(mc, "obter_top_mercado_tudo", return_value=[]), \
+         patch.object(mc, "_noticias_por_regiao", return_value=[]), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[]):
         texto = mc.montar_morning_call(agora)
     assert "4. AGENDA DE HOJE" in texto
@@ -292,7 +293,7 @@ def test_agenda_falha_de_leitura_cai_no_fallback_textual_sem_quebrar_email():
          patch.object(mc, "obter_cdi", return_value=None), \
          patch.object(mc, "obter_focus_ipca", return_value=None), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
-         patch.object(mc, "obter_top_mercado_tudo", return_value=[]), \
+         patch.object(mc, "_noticias_por_regiao", return_value=[]), \
          patch.object(mc, "calcular_calendario_cacheado", side_effect=RuntimeError("CVM fora do ar")):
         texto = mc.montar_morning_call(agora)
     assert "4. AGENDA DE HOJE" in texto
@@ -315,7 +316,7 @@ def test_montar_morning_call_nao_quebra_numa_segunda_feira_apos_fim_de_semana():
          patch.object(mc, "obter_cdi", return_value=None), \
          patch.object(mc, "obter_focus_ipca", return_value=None), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
-         patch.object(mc, "obter_top_mercado_tudo", return_value=[]), \
+         patch.object(mc, "_noticias_por_regiao", return_value=[]), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[]):
         texto = mc.montar_morning_call(segunda)
     assert "19/10/2026" in texto
@@ -336,8 +337,8 @@ def test_gerar_preview_contem_todas_as_secoes_obrigatorias_sem_enviar_email(monk
          patch.object(mc, "obter_cdi", return_value=None), \
          patch.object(mc, "obter_focus_ipca", return_value=None), \
          patch.object(mc, "obter_focus_selic", return_value=None), \
-         patch.object(mc, "obter_top_mercado_tudo", return_value=[
-             {"titulo": "Manchete X", "link": "https://exemplo.com/x", "regiao": "INT", "tickers": []},
+         patch.object(mc, "_noticias_por_regiao", return_value=[
+             {"titulo": "Manchete X", "link": "https://exemplo.com/x", "data": "2026-10-14T06:30:00-03:00", "regiao": "INT", "tickers": []},
          ]), \
          patch.object(mc, "calcular_calendario_cacheado", return_value=[_evento_exemplo(data=agora.date())]), \
          patch.object(mc, "enviar_email", enviar_email_mock):
@@ -835,3 +836,76 @@ def test_sem_radar_no_anexo_o_email_nao_anuncia_radar():
     texto = "PREGÃO\nsub\n\nLIMITAÇÕES\n- y"
     assert mc._com_chamada_radar(texto, None) == texto
     assert mc._com_chamada_radar(texto, {"radar_setores": []}) == texto
+
+
+# ---------------------------------------------------------------------
+# Auditoria 18/10/2026 aplicada ao e-mail em texto (mesmas regras do PDF)
+# ---------------------------------------------------------------------
+
+def _montar_com(**patches):
+    base = dict(_obter_cotacao_fmt=_COT_INDISPONIVEL, obter_selic_meta=None, obter_cdi=None,
+                obter_focus_ipca=None, obter_focus_selic=None, calcular_calendario_cacheado=[])
+    base.update(patches)
+    ctx = []
+    for nome, valor in base.items():
+        kw = {"side_effect": valor} if callable(valor) and nome == "_obter_cotacao_fmt" else {"return_value": valor}
+        ctx.append(patch.object(mc, nome, **kw))
+    for c in ctx:
+        c.start()
+    try:
+        return mc.montar_morning_call(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
+    finally:
+        for c in ctx:
+            c.stop()
+
+
+def test_email_exterior_nao_some_quando_pool_brasil_domina_o_ranking(monkeypatch):
+    brasil = [{"titulo": f"Notícia Brasil {n}", "link": f"https://br/{n}", "tickers": [], "importancia": 90 - n,
+               "data": "2026-10-14T06:30:00-03:00"} for n in range(25)]
+    mundo = [{"titulo": "Wall Street closes higher", "link": "https://int/1", "tickers": [], "importancia": 1,
+              "data": "2026-10-14T06:30:00-03:00"}]
+    monkeypatch.setattr(mc, "obter_top_mercado", lambda *_a: brasil)
+    monkeypatch.setattr(mc, "obter_top_mercado_internacional", lambda *_a: mundo)
+    texto = _montar_com()
+    secao_exterior = texto.split("3. EXTERIOR")[1].split("4. AGENDA")[0]
+    assert "Wall Street closes higher" in secao_exterior
+
+
+def test_email_falha_so_do_pool_internacional_e_dita_na_secao(monkeypatch):
+    monkeypatch.setattr(mc, "obter_top_mercado", lambda *_a: [
+        {"titulo": "Governo anuncia pacote fiscal", "link": "https://x/2", "tickers": [],
+         "data": "2026-10-14T06:30:00-03:00"}])
+    monkeypatch.setattr(mc, "obter_top_mercado_internacional", lambda *_a: None)
+    texto = _montar_com()
+    assert "Notícias internacionais indisponíveis nesta execução" in texto.split("3. EXTERIOR")[1]
+    assert "Governo anuncia pacote fiscal" in texto.split("2. BRASIL")[1].split("3. EXTERIOR")[0]
+
+
+def test_email_noticia_antiga_nao_entra(monkeypatch):
+    monkeypatch.setattr(mc, "obter_top_mercado", lambda *_a: [
+        {"titulo": "Notícia de semana passada", "link": "https://x/9", "tickers": [],
+         "data": "2026-10-06T09:00:00-03:00"}])
+    monkeypatch.setattr(mc, "obter_top_mercado_internacional", lambda *_a: [])
+    assert "Notícia de semana passada" not in _montar_com()
+
+
+def test_email_linha_de_cotacao_usa_referencia_legivel_e_nota_de_sessao(monkeypatch):
+    cot = {"erro": None, "preco": 205430.0, "variacao_pct": 0.54, "_barra_em": "2026-10-16T00:00:00-03:00",
+           "_negocio_em": "2026-10-16T17:18:00-03:00"}
+    monkeypatch.setattr(mc, "obter_cotacao_indice", lambda *_a: dict(cot))
+    monkeypatch.setattr(mc, "_noticias_por_regiao", lambda: [])
+    for nome in ("obter_selic_meta", "obter_cdi", "obter_focus_ipca", "obter_focus_selic"):
+        monkeypatch.setattr(mc, nome, lambda: None)
+    monkeypatch.setattr(mc, "calcular_calendario_cacheado", lambda *_a, **_k: [])
+    texto = mc.montar_morning_call(datetime(2026, 10, 18, 12, tzinfo=TZ_SP))  # domingo
+    assert "referência: 16/10 17:18 (horário de Brasília)" in texto
+    assert "T00:00:00" not in texto
+    resumo = texto.split("1. RESUMO EXECUTIVO")[1].split("2. BRASIL")[0]
+    assert "última sessão disponível (sexta-feira, 16/10)" in resumo
+    assert "não há pregão no fim de semana" in resumo
+
+
+def test_email_selic_indisponivel_diz_indisponivel_sem_inventar_valor():
+    texto = _montar_com(_noticias_por_regiao=[], obter_selic_meta=None)
+    assert "- Selic meta: indisponível (" in texto
+    assert "selic_meta_pct" not in texto
