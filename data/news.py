@@ -1231,6 +1231,12 @@ _PROMPT_SISTEMA_RESUMO = (
     "- Nunca apresente uma causa->consequência entre dois fatos que a "
     "fonte não conectou explicitamente, nunca atribua uma expectativa/"
     "consenso de mercado que a fonte não cite.\n"
+    "- O Título informado já é um fato estabelecido (ex: direção do "
+    "pregão - alta/queda - e percentual, quando o título trouxer isso): "
+    "seu resumo NUNCA pode contradizer essa direção/percentual. Se o "
+    "texto extraído parecer divergir do título, isso é sinal de que o "
+    "texto é sobre OUTRO fato/dia/ativo - nesse caso, responda "
+    "exatamente SEM_CONTEUDO em vez de inventar uma reconciliação.\n"
     f"- NUNCA use frases genéricas de preenchimento, como {_FRASES_PROIBIDAS_RESUMO}.\n\n"
     f"REGRAS DO BLOCO {_MARCADOR_LEITURA}\n"
     "- Só escreva este bloco se houver base real no texto pra discutir "
@@ -1263,7 +1269,11 @@ _PROMPT_SISTEMA_RESUMO_MANCHETES = (
     "Como só tem as manchetes (não o texto completo), vá direto ao que "
     "elas revelam (o que aconteceu, e contexto/impacto SE alguma manchete "
     "der essa informação) - nunca invente número, data ou fato que não "
-    "esteja nelas. Uma reação de mercado só conta se alguma manchete "
+    "esteja nelas. O Título informado é um fato estabelecido (direção do "
+    "pregão e percentual, quando trouxer isso) - seu resumo NUNCA pode "
+    "contradizer essa direção/percentual; se as manchetes parecerem "
+    "divergir dele, prefira SEM_CONTEUDO a inventar uma reconciliação. "
+    "Uma reação de mercado só conta se alguma manchete "
     "relatar como já acontecida (nunca sua previsão); um próximo passo só "
     "conta se alguma manchete citar um evento futuro explícito. Nunca "
     "conecte duas manchetes com uma relação de causa->consequência que "
@@ -1905,6 +1915,239 @@ def _resumo_e_generico(resumo: str, titulo: str) -> bool:
     return False
 
 
+# --- Gate de consistencia: contradicao manchete vs resumo (ABA 5, --------
+# auditoria 2026-10-17) -----------------------------------------------------
+# achado real em producao: manchete "IBOVESPA fecha hoje com alta de 0,54%"
+# com RESUMO afirmando queda, e atribuindo o movimento a pesquisas
+# eleitorais/Fed/petroleo sem nenhuma base no texto/manchetes de origem.
+# O prompt (_PROMPT_SISTEMA_RESUMO) ja' proibia as duas coisas, mas nenhum
+# gate automatico verificava - exatamente o mesmo problema que motivou
+# _resumo_e_generico (Groq free tier ocasionalmente ignora regra de prompt
+# sob texto-fonte pobre, ver comentario ali). Os dois gates abaixo seguem
+# o MESMO contrato: deteccao conservadora por regras (nunca por IA), e
+# quem chama (_gerar_resumo_grupo) trata reprovacao exatamente como uma
+# falha desta fonte/caminho - tenta o proximo fallback, nunca cacheia
+# nem devolve como sucesso.
+_TERMOS_ALTA_MERCADO = (
+    "alta", "sobe", "subiu", "sobem", "avanca", "avancou", "dispara",
+    "disparou", "valoriza", "valorizou", "ganha", "ganhou", "recupera",
+    "recuperou", "salta", "saltou", "dispara",
+)
+_TERMOS_QUEDA_MERCADO = (
+    "queda", "cai", "caiu", "caem", "recua", "recuou", "desaba", "desabou",
+    "despenca", "despencou", "perde", "perdeu", "deprecia", "depreciou",
+    "tomba", "tombou", "derrete", "derreteu", "afunda", "afundou",
+)
+
+_RE_PERCENTUAL = re.compile(r"(\d{1,3}(?:[.,]\d{1,2})?)\s*%")
+_TOLERANCIA_PERCENTUAL = 0.1  # diferenca de arredondamento entre fontes (ex: 0,54% vs 0,5%)
+
+
+# "baixa" (substantivo comum em manchete de mercado, ex: "fecha em baixa
+# de 1,2%") nao entra em _TERMOS_QUEDA_MERCADO como substring solta - a
+# mesma palavra tambem aparece em contextos SEM NADA a ver com direcao
+# ("baixa liquidez", "baixa volatilidade", "baixa renda"), o que causaria
+# falso positivo de queda num resumo so' comentando liquidez/volatilidade.
+# So' conta como sinal de queda quando vem seguida de "de" + numero (o
+# padrao real de manchete de fechamento, ex: "baixa de 1,2%") - casos
+# ambiguos (sem o numero logo depois) NUNCA contam, mesmo espirito
+# conservador do resto deste gate.
+_RE_BAIXA_DIRECAO = re.compile(r"\bbaixa\s+de\s*\d")
+
+
+def _direcao_mercado(texto: str) -> str | None:
+    """'alta'/'queda'/None a partir de termos literais de direcao de
+    mercado (ver _TERMOS_ALTA_MERCADO/_TERMOS_QUEDA_MERCADO, mais o padrao
+    "baixa de <numero>" - ver _RE_BAIXA_DIRECAO). Texto citando as DUAS
+    direcoes (ex: comparando ativos diferentes dentro do mesmo paragrafo)
+    devolve None de proposito - so' sinaliza contradicao quando cada lado
+    (titulo x resumo) tem um sinal INEQUIVOCO, nunca por uma leitura
+    ambigua."""
+    t = _sem_acento(texto or "")
+    tem_alta = any(termo in t for termo in _TERMOS_ALTA_MERCADO)
+    tem_queda = any(termo in t for termo in _TERMOS_QUEDA_MERCADO) or bool(_RE_BAIXA_DIRECAO.search(t))
+    if tem_alta and not tem_queda:
+        return "alta"
+    if tem_queda and not tem_alta:
+        return "queda"
+    return None
+
+
+# nome proprio (capitalizado, 3+ letras) - usado so' pra decidir se um
+# percentual do RESUMO esta' textualmente atribuido a uma empresa/ativo
+# diferente do titulo (ver _percentuais_atribuiveis) - deteccao bem
+# simples (sem lista de empresas, sem NER) de proposito: o objetivo nao e'
+# reconhecer QUAL empresa e', so' ter um sinal razoavel de "este numero e'
+# sobre outra coisa, nao sobre o fato do titulo".
+_RE_NOME_PROPRIO = re.compile(r"\b[A-ZÀ-ÚÇ][a-zà-úç]{2,}\b")
+_JANELA_ATRIBUICAO_PERCENTUAL = 40  # caracteres antes do "%" onde procurar o nome proprio
+
+
+def _percentuais(texto: str) -> set:
+    """Conjunto de percentuais citados (float, 2 casas) - usado so' pra
+    comparar titulo vs resumo, nunca pra validar o valor contra uma fonte
+    de cotacao independente (nao temos uma aqui)."""
+    valores = set()
+    for m in _RE_PERCENTUAL.finditer(texto or ""):
+        try:
+            valores.add(round(float(m.group(1).replace(",", ".")), 2))
+        except ValueError:
+            continue
+    return valores
+
+
+def _percentuais_atribuiveis(titulo: str, texto: str) -> set:
+    """Percentuais do TEXTO que NAO estao atribuidos, pela proximidade
+    textual, a um nome proprio AUSENTE do titulo (ex: titulo sobre o
+    Ibovespa, resumo citando "...impulsionado pela Vale, que subiu 2,1%
+    com a alta do minerio..." - achado real desta revisao: esse 2,1% e'
+    sobre a Vale, uma empresa citada como destaque dentro de uma materia
+    de fechamento do indice, NUNCA deveria ser comparado ao percentual do
+    titulo do INDICE. Sem isso, qualquer resumo de fechamento que cite o
+    desempenho de uma acao que puxou o pregao (padrao editorial comum,
+    nao um erro) seria rejeitado como "contradicao" por engano - o
+    problema nao e' o numero estar errado, e' ele ser sobre OUTRO ativo.
+    Deteccao conservadora: so' exclui quando ha' um nome proprio na janela
+    curta ANTES do numero que nao aparece no titulo - titulo vazio (so'
+    usado nunca, titulo sempre existe aqui) ou sem nome proprio nenhum na
+    janela devolve o percentual normalmente (nunca exclui sem motivo)."""
+    nomes_titulo = set(_RE_NOME_PROPRIO.findall(titulo or ""))
+    valores = set()
+    for m in _RE_PERCENTUAL.finditer(texto or ""):
+        janela = texto[max(0, m.start() - _JANELA_ATRIBUICAO_PERCENTUAL): m.start()]
+        nomes_janela = set(_RE_NOME_PROPRIO.findall(janela)) - nomes_titulo
+        if nomes_janela:
+            continue
+        try:
+            valores.add(round(float(m.group(1).replace(",", ".")), 2))
+        except ValueError:
+            continue
+    return valores
+
+
+def _percentuais_conflitam(a: set, b: set) -> bool:
+    if not a or not b:
+        return False
+    return not any(abs(x - y) <= _TOLERANCIA_PERCENTUAL for x in a for y in b)
+
+
+def _contradicao_titulo_resumo(titulo: str, corpo_resumo: str) -> str | None:
+    """Descricao da contradicao entre o TITULO do grupo e o CORPO do
+    resumo (bloco RESUMO, sem LEITURA DE MERCADO - essa secao PODE ser
+    interpretacao analitica, ver _PROMPT_SISTEMA_RESUMO), ou None se nao
+    houver contradicao detectavel. So' sinaliza quando ha' sinal
+    inequivoco e DIFERENTE dos dois lados (direcao de mercado ou
+    percentual) - qualquer ambiguidade deixa passar, nunca bloqueia sem
+    uma contradicao clara (mesmo espirito conservador de _resumo_e_generico).
+
+    O percentual do RESUMO passa por _percentuais_atribuiveis (nao
+    _percentuais puro) - um numero claramente atribuido a outra empresa/
+    ativo (ver docstring de _percentuais_atribuiveis) nunca conta como
+    contradicao do percentual do indice/fato do titulo."""
+    direcao_titulo = _direcao_mercado(titulo)
+    direcao_resumo = _direcao_mercado(corpo_resumo)
+    if direcao_titulo and direcao_resumo and direcao_titulo != direcao_resumo:
+        return f"manchete indica '{direcao_titulo}' mas o resumo gerado indica '{direcao_resumo}'"
+
+    percentuais_titulo = _percentuais(titulo)
+    percentuais_resumo = _percentuais_atribuiveis(titulo, corpo_resumo)
+    if _percentuais_conflitam(percentuais_titulo, percentuais_resumo):
+        return (
+            f"percentual da manchete ({', '.join(f'{v:g}' for v in sorted(percentuais_titulo))}%) "
+            f"nao bate com o percentual do resumo ({', '.join(f'{v:g}' for v in sorted(percentuais_resumo))}%)"
+        )
+    return None
+
+
+# conectores que introduzem uma relacao causa->consequencia explicita -
+# clausula que usa um destes PRECISA ter pelo menos 1 palavra de conteudo
+# em comum com o texto-base (texto extraido OU manchetes, ver
+# _gerar_resumo_grupo), senao e' causalidade que so' a IA conectou, nao a
+# fonte (secao 4B/4C do pedido - "nunca atribua causalidade sem evidencia").
+_CONECTORES_CAUSAIS = (
+    "por causa de", "por causa do", "por causa da", "por causa dos", "por causa das",
+    "por conta de", "por conta do", "por conta da", "por conta dos", "por conta das",
+    "devido a", "devido ao", "devido as", "devido aos",
+    "em meio a", "em meio ao", "em meio as", "em meio aos",
+    "impulsionado por", "impulsionada por", "motivado por", "motivada por",
+    "na esteira de", "diante de", "em resposta a", "em resposta ao", "em resposta as",
+    "puxado por", "puxada por", "pressionado por", "pressionada por",
+    "influenciado por", "influenciada por",
+)
+
+# palavras genericas demais pra servir de "evidencia" de base (alem das
+# _STOPWORDS ja' filtradas por _tokens_similaridade) - sem isso, qualquer
+# clausula causal que so' mencione "mercado"/"sessao"/"dia" passaria o
+# gate mesmo sem nenhum termo de conteudo real em comum com a fonte.
+_PALAVRAS_GENERICAS_CAUSAL = {
+    "mercado", "mercados", "sessao", "dia", "dias", "semana", "hoje",
+    "ontem", "pregao", "movimento", "movimentos", "cenario", "investidores",
+}
+
+
+def _clausulas_causais(corpo: str) -> list:
+    """Trecho causal de cada sentenca do CORPO do resumo que usa um
+    conector causal explicito (ver _CONECTORES_CAUSAIS) - SO' a partir do
+    conector em diante (a justificativa em si), nunca a sentenca inteira:
+    o sujeito/verbo ANTES do conector quase sempre tem base no texto (e'
+    o fato principal, normalmente já' extraido dali), e incluir essas
+    palavras na checagem de evidencia mascararia uma causa inventada
+    colada no final de uma frase por outro lado bem fundamentada (achado
+    real ao escrever o teste desta auditoria: 'A Petrobras anunciou X **em
+    meio a pesquisas eleitorais**' tem base de sobra pra 'Petrobras'/'X',
+    mas NENHUMA pra 'pesquisas eleitorais' - e' exatamente essa 2a parte
+    que precisa ser avaliada isoladamente)."""
+    sentencas = re.split(r"(?<=[.!?])\s+", corpo or "")
+    achadas = []
+    for s in sentencas:
+        if not s.strip():
+            continue
+        norm = _sem_acento(s)
+        posicoes = (norm.find(c) for c in _CONECTORES_CAUSAIS)
+        pos = min((p for p in posicoes if p != -1), default=-1)
+        if pos != -1:
+            achadas.append(s[pos:])
+    return achadas
+
+
+def _causalidade_sem_evidencia(corpo_resumo: str, texto_base: str) -> str | None:
+    """Descricao da PRIMEIRA clausula causal do resumo sem NENHUMA palavra
+    de conteudo em comum com o texto_base (texto extraido da materia ou
+    manchetes das fontes, dependendo do caminho de geracao - ver
+    _gerar_resumo_grupo), ou None se todas as clausulas causais tiverem
+    base. So' sinaliza quando a clausula tem pelo menos 2 palavras de
+    conteudo (depois de remover stopwords/termos genericos) e ZERO
+    sobreposicao com a base - clausula muito curta pra avaliar com
+    confianca (so' 1 palavra de conteudo) deixa passar, nunca bloqueia
+    por uma diferenca de redacao/sinonimo."""
+    clausulas = _clausulas_causais(corpo_resumo)
+    if not clausulas:
+        return None
+    tokens_base = _tokens_similaridade(texto_base or "", "")
+    for clausula in clausulas:
+        tokens_clausula = _tokens_similaridade(clausula, "") - _PALAVRAS_GENERICAS_CAUSAL
+        if len(tokens_clausula) >= 2 and not (tokens_clausula & tokens_base):
+            return f"trecho causal sem base no texto/manchetes de origem: \"{clausula.strip()}\""
+    return None
+
+
+def _validar_consistencia(resumo: str, titulo: str, texto_base: str) -> str | None:
+    """Motivo de reprovacao do resumo (contradicao de direcao/percentual OU
+    causalidade sem evidencia), ou None se passou nos dois gates. So' olha
+    o bloco RESUMO (corpo) - a LEITURA DE MERCADO pode ser interpretacao
+    analitica por natureza (ver _PROMPT_SISTEMA_RESUMO), entao nao passa
+    por este gate. Usado 3x em _gerar_resumo_grupo (texto completo de 1
+    fonte / fragmentos combinados / so'-manchetes), cada vez com o
+    texto_base apropriado a' evidencia realmente disponivel naquele
+    caminho."""
+    paragrafos, _leitura = separar_secoes_resumo(resumo)
+    corpo = " ".join(paragrafos)
+    motivo = _contradicao_titulo_resumo(titulo, corpo)
+    if motivo:
+        return motivo
+    return _causalidade_sem_evidencia(corpo, texto_base)
+
+
 def _combinar_fragmentos(fragmentos: list, titulos_unicos: tuple) -> str:
     """Junta pedaços curtos de texto de fontes diferentes do grupo (cada
     um curto demais sozinho pra resumir, ver _MIN_CHARS_TEXTO) com as
@@ -1966,7 +2209,20 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
     que a imagem escolhida realmente responde como foto antes de
     devolver/cachear - default False preserva o comportamento de sempre
     (zero requisicao de rede extra) pro caminho sob-demanda (clique no
-    card abre o modal)."""
+    card abre o modal).
+
+    qualidade_texto (ABA 5, 2026-10-17): classifica a evidencia real por
+    tras do resumo devolvido - "full_text" (texto integral de 1 fonte),
+    "partial_text" (fragmentos curtos combinados de varias fontes),
+    "snippet_only" (so' manchetes, nenhum texto baixado) ou
+    "extraction_failed" (nenhum resumo). Toda vez que o resumo passa
+    (gate _resumo_e_generico) tambem passa por _validar_consistencia
+    (contradicao de direcao/percentual entre titulo e resumo, e
+    causalidade atribuida sem base no texto/manchetes de origem) - reprovado
+    ai' e' tratado EXATAMENTE como uma falha desta fonte/caminho (nunca
+    cacheado, tenta o proximo fallback); se todos os caminhos reprovarem,
+    a funcao desiste honestamente (resumo=None) em vez de publicar uma
+    sintese que contradiz o proprio titulo do grupo."""
     # qual modelo Groq de fato gera o resumo - usado so' como metadado de
     # auditoria/debug na coluna "modelo" do cache global (data/ia_cache.py:
     # resumos_ia_cache); diferente do research, o NEWS nao tem fallback de
@@ -1997,10 +2253,21 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
             ultimo_motivo = "resumo gerado era genérico/sem informação específica (descartado)"
             resumo = None
         if resumo:
+            motivo_inconsistencia = _validar_consistencia(resumo, titulo, texto)
+            if motivo_inconsistencia:
+                # resumo contradiz o titulo (direcao/percentual) ou atribui
+                # causalidade que a propria fonte nao afirma - mesmo
+                # tratamento do gate generico acima: nunca cacheia, tenta a
+                # proxima fonte do grupo (ver Caso 3 do pedido - "tentar
+                # resolver por meio de fontes verificaveis antes de desistir").
+                ultimo_motivo = f"resumo gerado é inconsistente com a fonte ({motivo_inconsistencia}) — descartado"
+                resumo = None
+        if resumo:
             if validar_imagem and imagem and not _url_imagem_utilizavel(imagem):
                 imagem = None
             return {"resumo": resumo, "link_original": link_real, "imagem": imagem,
-                    "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": False}
+                    "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": False,
+                    "qualidade_texto": "full_text"}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
             # falha do Groq em si (cota/config), nao da fonte - tentar as
             # proximas fontes do grupo so repetiria o mesmo erro a toa
@@ -2022,25 +2289,39 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
             ultimo_motivo = "resumo gerado era genérico/sem informação específica (descartado)"
             resumo = None
         if resumo:
+            motivo_inconsistencia = _validar_consistencia(resumo, titulo, texto_combinado)
+            if motivo_inconsistencia:
+                ultimo_motivo = f"resumo gerado é inconsistente com a fonte ({motivo_inconsistencia}) — descartado"
+                resumo = None
+        if resumo:
             return {"resumo": resumo, "link_original": None, "imagem": None,
-                    "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": True}
+                    "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": True,
+                    "qualidade_texto": "partial_text"}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
             return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": motivo_groq}
         ultimo_motivo = motivo_groq or ultimo_motivo
 
     if len(titulos_unicos) >= 2:
+        manchetes_base = "\n".join(titulos_unicos)
         resumo, motivo_groq = _resumir_das_manchetes(titulo, titulos_unicos)
         if resumo and _resumo_e_generico(resumo, titulo):
             ultimo_motivo = "resumo gerado era genérico/sem informação específica (descartado)"
             resumo = None
         if resumo:
+            motivo_inconsistencia = _validar_consistencia(resumo, titulo, manchetes_base)
+            if motivo_inconsistencia:
+                ultimo_motivo = f"resumo gerado é inconsistente com a fonte ({motivo_inconsistencia}) — descartado"
+                resumo = None
+        if resumo:
             return {"resumo": resumo, "link_original": None, "imagem": None,
-                    "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": True}
+                    "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": True,
+                    "qualidade_texto": "snippet_only"}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
             return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": motivo_groq}
         ultimo_motivo = motivo_groq or ultimo_motivo
 
-    return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": ultimo_motivo}
+    return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": ultimo_motivo,
+            "qualidade_texto": "extraction_failed"}
 
 
 def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (), validar_imagem: bool = False) -> dict:
