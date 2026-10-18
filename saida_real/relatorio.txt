@@ -1,0 +1,6 @@
+{"indicador": "Selic meta", "valor": 13.75, "unidade": "% a.a.", "referencia": "vigente desde 17/09/2026", "detalhe": "fonte: 281ª reunião do Copom, histórico oficial em bcb.gov.br (SGS indisponível)", "erro": null}
+{"indicador": "CDI", "valor": null, "unidade": "% a.a.", "referencia": "—", "detalhe": null, "erro": "SGS 12: o Banco Central respondeu com página de erro HTML ('Requisição inválida') em vez dos dados"}
+{"indicador": "Focus IPCA 2026", "valor": 5.2245, "unidade": "%", "referencia": "boletim 09/10/2026", "detalhe": "144 respondentes", "erro": null}
+{"indicador": "Focus IPCA 2027", "valor": 4.3, "unidade": "%", "referencia": "boletim 09/10/2026", "detalhe": "144 respondentes", "erro": null}
+{"indicador": "Focus Selic 2026", "valor": 13.25, "unidade": "%", "referencia": "boletim 09/10/2026", "detalhe": "139 respondentes", "erro": null}
+{"indicador": "Focus Selic 2027", "valor": 12.0, "unidade": "%", "referencia": "boletim 09/10/2026", "detalhe": "138 respondentes", "erro": null}
