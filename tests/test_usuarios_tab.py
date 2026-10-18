@@ -109,6 +109,43 @@ def test_lista_vazia_mostra_info_sem_quebrar(monkeypatch):
     mock_info.assert_called_once()
 
 
+# ---------------------------------------------------------------------
+# CSV: mitigação de injeção de fórmula (email pode vir de texto digitado
+# pelo usuário no banner de onboarding quando o e-mail do Google não é
+# válido, ver app.py) - um valor começando com =/+/-/@/tab/CR nunca pode
+# chegar "crú" numa célula, senão Excel/LibreOffice/Google Sheets
+# executam como fórmula ao abrir o CSV exportado pelo admin.
+# ---------------------------------------------------------------------
+
+def test_csv_neutraliza_valor_que_parece_formula():
+    linhas = [
+        {
+            "email": "=HYPERLINK(\"http://evil\",\"clique\")",
+            "created_at": None, "last_seen_at": None,
+            "status_inscricao": "inscrito", "ativo_7d": False, "ativo_30d": False,
+        },
+    ]
+    csv_texto = usuarios_tab._csv_bytes(linhas).decode("utf-8-sig")
+    assert "'=HYPERLINK" in csv_texto
+    # garante que nenhuma linha do CSV comeca com um dos prefixos perigosos
+    for linha_csv in csv_texto.splitlines()[1:]:
+        primeira_celula = linha_csv.split(",")[0].strip('"')
+        assert not primeira_celula.startswith(("=", "+", "-", "@", "\t", "\r"))
+
+
+def test_csv_preserva_email_normal_sem_modificar():
+    linhas = [
+        {
+            "email": "pessoa@exemplo.com",
+            "created_at": None, "last_seen_at": None,
+            "status_inscricao": "inscrito", "ativo_7d": False, "ativo_30d": False,
+        },
+    ]
+    csv_texto = usuarios_tab._csv_bytes(linhas).decode("utf-8-sig")
+    assert "pessoa@exemplo.com" in csv_texto
+    assert "'pessoa@exemplo.com" not in csv_texto
+
+
 def test_render_com_dados_nao_lanca_excecao(monkeypatch):
     monkeypatch.setattr(usuarios_tab.config, "obter_emails_admin", lambda: [_ADMIN])
     usuarios = [

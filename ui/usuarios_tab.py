@@ -145,6 +145,24 @@ def _tabela_html(linhas: list[dict]) -> str:
     )
 
 
+_PREFIXOS_FORMULA_CSV = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _celula_segura_csv(valor) -> str:
+    """Neutraliza injeção de fórmula em CSV (Excel/LibreOffice/Google
+    Sheets executam uma célula que COMEÇA com =/+/-/@/tab/CR como
+    fórmula ao abrir o arquivo) - mitigação padrão OWASP: prefixa com
+    aspas simples, o que faz o programa tratar o conteúdo como texto
+    literal. Necessário aqui porque `email` pode vir do campo de texto
+    livre do banner de onboarding (ver app.py: usuário sem e-mail válido
+    do Google digita um à mão) - antes desta feature, `email` só vinha
+    do Google OAuth, nunca de texto digitado pelo próprio usuário."""
+    texto = str(valor)
+    if texto.startswith(_PREFIXOS_FORMULA_CSV):
+        return "'" + texto
+    return texto
+
+
 def _csv_bytes(linhas: list[dict]) -> bytes:
     buffer = io.StringIO()
     escritor = csv.writer(buffer)
@@ -152,7 +170,7 @@ def _csv_bytes(linhas: list[dict]) -> bytes:
     for linha in linhas:
         escritor.writerow(
             [
-                linha["email"],
+                _celula_segura_csv(linha["email"]),
                 linha["created_at"] or "",
                 linha["last_seen_at"] or "",
                 _ROTULO_STATUS.get(linha["status_inscricao"], linha["status_inscricao"]),
