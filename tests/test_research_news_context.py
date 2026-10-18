@@ -255,13 +255,47 @@ def test_12_watchlist_usa_snapshot_persistido_quando_recomendacao_viva_vazia():
              any("COMPRA" in c and "Genial" in c for c in capturado), f"(capturado={capturado})")
 
 
+def test_12c_watchlist_mostra_a_data_do_snapshot_quando_disponivel():
+    """Achado real (auditoria 2026-10-18, docs/auditoria-redesign-360.md
+    seção 5.A): ultimo_snapshot() grava e devolve `capturado_em` (usado
+    pra ORDENAR o snapshot mais recente - ver data/research/historico.py),
+    mas o fallback de _painel_watchlist descartava esse campo ao montar
+    recomendacao_ticker, e a linha "Genial: COMPRA · potencial..." nunca
+    mostrava nenhuma data - o único jeito de ver quando a recomendação foi
+    capturada era o expander de histórico, que só aparece com 2+
+    snapshots (_expander_historico_recomendacao, linha ~327: "0 ou 1
+    snapshot -> não há 'evolução' nenhuma pra mostrar") - o caso mais
+    comum (1 snapshot só) ficava sem NENHUMA data visível em lugar
+    nenhum da tela."""
+    prefs = {"watchlist": ["PETR4"], "formato_numerico": "BR"}
+    snap = {"recomendacao": "COMPRA", "preco_alvo": 48.5, "potencial_pct": 12.3,
+            "capturado_em": "2026-09-15T10:00:00+00:00"}
+    capturado = []
+    with patch.object(research_tab_mod, "_ultimo_snapshot_cacheado", return_value=snap), \
+         patch.object(research_tab_mod.st, "markdown", side_effect=lambda html, **k: capturado.append(html)), \
+         patch.object(research_tab_mod, "_bloco_o_que_mudou"), \
+         patch.object(research_tab_mod, "historico_ticker", return_value=[]):
+        research_tab_mod._painel_watchlist(prefs, [], [], [], [])
+    linha_genial = next((c for c in capturado if "Genial" in c and "COMPRA" in c), None)
+    _checar("12c a linha da recomendação mostra a data do snapshot (15/09/2026)",
+            linha_genial is not None and "15/09/2026" in linha_genial, f"(linha={linha_genial!r})")
+
+
 def test_13_watchlist_prefere_recomendacao_viva_e_nao_consulta_o_snapshot():
     prefs = {"watchlist": ["PETR4"], "formato_numerico": "BR"}
     recomendacoes_vivas = [{"ticker": "PETR4", "recomendacao": "VENDA", "preco_alvo": 30.0, "potencial_pct": -5.0}]
+    capturado = []
     with patch.object(research_tab_mod, "_ultimo_snapshot_cacheado") as mock_snap, \
-         patch.object(research_tab_mod.st, "markdown"), patch.object(research_tab_mod, "_bloco_o_que_mudou"):
+         patch.object(research_tab_mod.st, "markdown", side_effect=lambda html, **k: capturado.append(html)), \
+         patch.object(research_tab_mod, "_bloco_o_que_mudou"):
         research_tab_mod._painel_watchlist(prefs, [], recomendacoes_vivas, [], [])
     _checar("13 recomendacao AO VIVO disponivel -> NUNCA consulta o snapshot persistido", mock_snap.call_count == 0)
+    linha_genial = next((c for c in capturado if "Genial" in c and "VENDA" in c), None)
+    _checar(
+        "13b recomendacao AO VIVO (sem capturado_em, a fonte nao oferece essa data) "
+        "nunca inventa 'atualizado em' na tela",
+        linha_genial is not None and "atualizado em" not in linha_genial, f"(linha={linha_genial!r})",
+    )
 
 
 def test_14_watchlist_sem_recomendacao_viva_nem_persistida_fica_vazia():
