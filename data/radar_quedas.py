@@ -164,8 +164,31 @@ def avaliar_ticker(ticker, cotacao, recomendacoes, agora=None):
     }
 
 
+def _mesma_cotacao(anterior, alerta, tolerancia=1e-6):
+    """True se preco_atual/fechamento_anterior do alerta novo baterem com o
+    ULTIMO alerta persistido desse ticker (qualquer pregao). O calendario
+    de pregoes da B3 nao esta' modelado aqui (cron roda todo dia util,
+    sem excluir feriado) - num feriado o yfinance devolve a MESMA cotacao
+    do ultimo pregao real (sem negocio novo), e o pregao calculado (data
+    de hoje) muda mesmo sem evento de mercado novo. Sem esta checagem,
+    isso duplicaria o e-mail do mesmo evento de queda sob uma chave
+    (ticker, pregao) nova."""
+    try:
+        return (
+            abs(float(anterior.get("preco_atual")) - float(alerta.get("preco_atual"))) < tolerancia
+            and abs(float(anterior.get("fechamento_anterior")) - float(alerta.get("fechamento_anterior"))) < tolerancia
+        )
+    except (TypeError, ValueError):
+        return False
+
+
 def registrar_alerta(alerta):
-    """Idempotência no banco por ticker + pregão; não duplica entre carteiras."""
+    """Idempotência no banco por ticker + pregão; não duplica entre carteiras.
+
+    Tambem nao duplica quando a cotacao do pregao novo e' IDENTICA ao
+    ultimo alerta ja' persistido desse ticker (ver _mesma_cotacao) - sinal
+    de que nao houve negociacao nova (feriado em dia util, por exemplo),
+    nao um evento de queda novo."""
     cliente = obter_cliente()
     if cliente is None:
         return False, None
@@ -174,6 +197,15 @@ def registrar_alerta(alerta):
                      .eq("ticker", alerta["ticker"]).eq("pregao", alerta["pregao"])
                      .limit(1).execute())
         if existente.data:
+            return True, None
+        ultimo = (cliente.table("radar_alertas_queda").select("preco_atual,fechamento_anterior")
+                  .eq("ticker", alerta["ticker"]).order("pregao", desc=True).limit(1).execute())
+        if ultimo.data and _mesma_cotacao(ultimo.data[0], alerta):
+            print(
+                f"[radar_quedas] cotação de {alerta['ticker']} idêntica ao último alerta "
+                f"já registrado (pregão {alerta['pregao']}); sem negociação nova detectada "
+                "(provável feriado) - não duplica envio"
+            )
             return True, None
         resp = cliente.table("radar_alertas_queda").insert(alerta).execute()
         return bool(resp.data), (resp.data[0].get("id") if resp.data else None)
@@ -255,3 +287,31 @@ def alertas_recentes(limite=100):
         return resp.data or []
     except Exception:
         return None
+
+
+def resumo_fontes_vigentes():
+    """Resumo por casa (CASA_GENIAL/CASA_SAFRA) das carteiras VIGENTES e
+    NAO EXPIRADAS (reaproveita listar_carteiras, sem nenhuma chamada de
+    rede nova) - pra UI responder 'quais fontes estao atualizadas agora'
+    sem precisar abrir SAUDE DOS DADOS. Uma casa ausente do resultado
+    significa que ela nao tem nenhuma recomendacao vigente e nao-expirada
+    agora (bloqueada na ultima coleta, nunca coletada, ou expirada por
+    IDADE_MAXIMA_CARTEIRA_DIAS) - UI decide o rotulo, esta funcao so'
+    agrega o fato. None se o Supabase estiver indisponivel pra leitura
+    (mesmo contrato de listar_carteiras)."""
+    linhas = listar_carteiras()
+    if linhas is None:
+        return None
+    por_casa = {}
+    for linha in linhas:
+        casa = linha.get("casa") or "—"
+        info = por_casa.setdefault(casa, {"ativos": set(), "verificado_em": None})
+        if linha.get("ticker"):
+            info["ativos"].add(linha["ticker"])
+        verificado = linha.get("verificado_em")
+        if verificado and (info["verificado_em"] is None or str(verificado) > str(info["verificado_em"])):
+            info["verificado_em"] = verificado
+    return {
+        casa: {"ativos": len(info["ativos"]), "verificado_em": info["verificado_em"]}
+        for casa, info in por_casa.items()
+    }

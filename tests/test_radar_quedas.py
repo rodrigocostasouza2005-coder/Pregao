@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from data.radar_quedas import calcular_queda, deve_alertar, avaliar_ticker, registrar_alerta
+from data.radar_quedas import calcular_queda, deve_alertar, avaliar_ticker, registrar_alerta, resumo_fontes_vigentes
 
 
 def test_calculo_queda():
@@ -194,12 +194,79 @@ def test_registrar_alerta_e_idempotente_mesmo_ticker_mesmo_pregao():
     assert cliente.table.return_value.insert.call_count == 1  # continua em 1, não subiu pra 2
 
 
+def test_registrar_alerta_nao_duplica_quando_cotacao_repete_em_feriado():
+    """Feriado em dia util: cron roda (schedule e' so' por dia da semana,
+    nao exclui feriado - ver .github/workflows/radar-morning-call.yml),
+    yfinance devolve a MESMA cotacao do ultimo pregao real (sem negocio
+    novo), mas 'pregao' (data de hoje) e' uma chave NOVA - sem a checagem
+    de cotacao repetida, isso reenviaria o alerta do mesmo evento."""
+    cliente = MagicMock()
+    alerta = {
+        "ticker": "PETR4", "pregao": "2026-11-02",  # feriado (Finados), dia util
+        "preco_atual": 95.9, "fechamento_anterior": 100.0,
+    }
+    resposta_vazia = MagicMock(data=[])
+    resposta_ultimo_igual = MagicMock(data=[{"preco_atual": 95.9, "fechamento_anterior": 100.0}])
+    cliente.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = resposta_vazia
+    cliente.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = resposta_ultimo_igual
+
+    with patch("data.radar_quedas.obter_cliente", return_value=cliente):
+        ok, alerta_id = registrar_alerta(alerta)
+    assert ok is True and alerta_id is None
+    cliente.table.return_value.insert.assert_not_called()
+
+
+def test_registrar_alerta_cotacao_diferente_do_ultimo_insere_normalmente():
+    """Pregão novo com cotação REALMENTE diferente do último alerta (uma
+    nova queda de verdade, não o mesmo evento repetido) continua inserindo."""
+    cliente = MagicMock()
+    alerta = {
+        "ticker": "PETR4", "pregao": "2026-10-20",
+        "preco_atual": 88.0, "fechamento_anterior": 93.0,
+    }
+    resposta_vazia = MagicMock(data=[])
+    resposta_ultimo_diferente = MagicMock(data=[{"preco_atual": 95.9, "fechamento_anterior": 100.0}])
+    resposta_com_insercao = MagicMock(data=[{"id": 99}])
+    cliente.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = resposta_vazia
+    cliente.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = resposta_ultimo_diferente
+    cliente.table.return_value.insert.return_value.execute.return_value = resposta_com_insercao
+
+    with patch("data.radar_quedas.obter_cliente", return_value=cliente):
+        ok, alerta_id = registrar_alerta(alerta)
+    assert ok is True and alerta_id == 99
+    cliente.table.return_value.insert.assert_called_once()
+
+
 def test_registrar_alerta_falha_de_persistencia_nunca_lanca_excecao():
     cliente = MagicMock()
     cliente.table.side_effect = Exception("Supabase fora do ar")
     with patch("data.radar_quedas.obter_cliente", return_value=cliente):
         ok, alerta_id = registrar_alerta({"ticker": "PETR4", "pregao": "2026-10-16"})
     assert ok is False and alerta_id is None
+
+
+def test_resumo_fontes_vigentes_agrupa_por_casa():
+    """UI precisa saber 'quais fontes estao atualizadas agora' (secao 7
+    do pedido) sem nenhuma chamada de rede nova - so' agrega o que
+    listar_carteiras() (ja filtrado por vigente e nao-expirado) devolve."""
+    import data.radar_quedas as radar
+    linhas = [
+        {"casa": "Safra Corretora", "ticker": "PETR4", "verificado_em": "2026-10-17T10:00:00+00:00"},
+        {"casa": "Safra Corretora", "ticker": "VALE3", "verificado_em": "2026-10-17T10:00:00+00:00"},
+        {"casa": "Safra Corretora", "ticker": "PETR4", "verificado_em": "2026-10-16T10:00:00+00:00"},
+    ]
+    with patch.object(radar, "listar_carteiras", return_value=linhas):
+        resumo = resumo_fontes_vigentes()
+    assert resumo == {
+        "Safra Corretora": {"ativos": 2, "verificado_em": "2026-10-17T10:00:00+00:00"},
+    }
+    assert "Genial Analisa" not in resumo  # sem linha vigente -> casa ausente (UI rotula "sem dados")
+
+
+def test_resumo_fontes_vigentes_none_quando_supabase_indisponivel():
+    import data.radar_quedas as radar
+    with patch.object(radar, "listar_carteiras", return_value=None):
+        assert resumo_fontes_vigentes() is None
 
 
 def test_monitoramento_sem_queda_elegivel_e_execucao_valida():

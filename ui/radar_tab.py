@@ -366,7 +366,19 @@ def render_radar(prefs: dict):
 
     # Radar de quedas em carteiras recomendadas e independente da watchlist.
     with st.expander("RADAR DE QUEDAS — RECOMENDAÇÕES MONITORADAS", expanded=True):
-        from data.radar_quedas import alertas_recentes
+        from data.radar_quedas import CASA_GENIAL, CASA_SAFRA, alertas_recentes, resumo_fontes_vigentes
+
+        resumo_fontes = resumo_fontes_vigentes()
+        if resumo_fontes is not None:
+            partes_fontes = []
+            for casa in (CASA_GENIAL, CASA_SAFRA):
+                info = resumo_fontes.get(casa)
+                if info:
+                    partes_fontes.append(f"🟢 {casa}: atualizada ({info['ativos']} ativos)")
+                else:
+                    partes_fontes.append(f"⚪ {casa}: sem carteira vigente agora (bloqueada, sem coleta recente ou expirada)")
+            st.caption(" · ".join(partes_fontes))
+
         alertas = alertas_recentes()
         if alertas is None:
             st.caption("Histórico indisponível: confira a conexão e a migration sql/radar_research.sql.")
