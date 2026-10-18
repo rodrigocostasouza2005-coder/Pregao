@@ -131,6 +131,27 @@ def obter_cotacao(ticker: str) -> dict:
         return {"ticker": ticker, "erro": str(e)}
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def obter_data_ultimo_pregao(ticker: str):
+    """Data (date) do ultimo pregao em que o ticker NEGOCIOU, segundo o
+    proprio Yahoo - a barra diaria mais recente de history(period="5d").
+    Durante o pregao e' a data de hoje (barra parcial do dia); num
+    feriado/fim de semana e' o ultimo dia util com negocio.
+
+    obter_cotacao() so' devolve "cotacao_em" = hora da CONSULTA (fast_info
+    nao expoe timestamp da ultima negociacao) - usar a data do relogio como
+    "pregao" fazia um feriado em dia util virar um pregao novo com a mesma
+    cotacao do anterior (ver data/radar_quedas.py). None se o provedor
+    falhar - quem chama decide o fallback."""
+    try:
+        hist = yf.Ticker(_para_symbol_yf(ticker)).history(period="5d", timeout=_TIMEOUT_YF)
+        if hist is None or hist.empty:
+            return None
+        return hist.index[-1].date()
+    except Exception:
+        return None
+
+
 @st.cache_resource(show_spinner=False)
 def _ultima_cotacao_indice_valida() -> dict:
     """nome -> ultimo dict de cotacao de indice/moeda que veio sem erro.

@@ -29,61 +29,89 @@ import ui.radar_tab as radar_tab_mod
 _PREFS_SEM_WATCHLIST = {"formato_numerico": "BR", "watchlist": []}
 
 
-def _capturar_render(resumo_fontes, alertas=None):
-    """Chama render_radar de verdade com resumo_fontes_vigentes/
-    alertas_recentes mockados (dado já persistido, sem rede) e os
-    coletores reais substituídos por algo que FALHA o teste se for
-    chamado - prova que exibir o status não dispara coleta nova.
-    Retorna a lista de textos passados a st.caption."""
-    captions = []
+def _capturar_render(resumo_fontes, alertas=None, monitorados=None):
+    """Chama render_radar de verdade com os dados ja' persistidos mockados
+    (resumo_fontes_vigentes/painel_monitorados/alertas_periodo, sem rede)
+    e os coletores reais substituidos por algo que FALHA o teste se for
+    chamado - prova que desenhar a tela nao dispara coleta nova. Retorna
+    todo o HTML passado a st.markdown, concatenado."""
+    blocos = []
 
     def _coletor_nao_deveria_ser_chamado(*_a, **_k):
-        raise AssertionError("coletor de rede chamado só para exibir o status de fontes")
+        raise AssertionError("coletor de rede chamado só para exibir o Radar")
 
     with patch.object(radar_quedas_mod, "resumo_fontes_vigentes", return_value=resumo_fontes), \
-         patch.object(radar_quedas_mod, "alertas_recentes", return_value=alertas if alertas is not None else []), \
+         patch.object(radar_quedas_mod, "painel_monitorados", return_value=monitorados if monitorados is not None else []), \
+         patch.object(radar_quedas_mod, "alertas_periodo", return_value=alertas if alertas is not None else []), \
          patch.object(radar_quedas_mod, "coletar_carteiras_genial", side_effect=_coletor_nao_deveria_ser_chamado), \
          patch.object(radar_quedas_mod, "coletar_carteiras_safra", side_effect=_coletor_nao_deveria_ser_chamado), \
-         patch.object(radar_tab_mod.st, "caption", side_effect=lambda texto, **_k: captions.append(texto)):
+         patch.object(radar_tab_mod.st, "markdown", side_effect=lambda texto, **_k: blocos.append(texto)):
         # render_radar e' decorado com @st.fragment, que em bare mode (sem
         # ScriptRunContext real) NUNCA executa o corpo da funcao - chamar
         # render_radar(...) direto aqui silenciosamente nao faria nada e o
         # teste passaria "por acidente" sem checar coisa alguma.
-        # .__wrapped__ e' a funcao original (sem o decorador), que executa
-        # de verdade - confirmado em teste manual antes de escrever isto.
+        # .__wrapped__ e' a funcao original (sem o decorador).
         radar_tab_mod.render_radar.__wrapped__(_PREFS_SEM_WATCHLIST)
 
-    return captions
+    return "\n".join(b for b in blocos if not b.lstrip().startswith("<style>"))
+
+
+def _linha_da_casa(html_render, casa):
+    inicio = html_render.index(f"<td class='rq-esq'>{casa}</td>")
+    return html_render[inicio:html_render.index("</tr>", inicio)]
 
 
 def test_fonte_atualizada_e_fonte_indisponivel_sao_distinguidas():
     resumo = {
-        "Safra Corretora": {"ativos": 10, "verificado_em": "2026-10-17T10:00:00+00:00", "desatualizada": False},
+        "Safra Corretora": {"ativos": 10, "verificado_em": "2026-10-17T10:00:00+00:00", "desatualizada": False,
+                            "carteiras": ["Top 10 Ações"], "data_publicacao": "2026-10-01"},
         # Genial Analisa ausente do resumo -> UI trata como indisponível
     }
-    captions = _capturar_render(resumo)
-    assert captions, "a linha de status de fontes não foi renderizada"
-    texto = captions[0]
-    assert "🟢 Safra Corretora: atualizada (10 ativos)" in texto
-    assert "🔴 Genial Analisa: indisponível" in texto
-    assert "🟡" not in texto  # nenhuma das duas está no estado "desatualizada" aqui
+    html_render = _capturar_render(resumo)
+    assert "rq-estado-ATUALIZADA" in _linha_da_casa(html_render, "Safra Corretora")
+    assert "rq-estado-INDISPONIVEL" in _linha_da_casa(html_render, "Genial Analisa")
+    assert "1 de 2 casas com carteira vigente" in html_render
+    assert "rq-estado-DESATUALIZADA" not in html_render
 
 
 def test_fonte_desatualizada_e_distinguida_de_atualizada_e_de_indisponivel():
     resumo = {
-        "Safra Corretora": {"ativos": 10, "verificado_em": "2026-09-01T10:00:00+00:00", "desatualizada": True},
-        "Genial Analisa": {"ativos": 42, "verificado_em": "2026-10-17T10:00:00+00:00", "desatualizada": False},
+        "Safra Corretora": {"ativos": 10, "verificado_em": "2026-09-01T10:00:00+00:00", "desatualizada": True,
+                            "carteiras": ["Top 10 Ações"], "data_publicacao": "2026-09-01"},
+        "Genial Analisa": {"ativos": 42, "verificado_em": "2026-10-17T10:00:00+00:00", "desatualizada": False,
+                           "carteiras": ["Carteira Ações"], "data_publicacao": "2026-10-05"},
     }
-    captions = _capturar_render(resumo)
-    texto = captions[0]
-    assert "🟡 Safra Corretora: desatualizada" in texto
-    assert "🟢 Genial Analisa: atualizada (42 ativos)" in texto
-    assert "🔴" not in texto  # nenhuma das duas está "indisponível" aqui
+    html_render = _capturar_render(resumo)
+    assert "rq-estado-DESATUALIZADA" in _linha_da_casa(html_render, "Safra Corretora")
+    assert "rq-estado-ATUALIZADA" in _linha_da_casa(html_render, "Genial Analisa")
+    assert "rq-estado-INDISPONIVEL" not in html_render
+    assert "2 de 2 casas com carteira vigente" in html_render
 
 
-def test_supabase_indisponivel_nao_renderiza_linha_de_status_mas_nao_quebra():
-    """resumo_fontes_vigentes() devolve None (mesmo contrato de
-    listar_carteiras) quando o Supabase está fora do ar pra leitura - a
-    UI deve simplesmente omitir a linha, nunca lançar exceção."""
-    captions = _capturar_render(resumo_fontes=None)
-    assert captions == []
+def test_supabase_indisponivel_avisa_e_nao_quebra():
+    """resumo_fontes_vigentes() devolve None quando o Supabase está fora do
+    ar - a UI avisa, não desenha tabela nenhuma e nunca lança exceção."""
+    html_render = _capturar_render(resumo_fontes=None)
+    assert "Banco indisponível" in html_render
+    assert "rq-tabela" not in html_render
+
+
+def test_alertas_e_monitorados_renderizados_com_numero_brasileiro_e_estado_do_email():
+    import data.radar_quedas as rq
+    resumo = {"Safra Corretora": {"ativos": 2, "verificado_em": "2026-10-17T10:00:00+00:00", "desatualizada": False,
+                                  "carteiras": ["Top 10 Ações"], "data_publicacao": "2026-10-01"}}
+    monitorados = rq.linhas_monitorados(
+        [{"casa": "Safra Corretora", "carteira": "Top 10 Ações", "ticker": "PETR4", "empresa": "Petrobras"},
+         {"casa": "Safra Corretora", "carteira": "Top 10 Ações", "ticker": "VALE3", "empresa": "Vale"}],
+        {"PETR4": {"preco": 36.10, "fechamento_anterior": 37.92, "erro": None}, "VALE3": {"erro": "timeout"}},
+    )
+    alertas = [{"ticker": "PETR4", "empresa": "Petrobras", "pregao": "2026-10-16", "variacao_pct": -4.7996,
+                "preco_atual": 36.10, "fechamento_anterior": 37.92, "casas": ["Safra Corretora"],
+                "carteiras": ["Top 10 Ações"], "fontes": ["https://www.safra.com.br/x"],
+                "alertado_em": "2026-10-16T15:31:05+00:00", "status": "FALHA_ENVIO"}]
+    html_render = _capturar_render(resumo, alertas=alertas, monitorados=monitorados)
+    assert "-4,80%" in html_render and "37,92" in html_render  # formato BR, nunca 37.92
+    assert "rq-estado-ALERTA" in html_render
+    assert "rq-estado-SEM_COTACAO" in html_render  # VALE3 sem cotação não vira "0,00%"
+    assert "rq-estado-FALHOU" in html_render and "FALHA_ENVIO" not in html_render
+    assert "16/10 12:31" in html_render  # horário de Brasília, não ISO UTC
