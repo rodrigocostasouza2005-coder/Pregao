@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""DIAGNOSTICO TEMPORARIO v3 (somente leitura, NAO MERGEAR): gera a
+"""DIAGNOSTICO TEMPORARIO v4 (radar setorial) (somente leitura, NAO MERGEAR): gera a
 edicao REAL do Morning Call com o codigo da branch de auditoria. Sem
 secrets: sem Supabase (zero escrita), sem e-mail, sem Groq."""
 import json, os, sys, threading, traceback
@@ -50,6 +50,26 @@ for chave, campo in (("brasil", "noticias"), ("exterior", "noticias"), ("empresa
     for i in itens:
         p(f"   - {i.get('data')} {i.get('veiculo')} | {i.get('titulo')[:110]} | corpo={len(i.get('corpo') or [])} | {i.get('link')}")
 p("agenda:", json.dumps(edicao["empresas"].get("agenda"), ensure_ascii=False, default=str)[:1500])
+
+radar = edicao.get("radar")
+p("\n===== RADAR SETORIAL =====")
+if radar is None:
+    p("radar None")
+else:
+    p("plano do dia:", radar.get("plano"))
+    p("historico (plano recalculado):", radar.get("historico"))
+    for b in radar.get("setores") or []:
+        p(f"\n## {b['nome']} ({b['setor']}) - {b['palavras']} palavras")
+        p("O que aconteceu:"); [p("  ", f) for f in b["o_que_aconteceu"]]
+        p("Por que importa:", b["por_que_importa"])
+        p("Empresas e ativos relacionados:", b["empresas"])
+        p("O que acompanhar:", b["acompanhar"])
+        p("Fontes:")
+        for f in b["fontes"]:
+            p(f"   - {f['titulo']} | {f['veiculo']} | {f['data'].isoformat()} | {f['link']}")
+    for e in radar.get("excluidos") or []:
+        p("EXCLUIDO:", e)
+json.dump(radar, open("saida_diag/radar.json", "w"), ensure_ascii=False, indent=1, default=str)
 
 from jobs.morning_call_pdf import gerar_pdf
 try:
