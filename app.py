@@ -26,7 +26,7 @@ from data.prices import (
     validar_ticker,
 )
 from data.research import CASAS as CASAS_RESEARCH
-from data.user_prefs import obter_prefs, salvar_prefs
+from data.user_prefs import deve_oferecer_morning_call, email_valido, obter_prefs, registrar_acesso, salvar_prefs
 from ui import busca, graficos, paineis
 from ui.calendario_tab import render_calendario
 from ui.cvm_tab import render_cvm, render_cvm_ticker
@@ -40,8 +40,10 @@ from ui.research_tab import render_research
 from ui.saude_dados_tab import render_saude_dados
 from ui.sistema_tab import render_sistema
 from ui.top_mercado_tab import render_top_mercado
+from ui.usuarios_tab import render_usuarios
 from ui.visao_geral import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_VISAO_GERAL
 from ui.visao_geral import render_visao_geral
+
 
 # initial_sidebar_state="auto" (nao mais "expanded" fixo): bug real
 # confirmado por screenshot (Playwright contra o app rodando de verdade,
@@ -100,6 +102,16 @@ if st.session_state.get("prefs_sub") != usuario["sub"]:
     st.session_state.banco_ok = banco_ok
 
 prefs = st.session_state.prefs
+
+# --- registra o acesso pro painel admin USUARIOS (ver ui/usuarios_tab.py)
+# so' 1x por sessao de proposito (guarda abaixo) - data/user_prefs.py:
+# registrar_acesso tambem e' rate-limitada do lado do banco (last_seen_at
+# so' atualiza se ja fez mais de 30min), entao multiplas abas/sessoes do
+# mesmo dia nao geram escrita excessiva. Nunca bloqueia nem avisa o
+# usuario se falhar - e' so' telemetria de uso, nao preferencia dele.
+if not st.session_state.get("_acesso_registrado"):
+    registrar_acesso(usuario["sub"], usuario["email"])
+    st.session_state["_acesso_registrado"] = True
 
 
 def _persistir_prefs():
@@ -267,6 +279,62 @@ def _ticker_tape():
 if not st.session_state.banco_ok:
     st.warning("Sem conexão com o Supabase — preferências e watchlist valem só para esta sessão.")
 
+# --- oferta de inscricao no Morning Call por e-mail: aparece 1x por
+# usuario, so' ate ele responder (aceitar OU recusar) - ver
+# data/user_prefs.py:deve_oferecer_morning_call. So' mostra com banco_ok
+# (sem conexao com o Supabase, qualquer resposta valeria so' nesta
+# sessao e a pergunta voltaria a aparecer na visita seguinte - melhor
+# nao perguntar do que perguntar e nao conseguir lembrar a resposta).
+# Nao bloqueia nada: e' um painel normal, igual qualquer outro, com 2
+# acoes explicitas - nunca marca inscricao so' por ter sido exibido.
+if st.session_state.banco_ok and deve_oferecer_morning_call(prefs):
+    with st.container(border=True):
+        st.markdown(
+            '<div class="painel-titulo">RECEBER O MORNING CALL POR E-MAIL?</div>',
+            unsafe_allow_html=True,
+        )
+        email_usuario_ok = email_valido(usuario["email"])
+        st.markdown(
+            "<div class='cinza' style='font-size:0.78rem; margin-bottom:0.5rem;'>"
+            "Todo dia útil, por volta das 08h (Brasília): um resumo com mercados, "
+            "macro, agenda do dia e notícias — só isso, nada além do que já existe "
+            f"aqui no terminal. Enviado para <b>{usuario['email'] or '(sem e-mail)'}</b>. "
+            "Pode desligar quando quiser, em CONFIG."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        email_destino = usuario["email"]
+        if not email_usuario_ok:
+            email_destino = st.text_input(
+                "Sua conta não tem um e-mail válido associado — informe um e-mail pra receber:",
+                key="onboarding_mc_email_manual",
+                placeholder="voce@exemplo.com",
+            )
+            email_usuario_ok = email_valido(email_destino)
+
+        colb1, colb2, _colb3 = st.columns([1, 1, 3])
+        with colb1:
+            aceitou = st.button(
+                "QUERO RECEBER", key="onboarding_mc_aceitar", type="primary", disabled=not email_usuario_ok,
+            )
+        with colb2:
+            recusou = st.button("AGORA NÃO", key="onboarding_mc_recusar")
+
+        if aceitou or recusou:
+            prefs["morning_call_email_perguntado"] = True
+            if aceitou:
+                prefs["morning_call_email_ativo"] = True
+            ok = salvar_prefs(usuario["sub"], email_destino or usuario["email"], prefs)
+            st.session_state.banco_ok = ok
+            if ok:
+                st.toast(
+                    "Você vai receber o Morning Call por e-mail."
+                    if aceitou else "Combinado — você pode ativar isso depois em CONFIG.",
+                )
+            else:
+                st.warning("Não foi possível salvar agora (banco indisponível) — a pergunta pode voltar a aparecer.")
+            st.rerun()
+
 # --- secoes de navegacao: ordem/visibilidade vem das preferencias, CONFIG
 # sempre por ultimo. So a secao ativa executa (diferente de st.tabs(), que
 # roda o conteudo de TODAS as abas em toda rerun e so esconde por CSS) -
@@ -285,7 +353,12 @@ if _eh_admin:
     # ABAS_DISPONIVEIS) - painel operacional de monitoramento dos
     # coletores (ver ui/saude_dados_tab.py/data/saude_dados.py, FASE 2
     # da auditoria 2026-10-09), mesmo publico que DIAGNÓSTICO DE FONTES.
-    secoes = secoes + ["SISTEMA", "SAÚDE DOS DADOS"]
+    # USUÁRIOS: painel administrativo de usuarios/metricas/inscricao no
+    # Morning Call (ver ui/usuarios_tab.py) - mesmo tratamento das 2
+    # abas acima (so' admin, fora de ABAS_DISPONIVEIS). A autorizacao e'
+    # reconfirmada no dispatch abaixo E dentro de render_usuarios/
+    # data/admin_usuarios.py - esconder da nav nunca e' a UNICA barreira.
+    secoes = secoes + ["SISTEMA", "SAÚDE DOS DADOS", "USUÁRIOS"]
 rotulos_secao = [f"{config.ICONES_SECAO.get(chave, '')} {chave}".strip() for chave in secoes]
 mapa_rotulo_secao = dict(zip(rotulos_secao, secoes))
 padrao_rotulo_secao, mem_secao = _escolha_estavel("secao_ativa", rotulos_secao, rotulos_secao[0])
@@ -969,6 +1042,20 @@ if secao_atual == "SAÚDE DOS DADOS":
         render_saude_dados()
 
 
+# --- aba USUÁRIOS (so admin, ver ui/usuarios_tab.py) - reconfirma
+# _eh_admin aqui tambem (nao so' na nav): mesmo que secao_atual chegasse
+# a "USUÁRIOS" por algum jeito que nao passasse pela nav (ex: estado de
+# sessao reaproveitado de uma troca de usuario na mesma aba do navegador),
+# quem nao e' admin nunca ve' o conteudo real - e render_usuarios/
+# data/admin_usuarios.py reconfirmam de novo, inclusive na consulta ------
+if secao_atual == "USUÁRIOS":
+    with st.container():
+        if _eh_admin:
+            render_usuarios(usuario)
+        else:
+            st.error("Acesso restrito a administradores.")
+
+
 # --- aba CVM (documentos oficiais: fato relevante, comunicado, resultados,
 # proventos, calendario - watchlist inteira, ver ui/cvm_tab.py) -------------
 if secao_atual == "CVM":
@@ -1013,6 +1100,10 @@ if secao_atual == "CONFIG":
         )
         if morning_call_email_ativo != prefs.get("morning_call_email_ativo", False):
             prefs["morning_call_email_ativo"] = morning_call_email_ativo
+            # marca como "ja perguntado" tambem aqui: quem muda a
+            # preferencia direto em CONFIG (sem passar pelo banner de
+            # onboarding) nao deve ver a oferta reaparecer depois.
+            prefs["morning_call_email_perguntado"] = True
             if _persistir_prefs():
                 st.toast(
                     "Preferência de Morning Call por e-mail salva." if morning_call_email_ativo

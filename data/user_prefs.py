@@ -2,12 +2,20 @@
 """Preferencias do usuario, persistidas no Supabase (tabela user_prefs)."""
 
 import re
+from datetime import datetime, timedelta, timezone
 
 from config import PREFS_PADRAO
 from data.supabase_client import obter_cliente
 
 _RE_EMAIL_VALIDO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _TAMANHO_PAGINA_ASSINANTES = 500
+
+# intervalo minimo entre 2 escritas de last_seen_at pro MESMO usuario -
+# evita escrever no Supabase em toda rerun/fragment/interacao irrelevante
+# (ver registrar_acesso); 30min e' suficiente pra "ativo nos ultimos
+# N dias" (granularidade diaria no painel admin) sem gerar 1 UPDATE por
+# clique numa sessao tipica de uso do terminal.
+_INTERVALO_MIN_REGISTRO_ACESSO = timedelta(minutes=30)
 
 
 def obter_prefs(sub: str) -> tuple[dict, bool]:
@@ -37,6 +45,73 @@ def salvar_prefs(sub: str, email: str, prefs: dict) -> bool:
         return True
     except Exception:
         return False
+
+
+def deve_oferecer_morning_call(prefs: dict) -> bool:
+    """True so' quando o usuario AINDA NAO respondeu a oferta de
+    inscricao no Morning Call por e-mail (nem aceitou, nem recusou) -
+    usada pelo banner de onboarding em app.py pra decidir se mostra a
+    pergunta. Quem ja' aceitou (morning_call_email_ativo=True) ou ja'
+    recusou explicitamente (morning_call_email_perguntado=True, ver
+    config.PREFS_PADRAO) nunca ve' a oferta de novo."""
+    return not (
+        prefs.get("morning_call_email_ativo", False)
+        or prefs.get("morning_call_email_perguntado", False)
+    )
+
+
+def registrar_acesso(sub: str, email: str, cliente=None) -> None:
+    """Marca que `sub` acessou o Pregao agora - cria a linha em
+    user_prefs se ainda nao existir (created_at = 1o acesso identificado,
+    ver sql/schema.sql pro aviso sobre linhas anteriores a esta
+    migracao) ou atualiza last_seen_at numa linha existente.
+
+    Rate-limitada: so' escreve se last_seen_at for nulo ou mais antigo
+    que _INTERVALO_MIN_REGISTRO_ACESSO - NAO chama isto a cada rerun do
+    Streamlit (ver app.py: guarda de st.session_state que chama isto so'
+    1x por sessao); esta funcao e' a segunda camada de proteção contra
+    escrita excessiva (multiplas abas/sessoes do mesmo usuario no mesmo
+    dia), nao a unica.
+
+    Sem retorno de sucesso/falha de proposito: isto e' telemetria de uso
+    pro painel admin, nunca deve bloquear ou avisar o usuario comum se
+    falhar (Supabase indisponivel so' significa "essa visita nao conta
+    pras metricas", nada mais)."""
+    cliente = cliente if cliente is not None else obter_cliente()
+    if cliente is None:
+        return
+    try:
+        resp = cliente.table("user_prefs").select("last_seen_at").eq("sub", sub).limit(1).execute()
+        agora = datetime.now(timezone.utc)
+        linhas = resp.data or []
+        if not linhas:
+            try:
+                # insert puro (NAO upsert): se outra requisicao criou a
+                # linha entre o select acima e este insert (2 abas do
+                # mesmo usuario na primeira visita), a PK (sub) rejeita
+                # com conflito - cai no except e so' atualiza
+                # last_seen_at, nunca sobrescreve preferencias ja
+                # existentes por engano.
+                cliente.table("user_prefs").insert(
+                    {
+                        "sub": sub,
+                        "email": (email or "").lower(),
+                        "preferencias": dict(PREFS_PADRAO),
+                        "created_at": agora.isoformat(),
+                        "last_seen_at": agora.isoformat(),
+                    }
+                ).execute()
+            except Exception:
+                cliente.table("user_prefs").update({"last_seen_at": agora.isoformat()}).eq("sub", sub).execute()
+            return
+        ultimo_raw = linhas[0].get("last_seen_at")
+        if ultimo_raw:
+            ultimo = datetime.fromisoformat(str(ultimo_raw).replace("Z", "+00:00"))
+            if agora - ultimo < _INTERVALO_MIN_REGISTRO_ACESSO:
+                return
+        cliente.table("user_prefs").update({"last_seen_at": agora.isoformat()}).eq("sub", sub).execute()
+    except Exception as exc:
+        print(f"[user_prefs] falha ao registrar acesso: {exc!r}")
 
 
 def email_valido(email: str) -> bool:
