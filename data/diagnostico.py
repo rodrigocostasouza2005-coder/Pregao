@@ -14,7 +14,7 @@ from curl_cffi import requests as cffi_requests
 from .cvm import testar_conexao as testar_conexao_cvm
 from .ibovespa import _montar_url as _url_b3_ibov
 from .prices import testar_conexao_indicadores
-from .research import genial, genial_lives, xp
+from .research import btg, genial, genial_lives, xp
 
 _HEADERS = {"User-Agent": "PregaoApp/0.1 (uso pessoal, nao comercial; contato via github)"}
 _TIMEOUT = 10
@@ -68,6 +68,7 @@ _TESTES_ESPECIFICOS = {
     "Genial Analisa": genial.testar_conexao,
     "XP Investimentos": xp.testar_conexao,
     "Genial (Lives)": genial_lives.testar_conexao,
+    "BTG Pactual Research": btg.testar_conexao,
     "Yahoo Finance (indicadores)": testar_conexao_indicadores,
     "CVM (dados abertos)": testar_conexao_cvm,
     "Google News (decode+extração)": _testar_gnews_decode,
@@ -86,7 +87,7 @@ FONTES = [
     {"nome": "Yahoo Finance (indicadores)", "url": "https://query1.finance.yahoo.com/v10/finance/quoteSummary/PETR4.SA"},
     {"nome": "CVM (dados abertos)", "url": "https://dados.cvm.gov.br/dataset/cia_aberta-doc-ipe"},
     {"nome": "B3 (composição Ibovespa)", "url": _url_b3_ibov()},
-    {"nome": "BTG Research", "url": "https://content.btgpactual.com/api/research/public-router/media-research/api/media-research/public/v1/medias/lives?status=LIVE&pageNumber=1&pageSize=1"},
+    {"nome": "BTG Pactual Research", "url": f"{btg.FILTER_URL}?pageNumber=1&pageSize=1"},
     {"nome": "Itaú BBA", "url": "https://www.itau.com.br/itaubba-pt/analises-economicas"},
     {"nome": "Santander", "url": "https://www.santandercorretora.com.br/corretora/home/nossos-servicos/relatorios.html"},
     {"nome": "BB Investimentos", "url": "https://investalk.bb.com.br/relatorios-e-analises"},

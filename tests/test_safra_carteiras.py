@@ -4,7 +4,8 @@ chamada de rede real. O fixture TEXTO_PAGINA_1_REAL abaixo é o texto
 extraído via pypdf do PDF real "Outubro_Acoes.pdf" (Carteira Safra Top
 10 Ações, outubro/2026), baixado e inspecionado em sessão de auditoria
 real (2026-10-16) - confirma que essa fonte é pública, sem login e sem
-bot-detection (diferente de Genial/XP/BTG, bloqueadas na borda Akamai)."""
+bot-detection (diferente de Genial/XP, bloqueadas na borda Akamai; BTG
+não tem esse bloqueio - ver data/research/btg.py)."""
 import datetime
 import sys
 from pathlib import Path

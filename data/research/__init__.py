@@ -12,8 +12,12 @@ coletavel sem login:
   ver xp.py). Campos confirmados com requisicao real feita fora do
   sandbox (2026-09-23) - IP deste sandbox de dev continua bloqueado pelo
   CDN da XP, mas o coletor esta ativo por padrao.
-- BTG Research: API interna identificada mas bloqueada por bot-detection
-  (Akamai) - ver genial.py/relatorio da tarefa pros detalhes tecnicos.
+- BTG Research: API real (content.btgpactual.com/api/research/content-hub/
+  analysis/filter) coletavel - achado que corrigiu a investigacao anterior
+  (2026-10-17): o campo "tier" (AREA_PUBLICA/AREA_LOGADA) JA' vem no
+  proprio lote, nao so' no detalhe - coletor filtra por AREA_PUBLICA antes
+  de persistir, nunca toca em conteudo de area logada (ver data/research/
+  btg.py e CASAS['btg'] abaixo pros detalhes completos da investigacao).
 - Itau BBA, BB Investimentos, Santander, Safra, Agora/Bradesco, Inter:
   ainda nao investigadas (ver BACKLOG.md; reconhecimento rapido de
   reachability em data/diagnostico.py).
@@ -31,7 +35,7 @@ import streamlit as st
 
 from data.coletores_status import registrar_tentativa
 
-from . import genial, genial_lives, store, xp
+from . import btg, genial, genial_lives, store, xp
 from .base import TEMPO_MAX_COLETA_S
 
 # nao tenta recoletar a mesma casa antes desse tempo desde a ULTIMA
@@ -91,53 +95,58 @@ CASAS = [
         "disponivel": True,
         "obter_relatorios": genial_lives.obter_relatorios,
         "extrator_texto": genial_lives.obter_texto_transcricao,
+        # achado real (2026-10-17): a execucao de producao no GitHub
+        # Actions (run 38989522110) mostrou essa casa falhando ("[research]
+        # coleta Genial (Lives) falhou apos 4.5s") sem nenhum detalhe -
+        # motivo_ultima_falha novo em genial_lives.py (mesmo padrao de
+        # genial.py/xp.py) pra essa falha aparecer em SAUDE DOS DADOS.
+        "motivo_falha": genial_lives.motivo_ultima_falha,
     },
     {
-        # Investigado de novo em 2026-10-16 (sessao dedicada a BTG/XP/
-        # Genial) - a suposicao antiga ("precisa de Playwright pra passar
-        # do desafio JS") foi TESTADA DE VERDADE (nao so' suposta) contra
-        # os endpoints reais, em runner do GitHub Actions (mesmo tipo de
-        # rede/IP que a producao usa, via workflow_dispatch/push numa
-        # branch de diagnostico, depois removido): Chromium headless NAO
-        # passa da pagina www.btgpactual.com/acoes/ultimos-relatorios (que
-        # e' onde o JS client-side faria as chamadas de API de
-        # relatorios) - net::ERR_HTTP2_PROTOCOL_ERROR em todas as
-        # tentativas, e forcar HTTP/1.1 (que resolveu esse MESMO sintoma
-        # pra Genial, ver genial.py) so' trocou o erro por timeout de 30s,
-        # nunca carregou. 8 tentativas reais ao todo (2 execucoes x 4
-        # variacoes), 0 sucesso - nao e' "nao tentamos", e' "tentamos e
-        # nao passa", de forma repetida.
+        # Investigado de novo em 2026-10-17 (reinvestigacao da mesma
+        # sessao, apos pedido explicito do Rodrigo pra nao parar so' no
+        # diagnostico): a conclusao anterior ("tier so' aparece no
+        # detalhe, filtrar exigiria N+1 requisicoes contra conteudo ja'
+        # recebido") estava ERRADA - testada de novo com requisicao real,
+        # o campo "tier" ("AREA_PUBLICA"/"AREA_LOGADA") JA' vem no proprio
+        # POST /filter em lote, item por item, sem precisar de nenhuma
+        # chamada de detalhe. Confirmado com 300 itens reais (12 paginas),
+        # tier presente em 100% deles, 123/300 (41%) e 68/200 (34%) em
+        # amostras distintas "AREA_PUBLICA" - volume real suficiente pra
+        # coletor. robots.txt de content.btgpactual.com permite tudo
+        # ("Allow: /"); nenhum bloqueio observado em dezenas de requisicoes
+        # reais, com o UA identificado do projeto OU um UA de navegador
+        # comum - sem diferenca nenhuma (diferente de genial.py/xp.py,
+        # que SAO bloqueados por fingerprint/WAF - aqui nao ha' bloqueio
+        # algum pra contornar).
         #
-        # A API publica identificada em sessao anterior (BACKLOG.md,
-        # content.btgpactual.com/.../medias/lives) respondeu 200 com dados
-        # reais - MAS e' so' o status de LIVE STREAMING agora mesmo (0 ou
-        # 1 resultado tipico, sem texto/setor/ticker), nao relatorios
-        # escritos; confirmado SEM bot-detection nenhum (nem curl_cffi
-        # precisou - 'requests' puro com TLS padrao ja' funciona, e
-        # robots.txt de content.btgpactual.com permite tudo). O endpoint
-        # de LISTAGEM DE RELATORIOS nunca foi confirmado: a suposicao
-        # antiga ("ALL?...") deu 404 "Not Found" limpo (pagina de erro
-        # JSON normal, nao desafio/bloqueio) - e' o endpoint errado, nao
-        # bloqueado; outras 3 variacoes tentadas (sem segmento, ?type=
-        # REPORT, /REPORT) deram o mesmo 404 limpo. Achar o endpoint
-        # certo exigiria ler o bundle JS da propria pagina pra mapear as
-        # rotas reais - exatamente a pagina que esta bloqueada acima.
-        # Como a API de lives nao serve o proposito (nao e' "research") e
-        # nao ha' endpoint de relatorios confirmado, mantido indisponivel.
+        # Coletor implementado (data/research/btg.py) filtra por
+        # tier=="AREA_PUBLICA" ANTES de qualquer persistencia - usa o
+        # controle de acesso que a BTG expoe, em vez de ignora-lo; nunca
+        # inclui item AREA_LOGADA nem item sem tier reconhecido. A pagina
+        # www.btgpactual.com/acoes/ultimos-relatorios (SPA diferente,
+        # dominio diferente) continua bloqueada pra Chromium/Playwright
+        # (0/8 tentativas, auditorias anteriores) - mas o coletor nunca
+        # depende dela, le direto a API publica de content.btgpactual.com.
+        #
+        # Link persistido e' o endpoint de detalhe da API (real, publico,
+        # estavel, unico por item) - nao foi encontrada no bundle Angular
+        # publico (111 chunks JS verificados) uma rota de pagina com slug
+        # amigavel confirmada; usar o endpoint de API e' honesto (nao
+        # inventa uma URL de pagina nao verificada).
         "id": "btg",
-        "nome": "BTG Research",
-        "ativa_por_padrao": False,
-        "disponivel": False,
-        "obter_relatorios": None,
-        "extrator_texto": None,
-        "motivo_indisponivel": (
-            "Pagina de relatorios (www.btgpactual.com) bloqueada pra navegador "
-            "automatizado mesmo com Chromium/Playwright real (testado, nao suposto: "
-            "net::ERR_HTTP2_PROTOCOL_ERROR/timeout, 0/8 tentativas passaram) - sem "
-            "ela nao da pra mapear o endpoint real de LISTAGEM DE RELATORIOS "
-            "(a API publica confirmada, content.btgpactual.com/.../medias/lives, "
-            "so' traz status de live streaming agora mesmo, nao relatorios escritos)."
-        ),
+        "nome": "BTG Pactual Research",
+        "fonte": "content.btgpactual.com (API de research, filtrado por tier publico)",
+        "ativa_por_padrao": True,
+        "disponivel": True,
+        "obter_relatorios": btg.obter_relatorios,
+        # nao usa o generico (baixa a pagina com curl_cffi impersonate,
+        # pensado pra HTML/PDF) - link e' um endpoint JSON da propria API
+        # publica; obter_texto_publico reconsulta e RECONFIRMA tier antes
+        # de devolver texto (defesa em profundidade contra item que tenha
+        # virado AREA_LOGADA depois da coleta).
+        "extrator_texto": btg.obter_texto_publico,
+        "motivo_falha": btg.motivo_ultima_falha,
     },
 ]
 

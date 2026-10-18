@@ -49,6 +49,24 @@ _FEED_URL = f"https://www.youtube.com/feeds/videos.xml?channel_id={_CHANNEL_ID}"
 
 _NOME_CASA = "Genial (Lives)"
 
+# Motivo da ULTIMA falha TOTAL de obter_relatorios (achado real, auditoria
+# 2026-10-17: a execucao real do coletor_local.py no GitHub Actions
+# mostrou "[research] coleta Genial (Lives) falhou apos 4.5s" sem NENHUM
+# detalhe do motivo - diferente de genial.py/xp.py, que ja expoem
+# motivo_ultima_falha() pro painel SAUDE DOS DADOS/registrar_tentativa.
+# feedparser nunca lanca excecao por falha de rede (so marca bozo=True
+# com bozo_exception preenchida) - sem capturar isso, uma falha de DNS,
+# timeout ou feed malformado ficavam todas indistinguiveis. Mesmo padrao
+# simples que genial.py/xp.py ja usam (1 unica fonte, nao thread-local).
+_ultimo_motivo_falha = None
+
+
+def motivo_ultima_falha() -> str | None:
+    """Detalhe da ultima falha TOTAL de obter_relatorios (as 2 tentativas
+    do feed RSS) - None se a ultima chamada teve sucesso ou nenhuma
+    chamada foi feita ainda nesta sessao do processo."""
+    return _ultimo_motivo_falha
+
 # ordem importa: checagens mais especificas primeiro. Heuristica sobre o
 # TITULO do video (unico dado estruturado disponivel no feed publico) -
 # pode classificar errado o "sub-tipo" do programa em casos ambiguos
@@ -118,16 +136,26 @@ def obter_relatorios() -> list | None:
     # lanca excecao por isso - so marca feed.bozo=True com entries=[]),
     # entao uma instabilidade transitoria de conexao parece identica a
     # "feed malformado" sem uma 2a tentativa pra diferenciar.
+    global _ultimo_motivo_falha
+    erro_bruto = None
     for tentativa in range(2):
         try:
             feed = feedparser.parse(_FEED_URL)
-        except Exception:
+            erro_bruto = getattr(feed, "bozo_exception", None) if feed.bozo else None
+        except Exception as e:
             feed = None
+            erro_bruto = e
         if feed is not None and not (feed.bozo and not feed.entries):
+            _ultimo_motivo_falha = None
             break
         if tentativa == 0:
             time.sleep(1.5)
     else:
+        _ultimo_motivo_falha = (
+            f"feed RSS do YouTube falhou apos 2 tentativas: {erro_bruto}"
+            if erro_bruto is not None
+            else "feed RSS do YouTube respondeu sem entradas validas (bozo) apos 2 tentativas"
+        )
         return None
 
     relatorios = []
