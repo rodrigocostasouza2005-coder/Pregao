@@ -165,6 +165,36 @@ def _ultima_cotacao_indice_valida() -> dict:
 
 
 @st.cache_data(ttl=30, show_spinner=False)
+def _sem_barras_de_fim_de_semana(hist):
+    """Remove barras diarias datadas de sabado/domingo (no fuso da propria
+    barra). Pares de moeda como USDBRL=X recebem cotacoes indicativas no
+    fim de semana: sem este filtro, a "variacao do dia" de domingo (ou de
+    segunda, contra a barra de domingo) comparava uma cotacao indicativa
+    com o fechamento de sexta. Indices/futuros nao tem essas barras, entao
+    nada muda pra eles."""
+    try:
+        if hist is None or hist.empty or not hasattr(hist.index, "dayofweek"):
+            return hist
+        return hist[hist.index.dayofweek < 5]
+    except Exception:
+        return hist
+
+
+def _ultimo_negocio_iso(ticker_obj, barra) -> str | None:
+    """regularMarketTime (epoch) do history_metadata, em ISO no fuso da
+    barra, quando cai no MESMO dia da barra usada - nunca outro dia."""
+    try:
+        epoch = (ticker_obj.history_metadata or {}).get("regularMarketTime")
+        if not epoch:
+            return None
+        momento = pd.Timestamp(int(epoch), unit="s", tz="UTC").tz_convert(barra.tz)
+        if momento.date() != barra.date():
+            return None
+        return momento.isoformat()
+    except Exception:
+        return None
+
+
 def obter_cotacao_indice(nome: str, symbol: str) -> dict:
     """
     Cotacao de indice/moeda pra ticker tape (ex: Ibovespa, dolar). Usa
@@ -181,7 +211,8 @@ def obter_cotacao_indice(nome: str, symbol: str) -> dict:
     """
     cache = _ultima_cotacao_indice_valida()
     try:
-        hist = yf.Ticker(symbol).history(period="5d", timeout=_TIMEOUT_YF)
+        ticker_obj = yf.Ticker(symbol)
+        hist = _sem_barras_de_fim_de_semana(ticker_obj.history(period="5d", timeout=_TIMEOUT_YF))
         if len(hist) < 2:
             raise ValueError("histórico insuficiente retornado pelo yfinance")
         preco = float(hist["Close"].iloc[-1])
@@ -198,6 +229,10 @@ def obter_cotacao_indice(nome: str, symbol: str) -> dict:
             "erro": None,
             # Momento em que este dado de mercado aparece no historico da fonte.
             "_barra_em": hist.index[-1].isoformat() if hasattr(hist.index[-1], "isoformat") else str(hist.index[-1]),
+            # Horario do ultimo negocio informado pela fonte (a barra
+            # diaria vem sempre a meia-noite do fuso da bolsa) - so'
+            # quando cai no mesmo dia da barra usada; None se ausente.
+            "_negocio_em": _ultimo_negocio_iso(ticker_obj, hist.index[-1]),
             # Horario da coleta real; nunca renovado quando o valor e reutilizado.
             "_coletado_em": datetime.now(timezone.utc).isoformat(),
         }

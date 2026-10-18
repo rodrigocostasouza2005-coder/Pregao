@@ -8,7 +8,7 @@ prévias visuais do PDF - NUNCA usadas em produção.
 resumos, cotações e agenda são CONTEÚDO DE EXEMPLO, escritos pra ter o
 tamanho e a estrutura do que o pipeline real entrega (resumo em blocos
 RESUMO/LEITURA DE MERCADO já separado em parágrafos de corpo)."""
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from data.morning_call_editorial import selecionar_manchete
@@ -16,8 +16,9 @@ from data.morning_call_editorial import selecionar_manchete
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 
 
-def _ind(nome, preco, var, barra="17/10 17:00 (horário de Brasília)", erro=None):
-    return {"nome": nome, "preco": preco, "variacao_pct": var, "barra_fmt": barra, "erro": erro}
+def _ind(nome, preco, var, barra="16/10 17:18 (horário de Brasília)", erro=None):
+    return {"nome": nome, "preco": preco, "variacao_pct": var, "barra_fmt": barra, "erro": erro,
+            "sessao": date(2026, 10, 16) if barra else None}
 
 
 def _noticia(titulo, veiculo, importancia, corpo=None, link=None, horas_atras=13, tickers=None, regiao="BR"):
@@ -46,15 +47,28 @@ def _serie_ibov():
 
 
 def _macro():
-    return [
-        {"indicador": "Selic", "referencia": "2026-10-08", "detalhe": "valor: 15,00", "valores": {"valor": 15.0}},
-        {"indicador": "CDI", "referencia": "2026-10-16", "detalhe": "cdi diario pct: 0,06; cdi anualizado pct: 14,90",
-         "valores": {"cdi_diario_pct": 0.0553, "cdi_anualizado_pct": 14.90}},
-        {"indicador": "Focus IPCA", "referencia": "2026", "detalhe": "mediana: 5,22; numero respondentes: 96",
-         "valores": {"mediana": 5.22, "media": 5.25, "numero_respondentes": 96}},
-        {"indicador": "Focus Selic", "referencia": "2026", "detalhe": "mediana: 15,00; numero respondentes: 94",
-         "valores": {"mediana": 15.0, "media": 15.02, "numero_respondentes": 94}},
-    ]
+    """Linhas macro geradas pelo PRÓPRIO data/morning_call_editorial.py a
+    partir de DataFrames com as colunas reais de data/macro.py (valores
+    do diagnóstico real de 18/10/2026) - a amostra antiga usava chaves
+    inventadas ('valor', 'mediana') e escondeu o defeito do Focus."""
+    import pandas as pd
+    from unittest.mock import patch
+    import data.morning_call_editorial as editorial
+
+    def _focus(medianas, respondentes):
+        return pd.DataFrame({
+            "ano_referencia": [2026, 2027, 2028], "mediana_pct": medianas, "media_pct": medianas,
+            "numero_respondentes": respondentes,
+            "data_calculo": pd.to_datetime(["2026-10-09"] * 3).tz_localize(TZ_SP)})
+
+    selic = pd.DataFrame({"data": pd.to_datetime(["2026-10-16"]).tz_localize(TZ_SP), "selic_meta_pct": [15.0]})
+    cdi = pd.DataFrame({"data": pd.to_datetime(["2026-10-16"]).tz_localize(TZ_SP),
+                        "cdi_diario_pct": [0.055131], "cdi_anualizado_pct": [14.90]})
+    with patch.object(editorial, "obter_selic_meta", lambda: selic), \
+            patch.object(editorial, "obter_cdi", lambda: cdi), \
+            patch.object(editorial, "obter_focus_ipca", lambda: _focus([5.2245, 4.30, 3.79], [144, 138, 117])), \
+            patch.object(editorial, "obter_focus_selic", lambda: _focus([13.25, 12.00, 10.50], [140, 135, 115])):
+        return editorial._macro_rows(datetime(2026, 10, 19, 8, 0, tzinfo=TZ_SP))
 
 
 def edicao_tipica():
@@ -146,6 +160,9 @@ def edicao_tipica():
             ],
             "noticias_erro": None,
         },
+        "mercados_nota": ("Cotações e variações referem-se à última sessão disponível (sexta-feira, 16/10), "
+                          "comparada com a sessão anterior."),
+        "janela_noticias": datetime(2026, 10, 16, 6, 0, tzinfo=TZ_SP),
         "limitacoes": (
             "Fontes gratuitas podem ter atraso e indisponibilidade; esta edição não garante cotação em tempo real.",
             "Conteúdo informativo, não constitui recomendação de investimento.",

@@ -267,3 +267,58 @@ def test_foto_valida_entra_proporcional_com_credito(monkeypatch):
     img = flows[0]
     assert abs(img.drawWidth / img.drawHeight - 1.5) < 0.01
     assert "InfoMoney" in flows[1].text
+
+
+# ------------------------------------------------------------------
+# Auditoria da edição real de 18/10/2026 - regressões de conteúdo
+# ------------------------------------------------------------------
+
+def _plano(texto):
+    return " ".join(texto.split())
+
+
+def test_tabela_macro_sem_nome_de_coluna_e_com_focus_do_ano_corrente(tipica):
+    texto = _plano(_texto(tipica[2]))
+    for cru in ("mediana pct", "media pct", "numero respondentes", "mediana_pct"):
+        assert cru not in texto
+    assert "Focus IPCA 2026" in texto and "5,22%" in texto
+    assert "Focus Selic 2027" in texto and "12,00%" in texto
+    assert "2028" not in texto
+    assert "boletim 09/10/2026" in texto
+    assert "Selic meta" in texto and "15,00% a.a." in texto
+    assert "144 respondentes" in texto
+
+
+def test_indicador_macro_indisponivel_mostra_motivo_sem_inventar_valor():
+    edicao = amostras.edicao_tipica()
+    for linha in edicao["brasil"]["indicadores"]:
+        if linha.get("indicador") in ("Selic meta", "CDI"):
+            linha.update(valor=None, referencia="—",
+                         erro="SGS 432: o Banco Central respondeu com página de erro HTML")
+    texto = _plano(_texto(PdfReader(io.BytesIO(pdf_mod.gerar_pdf(edicao)))))
+    assert "Indisponível (Selic meta, CDI): SGS 432: o Banco Central respondeu com página de erro HTML" in texto
+    assert "15,00% a.a." not in texto
+
+
+def test_nota_de_mercados_explica_sessao_e_dolar(tipica):
+    texto = _plano(_texto(tipica[2]))
+    assert "referem-se à última sessão disponível (sexta-feira, 16/10)" in texto
+    assert "USDBRL=X" in texto
+    assert "00:00" not in texto and "01:00" not in texto
+
+
+def test_agenda_vazia_nao_afirma_ausencia_de_eventos():
+    edicao = amostras.edicao_tipica()
+    edicao["empresas"]["agenda"] = []
+    edicao["agora"] = datetime(2026, 10, 18, 12, 0, tzinfo=TZ_SP)  # domingo
+    texto = _plano(_texto(PdfReader(io.BytesIO(pdf_mod.gerar_pdf(edicao)))))
+    assert "Não há pregão hoje (fim de semana)" in texto
+    assert "pode não incluir todos os eventos" in texto
+    assert "Nenhuma divulgação de resultado prevista" not in texto
+
+
+def test_editoria_vazia_diz_a_janela_consultada():
+    edicao = amostras.edicao_tipica()
+    edicao["exterior"]["noticias"] = None
+    texto = _plano(_texto(PdfReader(io.BytesIO(pdf_mod.gerar_pdf(edicao)))))
+    assert "Nenhuma notícia desta editoria publicada desde 16/10 às 06:00" in texto
