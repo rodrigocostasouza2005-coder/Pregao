@@ -163,10 +163,11 @@ def test_montar_edicao_estrutura_completa_sem_rede():
     assert edicao["agora"] == agora
     assert set(edicao.keys()) == {"agora", "capa", "brasil", "exterior", "empresas", "limitacoes", "fontes"}
     assert edicao["brasil"]["noticias"] is None
-    assert edicao["brasil"]["destaque"] is None
     assert edicao["empresas"]["agenda"] == []
-    assert len(edicao["exterior"]["interpretacoes"]) == 3
-    assert all(i["tag"] == ed.TAG_INTERPRETACAO for i in edicao["exterior"]["interpretacoes"])
+    # sem notícia nenhuma, a capa não inventa manchete
+    assert edicao["capa"]["manchete"] is None and edicao["capa"]["chamadas"] == []
+    # as 3 "interpretações" genéricas fixas (iguais todo dia) saíram da edição
+    assert "interpretacoes" not in edicao["exterior"]
 
 
 def test_montar_edicao_capa_usa_top3_por_importancia():
@@ -181,3 +182,62 @@ def test_montar_edicao_capa_usa_top3_por_importancia():
     titulos_capa = [d["titulo"] for d in edicao["capa"]["destaques"]]
     assert titulos_capa[0] == "Alta importância"
     assert "Baixa importância" in titulos_capa  # só 3 notícias no total, as 3 entram
+
+
+def _fato(titulo, importancia, corpo=None):
+    return {"titulo": titulo, "importancia": importancia, "corpo": corpo or []}
+
+
+def test_manchete_e_a_mais_importante_entre_as_que_tem_texto():
+    """Relevância editorial manda, não volume de texto: a mais importante
+    com texto publicável abre a capa; uma mais importante SEM texto vira
+    chamada (não ganha manchete só de título enquanto houver opção com texto)."""
+    sem_texto = _fato("Muito importante, sem texto", 0.99)
+    lider = _fato("Importante com texto", 0.90, ["Parágrafo."])
+    longa = _fato("Menos importante e mais longa", 0.50, ["Texto longo. " * 40])
+    manchete, chamadas = ed.selecionar_manchete([longa, sem_texto, lider])
+    assert manchete is lider
+    assert chamadas == [sem_texto, longa]
+
+
+def test_manchete_so_de_titulo_quando_nenhuma_tem_texto():
+    a, b = _fato("A", 0.3), _fato("B", 0.8)
+    manchete, chamadas = ed.selecionar_manchete([a, b])
+    assert manchete is b and chamadas == [a]
+
+
+def test_sem_noticia_nao_ha_manchete():
+    assert ed.selecionar_manchete([]) == (None, [])
+
+
+def test_corpo_vem_do_bloco_resumo_do_cache_sem_a_leitura_de_mercado():
+    """O jornal publica o RESUMO (fato) já cacheado - nunca a LEITURA DE
+    MERCADO (interpretação do modelo) - e não chama IA nenhuma."""
+    noticia = {"titulo": "Ibovespa sobe", "link": "https://x/1", "regiao": "BR", "tickers": [],
+               "importancia": 0.9, "veiculos": ["InfoMoney"], "fontes": [], "data": "2026-10-17T18:00:00-03:00"}
+    pronto = {"resumo": "RESUMO:\nO Ibovespa subiu 0,5%.\n\nO volume foi de R$ 21 bilhões.\n\n"
+                        "LEITURA DE MERCADO:\nInvestidores devem seguir otimistas.",
+              "imagem": "https://img/x.jpg", "link_original": "https://veiculo/materia"}
+    agora = datetime(2026, 10, 19, 7, tzinfo=TZ_SP)
+    with _MultiPatch(obter_top_mercado_tudo=lambda: [noticia],
+                     obter_resumos_prontos=lambda grupos: {"https://x/1": pronto}):
+        edicao = ed.montar_edicao(agora)
+    item = edicao["brasil"]["noticias"][0]
+    assert item["corpo"] == ["O Ibovespa subiu 0,5%.", "O volume foi de R$ 21 bilhões."]
+    assert "otimistas" not in " ".join(item["corpo"])
+    assert item["imagem"] == "https://img/x.jpg"
+    assert item["veiculo"] == "InfoMoney"
+    assert edicao["capa"]["manchete"] is item
+
+
+def test_falha_na_leitura_do_cache_nao_derruba_a_edicao():
+    noticia = {"titulo": "X", "link": "https://x/1", "regiao": "BR", "tickers": [], "importancia": 1}
+
+    def _quebra(_g):
+        raise RuntimeError("cache fora do ar")
+
+    agora = datetime(2026, 10, 19, 7, tzinfo=TZ_SP)
+    with _MultiPatch(obter_top_mercado_tudo=lambda: [noticia], obter_resumos_prontos=_quebra):
+        edicao = ed.montar_edicao(agora)
+    assert edicao["brasil"]["noticias"][0]["corpo"] == []
+    assert edicao["capa"]["manchete"]["titulo"] == "X"

@@ -13,14 +13,12 @@ Reaproveita os MESMOS provedores que jobs/morning_call.py já usa
 reconsulta nem reformula um número/fato com regra própria diferente da
 do e-mail em texto simples (mesma fonte única de verdade).
 
-TAGS editoriais (exigência explícita da missão, nunca misturadas):
-FATO = reportado por uma fonte identificada (cotação, indicador,
-manchete com link/veículo). INTERPRETAÇÃO = leitura de cenário/risco,
-nunca um número novo (mesmas 3 linhas de TENDÊNCIAS E RISCOS do
-e-mail-texto - jobs/morning_call.py - única fonte de verdade,
-reaproveitada aqui, nunca duplicada com texto diferente). ACOMPANHAR =
-evento futuro da agenda (ainda não aconteceu - por definição não é fato
-consumado nem interpretação de risco).
+Separação fato/comentário: o jornal publica só FATO com fonte (cotação,
+indicador, matéria com veículo e link; o texto vem do bloco RESUMO do
+resumo já cacheado, nunca da LEITURA DE MERCADO do modelo). ACOMPANHAR
+marca evento futuro da agenda. As 3 "interpretações" genéricas fixas que
+saíam em toda edição foram retiradas (eram iguais todo dia - enchimento,
+não informação).
 """
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -33,13 +31,12 @@ from data.eventos import (
     calcular_calendario_cacheado,
 )
 from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta
-from data.news import obter_resumos_prontos, obter_top_mercado_tudo
+from data.news import obter_resumos_prontos, obter_top_mercado_tudo, separar_secoes_resumo
 from data.prices import obter_cotacao_indice, obter_historico
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 
 TAG_FATO = "FATO"
-TAG_INTERPRETACAO = "INTERPRETAÇÃO"
 TAG_ACOMPANHAR = "ACOMPANHAR"
 
 _NOTA_STATUS_EVENTO = {
@@ -48,27 +45,12 @@ _NOTA_STATUS_EVENTO = {
     STATUS_ESTIMADO: "data ESTIMADA por fonte externa — ainda não confirmada pela empresa.",
 }
 
-# Mesmas 3 linhas de TENDÊNCIAS E RISCOS do e-mail em texto simples
-# (jobs/morning_call.py) - única fonte de verdade pra interpretação de
-# cenário; nunca reescritas aqui com palavras diferentes (duplicaria
-# conteúdo editorial com 2 formulações divergentes do mesmo risco).
-INTERPRETACOES_PADRAO = (
-    "Risco global: acompanhe a direção dos futuros americanos, dólar e "
-    "commodities; confirme os movimentos nas fontes originais.",
-    "Brasil: observe juros futuros, câmbio e notícias fiscais/políticas; "
-    "o efeito depende da surpresa frente às expectativas.",
-    "Empresas: valide comunicados oficiais e resultados antes de "
-    "atribuir causalidade a movimentos de preço.",
-)
-
 LIMITACOES_PADRAO = (
     "Fontes gratuitas podem ter atraso e indisponibilidade; esta edição "
     "não garante cotação em tempo real.",
     "Não foram incluídos preços ou fatos que não puderam ser confirmados "
     "nesta execução.",
-    "Itens marcados INTERPRETAÇÃO são leitura de cenário, não fato nem "
-    "previsão garantida; itens marcados ACOMPANHAR são eventos futuros, "
-    "não resultados já ocorridos.",
+    "A agenda lista eventos previstos, não resultados já divulgados.",
     "Conteúdo informativo, não constitui recomendação de investimento.",
 )
 
@@ -157,7 +139,7 @@ def _macro_rows():
         try:
             dado = fn()
             if not isinstance(dado, pd.DataFrame) or dado.empty:
-                linhas.append({"indicador": nome, "referencia": "—", "detalhe": "indisponível"})
+                linhas.append({"indicador": nome, "referencia": "—", "detalhe": "indisponível", "valores": {}})
                 continue
             coluna_rotulo = "data" if "data" in dado.columns else (
                 "ano_referencia" if "ano_referencia" in dado.columns else None
@@ -171,10 +153,16 @@ def _macro_rows():
                 else str(bruto_rotulo)[:10] if coluna_rotulo and pd.notna(bruto_rotulo) else "—"
             )
             valores = []
+            # mesmos valores, numericos e por coluna original - o PDF
+            # formata com a unidade documentada de cada serie (ver
+            # data/macro.py) em vez de reaproveitar o texto montado acima
+            valores_num = {}
             for coluna in colunas_valor:
                 valor = ultimo.get(coluna)
                 if not pd.notna(valor):
                     continue
+                if isinstance(valor, (int, float)):
+                    valores_num[coluna] = float(valor)
                 rotulo_coluna = coluna.replace("_", " ")
                 if coluna in colunas_inteiras:
                     valores.append(f"{rotulo_coluna}: {int(valor)}")
@@ -183,9 +171,10 @@ def _macro_rows():
             linhas.append({
                 "indicador": nome, "referencia": referencia,
                 "detalhe": "; ".join(valores) if valores else "sem valor estruturado",
+                "valores": valores_num,
             })
         except Exception:
-            linhas.append({"indicador": nome, "referencia": "—", "detalhe": "indisponível"})
+            linhas.append({"indicador": nome, "referencia": "—", "detalhe": "indisponível", "valores": {}})
     return linhas
 
 
@@ -212,56 +201,66 @@ def _coletar_noticias():
     return None, brasil, empresas, exterior
 
 
-def _item_fato(item):
-    """Manchete -> {titulo, link, veiculo, tag=FATO} - veículo atribuído
-    explicitamente (nunca um fato sem fonte visível no PDF)."""
+def _item_fato(item, pronto=None):
+    """Manchete -> {titulo, link, veiculo, tag=FATO, ...} - veículo
+    atribuído explicitamente (nunca um fato sem fonte visível no PDF).
+
+    `pronto` = resultado JÁ CACHEADO do resumo desse grupo (ver
+    _resumos_cacheados) - "corpo" recebe só os parágrafos do bloco RESUMO
+    (separar_secoes_resumo); a LEITURA DE MERCADO (interpretação do
+    modelo) fica de fora do jornal de propósito: o PDF publica fato com
+    fonte, não opinião gerada. Sem resumo cacheado, corpo=[] e o renderer
+    publica só a manchete com a fonte (nunca inventa texto)."""
     veiculos = item.get("veiculos") or []
+    pronto = pronto or {}
+    corpo = []
+    if pronto.get("resumo"):
+        try:
+            corpo, _leitura = separar_secoes_resumo(pronto["resumo"])
+        except Exception:
+            corpo = []
     return {
         "titulo": str(item.get("titulo") or "").strip(),
         "link": str(item.get("link") or "").strip() or None,
         "veiculo": veiculos[0] if veiculos else None,
         "tag": TAG_FATO,
+        "importancia": item.get("importancia") or 0,
+        "data": item.get("data"),
+        "tickers": list(item.get("tickers") or []),
+        "corpo": corpo,
+        "imagem": pronto.get("imagem"),
+        "link_original": pronto.get("link_original"),
     }
 
 
-def _destaque(itens):
-    """'Destaque' de página = a manchete de maior importância do grupo,
-    atribuída ao veículo - nunca uma citação textual inventada (não há
-    fonte de aspas verbatim de pessoa nenhuma neste pipeline; usar a
-    própria manchete, atribuída, preserva o efeito editorial do mockup
-    sem fabricar uma frase que ninguém disse)."""
-    if not itens:
-        return None
-    melhor = max(itens, key=lambda i: i.get("importancia") or 0)
-    return _item_fato(melhor)
-
-
-def _cards_empresas(itens, limite=4):
-    """Cards com foto pra EMPRESAS E SETORES - usa SÓ
-    data/news.py:obter_resumos_prontos (leitura em lote do cache já
-    existente, sem custo de rede/IA novo aqui) pra resumo+imagem; grupo
-    sem resumo cacheado ainda aparece como card, só sem foto/resumo
-    (nunca inventa um resumo nem baixa imagem on-demand - ver docstring
-    de obter_resumos_prontos)."""
-    selecionados = itens[:limite]
-    if not selecionados:
-        return []
-    grupos = [{"titulo": i.get("titulo"), "fontes": i.get("fontes") or [], "link": i.get("link")} for i in selecionados]
+def _resumos_cacheados(itens):
+    """{link_do_grupo: resultado} dos resumos JÁ cacheados - uma única
+    leitura em lote (obter_resumos_prontos nunca gera resumo nem chama IA).
+    Falha de leitura -> {} (a edição sai só com manchetes, nunca quebra)."""
+    grupos = [{"titulo": i.get("titulo"), "fontes": i.get("fontes") or [], "link": i.get("link")}
+              for i in itens if i.get("link")]
+    if not grupos:
+        return {}
     try:
-        prontos = obter_resumos_prontos(grupos)
+        return obter_resumos_prontos(grupos) or {}
     except Exception:
-        prontos = {}
-    cards = []
-    for item in selecionados:
-        fato = _item_fato(item)
-        pronto = prontos.get(item.get("link")) or {}
-        cards.append({
-            **fato,
-            "resumo": pronto.get("resumo"),
-            "imagem": pronto.get("imagem"),
-            "link_original": pronto.get("link_original") or fato["link"],
-        })
-    return cards
+        return {}
+
+
+def selecionar_manchete(fatos, n_chamadas=5):
+    """(manchete, chamadas) da capa - a manchete é a matéria de MAIOR
+    importância editorial (data/news.py:_calcular_importancia: veículos,
+    recência, termos de mercado) entre as que têm texto publicável;
+    nunca a que tem mais texto ou foto. Sem nenhuma matéria com texto, a
+    de maior importância vira manchete só com título. Sem nenhuma
+    notícia -> (None, []): a capa não inventa manchete."""
+    ordenados = sorted(fatos, key=lambda f: f.get("importancia") or 0, reverse=True)
+    if not ordenados:
+        return None, []
+    com_texto = [f for f in ordenados if f.get("corpo")]
+    manchete = com_texto[0] if com_texto else ordenados[0]
+    chamadas = [f for f in ordenados if f is not manchete][:n_chamadas]
+    return manchete, chamadas
 
 
 def _linha_evento(evento):
@@ -317,40 +316,47 @@ def montar_edicao(agora=None):
     brasil_bruto = brasil_bruto or []
     empresas_bruto = empresas_bruto or []
     exterior_bruto = exterior_bruto or []
-    noticias_brasil = [_item_fato(i) for i in brasil_bruto]
-    noticias_exterior_fatos = [_item_fato(i) for i in exterior_bruto]
+    # Limite de extensão da edição (o PDF cresce com o conteúdo, mas não
+    # sem limite): as N mais importantes de cada editoria.
+    def _top(itens, limite):
+        return sorted(itens, key=lambda i: i.get("importancia") or 0, reverse=True)[:limite]
 
-    def _top_capa(fatos_brutos, limite=3):
-        ordenados = sorted(fatos_brutos, key=lambda i: i.get("importancia") or 0, reverse=True)
-        return [_item_fato(i) for i in ordenados[:limite]]
+    brasil_sel = _top(brasil_bruto, 8)
+    exterior_sel = _top(exterior_bruto, 8)
+    empresas_sel = _top(empresas_bruto, 6)
+    prontos = _resumos_cacheados(brasil_sel + exterior_sel + empresas_sel)
 
-    todos_brutos = brasil_bruto + empresas_bruto + exterior_bruto
+    def _fatos(itens):
+        return [_item_fato(i, prontos.get(i.get("link"))) for i in itens]
+
+    noticias_brasil = _fatos(brasil_sel)
+    noticias_exterior_fatos = _fatos(exterior_sel)
+    noticias_empresas = _fatos(empresas_sel)
+    todos_fatos = noticias_brasil + noticias_empresas + noticias_exterior_fatos
+    manchete, chamadas = selecionar_manchete(todos_fatos)
 
     edicao = {
         "agora": agora,
         "capa": {
             "indicadores": [ibov, dolar],
-            "destaques": _top_capa(todos_brutos, 3),
+            "destaques": sorted(todos_fatos, key=lambda f: f["importancia"], reverse=True)[:3],
+            "manchete": manchete,
+            "chamadas": chamadas,
         },
         "brasil": {
             "indicadores": [ibov, dolar] + _macro_rows(),
             "historico_ibov": _serie_fechamento("^BVSP", "1M"),
-            "destaque": _destaque(brasil_bruto),
-            "noticias": noticias_brasil[:8] or None,
+            "noticias": noticias_brasil or None,
             "noticias_erro": noticias_erro,
         },
         "exterior": {
             "indicadores": [sp500, nasdaq, ouro, petroleo],
             "historico_petroleo": _serie_fechamento("BZ=F", "1M"),
-            "destaque": _destaque(exterior_bruto),
-            "noticias": noticias_exterior_fatos[:8] or None,
+            "noticias": noticias_exterior_fatos or None,
             "noticias_erro": noticias_erro,
-            "interpretacoes": [
-                {"texto": t, "tag": TAG_INTERPRETACAO} for t in INTERPRETACOES_PADRAO
-            ],
         },
         "empresas": {
-            "cards": _cards_empresas(empresas_bruto),
+            "cards": noticias_empresas,
             "agenda": _agenda_hoje(agora),
             "noticias_erro": noticias_erro,
         },
