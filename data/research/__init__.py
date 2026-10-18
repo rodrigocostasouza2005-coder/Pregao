@@ -68,6 +68,13 @@ CASAS = [
         # aparecia no print(), nunca no painel. Opcional - casas sem essa
         # chave continuam exatamente como antes.
         "motivo_falha": genial.motivo_ultima_falha,
+        # achado real (auditoria 2026-10-18, correcao do exit code de
+        # coletor_local.py): sem isso, uma falha aqui (bloqueio de WAF
+        # ja' documentado, cronico desde 24/09) derrubava o exit code
+        # igual a uma regressao nova em qualquer outra casa - opcional,
+        # casa sem essa chave continua tratada como 'erro' (nunca
+        # bloqueio conhecido por padrao), ver _classificar_falha.
+        "categoria_falha": genial.categoria_ultima_falha,
     },
     {
         "id": "xp",
@@ -79,6 +86,7 @@ CASAS = [
         "extrator_texto": xp.obter_texto_aberto,  # nunca baixa a pagina publica (paywall)
         "tentar_coleta_automatica": False,  # idem Genial - bloqueada no Cloud (403), ver coletor_local.py
         "motivo_falha": xp.motivo_ultima_falha,
+        "categoria_falha": xp.categoria_ultima_falha,  # ver comentario equivalente em Genial Analisa acima
     },
     {
         # Ligada em 2026-09-28 a pedido explicito do Rodrigo ("quero a
@@ -198,17 +206,50 @@ def coletar_casa(casa: dict) -> tuple[int, bool]:
     return len(itens), ok
 
 
+def _classificar_falha(casa: dict) -> str:
+    """Classifica a falha de `casa` (so' chamada quando coletar_casa
+    devolveu ok=False) pra coletor_local.py decidir se ela sozinha deve
+    derrubar o exit code (ver _falha_critica la'). Regra dura (pedido
+    explicito, achado real auditoria 2026-10-18): 'bloqueio_externo_
+    conhecido' SO' quando a casa expoe 'categoria_falha' (callable) E ele
+    devolve exatamente essa string - campo ausente, excecao ao chamar, ou
+    qualquer valor diferente (incluindo None/vazio) sempre volta 'erro'.
+    Nunca usa um flag estatico por casa (ex: 'essa casa e bloqueada,
+    ignora falha dela') - a classificacao e' sempre da falha ESPECIFICA
+    que aconteceu agora, lida do motivo real (ver categoria_ultima_falha
+    em genial.py/xp.py) - uma falha nova/diferente na mesma casa (ex: a
+    XP comecar a devolver HTTP 500 em vez do 403 do Akamai) continua
+    'erro', nao fica mascarada so' porque a casa 'e' conhecida por
+    falhar'."""
+    obter_categoria = casa.get("categoria_falha")
+    if obter_categoria is None:
+        return "erro"
+    try:
+        categoria = obter_categoria()
+    except Exception:
+        return "erro"
+    return categoria if categoria == "bloqueio_externo_conhecido" else "erro"
+
+
 def coletar_todas_disponiveis() -> dict:
     """Coleta (sem gate de tempo) todas as casas marcadas como disponiveis.
     Pensada pra ser chamada por um job agendado, nao pelo app ao vivo (o
     app usa obter_relatorios_unificado, que respeita o gate de 30min).
-    Retorna {nome_da_casa: {'coletados': N, 'ok': bool}}."""
+    Retorna {nome_da_casa: {'coletados': N, 'ok': bool, 'categoria_falha':
+    str | None}} - 'categoria_falha' so' e' diferente de None quando
+    ok=False (ver _classificar_falha); usado por coletor_local.py pra
+    decidir o exit code sem derrubar a build por um bloqueio externo ja'
+    documentado (ex: Akamai na Genial/XP), mas sem mascarar nenhuma falha
+    nova ou falha de persistencia (que continua sempre 'erro')."""
     resultado = {}
     for casa in CASAS:
         if not casa["disponivel"]:
             continue
         coletados, ok = coletar_casa(casa)
-        resultado[casa["nome"]] = {"coletados": coletados, "ok": ok}
+        entrada = {"coletados": coletados, "ok": ok, "categoria_falha": None}
+        if not ok:
+            entrada["categoria_falha"] = _classificar_falha(casa)
+        resultado[casa["nome"]] = entrada
     return resultado
 
 
