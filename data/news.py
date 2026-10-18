@@ -1400,6 +1400,31 @@ def _extrair_dimensao_declarada(sopa, seletor_largura: str, seletor_altura: str)
 # PRE-PROCESSAMENTO em lote (pregerar_resumos_news), que ja' tem
 # orcamento proprio de tempo/rede reservado pra isso (ver seção 5 do
 # pedido: "testar se a URL realmente retorna uma imagem utilizável").
+#
+# bug real encontrado nesta auditoria (2026-10-17, investigacao do card
+# sem foto em produção): esta funcao usava _HEADERS (UA educado e
+# autoidentificado, "PregaoApp/0.1 (uso pessoal...)") - apropriado pro
+# RSS do Google News (que espera um bot se identificar), mas varios CDNs
+# de imagem de veiculo BR (ex: glbimg, imguol) tratam qualquer UA que
+# nao pareca navegador real como bot de scraping e bloqueiam (403/406)
+# ou devolvem um Content-Type generico, fazendo o GATE desta funcao
+# descartar (imagem=None) uma og:image perfeitamente valida so' por
+# causa do UA da PROPRIA validacao - nunca da imagem em si. O download
+# do ARTIGO (_extrair_texto_artigo, alguns paragrafos acima) ja usa um
+# UA de navegador real exatamente por esse motivo e funciona contra os
+# mesmos hosts; replica aqui o mesmo UA, so' pra esta chamada (nao
+# reaproveita _HEADERS global, que outros fetches - RSS - continuam
+# usando sem mudanca).
+_HEADERS_IMAGEM = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/128.0.0.0 Safari/537.36"
+    ),
+    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+}
+
+
 def _url_imagem_utilizavel(url: str) -> bool:
     """HEAD curto (GET como fallback, pra servidor que nao suporta HEAD)
     confirmando que a URL responde com Content-Type de imagem de verdade
@@ -1410,9 +1435,9 @@ def _url_imagem_utilizavel(url: str) -> bool:
     if not url or not isinstance(url, str):
         return False
     try:
-        r = requests.head(url, headers=_HEADERS, timeout=(3, 5), allow_redirects=True)
+        r = requests.head(url, headers=_HEADERS_IMAGEM, timeout=(3, 5), allow_redirects=True)
         if r.status_code >= 400 or r.status_code == 405 or not r.headers.get("Content-Type"):
-            r = requests.get(url, headers=_HEADERS, timeout=(3, 5), stream=True)
+            r = requests.get(url, headers=_HEADERS_IMAGEM, timeout=(3, 5), stream=True)
         if r.status_code >= 400:
             return False
         tipo = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
@@ -1582,6 +1607,45 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
                 imagem = candidata_trafilatura
     except Exception:
         pass
+
+    # Ultimo fallback: imagem lazy-loaded dentro do bloco de artigo
+    # principal (achado real, auditoria 2026-10-17 - rastreando o bug
+    # "fotos nao aparecem" ponta a ponta contra cache de producao:
+    # guiadoinvestidor.com.br e sites no mesmo molde nao declaram
+    # og:image/twitter:image nem JSON-LD NENHUM - a <img> real so existe
+    # com src=data:image/svg (placeholder de lazy-load) + a URL de
+    # verdade num atributo data-lazy-src/data-src, que os blocos acima
+    # (meta tags, JSON-LD, itemprop, trafilatura) nunca olham.
+    # So considera a PRIMEIRA <img> dentro do bloco principal que NAO
+    # esteja dentro de um <article> aninhado (achado real confirmado
+    # nesta auditoria: a mesma pagina embute os "relacionados" como
+    # <article> aninhado DENTRO do <article> principal - sem essa
+    # exclusao, uma materia SEM foto propria as vezes "roubaria" a foto
+    # de outra materia do bloco de relacionados).
+    if not imagem:
+        for seletor in ("article", "main", '[itemprop="articleBody"]'):
+            bloco_principal = sopa.select_one(seletor)
+            if not bloco_principal:
+                continue
+            for img_tag in bloco_principal.find_all("img"):
+                dentro_de_aninhado = False
+                pai = img_tag.parent
+                while pai is not None and pai is not bloco_principal:
+                    if getattr(pai, "name", None) == "article":
+                        dentro_de_aninhado = True
+                        break
+                    pai = pai.parent
+                if dentro_de_aninhado:
+                    continue
+                candidata_bruta = (
+                    img_tag.get("data-lazy-src") or img_tag.get("data-src")
+                    or img_tag.get("data-original") or img_tag.get("src")
+                )
+                imagem = _candidata_imagem(candidata_bruta)
+                if imagem:
+                    break
+            if imagem:
+                break
 
     # Segundo extrator menos restritivo: usa parágrafos de article/main,
     # remove navegação/rodapé e só aceita texto com tamanho mínimo. Não
