@@ -575,9 +575,17 @@ def _texto_tag(n: dict) -> str:
 
 
 def _tooltip_regras(n: dict) -> str:
+    """Explica o selo/score (ver data/news.py:_calcular_score): e' uma
+    heuristica por REGRAS fixas (veiculo confiavel, nº de veiculos,
+    linguagem sensacionalista/termo de rumor) - nunca uma probabilidade
+    calibrada de o fato estar certo, nem uma nota de confianca da IA (ABA
+    5, 2026-10-17: achado real - card em produção mostrou "PROV 100" e o
+    numero foi lido como % de acerto, quando na verdade e' so' a soma das
+    regras abaixo, capada em 100)."""
+    prefixo = "confiabilidade editorial (regras, não é % de acerto): "
     if not n["regras"]:
-        return "score base, nenhuma regra especial se aplicou"
-    return "; ".join(n["regras"])
+        return prefixo + "score base, nenhuma regra especial se aplicou"
+    return prefixo + "; ".join(n["regras"])
 
 
 def _truncar(texto: str, limite: int = _TRUNCA_MANCHETE) -> str:
@@ -849,7 +857,11 @@ def _meta_line_dialog(n: dict) -> str:
     if veiculo_principal:
         partes.append(html.escape(veiculo_principal))
     partes.append(_fmt_hora(n["data"]))
-    partes.append(f"{n['fontes_count']} fonte(s)")
+    tooltip_fontes = html.escape(
+        "veículos distintos que publicaram manchete semelhante sobre o mesmo fato — "
+        "não garante apuração independente (pode incluir reprodução da mesma agência/wire)"
+    )
+    partes.append(f"<span title='{tooltip_fontes}' style='cursor:help;'>{n['fontes_count']} fonte(s)</span>")
     confirmacao = n.get("cvm_confirmacao")
     if confirmacao:
         data_doc = confirmacao["data"][:10]
