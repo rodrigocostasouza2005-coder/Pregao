@@ -2,12 +2,26 @@ name: Radar e Morning Call
 
 on:
   schedule:
-    # B3: 10:00-17:00 BRT = 13:00-20:00 UTC, weekdays. Every 15 minutes.
-    - cron: "*/15 13-19 * * 1-5"
-    - cron: "0 20 * * 1-5"
-    # Morning Call at 08:00 BRT (America/Sao_Paulo, UTC-3, sem horário de
-    # verão desde 2019) on weekdays. 08:00 BRT = 11:00 UTC.
-    - cron: "0 11 * * 1-5"
+    # O GitHub DESCARTA disparos de `schedule` sob carga - medido de
+    # verdade (2026-10-18): de ~220 disparos esperados entre 14 e 17/10
+    # (este workflow + coletores-nuvem.yml), so' 23 aconteceram, e zero
+    # na sexta 17/10 inteira (Morning Call das 08h nao saiu). Minutos
+    # "redondos" (:00/:15/:30/:45) sao os mais congestionados, por isso
+    # todos os horarios abaixo usam minutos quebrados. Isso REDUZ a perda,
+    # nao garante - o disparo externo confiavel esta' em MANUAL.md
+    # ("Disparo externo dos agendamentos").
+    #
+    # Radar - B3 10:00-17:00 BRT = 13:00-20:00 UTC, dias uteis, a cada 15min.
+    - cron: "4,19,34,49 13-19 * * 1-5"
+    - cron: "4 20 * * 1-5"
+    # Morning Call - 08:03 BRT (UTC-3, sem horario de verao desde 2019)
+    # + 3 disparos de reserva. O envio e' idempotente por dia e por
+    # destinatario (jobs/morning_call.py:_ja_enviado_hoje): o primeiro que
+    # o GitHub entregar envia, os seguintes so' confirmam "ja enviado".
+    - cron: "3 11 * * 1-5"
+    - cron: "17 11 * * 1-5"
+    - cron: "38 11 * * 1-5"
+    - cron: "7 12 * * 1-5"
   workflow_dispatch:
     inputs:
       job:
@@ -28,17 +42,19 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: pregao-radar-morning-call
-  cancel-in-progress: false
-
 jobs:
   radar:
     if: >-
-      github.event_name == 'schedule' && (github.event.schedule == '*/15 13-19 * * 1-5' || github.event.schedule == '0 20 * * 1-5')
+      github.event_name == 'schedule' && contains(fromJSON('["4,19,34,49 13-19 * * 1-5", "4 20 * * 1-5"]'), github.event.schedule)
       || github.event_name == 'workflow_dispatch' && (inputs.job == 'radar' || inputs.job == 'ambos')
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    # concurrency por JOB (antes era do workflow inteiro): o GitHub mantem
+    # so' 1 execucao pendente por grupo e cancela a anterior - com um grupo
+    # unico, um Radar enfileirado podia derrubar o Morning Call pendente.
+    concurrency:
+      group: pregao-radar
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -70,10 +86,13 @@ jobs:
         run: python -m jobs.radar_quedas
   morning-call:
     if: >-
-      github.event_name == 'schedule' && github.event.schedule == '0 11 * * 1-5'
+      github.event_name == 'schedule' && contains(fromJSON('["3 11 * * 1-5", "17 11 * * 1-5", "38 11 * * 1-5", "7 12 * * 1-5"]'), github.event.schedule)
       || github.event_name == 'workflow_dispatch' && (inputs.job == 'morning_call' || inputs.job == 'ambos')
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    concurrency:
+      group: pregao-morning-call
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

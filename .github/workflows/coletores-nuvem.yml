@@ -4,8 +4,11 @@ on:
   schedule:
     # Horário comercial de Brasília (UTC-3): seg-sex, 07:00–20:00.
     # GitHub Actions usa UTC; evita execuções noturnas/fins de semana.
-    - cron: "*/30 10-22 * * 1-5"
-    - cron: "0 23 * * 1-5"
+    # Minutos quebrados de proposito: o GitHub descarta disparos de
+    # schedule sob carga, e :00/:30 sao os horarios mais congestionados
+    # (ver comentario em radar-morning-call.yml e MANUAL.md).
+    - cron: "11,41 10-22 * * 1-5"
+    - cron: "11 23 * * 1-5"
   workflow_dispatch:
 
 permissions:
