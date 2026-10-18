@@ -1,0 +1,31 @@
+name: DIAG temporario - Morning Call (somente leitura)
+on:
+  push:
+    branches: [diag/morning-call-dados-20261018]
+    paths: [diag_morning_call.py, .github/workflows/_diag-morning-call.yml]
+permissions:
+  contents: write   # so para gravar o PDF/PNG de volta NESTA branch temporaria
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+      - run: sudo apt-get install -y -q poppler-utils >/dev/null
+      # SEM secrets de proposito: nada de Supabase (zero escrita) nem e-mail
+      - run: python diag_morning_call.py 2>&1 | grep -v "No runtime found\|ScriptRunContext"
+        env:
+          STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+          PYTHONUNBUFFERED: "1"
+      - run: |
+          cd saida_diag && pdftoppm -r 80 -png morning_call_real.pdf pagina || true
+      - run: |
+          git config user.name "diag-bot"; git config user.email "diag-bot@users.noreply.github.com"
+          rm -rf saida_real && mv saida_diag saida_real && git add saida_real
+          git commit -m "diag: saida real (nao mergear)" && git push origin HEAD:diag/morning-call-dados-20261018
