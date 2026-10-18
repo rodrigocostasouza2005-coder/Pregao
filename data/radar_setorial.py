@@ -335,9 +335,11 @@ def _tem_termo(texto, termos):
 def _tem_nome(titulo, nomes):
     """Nomes de empresa que também são palavras comuns ("Vale", "Gol",
     "TIM", "Azul", "Rumo") - comparados com maiúscula, no título original;
-    "Vale a pena" não conta."""
+    "Vale a pena" e "Vale + infinitivo" não contam."""
     for nome in nomes:
-        if re.search(rf"(?<![\w-]){re.escape(nome)}(?![\w-])(?! a pena)", str(titulo or "")):
+        # "Vale a pena", "Vale manter/investir..." são o verbo, não a empresa
+        if re.search(rf"(?<![\w-]){re.escape(nome)}(?![\w-])(?! a pena)(?! [a-zà-ú]+(?:ar|er|ir)\b)",
+                     str(titulo or "")):
             return True
     return False
 

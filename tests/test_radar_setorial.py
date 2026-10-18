@@ -136,6 +136,11 @@ def test_nome_de_empresa_ambiguo_exige_maiuscula():
     assert rs._menciona_setor("Vale eleva produção de minério no trimestre", "MINERAÇÃO & SIDERURGIA")
     assert not rs._menciona_setor("Tesouro Selic ou CDB: onde vale a pena investir?", "MINERAÇÃO & SIDERURGIA")
     assert not rs._menciona_setor("Vale a pena investir em CDB com a Selic alta?", "MINERAÇÃO & SIDERURGIA")
+    # caso real de 18/10/2026
+    assert not rs._menciona_setor("Vale manter renda fixa, Bolsa americana e dólar depois do 1º turno?",
+                                  "MINERAÇÃO & SIDERURGIA")
+    assert rs._menciona_setor("Vale cede controle de Thompson e mantém fatia em níquel; ações sobem",
+                              "MINERAÇÃO & SIDERURGIA")
     assert rs._menciona_setor("Gol e Azul reajustam preços de passagens", "TRANSPORTE & LOGÍSTICA")
     assert not rs._menciona_setor("TIMES do Brasil mantêm vendas", "TECNOLOGIA & TELECOM")
 
