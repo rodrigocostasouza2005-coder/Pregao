@@ -128,6 +128,37 @@ def test_2a_logo_e_favicon_sao_rejeitados_por_nome():
     _checar("2e foto editorial normal NÃO é rejeitada", not news_mod._imagem_parece_generica("https://site.com/materias/2026/foto-ceo-empresa.jpg"))
 
 
+def test_2e2_imagem_de_banco_de_imagens_e_rejeitada_por_nome():
+    """achado real (auditoria 2026-10-18, bug "card da Vale mostra
+    imagem ilustrativa que não é a foto da matéria"): rastreando o cache
+    de produção, spacemoney.com.br publicava uma foto de banco (Pexels)
+    re-hospedada no PRÓPRIO domínio como og:image de uma matéria sobre a
+    Vale - passava em todos os filtros de antes (URL http(s) válida, não
+    é logo/favicon, sem dimensão pequena declarada) porque tecnicamente
+    é uma imagem real do veículo, só que genérica/sem relação com o
+    fato. O nome do arquivo preserva o padrão do banco de origem mesmo
+    após o re-upload."""
+    _checar("2e2a pexels-photo-NNNN.webp rejeitado",
+            news_mod._imagem_parece_generica("https://spacemoney.com.br/wp-content/uploads/2026/10/pexels-photo-34021878.webp"))
+    _checar("2e2b nome com sufixo -unsplash rejeitado",
+            news_mod._imagem_parece_generica("https://infomoney.com.br/wp-content/uploads/2026/03/blogging-guide-K5DY18hy5JQ-unsplash_red.jpg"))
+    _checar("2e2c shutterstock rejeitado",
+            news_mod._imagem_parece_generica("https://veiculo.com/img/shutterstock_123456.jpg"))
+    _checar("2e2d foto editorial normal continua NÃO rejeitada",
+            not news_mod._imagem_parece_generica("https://veiculo.com/materias/2026/foto-real-do-evento.jpg"))
+
+
+def test_2e3_placeholder_generico_do_tradingview_e_rejeitado():
+    """achado real (auditoria INTEGRAL do cache de produção, 2026-10-18):
+    "s.tradingview.com/static/images/illustrations/news-story.jpg"
+    apareceu em linhas de cache de matérias DIFERENTES (fontes e
+    assuntos diferentes) - confirmado pela URL IDÊNTICA se repetindo pra
+    conteúdo diferente que é um placeholder genérico do TradingView pra
+    qualquer notícia de wire sem foto própria, nunca a foto real."""
+    _checar("2e3 illustrations/news-story.jpg do TradingView rejeitado",
+            news_mod._imagem_parece_generica("https://s.tradingview.com/static/images/illustrations/news-story.jpg"))
+
+
 def test_2f_extracao_rejeita_og_image_que_e_logo_pelo_nome():
     html_com_logo = '<html><head><meta property="og:image" content="https://veiculo.com/assets/logo.png"></head></html>'
     with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/materia"), \
@@ -136,6 +167,73 @@ def test_2f_extracao_rejeita_og_image_que_e_logo_pelo_nome():
         texto, imagem, _, _ = news_mod._extrair_texto_artigo("https://news.google.com/x")
     _checar("2g og:image apontando pro logo nunca é aceito como capa", imagem is None)
     _checar("2h texto ainda extraído normalmente", bool(texto))
+
+
+def test_2f2_extracao_rejeita_og_image_de_banco_de_imagens_ponta_a_ponta():
+    """mesmo achado real do 2e2, mas no caminho completo de
+    _extrair_texto_artigo (não só o filtro isolado) - reproduz o caso
+    real do spacemoney.com.br: og:image presente, URL válida, mas é uma
+    foto de banco re-hospedada no domínio do veículo."""
+    html_banco = (
+        '<html><head>'
+        '<meta property="og:image" content="https://spacemoney.com.br/wp-content/uploads/2026/10/pexels-photo-34021878.webp">'
+        '</head></html>'
+    )
+    with patch.object(news_mod, "_resolver_link_real", return_value="https://spacemoney.com.br/investimentos/materia"), \
+         patch.object(news_mod.requests, "get", return_value=_FakeResponseHtml(html_banco)), \
+         patch.object(news_mod.trafilatura, "extract", return_value='{"text": "Texto bem longo o suficiente pra passar do limite minimo de extracao exigido pelo projeto todo."}'):
+        texto, imagem, _, _ = news_mod._extrair_texto_artigo("https://news.google.com/banco1")
+    _checar("2f2 og:image de banco de imagens nunca é aceito como capa da matéria", imagem is None)
+    _checar("2f3 texto ainda extraído normalmente", bool(texto))
+
+
+def test_2f4_jsonld_url_do_webpage_nunca_e_aceito_como_imagem():
+    """achado real (auditoria 2026-10-18, mesma investigação do card da
+    Vale): o node "WebPage" do @graph (padrão Yoast SEO, usado por vários
+    publishers BR) tem uma chave "url" - o LINK da própria página, nunca
+    uma imagem. Antes do fix, isso era aceito às cegas (URL http(s)
+    válida, não bate padrão de nome genérico) e `imagem` virava a MESMA
+    URL da matéria."""
+    html_webpage_url = (
+        '<html><head></head><body><article>'
+        '<script type="application/ld+json">'
+        '{"@context": "https://schema.org", "@graph": ['
+        '{"@type": "Article", "headline": "Matéria sem foto"},'
+        '{"@type": "WebPage", "url": "https://veiculo.com/materia-sem-foto-propria/"}'
+        ']}'
+        '</script>'
+        '</article></body></html>'
+    )
+    with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/materia-sem-foto-propria/"), \
+         patch.object(news_mod.requests, "get", return_value=_FakeResponseHtml(html_webpage_url)), \
+         patch.object(news_mod.trafilatura, "extract", return_value='{"text": "Texto bem longo o suficiente pra passar do limite minimo de extracao exigido pelo projeto todo."}'):
+        texto, imagem, _, _ = news_mod._extrair_texto_artigo("https://news.google.com/webpageurl")
+    _checar("2f4 o link da PRÓPRIA página (chave \"url\" do WebPage) nunca vira a imagem da matéria",
+            imagem is None)
+
+
+def test_2f5_jsonld_logo_da_organizacao_nunca_e_aceito_como_imagem():
+    """achado real (mesma auditoria): o node "Organization" do mesmo
+    @graph tem um "logo" inline (ImageObject com contentUrl de verdade)
+    com a MARCA do veículo - sem excluir essa chave da varredura
+    catch-all, o logo do site era aceito como se fosse a foto da
+    matéria."""
+    html_logo = (
+        '<html><head></head><body><article>'
+        '<script type="application/ld+json">'
+        '{"@context": "https://schema.org", "@graph": ['
+        '{"@type": "Article", "headline": "Matéria sem foto"},'
+        '{"@type": "Organization", "logo": {"@type": "ImageObject", '
+        '"contentUrl": "https://veiculo.com/marca/logo-oficial-do-veiculo.png", "caption": "Veículo"}}'
+        ']}'
+        '</script>'
+        '</article></body></html>'
+    )
+    with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/materia-sem-foto2/"), \
+         patch.object(news_mod.requests, "get", return_value=_FakeResponseHtml(html_logo)), \
+         patch.object(news_mod.trafilatura, "extract", return_value='{"text": "Texto bem longo o suficiente pra passar do limite minimo de extracao exigido pelo projeto todo."}'):
+        texto, imagem, _, _ = news_mod._extrair_texto_artigo("https://news.google.com/logo1")
+    _checar("2f5 a logomarca do veículo (Organization.logo) nunca vira a imagem da matéria", imagem is None)
 
 
 def test_2i_extracao_rejeita_imagem_com_dimensao_declarada_pequena():
@@ -207,6 +305,27 @@ def test_2k6_extracao_nunca_rouba_imagem_de_article_aninhado():
         texto, imagem, _, _ = news_mod._extrair_texto_artigo("https://news.google.com/lazy2")
     _checar("2k6 imagem de <article> aninhado (relacionados) nunca é roubada pra matéria atual",
             imagem is None)
+
+
+def test_2k7_fallback_lazy_pula_avatar_pequeno_e_aceita_a_proxima_foto_valida():
+    """achado real (auditoria 2026-10-18): um avatar de autor 40x40
+    (width/height declarados na própria tag, nome "img-default-...")
+    aparecia ANTES da foto de capa de verdade dentro do bloco principal
+    - o fallback precisa pular imagem com dimensão declarada pequena
+    demais (mesmo limiar do og:image:width) e continuar procurando,
+    nunca aceitar a primeira <img> sem checar o tamanho."""
+    html_avatar_antes_da_foto = (
+        '<html><body><article>'
+        '<img width="40" height="40" src="https://veiculo.com/uploads/avatar-autor.png" alt="">'
+        '<img width="1200" height="675" data-lazy-src="https://veiculo.com/uploads/foto-real-da-materia.jpg" alt="">'
+        '</article></body></html>'
+    )
+    with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/materia-com-avatar"), \
+         patch.object(news_mod.requests, "get", return_value=_FakeResponseHtml(html_avatar_antes_da_foto)), \
+         patch.object(news_mod.trafilatura, "extract", return_value='{"text": "Texto bem longo o suficiente pra passar do limite minimo de extracao exigido pelo projeto todo."}'):
+        texto, imagem, _, _ = news_mod._extrair_texto_artigo("https://news.google.com/avatar1")
+    _checar("2k7 avatar 40x40 é pulado e a foto real (1200x675) seguinte é aceita",
+            imagem == "https://veiculo.com/uploads/foto-real-da-materia.jpg")
 
 
 class _FakeResponseHtml:

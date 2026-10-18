@@ -1367,11 +1367,46 @@ def _url_imagem_valida(url) -> str | None:
 # (logo.png, favicon.ico, og-default.jpg, placeholder-foto.svg etc), nao
 # e' exaustivo por natureza (nao da pra detectar logo "generico" so pelo
 # nome do arquivo em 100% dos casos).
+#   achado real (auditoria 2026-10-18, bug "card da Vale mostra imagem
+#   ilustrativa que não é a foto da matéria"): rastreando o cache de
+#   produção, alguns publishers (ex: spacemoney.com.br, infomoney.com.br
+#   nalguns posts) fazem upload de uma foto de BANCO DE IMAGENS (Pexels/
+#   Unsplash) pro PRÓPRIO domínio deles e publicam ela como og:image -
+#   passa em todos os filtros acima (URL http(s) válida, não é logo/
+#   favicon, dimensão declarada grande o bastante) porque TECNICAMENTE é
+#   uma imagem real hospedada pelo veículo, só que é uma foto GENÉRICA
+#   de banco (ex: silo de grãos aleatório numa matéria sobre níquel no
+#   Canadá), nunca a foto real do fato noticiado - o nome do arquivo
+#   geralmente preserva o padrão de ID do banco de imagens de origem
+#   mesmo depois do re-upload (ex: "pexels-photo-34021878.webp",
+#   "...-unsplash_red.jpg"), o que permite o mesmo filtro por NOME já
+#   usado acima pra logo/favicon/placeholder.
 _PADROES_IMAGEM_GENERICA = (
     "logo", "favicon", "icon-", "-icon", "sprite", "placeholder",
     "default-image", "default_image", "og-default", "og_default",
     "share-image-default", "social-default", "avatar-padrao", "sem-foto",
     "noimage", "no-image", "apple-touch-icon",
+    # achado real (auditoria 2026-10-18): avatar de autor/widget com nome
+    # tipo "img-default-projeto-...-96x96.png" - "default"/"avatar" sozinhos
+    # (sem precisar do prefixo "img-"/sufixo "-padrao" que os padroes acima
+    # já exigiam) cobrem essa variação sem exigir dimensão declarada.
+    "default", "avatar",
+    # banco de imagens (ver achado real acima) - nomes de arquivo que
+    # preservam o padrao do banco de origem mesmo apos re-upload pro
+    # dominio do veiculo
+    "pexels", "unsplash", "shutterstock", "istockphoto", "istock-",
+    "gettyimages", "getty-images", "depositphotos", "123rf", "vecteezy",
+    "pixabay", "dreamstime", "adobestock", "stock-photo", "stockphoto",
+    "banco-de-imagens", "freepik",
+    # achado real (auditoria integral do cache de producao, 2026-10-18):
+    # "https://s.tradingview.com/static/images/illustrations/news-story.jpg"
+    # apareceu em 2 linhas de cache de materias DIFERENTES (fontes
+    # diferentes, assuntos diferentes) - imagem GENERICA de placeholder
+    # que o proprio TradingView usa pra qualquer noticia de wire sem foto
+    # propria (confirmado pela URL identica se repetindo pra conteudo
+    # diferente, nao so pelo nome - "news-story" e' literal "historia de
+    # noticia [generica]", nao algo especifico de uma materia real).
+    "news-story", "illustrations/",
 )
 
 
@@ -1560,7 +1595,39 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
 
     # Alguns publishers publicam a imagem principal apenas em JSON-LD.
     # Percorre metadados estruturados públicos sem executar scripts.
+    #
+    # achado real (auditoria 2026-10-18, bug "card da Vale mostra imagem
+    # ilustrativa que não é a foto da matéria"): a chave "url" NUNCA pode
+    # entrar nessa lista de chaves candidatas a imagem - "url" é uma
+    # propriedade genérica do schema.org presente em QUASE TODO node do
+    # @graph (WebPage, Organization, Person, BreadcrumbList...), sempre
+    # apontando pro link PRÓPRIO daquele node, nunca necessariamente uma
+    # imagem. Confirmado em produção: um publisher real (spacemoney.com.br)
+    # usa o padrão @graph do Yoast SEO, cujo node "WebPage" tem
+    # "url": "<URL da PRÓPRIA matéria>" - sem esse filtro, isso é aceito
+    # como se fosse a foto da notícia (passa em todo o resto da validação:
+    # é http(s) válido, não bate nenhum padrão de nome genérico), fazendo
+    # `imagem` virar a MESMA URL do artigo, nunca uma imagem de verdade.
+    # "contentUrl" e "primaryImageOfPage" continuam aqui porque são
+    # propriedades específicas de ImageObject (contentUrl) ou que só
+    # existem quando a página de fato declara uma imagem principal
+    # (primaryImageOfPage) - não têm essa ambiguidade genérica do "url".
+    #
+    # "logo"/"publisher"/"author" NUNCA entram na varredura "pega
+    # qualquer imagem aninhada em qualquer outra chave" (2º loop abaixo):
+    # achado real (mesma auditoria) - o node "Organization" do mesmo
+    # @graph do spacemoney.com.br tem um "logo" inline (ImageObject com
+    # "contentUrl" de verdade) com a logomarca do VEÍCULO ("caption":
+    # "SpaceMoney"), não da matéria - sem excluir essas 3 chaves, a
+    # varredura catch-all recursava pra dentro do logo e aceitava a
+    # marca do site como se fosse a foto da notícia. "logo" é sempre
+    # identidade de marca (Organization/WebSite), "publisher"/"author"
+    # são sempre entidade (empresa/pessoa) ligada à matéria, nunca o
+    # conteúdo visual da matéria em si.
     if not imagem:
+        _CHAVES_IMAGEM_JSONLD = ("image", "thumbnailUrl", "contentUrl", "primaryImageOfPage")
+        _CHAVES_NUNCA_IMAGEM_JSONLD = ("logo", "publisher", "author")
+
         def _urls_imagem_jsonld(obj):
             achados = []
             if isinstance(obj, str):
@@ -1570,14 +1637,14 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
                     achados.extend(_urls_imagem_jsonld(item))
                 return achados
             if isinstance(obj, dict):
-                for chave in ("image", "thumbnailUrl", "contentUrl", "url", "primaryImageOfPage"):
+                for chave in _CHAVES_IMAGEM_JSONLD:
                     valor = obj.get(chave)
                     if isinstance(valor, str):
                         achados.append(valor)
                     elif isinstance(valor, (dict, list)):
                         achados.extend(_urls_imagem_jsonld(valor))
                 for chave, valor in obj.items():
-                    if chave in ("image", "thumbnailUrl", "contentUrl", "url", "primaryImageOfPage"):
+                    if chave in _CHAVES_IMAGEM_JSONLD or chave in _CHAVES_NUNCA_IMAGEM_JSONLD:
                         continue
                     if isinstance(valor, (dict, list)):
                         achados.extend(_urls_imagem_jsonld(valor))
@@ -1631,7 +1698,13 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
     # nesta auditoria: a mesma pagina embute os "relacionados" como
     # <article> aninhado DENTRO do <article> principal - sem essa
     # exclusao, uma materia SEM foto propria as vezes "roubaria" a foto
-    # de outra materia do bloco de relacionados).
+    # de outra materia do bloco de relacionados) NEM tenha dimensao
+    # declarada pequena demais (achado real, auditoria 2026-10-18: um
+    # avatar de autor 40x40 - "width"/"height" no proprio <img>, nome de
+    # arquivo "img-default-projeto...") apareceu ANTES de qualquer foto
+    # de verdade dentro do bloco principal - mesmo limiar/mesma logica
+    # ja usada acima pro og:image:width, so que lendo o atributo da
+    # PROPRIA tag em vez de um <meta>.
     if not imagem:
         for seletor in ("article", "main", '[itemprop="articleBody"]'):
             bloco_principal = sopa.select_one(seletor)
@@ -1646,6 +1719,12 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
                         break
                     pai = pai.parent
                 if dentro_de_aninhado:
+                    continue
+                try:
+                    largura_tag = int(str(img_tag.get("width")).strip())
+                except (TypeError, ValueError):
+                    largura_tag = None
+                if largura_tag is not None and largura_tag < _LARGURA_MINIMA_IMAGEM_EDITORIAL:
                     continue
                 candidata_bruta = (
                     img_tag.get("data-lazy-src") or img_tag.get("data-src")
