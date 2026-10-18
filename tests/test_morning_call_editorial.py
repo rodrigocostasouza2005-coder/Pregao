@@ -169,6 +169,33 @@ def test_montar_edicao_estrutura_completa_sem_rede():
     assert all(i["tag"] == ed.TAG_INTERPRETACAO for i in edicao["exterior"]["interpretacoes"])
 
 
+def test_cards_empresas_sem_resumo_mantem_tag_fato():
+    """Card sem resumo cacheado mostra a manchete literal - tag continua FATO."""
+    itens = [{"titulo": "PETR4 anuncia dividendo", "link": "https://x/1", "veiculos": ["InfoMoney"]}]
+    with _MultiPatch(obter_resumos_prontos=lambda *_a, **_k: {}):
+        cards = ed._cards_empresas(itens)
+    assert len(cards) == 1
+    assert cards[0]["tag"] == ed.TAG_FATO
+    assert cards[0]["resumo"] is None
+
+
+def test_cards_empresas_com_resumo_usa_tag_sintese_nao_fato():
+    """Achado real (2026-10-18): quando ha' resumo de IA cacheado, o card
+    passa a mostrar esse texto sintetizado em vez do titulo literal (ver
+    jobs/morning_call_pdf.py: `card.get("resumo") or card.get("titulo")`) -
+    a tag precisa acompanhar isso. Antes da correcao, `tag` continuava
+    FATO mesmo com o texto exibido sendo sintese de IA."""
+    itens = [{"titulo": "PETR4 anuncia dividendo", "link": "https://x/1", "veiculos": ["InfoMoney"]}]
+    resumos = {"https://x/1": {"resumo": "Petrobras anuncia dividendo extraordinário, segundo comunicado.",
+                                "imagem": "https://img/1.jpg", "link_original": "https://x/1"}}
+    with _MultiPatch(obter_resumos_prontos=lambda *_a, **_k: resumos):
+        cards = ed._cards_empresas(itens)
+    assert len(cards) == 1
+    assert cards[0]["tag"] == ed.TAG_SINTESE
+    assert cards[0]["tag"] != ed.TAG_FATO
+    assert cards[0]["resumo"] == resumos["https://x/1"]["resumo"]
+
+
 def test_montar_edicao_capa_usa_top3_por_importancia():
     noticias = [
         {"titulo": "Baixa importância", "link": "https://x/1", "regiao": "INT", "tickers": [], "importancia": 1},

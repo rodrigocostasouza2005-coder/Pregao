@@ -15,13 +15,20 @@ do e-mail em texto simples (mesma fonte única de verdade).
 
 TAGS editoriais (exigência explícita da missão, nunca misturadas):
 FATO = reportado por uma fonte identificada (cotação, indicador,
-manchete com link/veículo). INTERPRETAÇÃO = leitura de cenário/risco,
-nunca um número novo (mesmas 3 linhas de TENDÊNCIAS E RISCOS do
-e-mail-texto - jobs/morning_call.py - única fonte de verdade,
-reaproveitada aqui, nunca duplicada com texto diferente). ACOMPANHAR =
-evento futuro da agenda (ainda não aconteceu - por definição não é fato
-consumado nem interpretação de risco).
-"""
+manchete com link/veículo), reproduzida como o veículo publicou.
+INTERPRETAÇÃO = leitura de cenário/risco, nunca um número novo (mesmas
+3 linhas de TENDÊNCIAS E RISCOS do e-mail-texto - jobs/morning_call.py -
+única fonte de verdade, reaproveitada aqui, nunca duplicada com texto
+diferente). ACOMPANHAR = evento futuro da agenda (ainda não aconteceu -
+por definição não é fato consumado nem interpretação de risco). SÍNTESE
+= texto gerado por IA a partir de uma ou mais fontes (ver
+data/news.py:obter_resumos_prontos) - nunca rotulado FATO, mesmo quando
+a fonte original é identificada, porque o texto exibido já não é a
+manchete literal (achado real, 2026-10-18: _cards_empresas aplicava
+FATO ao card inteiro, inclusive quando `resumo` substituía o título pelo
+texto sintetizado - um briefing diário por e-mail/PDF rotulando síntese
+de IA como fato apurado é exatamente a mistura que esta missão pede pra
+nunca acontecer)."""
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -41,6 +48,7 @@ TZ_SP = ZoneInfo("America/Sao_Paulo")
 TAG_FATO = "FATO"
 TAG_INTERPRETACAO = "INTERPRETAÇÃO"
 TAG_ACOMPANHAR = "ACOMPANHAR"
+TAG_SINTESE = "SÍNTESE"
 
 _NOTA_STATUS_EVENTO = {
     STATUS_PRAZO_CVM: "prazo MÁXIMO regulatório da CVM (Instrução CVM 480/2009) — não é data anunciada pela empresa.",
@@ -68,7 +76,9 @@ LIMITACOES_PADRAO = (
     "nesta execução.",
     "Itens marcados INTERPRETAÇÃO são leitura de cenário, não fato nem "
     "previsão garantida; itens marcados ACOMPANHAR são eventos futuros, "
-    "não resultados já ocorridos.",
+    "não resultados já ocorridos; itens marcados SÍNTESE são resumo "
+    "gerado por IA a partir da(s) fonte(s) indicada(s), não a manchete "
+    "literal do veículo.",
     "Conteúdo informativo, não constitui recomendação de investimento.",
 )
 
@@ -255,9 +265,17 @@ def _cards_empresas(itens, limite=4):
     for item in selecionados:
         fato = _item_fato(item)
         pronto = prontos.get(item.get("link")) or {}
+        resumo = pronto.get("resumo")
         cards.append({
             **fato,
-            "resumo": pronto.get("resumo"),
+            # card mostra `resumo` (texto de IA) em vez do titulo quando
+            # disponivel (ver jobs/morning_call_pdf.py: `card.get("resumo")
+            # or card.get("titulo")") - a TAG precisa acompanhar qual texto
+            # esta' de fato sendo exibido, nao a origem da manchete: um
+            # resumo sintetizado por IA nunca e' FATO, mesmo que a manchete
+            # que o originou seja (ver TAG_SINTESE no docstring do modulo).
+            "tag": TAG_SINTESE if resumo else fato["tag"],
+            "resumo": resumo,
             "imagem": pronto.get("imagem"),
             "link_original": pronto.get("link_original") or fato["link"],
         })

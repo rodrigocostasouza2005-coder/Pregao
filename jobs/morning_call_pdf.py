@@ -66,6 +66,7 @@ VERDE_ALTA = HexColor("#2E8B57")
 VERMELHO_QUEDA = HexColor("#C0392B")
 BRANCO = HexColor("#FFFFFF")
 CINZA_CLARO = HexColor("#D9D4CC")
+ROXO_SINTESE = HexColor("#5B4B8A")
 
 SERIF = "Times-Roman"
 SERIF_BOLD = "Times-Bold"
@@ -80,6 +81,7 @@ _TAG_COR = {
     "FATO": AZUL_MARINHO,
     "INTERPRETAÇÃO": AMBAR,
     "ACOMPANHAR": CINZA_EDITORIAL,
+    "SÍNTESE": ROXO_SINTESE,
 }
 
 _HEADERS_IMAGEM = {"User-Agent": "Mozilla/5.0 (compatible; PregaoBot/1.0)"}
