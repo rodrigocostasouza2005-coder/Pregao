@@ -40,7 +40,7 @@ SETORES = {
     },
     "VAREJO": {
         "palavras": [
-            "varejo", "varejista", "retail", "loja", "lojas", "e-commerce",
+            "varejo", "varejista", "retail", "retailer", "loja", "lojas", "e-commerce",
             "ecommerce", "consumo", "shopping",
         ],
         "tickers": ["MGLU3", "LREN3", "AMER3", "PCAR3", "AZZA3", "CEAB3", "ALPA4", "GUAR3", "VIVA3", "PETZ3"],

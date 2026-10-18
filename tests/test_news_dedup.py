@@ -329,7 +329,25 @@ def test_16_mesmo_percentual_direcoes_opostas_ficam_separados():
 
 def test_17_mesmo_percentual_fora_de_24h_fica_separado():
     itens = [
-        _item("Ibovespa sobe 0,54% com petróleo", "ADVFN", ticker=""),
-        _item("Ibovespa sobe 0,54% com bancos", "InfoMoney", data=_AGORA - timedelta(hours=30), ticker=""),
+        _item("Ibovespa sobe 0,54% com petróleo e eleições no radar", "ADVFN", ticker=""),
+        _item("Ibovespa avança 0,54% puxado por bancos, varejo e construtoras", "InfoMoney",
+              data=_AGORA - timedelta(hours=30), ticker=""),
     ]
     _checar("17 mesmo % em dias diferentes -> 2 grupos", len(_agrupar(itens)) == 2)
+
+
+def test_18_grupo_grande_nao_atrai_titulo_por_percentual_de_outro_membro():
+    """Diag real 18/10/2026: comparar com a UNIÃO do grupo juntava
+    'Petrobras sobe 6%' ao grupo do fechamento do Ibovespa. A regra 2b
+    compara título a título."""
+    itens = [
+        _item("Ibovespa fecha em alta de 0,54%", "ADVFN", ticker=""),
+        _item("Ibovespa sobe 0,54% com apoio de ações do petróleo", "Valor", data=_AGORA - timedelta(hours=1),
+              ticker=""),
+        _item("Magazine Luiza salta 6% e lidera ganhos do Ibovespa hoje", "InfoMoney",
+              data=_AGORA - timedelta(hours=2), ticker=""),
+    ]
+    grupos = _agrupar(itens)
+    _checar("18 as duas de 0,54% juntam; a de 6% fica fora", len(grupos) == 2 and
+            any(len(g["titulos"]) == 2 for g in grupos), f"(grupos={[g['titulos'] for g in grupos]})")
+
