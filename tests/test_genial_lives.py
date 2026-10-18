@@ -85,6 +85,24 @@ def test_falha_com_feed_malformado_sem_excecao_registra_motivo_generico():
     assert "sem entradas validas" in lives_mod.motivo_ultima_falha()
 
 
+def test_falha_imprime_o_erro_real_no_console(capsys):
+    """Achado real (auditoria 2026-10-18): as falhas reais de producao
+    encontradas no historico do GitHub Actions (runs 38832834568/
+    38982985477/38989522110/39088619143, todas rapidas - 1.7 a 4.5s,
+    nunca um travamento) nao tinham NENHUM detalhe visivel no log puro -
+    motivo_ultima_falha() so' chega no Supabase via registrar_tentativa,
+    sem acesso ao banco nao da pra saber se foi erro de rede ou resposta
+    vazia. genial.py/xp.py JA imprimem cada tentativa (visivel nos Logs
+    do GitHub Actions) - esse print() estava faltando so' aqui."""
+    erro = ConnectionError("Name or service not known")
+    with patch.object(lives_mod.feedparser, "parse", side_effect=[erro, erro]), \
+         patch.object(lives_mod.time, "sleep"):
+        lives_mod.obter_relatorios()
+    saida = capsys.readouterr().out
+    assert "Name or service not known" in saida
+    assert saida.count("[genial_lives] tentativa") == 2
+
+
 def test_sucesso_depois_de_uma_falha_anterior_limpa_o_motivo():
     with patch.object(lives_mod.feedparser, "parse", return_value=_feed(bozo=True, entries=[])), \
          patch.object(lives_mod.time, "sleep"):

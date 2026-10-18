@@ -6338,3 +6338,60 @@ Pedido explícito do Rodrigo, em branch isolada (`fix/exit-code-classificacao-fa
 **Arquivos alterados**: `coletor_local.py`, `data/research/__init__.py`, `data/research/genial.py`, `data/research/xp.py`, `tests/test_coletor_local.py`, `tests/test_research_genial_conectividade.py`, `tests/test_research_xp.py`, `tests/test_research_classificacao_falha.py` (novo). Nenhum arquivo de NEWS/Radar/Morning Call/UI tocado.
 
 **Pendências**: PR ainda não aberto nesta sessão (próximo passo imediato); aguardando CI real antes de qualquer decisão de merge (não autorizado nesta sessão).
+
+## 2026-10-18 (continuação) — Diagnóstico da intermitência do Genial (Lives): causa externa provável, sem correção de palpite
+
+Pedido do Rodrigo (offline, trabalho autônomo autorizado): investigar a causa raiz da falha intermitente do Genial (Lives) (~70-80% de sucesso) e corrigir SÓ com evidência real - sem retry extra "por garantia".
+
+**Amostra real analisada**: 16 execuções reais do workflow "Coletores na nuvem" (`gh run list --workflow=coletores-nuvem.yml` + `gh run view --log`), de 14/10 a 18/10. Resultado, separando por causa:
+- **4 falhas genuínas de coleta** (0 itens, fetch do feed falhou mesmo): runs `38832834568` (1.7s), `38982985477` (1.7s), `38989522110` (4.5s), `39088619143` (1.9s) - todas RÁPIDAS (nunca um travamento longo), 3 delas disparadas por `schedule` em horários fora da janela documentada do cron (`11,41 10-22 * * 1-5` + `11 23 * * 1-5`) - consistente com o atraso de disparo do GitHub já documentado (PR #56, "Agendamentos do GitHub descartados").
+- **6 falhas que NÃO são da Genial (Lives)**: runs entre `38752038994` e `38797666890` (14-15/10, janela ~14h30-19h40 UTC) mostraram `Genial (Lives): FALHOU` mas com **7 itens** coletados (`salvou=False`) - a causa real, confirmada no mesmo log, é uma falha de PERSISTÊNCIA que afetou TODAS as casas daquela execução (`SEM_CREDENCIAL` ou `Error 42501`, ver logs de `persistencia (self-test)` nos mesmos runs) - **não** tem relação com o feed do YouTube. Ficou fora da amostra de intermitência.
+- Restante das execuções: sucesso normal (0.1-0.5s, 7-8 itens, `salvou=True`).
+
+**Causa raiz**: não foi possível confirmar a causa EXATA das 4 falhas genuínas porque `motivo_ultima_falha()` (texto real do `bozo_exception`/exceção) nunca era impresso no console - só chegava ao Supabase via `registrar_tentativa`, sem acesso de leitura nesta sessão. Esse é o achado real desta investigação: uma lacuna de observabilidade que bloqueou a própria investigação. Teste real contra o feed (`feedparser.parse` direto, 5 chamadas em sequência) não reproduziu nenhum erro - sucesso 100% nesta rede. Hipótese mais provável, sem confirmação definitiva: falha transitória do lado do YouTube (rede/rate-limit no pool de IPs compartilhado dos runners do GitHub Actions) - rápida, intermitente, não um bloqueio sistemático (diferente do Akamai na Genial Analisa/XP, que é ~100% consistente). Não há evidência de timeout mal configurado (as falhas são rápidas, não travamentos) nem de bug de parsing (retry/isolamento por item já cobrem os casos testados).
+
+**Correção aplicada (só a lacuna confirmada, nada especulativo)**: `genial_lives.py` ganhou `print()` por tentativa (mesmo padrão que `genial.py`/`xp.py` já usam) - a próxima falha real vai aparecer com o erro verdadeiro no log do GitHub Actions, sem precisar do Supabase. **Nenhuma mudança de retry/timeout/comportamento** - não há evidência de que isso ajudaria, só um palpite, que o Rodrigo pediu explicitamente para evitar.
+
+**Testes**: 1 novo (`test_falha_imprime_o_erro_real_no_console`, usa `capsys`, confirma o texto real da exceção aparece 2x no log). Suíte completa: 801 passed. `compileall` OK.
+
+**Arquivos alterados**: `data/research/genial_lives.py`, `tests/test_genial_lives.py`, `PROGRESSO.md`.
+
+**Próximo passo concreto**: depois do merge (quando o Rodrigo revisar), observar a PRÓXIMA falha real do Genial (Lives) no log do GitHub Actions - agora vai aparecer o texto exato do erro, o que permite decidir com evidência (não palpite) se é rate-limit, timeout de rede, ou outra causa, e só então considerar uma classificação tipo `categoria_ultima_falha()` (bloqueio_externo_conhecido) ou uma correção de retry - nenhuma das duas foi feita agora por falta de evidência suficiente.
+
+## 2026-10-17/18 — Card da Vale com imagem errada: causa raiz real (não IA), 2 PRs, 2 backfills pontuais
+
+Pedido do Rodrigo: card de notícia da Vale (VALE3, minério de ferro, expansão de cobre) exibindo uma imagem ilustrativa que não é a foto da matéria. Investigação obrigatória incluía confirmar/descartar geração de imagem por IA antes de qualquer correção.
+
+**Confirmado primeiro**: não existe geração de imagem por IA em nenhum lugar do projeto (codebase inteiro buscado por qualquer integração - nenhuma encontrada). Rastreando o cache de produção (`resumos_ia_cache`) e reprocessando casos reais, a causa é sempre a mesma categoria - "imagem real hospedada pelo veículo, mas não é a foto da matéria" - por 6 motivos distintos, achados em 2 rodadas:
+
+**PR #60** (causa original, a da Vale): (1) foto de banco de imagens (Pexels/Unsplash/etc.) re-hospedada no domínio do veículo; (2) chave `"url"` do JSON-LD (schema.org, genérica - WebPage/Organization/Person) tratada como imagem, virando a URL da própria matéria; (3) logo da `Organization` (JSON-LD) aceito como foto; (4) placeholder genérico do TradingView (`illustrations/news-story.jpg`, achado numa auditoria integral do cache - 60 linhas lidas, 52 válidas, 8 divergentes, 0 erros). Backfill pontual autorizado de 6 linhas - **3 delas escreveram errado na 1ª tentativa** (só descoberto porque cada imagem nova foi baixada e **inspecionada visualmente de verdade**, não só "a função não lançou exceção"), corrigidas na hora pra `None` dentro do mesmo escopo.
+
+**PR #64** (causa raiz dos 3 erros do backfill acima): (5) `_imagem_parece_generica` só checava o CAMINHO da URL, nunca o HOST - um ícone de Bitcoin do TradingView (`s3-symbol-logo.tradingview.com/...`) passava porque "logo" estava no hostname; (6) o fallback de imagem lazy-loaded ESCALAVA pro seletor `"main"` (escopo bem mais amplo - cabeçalho, branding) mesmo quando a página tinha um `<article>` de verdade sem foto válida dentro dele - foi assim que o logo do produto "IM Trader" do InfoMoney entrou. Também adicionada exclusão por classe de widget (`cta`/`newsletter`/`banner`/...) pro lead-magnet do InfoMoney, embutido direto no `<article>` sem nenhum `<article>` aninhado.
+
+**Backfills pontuais executados** (sempre sob autorização explícita, sempre por `chave_documento` exata, sempre com releitura antes/depois e validação visual real - nunca "a função não lançou erro"): 6 linhas (PR #60, 3 reescritas pra `None` depois do erro pego na validação visual) + 2 linhas do TradingView/Cointelegraph (depois do PR #64, confirmadas com um gráfico BTC/USD real e específico da matéria, hash idêntico nas 2 por serem a mesma matéria). Nenhuma outra linha tocada; nenhum campo além de `resultado.imagem` alterado; nenhuma operação em lote.
+
+**Verificação final** (sem nova escrita): confirmado que o commit do PR #64 está em `main` (`daa14dd`); execução controlada (sem persistir) da função de extração atual contra a matéria real do TradingView/Cointelegraph devolve exatamente a imagem já backfillada - a coleta periódica normal (`pregerar_resumos_news`) resolve esse tipo de matéria corretamente sozinha daqui pra frente, sem depender de backfill manual.
+
+**Testes**: `tests/test_news_qualidade_editorial.py` +13 casos nas 2 PRs (banco de imagens por nome/ponta-a-ponta, placeholder do TradingView, chave "url" do JSON-LD, logo da Organization, avatar pequeno pulado, logo no hostname, widget CTA ignorado, `<article>` sem foto nunca escala pro escopo mais amplo). 803 passed, `compileall` limpo nas 2 PRs.
+
+**Arquivos alterados**: `data/news.py` (`_PADROES_IMAGEM_GENERICA`, `_imagem_parece_generica`, `_urls_imagem_jsonld`, fallback de imagem lazy-loaded), `tests/test_news_qualidade_editorial.py`, `CHANGELOG.md`.
+
+**Pendências explicitamente preservadas, não corrigidas**: padrão de `og:image` reciclado entre matérias diferentes do mesmo formato recorrente (UOL, "fechamento dólar/bolsa hoje") - a imagem é legítima (declarada pelo próprio publisher), só genérica demais pra representar um dia específico; exigiria checagem com estado contra outras linhas do cache, mecanismo novo, fora do escopo. Casos cross-domain ADVFN/Investidor10 (imagem hospedada em domínio diferente do artigo) - causa exata não isolada, resultado ficou conservador (`None`), não investigado a fundo. Confirmação visual em browser real de produção (`pregao.streamlit.app`) não foi feita - extensão Chrome não conectada em nenhuma sessão desta investigação.
+
+## 2026-10-18 (continuação) — Fonte alternativa pra Genial Analisa/XP: 3ª rodada de busca, conclusão fundamentada de "não existe"
+
+Pedido explícito do Rodrigo (prioridade máxima pra Genial Analisa): investigar de verdade se existe caminho público/legítimo alternativo pro bloqueio de borda Akamai, antes de desistir. Branch isolada `feat/research-genial-xp-fonte-alternativa-20261018`, a partir de `main` pós-merge do PR #61 (`905b1d0`).
+
+**4 caminhos testados de verdade pra Genial Analisa** (não suposição, com request real via ferramenta de fetch com rede própria, fora deste sandbox - confirma que o bloqueio não é limitação local):
+1. Página HTML específica já indexada (não só a home) - mesmo timeout silencioso de sempre, zona inteira confirmada de novo.
+2. Canal oficial no Telegram (@GenialAnalise, >9900 inscritos) - a pré-visualização pública (`t.me/s/GenialAnalise`, sem login) não expõe histórico de mensagens pra esse canal: devolve só a "capa" (nome/descrição/foto) com botão "View in Telegram" (deep link pro app) - confirmado via HTTP direto, com cookie de sessão do Telegram persistido entre requisições (a classe CSS do corpo das mensagens, `tgme_widget_message`, simplesmente não existe na resposta). Acessar mensagens de verdade exigiria app/API do Telegram com conta - fora do que "público sem login" permite.
+3. Bucket S3 achado por busca (`genial-documents.s3.amazonaws.com`, domínio diferente, SEM bloqueio - 200 OK confirmado) - mas serve documentos institucionais/jurídicos/de fundos (formulário de referência CVM, termos, materiais de divulgação), nenhum relatório de ações/setor/macro. Domínio certo, conteúdo errado.
+4. Matérias de terceiros (Money Times) citando a visão da Genial sobre tickers específicos - descartado por integridade de origem: seria registrar "Money Times" como se fosse "Genial Analisa", além de já ser o tipo de conteúdo que o coletor de NEWS deveria cobrir (não uma função nova do research).
+
+**Mesma lógica pra XP Research**: achou matérias da InfoMoney (que pertence ao grupo XP) comentando recomendação/preço-alvo dos analistas da XP - mesmo problema de origem (seria InfoMoney, não XP Investimentos) e mesma sobreposição com NEWS. Nenhum feed/sitemap/API fora do domínio já bloqueado foi encontrado.
+
+**Conclusão**: nenhuma alternativa legítima encontrada pra nenhuma das duas casas - é uma conclusão fundamentada (vários caminhos reais testados ao longo de 3 rodadas desde 16/10), não "não tentamos". Nenhuma tentativa de bypass de Akamai, rotação de IP ou falsificação de identidade foi feita. **Nenhuma implementação de código** - só as docstrings de `data/research/genial.py`/`xp.py` atualizadas com a 3ª rodada de busca, pro histórico ficar completo antes de qualquer sessão futura tentar de novo.
+
+**Arquivos alterados**: `data/research/genial.py`, `data/research/xp.py` (só docstring/comentário, nenhuma mudança de comportamento). Suíte completa: 800 passed (sem mudança, confirma que nada de funcional foi alterado). `python -m compileall` OK.
+
+**Pendências**: nenhuma de código. Externas, sem mudança: XP (contato `bloqueio-cdn@xpi.com.br`), Genial Analisa (nenhum canal de contato conhecido). PR aberto, sem merge (aguardando revisão do Rodrigo).
