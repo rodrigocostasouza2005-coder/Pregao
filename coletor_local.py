@@ -277,25 +277,33 @@ def main() -> int:
     # baseado em ia_cache.tabela_disponivel() (so' um SELECT, que RLS
     # sem policy deixa passar vazio em vez de erro - nunca detectava
     # INSERT bloqueado) pelo self-test de escrita+leitura real.
+    erro_news = None
     if diagnostico["ok"]:
         stats_news = pregerar_resumos_news(fatia_news)
-        logger.info(
-            f"  resumos de NEWS: {stats_news['grupos_considerados']} grupo(s) considerado(s), "
-            f"{stats_news['ja_cacheados']} ja' cacheado(s), {stats_news['gerados']} gerado(s) agora, "
-            f"{stats_news['falhas']} falha(s)"
-            + (" - orcamento esgotado" if stats_news["tempo_esgotado"] else "")
-        )
+        if stats_news.get("groq_configurado") is False:
+            erro_news = "GROQ_API_KEY não configurada neste ambiente - nenhum resumo pode ser gerado"
+            logger.warning(f"  resumos de NEWS: pre-processamento pulado - {erro_news}. Zero materia baixada.")
+        else:
+            logger.info(
+                f"  resumos de NEWS: {stats_news['grupos_considerados']} grupo(s) considerado(s), "
+                f"{stats_news['ja_cacheados']} ja' cacheado(s), {stats_news['gerados']} gerado(s) agora, "
+                f"{stats_news.get('indisponiveis', 0)} sem resumo, {stats_news['falhas']} falha(s)"
+                + (" - orcamento esgotado" if stats_news["tempo_esgotado"] else "")
+            )
     else:
-        stats_news = {"grupos_considerados": 0, "ja_cacheados": 0, "gerados": 0, "falhas": 0, "tempo_esgotado": False}
+        stats_news = {"grupos_considerados": 0, "ja_cacheados": 0, "gerados": 0, "indisponiveis": 0,
+                      "falhas": 0, "tempo_esgotado": False}
         logger.warning(
             f"  resumos de NEWS: pre-processamento pulado - persistencia indisponivel "
             f"(etapa {diagnostico['etapa']}: {diagnostico['detalhe']}). Zero chamada de IA foi feita."
         )
     registrar_tentativa(
         "NEWS (resumos)", "Groq + extração de matéria",
-        execucao_ok=True, persistencia_ok=diagnostico["ok"],
-        registros_novos=stats_news["gerados"], parcial=bool(stats_news["tempo_esgotado"] or stats_news["falhas"]),
-        erro=None if diagnostico["ok"] else f"persistência indisponível (etapa {diagnostico['etapa']}): {diagnostico['detalhe']}",
+        execucao_ok=erro_news is None, persistencia_ok=diagnostico["ok"],
+        registros_novos=stats_news["gerados"],
+        parcial=bool(stats_news["tempo_esgotado"] or stats_news["falhas"] or stats_news.get("indisponiveis")),
+        erro=(erro_news if diagnostico["ok"]
+              else f"persistência indisponível (etapa {diagnostico['etapa']}): {diagnostico['detalhe']}"),
         categoria="Noticias",
     )
 

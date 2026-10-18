@@ -295,6 +295,31 @@ def test_5k_news_tempo_esgotado_marca_parcial_mas_nao_falha_exit_code():
             f"(codigo={codigo})")
 
 
+def test_5n_news_sem_groq_api_key_aparece_como_erro_na_saude_dos_dados():
+    """Achado real 2026-10-18 (run 39088619143): sem GROQ_API_KEY o painel
+    registrava NEWS (resumos) como execucao OK. Agora: execucao_ok=False e
+    erro citando a chave - sem derrubar o exit code (o resto do coletor
+    continua valido)."""
+    stats_news = {"grupos_considerados": 0, "ja_cacheados": 0, "gerados": 0, "indisponiveis": 0,
+                  "falhas": 0, "tempo_esgotado": False, "tabela_disponivel": True, "groq_configurado": False}
+    stats_eventos = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
+                      "tempo_esgotado": False, "tabela_disponivel": True}
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=stats_news), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats_eventos), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa") as mock_reg:
+        codigo = coletor_local.main()
+    kwargs = _kwargs_registrar(mock_reg, "NEWS (resumos)")
+    _checar("5n execucao_ok=False sem GROQ_API_KEY", kwargs.get("execucao_ok") is False, f"({kwargs})")
+    _checar("5n erro cita GROQ_API_KEY", "GROQ_API_KEY" in (kwargs.get("erro") or ""), f"({kwargs})")
+    _checar("5n exit code continua 0 (resto da coleta valido)", codigo == 0, f"(codigo={codigo})")
+
+
 def test_6a_main_chama_self_test_de_persistencia_antes_de_qualquer_coletor():
     """Regressao 2026-10-15 (auditoria do secret errado em producao):
     main() precisa rodar diagnosticar_persistencia() ANTES de
