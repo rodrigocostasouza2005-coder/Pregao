@@ -412,3 +412,45 @@ def test_19_status_cotacao_indice_mantem_idade_sem_data_da_barra():
             "_fallback_cache": True, "_coletado_em": antigo,
         })
     _checar("19a fallback sem data de barra preserva idade", status == "EM CACHE • 2H 30MIN", f"(status={status})")
+
+
+def test_cotacao_indice_ignora_barra_de_fim_de_semana_do_cambio():
+    """Caso real (USDBRL=X, 18/10/2026): o Yahoo publica barra de domingo
+    com cotação indicativa; a variação comparava domingo x sexta e, na
+    segunda, seria segunda x domingo. Barras de sábado/domingo saem."""
+    import pandas as pd
+    indice = pd.DatetimeIndex(["2026-10-15", "2026-10-16", "2026-10-18"], tz="Europe/London")
+    hist = pd.DataFrame({"Close": [5.0800, 5.0966, 5.0645]}, index=indice)
+
+    class _TickerFds:
+        def __init__(self, *_a, **_k):
+            # formato real do yfinance 1.7: Timestamp ja' no fuso da bolsa
+            self.history_metadata = {"regularMarketTime": pd.Timestamp("2026-10-16T23:10:00+01:00").tz_convert("Europe/London")}
+
+        def history(self, *_a, **_k):
+            return hist
+
+    with patch.object(prices_mod.yf, "Ticker", _TickerFds):
+        r = obter_cotacao_indice("TESTE_FDS_USDBRL", "USDBRL=X")
+    assert r["preco"] == 5.0966
+    assert abs(r["variacao_pct"] - (5.0966 / 5.0800 - 1) * 100) < 1e-9
+    assert r["_barra_em"].startswith("2026-10-16")
+    assert r["_negocio_em"].startswith("2026-10-16T23:10")
+
+
+def test_cotacao_indice_horario_de_negocio_de_outro_dia_e_ignorado():
+    import pandas as pd
+    indice = pd.DatetimeIndex(["2026-10-15", "2026-10-16"], tz="America/New_York")
+    hist = pd.DataFrame({"Close": [100.0, 101.0]}, index=indice)
+
+    class _Ticker:
+        def __init__(self, *_a, **_k):
+            self.history_metadata = {"regularMarketTime": int(pd.Timestamp("2026-10-17T10:00:00-04:00").timestamp())}
+
+        def history(self, *_a, **_k):
+            return hist
+
+    with patch.object(prices_mod.yf, "Ticker", _Ticker):
+        r = obter_cotacao_indice("TESTE_NEGOCIO_OUTRO_DIA", "ES=F")
+    assert r["_negocio_em"] is None
+    assert r["variacao_pct"] == 1.0
