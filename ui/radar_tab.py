@@ -73,6 +73,59 @@ _CSS_RADAR = """
 div[data-testid="stElementContainer"]:has(.radar-stub) + div[data-testid="stElementContainer"] {
     margin-top: 1.1rem;
 }
+
+/* ---- RADAR DE QUEDAS (revisao 2026-10-18) ---------------------------- */
+.rq-regra { color: var(--cinza); font-size: 0.7rem; margin: 0.1rem 0 0.9rem 0; line-height: 1.5; }
+.rq-regra b { color: var(--neutro); font-weight: 600; }
+.rq-bloco {
+    font-size: 0.7rem; color: var(--cinza); letter-spacing: 0.06em; font-weight: 600;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; flex-wrap: wrap;
+    border-bottom: 1px solid var(--borda); padding-bottom: 0.25rem; margin: 1.1rem 0 0.35rem 0;
+}
+.rq-bloco span.rq-bloco-meta { font-weight: 400; letter-spacing: 0; }
+.rq-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.rq-tabela {
+    width: 100%; border-collapse: collapse; font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.76rem; font-variant-numeric: tabular-nums;
+}
+.rq-tabela th {
+    color: var(--cinza); font-size: 0.62rem; font-weight: 500; letter-spacing: 0.05em;
+    text-align: right; padding: 0.3rem 0.55rem; border-bottom: 1px solid var(--borda); white-space: nowrap;
+}
+.rq-tabela td {
+    text-align: right; padding: 0.32rem 0.55rem; border-bottom: 1px solid var(--borda);
+    white-space: nowrap; vertical-align: baseline;
+}
+.rq-tabela th, .rq-tabela td { border-left: none !important; border-right: none !important; border-top: none !important; }
+.rq-tabela .rq-esq { text-align: left; }
+.rq-tabela .rq-sub { margin-left: 0.45rem; }
+.rq-tabela tr.rq-linha-alerta td { background: color-mix(in srgb, var(--baixa) 9%, transparent); }
+.rq-ticker { color: var(--destaque); font-weight: 700; }
+.rq-sub { color: var(--cinza); font-size: 0.66rem; }
+.rq-baixa { color: var(--baixa); }
+.rq-alta { color: var(--alta); }
+.rq-cinza { color: var(--cinza); }
+.rq-estado {
+    display: inline-block; font-size: 0.6rem; letter-spacing: 0.05em; padding: 0.05rem 0.35rem;
+    border: 1px solid var(--borda); color: var(--cinza);
+}
+.rq-estado-ALERTA, .rq-estado-FALHOU, .rq-estado-INDISPONIVEL { color: var(--baixa); border-color: var(--baixa); }
+.rq-estado-ATENCAO, .rq-estado-PENDENTE, .rq-estado-DESATUALIZADA { color: var(--destaque); border-color: var(--destaque); }
+.rq-estado-ATUALIZADA, .rq-estado-ENVIADO { color: var(--alta); border-color: var(--alta); }
+.rq-tabela a { color: var(--cinza); text-decoration: none; }
+.rq-tabela a:hover { color: var(--destaque); }
+.rq-nota { color: var(--cinza); font-size: 0.66rem; margin-top: 0.35rem; line-height: 1.5; }
+.rq-vazio { color: var(--cinza); font-size: 0.76rem; padding: 0.5rem 0; }
+.radar-separador {
+    font-size: 0.78rem; color: var(--destaque); letter-spacing: 0.04em; font-weight: 600;
+    border-top: 1px solid var(--borda); padding-top: 0.8rem; margin-top: 1.6rem; margin-bottom: 0.9rem;
+}
+/* Celular: some com as colunas secundarias (cada tabela continua com
+   ticker, variacao e estado) em vez de forcar rolagem lateral. */
+@media (max-width: 640px) {
+    .rq-tabela .rq-sec { display: none; }
+    .rq-tabela th, .rq-tabela td { padding: 0.3rem 0.35rem; }
+}
 """
 
 
@@ -351,6 +404,244 @@ def _secao_copiloto(tickers: list):
 
 
 # ============================================================
+# G. RADAR DE QUEDAS - carteiras recomendadas (revisao 2026-10-18)
+# ============================================================
+
+_ROTULO_ESTADO = {"ALERTA": "ALERTA", "ATENCAO": "ATENÇÃO", "NORMAL": "NORMAL", "SEM_COTACAO": "SEM COTAÇÃO"}
+_ROTULO_EMAIL = {"ENVIADO": ("ENVIADO", "ENVIADO"), "PENDENTE_ENVIO": ("PENDENTE", "PENDENTE"),
+                 "FALHA_ENVIO": ("FALHOU", "FALHOU")}
+_PERIODOS_ALERTAS = {"HOJE": 1, "7 DIAS": 7, "30 DIAS": 30, "90 DIAS": 90}
+
+
+def _chip(classe: str, rotulo: str) -> str:
+    return f"<span class='rq-estado rq-estado-{classe}'>{html.escape(rotulo)}</span>"
+
+
+def _pct(valor, prefs, sinal=True) -> str:
+    if valor is None:
+        return "—"
+    txt = config.formatar_numero(valor, 2, prefs["formato_numerico"])
+    return f"{'+' if sinal and valor > 0 else ''}{txt}%"
+
+
+def _classe_var(valor) -> str:
+    if valor is None:
+        return "rq-cinza"
+    return "rq-baixa" if valor < 0 else ("rq-alta" if valor > 0 else "")
+
+
+def _data_br(valor) -> str:
+    """'2026-10-16' / ISO com hora -> '16/10' (ano so' quando nao e' o atual)."""
+    if not valor:
+        return "—"
+    texto = str(valor)[:10]
+    try:
+        d = date.fromisoformat(texto)
+    except ValueError:
+        return html.escape(texto)
+    return d.strftime("%d/%m") if d.year == date.today().year else d.strftime("%d/%m/%Y")
+
+
+def _hora_sp(valor_iso) -> str:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    try:
+        quando = datetime.fromisoformat(str(valor_iso).replace("Z", "+00:00"))
+        return quando.astimezone(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m %H:%M")
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _tabela_cobertura_html(resumo_fontes, casas_monitoradas) -> str:
+    linhas = []
+    for casa in casas_monitoradas:
+        info = (resumo_fontes or {}).get(casa)
+        if info is None:
+            estado = _chip("INDISPONIVEL", "INDISPONÍVEL")
+            carteiras, ativos, confirmacao, referencia = "—", "—", "—", "—"
+        else:
+            estado = (_chip("DESATUALIZADA", "DESATUALIZADA") if info["desatualizada"]
+                      else _chip("ATUALIZADA", "ATUALIZADA"))
+            carteiras = html.escape(", ".join(info.get("carteiras") or []) or "—")
+            ativos = str(info["ativos"])
+            confirmacao = _hora_sp(info.get("verificado_em")) if info.get("verificado_em") else "—"
+            referencia = _data_br(info.get("data_publicacao"))
+        linhas.append(
+            f"<tr><td class='rq-esq'>{html.escape(casa)}</td>"
+            f"<td class='rq-esq rq-sec'>{carteiras}</td><td>{ativos}</td>"
+            f"<td class='rq-sec'>{referencia}</td><td class='rq-sec'>{confirmacao}</td><td>{estado}</td></tr>"
+        )
+    return (
+        "<div class='rq-scroll'><table class='rq-tabela'><thead><tr>"
+        "<th class='rq-esq'>CASA</th><th class='rq-esq rq-sec'>CARTEIRA</th><th>ATIVOS</th>"
+        "<th class='rq-sec'>REFERÊNCIA</th><th class='rq-sec'>ÚLT. CONFIRMAÇÃO</th><th>FONTE</th>"
+        f"</tr></thead><tbody>{''.join(linhas)}</tbody></table></div>"
+    )
+
+
+def _tabela_monitorados_html(linhas, prefs) -> str:
+    corpo = []
+    for l in linhas:
+        classe_linha = " class='rq-linha-alerta'" if l["estado"] == "ALERTA" else ""
+        dist = "—" if l["distancia_gatilho_pp"] is None else (
+            "atingido" if l["estado"] == "ALERTA"
+            else f"{config.formatar_numero(l['distancia_gatilho_pp'], 2, prefs['formato_numerico'])} p.p."
+        )
+        origem = html.escape(" · ".join(l["casas"]))
+        corpo.append(
+            f"<tr{classe_linha}><td class='rq-esq'><span class='rq-ticker'>{html.escape(l['ticker'])}</span>"
+            f"<span class='rq-sub rq-sec'>{html.escape(l['empresa'] or '')}</span></td>"
+            f"<td class='rq-esq rq-sec rq-cinza'>{origem}</td>"
+            f"<td class='rq-sec'>{_fmt_num(l['fechamento_anterior'], 2, prefs)}</td>"
+            f"<td>{_fmt_num(l['preco'], 2, prefs)}</td>"
+            f"<td class='{_classe_var(l['variacao_pct'])}'>{_pct(l['variacao_pct'], prefs)}</td>"
+            f"<td class='rq-sec rq-cinza'>{dist}</td>"
+            f"<td>{_chip(l['estado'], _ROTULO_ESTADO[l['estado']])}</td></tr>"
+        )
+    return (
+        "<div class='rq-scroll'><table class='rq-tabela'><thead><tr>"
+        "<th class='rq-esq'>ATIVO</th><th class='rq-esq rq-sec'>CASA</th><th class='rq-sec'>FECH. ANT.</th>"
+        "<th>ÚLTIMO</th><th>VAR. DIA</th><th class='rq-sec'>ATÉ O GATILHO</th><th>ESTADO</th>"
+        f"</tr></thead><tbody>{''.join(corpo)}</tbody></table></div>"
+    )
+
+
+def _tabela_alertas_html(alertas, prefs) -> str:
+    corpo = []
+    for a in alertas:
+        variacao = float(a.get("variacao_pct") or 0)
+        rotulo_email, classe_email = _ROTULO_EMAIL.get(a.get("status") or "", (a.get("status") or "—", ""))
+        origem = " · ".join(
+            f"{c}" for c in (a.get("casas") or [])
+        ) + (f" — {', '.join(a.get('carteiras') or [])}" if a.get("carteiras") else "")
+        fontes = " ".join(
+            f"<a href='{html.escape(u, quote=True)}' target='_blank' rel='noopener'>↗</a>"
+            for u in (a.get("fontes") or []) if str(u).startswith("https://")
+        ) or "—"
+        corpo.append(
+            f"<tr><td class='rq-esq'>{_data_br(a.get('pregao'))}</td>"
+            f"<td class='rq-esq'><span class='rq-ticker'>{html.escape(a.get('ticker', ''))}</span>"
+            f"<span class='rq-sub rq-sec'>{html.escape(a.get('empresa') or '')}</span></td>"
+            f"<td class='rq-baixa'>{_pct(variacao, prefs)}</td>"
+            f"<td class='rq-sec'>{_fmt_num(a.get('fechamento_anterior'), 2, prefs)}</td>"
+            f"<td class='rq-sec'>{_fmt_num(a.get('preco_atual'), 2, prefs)}</td>"
+            f"<td class='rq-esq rq-sec rq-cinza'>{html.escape(origem)}</td>"
+            f"<td class='rq-sec rq-cinza'>{_hora_sp(a.get('alertado_em'))}</td>"
+            f"<td>{_chip(classe_email, rotulo_email)}</td>"
+            f"<td class='rq-sec'>{fontes}</td></tr>"
+        )
+    return (
+        "<div class='rq-scroll'><table class='rq-tabela'><thead><tr>"
+        "<th class='rq-esq'>PREGÃO</th><th class='rq-esq'>ATIVO</th><th>VAR. DIA</th>"
+        "<th class='rq-sec'>FECH. ANT.</th><th class='rq-sec'>PREÇO NO ALERTA</th>"
+        "<th class='rq-esq rq-sec'>RECOMENDADO POR</th><th class='rq-sec'>DETECTADO</th>"
+        "<th>E-MAIL</th><th class='rq-sec'>FONTE</th>"
+        f"</tr></thead><tbody>{''.join(corpo)}</tbody></table></div>"
+    )
+
+
+def _secao_radar_quedas(prefs: dict):
+    from data import radar_quedas as rq
+
+    st.markdown('<div class="radar-pergunta">RADAR DE QUEDAS — CARTEIRAS RECOMENDADAS</div>', unsafe_allow_html=True)
+    st.markdown(
+        "<div class='rq-regra'>Alerta quando um ativo de carteira recomendada cai <b>mais de 4,00% no dia</b> "
+        "(preço atual vs. fechamento do pregão anterior; −4,00% exato não alerta). Um alerta por ativo e pregão, "
+        "mesmo que esteja em várias carteiras. Cotação Yahoo Finance, com atraso.</div>",
+        unsafe_allow_html=True,
+    )
+
+    # --- 1. cobertura -----------------------------------------------------
+    resumo_fontes = rq.resumo_fontes_vigentes()
+    if resumo_fontes is None:
+        st.markdown(
+            "<div class='rq-vazio'>Banco indisponível: não foi possível ler as carteiras vigentes "
+            "(confira a conexão e a migration sql/radar_research.sql).</div>",
+            unsafe_allow_html=True,
+        )
+        return
+    casas = list(rq.CASAS_MONITORADAS) + sorted(c for c in resumo_fontes if c not in rq.CASAS_MONITORADAS)
+    ativas = sum(1 for c in casas if c in resumo_fontes)
+    st.markdown(
+        f"<div class='rq-bloco'><span>COBERTURA</span>"
+        f"<span class='rq-bloco-meta'>{ativas} de {len(casas)} casas com carteira vigente</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(_tabela_cobertura_html(resumo_fontes, casas), unsafe_allow_html=True)
+    st.markdown(
+        "<div class='rq-nota'>ATUALIZADA = fonte confirmou a carteira nas últimas "
+        f"{rq.IDADE_FRESCA_HORAS}h · DESATUALIZADA = carteira ainda vigente, mas sem confirmação recente · "
+        f"INDISPONÍVEL = sem carteira vigente (fonte bloqueada, nunca coletada ou expirada após "
+        f"{rq.IDADE_MAXIMA_CARTEIRA_DIAS} dias). XP, BTG e outras casas não entram: não há carteira "
+        "recomendada pública acessível.</div>",
+        unsafe_allow_html=True,
+    )
+
+    # --- 2. ativos monitorados agora -------------------------------------
+    monitorados = rq.painel_monitorados()
+    if monitorados:
+        n_alerta = sum(1 for l in monitorados if l["estado"] == "ALERTA")
+        n_atencao = sum(1 for l in monitorados if l["estado"] == "ATENCAO")
+        destaque = []
+        if n_alerta:
+            destaque.append(f"<span class='rq-baixa'>{n_alerta} abaixo do gatilho</span>")
+        if n_atencao:
+            destaque.append(f"<span style='color:var(--destaque)'>{n_atencao} em atenção</span>")
+        meta = " · ".join(destaque + [f"{len(monitorados)} ativos"])
+        st.markdown(
+            f"<div class='rq-bloco'><span>MONITORADOS AGORA</span><span class='rq-bloco-meta'>{meta}</span></div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(_tabela_monitorados_html(monitorados, prefs), unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='rq-nota'>Ordenado pela maior queda do dia. ATENÇÃO = queda de "
+            f"{config.formatar_numero(abs(rq.LIMIAR_ATENCAO), 1, prefs['formato_numerico'])}% ou mais, ainda sem "
+            "alerta (não envia e-mail). Cotação consultada agora (cache de até 1 min); o alerta é registrado "
+            "pelo monitor agendado, não por esta tela.</div>",
+            unsafe_allow_html=True,
+        )
+    elif monitorados == []:
+        st.markdown("<div class='rq-vazio'>Nenhuma carteira vigente: nada sendo monitorado agora.</div>",
+                    unsafe_allow_html=True)
+
+    # --- 3. alertas registrados ------------------------------------------
+    st.markdown("<div class='rq-bloco'><span>ALERTAS REGISTRADOS</span></div>", unsafe_allow_html=True)
+    col_p, col_c, col_t = st.columns([2.2, 1.2, 1], vertical_alignment="bottom")
+    with col_p:
+        periodo = st.pills("Período", list(_PERIODOS_ALERTAS), default="7 DIAS",
+                           key="rq_periodo", label_visibility="collapsed") or "7 DIAS"
+    alertas = rq.alertas_periodo(_PERIODOS_ALERTAS[periodo])
+    if alertas is None:
+        st.markdown("<div class='rq-vazio'>Histórico indisponível (banco fora do ar).</div>", unsafe_allow_html=True)
+        return
+    with col_c:
+        casas_opcoes = sorted({c for a in alertas for c in (a.get("casas") or [])})
+        filtro_casa = st.selectbox("Casa", ["TODAS AS CASAS"] + casas_opcoes, key="rq_casa",
+                                   label_visibility="collapsed")
+    with col_t:
+        filtro_ticker = st.text_input("Ticker", key="rq_ticker", placeholder="TICKER",
+                                      label_visibility="collapsed").strip().upper()
+    filtrados = [a for a in alertas
+                 if (not filtro_ticker or filtro_ticker in str(a.get("ticker", "")).upper())
+                 and (filtro_casa == "TODAS AS CASAS" or filtro_casa in (a.get("casas") or []))]
+    if filtrados:
+        st.markdown(_tabela_alertas_html(filtrados, prefs), unsafe_allow_html=True)
+        st.markdown(
+            "<div class='rq-nota'>PREÇO NO ALERTA = cotação no momento em que o monitor detectou a queda "
+            "(não é o fechamento do dia). E-MAIL: ENVIADO, PENDENTE (será reenviado) ou FALHOU.</div>",
+            unsafe_allow_html=True,
+        )
+    elif alertas:
+        st.markdown("<div class='rq-vazio'>Nenhum alerta corresponde aos filtros.</div>", unsafe_allow_html=True)
+    else:
+        st.markdown(
+            f"<div class='rq-vazio'>Nenhuma queda acima de 4% em ativo monitorado no período "
+            f"({periodo.lower()}). Ausência de alerta não é falha do monitor: veja o estado das fontes acima.</div>",
+            unsafe_allow_html=True,
+        )
+
+
+# ============================================================
 # Entrada da aba
 # ============================================================
 
@@ -365,59 +656,9 @@ def render_radar(prefs: dict):
     )
 
     # Radar de quedas em carteiras recomendadas e independente da watchlist.
-    with st.expander("RADAR DE QUEDAS — RECOMENDAÇÕES MONITORADAS", expanded=True):
-        from data.radar_quedas import CASA_GENIAL, CASA_SAFRA, alertas_recentes, resumo_fontes_vigentes
+    _secao_radar_quedas(prefs)
 
-        resumo_fontes = resumo_fontes_vigentes()
-        if resumo_fontes is not None:
-            partes_fontes = []
-            for casa in (CASA_GENIAL, CASA_SAFRA):
-                info = resumo_fontes.get(casa)
-                if info and not info["desatualizada"]:
-                    partes_fontes.append(f"🟢 {casa}: atualizada ({info['ativos']} ativos)")
-                elif info:
-                    partes_fontes.append(f"🟡 {casa}: desatualizada (sem confirmação recente, {info['ativos']} ativos)")
-                else:
-                    partes_fontes.append(f"🔴 {casa}: indisponível (sem carteira vigente - bloqueada, sem coleta ou expirada)")
-            st.caption(" · ".join(partes_fontes))
-
-        alertas = alertas_recentes()
-        if alertas is None:
-            st.caption("Histórico indisponível: confira a conexão e a migration sql/radar_research.sql.")
-        elif not alertas:
-            st.markdown("<div class='radar-vazio'>Nenhum alerta persistido. O monitor só registra quedas diárias abaixo de -4,00% em ativos com recomendação vigente e cotação válida.</div>", unsafe_allow_html=True)
-        else:
-            col_t, col_c, col_p = st.columns([1.3, 1, 1])
-            with col_t:
-                filtro_ticker = st.text_input("Ticker", key="radar_queda_filtro_ticker").strip().upper()
-            with col_c:
-                casas_opcoes = sorted({c for a in alertas for c in (a.get("casas") or [])})
-                filtro_casa = st.selectbox("Casa", ["TODAS"] + casas_opcoes, key="radar_queda_filtro_casa")
-            with col_p:
-                dias = st.selectbox("Período", [1, 7, 30, 90], index=1, format_func=lambda n: f"{n} dia(s)" if n == 1 else f"{n} dias", key="radar_queda_filtro_dias")
-            from datetime import datetime, timedelta
-            from zoneinfo import ZoneInfo
-            limite_data = datetime.now(ZoneInfo("America/Sao_Paulo")).date() - timedelta(days=dias - 1)
-            filtrados = [a for a in alertas
-                         if (not filtro_ticker or filtro_ticker in str(a.get("ticker", "")).upper())
-                         and (filtro_casa == "TODAS" or filtro_casa in (a.get("casas") or []))
-                         and str(a.get("pregao", ""))[:10] >= limite_data.isoformat()]
-            for a in filtrados:
-                variacao = float(a.get("variacao_pct") or 0)
-                cor = "var(--baixa)" if variacao < 0 else "var(--alta)"
-                fontes = " · ".join(f"<a href='{html.escape(u, quote=True)}' target='_blank' rel='noopener'>fonte ↗</a>" for u in (a.get("fontes") or []) if u.startswith("https://"))
-                st.markdown(
-                    f"<div class='radar-alerta'><div class='radar-alerta-topo'>"
-                    f"<span class='radar-ticker'>{html.escape(a.get('ticker', ''))}</span>"
-                    f"<span style='color:{cor}'>{variacao:.2f}%</span></div>"
-                    f"<div class='radar-descricao'>{html.escape(a.get('empresa') or '')} · "
-                    f"R$ {float(a.get('preco_atual') or 0):.2f} | fechamento anterior R$ {float(a.get('fechamento_anterior') or 0):.2f}</div>"
-                    f"<div class='radar-relevancia'>Casas: {html.escape(', '.join(a.get('casas') or []))} · Carteiras: {html.escape(', '.join(a.get('carteiras') or []))}</div>"
-                    f"<div class='radar-meta'>Pregão {html.escape(str(a.get('pregao', ''))[:10])} · cotação {html.escape(str(a.get('cotacao_em', '')))} · {html.escape(a.get('tipo_cotacao') or 'tipo não informado')} · {html.escape(a.get('status') or '')} {fontes}</div></div>",
-                    unsafe_allow_html=True,
-                )
-            if not filtrados:
-                st.caption("Nenhum alerta corresponde aos filtros.")
+    st.markdown('<div class="radar-separador">INTELIGÊNCIA DA WATCHLIST</div>', unsafe_allow_html=True)
     watchlist = prefs.get("watchlist") or []
     if not watchlist:
         st.info("Adicione tickers na watchlist (barra lateral) para o restante do RADAR analisar os ativos.")
