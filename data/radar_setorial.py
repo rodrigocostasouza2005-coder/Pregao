@@ -57,8 +57,11 @@ CATALOGO = {
         ),
         "termos": (
             "bancos", "bancario", "bancaria", "bancarios", "credito", "inadimplencia", "spread",
-            "itau", "bradesco", "santander", "btg", "nubank", "banco do brasil", "banco central",
+            "itau", "bradesco", "santander", "btg", "nubank", "banco do brasil",
         ),
+        # "Bancos centrais preveem juros mais altos" entrou como Bancos no
+        # exemplo real: autoridade monetária não é o setor bancário
+        "exclui": ("banco central", "bancos centrais"),
         "empresas": ("ITUB4", "BBDC4", "BBAS3", "SANB11", "BPAC11"),
         "importa": ("Bancos têm o maior peso setorial do Ibovespa. Juros, inadimplência e demanda por "
                     "crédito definem quanto eles lucram, e o setor costuma refletir rapidamente "
@@ -356,6 +359,8 @@ def _menciona_setor(titulo, setor, tickers=()):
     `tickers` é ignorado de propósito - ver _tickers_do_titulo."""
     cfg = CATALOGO[setor]
     texto = _sem_acento(titulo)
+    for trecho in cfg.get("exclui", ()):
+        texto = texto.replace(_sem_acento(trecho), " ")
     cita = (_tem_termo(texto, cfg["termos"]) or _tem_nome(titulo, cfg.get("nomes", ()))
             or bool(set(_tickers_do_titulo(titulo)) & set(cfg["empresas"])))
     return cita and _tem_termo(texto, CONTEXTO_MERCADO)
@@ -457,26 +462,30 @@ def redigir_bloco(setor, fontes):
     PALAVRAS_MIN e PALAVRAS_MAX palavras ajustando quantas manchetes entram
     (nunca acrescenta texto que não seja da fonte ou do catálogo)."""
     cfg = CATALOGO[setor]
-    citadas = sorted({t for f in fontes for t in _tickers_do_titulo(f["titulo"])})
-    do_setor = [t for t in cfg["empresas"] if t not in citadas]
-    partes_empresas = []
-    if citadas:
-        partes_empresas.append("Citadas nas notícias: " + ", ".join(citadas) + ".")
-    partes_empresas.append("Principais do setor no Ibovespa: " + ", ".join(do_setor or cfg["empresas"]) + ".")
-    empresas = " ".join(partes_empresas)
-
     escolhidas = _escolher_fontes(fontes)
+
+    def _empresas(publicadas):
+        # só tickers escritos nas manchetes QUE SAEM no bloco (no exemplo
+        # real apareciam tickers de notícias candidatas não publicadas)
+        citadas = sorted({t for f in publicadas for t in _tickers_do_titulo(f["titulo"])})
+        do_setor = [t for t in cfg["empresas"] if t not in citadas]
+        partes = []
+        if citadas:
+            partes.append("Citadas nas notícias: " + ", ".join(citadas) + ".")
+        partes.append("Principais do setor no Ibovespa: " + ", ".join(do_setor or cfg["empresas"]) + ".")
+        return " ".join(partes)
 
     def _montar(qtd):
         fatos = [_frase_fato(f) for f in escolhidas[:qtd]]
+        empresas = _empresas(escolhidas[:qtd])
         total = _palavras(" ".join(fatos + [cfg["importa"], empresas, cfg["acompanhar"]]))
-        return fatos, total
+        return fatos, empresas, total
 
     qtd = len(escolhidas)
-    fatos, total = _montar(qtd)
+    fatos, empresas, total = _montar(qtd)
     while total > PALAVRAS_MAX and qtd > MIN_FONTES:
         qtd -= 1
-        fatos, total = _montar(qtd)
+        fatos, empresas, total = _montar(qtd)
     return {
         "setor": setor,
         "nome": cfg["nome"],
