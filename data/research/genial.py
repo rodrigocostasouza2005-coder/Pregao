@@ -31,7 +31,19 @@ o disclaimer (que proibe reproducao/redistribuicao do conteudo sem
 autorizacao previa por escrito, o que tambem descarta usar um agregador
 de terceiro como substituto legitimo). O parsing do __NEXT_DATA__ da
 home (ja' implementado aqui) continua sendo a unica via conhecida; o
-bloqueio de WAF documentado acima permanece a causa real."""
+bloqueio de WAF documentado acima permanece a causa real.
+
+Busca por via alternativa, 2a rodada (2026-10-17, com rede real
+disponivel): testado se o bloqueio e' so' do subdominio analisa.
+genialinvestimentos.com.br ou da zona inteira - genialinvestimentos.
+com.br (raiz, IP diferente do subdominio) tambem da timeout silencioso
+(sem nenhum byte de resposta em 10s, mesmo sintoma documentado acima),
+com UA identificado do projeto, SEM impersonate/disfarce. Mesma
+conclusao do caso XP (ver xp.py): nao e' um subdominio isolado, e' a
+zona inteira - descarta "tentar outro subdominio da Genial" como
+alternativa legitima. Nenhuma tentativa de bypass foi feita contra o
+MESMO alvo - so' um teste de reachability contra um alvo diferente (a
+raiz do dominio), o que e' legitimo."""
 
 import json
 import re

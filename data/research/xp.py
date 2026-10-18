@@ -47,7 +47,21 @@ curl de verdade pra conteudos.xpi.com.br (fora do allowlist de rede
 daquele ambiente - nem resolve DNS), a verificacao foi via busca na web
 (WebSearch); nao achou nenhum feed RSS, sitemap ou API publica
 alternativa documentada pra XP research - a API wp-json/wp/v2 (ja' usada
-aqui) continua sendo a unica via conhecida."""
+aqui) continua sendo a unica via conhecida.
+
+Busca por via alternativa, 2a rodada (2026-10-17, com rede real
+disponivel): testado se o bloqueio e' so' do subdominio conteudos.xpi.
+com.br ou da zona inteira - xpi.com.br (raiz) tambem devolve a MESMA
+pagina "Acesso Bloqueado" da Akamai (HTTP 403, requisicao real, UA
+identificado do projeto, SEM impersonate/disfarce de fingerprint). Ou
+seja, nao e' um subdominio especifico bloqueado enquanto outro da mesma
+empresa ficaria livre - e' a zona de CDN inteira associada a conta/
+reputacao. Descarta a hipotese de "tentar outro subdominio da XP" como
+alternativa legitima: nao existe outro subdominio fora dessa mesma zona
+de bloqueio conhecido. Nenhuma tentativa de bypass foi feita (sem
+rotacao de IP, sem fingerprint novo contra o MESMO dominio) - so' um
+teste de reachability contra um alvo DIFERENTE (a raiz do dominio), o
+que e' legitimo."""
 
 import re
 
