@@ -234,6 +234,7 @@ def test_filtro_descarta_loteria_e_mantem_noticia_com_palavra_parecida():
     d = "2026-10-18T20:00:00-03:00"
     itens = [{"titulo": "Resultado da Quina 6855 de sábado", "data": d, "importancia": 9},
              {"titulo": "Mega-Sena acumula e prêmio vai a R$ 50 milhões", "data": d, "importancia": 8},
+             {"titulo": "Passagens aéreas para São Paulo a partir de R$ 351 ida e volta", "data": d, "importancia": 7},
              {"titulo": "Quinta-feira tem dados de inflação nos EUA", "data": d, "importancia": 1}]
     assert [i["titulo"] for i in ed.filtrar_noticias(itens, agora)] == ["Quinta-feira tem dados de inflação nos EUA"]
 

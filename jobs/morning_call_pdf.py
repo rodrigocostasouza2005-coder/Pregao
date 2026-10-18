@@ -228,6 +228,8 @@ def _estilos():
     estilo("aviso", fontName=F["PregaoSerifItalico"], fontSize=9.4, leading=12.9, textColor=CINZA)
     estilo("tabela", fontName=F["PregaoSans"], fontSize=8, leading=10.2)
     estilo("tabela_num", fontName=F["PregaoMono"], fontSize=8, leading=10.2, alignment=TA_RIGHT)
+    estilo("tabela_num_texto", fontName=F["PregaoSans"], fontSize=8, leading=10.2, alignment=TA_RIGHT,
+           textColor=CINZA)
     estilo("tabela_cab", fontName=F["PregaoSansMedia"], fontSize=6.6, leading=8.4, textColor=CINZA)
     estilo("tabela_cab_num", fontName=F["PregaoSansMedia"], fontSize=6.6, leading=8.4, textColor=CINZA,
            alignment=TA_RIGHT)
@@ -913,9 +915,12 @@ def _tabela_macro(linhas_macro, estilos):
                Paragraph("VALOR", estilos["tabela_cab_num"])]]
     for linha in linhas_macro:
         referencia = str(linha.get("referencia") or "—")
+        # "indisponível" em fonte de texto: na mono da coluna numérica a
+        # palavra quebrava em duas linhas ("indisponíve / l") na edição real
+        estilo_valor = "tabela_num" if linha.get("valor") is not None else "tabela_num_texto"
         linhas.append([Paragraph(_t(linha.get("indicador")), estilos["tabela"]),
                        Paragraph(_t(referencia), estilos["tabela"]),
-                       Paragraph(_t(_valor_macro(linha)), estilos["tabela_num"])])
+                       Paragraph(_t(_valor_macro(linha)), estilos[estilo_valor])])
     tabela = Table(linhas, colWidths=[None, 30 * MM, 22 * MM], hAlign="LEFT")
     tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE))
     return tabela

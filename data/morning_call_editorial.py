@@ -298,7 +298,10 @@ def _coletar_noticias():
 # e que não são notícia de mercado (achado real: "Resultado da Quina" no
 # topo da edição de 18/10/2026). Filtro editorial do PDF, por título.
 _TERMOS_FORA_DE_PAUTA = ("quina", "mega-sena", "mega sena", "lotofacil", "lotomania", "loteria",
-                         "dupla sena", "timemania", "dia de sorte", "+milionaria", "horoscopo")
+                         "dupla sena", "timemania", "dia de sorte", "+milionaria", "horoscopo",
+                         # anúncio de passagem ("... a partir de R$ 351 ida e volta"), visto na
+                         # editoria Brasil da edição real de 18/10/2026
+                         "ida e volta")
 
 
 # Colunas de aconselhamento pessoal do feed do MarketWatch ("I'm 64 with
