@@ -68,10 +68,10 @@ abas em toda rerun. 11 seções visíveis ao usuário comum + 2 restritas a admi
 `jobs/morning_call.py` + `jobs/morning_call_pdf.py` + `data/morning_call_editorial.py`
 (briefing diário por e-mail/PDF), `jobs/radar_quedas.py` (worker do Radar).
 
-**Testes:** 881 testes passando no estado final desta branch (depois do merge
-com o trabalho concorrente de `origin/main` — baseline era 776 antes do merge,
-681 no início desta sessão, antes mesmo dos 2 commits de teste novos desta
-auditoria), todos via `pytest`, sem Playwright/browser real no CI (ver
+**Testes:** 890 testes passando nesta branch após a 2ª rodada (PRs #75-78,
+seção 13) — 881 ao final da 1ª rodada (depois do merge com o trabalho
+concorrente de `origin/main`, baseline 776 antes do merge, 681 no início
+desta sessão), todos via `pytest`, sem Playwright/browser real no CI (ver
 seção 12, limitações).
 
 ---
@@ -439,16 +439,18 @@ leitura de todos os arquivos de UI — os únicos símbolos usados são `●`/`�
 | # | Achado | Prioridade | Esforço | Risco de implementar | Status |
 |---|---|---|---|---|---|
 | 1 | Morning Call: síntese de IA rotulada como FATO | **P0** | Baixo | Baixo (isolado, testado) | **Feito** (corrigido por mim, `ba0f620`; depois superado por reescrita concorrente mais rigorosa do mesmo problema — resultado líquido em `main` continua corrigido, ver seção 5.B) |
-| 2 | Watchlist (VISÃO GERAL): ticker sem destino | **P1** | Baixo | Baixo (isolado, testado, validado visualmente) | **Feito** |
-| 3 | CTRL K decorativo, sem atalho real | P2 | Baixo | Baixo (validado com Playwright antes de integrar) | **Feito** |
-| 4 | Radar: `.rq-ticker` sem destino nas tabelas densas | P1 | Médio | Médio (componente redesenhado horas antes; densidade em jogo) | Documentado |
-| 5 | RESEARCH: vigente vs. antigo sem diferenciação | P1 | Médio-alto | Médio (mudança de estrutura de dado) | Documentado |
-| 6 | Design system: escala tipográfica nomeada | P2 | Alto (toca ~13 telas) | Alto sem ciclo de confirmação visual | Proposta |
-| 7 | `ui/workspace.py` sem teste automatizado | P2 | Médio | — (é trabalho de teste, não de produto) | Documentado |
-| 8 | CONFIG × popover "⚙": controle de painel duplicado | P2 | Baixo | Médio (remover sem substituto quebra reordenar) | Documentado |
-| 9 | CVM/RESEARCH: resumo de IA sem rótulo visual | P2 | Baixo | Baixo | Documentado |
-| 10 | NEWS: área de clique "↗ abrir" pequena em mobile | P2 | Baixo | Baixo | Documentado |
-| 11 | Demais achados P2/P3 da seção 9 | P2/P3 | Variável | — | Documentado |
+| 2 | Watchlist (VISÃO GERAL): ticker sem destino | **P1** | Baixo | Baixo (isolado, testado, validado visualmente) | **Feito** (PR #70) |
+| 3 | CTRL K decorativo, sem atalho real | P2 | Baixo | Baixo (validado com Playwright antes de integrar) | **Feito** (PR #70) |
+| 4 | Radar: `.rq-ticker` sem destino nas tabelas densas | P1 | Médio | Médio (componente redesenhado horas antes; densidade em jogo) | Documentado (seção 4) |
+| 5 | RESEARCH: recomendação da watchlist sem data de captura | **P1** | Baixo | Baixo (isolado, testado, validado visualmente) | **Feito** (PR #75, seção 13) |
+| 6 | MERCADO/VISÃO GERAL: "Mais Negociados" sem clique pra EQUITY | **P1** | Baixo | Baixo (isolado, testado, validado visualmente) | **Feito** (PR #76, seção 13) |
+| 7 | CVM: resumo de IA sem rótulo visual | P2 | Baixo | Baixo | **Feito** (PR #77, seção 13) |
+| 8 | `ui/workspace.py` sem teste automatizado | P2 | Médio | — (é trabalho de teste, não de produto) | **Feito** (PR #78, só lógica pura — seção 13) |
+| 9 | Design system: escala tipográfica nomeada | P2 | Alto (toca ~13 telas) | Alto sem ciclo de confirmação visual | Proposta |
+| 10 | CONFIG × popover "⚙": controle de painel duplicado | P2 | Baixo | Médio (remover sem substituto quebra reordenar) | Documentado |
+| 11 | RESEARCH: resumo de IA sem rótulo visual | P2 | Baixo | Baixo (mesmo princípio do #7, não replicado ainda) | Documentado |
+| 12 | NEWS: área de clique "↗ abrir" pequena em mobile | P2 | Baixo | Reavaliado — risco subjetivo, sem evidência concreta (seção 13) | Descartado por falta de evidência |
+| 13 | Demais achados P2/P3 da seção 9 | P2/P3 | Variável | — | Documentado |
 
 ---
 
@@ -495,19 +497,68 @@ leitura de todos os arquivos de UI — os únicos símbolos usados são `●`/`�
 
 ---
 
-## 13. O que ficou explicitamente para uma próxima sessão
+## 13. Segunda rodada de correções (trabalho autônomo, 2026-10-18, continuação)
+
+Com o PR #70 aberto e aguardando revisão, 4 PRs adicionais foram abertos a
+partir do backlog desta própria auditoria, cada um isolado, testado (teste
+de reprodução escrito e confirmado falhando antes da correção, quando
+aplicável) e validado visualmente onde havia componente visual novo:
+
+| PR | Achado | Prioridade | Arquivo(s) |
+|---|---|---|---|
+| #75 | RESEARCH: recomendação da watchlist (Genial) nunca mostrava quando foi capturada — `capturado_em` existia no snapshot mas era descartado no fallback; o único lugar que mostrava qualquer data só aparece com 2+ snapshots | P1 | `ui/research_tab.py` |
+| #76 | MERCADO/VISÃO GERAL: painel MAIS NEGOCIADOS (mesma função, 2 abas) sem nenhum jeito de ir do ticker até EQUITY — `<td>` cru, nem falsa affordance, simplesmente sem destino | P1 | `ui/mercado_tab.py` |
+| #77 | CVM: modal de documento mostra resumo gerado por IA sob rótulo só "Resumo", sem indicar que é sintetizado por IA — mesmo princípio de risco do achado P0 do Morning Call (seção 5.B) | P2 | `ui/cvm_tab.py` |
+| #78 | `ui/workspace.py` sem nenhum teste automatizado (achado P2 original) — cobertura adicionada pras garantias de robustez já documentadas no próprio código (normalização de dado corrompido, rejeição de `Infinity`/`NaN`) | P2 | `tests/test_workspace.py` (só teste, zero mudança de comportamento) |
+
+Cada PR é independente e isolado (nenhum arquivo em comum entre eles, nem
+com o PR #70), para não bloquear um no outro nem competir com as 4 outras
+sessões ativas no mesmo repositório no momento (#71/#72/#73 — todas em
+Morning Call/onboarding — e #65, já mergeada, em `data/research/`).
+
+**Erro cometido e corrigido durante o trabalho:** o commit da correção do
+CVM (#77) foi feito por engano em cima da branch do PR #76 (Mais
+Negociados) antes de ser percebido — corrigido movendo o commit pra uma
+branch nova com `git branch`+`git rebase --onto`, sem nunca ter sido
+empurrado pro remoto nesse estado (nenhum PR chegou a ficar com escopo
+misturado). Registrado aqui por transparência, não escondido.
+
+**Itens considerados e descartados nesta rodada** (não viraram correção,
+com o motivo):
+- NEWS: link "↗ abrir" perto do botão-título em mobile — reavaliado com
+  mais cuidado: é uma linha HTML separada abaixo do botão (não
+  literalmente sobreposta), risco de clique acidental é subjetivo, sem
+  evidência concreta de problema real. Mudar sem confirmação visual do
+  Rodrigo seria exatamente o tipo de "mudança cosmética sem evidência de
+  necessidade" que a missão pede pra evitar.
+- RESEARCH: "2 padrões de interação no mesmo feed" (LIVE abre modal, resto
+  expande inline) — **não é um bug**, é decisão deliberada já documentada
+  no código (`ui/research_tab.py`: "pedido explícito do Rodrigo,
+  2026-09-28: a lista ficava 'espalhada'..."). Corrigido o entendimento
+  desta auditoria: removido da lista de achados pendentes.
+- Radar `.rq-ticker` — mantido como pendência (ver lista abaixo); risco de
+  densidade ainda não foi reavaliado com uma solução concreta testada.
+
+---
+
+## 14. O que ficou explicitamente para uma próxima sessão
 
 Por ordem de valor/risco, na visão desta auditoria:
 
 1. Radar: tornar `.rq-ticker` clicável sem perder a densidade da tabela (opção
    proposta na seção 4 — link `<a>` por linha com query param, precisa de
-   validação Playwright antes de subir).
-2. RESEARCH: diferenciação visual vigente/antigo + unificar os 2 padrões de
-   interação do feed.
+   validação Playwright antes de subir). Não tentado na 2ª rodada porque
+   exigiria mexer em `app.py`, tocado agora pelo PR #72 (onboarding/admin)
+   em paralelo.
+2. RESEARCH: diferenciação visual vigente/antigo (preço-alvo/recomendação
+   por casa, não só a data — já coberta no PR #75) + rótulo "gerado por
+   IA" no resumo (`_bloco_resumo`, mesmo princípio do PR #77 pra CVM, não
+   replicado em RESEARCH nesta rodada pra não empilhar mudanças no mesmo
+   arquivo que o PR #75 já altera).
 3. Escala tipográfica nomeada no design system — só com revisão visual do
    Rodrigo por tela (não em lote).
-4. Teste automatizado para `ui/workspace.py` (puro trabalho de teste, zero
-   risco de regressão de produto).
-5. Rótulo visual "gerado por IA" nos modais de resumo (CVM, RESEARCH) — mesmo
-   princípio do achado P0 corrigido no Morning Call, risco menor aqui porque já
-   há nota textual, mas vale o mesmo cuidado visual.
+4. Teste automatizado para `ui/workspace.py` — **feito nesta rodada (PR
+   #78)**, cobrindo a lógica pura (`layout_efetivo`/`_aplicar_bridge`); o
+   script JS (drag/resize real, dentro do browser) ainda não tem
+   cobertura automatizada — exigiria um harness Playwright dedicado, fora
+   do escopo de `pytest`.
