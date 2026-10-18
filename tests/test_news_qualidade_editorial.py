@@ -316,6 +316,14 @@ def test_2z_sem_validar_imagem_nunca_chama_o_validador_de_rede():
 # 3. pregerar_resumos_news - pré-processamento em lote
 # ============================================================
 
+# Cenarios de pre-geracao com resumo REAL precisam de GROQ_API_KEY
+# configurada (valor ficticio - obter_resumo_grupo e' mockado, nada chama
+# a API de verdade). Sem chave, pregerar_resumos_news para antes de
+# baixar qualquer materia (ver test_3r).
+def _com_groq():
+    return patch.object(news_mod.config, "obter_credenciais_groq", return_value=("chave-ficticia", "modelo"))
+
+
 def _grupo_fake(titulo, link, fontes=None):
     fontes = fontes or [{"veiculo": "Fonte", "link": link}]
     return {"titulo": titulo, "titulos": [titulo], "link": link, "fontes": fontes}
@@ -336,6 +344,7 @@ def test_3a_dedup_entre_top_mercado_e_busca_por_ticker():
          patch.object(news_mod, "obter_noticias", return_value=[grupo]), \
          patch.object(news_mod.ia_cache, "obter_varios", return_value={}), \
          patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
+         _com_groq(), \
          patch.object(news_mod, "obter_resumo_grupo", side_effect=_fake_obter_resumo_grupo):
         stats = news_mod.pregerar_resumos_news(["PETR4"])
     _checar("3a 1 grupo considerado (dedup pelo mesmo link/título)", stats["grupos_considerados"] == 1, f"({stats})")
@@ -353,6 +362,7 @@ def test_3d_grupo_ja_cacheado_nunca_chama_a_ia_de_novo():
          patch.object(news_mod, "obter_noticias", return_value=[]), \
          patch.object(news_mod.ia_cache, "obter_varios", return_value={chave: {"resumo": "já cacheado"}}), \
          patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
+         _com_groq(), \
          patch.object(news_mod, "obter_resumo_grupo") as mock_gerar:
         stats = news_mod.pregerar_resumos_news([])
     _checar("3e grupo já cacheado -> 0 chamadas de IA", mock_gerar.call_count == 0)
@@ -369,6 +379,7 @@ def test_3g_respeita_contagem_maxima_de_resumos_por_execucao():
          patch.object(news_mod, "obter_noticias", return_value=[]), \
          patch.object(news_mod.ia_cache, "obter_varios", return_value={}), \
          patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
+         _com_groq(), \
          patch.object(news_mod, "obter_resumo_grupo", side_effect=_fake_obter_resumo_grupo) as mock_gerar:
         stats = news_mod.pregerar_resumos_news([])
     _checar("3h nunca gera mais que _MAX_RESUMOS_POR_EXECUCAO por execução",
@@ -386,6 +397,7 @@ def test_3j_respeita_orcamento_de_tempo():
          patch.object(news_mod, "obter_noticias", return_value=[]), \
          patch.object(news_mod.ia_cache, "obter_varios", return_value={}), \
          patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
+         _com_groq(), \
          patch.object(news_mod, "obter_resumo_grupo", side_effect=_fake_obter_resumo_grupo) as mock_gerar, \
          patch.object(news_mod.time, "monotonic", side_effect=[0.0] + [10 ** 9] * 20):
         stats = news_mod.pregerar_resumos_news([])
@@ -405,6 +417,7 @@ def test_3m_falha_isolada_em_1_ticker_nao_aborta_os_demais():
          patch.object(news_mod, "obter_noticias", side_effect=_fake_obter_noticias), \
          patch.object(news_mod.ia_cache, "obter_varios", return_value={}), \
          patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
+         _com_groq(), \
          patch.object(news_mod, "obter_resumo_grupo", return_value={"resumo": "RESUMO:\nTexto.", "imagem": None, "motivo_indisponivel": None}):
         stats = news_mod.pregerar_resumos_news(["QUEBRA3", "OK4"])
     _checar("3n 1 falha registrada (ticker QUEBRA3)", stats["falhas"] == 1, f"({stats})")
@@ -418,6 +431,47 @@ def test_3p_top_mercado_indisponivel_nao_quebra_o_pregen():
          patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True):
         stats = news_mod.pregerar_resumos_news([])
     _checar("3q TOP MERCADO indisponível -> nunca lança exceção, 0 grupos", stats["grupos_considerados"] == 0, f"({stats})")
+
+
+def test_3r_sem_groq_api_key_nao_baixa_nada_nem_conta_como_gerado():
+    """Achado real 2026-10-18 (run 39088619143 do GitHub Actions): sem
+    GROQ_API_KEY no ambiente, os 25 grupos voltavam resumo=None e o log
+    dizia "25 gerado(s) agora, 0 falha(s)". Sem chave: zero materia
+    baixada, zero "gerado", e stats['groq_configurado'] is False."""
+    with patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
+         patch.object(news_mod.config, "obter_credenciais_groq", return_value=(None, "modelo")), \
+         patch.object(news_mod, "obter_top_mercado_tudo") as mock_top, \
+         patch.object(news_mod, "obter_noticias") as mock_noticias, \
+         patch.object(news_mod, "obter_resumo_grupo") as mock_gerar:
+        stats = news_mod.pregerar_resumos_news(["PETR4"])
+    _checar("3r groq_configurado=False", stats["groq_configurado"] is False, f"({stats})")
+    _checar("3r nenhuma noticia buscada", not mock_top.called and not mock_noticias.called)
+    _checar("3r nenhum resumo tentado", not mock_gerar.called)
+    _checar("3r gerados=0", stats["gerados"] == 0, f"({stats})")
+
+
+def test_3s_resumo_vazio_conta_como_indisponivel_nao_como_gerado():
+    """resumo=None sem excecao (cota, materia sem texto, resumo rejeitado
+    pela checagem de consistencia) nao e' "gerado" - o cache nao grava
+    nada nesse caso."""
+    grupos = [_grupo_fake("Fato com resumo", "https://veiculo.com/a"),
+              _grupo_fake("Fato sem resumo", "https://veiculo.com/b")]
+
+    def _fake(titulo, fontes_ordenadas, titulos=(), validar_imagem=False):
+        if titulo == "Fato com resumo":
+            return {"resumo": "RESUMO:\nTexto.", "imagem": None, "motivo_indisponivel": None}
+        return {"resumo": None, "imagem": None, "motivo_indisponivel": "cota do Groq esgotada"}
+
+    with patch.object(news_mod, "obter_top_mercado_tudo", return_value=grupos), \
+         patch.object(news_mod, "obter_noticias", return_value=[]), \
+         patch.object(news_mod.ia_cache, "obter_varios", return_value={}), \
+         patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
+         _com_groq(), \
+         patch.object(news_mod, "obter_resumo_grupo", side_effect=_fake):
+        stats = news_mod.pregerar_resumos_news([])
+    _checar("3s 1 gerado (so' o resumo real)", stats["gerados"] == 1, f"({stats})")
+    _checar("3s 1 indisponivel", stats["indisponiveis"] == 1, f"({stats})")
+    _checar("3s 0 falhas (sem excecao)", stats["falhas"] == 0, f"({stats})")
 
 
 # ============================================================
@@ -515,6 +569,7 @@ def test_4l_pregen_roda_normalmente_quando_tabela_disponivel():
     (nenhuma regressao introduzida pelo guard)."""
     grupo = _grupo_fake("Fato normal", "https://veiculo.com/normal")
     with patch.object(news_mod.ia_cache, "tabela_disponivel", return_value=True), \
+         _com_groq(), \
          patch.object(news_mod, "obter_top_mercado_tudo", return_value=[grupo]), \
          patch.object(news_mod, "obter_noticias", return_value=[]), \
          patch.object(news_mod.ia_cache, "obter_varios", return_value={}), \
