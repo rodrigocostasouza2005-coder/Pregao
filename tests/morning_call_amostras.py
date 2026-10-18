@@ -213,3 +213,44 @@ def edicao_cheia():
     todas = ed["brasil"]["noticias"] + ed["empresas"]["cards"] + ed["exterior"]["noticias"]
     ed["capa"]["manchete"], ed["capa"]["chamadas"] = selecionar_manchete(todas)
     return ed
+
+
+def _noticia_setor(titulo, veiculo, horas_atras, importancia, tickers=None):
+    agora = datetime(2026, 10, 19, 8, 0, tzinfo=TZ_SP)
+    slug = "-".join(titulo.lower().split()[:5])
+    return {"titulo": titulo, "veiculos": [veiculo], "link": f"https://exemplo.invalid/setor/{slug}",
+            "data": (agora - timedelta(hours=horas_atras)).isoformat(), "importancia": importancia,
+            "tickers": tickers or [], "regiao": "BR"}
+
+
+# Manchetes de EXEMPLO por setor (formato do coletor data/news.py) - só
+# para testes; o exemplo real vem do diagnóstico com dados reais.
+NOTICIAS_SETOR_AMOSTRA = {
+    "PETRÓLEO & GÁS": [
+        _noticia_setor("Petrobras renova recorde de produção no pré-sal no terceiro trimestre", "Valor Econômico", 20, 90, ["PETR4"]),
+        _noticia_setor("Brent sobe com cortes de oferta da Opep+ e estoques menores nos EUA", "InfoMoney", 30, 80),
+        _noticia_setor("PRIO conclui aquisição de fatia em campo na Bacia de Campos", "Money Times", 40, 60, ["PRIO3"]),
+    ],
+    "IMOBILIÁRIO": [
+        _noticia_setor("Construtoras de baixa renda aceleram lançamentos e vendas com novas faixas do Minha Casa, Minha Vida", "Estadão", 22, 70),
+        _noticia_setor("Cury e Direcional lideram vendas de imóveis no trimestre", "Valor Econômico", 26, 65, ["CURY3", "DIRR3"]),
+    ],
+    "BANCOS": [
+        _noticia_setor("Bancos ampliam provisões para inadimplência de pequenas empresas", "Folha de S.Paulo", 18, 85),
+        _noticia_setor("Itaú e Bradesco divulgam balanços na próxima semana; crédito é foco", "InfoMoney", 28, 75, ["ITUB4", "BBDC4"]),
+    ],
+    "VAREJO": [
+        _noticia_setor("Vendas no varejo surpreendem e sobem em agosto, diz IBGE", "G1", 24, 70),
+        _noticia_setor("Varejistas de moda reforçam estoques para a Black Friday", "Exame", 34, 50),
+    ],
+    # só uma fonte: deve sair do radar por evidência insuficiente
+    "ENERGIA ELÉTRICA": [_noticia_setor("Aneel mantém bandeira tarifária amarela em novembro", "Agência Brasil", 12, 60)],
+}
+
+
+def radar_amostra():
+    from data import radar_setorial
+    agora = datetime(2026, 10, 19, 8, 0, tzinfo=TZ_SP)
+    return radar_setorial.montar_radar(
+        agora, buscar=lambda setor: NOTICIAS_SETOR_AMOSTRA.get(setor, []),
+        inicio=datetime(2026, 10, 16, 6, 0, tzinfo=TZ_SP))

@@ -38,7 +38,9 @@ from data.macro import (
 from data.news import (
     obter_resumos_prontos, obter_top_mercado, obter_top_mercado_internacional, separar_secoes_resumo,
 )
+from data.news import eh_fonte_confiavel
 from data.prices import obter_cotacao_indice, obter_historico
+from data.radar_setorial import montar_radar
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 
@@ -201,7 +203,7 @@ def _linha_macro(indicador, valor, unidade, referencia, detalhe=None, erro=None)
             "referencia": referencia or "—", "detalhe": detalhe, "erro": erro}
 
 
-def _macro_rows(agora=None):
+def _macro_rows(agora=None, provedores=None):
     """Linhas da tabela macro do PDF, normalizadas.
 
     Causa dos defeitos da edição de 18/10/2026 (auditoria): (1) as linhas
@@ -214,6 +216,11 @@ def _macro_rows(agora=None):
     corrente e o seguinte, com a data do boletim; sem dado -> 'indisponível'
     com o motivo (nunca um valor estimado)."""
     agora = agora or datetime.now(TZ_SP)
+    provedores = provedores or {}
+    selic_fn = provedores.get("selic", obter_selic_meta)
+    cdi_fn = provedores.get("cdi", obter_cdi)
+    focus_ipca_fn = provedores.get("focus_ipca", obter_focus_ipca)
+    focus_selic_fn = provedores.get("focus_selic", obter_focus_selic)
     linhas = []
 
     def _serie(nome, fn, coluna, chave_motivo):
@@ -233,10 +240,10 @@ def _macro_rows(agora=None):
         motivo = motivo or motivo_indisponivel(chave_motivo) or "Banco Central (SGS) sem dado nesta execução"
         linhas.append(_linha_macro(nome, None, "% a.a.", None, erro=motivo))
 
-    _serie("Selic meta", obter_selic_meta, "selic_meta_pct", "selic")
-    _serie("CDI", obter_cdi, "cdi_anualizado_pct", "cdi")
+    _serie("Selic meta", selic_fn, "selic_meta_pct", "selic")
+    _serie("CDI", cdi_fn, "cdi_anualizado_pct", "cdi")
 
-    for nome, fn in (("Focus IPCA", obter_focus_ipca), ("Focus Selic", obter_focus_selic)):
+    for nome, fn in (("Focus IPCA", focus_ipca_fn), ("Focus Selic", focus_selic_fn)):
         try:
             dado = fn()
         except Exception:
@@ -478,6 +485,44 @@ def _agenda_hoje(agora):
         return None
 
 
+def _noticias_do_setor(setor):
+    """Notícias candidatas de um setor: uma busca dedicada no Google News
+    com a consulta do catálogo (últimos 3 dias) mais o ranking geral do
+    Brasil (obter_top_mercado, já cacheado). A busca dedicada usa as
+    funções de leitura do coletor (data/news.py: _buscar_feed_de_url e
+    _processar_pool - mesmo parse, agrupamento e data), sem alterá-lo: é
+    uma requisição por setor, contra ~10 de obter_top_mercado(setor), que
+    recoleta o pool inteiro a cada chamada. None só se as duas falharem."""
+    from urllib.parse import quote
+
+    from data import news as coletor
+    from data.radar_setorial import CATALOGO
+
+    url = coletor._RSS_URL.format(termo=quote(f"{CATALOGO[setor]['consulta']} when:3d"))
+    feed = coletor._buscar_feed_de_url(url)
+    dedicadas = [] if feed is None else coletor._processar_pool(
+        {e.get("link"): (e, None) for e in feed}, "TODOS", "BR")
+    gerais = obter_top_mercado()
+    if feed is None and gerais is None:
+        return None
+    return dedicadas + list(gerais or [])
+
+
+def _radar_setorial(agora):
+    """Radar setorial (data/radar_setorial.py) com as notícias do coletor
+    filtrado por setor (mesma função da aba TOP MERCADO do app) e as
+    mesmas regras editoriais desta edição: janela, fora de pauta,
+    duplicata. Falha geral -> None (a seção diz que não saiu)."""
+    try:
+        return montar_radar(
+            agora, buscar=_noticias_do_setor, inicio=inicio_janela_noticias(agora),
+            confiavel=eh_fonte_confiavel, mesmo_fato=_mesmo_fato, fora_de_pauta=_fora_de_pauta,
+        )
+    except Exception as exc:
+        print(f"[morning_call] radar setorial indisponível: {exc!r}")
+        return None
+
+
 def montar_edicao(agora=None):
     """Monta a edição completa do Morning Call em PDF - um dict puro
     (capa/brasil/exterior/empresas/fontes/limitações), sem nenhuma
@@ -549,6 +594,7 @@ def montar_edicao(agora=None):
             "agenda": _agenda_hoje(agora),
             "noticias_erro": erro_br,
         },
+        "radar": _radar_setorial(agora),
         "mercados_nota": nota_sessao([ibov, dolar, sp500, nasdaq, ouro, petroleo], agora),
         "janela_noticias": inicio_janela_noticias(agora),
         "limitacoes": LIMITACOES_PADRAO,
