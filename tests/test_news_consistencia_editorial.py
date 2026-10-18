@@ -90,6 +90,53 @@ def test_02b_diferenca_de_arredondamento_nao_e_falso_positivo():
     _checar("02c diferenca so' de arredondamento -> sem contradicao", motivo is None)
 
 
+def test_02d_percentual_de_outra_empresa_nao_e_falso_positivo():
+    """Achado real da revisao do PR #54: titulo sobre o INDICE (Ibovespa,
+    0,54%) e resumo que cita o percentual de uma ACAO especifica que
+    puxou o pregao (Vale, 2,1%) - padrao editorial comum em materia de
+    fechamento de mercado, NUNCA deveria ser tratado como contradicao
+    (o numero e' sobre outro ativo, nao sobre o fato do titulo)."""
+    titulo = "Ibovespa fecha em alta de 0,54%"
+    corpo = (
+        "RESUMO:\nO Ibovespa fechou em alta, impulsionado pela Vale, que subiu "
+        "2,1% com a valorização do minério de ferro."
+    )
+    motivo = news_mod._contradicao_titulo_resumo(titulo, corpo)
+    _checar("02e percentual atribuido a outra empresa -> sem contradicao", motivo is None)
+
+
+def test_02e_percentual_do_proprio_indice_ainda_e_pego_mesmo_citando_empresa():
+    """Garante que a correcao do 02d nao abriu um buraco: se o percentual
+    ERRADO continuar sendo sobre o INDICE (sem nome proprio na janela
+    antes do numero), ainda precisa ser pego como contradicao."""
+    titulo = "Ibovespa fecha em alta de 0,54%"
+    corpo = "RESUMO:\nO índice encerrou em alta de 3,80%, puxado por bancos."
+    motivo = news_mod._contradicao_titulo_resumo(titulo, corpo)
+    _checar("02f percentual errado do proprio indice -> ainda e' contradicao", motivo is not None)
+
+
+# ============================================================
+# 2b. Direcao "baixa" (substantivo comum em manchete de fechamento,
+#     distinto de "queda"/"cai" - gap real encontrado na revisao do PR #54)
+# ============================================================
+
+def test_02f_baixa_de_percentual_e_reconhecida_como_queda():
+    _checar(
+        "02g 'fecha em baixa de X%' e' reconhecida como queda",
+        news_mod._direcao_mercado("Ibovespa fecha em baixa de 1,2%") == "queda",
+    )
+
+
+def test_02g_baixa_liquidez_nunca_e_confundida_com_direcao_de_mercado():
+    """'baixa' sem numero logo depois (ex: 'baixa liquidez', 'baixa
+    volatilidade') NUNCA pode contar como sinal de queda - e' ambiguo
+    (adjetivo comum, nao direcao de mercado)."""
+    _checar(
+        "02h 'baixa liquidez' nao e' direcao de mercado",
+        news_mod._direcao_mercado("O resumo comenta a baixa liquidez do papel no pregão") is None,
+    )
+
+
 # ============================================================
 # 3. Texto completo consistente -> sintese especifica normal
 # ============================================================
@@ -465,6 +512,92 @@ def test_15_resumo_corrigido_fica_cacheado_e_e_reaproveitado():
     _checar("15b 2a chamada reaproveita o cache (nao gera de novo)", len(chamadas) == 1)
     _checar("15c o resumo persistido e' o corrigido, igual nas 2 leituras", primeiro["resumo"] == segundo["resumo"])
     _checar("15d status final no Supabase e' 'concluido'", cliente.linhas[chave]["status"] == "concluido")
+
+
+# ============================================================
+# 16. Integracao real: resumo reprovado pelo gate NUNCA fica "concluido"
+#     no cache (a reserva e' liberada, nunca uma linha com resumo vazio)
+# ============================================================
+
+def test_16_resumo_reprovado_pelo_gate_nunca_fica_cacheado():
+    """Fluxo real _gerar_resumo_grupo (nao mockado) -> obter_resumo_com_cache
+    (nao mockado): UNICA fonte do grupo devolve um resumo que contradiz o
+    titulo - precisa (a) nunca aparecer como resumo=algo, (b) a linha de
+    reserva no Supabase ser APAGADA (_liberar_reserva), nunca deixada como
+    'concluido' com resultado vazio (o que faria toda visita futura ao
+    grupo ler um "sucesso" vazio em vez de tentar gerar de novo)."""
+    class _TabelaFake:
+        def __init__(self, linhas):
+            self.linhas = linhas
+            self._op = None
+            self._chave = None
+
+        def select(self, *_a, **_k):
+            self._op = "select"
+            return self
+
+        def insert(self, payload):
+            self._op = "insert"
+            self._payload = payload
+            return self
+
+        def delete(self):
+            self._op = "delete"
+            return self
+
+        def eq(self, campo, valor):
+            if campo == "chave_documento":
+                self._chave = valor
+            return self
+
+        def limit(self, _n):
+            return self
+
+        def execute(self):
+            if self._op == "select":
+                linha = self.linhas.get(self._chave)
+                resp = MagicMock()
+                resp.data = [linha] if linha else []
+                return resp
+            if self._op == "insert":
+                self._chave = self._payload["chave_documento"]
+                if self._chave in self.linhas:
+                    raise Exception("duplicate key")
+                self.linhas[self._chave] = dict(self._payload)
+                resp = MagicMock()
+                resp.data = [dict(self._payload)]
+                return resp
+            if self._op == "delete":
+                self.linhas.pop(self._chave, None)
+                resp = MagicMock()
+                resp.data = []
+                return resp
+            raise AssertionError("op nao mockada")
+
+    class _ClienteFake:
+        def __init__(self):
+            self.linhas = {}
+
+        def table(self, _nome):
+            return _TabelaFake(self.linhas)
+
+    titulo = "IBOVESPA fecha hoje com alta de 0,54%"
+    resumo_contraditorio = "RESUMO:\nO Ibovespa encerrou o pregão em queda, pressionado pelo exterior."
+    fontes = (("Veiculo", "https://veiculo.com/materia"),)
+    cliente = _ClienteFake()
+
+    def _gerar_fn():
+        return news_mod._gerar_resumo_grupo(titulo, fontes, (titulo,))
+
+    chave = ia_cache_mod.chave_news(titulo, ("https://veiculo.com/materia",))
+    with patch.object(news_mod, "_extrair_texto_artigo",
+                       return_value=("Texto longo o suficiente, com conteúdo jornalístico real.",
+                                     None, "https://veiculo.com/materia", None)), \
+         patch.object(news_mod, "_chamar_groq", return_value=(resumo_contraditorio, None)), \
+         patch.object(ia_cache_mod, "obter_cliente", return_value=cliente):
+        resultado = ia_cache_mod.obter_resumo_com_cache(chave, "https://veiculo.com/materia", "news", _gerar_fn)
+    _checar("16a resumo contraditorio nunca e' devolvido", resultado["resumo"] is None)
+    _checar("16b nenhuma linha fica presa no Supabase (reserva liberada, nao 'concluido' vazio)", chave not in cliente.linhas)
 
 
 if __name__ == "__main__":

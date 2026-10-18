@@ -1809,21 +1809,44 @@ _RE_PERCENTUAL = re.compile(r"(\d{1,3}(?:[.,]\d{1,2})?)\s*%")
 _TOLERANCIA_PERCENTUAL = 0.1  # diferenca de arredondamento entre fontes (ex: 0,54% vs 0,5%)
 
 
+# "baixa" (substantivo comum em manchete de mercado, ex: "fecha em baixa
+# de 1,2%") nao entra em _TERMOS_QUEDA_MERCADO como substring solta - a
+# mesma palavra tambem aparece em contextos SEM NADA a ver com direcao
+# ("baixa liquidez", "baixa volatilidade", "baixa renda"), o que causaria
+# falso positivo de queda num resumo so' comentando liquidez/volatilidade.
+# So' conta como sinal de queda quando vem seguida de "de" + numero (o
+# padrao real de manchete de fechamento, ex: "baixa de 1,2%") - casos
+# ambiguos (sem o numero logo depois) NUNCA contam, mesmo espirito
+# conservador do resto deste gate.
+_RE_BAIXA_DIRECAO = re.compile(r"\bbaixa\s+de\s*\d")
+
+
 def _direcao_mercado(texto: str) -> str | None:
     """'alta'/'queda'/None a partir de termos literais de direcao de
-    mercado (ver _TERMOS_ALTA_MERCADO/_TERMOS_QUEDA_MERCADO). Texto citando
-    as DUAS direcoes (ex: comparando ativos diferentes dentro do mesmo
-    paragrafo) devolve None de proposito - so' sinaliza contradicao quando
-    cada lado (titulo x resumo) tem um sinal INEQUIVOCO, nunca por uma
-    leitura ambigua."""
+    mercado (ver _TERMOS_ALTA_MERCADO/_TERMOS_QUEDA_MERCADO, mais o padrao
+    "baixa de <numero>" - ver _RE_BAIXA_DIRECAO). Texto citando as DUAS
+    direcoes (ex: comparando ativos diferentes dentro do mesmo paragrafo)
+    devolve None de proposito - so' sinaliza contradicao quando cada lado
+    (titulo x resumo) tem um sinal INEQUIVOCO, nunca por uma leitura
+    ambigua."""
     t = _sem_acento(texto or "")
     tem_alta = any(termo in t for termo in _TERMOS_ALTA_MERCADO)
-    tem_queda = any(termo in t for termo in _TERMOS_QUEDA_MERCADO)
+    tem_queda = any(termo in t for termo in _TERMOS_QUEDA_MERCADO) or bool(_RE_BAIXA_DIRECAO.search(t))
     if tem_alta and not tem_queda:
         return "alta"
     if tem_queda and not tem_alta:
         return "queda"
     return None
+
+
+# nome proprio (capitalizado, 3+ letras) - usado so' pra decidir se um
+# percentual do RESUMO esta' textualmente atribuido a uma empresa/ativo
+# diferente do titulo (ver _percentuais_atribuiveis) - deteccao bem
+# simples (sem lista de empresas, sem NER) de proposito: o objetivo nao e'
+# reconhecer QUAL empresa e', so' ter um sinal razoavel de "este numero e'
+# sobre outra coisa, nao sobre o fato do titulo".
+_RE_NOME_PROPRIO = re.compile(r"\b[A-ZÀ-ÚÇ][a-zà-úç]{2,}\b")
+_JANELA_ATRIBUICAO_PERCENTUAL = 40  # caracteres antes do "%" onde procurar o nome proprio
 
 
 def _percentuais(texto: str) -> set:
@@ -1832,6 +1855,35 @@ def _percentuais(texto: str) -> set:
     de cotacao independente (nao temos uma aqui)."""
     valores = set()
     for m in _RE_PERCENTUAL.finditer(texto or ""):
+        try:
+            valores.add(round(float(m.group(1).replace(",", ".")), 2))
+        except ValueError:
+            continue
+    return valores
+
+
+def _percentuais_atribuiveis(titulo: str, texto: str) -> set:
+    """Percentuais do TEXTO que NAO estao atribuidos, pela proximidade
+    textual, a um nome proprio AUSENTE do titulo (ex: titulo sobre o
+    Ibovespa, resumo citando "...impulsionado pela Vale, que subiu 2,1%
+    com a alta do minerio..." - achado real desta revisao: esse 2,1% e'
+    sobre a Vale, uma empresa citada como destaque dentro de uma materia
+    de fechamento do indice, NUNCA deveria ser comparado ao percentual do
+    titulo do INDICE. Sem isso, qualquer resumo de fechamento que cite o
+    desempenho de uma acao que puxou o pregao (padrao editorial comum,
+    nao um erro) seria rejeitado como "contradicao" por engano - o
+    problema nao e' o numero estar errado, e' ele ser sobre OUTRO ativo.
+    Deteccao conservadora: so' exclui quando ha' um nome proprio na janela
+    curta ANTES do numero que nao aparece no titulo - titulo vazio (so'
+    usado nunca, titulo sempre existe aqui) ou sem nome proprio nenhum na
+    janela devolve o percentual normalmente (nunca exclui sem motivo)."""
+    nomes_titulo = set(_RE_NOME_PROPRIO.findall(titulo or ""))
+    valores = set()
+    for m in _RE_PERCENTUAL.finditer(texto or ""):
+        janela = texto[max(0, m.start() - _JANELA_ATRIBUICAO_PERCENTUAL): m.start()]
+        nomes_janela = set(_RE_NOME_PROPRIO.findall(janela)) - nomes_titulo
+        if nomes_janela:
+            continue
         try:
             valores.add(round(float(m.group(1).replace(",", ".")), 2))
         except ValueError:
@@ -1852,14 +1904,19 @@ def _contradicao_titulo_resumo(titulo: str, corpo_resumo: str) -> str | None:
     houver contradicao detectavel. So' sinaliza quando ha' sinal
     inequivoco e DIFERENTE dos dois lados (direcao de mercado ou
     percentual) - qualquer ambiguidade deixa passar, nunca bloqueia sem
-    uma contradicao clara (mesmo espirito conservador de _resumo_e_generico)."""
+    uma contradicao clara (mesmo espirito conservador de _resumo_e_generico).
+
+    O percentual do RESUMO passa por _percentuais_atribuiveis (nao
+    _percentuais puro) - um numero claramente atribuido a outra empresa/
+    ativo (ver docstring de _percentuais_atribuiveis) nunca conta como
+    contradicao do percentual do indice/fato do titulo."""
     direcao_titulo = _direcao_mercado(titulo)
     direcao_resumo = _direcao_mercado(corpo_resumo)
     if direcao_titulo and direcao_resumo and direcao_titulo != direcao_resumo:
         return f"manchete indica '{direcao_titulo}' mas o resumo gerado indica '{direcao_resumo}'"
 
     percentuais_titulo = _percentuais(titulo)
-    percentuais_resumo = _percentuais(corpo_resumo)
+    percentuais_resumo = _percentuais_atribuiveis(titulo, corpo_resumo)
     if _percentuais_conflitam(percentuais_titulo, percentuais_resumo):
         return (
             f"percentual da manchete ({', '.join(f'{v:g}' for v in sorted(percentuais_titulo))}%) "
