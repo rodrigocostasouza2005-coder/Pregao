@@ -405,6 +405,10 @@ def _fonte(item):
 
 # Publicação legal paga ("Edital de Leilão ITAÚ UNIBANCO S/A", visto no
 # exemplo real de 18/10/2026): aviso, não notícia sobre o setor.
+# Página de spam com token aleatório no título ("Saúde Suplementar E Regras
+# Da ANS Andrew Mccutchen (YBLynHtzMt)", exemplo real de 18/10/2026).
+_TOKEN_ALEATORIO = re.compile(r"\((?=[A-Za-z0-9]*[a-z])(?=[A-Za-z0-9]*[A-Z][A-Za-z0-9]*[A-Z])[A-Za-z0-9]{8,}\)")
+
 _AVISO_LEGAL = re.compile(r"^\s*(edital|aviso|ata|convoca[cç][aã]o|fato relevante:?\s*$)\b", re.IGNORECASE)
 
 
@@ -419,7 +423,8 @@ def evidencias_do_setor(setor, itens, inicio, agora, confiavel=None, mesmo_fato=
     candidatos = []
     for item in sorted(itens or [], key=lambda i: -(i.get("importancia") or 0)):
         ok, _motivo = validar_fonte(item, inicio, agora)
-        if not ok or fora_de_pauta(item.get("titulo")) or _AVISO_LEGAL.match(str(item.get("titulo") or "")):
+        titulo = str(item.get("titulo") or "")
+        if not ok or fora_de_pauta(titulo) or _AVISO_LEGAL.match(titulo) or _TOKEN_ALEATORIO.search(titulo):
             continue
         if not _menciona_setor(item.get("titulo"), setor, item.get("tickers")):
             continue
