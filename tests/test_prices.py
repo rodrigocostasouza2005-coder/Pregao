@@ -424,7 +424,8 @@ def test_cotacao_indice_ignora_barra_de_fim_de_semana_do_cambio():
 
     class _TickerFds:
         def __init__(self, *_a, **_k):
-            self.history_metadata = {"regularMarketTime": int(pd.Timestamp("2026-10-16T23:10:00+01:00").timestamp())}
+            # formato real do yfinance 1.7: Timestamp ja' no fuso da bolsa
+            self.history_metadata = {"regularMarketTime": pd.Timestamp("2026-10-16T23:10:00+01:00").tz_convert("Europe/London")}
 
         def history(self, *_a, **_k):
             return hist

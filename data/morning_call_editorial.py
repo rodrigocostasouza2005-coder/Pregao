@@ -301,8 +301,17 @@ _TERMOS_FORA_DE_PAUTA = ("quina", "mega-sena", "mega sena", "lotofacil", "lotoma
                          "dupla sena", "timemania", "dia de sorte", "+milionaria", "horoscopo")
 
 
+# Colunas de aconselhamento pessoal do feed do MarketWatch ("I'm 64 with
+# two sons...", "I'm 63 and diagnosed with lymphoma...") apareceram na
+# editoria Mundo da edição real de 18/10/2026: carta de leitor em 1ª
+# pessoa, não notícia de mercado.
+_CARTA_DE_LEITOR = re.compile(r"^(i['\u2019]m|i am|my|we['\u2019]re|should i)\b", re.IGNORECASE)
+
+
 def _fora_de_pauta(titulo):
     texto = _sem_acento(titulo).lower()
+    if _CARTA_DE_LEITOR.match(str(titulo or "").strip()):
+        return True
     return any(re.search(rf"(?<![a-z]){re.escape(t)}(?![a-z])", texto) for t in _TERMOS_FORA_DE_PAUTA)
 
 

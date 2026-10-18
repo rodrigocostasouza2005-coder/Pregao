@@ -184,10 +184,18 @@ def _ultimo_negocio_iso(ticker_obj, barra) -> str | None:
     """regularMarketTime (epoch) do history_metadata, em ISO no fuso da
     barra, quando cai no MESMO dia da barra usada - nunca outro dia."""
     try:
-        epoch = (ticker_obj.history_metadata or {}).get("regularMarketTime")
-        if not epoch:
+        bruto = (ticker_obj.history_metadata or {}).get("regularMarketTime")
+        if bruto is None:
             return None
-        momento = pd.Timestamp(int(epoch), unit="s", tz="UTC").tz_convert(barra.tz)
+        # o yfinance ja' entrega como Timestamp no fuso da bolsa
+        # (utils.format_history_metadata); epoch cru so' em versoes antigas
+        if isinstance(bruto, (int, float)):
+            momento = pd.Timestamp(int(bruto), unit="s", tz="UTC")
+        else:
+            momento = pd.Timestamp(bruto)
+            if momento.tzinfo is None:
+                momento = momento.tz_localize("UTC")
+        momento = momento.tz_convert(barra.tz)
         if momento.date() != barra.date():
             return None
         return momento.isoformat()
