@@ -68,7 +68,7 @@ abas em toda rerun. 11 seções visíveis ao usuário comum + 2 restritas a admi
 `jobs/morning_call.py` + `jobs/morning_call_pdf.py` + `data/morning_call_editorial.py`
 (briefing diário por e-mail/PDF), `jobs/radar_quedas.py` (worker do Radar).
 
-**Testes:** cada PR desta auditoria (#70, #75-79) é uma branch independente
+**Testes:** cada PR desta auditoria (#70, #75-80) é uma branch independente
 a partir do `main` mais recente no momento, com sua própria suíte completa
 passando (variando de 889 a 891 conforme a base de `main` em cada branch —
 ver seção 13 pra lista); 881 ao final da 1ª rodada no PR #70 (depois do
@@ -451,7 +451,7 @@ leitura de todos os arquivos de UI — os únicos símbolos usados são `●`/`�
 | 8 | `ui/workspace.py` sem teste automatizado | P2 | Médio | — (é trabalho de teste, não de produto) | **Feito** (PR #78, só lógica pura — seção 13) |
 | 9 | Design system: escala tipográfica nomeada | P2 | Alto (toca ~13 telas) | Alto sem ciclo de confirmação visual | Proposta |
 | 10 | CONFIG × popover "⚙": controle de painel duplicado | P2 | Baixo | Médio (remover sem substituto quebra reordenar) | Documentado |
-| 11 | RESEARCH: resumo de IA sem rótulo visual | P2 | Baixo | Baixo (mesmo princípio do #7, não replicado ainda) | Documentado |
+| 11 | RESEARCH: resumo de IA sem rótulo visual | **P2** | Baixo | Baixo (isolado, testado, validado visualmente) | **Feito** (PR #80, seção 13) |
 | 12 | NEWS: área de clique "↗ abrir" pequena em mobile | P2 | Baixo | Reavaliado — risco subjetivo, sem evidência concreta (seção 13) | Descartado por falta de evidência |
 | 13 | NEWS: `_truncar` cortava manchete/teaser no meio de uma palavra | **P2** | Baixo | Baixo (isolado, testado, validado visualmente) | **Feito** (PR #79, seção 13) |
 | 14 | Demais achados P2/P3 da seção 9 | P2/P3 | Variável | — | Documentado |
@@ -515,6 +515,7 @@ aplicável) e validado visualmente onde havia componente visual novo:
 | #77 | CVM: modal de documento mostra resumo gerado por IA sob rótulo só "Resumo", sem indicar que é sintetizado por IA — mesmo princípio de risco do achado P0 do Morning Call (seção 5.B) | P2 | `ui/cvm_tab.py` |
 | #78 | `ui/workspace.py` sem nenhum teste automatizado (achado P2 original) — cobertura adicionada pras garantias de robustez já documentadas no próprio código (normalização de dado corrompido, rejeição de `Infinity`/`NaN`) | P2 | `tests/test_workspace.py` (só teste, zero mudança de comportamento) |
 | #79 | NEWS: `_truncar` cortava manchete/teaser no meio de uma palavra (contagem de caracteres pura, sem fronteira de palavra) — "...aprovação unanime..." virava "...aprovação u…" | P2 | `ui/news_tab.py` |
+| #80 | RESEARCH: `_bloco_resumo` (5 pontos de uso) mostrava resumo sempre gerado por IA sem nenhum rótulo — mesmo princípio do #77 (CVM), lacuna ainda maior (nem "Resumo" simples existia) | P2 | `ui/research_tab.py` |
 
 Cada PR é independente e isolado (nenhum arquivo em comum entre eles, nem
 com o PR #70), para não bloquear um no outro nem competir com as 4 outras
@@ -556,10 +557,11 @@ Por ordem de valor/risco, na visão desta auditoria:
    exigiria mexer em `app.py`, tocado agora pelo PR #72 (onboarding/admin)
    em paralelo.
 2. RESEARCH: diferenciação visual vigente/antigo (preço-alvo/recomendação
-   por casa, não só a data — já coberta no PR #75) + rótulo "gerado por
-   IA" no resumo (`_bloco_resumo`, mesmo princípio do PR #77 pra CVM, não
-   replicado em RESEARCH nesta rodada pra não empilhar mudanças no mesmo
-   arquivo que o PR #75 já altera).
+   por casa, não só a data — data de captura já coberta no PR #75; rótulo
+   "gerado por IA" no resumo já coberto no PR #80). Falta ainda: comparar
+   o mesmo ticker entre casas diferentes sem precisar ler linha por linha
+   no feed (histórico de preço-alvo hoje só existe, hardcoded, pra Genial
+   Analisa).
 3. Escala tipográfica nomeada no design system — só com revisão visual do
    Rodrigo por tela (não em lote).
 4. Teste automatizado para `ui/workspace.py` — **feito nesta rodada (PR
