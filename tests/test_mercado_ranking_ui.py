@@ -274,6 +274,50 @@ def test_4_sem_cores_hardcoded_fora_dos_tokens_de_tema():
     )
 
 
+# ============================================================
+# 5. MAIS NEGOCIADOS: ticker clicavel (achado real da auditoria 360,
+# 2026-10-18, docs/auditoria-redesign-360.md) - igual ao ranking
+# altas/baixas acima, mas ESTE painel so' tinha texto cru <td>{ticker}</td>
+# dentro de uma tabela HTML, sem NENHUM jeito de ir direto pro ticker em
+# EQUITY. Reusa o MESMO mecanismo ja validado (_ir_para_equity).
+# ============================================================
+
+def test_5_mais_negociados_ticker_e_botao_real_com_on_click_para_equity():
+    negociados = [
+        {"ticker": "PETR4", "volume_financeiro": 1_500_000_000.0, "variacao_pct": 1.23},
+        {"ticker": "VALE3", "volume_financeiro": 980_000_000.0, "variacao_pct": -0.87},
+    ]
+    chamadas_button = []
+
+    def _espiao_button(label, **kwargs):
+        chamadas_button.append((label, kwargs))
+        return False
+
+    with patch.object(mercado_tab_mod, "obter_mais_negociados", return_value=negociados), \
+         patch.object(mercado_tab_mod.st, "button", side_effect=_espiao_button):
+        mercado_tab_mod._painel_mais_negociados(_PREFS)
+
+    _checar("5a st.button chamado 1x por ticker (2 tickers -> 2 botoes)", len(chamadas_button) == 2,
+            f"(chamadas={chamadas_button})")
+    rotulos = [label for label, _k in chamadas_button]
+    _checar("5b rotulos dos botoes sao os tickers, na ordem recebida", rotulos == ["PETR4", "VALE3"],
+            f"(rotulos={rotulos})")
+    for label, kwargs in chamadas_button:
+        _checar(
+            f"5c botao de {label} usa on_click=_ir_para_equity com args=(ticker, prefs) - mesmo "
+            "mecanismo ja validado no ranking de altas/baixas",
+            kwargs.get("on_click") is mercado_tab_mod._ir_para_equity and kwargs.get("args") == (label, _PREFS),
+            f"(kwargs={kwargs})",
+        )
+
+
+def test_5d_mais_negociados_sem_dado_nao_quebra():
+    with patch.object(mercado_tab_mod, "obter_mais_negociados", return_value=None), \
+         patch.object(mercado_tab_mod.st, "button") as mock_button:
+        mercado_tab_mod._painel_mais_negociados(_PREFS)
+    _checar("5d sem dado -> nenhum botao criado, sem excecao", mock_button.call_count == 0)
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
