@@ -302,6 +302,18 @@ Job independente `python -m jobs.morning_call`; agenda de dias úteis às 07:00 
 
 Sem migration e secrets, os jobs não conseguem persistir nem enviar e-mails. O agendamento do GitHub Actions é best effort, não um SLA de execução pontual.
 
+## Resumos das matérias (Groq) no Morning Call
+
+O Morning Call **não chama o Groq**: ele só lê os resumos que o workflow **Coletores na nuvem** (`coletores-nuvem.yml` → `coletor_local.py` → `pregerar_resumos_news`) já gerou e guardou no cache (`resumos_ia_cache`). Sem resumo no cache, a matéria sai no PDF só com manchete, veículo e link — nunca com texto inventado.
+
+Esse workflow precisa do secret `GROQ_API_KEY`. Em 18/10/2026 ele chegava **vazio** ao job (log: `'GROQ_API_KEY não configurada em st.secrets'` em todos os grupos). Para configurar:
+
+1. GitHub → repositório **Pregao** → **Settings** → **Secrets and variables** → **Actions** → aba **Secrets** → **New repository secret**.
+2. *Name*: `GROQ_API_KEY` (exatamente assim). *Secret*: a mesma chave usada no app (Streamlit Cloud → *Manage app* → *Settings* → *Secrets*). Não crie como *Variable* nem como secret de *Environment*: o workflow lê `secrets.GROQ_API_KEY` do repositório.
+3. Confira na próxima execução de **Coletores na nuvem** (ou *Run workflow* manual): a linha `resumos de NEWS: ... gerado(s) agora` deve deixar de mostrar `GROQ_API_KEY não configurada`.
+
+Os resumos só entram no Morning Call se uma execução dos coletores rodar **antes** do envio (os coletores rodam a partir das 07h11, o Morning Call às 08h03, horário de Brasília).
+
 ## Disparo externo dos agendamentos (recomendado)
 
 O `schedule` do GitHub Actions é "best effort": sob carga, o GitHub atrasa ou **descarta** disparos. Medido em 2026-10-18: entre 14 e 17/10, de ~220 disparos esperados (Radar a cada 15 min + Coletores a cada 30 min + Morning Call), só 23 aconteceram — e nenhum na sexta 17/10 (o Morning Call das 08h não saiu). Os workflows já usam minutos quebrados e disparos de reserva para reduzir a perda, mas a única forma confiável é um agendador externo chamando o `workflow_dispatch`.

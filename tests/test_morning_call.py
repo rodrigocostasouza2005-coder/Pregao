@@ -909,3 +909,26 @@ def test_email_selic_indisponivel_diz_indisponivel_sem_inventar_valor():
     texto = _montar_com(_noticias_por_regiao=[], obter_selic_meta=None)
     assert "- Selic meta: indisponível (" in texto
     assert "selic_meta_pct" not in texto
+
+
+def test_email_erro_do_bcb_nunca_sai_como_taxa(monkeypatch):
+    import data.morning_call_editorial as ed
+    monkeypatch.setattr(ed, "motivo_indisponivel", lambda c: "SGS 432: erro informado pelo Banco Central (500 Internal error)")
+    monkeypatch.setattr(ed, "ultima_coleta_valida", lambda c: None)
+    texto = _montar_com(_noticias_por_regiao=[], obter_selic_meta=None, obter_cdi=None)
+    linha = next(l for l in texto.splitlines() if l.startswith("- Selic meta"))
+    assert linha.startswith("- Selic meta: indisponível (SGS 432")
+    assert "% a.a." not in linha
+
+
+def test_log_da_edicao_resume_conteudo_sem_dados_sensiveis():
+    edicao = {"brasil": {"noticias": [{"corpo": ["x"]}, {"corpo": []}],
+                         "indicadores": [{"indicador": "Selic meta", "valor": None},
+                                         {"indicador": "Focus IPCA 2026", "valor": 5.2}]},
+              "empresas": {"cards": [], "agenda": []}, "exterior": {"noticias": None},
+              "radar": {"setores": [{"nome": "Bancos"}]}}
+    linha = mc._resumo_edicao(edicao, b"%PDF-invalido")
+    assert "brasil=2 (1 com texto)" in linha and "exterior=0 (0 com texto)" in linha
+    assert "macro indisponível: Selic meta" in linha
+    assert "radar: Bancos" in linha and "agenda: 0 evento(s)" in linha
+    assert "@" not in linha

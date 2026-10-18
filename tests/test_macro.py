@@ -396,3 +396,16 @@ def test_20_selic_indisponivel_guarda_motivo_para_a_edicao():
         assert macro_mod.obter_selic_meta() is None
     _checar("20a motivo disponível para o PDF", macro_mod.motivo_indisponivel("selic") == "SGS 432: página de erro")
     macro_mod.obter_selic_meta.clear()
+
+
+def test_21_sgs_valor_nao_numerico_nunca_vira_numero():
+    """Texto de erro dentro do JSON do SGS nunca pode virar taxa."""
+    resposta = _resposta_sgs("application/json", [{"data": "16/10/2026", "valor": "Internal error"}])
+    with patch.object(macro_mod.requests, "get", return_value=resposta):
+        try:
+            macro_mod._serie_sgs(432, 30)
+        except macro_mod.RespostaSgsInvalida as e:
+            motivo = str(e)
+        else:
+            raise AssertionError("valor não numérico deveria virar RespostaSgsInvalida")
+    _checar("21a motivo diz valor não numérico", "não numérico" in motivo)

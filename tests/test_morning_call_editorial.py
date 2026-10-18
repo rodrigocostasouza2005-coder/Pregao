@@ -423,3 +423,44 @@ def test_noticias_do_setor_none_quando_as_duas_coletas_falham(monkeypatch):
     monkeypatch.setattr(coletor, "_buscar_feed_de_url", lambda url: None)
     monkeypatch.setattr(ed, "obter_top_mercado", lambda *_a: None)
     assert ed._noticias_do_setor("BANCOS") is None
+
+
+# ------------------------------------------------------------------
+# Selic/CDI: erro nunca vira valor; última coleta válida (só leitura)
+# ------------------------------------------------------------------
+
+def test_taxa_plausivel_rejeita_texto_nan_e_absurdos():
+    assert ed._taxa_plausivel(15.0) == 15.0
+    for invalido in ("Internal error", None, float("nan"), -1, 0, 150, "15,00% a.a."):
+        assert ed._taxa_plausivel(invalido) is None, invalido
+
+
+def test_selic_com_valor_absurdo_sai_indisponivel_sem_numero():
+    selic = pd.DataFrame({"data": pd.to_datetime(["2026-10-16"]).tz_localize(TZ_SP), "selic_meta_pct": [1500.0]})
+    with _MultiPatch(obter_selic_meta=lambda: selic, ultima_coleta_valida=lambda _c: None):
+        linha = next(l for l in ed._macro_rows() if l["indicador"] == "Selic meta")
+    assert linha["valor"] is None
+    assert "fora da faixa" in linha["erro"]
+
+
+def test_indisponivel_informa_ultima_coleta_valida_sem_inventar_valor():
+    with _MultiPatch(obter_selic_meta=lambda: None, motivo_indisponivel=lambda _c: "SGS 432: página de erro HTML",
+                     ultima_coleta_valida=lambda c: "16/10/2026 18:41" if c == "selic" else None):
+        linhas = {l["indicador"]: l for l in ed._macro_rows()}
+    assert linhas["Selic meta"]["valor"] is None
+    assert linhas["Selic meta"]["erro"] == ("SGS 432: página de erro HTML; última coleta válida registrada em "
+                                           "16/10/2026 18:41 (horário de Brasília)")
+
+
+def test_ultima_coleta_valida_le_o_painel_de_saude_e_converte_para_brasilia(monkeypatch):
+    import data.coletores_status as cs
+    monkeypatch.setattr(cs, "obter_status", lambda nome: {"ultimo_sucesso_em": "2026-10-16T21:41:00+00:00"}
+                        if nome == "MACRO (BCB - Selic)" else None)
+    assert ed.ultima_coleta_valida("selic") == "16/10/2026 18:41"
+    assert ed.ultima_coleta_valida("cdi") is None
+
+
+def test_ultima_coleta_valida_com_banco_fora_do_ar_devolve_none(monkeypatch):
+    import data.coletores_status as cs
+    monkeypatch.setattr(cs, "obter_status", lambda nome: (_ for _ in ()).throw(RuntimeError("supabase fora")))
+    assert ed.ultima_coleta_valida("selic") is None

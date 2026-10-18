@@ -203,6 +203,39 @@ def _linha_macro(indicador, valor, unidade, referencia, detalhe=None, erro=None)
             "referencia": referencia or "—", "detalhe": detalhe, "erro": erro}
 
 
+def _taxa_plausivel(valor):
+    """float da taxa anual (%) só se for número finito entre 0 e 100 -
+    qualquer outra coisa (texto, NaN, negativo, absurdo) é tratada como
+    dado inválido, nunca publicada como valor."""
+    try:
+        v = float(valor)
+    except (TypeError, ValueError):
+        return None
+    if v != v or not (0 < v < 100):
+        return None
+    return v
+
+
+_NOME_STATUS_SGS = {"selic": "MACRO (BCB - Selic)", "cdi": "MACRO (BCB - CDI)"}
+
+
+def ultima_coleta_valida(chave):
+    """'dd/mm/aaaa hh:mm' do último sucesso registrado no painel de saúde
+    dos dados (data/coletores_status.py, somente leitura) - é o momento em
+    que alguma execução do Pregão (app ou job) conseguiu ler a série. O
+    VALOR daquela leitura não é guardado, então nunca é exibido. None se
+    não houver registro ou o banco estiver fora do ar."""
+    try:
+        from data.coletores_status import obter_status
+        status = obter_status(_NOME_STATUS_SGS[chave]) or {}
+        bruto = status.get("ultimo_sucesso_em")
+        if not bruto:
+            return None
+        return datetime.fromisoformat(str(bruto).replace("Z", "+00:00")).astimezone(TZ_SP).strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        return None
+
+
 def _macro_rows(agora=None, provedores=None):
     """Linhas da tabela macro do PDF, normalizadas.
 
@@ -235,9 +268,15 @@ def _macro_rows(agora=None, provedores=None):
             validos = dado.dropna(subset=[coluna])
             if not validos.empty:
                 ultimo = validos.iloc[-1]
-                linhas.append(_linha_macro(nome, float(ultimo[coluna]), "% a.a.", _data_br(ultimo.get("data"))))
-                return
+                valor = _taxa_plausivel(ultimo[coluna])
+                if valor is not None:
+                    linhas.append(_linha_macro(nome, valor, "% a.a.", _data_br(ultimo.get("data"))))
+                    return
+                motivo = motivo or f"valor recebido fora da faixa de uma taxa anual ({ultimo[coluna]!r})"
         motivo = motivo or motivo_indisponivel(chave_motivo) or "Banco Central (SGS) sem dado nesta execução"
+        ultima = ultima_coleta_valida(chave_motivo)
+        if ultima:
+            motivo += f"; última coleta válida registrada em {ultima} (horário de Brasília)"
         linhas.append(_linha_macro(nome, None, "% a.a.", None, erro=motivo))
 
     _serie("Selic meta", selic_fn, "selic_meta_pct", "selic")

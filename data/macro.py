@@ -127,7 +127,11 @@ def _serie_sgs(codigo: int, dias_historico: int) -> pd.DataFrame:
         raise ValueError(f"SGS {codigo} retornou lista vazia")
     df = pd.DataFrame(dados)
     df["data"] = pd.to_datetime(df["data"], format="%d/%m/%Y", dayfirst=True).dt.tz_localize(TZ)
-    df["valor"] = df["valor"].astype(float)
+    # valor não numérico (ex.: texto de erro dentro do JSON) nunca vira
+    # número: a série inteira é tratada como resposta inválida
+    df["valor"] = pd.to_numeric(df["valor"], errors="coerce")
+    if df["valor"].isna().any():
+        raise RespostaSgsInvalida(f"SGS {codigo}: resposta com valor não numérico")
     return df[["data", "valor"]]
 
 
