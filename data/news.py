@@ -1398,6 +1398,15 @@ _PADROES_IMAGEM_GENERICA = (
     "gettyimages", "getty-images", "depositphotos", "123rf", "vecteezy",
     "pixabay", "dreamstime", "adobestock", "stock-photo", "stockphoto",
     "banco-de-imagens", "freepik",
+    # achado real (auditoria integral do cache de producao, 2026-10-18):
+    # "https://s.tradingview.com/static/images/illustrations/news-story.jpg"
+    # apareceu em 2 linhas de cache de materias DIFERENTES (fontes
+    # diferentes, assuntos diferentes) - imagem GENERICA de placeholder
+    # que o proprio TradingView usa pra qualquer noticia de wire sem foto
+    # propria (confirmado pela URL identica se repetindo pra conteudo
+    # diferente, nao so pelo nome - "news-story" e' literal "historia de
+    # noticia [generica]", nao algo especifico de uma materia real).
+    "news-story", "illustrations/",
 )
 
 

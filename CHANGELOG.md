@@ -47,14 +47,17 @@ principal. Corrigido com o mesmo limiar já usado pro `og:image:width`
 própria tag.
 
 **`data/news.py`** — `_PADROES_IMAGEM_GENERICA` (+ bancos de imagens,
-+ "default"/"avatar"), `_urls_imagem_jsonld` (remove "url", exclui
-"logo"/"publisher"/"author" da varredura catch-all), fallback de
-imagem lazy-loaded (guarda de dimensão via atributo `width` da tag).
++ "default"/"avatar", + "news-story"/"illustrations/" do TradingView -
+achado da auditoria integral, ver abaixo), `_urls_imagem_jsonld` (remove
+"url", exclui "logo"/"publisher"/"author" da varredura catch-all),
+fallback de imagem lazy-loaded (guarda de dimensão via atributo `width`
+da tag).
 
-Testes novos: `tests/test_news_qualidade_editorial.py` (+6 casos) -
-banco de imagens rejeitado por nome (isolado e ponta a ponta), "url"
-do WebPage nunca vira imagem, logo da Organization nunca vira imagem,
-avatar pequeno é pulado em favor da foto real seguinte.
+Testes novos: `tests/test_news_qualidade_editorial.py` (+7 casos) -
+banco de imagens rejeitado por nome (isolado e ponta a ponta),
+placeholder do TradingView rejeitado, "url" do WebPage nunca vira
+imagem, logo da Organization nunca vira imagem, avatar pequeno é
+pulado em favor da foto real seguinte.
 
 Confirmado ponta a ponta contra o artigo real do spacemoney.com.br que
 originou o relato (Vale Base Metals/Exiro Nickel/Thompson): antes dos
@@ -63,6 +66,58 @@ site, nessa ordem, conforme cada bloqueio anterior era corrigido;
 depois dos 3, `imagem` corretamente vira `None` (este artigo
 específico não tem foto editorial própria - nenhuma das 3 imagens
 "reais" encontradas era a foto da matéria).
+
+**Auditoria INTEGRAL do cache de produção** (read-only, nenhuma escrita
+- script descartável, credenciais nunca expostas): das 60 linhas
+`origem=news`/`status=concluido` com imagem persistida, reprocessadas
+TODAS com o pipeline corrigido e comparadas 1 a 1 com o valor atual:
+
+- **52 iguais** (84,7% das 60) - imagem já era a correta, sem mudança.
+- **8 divergentes** - valor mudou ao reprocessar com os 3 fixes:
+  - **3 linhas** = as 3 reincidências do MESMO artigo da Vale
+    (spacemoney.com.br/Thompson, cacheado 3x por chegar via links
+    diferentes do Google News) - pexels → `None`. Confirma e fecha o
+    relato original.
+  - **1 linha** = `s.tradingview.com/.../illustrations/news-story.jpg`
+    (br.tradingview.com, matéria da Cointelegraph) - mesmo achado
+    confirmado por 2 linhas distintas com URL idêntica pra conteúdo
+    diferente (placeholder genérico do TradingView). Fix novo nesta
+    mesma passada: `"news-story"`/`"illustrations/"` adicionados a
+    `_PADROES_IMAGEM_GENERICA`.
+  - **1 linha** = `br.advfn.com` com imagem de `investidor10.com.br`
+    (domínio diferente do artigo) → `None` após o fix (causa exata não
+    isolada - resultado ficou mais conservador, não pior).
+  - **3 linhas** (2 chaves de cache, mesmo artigo real de
+    `economia.uol.com.br` sobre fechamento de dólar/bolsa, reprocessado
+    2x em momentos diferentes) = resultado **inconsistente**: imagens de
+    `jornaldebrasilia.com.br`/`static.poder360.com.br` (cache antigo,
+    cross-domain) viraram, numa passada, a `og:image` real declarada
+    pelo próprio UOL (`conteudo.imguol.com.br`, domínio correto) e,
+    noutra passada do MESMO artigo, `None`. Investigado: a `og:image`
+    que o UOL declara pra esse artigo é datada de 2022
+    (`.../2022/01/31/...-1643631825655...`) - um header genérico que o
+    UOL reutiliza em todo artigo do formato recorrente "fechamento
+    dólar/bolsa hoje", não uma foto específica do dia. **Não é um bug
+    de extração** (é literalmente o que o publisher declara como
+    og:image) e **não foi corrigido nesta PR** - nenhum sinal
+    disponível na página isolada (nome de arquivo, dimensão, domínio)
+    diferencia isso de uma foto editorial legítima; só fica visível
+    comparando contra OUTRAS matérias no cache (a mesma URL reaparecendo
+    em artigos de dias diferentes). Registrado como pendência explícita
+    abaixo, não escondido.
+- **0 erros** ao reprocessar (todas as 60 linhas buscadas e comparadas
+  com sucesso - nenhuma falhou por timeout/rede/parsing).
+
+**Pendência explícita, NÃO corrigida nesta PR**: imagem "real"
+(hospedada pelo próprio veículo, og:image declarado de verdade) mas
+RECICLADA entre várias matérias diferentes ao longo do tempo (padrão
+observado no UOL) exigiria um 4º tipo de verificação - comparar a URL
+da imagem contra as de OUTRAS linhas já cacheadas (ex: "essa URL já
+apareceu em N matérias com título/fonte diferentes? então é suspeita")
+- um mecanismo com estado, consultando o cache inteiro, diferente de
+tudo que existe hoje (checagem sempre por página isolada). Fora do
+escopo desta correção (achado novo, não o bug relatado), fica como
+sugestão de investigação futura caso o Rodrigo queira.
 
 ## 2026-10-17 (2ª passada) — correção da causa raiz real do bug de imagens dos cards
 

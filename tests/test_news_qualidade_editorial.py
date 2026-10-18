@@ -148,6 +148,17 @@ def test_2e2_imagem_de_banco_de_imagens_e_rejeitada_por_nome():
             not news_mod._imagem_parece_generica("https://veiculo.com/materias/2026/foto-real-do-evento.jpg"))
 
 
+def test_2e3_placeholder_generico_do_tradingview_e_rejeitado():
+    """achado real (auditoria INTEGRAL do cache de produção, 2026-10-18):
+    "s.tradingview.com/static/images/illustrations/news-story.jpg"
+    apareceu em linhas de cache de matérias DIFERENTES (fontes e
+    assuntos diferentes) - confirmado pela URL IDÊNTICA se repetindo pra
+    conteúdo diferente que é um placeholder genérico do TradingView pra
+    qualquer notícia de wire sem foto própria, nunca a foto real."""
+    _checar("2e3 illustrations/news-story.jpg do TradingView rejeitado",
+            news_mod._imagem_parece_generica("https://s.tradingview.com/static/images/illustrations/news-story.jpg"))
+
+
 def test_2f_extracao_rejeita_og_image_que_e_logo_pelo_nome():
     html_com_logo = '<html><head><meta property="og:image" content="https://veiculo.com/assets/logo.png"></head></html>'
     with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/materia"), \
