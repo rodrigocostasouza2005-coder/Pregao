@@ -1,0 +1,233 @@
+{
+ "setores": [
+  {
+   "setor": "TECNOLOGIA & TELECOM",
+   "nome": "Tecnologia e telecom",
+   "o_que_aconteceu": [
+    "Brasil 247 (18/10): “Comunidade Ásia-Pacífico: Semeando esperança nos arrozais tropicais — Tecnologia chinesa de arroz híbrido proporciona colheitas abundantes nas Filipinas”.",
+    "CNN Brasil (16/10): “Tecnologia detecta mais de 80 tiros em Niterói e auxilia ação policial”.",
+    "ADVFN (16/10): “Bolsas da Europa fecham em alta com recuperação da tecnologia, força das ações de defesa e queda nos preços do petróleo”."
+   ],
+   "por_que_importa": "Teles têm receita recorrente e investimento pesado em rede. Empresas de software dependem do crescimento da base de clientes, e por isso costumam ser sensíveis aos juros. Em ambos os casos, a disputa por clientes e a regulação definem quanto da receita vira lucro.",
+   "empresas": "Citadas nas notícias: INTB3, MGLU3, TOTS3. Principais do setor no Ibovespa: VIVT3, TIMS3, LWSA3.",
+   "acompanhar": "Decisões da Anatel, leilões de espectro, consolidação entre operadoras e indicadores de receita recorrente nos balanços.",
+   "fontes": [
+    {
+     "titulo": "Comunidade Ásia-Pacífico: Semeando esperança nos arrozais tropicais — Tecnologia chinesa de arroz híbrido proporciona colheitas abundantes nas Filipinas",
+     "veiculo": "Brasil 247",
+     "data": "2026-10-18 11:00:00-03:00",
+     "link": "https://news.google.com/rss/articles/CBMikAJBVV95cUxQLWYwTVNNTzhzWkhxZ2E3OWxMdXR2WE84Tk9STkdGeks0OTBGdEZKSHd4ckp4LTJHS3ZCRWN6cjN2TXJ2MEVpckdjZ3JhWDZ3T1FNZ3NLMk43TmlIeFNFUEtvQXEybkZjREE4c2V1TmdJRjZ5WEtlTXVXSHBsTlZEMi1LQkFBb29WdjNuS2hCYXpzSzlISTMtaUhOMjBpcHM5SHpBZi03S0xtRXFFSWRxb0U0NDJDTjd0WGxIMnJmR2k2aU9tQ3NuTXMxa3ROSFR1MXhoY1h2U2ZOY2o4Q3ZGWjluTFZfZElTZWd2MHU2NXNFSlZYMkc1cWd2akRQU3h4S0JDR2JIcVktMDM0c1lHdg?oc=5",
+     "tickers": [],
+     "importancia": 127.9
+    },
+    {
+     "titulo": "Tecnologia detecta mais de 80 tiros em Niterói e auxilia ação policial",
+     "veiculo": "CNN Brasil",
+     "data": "2026-10-16 20:10:18-03:00",
+     "link": "https://news.google.com/rss/articles/CBMivAFBVV95cUxNcHVUeDVZWXlncWotVmVvMWtvQ2t3Y2J1WkdPR1ltZVFUeFlaT1pUSW5hVUV6MmRsNGd0RW52U25aZnVOYlltM0NmRjRnX1NsSjVJcWVtZXpvWjM4YVdTb3ZLRE5uaEI5djNDQ3hRWjRGeFlHM0JnZldzRXBKcDJzWTc5RHJLTjhCcU96ZzZBSm5sdlUxTXRUSmtqbEhEZl85TFBGdk8yb0w4TmFMLUZDQlBhVlJna0VTaklLcg?oc=5",
+     "tickers": [],
+     "importancia": 105.0
+    },
+    {
+     "titulo": "Bolsas da Europa fecham em alta com recuperação da tecnologia, força das ações de defesa e queda nos preços do petróleo",
+     "veiculo": "ADVFN",
+     "data": "2026-10-16 14:10:48-03:00",
+     "link": "https://news.google.com/rss/articles/CBMi6gFBVV95cUxPQW9XYVhwYVVkMnZPbDJfbUh2TlVhMEZfQVJrTlRwc3VKcVZiSGFic0NoSG8wUzMyTDdXaElXR0kwS1NFVHFsTXA3SVBlbENBTzRfWlpsVkUxUjRNU2tPU3k0TWpLRDgyTVhiVjJrSldnQ1p4TFFPWE92OUpYUHJHdUpmbGtDU0c4SEd4dFN6NWg0eG5MYUxSa25Mc0dRSFZseE9yZ0RXeWNRWnRfSGdLdlNfM1lJd01zVy12ZEpOeHh0SmxwbDZNRUZqRENhRExlSUd4X0FWVHp2NzRMRDc3YTR1Qm5qY2U2NWc?oc=5",
+     "tickers": [],
+     "importancia": 96.0
+    }
+   ],
+   "palavras": 133
+  },
+  {
+   "setor": "SAÚDE",
+   "nome": "Saúde",
+   "o_que_aconteceu": [
+    "ACI Digital (18/10): “Papa Leão 14 reza o Angelus após deixar hospital e agradece orações”.",
+    "Cleber Toledo (18/10): “\"Sabadaço\" da bike faz coleta de alimentos em proveito de Hospital”.",
+    "Agora Floripa (18/10): “Hospital Regional de São José recebe mais R$ 15 milhões em obras; veja o que vai mudar”."
+   ],
+   "por_que_importa": "O setor de saúde combina demanda estável com custos que sobem acima da inflação. Reajustes autorizados pela ANS e o uso dos planos definem a margem das operadoras e dos hospitais. Fusões e aquisições têm sido frequentes, e a integração das redes compradas costuma aparecer nos resultados.",
+   "empresas": "Principais do setor no Ibovespa: RDOR3, HAPV3, RADL3, FLRY3, HYPE3.",
+   "acompanhar": "Reajustes de planos definidos pela ANS, índices de sinistralidade nos balanços e regras de preços de medicamentos.",
+   "fontes": [
+    {
+     "titulo": "Papa Leão 14 reza o Angelus após deixar hospital e agradece orações",
+     "veiculo": "ACI Digital",
+     "data": "2026-10-18 11:57:47-03:00",
+     "link": "https://news.google.com/rss/articles/CBMiZ0FVX3lxTE8yM2lneU5HLU55eUlsT1RhQmg0Sjk2clZtMkpVZTRfOFBJbDRpampVU0NobGJONmFDZVFLWmpSTGNpSDdSaVE1MG9TR2NiQlpjV2JCdTFTOWN0UjFHSHJoME82eGQxV3M?oc=5",
+     "tickers": [],
+     "importancia": 418.9
+    },
+    {
+     "titulo": "\"Sabadaço\" da bike faz coleta de alimentos em proveito de Hospital",
+     "veiculo": "Cleber Toledo",
+     "data": "2026-10-18 12:08:00-03:00",
+     "link": "https://news.google.com/rss/articles/CBMimAFBVV95cUxNUkxHcnIybWZOT3luMTdtekV3dWdtX1lRVHRGQnlRZzM1TVg1Y2JmcUp1cE1mN252OV93MDBaX0NjYzVOMTRNZjhrY01NU2l6ejRuOG5uSkdXSGxpcGFYOFplbmpPVjdhcFQ0TTVoeXVPb2d4RGJNNE1iTlgyUmN4b1BUb3EyTEhqYURuVXZWV0l3X0RFWC1RdQ?oc=5",
+     "tickers": [],
+     "importancia": 135.0
+    },
+    {
+     "titulo": "Hospital Regional de São José recebe mais R$ 15 milhões em obras; veja o que vai mudar",
+     "veiculo": "Agora Floripa",
+     "data": "2026-10-18 12:08:09-03:00",
+     "link": "https://news.google.com/rss/articles/CBMiswFBVV95cUxOWHBBR2ZiVk0yUFRYaW1UQndoOTlReDBRWVFOaHVCNjRDeExxbFR0Nk5TSHFEdVNBcWVqQUdHeFdsekpPRTVrWkVDMVRKdS04R0I1YUN3U0JrcjBEWTlkWHpIX21WdFNwSTdVWFdVU3ItbjlWMTNVR19tRHAzQ01BUkVWX28xVWQwQTctNndsLUJDd1ZLZlBEVjVjX0N1UWNVdHdQVnBNbnlaWjBLSkNUVVA4Yw?oc=5",
+     "tickers": [],
+     "importancia": 54.0
+    }
+   ],
+   "palavras": 123
+  },
+  {
+   "setor": "PETRÓLEO & GÁS",
+   "nome": "Petróleo e gás",
+   "o_que_aconteceu": [
+    "ADVFN (16/10): “Ibovespa sobe 0,54% com apoio de ações do petróleo e fecha aos 205 mil pontos”.",
+    "Agência Petrobras de Notícias (18/10): “Petrobras supera R$ 800 bilhões e lidera ranking das maiores empresas da América Latina”.",
+    "InfoMoney (18/10): “Plano econômico de Flávio pode garantir equilíbrio fiscal sem desenvolvimento e seguridade social”."
+   ],
+   "por_que_importa": "O preço internacional do petróleo e a política de preços da Petrobras afetam a receita das produtoras, a inflação de combustíveis e o peso do setor no Ibovespa, onde a Petrobras é uma das maiores empresas. Para as produtoras privadas, o que pesa mais é o volume extraído e o custo de cada barril.",
+   "empresas": "Citadas nas notícias: BBAS3, MGLU3, PETR3, PETR4, PRIO3, VALE3, VAMO3, WDOX26, WINZ26. Principais do setor no Ibovespa: BRAV3, VBBR3.",
+   "acompanhar": "Cotação do Brent, reuniões da Opep+, reajustes de combustíveis e dados de produção divulgados pela ANP e pelas empresas.",
+   "fontes": [
+    {
+     "titulo": "Ibovespa sobe 0,54% com apoio de ações do petróleo e fecha aos 205 mil pontos",
+     "veiculo": "ADVFN",
+     "data": "2026-10-16 22:25:00-03:00",
+     "link": "https://news.google.com/rss/articles/CBMisAFBVV95cUxOMXJEanNLaFJnUDVnZGJEenhBRF9KbDg0OEhwWmJHQXU0ZVBrbkdNMFd0MldNUGJSV3VuM3lONGl0X0JDQUlqNExWbFZqeTZsU1lNVXRxb1lpa3JPdFdsaGNEUlFXbnVDcUJsbGlnWXhZZmpuUzJsVjlBNWttYjNvZW9INWs5cmpFM29RR3NhdV9WVTFVSUxTRFgzV3BXS1BESlVWNjI4dHhidXVfYTRXWdIBtgFBVV95cUxQMVp3SEFhQ1JDaTB0djRhNkJVYzZXRTRZeGdYLVN1UG85ampLWGRUZ0pRWUtocUhpMm9DTkdBaGFJM2MxVDROZy0yX1dSYV8xMTVhcFN4dGxxcENVMG5iSlNsU0xfVHBUWndIaVdfMGtscHJfTXhHOW5jaldwT1BXR0VoekFOWlR1VXdsUVJ3LUtkRVNjZkxFWXIyRjdhQlhFZFpndl9aQVAzemF6bVM1Tl9wMzBUQQ?oc=5",
+     "tickers": [
+      "BBAS3",
+      "PETR4"
+     ],
+     "importancia": 505.0
+    },
+    {
+     "titulo": "Petrobras supera R$ 800 bilhões e lidera ranking das maiores empresas da América Latina",
+     "veiculo": "Agência Petrobras de Notícias",
+     "data": "2026-10-18 12:15:47-03:00",
+     "link": "https://news.google.com/rss/articles/CBMi2wFBVV95cUxQNXZqX2RndnRpeFRvS0NQRW5JMkRRTXVIYVhrVEFncWduQU5MRTIta2Zoby1BeVZvZVAtaHY3aWZlU0p2RnYyTFF2cWJDY1kwRk1tYlpPUXRYLUNZVFd3TS1ydFNaMklfOVFsR1BhU3hmRzE2RTcxdUtZaEhkTzRFdjhpTkxkeWNtMjRzTGwzUmJzb2szeVc5YnlqZzY0UVBWZDNoTXJiYU8wUjJWM3k4ekE0NkhZZWl1WFNRT01NemJ6ZEd6cHpNbVJyOFZBMWN2Nk8zUVdhTGNNaTg?oc=5",
+     "tickers": [
+      "PETR4"
+     ],
+     "importancia": 299.2
+    },
+    {
+     "titulo": "Plano econômico de Flávio pode garantir equilíbrio fiscal sem desenvolvimento e seguridade social",
+     "veiculo": "InfoMoney",
+     "data": "2026-10-18 07:02:30-03:00",
+     "link": "https://news.google.com/rss/articles/CBMixAFBVV95cUxNLU5PSnQzaHBsaURFRFpXZkJ1a0REUTc2M3RhVnk0OVFLTGZZd1VydEllUXZwVzRRVHdxelZFY2cyRjg3XzItSlJDVmNwQUtZOXpYSHllUGpfYXlITzNyQzNvQTBTZUVqTmNXeFJmM3NHaW5VWkp5YTZIVjUxcFE3a3pNQjRsRHB0YWpfTEpEdGdQbHpsQ1BYRDlWcUhwWTVWN194cHlvdVU4ZXB2R2YzRTNjbmpnbUpWUHQ0eWRBLWJCLVJ5?oc=5",
+     "tickers": [
+      "PRIO3",
+      "VAMO3"
+     ],
+     "importancia": 121.7
+    }
+   ],
+   "palavras": 143
+  },
+  {
+   "setor": "BANCOS",
+   "nome": "Bancos",
+   "o_que_aconteceu": [
+    "A Crítica de Campo Grande (18/10): “Edital Mãos Dadas, do Banco do Brasil, tem inscrições abertas para projetos de impacto social”.",
+    "Agência de Notícias da Indústria (16/10): “CNI: indústria depende mais de bancos tradicionais para obter crédito”.",
+    "Brasil Paralelo (17/10): “\"Nunca assinei nenhum contrato com o Banco Master\", afirma Gabriela Prioli sobre supostas mensagens que a ligariam ao escândalo financeiro”."
+   ],
+   "por_que_importa": "Bancos têm o maior peso setorial do Ibovespa. Juros, inadimplência e demanda por crédito definem quanto eles lucram, e o setor costuma refletir rapidamente mudanças na expectativa para a Selic. Em ciclos de juros altos, a margem tende a melhorar, mas o risco de calote também cresce.",
+   "empresas": "Principais do setor no Ibovespa: ITUB4, BBDC4, BBAS3, SANB11, BPAC11.",
+   "acompanhar": "Decisões e comunicados do Copom, dados de crédito e inadimplência do Banco Central e balanços trimestrais dos grandes bancos.",
+   "fontes": [
+    {
+     "titulo": "Edital Mãos Dadas, do Banco do Brasil, tem inscrições abertas para projetos de impacto social",
+     "veiculo": "A Crítica de Campo Grande",
+     "data": "2026-10-18 12:55:00-03:00",
+     "link": "https://news.google.com/rss/articles/CBMimwFBVV95cUxQZGxCN1U0YVZHZlhxT0ZDbFZTc0Zid0V4ZVI0N242WldhZGdrb190ckpoV1dGOEFMbUF4UjM4NUp1SDFVZjZxbWFzNzlBeHVZeHZjRGhfR05NVFk4TUdQQmU0eDZ2d2gyRHZxOWRlV09WaVZoNDdWeXB5YnQ0UUhmQ3A4Sms0ZjhVR0xYNzlhTWFnZlMydEdpdmwyc9IBoAFBVV95cUxNdmJKRlpmYXMzQ0dBM0dJd2tHSGN5QjVjdnFGMnpFbDdzeW5md3BscFNhbWZPTU9nY3NNb2RqQTc0b3RQNFdGSUdHTzN4RDJNXzZxRlBTdkxpTWtMckIzZTJfY0k4YUt2N3ctVWNnQUF4YmZaRURrX28xWjJFT2xWcEYzbGdFeUY5Zk1tUFNfQVYwb2dhcGtsSEd5NUczQXRK?oc=5",
+     "tickers": [],
+     "importancia": 144.8
+    },
+    {
+     "titulo": "CNI: indústria depende mais de bancos tradicionais para obter crédito",
+     "veiculo": "Agência de Notícias da Indústria",
+     "data": "2026-10-16 16:31:25-03:00",
+     "link": "https://news.google.com/rss/articles/CBMixgFBVV95cUxQNkc0emFsZ2phSFlpNkF2bWhEXzg0LVlnQVB5b0xyQVZzZ1ZIaTVFWnpnSnVnUWdqYS1UaG16eWRlS1lVeEpYeTdLQ2tLd1hyRGF1UzFxQnBGdnJmLVFPOEppckdXaktOVUJlbGl4NXpzdTJOTjBuNDRpV1lMaVZBNGVIVjltNFNaRzNmY2pzTm9FMmdSSkRucTZzeUVRb1pUQVJrbjJHMTRra3hyMkFBaXAzOVN3VjlPR2UyalI5M2xfLVl0MGc?oc=5",
+     "tickers": [],
+     "importancia": 106.0
+    },
+    {
+     "titulo": "\"Nunca assinei nenhum contrato com o Banco Master\", afirma Gabriela Prioli sobre supostas mensagens que a ligariam ao escândalo financeiro",
+     "veiculo": "Brasil Paralelo",
+     "data": "2026-10-17 00:00:54-03:00",
+     "link": "https://news.google.com/rss/articles/CBMixgJBVV95cUxOMlRvLTZXN3Y1d2ZpY2lIYTdQME1NN0VldVlJU1dqemdvNEh2RDVKN1VoQjhOVHo5bWUxUTBZZVpGVzBtVFdxY19pZE5EUEJucWtPcVRXU0xpOGV6VjFjbVcxREhXLVhSellXeHJaSVFwVDNwZkZ5OUczaGZCb1dSWGZjekV6by1kNURmdm1wMzhzZWFkWlhSV2VxWTNIX3otZ2h1RmdBaWIzZmN1TWI2bG45OWlYZko5UjRZSkVaM2JkaEFTVVBhNGszT3pDaXFteFFOc053RklTM25JeWFQaUVsbmhCcjZkaXpRQ2x3RU0wazJkRlduTlNsQ1RpYVBMNm83cG9CM0VqRU82dlVtRnp3cVR5RmZaNVl4VHhVTTJCNWtzdXp5TWUxYlFPOHZjS1FEMFZmcEctUWVyQ1NmMDFVZlJvZw?oc=5",
+     "tickers": [],
+     "importancia": 98.0
+    }
+   ],
+   "palavras": 136
+  }
+ ],
+ "excluidos": [
+  {
+   "setor": "MINERAÇÃO & SIDERURGIA",
+   "nome": "Mineração e siderurgia",
+   "motivo": "evidência insuficiente: nenhum veículo da lista de fontes confiáveis"
+  },
+  {
+   "setor": "SANEAMENTO",
+   "nome": "Saneamento",
+   "motivo": "evidência insuficiente: nenhum veículo da lista de fontes confiáveis"
+  }
+ ],
+ "plano": [
+  "TECNOLOGIA & TELECOM",
+  "SAÚDE",
+  "MINERAÇÃO & SIDERURGIA",
+  "SANEAMENTO"
+ ],
+ "historico": [
+  [
+   "2026-10-12",
+   [
+    "TRANSPORTE & LOGÍSTICA",
+    "AGRO & ALIMENTOS",
+    "ENERGIA ELÉTRICA",
+    "BANCOS"
+   ]
+  ],
+  [
+   "2026-10-13",
+   [
+    "TECNOLOGIA & TELECOM",
+    "MINERAÇÃO & SIDERURGIA",
+    "VAREJO",
+    "SAÚDE"
+   ]
+  ],
+  [
+   "2026-10-14",
+   [
+    "PETRÓLEO & GÁS",
+    "SANEAMENTO",
+    "IMOBILIÁRIO",
+    "BANCOS"
+   ]
+  ],
+  [
+   "2026-10-15",
+   [
+    "TRANSPORTE & LOGÍSTICA",
+    "AGRO & ALIMENTOS",
+    "ENERGIA ELÉTRICA",
+    "VAREJO"
+   ]
+  ],
+  [
+   "2026-10-16",
+   [
+    "TECNOLOGIA & TELECOM",
+    "SAÚDE",
+    "MINERAÇÃO & SIDERURGIA",
+    "SANEAMENTO"
+   ]
+  ]
+ ]
+}
