@@ -401,6 +401,11 @@ def _fonte(item):
             "tickers": _tickers_do_titulo(item["titulo"]), "importancia": item.get("importancia") or 0}
 
 
+# Publicação legal paga ("Edital de Leilão ITAÚ UNIBANCO S/A", visto no
+# exemplo real de 18/10/2026): aviso, não notícia sobre o setor.
+_AVISO_LEGAL = re.compile(r"^\s*(edital|aviso|ata|convoca[cç][aã]o|fato relevante:?\s*$)\b", re.IGNORECASE)
+
+
 def evidencias_do_setor(setor, itens, inicio, agora, confiavel=None, mesmo_fato=None, fora_de_pauta=None):
     """(fontes, motivo) - fontes validadas do setor, sem duplicata do
     mesmo fato, mais importantes primeiro. motivo != None quando a
@@ -412,7 +417,7 @@ def evidencias_do_setor(setor, itens, inicio, agora, confiavel=None, mesmo_fato=
     candidatos = []
     for item in sorted(itens or [], key=lambda i: -(i.get("importancia") or 0)):
         ok, _motivo = validar_fonte(item, inicio, agora)
-        if not ok or fora_de_pauta(item.get("titulo")):
+        if not ok or fora_de_pauta(item.get("titulo")) or _AVISO_LEGAL.match(str(item.get("titulo") or "")):
             continue
         if not _menciona_setor(item.get("titulo"), setor, item.get("tickers")):
             continue

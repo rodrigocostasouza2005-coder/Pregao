@@ -171,6 +171,14 @@ def test_noticia_fora_da_janela_ou_sem_link_nao_conta_como_evidencia():
     assert motivo
 
 
+def test_edital_publicado_nao_conta_como_noticia():
+    """Caso real de 18/10/2026."""
+    itens = [_noticia("Edital de Leilão ITAÚ UNIBANCO S/A", "Folha Capital"),
+             _noticia("Bancos ampliam crédito", "Valor Econômico")]
+    fontes, motivo = rs.evidencias_do_setor("BANCOS", itens, INICIO, AGORA)
+    assert [f["veiculo"] for f in fontes] == ["Valor Econômico"] and motivo
+
+
 def test_duplicata_do_mesmo_fato_conta_uma_vez():
     itens = [_noticia("Bancos ampliam crédito", "Valor Econômico"), _noticia("Bancos ampliam crédito", "Folha")]
     fontes, motivo = rs.evidencias_do_setor("BANCOS", itens, INICIO, AGORA)
