@@ -36,6 +36,53 @@ _SGS_CDI_DIARIO = 12
 _SGS_CDI_ANUALIZADO = 4389
 
 
+class RespostaSgsInvalida(ValueError):
+    """O SGS respondeu HTTP 200 sem os dados da serie. Visto em producao
+    (diagnostico de 18/10/2026, runner do GitHub Actions): para as series
+    432/12/4389/433 a API alternava entre uma pagina HTML "Requisição
+    inválida!" (content-type text/html) e o JSON
+    {"erro": {"statusCode": 500, "detail": "Internal error"}} - os dois com
+    status 200. Antes, o r.json() da pagina HTML lancava um ValueError
+    generico e a edicao mostrava so' "indisponível", sem o motivo."""
+
+
+def _json_sgs(r, codigo: int):
+    """Valida a resposta do SGS e devolve a lista de pontos, ou lanca
+    RespostaSgsInvalida com o motivo legivel. Nao tenta contornar a pagina
+    de bloqueio/erro (outro User-Agent etc.): so' identifica e reporta."""
+    tipo = r.headers.get("Content-Type") if hasattr(r, "headers") else None
+    tipo = tipo.lower() if isinstance(tipo, str) else ""
+    if "html" in tipo:
+        raise RespostaSgsInvalida(
+            f"SGS {codigo}: o Banco Central respondeu com página de erro HTML "
+            "('Requisição inválida') em vez dos dados")
+    try:
+        dados = r.json()
+    except ValueError:
+        raise RespostaSgsInvalida(f"SGS {codigo}: resposta sem JSON válido") from None
+    if isinstance(dados, dict):
+        erro = dados.get("erro") or dados.get("error")
+        if erro:
+            detalhe = erro.get("detail") if isinstance(erro, dict) else erro
+            status = erro.get("statusCode") if isinstance(erro, dict) else None
+            raise RespostaSgsInvalida(
+                f"SGS {codigo}: erro informado pelo Banco Central"
+                + (f" ({status} {detalhe})" if status else f" ({detalhe})"))
+        raise RespostaSgsInvalida(f"SGS {codigo}: formato de resposta inesperado")
+    return dados
+
+
+# Ultimo motivo de falha por indicador, nesta execucao - so' pra quem
+# monta a edicao poder dizer POR QUE um indicador saiu indisponivel (as
+# funcoes obter_* devolvem None e o erro ja' vai pro registro de saude).
+_MOTIVO_FALHA = {}
+
+
+def motivo_indisponivel(indicador: str) -> str | None:
+    """'selic' / 'cdi' -> texto do ultimo erro desta execucao, ou None."""
+    return _MOTIVO_FALHA.get(indicador)
+
+
 def _serie_sgs(codigo: int, dias_historico: int) -> pd.DataFrame:
     """Busca uma serie do SGS entre (hoje - dias_historico) e hoje, devolve
     DataFrame [data, valor] com data tz-aware (America/Sao_Paulo) e valor em
@@ -62,7 +109,7 @@ def _serie_sgs(codigo: int, dias_historico: int) -> pd.DataFrame:
             if r.status_code == 429 or r.status_code >= 500:
                 r.raise_for_status()
             r.raise_for_status()
-            dados = r.json()
+            dados = _json_sgs(r, codigo)
             break
         except requests.RequestException as e:
             ultima_excecao = e
@@ -127,8 +174,10 @@ def obter_selic_meta(dias_historico: int = 400) -> pd.DataFrame | None:
         df = _serie_sgs(_SGS_SELIC_META, dias_historico).rename(columns={"valor": "selic_meta_pct"})
         registrar_tentativa("MACRO (BCB - Selic)", "Banco Central (SGS)", execucao_ok=True,
                              registros_novos=len(df), categoria="Macro")
+        _MOTIVO_FALHA.pop("selic", None)
         return df
     except Exception as e:
+        _MOTIVO_FALHA["selic"] = str(e)[:200]
         registrar_tentativa("MACRO (BCB - Selic)", "Banco Central (SGS)", execucao_ok=False,
                              erro=str(e)[:300], categoria="Macro")
         return None
@@ -146,8 +195,10 @@ def obter_cdi(dias_historico: int = 90) -> pd.DataFrame | None:
         df = pd.merge(diario, anualizado, on="data", how="outer").sort_values("data").reset_index(drop=True)
         registrar_tentativa("MACRO (BCB - CDI)", "Banco Central (SGS)", execucao_ok=True,
                              registros_novos=len(df), categoria="Macro")
+        _MOTIVO_FALHA.pop("cdi", None)
         return df
     except Exception as e:
+        _MOTIVO_FALHA["cdi"] = str(e)[:200]
         registrar_tentativa("MACRO (BCB - CDI)", "Banco Central (SGS)", execucao_ok=False,
                              erro=str(e)[:300], categoria="Macro")
         return None

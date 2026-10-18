@@ -8,7 +8,7 @@ prévias visuais do PDF - NUNCA usadas em produção.
 resumos, cotações e agenda são CONTEÚDO DE EXEMPLO, escritos pra ter o
 tamanho e a estrutura do que o pipeline real entrega (resumo em blocos
 RESUMO/LEITURA DE MERCADO já separado em parágrafos de corpo)."""
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from data.morning_call_editorial import selecionar_manchete
@@ -16,8 +16,9 @@ from data.morning_call_editorial import selecionar_manchete
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 
 
-def _ind(nome, preco, var, barra="17/10 17:00 (horário de Brasília)", erro=None):
-    return {"nome": nome, "preco": preco, "variacao_pct": var, "barra_fmt": barra, "erro": erro}
+def _ind(nome, preco, var, barra="16/10 17:18 (horário de Brasília)", erro=None):
+    return {"nome": nome, "preco": preco, "variacao_pct": var, "barra_fmt": barra, "erro": erro,
+            "sessao": date(2026, 10, 16) if barra else None}
 
 
 def _noticia(titulo, veiculo, importancia, corpo=None, link=None, horas_atras=13, tickers=None, regiao="BR"):
@@ -46,15 +47,28 @@ def _serie_ibov():
 
 
 def _macro():
-    return [
-        {"indicador": "Selic", "referencia": "2026-10-08", "detalhe": "valor: 15,00", "valores": {"valor": 15.0}},
-        {"indicador": "CDI", "referencia": "2026-10-16", "detalhe": "cdi diario pct: 0,06; cdi anualizado pct: 14,90",
-         "valores": {"cdi_diario_pct": 0.0553, "cdi_anualizado_pct": 14.90}},
-        {"indicador": "Focus IPCA", "referencia": "2026", "detalhe": "mediana: 5,22; numero respondentes: 96",
-         "valores": {"mediana": 5.22, "media": 5.25, "numero_respondentes": 96}},
-        {"indicador": "Focus Selic", "referencia": "2026", "detalhe": "mediana: 15,00; numero respondentes: 94",
-         "valores": {"mediana": 15.0, "media": 15.02, "numero_respondentes": 94}},
-    ]
+    """Linhas macro geradas pelo PRÓPRIO data/morning_call_editorial.py a
+    partir de DataFrames com as colunas reais de data/macro.py (valores
+    do diagnóstico real de 18/10/2026) - a amostra antiga usava chaves
+    inventadas ('valor', 'mediana') e escondeu o defeito do Focus."""
+    import pandas as pd
+    from unittest.mock import patch
+    import data.morning_call_editorial as editorial
+
+    def _focus(medianas, respondentes):
+        return pd.DataFrame({
+            "ano_referencia": [2026, 2027, 2028], "mediana_pct": medianas, "media_pct": medianas,
+            "numero_respondentes": respondentes,
+            "data_calculo": pd.to_datetime(["2026-10-09"] * 3).tz_localize(TZ_SP)})
+
+    selic = pd.DataFrame({"data": pd.to_datetime(["2026-10-16"]).tz_localize(TZ_SP), "selic_meta_pct": [15.0]})
+    cdi = pd.DataFrame({"data": pd.to_datetime(["2026-10-16"]).tz_localize(TZ_SP),
+                        "cdi_diario_pct": [0.055131], "cdi_anualizado_pct": [14.90]})
+    with patch.object(editorial, "obter_selic_meta", lambda: selic), \
+            patch.object(editorial, "obter_cdi", lambda: cdi), \
+            patch.object(editorial, "obter_focus_ipca", lambda: _focus([5.2245, 4.30, 3.79], [144, 138, 117])), \
+            patch.object(editorial, "obter_focus_selic", lambda: _focus([13.25, 12.00, 10.50], [140, 135, 115])):
+        return editorial._macro_rows(datetime(2026, 10, 19, 8, 0, tzinfo=TZ_SP))
 
 
 def edicao_tipica():
@@ -146,6 +160,9 @@ def edicao_tipica():
             ],
             "noticias_erro": None,
         },
+        "mercados_nota": ("Cotações e variações referem-se à última sessão disponível (sexta-feira, 16/10), "
+                          "comparada com a sessão anterior."),
+        "janela_noticias": datetime(2026, 10, 16, 6, 0, tzinfo=TZ_SP),
         "limitacoes": (
             "Fontes gratuitas podem ter atraso e indisponibilidade; esta edição não garante cotação em tempo real.",
             "Conteúdo informativo, não constitui recomendação de investimento.",
@@ -196,3 +213,44 @@ def edicao_cheia():
     todas = ed["brasil"]["noticias"] + ed["empresas"]["cards"] + ed["exterior"]["noticias"]
     ed["capa"]["manchete"], ed["capa"]["chamadas"] = selecionar_manchete(todas)
     return ed
+
+
+def _noticia_setor(titulo, veiculo, horas_atras, importancia, tickers=None):
+    agora = datetime(2026, 10, 19, 8, 0, tzinfo=TZ_SP)
+    slug = "-".join(titulo.lower().split()[:5])
+    return {"titulo": titulo, "veiculos": [veiculo], "link": f"https://exemplo.invalid/setor/{slug}",
+            "data": (agora - timedelta(hours=horas_atras)).isoformat(), "importancia": importancia,
+            "tickers": tickers or [], "regiao": "BR"}
+
+
+# Manchetes de EXEMPLO por setor (formato do coletor data/news.py) - só
+# para testes; o exemplo real vem do diagnóstico com dados reais.
+NOTICIAS_SETOR_AMOSTRA = {
+    "PETRÓLEO & GÁS": [
+        _noticia_setor("Petrobras renova recorde de produção no pré-sal no terceiro trimestre", "Valor Econômico", 20, 90, ["PETR4"]),
+        _noticia_setor("Brent sobe com cortes de oferta da Opep+ e estoques menores nos EUA", "InfoMoney", 30, 80),
+        _noticia_setor("PRIO conclui aquisição de fatia em campo na Bacia de Campos", "Money Times", 40, 60, ["PRIO3"]),
+    ],
+    "IMOBILIÁRIO": [
+        _noticia_setor("Construtoras de baixa renda aceleram lançamentos e vendas com novas faixas do Minha Casa, Minha Vida", "Estadão", 22, 70),
+        _noticia_setor("Cury e Direcional lideram vendas de imóveis no trimestre", "Valor Econômico", 26, 65, ["CURY3", "DIRR3"]),
+    ],
+    "BANCOS": [
+        _noticia_setor("Bancos ampliam provisões para inadimplência de pequenas empresas", "Folha de S.Paulo", 18, 85),
+        _noticia_setor("Itaú e Bradesco divulgam balanços na próxima semana; crédito é foco", "InfoMoney", 28, 75, ["ITUB4", "BBDC4"]),
+    ],
+    "VAREJO": [
+        _noticia_setor("Vendas no varejo surpreendem e sobem em agosto, diz IBGE", "G1", 24, 70),
+        _noticia_setor("Varejistas de moda reforçam estoques para a Black Friday", "Exame", 34, 50),
+    ],
+    # só uma fonte: deve sair do radar por evidência insuficiente
+    "ENERGIA ELÉTRICA": [_noticia_setor("Aneel mantém bandeira tarifária amarela em novembro", "Agência Brasil", 12, 60)],
+}
+
+
+def radar_amostra():
+    from data import radar_setorial
+    agora = datetime(2026, 10, 19, 8, 0, tzinfo=TZ_SP)
+    return radar_setorial.montar_radar(
+        agora, buscar=lambda setor: NOTICIAS_SETOR_AMOSTRA.get(setor, []),
+        inicio=datetime(2026, 10, 16, 6, 0, tzinfo=TZ_SP))

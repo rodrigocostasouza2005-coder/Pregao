@@ -23,12 +23,23 @@ def _sem_rede(**overrides):
         obter_cdi=lambda: None,
         obter_focus_ipca=lambda: None,
         obter_focus_selic=lambda: None,
-        obter_top_mercado_tudo=lambda: [],
+        obter_top_mercado=lambda *_a: [],
+        obter_top_mercado_internacional=lambda *_a: [],
         calcular_calendario_cacheado=lambda *_a, **_k: [],
         obter_resumos_prontos=lambda *_a, **_k: {},
+        _noticias_do_setor=lambda _setor: [],
     )
     base.update(overrides)
     return base
+
+
+def _pools(noticias, data="2026-10-14T06:30:00-03:00"):
+    """Separa notícias de teste nos dois pools reais (BR / INT), com data
+    dentro da janela da edição quando o item não traz uma."""
+    itens = [{"data": data, **n} for n in noticias]
+    return dict(obter_top_mercado=lambda setor="TODOS": [n for n in itens if n.get("regiao") == "BR"]
+                if setor == "TODOS" else [],
+                obter_top_mercado_internacional=lambda *_a: [n for n in itens if n.get("regiao") != "BR"])
 
 
 class _MultiPatch:
@@ -62,6 +73,31 @@ def test_indicador_com_erro_nunca_inventa_preco():
     assert info["erro"] == "sem dado"
 
 
+def test_referencia_usa_horario_do_ultimo_negocio_em_brasilia():
+    """Regressão: a barra diária do Yahoo fica à meia-noite do fuso da
+    bolsa e virava '16/10 00:00' / '16/10 01:00' no PDF."""
+    cot = {**_COT_OK, "_barra_em": "2026-10-16T00:00:00-04:00", "_negocio_em": "2026-10-16T16:59:58-04:00"}
+    with _MultiPatch(obter_cotacao_indice=lambda *_a, **_k: cot):
+        info = ed._indicador("S&P 500 futuro", "ES=F")
+    assert info["barra_fmt"] == "16/10 17:59 (horário de Brasília)"
+    assert info["sessao"] == date(2026, 10, 16)
+
+
+def test_referencia_sem_horario_de_negocio_mostra_so_a_sessao():
+    cot = {**_COT_OK, "_barra_em": "2026-10-16T00:00:00-04:00"}
+    with _MultiPatch(obter_cotacao_indice=lambda *_a, **_k: cot):
+        info = ed._indicador("Ouro", "GC=F")
+    assert info["barra_fmt"] == "fech. 16/10"
+    assert "00:00" not in info["barra_fmt"] and "01:00" not in info["barra_fmt"]
+
+
+def test_nota_de_sessao_no_fim_de_semana():
+    indicadores = [{"sessao": date(2026, 10, 16)}, {"sessao": date(2026, 10, 15)}, {"sessao": None}]
+    nota = ed.nota_sessao(indicadores, datetime(2026, 10, 18, 12, tzinfo=TZ_SP))
+    assert "sexta-feira, 16/10" in nota and "fim de semana" in nota
+    assert ed.nota_sessao([{"sessao": date(2026, 10, 19)}], datetime(2026, 10, 19, 11, tzinfo=TZ_SP)) is None
+
+
 def test_indicador_ok_reaproveita_mesmo_dado_do_provedor():
     with _MultiPatch(obter_cotacao_indice=lambda *_a, **_k: dict(_COT_OK)):
         info = ed._indicador("Ibovespa", "^BVSP")
@@ -86,27 +122,58 @@ def test_serie_fechamento_le_data_e_close_do_historico():
     assert serie[-1][1] == 128_432.0
 
 
-def test_macro_rows_usa_ano_referencia_pro_focus_sem_formatar_como_dinheiro():
-    """Mesma regressão corrigida em jobs/morning_call.py (2026-10-15):
-    Focus IPCA/Selic usam coluna 'ano_referencia', não 'data'."""
+def test_macro_rows_focus_do_ano_corrente_e_seguinte_com_data_do_boletim():
+    """Regressão da edição de 18/10/2026: o PDF mostrava a linha de 2028
+    (iloc[-1]) com o texto cru 'mediana pct: ...; media pct: ...; numero
+    respondentes: ...'. Agora: ano corrente e seguinte, valor numérico +
+    unidade, boletim na referência e respondentes no detalhe."""
     focus_ipca = pd.DataFrame({
-        "ano_referencia": [2026],
-        "mediana_pct": [5.22],
-        "numero_respondentes": [144],
+        "ano_referencia": [2026, 2027, 2028],
+        "mediana_pct": [5.2245, 4.30, 3.79],
+        "media_pct": [5.25, 4.35, 3.80],
+        "numero_respondentes": [144, 140, 120],
+        "data_calculo": pd.to_datetime(["2026-10-09"] * 3).tz_localize(TZ_SP),
     })
+    agora = datetime(2026, 10, 19, 8, tzinfo=TZ_SP)
     with _MultiPatch(obter_focus_ipca=lambda: focus_ipca):
-        linhas = ed._macro_rows()
-    linha_focus = next(l for l in linhas if l["indicador"] == "Focus IPCA")
-    assert linha_focus["referencia"] == "2026"
-    assert "numero respondentes: 144" in linha_focus["detalhe"]
-    assert "2.026" not in linha_focus["detalhe"]
+        linhas = ed._macro_rows(agora)
+    por_nome = {l["indicador"]: l for l in linhas}
+    assert por_nome["Focus IPCA 2026"]["valor"] == 5.2245
+    assert por_nome["Focus IPCA 2026"]["unidade"] == "%"
+    assert por_nome["Focus IPCA 2026"]["referencia"] == "boletim 09/10/2026"
+    assert por_nome["Focus IPCA 2026"]["detalhe"] == "144 respondentes"
+    assert por_nome["Focus IPCA 2027"]["valor"] == 4.30
+    assert "Focus IPCA 2028" not in por_nome
+    texto = repr(linhas)
+    assert "mediana pct" not in texto and "media pct" not in texto and "numero respondentes" not in texto
 
 
-def test_macro_rows_indisponivel_quando_provedor_falha():
+def test_macro_rows_selic_e_cdi_com_colunas_reais():
+    selic = pd.DataFrame({"data": pd.to_datetime(["2026-10-15", "2026-10-16"]).tz_localize(TZ_SP),
+                          "selic_meta_pct": [15.0, 15.0]})
+    cdi = pd.DataFrame({"data": pd.to_datetime(["2026-10-16"]).tz_localize(TZ_SP),
+                        "cdi_diario_pct": [0.055131], "cdi_anualizado_pct": [14.90]})
+    with _MultiPatch(obter_selic_meta=lambda: selic, obter_cdi=lambda: cdi):
+        linhas = ed._macro_rows(datetime(2026, 10, 19, 8, tzinfo=TZ_SP))
+    por_nome = {l["indicador"]: l for l in linhas}
+    assert por_nome["Selic meta"]["valor"] == 15.0
+    assert por_nome["Selic meta"]["referencia"] == "16/10/2026"
+    assert por_nome["CDI"]["valor"] == 14.90
+    assert por_nome["CDI"]["unidade"] == "% a.a."
+
+
+def test_macro_rows_indisponivel_com_motivo_quando_provedor_falha():
     with _MultiPatch(obter_selic_meta=lambda: (_ for _ in ()).throw(RuntimeError("fora do ar"))):
         linhas = ed._macro_rows()
-    linha_selic = next(l for l in linhas if l["indicador"] == "Selic")
-    assert linha_selic["detalhe"] == "indisponível"
+    linha_selic = next(l for l in linhas if l["indicador"] == "Selic meta")
+    assert linha_selic["valor"] is None
+    assert "fora do ar" in linha_selic["erro"]
+
+
+def test_macro_rows_usa_motivo_registrado_pelo_sgs():
+    with _MultiPatch(motivo_indisponivel=lambda chave: "SGS 432: página de erro HTML" if chave == "selic" else None):
+        linhas = ed._macro_rows()
+    assert next(l for l in linhas if l["indicador"] == "Selic meta")["erro"] == "SGS 432: página de erro HTML"
 
 
 def test_coletar_noticias_classifica_por_regiao_e_ticker():
@@ -115,19 +182,85 @@ def test_coletar_noticias_classifica_por_regiao_e_ticker():
         {"titulo": "Governo anuncia pacote fiscal", "link": "https://x/2", "regiao": "BR", "tickers": []},
         {"titulo": "Fed sinaliza postura sobre juros", "link": "https://x/3", "regiao": "INT", "tickers": []},
     ]
-    with _MultiPatch(obter_top_mercado_tudo=lambda: noticias):
-        erro, brasil, empresas, exterior = ed._coletar_noticias()
-    assert erro is None
+    with _MultiPatch(**_pools(noticias)):
+        erros, brasil, empresas, exterior = ed._coletar_noticias()
+    assert erros == {}
     assert [i["titulo"] for i in brasil] == ["Governo anuncia pacote fiscal"]
     assert [i["titulo"] for i in empresas] == ["PETR4 anuncia dividendo"]
     assert [i["titulo"] for i in exterior] == ["Fed sinaliza postura sobre juros"]
 
 
-def test_coletar_noticias_erro_devolve_mensagem_e_listas_vazias():
-    with _MultiPatch(obter_top_mercado_tudo=lambda: (_ for _ in ()).throw(RuntimeError("Google News fora do ar"))):
-        erro, brasil, empresas, exterior = ed._coletar_noticias()
-    assert "RuntimeError" in erro
-    assert brasil == [] and empresas == [] and exterior == []
+def test_coletar_noticias_erro_de_um_pool_nao_esvazia_o_outro():
+    falha = lambda: (_ for _ in ()).throw(RuntimeError("Google News fora do ar"))
+    fed = {"titulo": "Fed", "link": "https://x/3", "regiao": "INT", "tickers": []}
+    with _MultiPatch(obter_top_mercado=falha, obter_top_mercado_internacional=lambda: [fed]):
+        erros, brasil, empresas, exterior = ed._coletar_noticias()
+    assert "RuntimeError" in erros["BR"]
+    assert "INT" not in erros
+    assert brasil == [] and empresas == []
+    assert exterior == [fed]
+
+
+def test_mundo_nao_fica_vazio_quando_pool_brasil_domina_o_ranking():
+    """Regressão da edição de 18/10/2026: com o ranking combinado (top 20
+    de BR+INT) as 20 mais importantes eram do Brasil e Mundo saía vazio."""
+    brasil = [{"titulo": f"Notícia Brasil {n}", "link": f"https://br/{n}", "regiao": "BR", "tickers": [],
+               "importancia": 90 - n} for n in range(25)]
+    mundo = [{"titulo": "Wall Street closes higher", "link": "https://int/1", "regiao": "INT", "tickers": [],
+              "importancia": 10}]
+    with _MultiPatch(**_pools(brasil + mundo)):
+        edicao = ed.montar_edicao(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
+    assert [n["titulo"] for n in edicao["exterior"]["noticias"]] == ["Wall Street closes higher"]
+
+
+def test_filtro_descarta_noticia_antiga_futura_e_sem_data():
+    agora = datetime(2026, 10, 19, 7, tzinfo=TZ_SP)  # segunda -> janela desde sexta 06:00
+    itens = [
+        {"titulo": "Sexta de manhã", "data": "2026-10-16T09:00:00-03:00", "importancia": 1},
+        {"titulo": "Terça passada", "data": "2026-10-13T09:00:00-03:00", "importancia": 9},
+        {"titulo": "Sexta de madrugada", "data": "2026-10-16T05:00:00-03:00", "importancia": 9},
+        {"titulo": "Sem data", "importancia": 9},
+        {"titulo": "Do futuro", "data": "2026-10-20T09:00:00-03:00", "importancia": 9},
+    ]
+    assert [i["titulo"] for i in ed.filtrar_noticias(itens, agora)] == ["Sexta de manhã"]
+
+
+def test_janela_de_noticias_comeca_no_dia_util_anterior():
+    assert ed.inicio_janela_noticias(datetime(2026, 10, 19, 7, tzinfo=TZ_SP)) == datetime(2026, 10, 16, 6, tzinfo=TZ_SP)
+    assert ed.inicio_janela_noticias(datetime(2026, 10, 18, 12, tzinfo=TZ_SP)) == datetime(2026, 10, 16, 6, tzinfo=TZ_SP)
+    assert ed.inicio_janela_noticias(datetime(2026, 10, 21, 7, tzinfo=TZ_SP)) == datetime(2026, 10, 20, 6, tzinfo=TZ_SP)
+
+
+def test_filtro_descarta_loteria_e_mantem_noticia_com_palavra_parecida():
+    agora = datetime(2026, 10, 19, 7, tzinfo=TZ_SP)
+    d = "2026-10-18T20:00:00-03:00"
+    itens = [{"titulo": "Resultado da Quina 6855 de sábado", "data": d, "importancia": 9},
+             {"titulo": "Mega-Sena acumula e prêmio vai a R$ 50 milhões", "data": d, "importancia": 8},
+             {"titulo": "Passagens aéreas para São Paulo a partir de R$ 351 ida e volta", "data": d, "importancia": 7},
+             {"titulo": "Quinta-feira tem dados de inflação nos EUA", "data": d, "importancia": 1}]
+    assert [i["titulo"] for i in ed.filtrar_noticias(itens, agora)] == ["Quinta-feira tem dados de inflação nos EUA"]
+
+
+def test_filtro_descarta_carta_de_leitor_em_primeira_pessoa():
+    """Caso real (Mundo, 18/10/2026): colunas de aconselhamento do MarketWatch."""
+    agora = datetime(2026, 10, 19, 7, tzinfo=TZ_SP)
+    d = "2026-10-18T12:00:00-03:00"
+    itens = [{"titulo": "I\u2019m 63 and diagnosed with lymphoma. Should I take my Social Security next year?",
+              "data": d, "importancia": 9},
+             {"titulo": "I'm 64 with two sons, but only one works in the family business", "data": d, "importancia": 8},
+             {"titulo": "Microsoft pulls plug on Nscale data centre deal", "data": d, "importancia": 1}]
+    assert [i["titulo"] for i in ed.filtrar_noticias(itens, agora)] == ["Microsoft pulls plug on Nscale data centre deal"]
+
+
+def test_filtro_remove_duplicata_do_mesmo_fato_mantendo_a_mais_importante():
+    """Caso real de 18/10/2026: duas manchetes do mesmo fechamento."""
+    agora = datetime(2026, 10, 19, 7, tzinfo=TZ_SP)
+    d = "2026-10-16T18:00:00-03:00"
+    itens = [{"titulo": "IBOVESPA fecha hoje com alta de 0,54%", "data": d, "importancia": 70},
+             {"titulo": "Ibovespa sobe 0,54% e fecha semana no azul", "data": d, "importancia": 60},
+             {"titulo": "Dólar cai 0,54% frente ao real", "data": d, "importancia": 50}]
+    titulos = [i["titulo"] for i in ed.filtrar_noticias(itens, agora)]
+    assert titulos == ["IBOVESPA fecha hoje com alta de 0,54%", "Dólar cai 0,54% frente ao real"]
 
 
 def test_agenda_hoje_none_quando_calendario_falha():
@@ -161,7 +294,11 @@ def test_montar_edicao_estrutura_completa_sem_rede():
     with _MultiPatch():
         edicao = ed.montar_edicao(agora)
     assert edicao["agora"] == agora
-    assert set(edicao.keys()) == {"agora", "capa", "brasil", "exterior", "empresas", "limitacoes", "fontes"}
+    assert set(edicao.keys()) == {"agora", "capa", "brasil", "exterior", "empresas", "limitacoes", "fontes",
+                                  "mercados_nota", "janela_noticias", "radar"}
+    # sem notícia de setor nenhum, o radar sai vazio e registra cada exclusão
+    assert edicao["radar"]["setores"] == []
+    assert all("evidência insuficiente" in e["motivo"] for e in edicao["radar"]["excluidos"])
     assert edicao["brasil"]["noticias"] is None
     assert edicao["empresas"]["agenda"] == []
     # sem notícia nenhuma, a capa não inventa manchete
@@ -177,7 +314,7 @@ def test_montar_edicao_capa_usa_top3_por_importancia():
         {"titulo": "Média importância", "link": "https://x/3", "regiao": "BR", "tickers": [], "importancia": 5},
     ]
     agora = datetime(2026, 10, 14, 7, tzinfo=TZ_SP)
-    with _MultiPatch(obter_top_mercado_tudo=lambda: noticias):
+    with _MultiPatch(**_pools(noticias)):
         edicao = ed.montar_edicao(agora)
     titulos_capa = [d["titulo"] for d in edicao["capa"]["destaques"]]
     assert titulos_capa[0] == "Alta importância"
@@ -219,7 +356,7 @@ def test_corpo_vem_do_bloco_resumo_do_cache_sem_a_leitura_de_mercado():
                         "LEITURA DE MERCADO:\nInvestidores devem seguir otimistas.",
               "imagem": "https://img/x.jpg", "link_original": "https://veiculo/materia"}
     agora = datetime(2026, 10, 19, 7, tzinfo=TZ_SP)
-    with _MultiPatch(obter_top_mercado_tudo=lambda: [noticia],
+    with _MultiPatch(**_pools([noticia]),
                      obter_resumos_prontos=lambda grupos: {"https://x/1": pronto}):
         edicao = ed.montar_edicao(agora)
     item = edicao["brasil"]["noticias"][0]
@@ -237,7 +374,52 @@ def test_falha_na_leitura_do_cache_nao_derruba_a_edicao():
         raise RuntimeError("cache fora do ar")
 
     agora = datetime(2026, 10, 19, 7, tzinfo=TZ_SP)
-    with _MultiPatch(obter_top_mercado_tudo=lambda: [noticia], obter_resumos_prontos=_quebra):
+    with _MultiPatch(**_pools([noticia], data="2026-10-18T09:00:00-03:00"), obter_resumos_prontos=_quebra):
         edicao = ed.montar_edicao(agora)
     assert edicao["brasil"]["noticias"][0]["corpo"] == []
     assert edicao["capa"]["manchete"]["titulo"] == "X"
+
+
+def test_radar_consulta_cada_setor_e_aplica_regras_da_edicao():
+    """O radar pede as notícias de cada setor e aplica a janela, o filtro
+    de pauta e a validação de fonte."""
+    pedidos = []
+    agora = datetime(2026, 10, 19, 8, tzinfo=TZ_SP)
+
+    def por_setor(setor="TODOS"):
+        pedidos.append(setor)
+        if setor == "TODOS":
+            return []
+        return [
+            {"titulo": "Bancos ampliam provisões", "veiculos": ["Valor Econômico"], "link": "https://v/1",
+             "data": "2026-10-18T20:00:00-03:00", "importancia": 5, "tickers": []},
+            {"titulo": "Crédito bancario desacelera, diz BC", "veiculos": ["Folha de S.Paulo"], "link": "https://f/2",
+             "data": "2026-10-18T21:00:00-03:00", "importancia": 4, "tickers": []},
+            {"titulo": "Resultado da Quina: bancos fecham", "veiculos": ["G1"], "link": "https://g/3",
+             "data": "2026-10-18T21:00:00-03:00", "importancia": 9, "tickers": []},
+        ]
+
+    with _MultiPatch(obter_top_mercado=por_setor,
+                     _noticias_do_setor=lambda setor: por_setor(setor)):
+        edicao = ed.montar_edicao(agora)
+    assert "BANCOS" in pedidos
+    bancos = next(b for b in edicao["radar"]["setores"] if b["setor"] == "BANCOS")
+    assert [f["veiculo"] for f in bancos["fontes"]] == ["Valor Econômico", "Folha de S.Paulo"]
+
+
+def test_noticias_do_setor_busca_dedicada_mais_ranking_geral(monkeypatch):
+    from data import news as coletor
+    urls = []
+    monkeypatch.setattr(coletor, "_buscar_feed_de_url", lambda url: urls.append(url) or [{"link": "x"}])
+    monkeypatch.setattr(coletor, "_processar_pool", lambda entries, setor, regiao: [{"titulo": "dedicada"}])
+    monkeypatch.setattr(ed, "obter_top_mercado", lambda *_a: [{"titulo": "geral"}])
+    itens = ed._noticias_do_setor("BANCOS")
+    assert [i["titulo"] for i in itens] == ["dedicada", "geral"]
+    assert len(urls) == 1 and "when%3A3d" in urls[0] and "Ita%C3%BA" in urls[0]
+
+
+def test_noticias_do_setor_none_quando_as_duas_coletas_falham(monkeypatch):
+    from data import news as coletor
+    monkeypatch.setattr(coletor, "_buscar_feed_de_url", lambda url: None)
+    monkeypatch.setattr(ed, "obter_top_mercado", lambda *_a: None)
+    assert ed._noticias_do_setor("BANCOS") is None

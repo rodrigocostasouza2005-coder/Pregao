@@ -20,7 +20,9 @@ marca evento futuro da agenda. As 3 "interpretações" genéricas fixas que
 saíam em toda edição foram retiradas (eram iguais todo dia - enchimento,
 não informação).
 """
-from datetime import datetime
+import re
+import unicodedata
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -30,9 +32,15 @@ from data.eventos import (
     STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_LABEL, STATUS_PRAZO_CVM,
     calcular_calendario_cacheado,
 )
-from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta
-from data.news import obter_resumos_prontos, obter_top_mercado_tudo, separar_secoes_resumo
+from data.macro import (
+    motivo_indisponivel, obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta,
+)
+from data.news import (
+    obter_resumos_prontos, obter_top_mercado, obter_top_mercado_internacional, separar_secoes_resumo,
+)
+from data.news import eh_fonte_confiavel
 from data.prices import obter_cotacao_indice, obter_historico
+from data.radar_setorial import montar_radar
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 
@@ -96,20 +104,74 @@ def brt_label(iso_str):
         return str(iso_str)
 
 
+def _referencia_cotacao(cot):
+    """Rótulo de referência de uma cotação + data da sessão (date).
+
+    Causa dos horários '16/10 00:00', '16/10 01:00' e '17/10 20:00' na
+    edição de 18/10/2026: _barra_em é o índice da barra DIÁRIA do Yahoo,
+    que fica sempre à meia-noite no fuso da bolsa (São Paulo, Nova York,
+    Londres no câmbio) - convertida para Brasília virava um 'horário' que
+    não é de negócio nenhum. Agora: com o horário do último negócio da
+    fonte (regularMarketTime, mesmo dia da barra) mostra esse horário em
+    Brasília; sem ele, só 'fech. dd/mm' da sessão - nunca um horário
+    inventado. A data da sessão é a do fuso da própria bolsa."""
+    sessao = None
+    try:
+        barra = datetime.fromisoformat(cot.get("_barra_em"))
+        sessao = barra.date()
+    except (TypeError, ValueError):
+        barra = None
+    negocio = cot.get("_negocio_em")
+    if negocio:
+        rotulo = brt_label(negocio)
+    elif sessao:
+        rotulo = f"fech. {sessao.strftime('%d/%m')}"
+    else:
+        rotulo = None
+    if rotulo and cot.get("_fallback_cache"):
+        rotulo += " (cache)"
+    return rotulo, sessao
+
+
 def _indicador(nome, ticker):
     """Mesma leitura 1x de data/prices.py:obter_cotacao_indice usada pelo
     e-mail em texto simples - nunca um valor novo/recalculado aqui."""
     cot = obter_cotacao_indice(nome, ticker)
     if not isinstance(cot, dict) or cot.get("erro"):
         erro = cot.get("erro", "sem dado") if isinstance(cot, dict) else "sem dado"
-        return {"nome": nome, "preco": None, "variacao_pct": None, "barra_fmt": None, "erro": erro}
+        return {"nome": nome, "preco": None, "variacao_pct": None, "barra_fmt": None, "sessao": None,
+                "erro": erro}
+    rotulo, sessao = _referencia_cotacao(cot)
     return {
         "nome": nome,
         "preco": cot.get("preco"),
         "variacao_pct": cot.get("variacao_pct"),
-        "barra_fmt": brt_label(cot.get("_barra_em")),
+        "barra_fmt": rotulo,
+        "sessao": sessao,
         "erro": None,
     }
+
+
+_DIAS_SEMANA = ("segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira",
+                "sábado", "domingo")
+
+
+def nota_sessao(indicadores, agora):
+    """Aviso quando as cotações vêm de uma sessão anterior ao dia da
+    edição (fim de semana, feriado, antes da abertura): a 'variação' é a
+    da última sessão, não a de hoje. None quando todas são de hoje."""
+    sessoes = [i.get("sessao") for i in indicadores if i.get("sessao")]
+    if not sessoes:
+        return None
+    ultima = max(sessoes)
+    if ultima >= agora.date():
+        return None
+    texto = (f"Cotações e variações referem-se à última sessão disponível "
+             f"({_DIAS_SEMANA[ultima.weekday()]}, {ultima.strftime('%d/%m')}), "
+             f"comparada com a sessão anterior")
+    if agora.weekday() >= 5:
+        texto += "; não há pregão no fim de semana"
+    return texto + "."
 
 
 def _serie_fechamento(ticker, periodo_label="1M"):
@@ -127,78 +189,210 @@ def _serie_fechamento(ticker, periodo_label="1M"):
         return []
 
 
-def _macro_rows():
-    """Última leitura de cada indicador macro, como linhas de tabela
-    estruturadas (pro PDF) - mesma lógica de leitura de coluna por
-    indicador (Selic/CDI usam 'data'; Focus usa 'ano_referencia') já
-    usada em jobs/morning_call.py:montar_morning_call, nunca
-    reinterpretada com regra diferente."""
+def _data_br(valor):
+    try:
+        return pd.Timestamp(valor).strftime("%d/%m/%Y")
+    except Exception:
+        return None
+
+
+def _linha_macro(indicador, valor, unidade, referencia, detalhe=None, erro=None):
+    """Contrato de uma linha da tabela macro do PDF - valor numérico +
+    unidade + referência já legíveis; nunca nome de coluna do DataFrame."""
+    return {"indicador": indicador, "valor": valor, "unidade": unidade,
+            "referencia": referencia or "—", "detalhe": detalhe, "erro": erro}
+
+
+def _macro_rows(agora=None, provedores=None):
+    """Linhas da tabela macro do PDF, normalizadas.
+
+    Causa dos defeitos da edição de 18/10/2026 (auditoria): (1) as linhas
+    eram montadas com o nome cru das colunas ("mediana pct: 3,79; media
+    pct...; numero respondentes...") e o renderer procurava chaves que não
+    existem nos dados reais ("valor"/"mediana"), caindo nesse texto bruto;
+    (2) o Focus usava dado.iloc[-1], a ÚLTIMA linha da tabela por ano - o
+    ano corrente + 2 (2028), não o ano corrente. Agora: Selic meta e CDI
+    anualizado com a data da leitura; Focus IPCA e Selic para o ano
+    corrente e o seguinte, com a data do boletim; sem dado -> 'indisponível'
+    com o motivo (nunca um valor estimado)."""
+    agora = agora or datetime.now(TZ_SP)
+    provedores = provedores or {}
+    selic_fn = provedores.get("selic", obter_selic_meta)
+    cdi_fn = provedores.get("cdi", obter_cdi)
+    focus_ipca_fn = provedores.get("focus_ipca", obter_focus_ipca)
+    focus_selic_fn = provedores.get("focus_selic", obter_focus_selic)
     linhas = []
-    for nome, fn in (("Selic", obter_selic_meta), ("CDI", obter_cdi),
-                      ("Focus IPCA", obter_focus_ipca), ("Focus Selic", obter_focus_selic)):
+
+    def _serie(nome, fn, coluna, chave_motivo):
         try:
             dado = fn()
-            if not isinstance(dado, pd.DataFrame) or dado.empty:
-                linhas.append({"indicador": nome, "referencia": "—", "detalhe": "indisponível", "valores": {}})
-                continue
-            coluna_rotulo = "data" if "data" in dado.columns else (
-                "ano_referencia" if "ano_referencia" in dado.columns else None
-            )
-            colunas_inteiras = {"ano_referencia", "numero_respondentes"}
-            colunas_valor = [c for c in dado.columns if c != coluna_rotulo]
-            ultimo = dado.iloc[-1]
-            bruto_rotulo = ultimo.get(coluna_rotulo) if coluna_rotulo else None
-            referencia = (
-                f"{int(bruto_rotulo)}" if coluna_rotulo == "ano_referencia" and pd.notna(bruto_rotulo)
-                else str(bruto_rotulo)[:10] if coluna_rotulo and pd.notna(bruto_rotulo) else "—"
-            )
-            valores = []
-            # mesmos valores, numericos e por coluna original - o PDF
-            # formata com a unidade documentada de cada serie (ver
-            # data/macro.py) em vez de reaproveitar o texto montado acima
-            valores_num = {}
-            for coluna in colunas_valor:
-                valor = ultimo.get(coluna)
-                if not pd.notna(valor):
-                    continue
-                if isinstance(valor, (int, float)):
-                    valores_num[coluna] = float(valor)
-                rotulo_coluna = coluna.replace("_", " ")
-                if coluna in colunas_inteiras:
-                    valores.append(f"{rotulo_coluna}: {int(valor)}")
-                elif isinstance(valor, (int, float)):
-                    valores.append(f"{rotulo_coluna}: {_fmt_num(valor)}")
-            linhas.append({
-                "indicador": nome, "referencia": referencia,
-                "detalhe": "; ".join(valores) if valores else "sem valor estruturado",
-                "valores": valores_num,
-            })
+        except Exception as exc:
+            dado = None
+            motivo = str(exc)[:200]
+        else:
+            motivo = None
+        if isinstance(dado, pd.DataFrame) and not dado.empty and coluna in dado.columns:
+            validos = dado.dropna(subset=[coluna])
+            if not validos.empty:
+                ultimo = validos.iloc[-1]
+                linhas.append(_linha_macro(nome, float(ultimo[coluna]), "% a.a.", _data_br(ultimo.get("data"))))
+                return
+        motivo = motivo or motivo_indisponivel(chave_motivo) or "Banco Central (SGS) sem dado nesta execução"
+        linhas.append(_linha_macro(nome, None, "% a.a.", None, erro=motivo))
+
+    _serie("Selic meta", selic_fn, "selic_meta_pct", "selic")
+    _serie("CDI", cdi_fn, "cdi_anualizado_pct", "cdi")
+
+    for nome, fn in (("Focus IPCA", focus_ipca_fn), ("Focus Selic", focus_selic_fn)):
+        try:
+            dado = fn()
         except Exception:
-            linhas.append({"indicador": nome, "referencia": "—", "detalhe": "indisponível", "valores": {}})
+            dado = None
+        anos = (agora.year, agora.year + 1)
+        if not isinstance(dado, pd.DataFrame) or dado.empty or "ano_referencia" not in dado.columns:
+            linhas.append(_linha_macro(f"{nome} {anos[0]}", None, "%", None,
+                                       erro="Boletim Focus sem dado nesta execução"))
+            continue
+        for ano in anos:
+            sel = dado[dado["ano_referencia"].astype(int) == ano]
+            if sel.empty or pd.isna(sel.iloc[0].get("mediana_pct")):
+                linhas.append(_linha_macro(f"{nome} {ano}", None, "%", None,
+                                           erro=f"Focus sem projeção para {ano}"))
+                continue
+            r = sel.iloc[0]
+            resp = r.get("numero_respondentes")
+            detalhe = f"{int(resp)} respondentes" if pd.notna(resp) else None
+            boletim = _data_br(r.get("data_calculo"))
+            linhas.append(_linha_macro(f"{nome} {ano}", float(r["mediana_pct"]), "%",
+                                       f"boletim {boletim}" if boletim else None, detalhe=detalhe))
     return linhas
 
 
 def _coletar_noticias():
-    """Mesma coleta/classificação de jobs/morning_call.py - BR com ticker
-    reconhecido -> empresas; BR sem ticker -> macro Brasil; INT ->
-    exterior. Nunca reclassificado com regra própria, nunca refeito.
+    """Coleta as notícias das editorias: pool Brasil (obter_top_mercado)
+    e pool internacional (obter_top_mercado_internacional), cada um com o
+    próprio ranking. BR com ticker reconhecido -> empresas; BR sem ticker
+    -> Brasil; INT -> Mundo.
 
-    erro != None distingue "a coleta falhou" (precisa dizer isso
-    explicitamente em cada seção) de "a coleta funcionou mas não achou
-    nada pra essa categoria agora" (listas vazias) - mesma distinção que
-    jobs/morning_call.py já faz com noticias_erro."""
+    Causa da editoria Mundo vazia na edição de 18/10/2026: a coleta usava
+    obter_top_mercado_tudo(), que junta os dois pools e corta o TOTAL nas
+    20 mais importantes - naquele dia as 20 eram todas do pool Brasil
+    (821 itens contra 110), e o internacional sumia inteiro. As funções
+    usadas aqui são as mesmas do app (abas BRASIL/INTERNACIONAL do TOP
+    MERCADO), sem nenhuma alteração no pipeline de notícias.
+
+    erro != None distingue "a coleta falhou" de "funcionou mas não achou
+    nada" (listas vazias). Um pool falhar sozinho não derruba o outro:
+    o erro vem por região."""
+    erros = {}
+    pools = {}
+    for regiao, fn in (("BR", obter_top_mercado), ("INT", obter_top_mercado_internacional)):
+        try:
+            itens = fn()
+        except Exception as exc:
+            erros[regiao] = f"{type(exc).__name__}: {exc}"
+            itens = None
+        if itens is None and regiao not in erros:
+            erros[regiao] = "coleta do Google News falhou nesta execução"
+        pools[regiao] = itens if isinstance(itens, list) else []
+    brasil, empresas = [], []
+    for item in pools["BR"]:
+        (empresas if item.get("tickers") else brasil).append(item)
+    return erros, brasil, empresas, list(pools["INT"])
+
+
+# Itens de serviço que o pool de "negócios" do Google News às vezes traz
+# e que não são notícia de mercado (achado real: "Resultado da Quina" no
+# topo da edição de 18/10/2026). Filtro editorial do PDF, por título.
+_TERMOS_FORA_DE_PAUTA = ("quina", "mega-sena", "mega sena", "lotofacil", "lotomania", "loteria",
+                         "dupla sena", "timemania", "dia de sorte", "+milionaria", "horoscopo",
+                         # anúncio de passagem ("... a partir de R$ 351 ida e volta"), visto na
+                         # editoria Brasil da edição real de 18/10/2026
+                         "ida e volta")
+
+
+# Colunas de aconselhamento pessoal do feed do MarketWatch ("I'm 64 with
+# two sons...", "I'm 63 and diagnosed with lymphoma...") apareceram na
+# editoria Mundo da edição real de 18/10/2026: carta de leitor em 1ª
+# pessoa, não notícia de mercado.
+_CARTA_DE_LEITOR = re.compile(r"^(i['\u2019]m|i am|my|we['\u2019]re|should i)\b", re.IGNORECASE)
+
+
+def _fora_de_pauta(titulo):
+    texto = _sem_acento(titulo).lower()
+    if _CARTA_DE_LEITOR.match(str(titulo or "").strip()):
+        return True
+    return any(re.search(rf"(?<![a-z]){re.escape(t)}(?![a-z])", texto) for t in _TERMOS_FORA_DE_PAUTA)
+
+
+def _sem_acento(texto):
+    return "".join(c for c in unicodedata.normalize("NFKD", str(texto or "")) if not unicodedata.combining(c))
+
+
+def inicio_janela_noticias(agora):
+    """06:00 (Brasília) do dia útil anterior ao da edição. Segunda-feira
+    -> sexta 06:00 (cobre o fim de semana); domingo -> sexta 06:00."""
+    dia = agora.date() - timedelta(days=1)
+    while dia.weekday() >= 5:
+        dia -= timedelta(days=1)
+    return datetime.combine(dia, time(6, 0), tzinfo=TZ_SP)
+
+
+def _data_item(item):
     try:
-        noticias = obter_top_mercado_tudo()
-        candidatos = noticias if isinstance(noticias, list) else []
-    except Exception as exc:
-        return f"{type(exc).__name__}: {exc}", [], [], []
-    brasil, empresas, exterior = [], [], []
+        momento = datetime.fromisoformat(str(item.get("data")))
+    except (TypeError, ValueError):
+        return None
+    return momento if momento.tzinfo else momento.replace(tzinfo=TZ_SP)
+
+
+_PERCENTUAL = re.compile(r"\d+(?:[.,]\d+)?\s?%")
+_PALAVRAS_VAZIAS = {"de", "da", "do", "das", "dos", "e", "em", "com", "a", "o", "as", "os", "no", "na",
+                    "nos", "nas", "por", "para", "que", "hoje", "fecha", "sobe", "cai", "alta", "queda",
+                    "the", "of", "to", "in", "and", "on", "for"}
+
+
+def _assinatura(titulo):
+    texto = _sem_acento(titulo).lower()
+    pcts = {p.replace(" ", "").replace(".", ",") for p in _PERCENTUAL.findall(texto)}
+    palavras = {w for w in re.findall(r"[a-z]{4,}", texto) if w not in _PALAVRAS_VAZIAS}
+    return pcts, palavras
+
+
+def _mesmo_fato(a, b):
+    """Duas manchetes sobre o mesmo número do mesmo assunto ('IBOVESPA
+    fecha hoje com alta de 0,54%' x 'Ibovespa sobe 0,54% ...') - o
+    agrupador do pipeline de notícias deixou as duas em grupos separados
+    na edição de 18/10/2026. Regra estrita de propósito: mesmo percentual
+    E ao menos uma palavra de conteúdo em comum."""
+    pa, wa = _assinatura(a.get("titulo"))
+    pb, wb = _assinatura(b.get("titulo"))
+    return bool(pa & pb) and bool(wa & wb)
+
+
+def filtrar_noticias(itens, agora):
+    """Seleção editorial do PDF (não altera o pipeline de notícias):
+    descarta itens fora da janela da edição (publicados antes de 06:00 do
+    dia útil anterior, ou com data no futuro), itens fora de pauta
+    (loterias) e duplicatas do mesmo fato (fica o de maior importância).
+    Item sem data é descartado - não dá pra afirmar que é recente."""
+    inicio = inicio_janela_noticias(agora)
+    limite_futuro = agora + timedelta(hours=1)
+    candidatos = []
+    for item in itens or []:
+        momento = _data_item(item)
+        if momento is None or momento < inicio or momento > limite_futuro:
+            continue
+        if _fora_de_pauta(item.get("titulo")):
+            continue
+        candidatos.append(item)
+    candidatos.sort(key=lambda i: i.get("importancia") or 0, reverse=True)
+    escolhidos = []
     for item in candidatos:
-        if item.get("regiao") == "BR":
-            (empresas if item.get("tickers") else brasil).append(item)
-        else:
-            exterior.append(item)
-    return None, brasil, empresas, exterior
+        if any(_mesmo_fato(item, e) for e in escolhidos):
+            continue
+        escolhidos.append(item)
+    return escolhidos
 
 
 def _item_fato(item, pronto=None):
@@ -291,6 +485,44 @@ def _agenda_hoje(agora):
         return None
 
 
+def _noticias_do_setor(setor):
+    """Notícias candidatas de um setor: uma busca dedicada no Google News
+    com a consulta do catálogo (últimos 3 dias) mais o ranking geral do
+    Brasil (obter_top_mercado, já cacheado). A busca dedicada usa as
+    funções de leitura do coletor (data/news.py: _buscar_feed_de_url e
+    _processar_pool - mesmo parse, agrupamento e data), sem alterá-lo: é
+    uma requisição por setor, contra ~10 de obter_top_mercado(setor), que
+    recoleta o pool inteiro a cada chamada. None só se as duas falharem."""
+    from urllib.parse import quote
+
+    from data import news as coletor
+    from data.radar_setorial import CATALOGO
+
+    url = coletor._RSS_URL.format(termo=quote(f"{CATALOGO[setor]['consulta']} when:3d"))
+    feed = coletor._buscar_feed_de_url(url)
+    dedicadas = [] if feed is None else coletor._processar_pool(
+        {e.get("link"): (e, None) for e in feed}, "TODOS", "BR")
+    gerais = obter_top_mercado()
+    if feed is None and gerais is None:
+        return None
+    return dedicadas + list(gerais or [])
+
+
+def _radar_setorial(agora):
+    """Radar setorial (data/radar_setorial.py) com as notícias do coletor
+    filtrado por setor (mesma função da aba TOP MERCADO do app) e as
+    mesmas regras editoriais desta edição: janela, fora de pauta,
+    duplicata. Falha geral -> None (a seção diz que não saiu)."""
+    try:
+        return montar_radar(
+            agora, buscar=_noticias_do_setor, inicio=inicio_janela_noticias(agora),
+            confiavel=eh_fonte_confiavel, mesmo_fato=_mesmo_fato, fora_de_pauta=_fora_de_pauta,
+        )
+    except Exception as exc:
+        print(f"[morning_call] radar setorial indisponível: {exc!r}")
+        return None
+
+
 def montar_edicao(agora=None):
     """Monta a edição completa do Morning Call em PDF - um dict puro
     (capa/brasil/exterior/empresas/fontes/limitações), sem nenhuma
@@ -307,15 +539,17 @@ def montar_edicao(agora=None):
     ouro = _indicador("Ouro", "GC=F")
     petroleo = _indicador("Petróleo Brent", "BZ=F")
 
-    # Uma única coleta de notícias (obter_top_mercado_tudo já é
-    # cacheada, mas chamar 1x só aqui evita depender desse cache pra
-    # consistência - as 3 seções abaixo e a capa precisam ver EXATAMENTE
-    # o mesmo conjunto de itens, nunca uma segunda leitura que poderia
-    # vir diferente entre chamadas).
-    noticias_erro, brasil_bruto, empresas_bruto, exterior_bruto = _coletar_noticias()
-    brasil_bruto = brasil_bruto or []
-    empresas_bruto = empresas_bruto or []
-    exterior_bruto = exterior_bruto or []
+    # Uma única coleta de notícias - as 3 seções e a capa precisam ver
+    # EXATAMENTE o mesmo conjunto de itens.
+    erros_noticias, brasil_bruto, empresas_bruto, exterior_bruto = _coletar_noticias()
+    # filtro editorial (janela, fora de pauta, duplicatas) no pool Brasil
+    # inteiro antes de separar Brasil/Empresas, pra dedupe valer entre as duas
+    br_ok = {id(i) for i in filtrar_noticias((brasil_bruto or []) + (empresas_bruto or []), agora)}
+    brasil_bruto = [i for i in brasil_bruto or [] if id(i) in br_ok]
+    empresas_bruto = [i for i in empresas_bruto or [] if id(i) in br_ok]
+    exterior_bruto = filtrar_noticias(exterior_bruto or [], agora)
+    erro_br = erros_noticias.get("BR")
+    erro_int = erros_noticias.get("INT")
     # Limite de extensão da edição (o PDF cresce com o conteúdo, mas não
     # sem limite): as N mais importantes de cada editoria.
     def _top(itens, limite):
@@ -344,22 +578,25 @@ def montar_edicao(agora=None):
             "chamadas": chamadas,
         },
         "brasil": {
-            "indicadores": [ibov, dolar] + _macro_rows(),
+            "indicadores": [ibov, dolar] + _macro_rows(agora),
             "historico_ibov": _serie_fechamento("^BVSP", "1M"),
             "noticias": noticias_brasil or None,
-            "noticias_erro": noticias_erro,
+            "noticias_erro": erro_br,
         },
         "exterior": {
             "indicadores": [sp500, nasdaq, ouro, petroleo],
             "historico_petroleo": _serie_fechamento("BZ=F", "1M"),
             "noticias": noticias_exterior_fatos or None,
-            "noticias_erro": noticias_erro,
+            "noticias_erro": erro_int,
         },
         "empresas": {
             "cards": noticias_empresas,
             "agenda": _agenda_hoje(agora),
-            "noticias_erro": noticias_erro,
+            "noticias_erro": erro_br,
         },
+        "radar": _radar_setorial(agora),
+        "mercados_nota": nota_sessao([ibov, dolar, sp500, nasdaq, ouro, petroleo], agora),
+        "janela_noticias": inicio_janela_noticias(agora),
         "limitacoes": LIMITACOES_PADRAO,
         "fontes": FONTES_PADRAO,
     }
