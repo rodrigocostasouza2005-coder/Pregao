@@ -480,6 +480,29 @@ def _agenda_hoje(agora):
         return None
 
 
+def _noticias_do_setor(setor):
+    """Notícias candidatas de um setor: uma busca dedicada no Google News
+    com a consulta do catálogo (últimos 3 dias) mais o ranking geral do
+    Brasil (obter_top_mercado, já cacheado). A busca dedicada usa as
+    funções de leitura do coletor (data/news.py: _buscar_feed_de_url e
+    _processar_pool - mesmo parse, agrupamento e data), sem alterá-lo: é
+    uma requisição por setor, contra ~10 de obter_top_mercado(setor), que
+    recoleta o pool inteiro a cada chamada. None só se as duas falharem."""
+    from urllib.parse import quote
+
+    from data import news as coletor
+    from data.radar_setorial import CATALOGO
+
+    url = coletor._RSS_URL.format(termo=quote(f"{CATALOGO[setor]['consulta']} when:3d"))
+    feed = coletor._buscar_feed_de_url(url)
+    dedicadas = [] if feed is None else coletor._processar_pool(
+        {e.get("link"): (e, None) for e in feed}, "TODOS", "BR")
+    gerais = obter_top_mercado()
+    if feed is None and gerais is None:
+        return None
+    return dedicadas + list(gerais or [])
+
+
 def _radar_setorial(agora):
     """Radar setorial (data/radar_setorial.py) com as notícias do coletor
     filtrado por setor (mesma função da aba TOP MERCADO do app) e as
@@ -487,7 +510,7 @@ def _radar_setorial(agora):
     duplicata. Falha geral -> None (a seção diz que não saiu)."""
     try:
         return montar_radar(
-            agora, buscar=lambda setor: obter_top_mercado(setor), inicio=inicio_janela_noticias(agora),
+            agora, buscar=_noticias_do_setor, inicio=inicio_janela_noticias(agora),
             confiavel=eh_fonte_confiavel, mesmo_fato=_mesmo_fato, fora_de_pauta=_fora_de_pauta,
         )
     except Exception as exc:

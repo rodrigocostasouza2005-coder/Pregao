@@ -36,7 +36,7 @@ TZ_SP = ZoneInfo("America/Sao_Paulo")
 
 QTD_SETORES = 4
 EPOCA = date(2026, 1, 5)  # segunda-feira; início do histórico recalculado
-MAX_TENTATIVAS = QTD_SETORES + 4  # setores consultados no máximo por edição
+MAX_TENTATIVAS = 11  # setores consultados no máximo por edição (o catálogo inteiro)
 MIN_FONTES = 2  # notícias válidas de veículos diferentes
 MAX_FATOS = 3
 PALAVRAS_MIN, PALAVRAS_MAX = 100, 150
@@ -45,13 +45,20 @@ PALAVRAS_MIN, PALAVRAS_MAX = 100, 150
 # data/news_setores.SETORES (é por ele que o coletor filtra as notícias);
 # "termos" são palavras inteiras exigidas no título (mais estritas que as
 # do classificador do app, que casa por substring); "empresas" são as
-# principais do setor no Ibovespa (config.IBOVESPA_SETORES). Textos sem
+# principais do setor no Ibovespa (config.IBOVESPA_SETORES); "nomes" são
+# nomes de empresa que também são palavras comuns, comparados com maiúscula. Textos sem
 # números e sem recomendação: explicam o mecanismo, não o preço.
 CATALOGO = {
     "BANCOS": {
         "nome": "Bancos",
-        "termos": ("banco", "bancos", "bancario", "bancaria", "credito", "inadimplencia", "spread",
-                   "itau", "bradesco", "santander", "btg", "nubank"),
+        "consulta": (
+            '("bancos" OR "Itaú" OR "Bradesco" OR "Banco do Brasil" OR "Santander" OR '
+            '"crédito bancário")'
+        ),
+        "termos": (
+            "bancos", "bancario", "bancaria", "bancarios", "credito", "inadimplencia", "spread",
+            "itau", "bradesco", "santander", "btg", "nubank", "banco do brasil", "banco central",
+        ),
         "empresas": ("ITUB4", "BBDC4", "BBAS3", "SANB11", "BPAC11"),
         "importa": ("Bancos têm o maior peso setorial do Ibovespa. Juros, inadimplência e demanda por "
                     "crédito definem quanto eles lucram, e o setor costuma refletir rapidamente "
@@ -62,8 +69,13 @@ CATALOGO = {
     },
     "PETRÓLEO & GÁS": {
         "nome": "Petróleo e gás",
-        "termos": ("petroleo", "petrobras", "petrolifera", "barril", "brent", "opep", "pre-sal",
-                   "diesel", "gasolina", "combustivel", "combustiveis", "refino", "refinaria", "prio"),
+        "consulta": '("Petrobras" OR "petróleo" OR "Brent" OR "Opep" OR "combustíveis" OR "PetroReconcavo")',
+        "termos": (
+            "petroleo", "petrobras", "petrolifera", "petroliferas", "barril", "brent", "opep", "pre-sal",
+            "diesel", "gasolina", "combustivel", "combustiveis", "refino", "refinaria",
+            "petroreconcavo", "brava energia",
+        ),
+        "nomes": ("PRIO", "Prio"),
         "empresas": ("PETR4", "PETR3", "PRIO3", "BRAV3", "VBBR3"),
         "importa": ("O preço internacional do petróleo e a política de preços da Petrobras afetam a "
                     "receita das produtoras, a inflação de combustíveis e o peso do setor no "
@@ -74,8 +86,12 @@ CATALOGO = {
     },
     "MINERAÇÃO & SIDERURGIA": {
         "nome": "Mineração e siderurgia",
-        "termos": ("minerio", "mineradora", "mineracao", "siderurgia", "siderurgica", "aco", "vale",
-                   "usiminas", "gerdau", "csn", "iron"),
+        "consulta": '("Vale" OR "minério de ferro" OR "siderurgia" OR "Gerdau" OR "Usiminas" OR "CSN")',
+        "termos": (
+            "minerio", "mineradora", "mineradoras", "mineracao", "siderurgia", "siderurgica",
+            "siderurgicas", "aco", "usiminas", "gerdau", "csn", "cmin",
+        ),
+        "nomes": ("Vale",),
         "empresas": ("VALE3", "GGBR4", "CSNA3", "USIM5", "CMIN3"),
         "importa": ("A demanda chinesa por minério de ferro e aço move a receita da Vale e das "
                     "siderúrgicas. Como a Vale tem grande peso no Ibovespa, o setor influencia o "
@@ -86,8 +102,14 @@ CATALOGO = {
     },
     "VAREJO": {
         "nome": "Varejo",
-        "termos": ("varejo", "varejista", "varejistas", "consumo", "vendas", "e-commerce", "magazine",
-                   "renner", "assai", "lojas"),
+        "consulta": (
+            '("varejo" OR "varejistas" OR "Magazine Luiza" OR "Renner" OR "Assaí" OR '
+            '"vendas no varejo")'
+        ),
+        "termos": (
+            "varejo", "varejista", "varejistas", "magazine luiza", "magalu", "renner", "assai",
+            "casas bahia", "c&a", "azzas", "e-commerce",
+        ),
         "empresas": ("MGLU3", "LREN3", "ASAI3", "AZZA3", "CEAB3"),
         "importa": ("O varejo depende da renda das famílias e do custo do crédito ao consumidor. Por "
                     "isso, as ações do setor tendem a reagir a mudanças nas expectativas de juros e "
@@ -98,8 +120,15 @@ CATALOGO = {
     },
     "ENERGIA ELÉTRICA": {
         "nome": "Energia elétrica",
-        "termos": ("energia", "eletrica", "eletricidade", "aneel", "hidreletrica", "transmissao",
-                   "distribuidora", "eletrobras", "axia", "cemig", "copel", "tarifa", "bandeira"),
+        "consulta": (
+            '("energia elétrica" OR "Aneel" OR "Eletrobras" OR "Axia" OR "Cemig" OR '
+            '"bandeira tarifária")'
+        ),
+        "termos": (
+            "energia eletrica", "eletricidade", "aneel", "hidreletrica", "hidreletricas",
+            "transmissao de energia", "distribuidora de energia", "distribuidoras", "eletrobras",
+            "axia", "cemig", "copel", "equatorial", "engie", "bandeira tarifaria", "conta de luz",
+        ),
         "empresas": ("AXIA3", "EQTL3", "CMIG4", "CPLE3", "EGIE3"),
         "importa": ("Empresas de energia têm receita regulada e previsível. Por isso, chuvas, decisões "
                     "da Aneel e o nível dos juros, que muda o valor presente dessas receitas, pesam "
@@ -110,7 +139,8 @@ CATALOGO = {
     },
     "SANEAMENTO": {
         "nome": "Saneamento",
-        "termos": ("saneamento", "sabesp", "copasa", "sanepar", "esgoto", "agua"),
+        "consulta": '("saneamento" OR "Sabesp" OR "Copasa" OR "Sanepar")',
+        "termos": ('saneamento', 'sabesp', 'copasa', 'sanepar', 'esgoto'),
         "empresas": ("SBSP3", "CSMG3", "SAPR11"),
         "importa": ("Saneamento é um setor regulado e intensivo em investimento. O marco legal e as "
                     "privatizações estaduais mudam o horizonte de crescimento, e os juros afetam o "
@@ -121,8 +151,12 @@ CATALOGO = {
     },
     "AGRO & ALIMENTOS": {
         "nome": "Agronegócio e alimentos",
-        "termos": ("agro", "agronegocio", "agricola", "safra", "soja", "milho", "carne", "frigorifico",
-                   "frigorificos", "acucar", "etanol", "fertilizante", "fertilizantes", "jbs", "brf"),
+        "consulta": '("agronegócio" OR "safra" OR "soja" OR "frigoríficos" OR "JBS" OR "BRF")',
+        "termos": (
+            "agronegocio", "agricola", "safra", "soja", "milho", "frigorifico", "frigorificos",
+            "acucar", "etanol", "fertilizante", "fertilizantes", "jbs", "brf", "marfrig", "minerva",
+            "sao martinho", "slc",
+        ),
         "empresas": ("JBSS32", "MBRF3", "SMTO3", "BEEF3", "SLCE3"),
         "importa": ("O agronegócio é exportador e sensível ao câmbio, ao clima e à demanda externa, em "
                     "especial da China. Preços de grãos e de proteínas afetam tanto as empresas quanto "
@@ -133,8 +167,15 @@ CATALOGO = {
     },
     "IMOBILIÁRIO": {
         "nome": "Construção e imobiliário",
-        "termos": ("imobiliario", "imobiliaria", "imoveis", "imovel", "construtora", "construtoras",
-                   "incorporadora", "incorporadoras", "habitacao", "lancamentos", "mrv", "cyrela"),
+        "consulta": (
+            '("construtoras" OR "incorporadoras" OR "mercado imobiliário" OR '
+            '"Minha Casa, Minha Vida" OR "MRV" OR "Cyrela")'
+        ),
+        "termos": (
+            "imobiliario", "imobiliaria", "imobiliarios", "imoveis", "construtora", "construtoras",
+            "incorporadora", "incorporadoras", "minha casa", "mrv", "cyrela", "cury", "direcional",
+            "eztec", ),
+        "nomes": ("Tenda",),
         "empresas": ("CYRE3", "MRVE3", "CURY3", "DIRR3", "EZTC3"),
         "importa": ("Construtoras dependem do custo e da oferta de financiamento imobiliário. Juros "
                     "mais altos encarecem a compra do imóvel e o capital das empresas, e programas "
@@ -145,8 +186,15 @@ CATALOGO = {
     },
     "SAÚDE": {
         "nome": "Saúde",
-        "termos": ("saude", "hospital", "hospitais", "plano", "planos", "farmaceutica", "farmacia",
-                   "laboratorio", "medicamento", "medicamentos", "ans", "hapvida", "rede d'or"),
+        "consulta": (
+            '("planos de saúde" OR "ANS" OR "Rede D\'Or" OR "Hapvida" OR "farmacêuticas" OR '
+            '"Raia Drogasil")'
+        ),
+        "termos": (
+            "plano de saude", "planos de saude", "operadora de saude", "operadoras de saude", "ans",
+            "rede d'or", "hapvida", "fleury", "hypera", "raia drogasil", "dasa", "farmaceutica",
+            "farmaceuticas", "hospitalar",
+        ),
         "empresas": ("RDOR3", "HAPV3", "RADL3", "FLRY3", "HYPE3"),
         "importa": ("O setor de saúde combina demanda estável com custos que sobem acima da inflação. "
                     "Reajustes autorizados pela ANS e o uso dos planos definem a margem das "
@@ -157,8 +205,12 @@ CATALOGO = {
     },
     "TECNOLOGIA & TELECOM": {
         "nome": "Tecnologia e telecom",
-        "termos": ("tecnologia", "telecom", "telecomunicacoes", "telefonia", "software", "5g", "vivo",
-                   "tim", "totvs", "anatel", "internet"),
+        "consulta": '("telecom" OR "Anatel" OR "operadoras" OR "Vivo" OR "TIM" OR "Totvs")',
+        "termos": (
+            "telecom", "telecomunicacoes", "telefonia", "operadora", "operadoras", "5g", "anatel",
+            "software", "totvs", "locaweb", "positivo",
+        ),
+        "nomes": ("Vivo", "TIM"),
         "empresas": ("VIVT3", "TIMS3", "TOTS3", "LWSA3"),
         "importa": ("Teles têm receita recorrente e investimento pesado em rede. Empresas de software "
                     "dependem do crescimento da base de clientes, e por isso costumam ser sensíveis "
@@ -169,9 +221,16 @@ CATALOGO = {
     },
     "TRANSPORTE & LOGÍSTICA": {
         "nome": "Transporte e logística",
-        "termos": ("transporte", "logistica", "aviacao", "aerea", "aereas", "rodovia", "rodovias",
-                   "ferrovia", "ferrovias", "porto", "portos", "aeroporto", "concessao", "rumo",
-                   "azul", "gol", "frete"),
+        "consulta": (
+            '("logística" OR "Rumo" OR "concessão de rodovias" OR "ferrovias" OR "aéreas" OR '
+            '"Azul" OR "Gol")'
+        ),
+        "termos": (
+            "logistica", "aviacao", "aereas", "companhias aereas", "rodovia", "rodovias",
+            "ferrovia", "ferrovias", "porto", "portos", "aeroporto", "aeroportos", "concessao",
+            "concessoes", "frete", "motiva", "ecorodovias", "localiza",
+        ),
+        "nomes": ("Azul", "Gol", "Rumo"),
         "empresas": ("RAIL3", "MOTV3", "ECOR3", "VAMO3", "RENT3"),
         "importa": ("Transporte é sensível ao preço do combustível, ao volume da economia e, no caso "
                     "das concessões, às regras contratuais e aos juros, que pesam em empresas muito "
@@ -241,13 +300,65 @@ def historico_planos(ate, dias=10, catalogo=None, n=QTD_SETORES):
 # Evidência
 # ------------------------------------------------------------------
 
+# Contexto de mercado exigido no PRÓPRIO título, além do termo do setor.
+# Achado do exemplo real de 18/10/2026: só com palavra-chave entraram
+# "Tecnologia detecta mais de 80 tiros em Niterói" (Tecnologia), "Papa
+# Leão 14 reza o Angelus após deixar hospital" (Saúde) e um edital social
+# do Banco do Brasil (Bancos) - citam o setor, mas não são notícia dele.
+CONTEXTO_MERCADO = (
+    "acoes", "acao", "bolsa", "bolsas", "ibovespa", "b3", "lucro", "lucros", "prejuizo", "receita", "receitas",
+    "balanco", "balancos", "resultado", "resultados", "trimestre", "dividendos", "jcp", "mercado", "investimento",
+    "investimentos", "investidores", "credito", "juros", "selic", "preco", "precos", "tarifa", "tarifas",
+    "tarifaria", "reajuste", "reajustes", "leilao", "leiloes", "concessao", "concessoes", "producao", "demanda",
+    "exportacao", "exportacoes", "importacao", "importacoes", "vendas", "faturamento", "margem", "margens",
+    "divida", "dividas", "debentures", "ipo", "aquisicao", "aquisicoes", "fusao", "privatizacao", "regulacao",
+    "anatel", "aneel", "ans", "anp", "cvm", "cade", "valor de mercado", "recorde", "bilhao", "bilhoes",
+    "safra", "cotacao", "barril", "inadimplencia", "spread", "provisao", "provisoes", "operacional", "guidance", "rebaixa", "eleva",
+    "recomendacao", "rating", "oferta", "estoques", "custos", "inflacao", "%",
+)
+
+
+def _tem_termo(texto, termos):
+    for termo in termos:
+        t = _sem_acento(termo)
+        if t == "%":
+            if "%" in texto:
+                return True
+        elif re.search(rf"(?<![a-z0-9]){re.escape(t)}(?![a-z0-9])", texto):
+            return True
+    return False
+
+
+def _tem_nome(titulo, nomes):
+    """Nomes de empresa que também são palavras comuns ("Vale", "Gol",
+    "TIM", "Azul", "Rumo") - comparados com maiúscula, no título original;
+    "Vale a pena" não conta."""
+    for nome in nomes:
+        if re.search(rf"(?<![\w-]){re.escape(nome)}(?![\w-])(?! a pena)", str(titulo or "")):
+            return True
+    return False
+
+
+_TICKER_ACAO = re.compile(r"\b[A-Z]{4}(?:3|4|5|6|11|32|33|34)\b")
+
+
+def _tickers_do_titulo(titulo):
+    """Só tickers de AÇÃO escritos no próprio título - não os tickers do
+    grupo inteiro de notícias (no exemplo real, uma manchete sobre o plano
+    fiscal de um candidato herdou PETR4/VALE3/WINZ26 dos outros títulos do
+    grupo e caiu em Petróleo)."""
+    return sorted(set(_TICKER_ACAO.findall(str(titulo or ""))))
+
+
 def _menciona_setor(titulo, setor, tickers=()):
+    """O título cita o setor (termo forte do catálogo, palavra inteira, ou
+    ticker do setor escrito no título) E tem contexto de mercado.
+    `tickers` é ignorado de propósito - ver _tickers_do_titulo."""
     cfg = CATALOGO[setor]
     texto = _sem_acento(titulo)
-    if any(re.search(rf"(?<![a-z0-9]){re.escape(_sem_acento(t))}(?![a-z0-9])", texto) for t in cfg["termos"]):
-        return True
-    citados = set(tickers or ()) | set(re.findall(r"\b[A-Z]{4}\d{1,2}\b", str(titulo or "")))
-    return bool(citados & set(cfg["empresas"]))
+    cita = (_tem_termo(texto, cfg["termos"]) or _tem_nome(titulo, cfg.get("nomes", ()))
+            or bool(set(_tickers_do_titulo(titulo)) & set(cfg["empresas"])))
+    return cita and _tem_termo(texto, CONTEXTO_MERCADO)
 
 
 def validar_fonte(item, inicio, agora):
@@ -282,7 +393,7 @@ def _fonte(item):
         momento = momento.replace(tzinfo=TZ_SP)
     return {"titulo": str(item["titulo"]).strip(), "veiculo": str(veiculos[0]).strip(),
             "data": momento.astimezone(TZ_SP), "link": str(item["link"]),
-            "tickers": list(item.get("tickers") or []), "importancia": item.get("importancia") or 0}
+            "tickers": _tickers_do_titulo(item["titulo"]), "importancia": item.get("importancia") or 0}
 
 
 def evidencias_do_setor(setor, itens, inicio, agora, confiavel=None, mesmo_fato=None, fora_de_pauta=None):
@@ -304,6 +415,8 @@ def evidencias_do_setor(setor, itens, inicio, agora, confiavel=None, mesmo_fato=
         if any(mesmo_fato(fonte, f) for f in candidatos):
             continue
         candidatos.append(fonte)
+    # veículos da lista de confiáveis primeiro, depois importância
+    candidatos.sort(key=lambda f: (not confiavel(f["veiculo"]), -f["importancia"]))
     veiculos = {f["veiculo"] for f in candidatos}
     if len(candidatos) < MIN_FONTES or len(veiculos) < MIN_FONTES:
         return candidatos, (f"evidência insuficiente: {len(candidatos)} notícia(s) válida(s) de "
@@ -344,8 +457,7 @@ def redigir_bloco(setor, fontes):
     PALAVRAS_MIN e PALAVRAS_MAX palavras ajustando quantas manchetes entram
     (nunca acrescenta texto que não seja da fonte ou do catálogo)."""
     cfg = CATALOGO[setor]
-    citadas = sorted({t for f in fontes for t in f["tickers"]}
-                     | {t for f in fontes for t in re.findall(r"\b[A-Z]{4}\d{1,2}\b", f["titulo"])})
+    citadas = sorted({t for f in fontes for t in _tickers_do_titulo(f["titulo"])})
     do_setor = [t for t in cfg["empresas"] if t not in citadas]
     partes_empresas = []
     if citadas:

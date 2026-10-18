@@ -232,7 +232,7 @@ NOTICIAS_SETOR_AMOSTRA = {
         _noticia_setor("PRIO conclui aquisição de fatia em campo na Bacia de Campos", "Money Times", 40, 60, ["PRIO3"]),
     ],
     "IMOBILIÁRIO": [
-        _noticia_setor("Construtoras de baixa renda aceleram lançamentos com novas faixas do programa habitacional", "Estadão", 22, 70),
+        _noticia_setor("Construtoras de baixa renda aceleram lançamentos e vendas com novas faixas do Minha Casa, Minha Vida", "Estadão", 22, 70),
         _noticia_setor("Cury e Direcional lideram vendas de imóveis no trimestre", "Valor Econômico", 26, 65, ["CURY3", "DIRR3"]),
     ],
     "BANCOS": [

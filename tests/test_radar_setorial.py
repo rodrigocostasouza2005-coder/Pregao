@@ -112,10 +112,36 @@ def test_sem_veiculo_confiavel_e_excluido():
 def test_classificacao_estrita_por_palavra_inteira():
     """O classificador do app casa por substring ('gas' em 'gastos'); o
     radar exige a palavra inteira ou o ticker do setor."""
-    assert not rs._menciona_setor("Governo corta gastos e acordo fiscal avança", "PETRÓLEO & GÁS")
-    assert not rs._menciona_setor("Governo fecha acordo com estados", "MINERAÇÃO & SIDERURGIA")
+    assert not rs._menciona_setor("Governo corta gastos e acordo fiscal avança no mercado", "PETRÓLEO & GÁS")
+    assert not rs._menciona_setor("Governo fecha acordo com estados sobre dívida", "MINERAÇÃO & SIDERURGIA")
     assert rs._menciona_setor("Preço do aço sobe na China", "MINERAÇÃO & SIDERURGIA")
     assert rs._menciona_setor("Ações sobem com resultado de PRIO3", "PETRÓLEO & GÁS")
+
+
+def test_citar_o_setor_sem_contexto_de_mercado_nao_basta():
+    """Casos reais do exemplo de 18/10/2026 que entraram só por palavra-chave."""
+    assert not rs._menciona_setor("Tecnologia detecta mais de 80 tiros em Niterói e auxilia ação policial",
+                                  "TECNOLOGIA & TELECOM")
+    assert not rs._menciona_setor("Papa Leão 14 reza o Angelus após deixar hospital e agradece orações", "SAÚDE")
+    assert not rs._menciona_setor("Edital Mãos Dadas, do Banco do Brasil, tem inscrições abertas para projetos "
+                                  "de impacto social", "BANCOS")
+    assert not rs._menciona_setor("Plano econômico de Flávio pode garantir equilíbrio fiscal", "PETRÓLEO & GÁS",
+                                  tickers=["PETR4", "VALE3"])
+    assert rs._menciona_setor("Petrobras supera R$ 800 bilhões e lidera ranking das maiores empresas",
+                              "PETRÓLEO & GÁS")
+    assert rs._menciona_setor("CNI: indústria depende mais de bancos tradicionais para obter crédito", "BANCOS")
+
+
+def test_nome_de_empresa_ambiguo_exige_maiuscula():
+    assert rs._menciona_setor("Vale eleva produção de minério no trimestre", "MINERAÇÃO & SIDERURGIA")
+    assert not rs._menciona_setor("Tesouro Selic ou CDB: onde vale a pena investir?", "MINERAÇÃO & SIDERURGIA")
+    assert not rs._menciona_setor("Vale a pena investir em CDB com a Selic alta?", "MINERAÇÃO & SIDERURGIA")
+    assert rs._menciona_setor("Gol e Azul reajustam preços de passagens", "TRANSPORTE & LOGÍSTICA")
+    assert not rs._menciona_setor("TIMES do Brasil mantêm vendas", "TECNOLOGIA & TELECOM")
+
+
+def test_empresas_citadas_so_tickers_de_acao_escritos_no_titulo():
+    assert rs._tickers_do_titulo("Mini-índice WINZ26 e PETR4 sobem; VALE3 cai") == ["PETR4", "VALE3"]
 
 
 def test_noticia_fora_da_janela_ou_sem_link_nao_conta_como_evidencia():
@@ -154,7 +180,8 @@ def test_nenhum_numero_que_nao_esteja_na_fonte():
         for fato in bloco["o_que_aconteceu"]:
             for numero in re.findall(r"\d+(?:[.,/]\d+)*", fato):
                 assert numero in origem, (numero, fato)
-        tickers_validos = set(rs.CATALOGO[bloco["setor"]]["empresas"]) | {t for f in bloco["fontes"] for t in f["tickers"]}
+        tickers_validos = set(rs.CATALOGO[bloco["setor"]]["empresas"]) | {
+            t for f in bloco["fontes"] for t in rs._tickers_do_titulo(f["titulo"])}
         assert set(re.findall(r"\b[A-Z]{4}\d{1,2}\b", bloco["empresas"])) <= tickers_validos
 
 
@@ -182,8 +209,8 @@ def test_setor_sem_evidencia_e_substituido_pelo_proximo_da_ordem():
     noticias.pop("ENERGIA ELÉTRICA")  # o substituto recebe as notícias genéricas abaixo
     ordem = rs.plano_do_dia(AGORA.date())
     radar = rs.montar_radar(AGORA, buscar=lambda s: noticias.get(s, []) or [
-        _noticia(f"{rs.CATALOGO[s]['termos'][0]} em foco", "Valor Econômico"),
-        _noticia(f"{rs.CATALOGO[s]['termos'][0]} segue no radar", "Folha")], inicio=INICIO)
+        _noticia(f"{rs.CATALOGO[s]['termos'][0]}: ações sobem após resultado", "Valor Econômico"),
+        _noticia(f"{rs.CATALOGO[s]['termos'][0]}: receita cresce no trimestre", "Folha")], inicio=INICIO)
     nomes = [b["setor"] for b in radar["setores"]]
     assert "BANCOS" not in nomes and len(nomes) == 4
     assert nomes[3] == ordem[4]
