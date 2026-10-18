@@ -318,6 +318,13 @@ Os resumos só entram no Morning Call se uma execução dos coletores rodar **an
 
 O `schedule` do GitHub Actions é "best effort": sob carga, o GitHub atrasa ou **descarta** disparos. Medido em 2026-10-18: entre 14 e 17/10, de ~220 disparos esperados (Radar a cada 15 min + Coletores a cada 30 min + Morning Call), só 23 aconteceram — e nenhum na sexta 17/10 (o Morning Call das 08h não saiu). Os workflows já usam minutos quebrados e disparos de reserva para reduzir a perda, mas a única forma confiável é um agendador externo chamando o `workflow_dispatch`.
 
+Diagnóstico das execuções de 14 a 17/10/2026 (verificado no histórico do Actions):
+
+- **Atraso, não só descarte:** o Morning Call agendado para 10h UTC (07h de Brasília, horário da época) só foi entregue pelo GitHub às 14h39 UTC de 15/10 e às 14h31 UTC de 16/10 — cerca de 4h30 depois. O Radar (a cada 15 min) teve 3 a 4 execuções por dia, também atrasadas. Em 17/10 (sexta) nenhum disparo agendado de nenhum workflow aconteceu.
+- **As duas execuções que chegaram falharam por configuração de e-mail** (`EMAIL_FROM e EMAIL_TO precisam estar configurados`), já corrigida em 17/10 (envio por assinante opt-in + Brevo). Os envios de teste de 18/10, com os mesmos secrets, saíram com `ok=True`.
+- **Hoje:** o Morning Call está em `3 11 * * 1-5` (08h03 de Brasília) com reservas às 08h17, 08h38 e 09h07. Não há proteção de horário: um disparo atrasado envia na hora em que chegar (o primeiro que rodar envia; os seguintes só confirmam "já enviado").
+- **Sem e-mail duplicado:** as execuções do Morning Call rodam em série (`concurrency: pregao-morning-call`) e cada uma pula quem já tem registro `ENVIADO` no dia em `morning_call_execucoes`. Um disparo externo extra (abaixo) cai nessa mesma checagem. Exceção documentada no código: se a consulta a essa tabela falhar, o envio segue (prefere-se um duplicado raro a nenhum e-mail).
+
 Passo a passo (gratuito, ~10 min):
 
 1. **Token do GitHub (só para este repositório):** GitHub → Settings (do seu perfil) → Developer settings → Personal access tokens → **Fine-grained tokens** → *Generate new token*. Em *Repository access*, escolha **Only select repositories → Pregao**. Em *Permissions → Repository permissions*, deixe **Actions: Read and write** (nada mais). Validade: 1 ano. Copie o token (ele só aparece uma vez).

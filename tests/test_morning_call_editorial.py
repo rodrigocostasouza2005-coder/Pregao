@@ -501,3 +501,25 @@ def test_cdi_nao_tem_plano_b_e_continua_indisponivel():
                      ultima_coleta_valida=lambda _c: None):
         linha = next(l for l in ed._macro_rows() if l["indicador"] == "CDI")
     assert linha["valor"] is None
+
+
+def test_resumo_cacheado_chega_tambem_na_editoria_mundo():
+    """O PDF publica o RESUMO cacheado de matérias internacionais (pool
+    INT separado) - mesma regra do pool Brasil, sem chamar IA."""
+    mundo = {"titulo": "Fed holds rates", "link": "https://int/1", "regiao": "INT", "tickers": [],
+             "importancia": 9, "veiculos": ["Reuters"], "fontes": [], "data": "2026-10-18T20:00:00-03:00"}
+    pronto = {"resumo": "RESUMO:\nO Fed manteve os juros.\n\nLEITURA DE MERCADO:\nOpinião do modelo."}
+    with _MultiPatch(**_pools([mundo]), obter_resumos_prontos=lambda grupos: {"https://int/1": pronto}):
+        edicao = ed.montar_edicao(datetime(2026, 10, 19, 7, tzinfo=TZ_SP))
+    item = edicao["exterior"]["noticias"][0]
+    assert item["corpo"] == ["O Fed manteve os juros."]
+    assert "Opinião" not in " ".join(item["corpo"])
+
+
+def test_sem_resumo_cacheado_mundo_sai_so_com_manchete_e_fonte():
+    mundo = {"titulo": "Fed holds rates", "link": "https://int/1", "regiao": "INT", "tickers": [],
+             "importancia": 9, "veiculos": ["Reuters"], "fontes": [], "data": "2026-10-18T20:00:00-03:00"}
+    with _MultiPatch(**_pools([mundo]), obter_resumos_prontos=lambda grupos: {}):
+        edicao = ed.montar_edicao(datetime(2026, 10, 19, 7, tzinfo=TZ_SP))
+    item = edicao["exterior"]["noticias"][0]
+    assert item["corpo"] == [] and item["veiculo"] == "Reuters" and item["link"] == "https://int/1"
