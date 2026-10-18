@@ -6305,3 +6305,18 @@ Validado com **execução real, sem mock**, nesta sessão: `obter_relatorios()` 
 2. XP: mesma pendência de sempre - contato `bloqueio-cdn@xpi.com.br`, só o Rodrigo pode abrir.
 3. Genial Analisa: nenhum canal de contato conhecido (confirmado de novo nesta sessão).
 4. Verificar o PR #52 (agora com o coletor do BTG incluído) e decidir sobre o merge.
+
+## 2026-10-18 — Retomada: quadro real, agendamentos, contagem de NEWS e revisão do Radar
+
+Estado verificado no GitHub (não no resumo histórico): PRs #51–#55 já integrados em `main` (`093e79b`); nenhuma outra sessão cloud ativa; PR #37 (runner self-hosted) **fechado** — premissa refutada pelo registro de 16/10 (Genial/XP bloqueiam também a rede residencial) e Radar já funcional na nuvem via Safra.
+
+**Achados com evidência e o que foi feito:**
+1. **Agendamentos do GitHub descartados (crítico)** — via API de Actions (`event=schedule`): de ~220 disparos esperados entre 14 e 17/10 (Radar */15, Coletores */30, Morning Call 08h), só 23 aconteceram; **zero na sexta 17/10** (Morning Call não saiu, Radar não monitorou). Workflows `active`. PR **#56** (integrado): crons em minutos quebrados, 3 disparos de reserva do Morning Call (idempotente), `if:` por lista, concurrency por job (grupo único cancelava pendentes), testes. MANUAL.md: disparo externo via cron-job.org — **única solução confiável, depende do Rodrigo**.
+2. **NEWS: contagem enganosa** — run 39088619143: 25 grupos "sem resumo: GROQ_API_KEY não configurada" e log "25 gerado(s), 0 falha(s)". PR **#57** (integrado): sem chave não baixa nada; `gerados` só conta resumo real (`indisponiveis` separado); SAÚDE DOS DADOS mostra o erro. **Causa raiz externa: secret `GROQ_API_KEY` ausente no GitHub Actions.**
+3. **BTG** — mesma run: `26 itens em 3.9s (salvou=True)` → coleta + persistência reais em produção confirmadas (visibilidade no app não verificada daqui).
+4. **Radar de Quedas** — PR **#58** (integrado): seção própria com COBERTURA / MONITORADOS AGORA / ALERTAS REGISTRADOS; pregão do alerta = data do último pregão no Yahoo (causa raiz da duplicação em feriado); alertas filtrados por período no banco; formato BR, sem emoji, mobile sem rolagem lateral. Antes/depois em `docs/evidencias/radar-20261018/` (dados de exemplo).
+5. **Morning Call PDF** — prévia gerada com `_edicao_completa` (fixture dos testes): capa = cabeçalho + 2 cards + lista, ~70% em branco, sem manchete/hierarquia editorial. Confirma a avaliação do Rodrigo; redesenho é a próxima frente (não iniciado).
+
+**Não verificável desta sessão**: Supabase/Yahoo/pregao.streamlit.app inacessíveis pela rede do ambiente — validação visual com dado real e o efeito de `obter_data_ultimo_pregao` contra o Yahoo ficam para o próximo pregão.
+
+**Pendências que só o Rodrigo resolve**: (a) cadastrar `GROQ_API_KEY` em Settings → Secrets and variables → Actions; (b) configurar o disparo externo (MANUAL.md, "Disparo externo dos agendamentos"); (c) XP: e-mail para bloqueio-cdn@xpi.com.br com o Reference ID mais recente (`0.911c1602.1792288998.7c275aac`, run 39088619143).
