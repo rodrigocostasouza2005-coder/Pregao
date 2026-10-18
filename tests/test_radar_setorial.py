@@ -184,6 +184,16 @@ def test_edital_publicado_nao_conta_como_noticia():
     assert [f["veiculo"] for f in fontes] == ["Valor Econômico"] and motivo
 
 
+def test_titulo_com_token_aleatorio_e_descartado():
+    """Caso real de 18/10/2026 (página de spam indexada como notícia)."""
+    itens = [_noticia("Saúde Suplementar E Regras Da ANS Andrew Mccutchen (YBLynHtzMt)", "Gov"),
+             _noticia("Hapvida sobe 40% em duas semanas", "Estadão")]
+    fontes, _m = rs.evidencias_do_setor("SAÚDE", itens, INICIO, AGORA)
+    assert [f["veiculo"] for f in fontes] == ["Estadão"]
+    assert not rs._TOKEN_ALEATORIO.search("Lucro do Itaú (ITUB4) sobe")
+    assert not rs._TOKEN_ALEATORIO.search("Resultado do 3T26 (BRL) e guidance")
+
+
 def test_duplicata_do_mesmo_fato_conta_uma_vez():
     itens = [_noticia("Bancos ampliam crédito", "Valor Econômico"), _noticia("Bancos ampliam crédito", "Folha")]
     fontes, motivo = rs.evidencias_do_setor("BANCOS", itens, INICIO, AGORA)
