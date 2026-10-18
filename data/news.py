@@ -589,14 +589,22 @@ def _mesmo_numero_mesmo_assunto(g: dict, item: dict) -> bool:
     pcts_item = item.get("_pcts")
     if pcts_item is None:
         pcts_item = _percentuais(item["titulo"])
-    if not pcts_item or not (pcts_item & g.get("_pcts", set())):
+    if not pcts_item:
         return False
     conteudo_item = item["_tokens_sim"] - _TOKENS_MOVIMENTO
-    if not any(conteudo_item & (t - _TOKENS_MOVIMENTO) for t in g["_tokens_sim_todos"]):
-        return False
     d_item = _direcao_mercado(item["titulo"])
-    d_grupo = _direcao_mercado(g["titulo"])
-    return not (d_item and d_grupo and d_item != d_grupo)
+    # compara com CADA título do grupo (não com a união do grupo): senão um
+    # grupo grande acumula percentuais e palavras e passa a atrair tudo
+    for titulo, tokens in zip(g["titulos"], g["_tokens_sim_todos"]):
+        if not (pcts_item & _percentuais(titulo)):
+            continue
+        if not (conteudo_item & (tokens - _TOKENS_MOVIMENTO)):
+            continue
+        d_titulo = _direcao_mercado(titulo)
+        if d_item and d_titulo and d_item != d_titulo:
+            continue
+        return True
+    return False
 
 
 def _mesmo_grupo(g: dict, item: dict, entidades_item: set) -> bool:
@@ -625,12 +633,15 @@ def _mesmo_grupo(g: dict, item: dict, entidades_item: set) -> bool:
     if horas_diff <= _JANELA_HORAS_ENTIDADE and _mesmo_numero_mesmo_assunto(g, item):
         return True
 
-    # termos de movimento ("fecha", "alta", "sobe"...) ficam fora da
-    # comparação: sem isso "Ibovespa fecha em alta" e "Dólar fecha em
-    # alta" davam 2/3 de sobreposição e viravam o mesmo fato
+    # a similaridade continua sobre todos os tokens, mas exige ao menos uma
+    # palavra de CONTEÚDO em comum (fora termos de movimento como "fecha",
+    # "alta", "sobe"): "Ibovespa fecha em alta" e "Dólar fecha em alta"
+    # davam 2/3 de sobreposição só com "fecha"+"alta" e viravam o mesmo
+    # fato. Esta regra só pode SEPARAR grupos, nunca juntar novos.
     conteudo_item = item["_tokens_sim"] - _TOKENS_MOVIMENTO
-    if dias_diff <= _JANELA_DIAS_GRUPO and conteudo_item and any(
-        _similaridade(tokens - _TOKENS_MOVIMENTO, conteudo_item) >= _LIMIAR_SIMILARIDADE
+    if dias_diff <= _JANELA_DIAS_GRUPO and any(
+        _similaridade(tokens, item["_tokens_sim"]) >= _LIMIAR_SIMILARIDADE
+        and bool((tokens - _TOKENS_MOVIMENTO) & conteudo_item)
         for tokens in g["_tokens_sim_todos"]
     ):
         return True
@@ -657,7 +668,6 @@ def _agrupar(itens: list) -> list:
             grupo["ao_vivo"] = grupo["ao_vivo"] or item.get("ao_vivo", False)
             grupo["_tokens_sim_todos"].append(item["_tokens_sim"])
             grupo["_entidades"] |= entidades_item
-            grupo["_pcts"] |= item["_pcts"]
         else:
             grupos.append({
                 "titulo": item["titulo"],
@@ -669,7 +679,6 @@ def _agrupar(itens: list) -> list:
                 "ao_vivo": item.get("ao_vivo", False),
                 "_tokens_sim_todos": [item["_tokens_sim"]],
                 "_entidades": entidades_item,
-                "_pcts": set(item["_pcts"]),
                 "_data": item["data"],
             })
     return grupos
