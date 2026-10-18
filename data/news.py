@@ -1411,11 +1411,20 @@ _PADROES_IMAGEM_GENERICA = (
 
 
 def _imagem_parece_generica(url: str) -> bool:
-    """True se o CAMINHO da URL (sem acento/minusculo) bater com um
-    padrao conhecido de logo/favicon/placeholder - nunca mexe na query
-    string (irrelevante pro nome do arquivo em si)."""
-    caminho = _sem_acento(urlparse(url).path)
-    return any(p in caminho for p in _PADROES_IMAGEM_GENERICA)
+    """True se o CAMINHO ou o HOST da URL (sem acento/minusculo) bater
+    com um padrao conhecido de logo/favicon/placeholder - nunca mexe na
+    query string (irrelevante pro nome do arquivo em si).
+
+    achado real (auditoria 2026-10-18, backfill de producao - validacao
+    visual pos-escrita pegou o erro): um icone de simbolo de criptomoeda
+    do TradingView (`s3-symbol-logo.tradingview.com/crypto/XTVCBTC.svg`)
+    passou pelo filtro porque "logo" estava no HOST, nao no caminho - a
+    versao anterior desta funcao so' checava `urlparse(url).path`. Host
+    entra na mesma checagem de agora em diante (mesmos padroes, mesmo
+    heuristica - CDN com "logo"/"icon"/etc no proprio nome de dominio e'
+    tao forte quanto no caminho)."""
+    sem_acento_url = _sem_acento(urlparse(url).netloc + urlparse(url).path)
+    return any(p in sem_acento_url for p in _PADROES_IMAGEM_GENERICA)
 
 
 # dimensao minima aceita quando a PROPRIA pagina declara og:image:width/
@@ -1698,27 +1707,58 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
     # nesta auditoria: a mesma pagina embute os "relacionados" como
     # <article> aninhado DENTRO do <article> principal - sem essa
     # exclusao, uma materia SEM foto propria as vezes "roubaria" a foto
-    # de outra materia do bloco de relacionados) NEM tenha dimensao
+    # de outra materia do bloco de relacionados) NEM esteja dentro de um
+    # widget promocional/CTA (achado real, auditoria 2026-10-18 - o
+    # backfill de producao escreveu por engano o banner "Planilha de
+    # Gastos" do InfoMoney: a pagina embute um lead-magnet/newsletter
+    # dentro de um <div class="im-cta">...<img>...</div> SEM nenhum
+    # <article> aninhado - so' a exclusao de <article> nao bastava.
+    # Qualquer ancestral com classe batendo um desses marcadores conta
+    # como widget, nunca conteudo da materia) NEM tenha dimensao
     # declarada pequena demais (achado real, auditoria 2026-10-18: um
     # avatar de autor 40x40 - "width"/"height" no proprio <img>, nome de
     # arquivo "img-default-projeto...") apareceu ANTES de qualquer foto
     # de verdade dentro do bloco principal - mesmo limiar/mesma logica
     # ja usada acima pro og:image:width, so que lendo o atributo da
     # PROPRIA tag em vez de um <meta>.
+    _CLASSES_WIDGET_NAO_MATERIA = (
+        "cta", "anuncio", "ads", "publicidade", "newsletter", "promo",
+        "banner", "cadastro", "inscricao", "advertisement", "patrocinado",
+        "sponsor", "lead-magnet",
+    )
+    # achado real (auditoria 2026-10-18, mesmo backfill): quando a pagina
+    # TEM um <article> de verdade mas a varredura nele nao acha nenhuma
+    # foto valida (sem nenhum candidato, nao so' rejeitado pelos filtros
+    # acima), o loop ORIGINAL caia pro proximo seletor ("main") mesmo
+    # assim - "main" e' um escopo MUITO mais amplo (inclui cabecalho,
+    # selo de categoria, barra de navegacao...) que reintroduz
+    # exatamente o risco de widget/branding que o escopo de <article>
+    # existe pra evitar (caso real: InfoMoney tem <article> de verdade,
+    # SEM foto propria dentro dele - busca certa, resultado None -, mas
+    # o fallback pra "main" pegou o logo do produto "IM Trader" no
+    # cabecalho da pagina, ANTES do <article> comecar). "main"/
+    # "[itemprop=articleBody]" agora so' sao tentados quando o seletor
+    # ANTERIOR nao encontrou bloco NENHUM (pagina sem <article> de
+    # verdade) - nunca como escalada depois de uma busca legitima e
+    # vazia dentro do <article>.
     if not imagem:
         for seletor in ("article", "main", '[itemprop="articleBody"]'):
             bloco_principal = sopa.select_one(seletor)
             if not bloco_principal:
                 continue
             for img_tag in bloco_principal.find_all("img"):
-                dentro_de_aninhado = False
+                dentro_de_aninhado_ou_widget = False
                 pai = img_tag.parent
                 while pai is not None and pai is not bloco_principal:
                     if getattr(pai, "name", None) == "article":
-                        dentro_de_aninhado = True
+                        dentro_de_aninhado_ou_widget = True
+                        break
+                    classes_pai = _sem_acento(" ".join(pai.get("class") or []))
+                    if any(marca in classes_pai for marca in _CLASSES_WIDGET_NAO_MATERIA):
+                        dentro_de_aninhado_ou_widget = True
                         break
                     pai = pai.parent
-                if dentro_de_aninhado:
+                if dentro_de_aninhado_ou_widget:
                     continue
                 try:
                     largura_tag = int(str(img_tag.get("width")).strip())
@@ -1733,8 +1773,11 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
                 imagem = _candidata_imagem(candidata_bruta)
                 if imagem:
                     break
-            if imagem:
-                break
+            # bloco_principal foi encontrado (o seletor bateu) - para aqui
+            # sempre, mesmo sem achar imagem valida dentro dele; so' tenta
+            # o PROXIMO seletor (escopo mais amplo) quando o ATUAL nao
+            # bateu em NADA (ver achado real no comentario acima).
+            break
 
     # Segundo extrator menos restritivo: usa parágrafos de article/main,
     # remove navegação/rodapé e só aceita texto com tamanho mínimo. Não
