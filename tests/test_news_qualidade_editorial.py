@@ -168,6 +168,47 @@ def test_2k_extracao_aceita_imagem_com_dimensao_declarada_grande():
     _checar("2l foto editorial 1200x630 é aceita", imagem == "https://veiculo.com/img/foto-materia.jpg")
 
 
+def test_2k5_extracao_aceita_imagem_lazy_quando_nao_ha_og_image_nem_jsonld():
+    """achado real (auditoria 2026-10-17, bug "fotos não aparecem" -
+    guiadoinvestidor.com.br e sites no mesmo molde): página sem
+    og:image/twitter:image/JSON-LD nenhum, foto real só existe como
+    data-lazy-src (src vem com um placeholder data:image/svg vazio,
+    convenção comum de lazy-load). Último fallback precisa achar essa
+    foto dentro do <article> principal."""
+    html_lazy = (
+        '<html><body><article>'
+        '<img src="data:image/svg+xml,%3Csvg%3E%3C/svg%3E" '
+        'data-lazy-src="https://veiculo.com/uploads/2026/foto-real-da-materia.png" alt="Foto real">'
+        '</article></body></html>'
+    )
+    with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/materia-lazy"), \
+         patch.object(news_mod.requests, "get", return_value=_FakeResponseHtml(html_lazy)), \
+         patch.object(news_mod.trafilatura, "extract", return_value='{"text": "Texto bem longo o suficiente pra passar do limite minimo de extracao exigido pelo projeto todo."}'):
+        texto, imagem, _, _ = news_mod._extrair_texto_artigo("https://news.google.com/lazy1")
+    _checar("2k5a imagem lazy (data-lazy-src) é aceita quando não há sinal melhor",
+            imagem == "https://veiculo.com/uploads/2026/foto-real-da-materia.png")
+    _checar("2k5b texto ainda extraído normalmente", bool(texto))
+
+
+def test_2k6_extracao_nunca_rouba_imagem_de_article_aninhado():
+    """achado real (mesma auditoria): a página embute os "relacionados"
+    como <article> ANINHADO dentro do <article> principal - uma matéria
+    SEM foto própria (nenhuma <img> antes do bloco aninhado) nunca pode
+    "roubar" a foto de outra matéria do bloco de relacionados."""
+    html_aninhado = (
+        '<html><body><article>'
+        '<p>Texto da matéria principal, sem foto própria nenhuma.</p>'
+        '<article><img data-lazy-src="https://veiculo.com/uploads/foto-de-OUTRA-materia.png" alt="Relacionada"></article>'
+        '</article></body></html>'
+    )
+    with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/materia-aninhada"), \
+         patch.object(news_mod.requests, "get", return_value=_FakeResponseHtml(html_aninhado)), \
+         patch.object(news_mod.trafilatura, "extract", return_value='{"text": "Texto bem longo o suficiente pra passar do limite minimo de extracao exigido pelo projeto todo."}'):
+        texto, imagem, _, _ = news_mod._extrair_texto_artigo("https://news.google.com/lazy2")
+    _checar("2k6 imagem de <article> aninhado (relacionados) nunca é roubada pra matéria atual",
+            imagem is None)
+
+
 class _FakeResponseHtml:
     """Resposta fake de requests.get só com o necessário pra
     _extrair_texto_artigo: .raise_for_status(), .headers, .text, .url -

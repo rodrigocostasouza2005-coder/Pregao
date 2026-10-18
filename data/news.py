@@ -1608,6 +1608,45 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
     except Exception:
         pass
 
+    # Ultimo fallback: imagem lazy-loaded dentro do bloco de artigo
+    # principal (achado real, auditoria 2026-10-17 - rastreando o bug
+    # "fotos nao aparecem" ponta a ponta contra cache de producao:
+    # guiadoinvestidor.com.br e sites no mesmo molde nao declaram
+    # og:image/twitter:image nem JSON-LD NENHUM - a <img> real so existe
+    # com src=data:image/svg (placeholder de lazy-load) + a URL de
+    # verdade num atributo data-lazy-src/data-src, que os blocos acima
+    # (meta tags, JSON-LD, itemprop, trafilatura) nunca olham.
+    # So considera a PRIMEIRA <img> dentro do bloco principal que NAO
+    # esteja dentro de um <article> aninhado (achado real confirmado
+    # nesta auditoria: a mesma pagina embute os "relacionados" como
+    # <article> aninhado DENTRO do <article> principal - sem essa
+    # exclusao, uma materia SEM foto propria as vezes "roubaria" a foto
+    # de outra materia do bloco de relacionados).
+    if not imagem:
+        for seletor in ("article", "main", '[itemprop="articleBody"]'):
+            bloco_principal = sopa.select_one(seletor)
+            if not bloco_principal:
+                continue
+            for img_tag in bloco_principal.find_all("img"):
+                dentro_de_aninhado = False
+                pai = img_tag.parent
+                while pai is not None and pai is not bloco_principal:
+                    if getattr(pai, "name", None) == "article":
+                        dentro_de_aninhado = True
+                        break
+                    pai = pai.parent
+                if dentro_de_aninhado:
+                    continue
+                candidata_bruta = (
+                    img_tag.get("data-lazy-src") or img_tag.get("data-src")
+                    or img_tag.get("data-original") or img_tag.get("src")
+                )
+                imagem = _candidata_imagem(candidata_bruta)
+                if imagem:
+                    break
+            if imagem:
+                break
+
     # Segundo extrator menos restritivo: usa parágrafos de article/main,
     # remove navegação/rodapé e só aceita texto com tamanho mínimo. Não
     # contorna paywall nem tenta executar JavaScript.

@@ -288,6 +288,22 @@ deste sandbox, registrados aqui pra o Rodrigo confirmar em produção:
   **continua aberta** — ainda sem browser real disponível neste
   sandbox; o que mudou é que a causa mais provável já foi corrigida no
   código, em vez de só o fallback visual (`onerror`) estar certo.
+  **Atualização 2026-10-17 (2ª passada)**: desta vez havia rede real
+  disponível (sem browser ainda) - testei os 2 UAs de bot antigos
+  direto contra 4 CDNs reais (g1/glbimg, infomoney, moneytimes,
+  cnnbrasil): nenhum bloqueio por UA nos 4. Consulta read-only ao cache
+  de produção confirmou que 80% das linhas `origem=news` já tinham
+  imagem com o código ANTIGO (sem este fix) - **a hipótese de UA não é
+  a causa principal**, embora o fix em si seja inofensivo (mantido).
+  Causa real das 8 linhas sem imagem: 2 fontes específicas
+  (`guiadoinvestidor.com.br`, `euqueroinvestir.com`), sem relação com
+  UA - ver CHANGELOG.md "2ª passada" pro detalhe e o fallback de imagem
+  lazy-loaded adicionado em `_extrair_texto_artigo`. `euqueroinvestir.com`
+  (Next.js com HTML via streaming de RSC, sem `og:image` nem JSON-LD
+  real no HTML estático) é impedimento externo confirmado - exigiria
+  headless browser, fora de escopo. Pendência de confirmação visual
+  num browser real de verdade continua aberta (Chrome MCP não estava
+  conectado nesta sessão).
 - **Formato RESUMO/LEITURA DE MERCADO com o Groq real**: o prompt novo
   (`data/news.py:_PROMPT_SISTEMA_RESUMO`) só foi testado com mocks
   (`_chamar_groq` nunca foi chamado de verdade nesta sessão, sem

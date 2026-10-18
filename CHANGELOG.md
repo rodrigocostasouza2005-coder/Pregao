@@ -1,5 +1,61 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-17 (2ª passada) — correção da causa raiz real do bug de imagens dos cards
+
+Retomando a investigação abaixo (que já deixava em aberto "confirmar
+visualmente em produção que um CDN específico de fato libera a imagem"):
+validação real contra produção mostrou que a hipótese de User-Agent
+bloqueado **não é a causa principal**. Evidência:
+
+1. Testei diretamente 4 CDNs de imagem reais (g1/glbimg, infomoney,
+   moneytimes, cnnbrasil) com os 2 UAs de bot antigos e o UA de
+   navegador novo - as 3 variantes voltaram 200 OK com Content-Type de
+   imagem correto nos 4 casos. Nenhum bloqueio por UA.
+2. Consulta read-only ao cache `resumos_ia_cache` em produção (sem
+   alterar nada): das últimas 67 linhas `origem=news` concluídas, **54
+   (80%) já tinham imagem usando o código ATUAL (sem este fix)** - a
+   maioria das fontes nunca foi bloqueada por UA.
+3. Rastreei as 8 linhas restantes sem imagem (nunca "parcial") ponta a
+   ponta: 100% vinham de só 2 fontes (nenhuma por CDN bloqueando UA):
+   - `guiadoinvestidor.com.br`: às vezes a página simplesmente não tem
+     foto própria (nenhuma `<img>` antes do bloco de "relacionados");
+     quando tem, não declara `og:image`/`twitter:image`/JSON-LD nenhum
+     - a foto real só existe via lazy-load (`data-lazy-src`), que
+     nenhum dos 3 blocos de extração (meta tags, JSON-LD, itemprop)
+     olhava.
+   - `euqueroinvestir.com`: Next.js com HTML servido via streaming de
+     React Server Components - não existe `<meta og:image>` real nem
+     um `<script type="application/ld+json">` de fato no HTML estático
+     (o que parece JSON-LD é um blob serializado dentro de outro
+     script). **Impedimento externo confirmado** - exigiria executar
+     JS (headless browser) pra extrair; fora de escopo deste coletor.
+
+**`data/news.py`** — novo último fallback em `_extrair_texto_artigo`:
+quando nenhum og:image/twitter:image/JSON-LD/itemprop/trafilatura
+resolve, procura a primeira `<img>` dentro do bloco de artigo principal
+(`article`/`main`/`[itemprop="articleBody"]`) que NÃO esteja dentro de
+um `<article>` ANINHADO (achado real: a mesma página embute os
+"relacionados" como `<article>` aninhado dentro do principal - sem essa
+exclusão, uma matéria sem foto própria às vezes "roubaria" a foto de
+outra matéria do bloco de relacionados), usando `data-lazy-src`/
+`data-src`/`data-original`/`src` nessa ordem. Validado contra as 2
+matérias reais do `guiadoinvestidor.com.br` que estavam sem imagem no
+cache de produção - as 2 agora extraem a foto correta (confirmado por
+HTTP real, imagem carrega e é tematicamente coerente com a matéria).
+`euqueroinvestir.com` continua sem imagem (esperado - impedimento
+externo, não uma falha deste fallback).
+
+Testes novos: `tests/test_news_qualidade_editorial.py` (+2 casos) -
+imagem lazy aceita quando não há sinal melhor, e nunca "rouba" imagem
+de `<article>` aninhado.
+
+**Pendência que NÃO foi resolvida nesta passada**: as 8 linhas antigas
+no cache de produção (geradas antes deste fix) continuam com
+`imagem=None` pra sempre - `resumos_ia_cache` não tem TTL, só expira se
+o conjunto de fontes do grupo mudar. Backfill pontual autorizado
+separadamente (reprocessar só essas 8 chaves, nunca um bump de versão
+genérico que reprocessaria tudo à toa).
+
 ## 2026-10-17 — fix: imagens dos cards de NEWS (causa raiz: User-Agent de bot bloqueado pelo CDN)
 
 Bug reportado pelo Rodrigo ("imagens dos cards de notícias não exibem
