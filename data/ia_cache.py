@@ -139,7 +139,21 @@ def chave_research(link: str) -> str:
 # sido aceito sob a regra antiga (mais permissiva) mesmo sendo generico -
 # bump de versao forca reprocessamento 1x por grupo, mesmo motivo do bump
 # v1->v2 acima.
-_VERSAO_CHAVE_NEWS = "v3"
+#
+# v4 (2026-10-17, ABA 5 - auditoria do pipeline de noticias/IA): achado
+# real em producao - manchete "IBOVESPA fecha hoje com alta de 0,54%" com
+# RESUMO cacheado afirmando queda e atribuindo o movimento a pesquisas
+# eleitorais/Fed/petroleo sem base no texto/manchetes de origem. Nenhum
+# gate ate' aqui verificava contradicao de direcao/percentual entre
+# titulo e resumo, nem causalidade sem evidencia (ver
+# data/news.py:_validar_consistencia, novo gate aplicado nos 3 caminhos
+# de geracao). Resumo v3 ja' cacheado pode ter passado pelas regras
+# antigas (sem esse gate) mesmo sendo contraditorio - bump de versao forca
+# reprocessamento 1x por grupo, mesmo padrao do v1->v2 e v2->v3 acima.
+# Nenhuma linha e' apagada da tabela: o grupo so' deixa de bater na chave
+# antiga (nunca mais servida) e gera uma linha nova na proxima visita,
+# igual a qualquer mudanca no conjunto de fontes de um grupo.
+_VERSAO_CHAVE_NEWS = "v4"
 
 
 def chave_news(titulo: str, links: tuple) -> str:
