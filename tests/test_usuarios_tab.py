@@ -133,6 +133,34 @@ def test_csv_neutraliza_valor_que_parece_formula():
         assert not primeira_celula.startswith(("=", "+", "-", "@", "\t", "\r"))
 
 
+def test_csv_neutraliza_espaco_lider_antes_da_formula():
+    """Bypass real encontrado na revisão: email_valido() (data/user_prefs.py)
+    valida a string JÁ feita .strip(), mas quem chama (app.py) guarda o
+    valor ORIGINAL com o espaço líder intacto - " =1+1@x.com" passa
+    email_valido() normalmente e seria salvo exatamente assim. Sem
+    tratar o espaço líder, essa célula escaparia da mitigação."""
+    linhas = [
+        {
+            "email": " =1+1@x.com",
+            "created_at": None, "last_seen_at": None,
+            "status_inscricao": "inscrito", "ativo_7d": False, "ativo_30d": False,
+        },
+    ]
+    csv_texto = usuarios_tab._csv_bytes(linhas).decode("utf-8-sig")
+    assert "' =1+1@x.com" in csv_texto
+
+
+def test_csv_neutraliza_mais_menos_e_arroba_como_primeiro_caractere():
+    for prefixo_perigoso in ("+1+1@x.com", "-1-1@x.com", "@SUM(A1:A9)@x.com"):
+        linhas = [{
+            "email": prefixo_perigoso,
+            "created_at": None, "last_seen_at": None,
+            "status_inscricao": "inscrito", "ativo_7d": False, "ativo_30d": False,
+        }]
+        csv_texto = usuarios_tab._csv_bytes(linhas).decode("utf-8-sig")
+        assert f"'{prefixo_perigoso}" in csv_texto
+
+
 def test_csv_preserva_email_normal_sem_modificar():
     linhas = [
         {

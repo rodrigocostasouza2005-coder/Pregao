@@ -145,20 +145,31 @@ def _tabela_html(linhas: list[dict]) -> str:
     )
 
 
-_PREFIXOS_FORMULA_CSV = ("=", "+", "-", "@", "\t", "\r")
+_PREFIXOS_FORMULA_CSV = ("=", "+", "-", "@")
+_CONTROLE_LIDER_CSV = ("\t", "\r")
 
 
 def _celula_segura_csv(valor) -> str:
     """Neutraliza injeção de fórmula em CSV (Excel/LibreOffice/Google
-    Sheets executam uma célula que COMEÇA com =/+/-/@/tab/CR como
-    fórmula ao abrir o arquivo) - mitigação padrão OWASP: prefixa com
-    aspas simples, o que faz o programa tratar o conteúdo como texto
-    literal. Necessário aqui porque `email` pode vir do campo de texto
-    livre do banner de onboarding (ver app.py: usuário sem e-mail válido
-    do Google digita um à mão) - antes desta feature, `email` só vinha
-    do Google OAuth, nunca de texto digitado pelo próprio usuário."""
+    Sheets executam uma célula que COMEÇA com =/+/-/@ como fórmula ao
+    abrir o arquivo) - mitigação padrão OWASP: prefixa com aspas
+    simples, o que faz o programa tratar o conteúdo como texto literal.
+    Necessário aqui porque `email` pode vir do campo de texto livre do
+    banner de onboarding (ver app.py: usuário sem e-mail válido do
+    Google digita um à mão) - antes desta feature, `email` só vinha do
+    Google OAuth, nunca de texto digitado pelo próprio usuário.
+
+    `texto.lstrip()` ANTES de checar o prefixo de fórmula: email_valido()
+    (data/user_prefs.py) valida a string JÁ FEITA .strip() internamente,
+    mas devolve só um bool - quem chama (app.py) continua guardando o
+    valor ORIGINAL, com o espaço/controle líder intacto (" =1+1@x.com"
+    passa email_valido() e seria salvo exatamente assim). Sem o
+    `.lstrip()` aqui, esse espaço líder escondia o "=" do `.startswith`
+    e a célula escapava da mitigação - checar \t/\r à parte (antes do
+    lstrip) porque esses 2 também contam como líder perigoso por si só,
+    independente do que vier depois."""
     texto = str(valor)
-    if texto.startswith(_PREFIXOS_FORMULA_CSV):
+    if texto.startswith(_CONTROLE_LIDER_CSV) or texto.lstrip().startswith(_PREFIXOS_FORMULA_CSV):
         return "'" + texto
     return texto
 
