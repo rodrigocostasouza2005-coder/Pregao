@@ -203,7 +203,7 @@ def _linha_macro(indicador, valor, unidade, referencia, detalhe=None, erro=None)
             "referencia": referencia or "—", "detalhe": detalhe, "erro": erro}
 
 
-def _macro_rows(agora=None):
+def _macro_rows(agora=None, provedores=None):
     """Linhas da tabela macro do PDF, normalizadas.
 
     Causa dos defeitos da edição de 18/10/2026 (auditoria): (1) as linhas
@@ -216,6 +216,11 @@ def _macro_rows(agora=None):
     corrente e o seguinte, com a data do boletim; sem dado -> 'indisponível'
     com o motivo (nunca um valor estimado)."""
     agora = agora or datetime.now(TZ_SP)
+    provedores = provedores or {}
+    selic_fn = provedores.get("selic", obter_selic_meta)
+    cdi_fn = provedores.get("cdi", obter_cdi)
+    focus_ipca_fn = provedores.get("focus_ipca", obter_focus_ipca)
+    focus_selic_fn = provedores.get("focus_selic", obter_focus_selic)
     linhas = []
 
     def _serie(nome, fn, coluna, chave_motivo):
@@ -235,10 +240,10 @@ def _macro_rows(agora=None):
         motivo = motivo or motivo_indisponivel(chave_motivo) or "Banco Central (SGS) sem dado nesta execução"
         linhas.append(_linha_macro(nome, None, "% a.a.", None, erro=motivo))
 
-    _serie("Selic meta", obter_selic_meta, "selic_meta_pct", "selic")
-    _serie("CDI", obter_cdi, "cdi_anualizado_pct", "cdi")
+    _serie("Selic meta", selic_fn, "selic_meta_pct", "selic")
+    _serie("CDI", cdi_fn, "cdi_anualizado_pct", "cdi")
 
-    for nome, fn in (("Focus IPCA", obter_focus_ipca), ("Focus Selic", obter_focus_selic)):
+    for nome, fn in (("Focus IPCA", focus_ipca_fn), ("Focus Selic", focus_selic_fn)):
         try:
             dado = fn()
         except Exception:
