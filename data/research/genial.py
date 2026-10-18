@@ -83,6 +83,34 @@ _ORCAMENTO_TOTAL_S = 20
 # - mesmo padrao simples que o resto do projeto usa pra isso).
 _ultimo_motivo_falha = None
 
+# Marcador textual (achado real, auditoria 2026-10-18 - correcao do exit
+# code de coletor_local.py): so' aparece em _ultimo_motivo_falha quando o
+# ultimo erro bate EXATAMENTE com um dos 2 sintomas do WAF Akamai ja
+# documentados na docstring do modulo (timeout total sem nenhum byte
+# recebido, ou reset ativo de stream HTTP/2) - ver _eh_padrao_bloqueio_
+# conhecido(). Serve pra categoria_ultima_falha() decidir se essa falha
+# especifica pode deixar de derrubar o exit code (ja' e' um bloqueio
+# conhecido, nao uma regressao nova) - qualquer erro DIFERENTE desses 2
+# sintomas (ex: HTTP 500, erro de parsing) nao ganha esse marcador, fica
+# como falha generica/nao classificada de proposito.
+_MARCADOR_BLOQUEIO_WAF = "bloqueio de borda do WAF (Akamai)"
+
+
+def _eh_padrao_bloqueio_conhecido(erro: str) -> bool:
+    """So' reconhece os 2 sintomas REAIS ja documentados (ver docstring do
+    modulo, achados de 2026-09-23/24): timeout total sem nenhum byte de
+    resposta ('0 bytes received' - texto literal do curl pra essa
+    situacao, independente do codigo de erro exato na mensagem) ou reset
+    ativo de stream HTTP/2 pelo servidor ('stream ... reset by server').
+    Qualquer outro texto de erro (ex: HTTP 500, erro de parsing, DNS
+    mudou) devolve False de proposito - nao e' um bypass, e' so' nao
+    inventar que um erro desconhecido e' o mesmo bloqueio antigo."""
+    if not erro:
+        return False
+    timeout_sem_resposta = "0 bytes received" in erro
+    reset_http2 = "reset by server" in erro and "stream" in erro
+    return timeout_sem_resposta or reset_http2
+
 
 def motivo_ultima_falha() -> str | None:
     """Detalhe da ultima falha TOTAL de _tentar_buscar (todas as
@@ -90,6 +118,19 @@ def motivo_ultima_falha() -> str | None:
     chamada teve sucesso ou nenhuma chamada foi feita ainda nesta
     sessao do processo."""
     return _ultimo_motivo_falha
+
+
+def categoria_ultima_falha() -> str:
+    """Classifica a ultima falha pra decidir se ela sozinha pode deixar
+    de derrubar o exit code de coletor_local.py (ver data/research/
+    __init__.py:_classificar_falha e coletor_local.py:_falha_critica).
+    So' devolve 'bloqueio_externo_conhecido' quando o motivo da ultima
+    falha tem o marcador do padrao de WAF JA' documentado (ver
+    _eh_padrao_bloqueio_conhecido) - qualquer coisa diferente (sucesso,
+    motivo None, erro novo/desconhecido) devolve 'erro' de proposito,
+    pra nunca mascarar uma mudanca real de comportamento."""
+    motivo = _ultimo_motivo_falha or ""
+    return "bloqueio_externo_conhecido" if _MARCADOR_BLOQUEIO_WAF in motivo else "erro"
 
 
 def _tentar_buscar(url: str, orcamento_s: float = _ORCAMENTO_TOTAL_S):
@@ -105,6 +146,8 @@ def _tentar_buscar(url: str, orcamento_s: float = _ORCAMENTO_TOTAL_S):
         if time.monotonic() > limite:
             print("[genial] orçamento de tempo esgotado, parando tentativas")
             _ultimo_motivo_falha = f"orçamento de {orcamento_s:.0f}s esgotado antes de tentar todos os perfis; último erro: {ultimo_erro or 'nenhum'}"
+            if _eh_padrao_bloqueio_conhecido(ultimo_erro or ""):
+                _ultimo_motivo_falha += f" - {_MARCADOR_BLOQUEIO_WAF}"
             return None, None
         rotulo = f"impersonate={tentativa.get('impersonate')} http={tentativa.get('http_version', 'auto')}"
         try:
@@ -119,6 +162,8 @@ def _tentar_buscar(url: str, orcamento_s: float = _ORCAMENTO_TOTAL_S):
             ultimo_erro = f"{rotulo}: {type(e).__name__}: {e}"
             print(f"[genial] tentativa falhou ({rotulo}): {e}")
     _ultimo_motivo_falha = f"todas as {len(_TENTATIVAS)} tentativas falharam; última: {ultimo_erro or 'nenhum erro capturado'}"
+    if _eh_padrao_bloqueio_conhecido(ultimo_erro or ""):
+        _ultimo_motivo_falha += f" - {_MARCADOR_BLOQUEIO_WAF}"
     return None, None
 
 

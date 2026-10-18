@@ -569,6 +569,44 @@ def _extrair_entidades(titulo: str) -> set:
     return entidades
 
 
+# Verbos/termos de movimento que toda manchete de fechamento tem - não
+# servem pra dizer que duas manchetes falam do MESMO ativo.
+_TOKENS_MOVIMENTO = {
+    "alta", "altas", "queda", "quedas", "sobe", "sobem", "subiu", "cai", "caem", "caiu", "fecha", "fecham",
+    "fechou", "abre", "abrem", "avanca", "avancou", "recua", "recuou", "hoje", "dia", "sessao", "pregao",
+    "mercado", "mercados", "semana", "pontos", "mil", "valoriza", "desvaloriza", "ganho", "perda",
+}
+
+
+def _mesmo_numero_mesmo_assunto(g: dict, item: dict) -> bool:
+    """Regra 2b: mesmo percentual citado + ao menos uma palavra de conteúdo
+    em comum (fora termos de movimento) + direção não contraditória.
+    Caso real (Morning Call de 18/10/2026): "IBOVESPA fecha hoje com alta
+    de 0,54%" e "Ibovespa sobe 0,54% com apoio de ações do petróleo..."
+    ficaram em grupos separados - "ibovespa" está em _ENTIDADE_IGNORAR
+    (termo de mercado), e a similaridade de tokens ficava abaixo do
+    limiar porque um título é bem mais longo que o outro."""
+    pcts_item = item.get("_pcts")
+    if pcts_item is None:
+        pcts_item = _percentuais(item["titulo"])
+    if not pcts_item:
+        return False
+    conteudo_item = item["_tokens_sim"] - _TOKENS_MOVIMENTO
+    d_item = _direcao_mercado(item["titulo"])
+    # compara com CADA título do grupo (não com a união do grupo): senão um
+    # grupo grande acumula percentuais e palavras e passa a atrair tudo
+    for titulo, tokens in zip(g["titulos"], g["_tokens_sim_todos"]):
+        if not (pcts_item & _percentuais(titulo)):
+            continue
+        if not (conteudo_item & (tokens - _TOKENS_MOVIMENTO)):
+            continue
+        d_titulo = _direcao_mercado(titulo)
+        if d_item and d_titulo and d_item != d_titulo:
+            continue
+        return True
+    return False
+
+
 def _mesmo_grupo(g: dict, item: dict, entidades_item: set) -> bool:
     """Decide se `item` entra no grupo `g` - 3 regras, na ordem:
     1. titulo identico (sem acento) SEMPRE junta, mesmo fora da janela de
@@ -592,8 +630,18 @@ def _mesmo_grupo(g: dict, item: dict, entidades_item: set) -> bool:
     if horas_diff <= _JANELA_HORAS_ENTIDADE and g["_entidades"] & entidades_item:
         return True
 
+    if horas_diff <= _JANELA_HORAS_ENTIDADE and _mesmo_numero_mesmo_assunto(g, item):
+        return True
+
+    # a similaridade continua sobre todos os tokens, mas exige ao menos uma
+    # palavra de CONTEÚDO em comum (fora termos de movimento como "fecha",
+    # "alta", "sobe"): "Ibovespa fecha em alta" e "Dólar fecha em alta"
+    # davam 2/3 de sobreposição só com "fecha"+"alta" e viravam o mesmo
+    # fato. Esta regra só pode SEPARAR grupos, nunca juntar novos.
+    conteudo_item = item["_tokens_sim"] - _TOKENS_MOVIMENTO
     if dias_diff <= _JANELA_DIAS_GRUPO and any(
         _similaridade(tokens, item["_tokens_sim"]) >= _LIMIAR_SIMILARIDADE
+        and bool((tokens - _TOKENS_MOVIMENTO) & conteudo_item)
         for tokens in g["_tokens_sim_todos"]
     ):
         return True
@@ -611,6 +659,7 @@ def _agrupar(itens: list) -> list:
     grupos = []
     for item in itens:
         entidades_item = _extrair_entidades(item["titulo"])
+        item["_pcts"] = _percentuais(item["titulo"])
         grupo = next((g for g in grupos if _mesmo_grupo(g, item, entidades_item)), None)
         if grupo:
             grupo["fontes"].append({"veiculo": item["veiculo"], "link": item["link"]})
@@ -1367,20 +1416,64 @@ def _url_imagem_valida(url) -> str | None:
 # (logo.png, favicon.ico, og-default.jpg, placeholder-foto.svg etc), nao
 # e' exaustivo por natureza (nao da pra detectar logo "generico" so pelo
 # nome do arquivo em 100% dos casos).
+#   achado real (auditoria 2026-10-18, bug "card da Vale mostra imagem
+#   ilustrativa que não é a foto da matéria"): rastreando o cache de
+#   produção, alguns publishers (ex: spacemoney.com.br, infomoney.com.br
+#   nalguns posts) fazem upload de uma foto de BANCO DE IMAGENS (Pexels/
+#   Unsplash) pro PRÓPRIO domínio deles e publicam ela como og:image -
+#   passa em todos os filtros acima (URL http(s) válida, não é logo/
+#   favicon, dimensão declarada grande o bastante) porque TECNICAMENTE é
+#   uma imagem real hospedada pelo veículo, só que é uma foto GENÉRICA
+#   de banco (ex: silo de grãos aleatório numa matéria sobre níquel no
+#   Canadá), nunca a foto real do fato noticiado - o nome do arquivo
+#   geralmente preserva o padrão de ID do banco de imagens de origem
+#   mesmo depois do re-upload (ex: "pexels-photo-34021878.webp",
+#   "...-unsplash_red.jpg"), o que permite o mesmo filtro por NOME já
+#   usado acima pra logo/favicon/placeholder.
 _PADROES_IMAGEM_GENERICA = (
     "logo", "favicon", "icon-", "-icon", "sprite", "placeholder",
     "default-image", "default_image", "og-default", "og_default",
     "share-image-default", "social-default", "avatar-padrao", "sem-foto",
     "noimage", "no-image", "apple-touch-icon",
+    # achado real (auditoria 2026-10-18): avatar de autor/widget com nome
+    # tipo "img-default-projeto-...-96x96.png" - "default"/"avatar" sozinhos
+    # (sem precisar do prefixo "img-"/sufixo "-padrao" que os padroes acima
+    # já exigiam) cobrem essa variação sem exigir dimensão declarada.
+    "default", "avatar",
+    # banco de imagens (ver achado real acima) - nomes de arquivo que
+    # preservam o padrao do banco de origem mesmo apos re-upload pro
+    # dominio do veiculo
+    "pexels", "unsplash", "shutterstock", "istockphoto", "istock-",
+    "gettyimages", "getty-images", "depositphotos", "123rf", "vecteezy",
+    "pixabay", "dreamstime", "adobestock", "stock-photo", "stockphoto",
+    "banco-de-imagens", "freepik",
+    # achado real (auditoria integral do cache de producao, 2026-10-18):
+    # "https://s.tradingview.com/static/images/illustrations/news-story.jpg"
+    # apareceu em 2 linhas de cache de materias DIFERENTES (fontes
+    # diferentes, assuntos diferentes) - imagem GENERICA de placeholder
+    # que o proprio TradingView usa pra qualquer noticia de wire sem foto
+    # propria (confirmado pela URL identica se repetindo pra conteudo
+    # diferente, nao so pelo nome - "news-story" e' literal "historia de
+    # noticia [generica]", nao algo especifico de uma materia real).
+    "news-story", "illustrations/",
 )
 
 
 def _imagem_parece_generica(url: str) -> bool:
-    """True se o CAMINHO da URL (sem acento/minusculo) bater com um
-    padrao conhecido de logo/favicon/placeholder - nunca mexe na query
-    string (irrelevante pro nome do arquivo em si)."""
-    caminho = _sem_acento(urlparse(url).path)
-    return any(p in caminho for p in _PADROES_IMAGEM_GENERICA)
+    """True se o CAMINHO ou o HOST da URL (sem acento/minusculo) bater
+    com um padrao conhecido de logo/favicon/placeholder - nunca mexe na
+    query string (irrelevante pro nome do arquivo em si).
+
+    achado real (auditoria 2026-10-18, backfill de producao - validacao
+    visual pos-escrita pegou o erro): um icone de simbolo de criptomoeda
+    do TradingView (`s3-symbol-logo.tradingview.com/crypto/XTVCBTC.svg`)
+    passou pelo filtro porque "logo" estava no HOST, nao no caminho - a
+    versao anterior desta funcao so' checava `urlparse(url).path`. Host
+    entra na mesma checagem de agora em diante (mesmos padroes, mesmo
+    heuristica - CDN com "logo"/"icon"/etc no proprio nome de dominio e'
+    tao forte quanto no caminho)."""
+    sem_acento_url = _sem_acento(urlparse(url).netloc + urlparse(url).path)
+    return any(p in sem_acento_url for p in _PADROES_IMAGEM_GENERICA)
 
 
 # dimensao minima aceita quando a PROPRIA pagina declara og:image:width/
@@ -1560,7 +1653,39 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
 
     # Alguns publishers publicam a imagem principal apenas em JSON-LD.
     # Percorre metadados estruturados públicos sem executar scripts.
+    #
+    # achado real (auditoria 2026-10-18, bug "card da Vale mostra imagem
+    # ilustrativa que não é a foto da matéria"): a chave "url" NUNCA pode
+    # entrar nessa lista de chaves candidatas a imagem - "url" é uma
+    # propriedade genérica do schema.org presente em QUASE TODO node do
+    # @graph (WebPage, Organization, Person, BreadcrumbList...), sempre
+    # apontando pro link PRÓPRIO daquele node, nunca necessariamente uma
+    # imagem. Confirmado em produção: um publisher real (spacemoney.com.br)
+    # usa o padrão @graph do Yoast SEO, cujo node "WebPage" tem
+    # "url": "<URL da PRÓPRIA matéria>" - sem esse filtro, isso é aceito
+    # como se fosse a foto da notícia (passa em todo o resto da validação:
+    # é http(s) válido, não bate nenhum padrão de nome genérico), fazendo
+    # `imagem` virar a MESMA URL do artigo, nunca uma imagem de verdade.
+    # "contentUrl" e "primaryImageOfPage" continuam aqui porque são
+    # propriedades específicas de ImageObject (contentUrl) ou que só
+    # existem quando a página de fato declara uma imagem principal
+    # (primaryImageOfPage) - não têm essa ambiguidade genérica do "url".
+    #
+    # "logo"/"publisher"/"author" NUNCA entram na varredura "pega
+    # qualquer imagem aninhada em qualquer outra chave" (2º loop abaixo):
+    # achado real (mesma auditoria) - o node "Organization" do mesmo
+    # @graph do spacemoney.com.br tem um "logo" inline (ImageObject com
+    # "contentUrl" de verdade) com a logomarca do VEÍCULO ("caption":
+    # "SpaceMoney"), não da matéria - sem excluir essas 3 chaves, a
+    # varredura catch-all recursava pra dentro do logo e aceitava a
+    # marca do site como se fosse a foto da notícia. "logo" é sempre
+    # identidade de marca (Organization/WebSite), "publisher"/"author"
+    # são sempre entidade (empresa/pessoa) ligada à matéria, nunca o
+    # conteúdo visual da matéria em si.
     if not imagem:
+        _CHAVES_IMAGEM_JSONLD = ("image", "thumbnailUrl", "contentUrl", "primaryImageOfPage")
+        _CHAVES_NUNCA_IMAGEM_JSONLD = ("logo", "publisher", "author")
+
         def _urls_imagem_jsonld(obj):
             achados = []
             if isinstance(obj, str):
@@ -1570,14 +1695,14 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
                     achados.extend(_urls_imagem_jsonld(item))
                 return achados
             if isinstance(obj, dict):
-                for chave in ("image", "thumbnailUrl", "contentUrl", "url", "primaryImageOfPage"):
+                for chave in _CHAVES_IMAGEM_JSONLD:
                     valor = obj.get(chave)
                     if isinstance(valor, str):
                         achados.append(valor)
                     elif isinstance(valor, (dict, list)):
                         achados.extend(_urls_imagem_jsonld(valor))
                 for chave, valor in obj.items():
-                    if chave in ("image", "thumbnailUrl", "contentUrl", "url", "primaryImageOfPage"):
+                    if chave in _CHAVES_IMAGEM_JSONLD or chave in _CHAVES_NUNCA_IMAGEM_JSONLD:
                         continue
                     if isinstance(valor, (dict, list)):
                         achados.extend(_urls_imagem_jsonld(valor))
@@ -1631,21 +1756,64 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
     # nesta auditoria: a mesma pagina embute os "relacionados" como
     # <article> aninhado DENTRO do <article> principal - sem essa
     # exclusao, uma materia SEM foto propria as vezes "roubaria" a foto
-    # de outra materia do bloco de relacionados).
+    # de outra materia do bloco de relacionados) NEM esteja dentro de um
+    # widget promocional/CTA (achado real, auditoria 2026-10-18 - o
+    # backfill de producao escreveu por engano o banner "Planilha de
+    # Gastos" do InfoMoney: a pagina embute um lead-magnet/newsletter
+    # dentro de um <div class="im-cta">...<img>...</div> SEM nenhum
+    # <article> aninhado - so' a exclusao de <article> nao bastava.
+    # Qualquer ancestral com classe batendo um desses marcadores conta
+    # como widget, nunca conteudo da materia) NEM tenha dimensao
+    # declarada pequena demais (achado real, auditoria 2026-10-18: um
+    # avatar de autor 40x40 - "width"/"height" no proprio <img>, nome de
+    # arquivo "img-default-projeto...") apareceu ANTES de qualquer foto
+    # de verdade dentro do bloco principal - mesmo limiar/mesma logica
+    # ja usada acima pro og:image:width, so que lendo o atributo da
+    # PROPRIA tag em vez de um <meta>.
+    _CLASSES_WIDGET_NAO_MATERIA = (
+        "cta", "anuncio", "ads", "publicidade", "newsletter", "promo",
+        "banner", "cadastro", "inscricao", "advertisement", "patrocinado",
+        "sponsor", "lead-magnet",
+    )
+    # achado real (auditoria 2026-10-18, mesmo backfill): quando a pagina
+    # TEM um <article> de verdade mas a varredura nele nao acha nenhuma
+    # foto valida (sem nenhum candidato, nao so' rejeitado pelos filtros
+    # acima), o loop ORIGINAL caia pro proximo seletor ("main") mesmo
+    # assim - "main" e' um escopo MUITO mais amplo (inclui cabecalho,
+    # selo de categoria, barra de navegacao...) que reintroduz
+    # exatamente o risco de widget/branding que o escopo de <article>
+    # existe pra evitar (caso real: InfoMoney tem <article> de verdade,
+    # SEM foto propria dentro dele - busca certa, resultado None -, mas
+    # o fallback pra "main" pegou o logo do produto "IM Trader" no
+    # cabecalho da pagina, ANTES do <article> comecar). "main"/
+    # "[itemprop=articleBody]" agora so' sao tentados quando o seletor
+    # ANTERIOR nao encontrou bloco NENHUM (pagina sem <article> de
+    # verdade) - nunca como escalada depois de uma busca legitima e
+    # vazia dentro do <article>.
     if not imagem:
         for seletor in ("article", "main", '[itemprop="articleBody"]'):
             bloco_principal = sopa.select_one(seletor)
             if not bloco_principal:
                 continue
             for img_tag in bloco_principal.find_all("img"):
-                dentro_de_aninhado = False
+                dentro_de_aninhado_ou_widget = False
                 pai = img_tag.parent
                 while pai is not None and pai is not bloco_principal:
                     if getattr(pai, "name", None) == "article":
-                        dentro_de_aninhado = True
+                        dentro_de_aninhado_ou_widget = True
+                        break
+                    classes_pai = _sem_acento(" ".join(pai.get("class") or []))
+                    if any(marca in classes_pai for marca in _CLASSES_WIDGET_NAO_MATERIA):
+                        dentro_de_aninhado_ou_widget = True
                         break
                     pai = pai.parent
-                if dentro_de_aninhado:
+                if dentro_de_aninhado_ou_widget:
+                    continue
+                try:
+                    largura_tag = int(str(img_tag.get("width")).strip())
+                except (TypeError, ValueError):
+                    largura_tag = None
+                if largura_tag is not None and largura_tag < _LARGURA_MINIMA_IMAGEM_EDITORIAL:
                     continue
                 candidata_bruta = (
                     img_tag.get("data-lazy-src") or img_tag.get("data-src")
@@ -1654,8 +1822,11 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
                 imagem = _candidata_imagem(candidata_bruta)
                 if imagem:
                     break
-            if imagem:
-                break
+            # bloco_principal foi encontrado (o seletor bateu) - para aqui
+            # sempre, mesmo sem achar imagem valida dentro dele; so' tenta
+            # o PROXIMO seletor (escopo mais amplo) quando o ATUAL nao
+            # bateu em NADA (ver achado real no comentario acima).
+            break
 
     # Segundo extrator menos restritivo: usa parágrafos de article/main,
     # remove navegação/rodapé e só aceita texto com tamanho mínimo. Não
@@ -2379,10 +2550,19 @@ def pregerar_resumos_news(tickers_universo: list) -> dict:
     limite = time.monotonic() + _ORCAMENTO_PREGERAR_RESUMOS_S
 
     grupos = []
-    try:
-        grupos.extend(obter_top_mercado_tudo("TODOS") or [])
-    except Exception:
-        logging.exception("pregerar_resumos_news: falha ao coletar TOP MERCADO")
+    # O Morning Call (data/morning_call_editorial.py) publica as manchetes
+    # dos pools Brasil e internacional SEPARADOS (top 20 de cada); o TOP
+    # MERCADO "tudo" corta o total em 20 e, em dia de muito noticiário no
+    # Brasil, deixa o internacional inteiro de fora - essas matérias nunca
+    # recebiam resumo e saíam no PDF só com manchete. As 3 listas entram
+    # aqui; a chave de cache abaixo remove os grupos repetidos.
+    for nome_fonte, coletar in (("TOP MERCADO", obter_top_mercado_tudo),
+                                ("TOP MERCADO Brasil", obter_top_mercado),
+                                ("TOP MERCADO internacional", obter_top_mercado_internacional)):
+        try:
+            grupos.extend(coletar("TODOS") or [])
+        except Exception:
+            logging.exception("pregerar_resumos_news: falha ao coletar %s", nome_fonte)
 
     for ticker in tickers_universo:
         if time.monotonic() > limite:

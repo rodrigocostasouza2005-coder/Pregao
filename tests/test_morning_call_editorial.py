@@ -20,6 +20,7 @@ def _sem_rede(**overrides):
         obter_cotacao_indice=lambda *_a, **_k: dict(_COT_ERRO),
         obter_historico=lambda *_a, **_k: None,
         obter_selic_meta=lambda: None,
+        obter_selic_meta_copom=lambda: None,
         obter_cdi=lambda: None,
         obter_focus_ipca=lambda: None,
         obter_focus_selic=lambda: None,
@@ -423,3 +424,80 @@ def test_noticias_do_setor_none_quando_as_duas_coletas_falham(monkeypatch):
     monkeypatch.setattr(coletor, "_buscar_feed_de_url", lambda url: None)
     monkeypatch.setattr(ed, "obter_top_mercado", lambda *_a: None)
     assert ed._noticias_do_setor("BANCOS") is None
+
+
+# ------------------------------------------------------------------
+# Selic/CDI: erro nunca vira valor; última coleta válida (só leitura)
+# ------------------------------------------------------------------
+
+def test_taxa_plausivel_rejeita_texto_nan_e_absurdos():
+    assert ed._taxa_plausivel(15.0) == 15.0
+    for invalido in ("Internal error", None, float("nan"), -1, 0, 150, "15,00% a.a."):
+        assert ed._taxa_plausivel(invalido) is None, invalido
+
+
+def test_selic_com_valor_absurdo_sai_indisponivel_sem_numero():
+    selic = pd.DataFrame({"data": pd.to_datetime(["2026-10-16"]).tz_localize(TZ_SP), "selic_meta_pct": [1500.0]})
+    with _MultiPatch(obter_selic_meta=lambda: selic, ultima_coleta_valida=lambda _c: None):
+        linha = next(l for l in ed._macro_rows() if l["indicador"] == "Selic meta")
+    assert linha["valor"] is None
+    assert "fora da faixa" in linha["erro"]
+
+
+def test_indisponivel_informa_ultima_coleta_valida_sem_inventar_valor():
+    with _MultiPatch(obter_selic_meta=lambda: None,
+                     motivo_indisponivel=lambda c: "SGS 432: página de erro HTML" if c == "selic" else None,
+                     ultima_coleta_valida=lambda c: "16/10/2026 18:41" if c == "selic" else None):
+        linhas = {l["indicador"]: l for l in ed._macro_rows()}
+    assert linhas["Selic meta"]["valor"] is None
+    assert linhas["Selic meta"]["erro"] == ("SGS 432: página de erro HTML; última coleta válida registrada em "
+                                           "16/10/2026 18:41 (horário de Brasília)")
+
+
+def test_ultima_coleta_valida_le_o_painel_de_saude_e_converte_para_brasilia(monkeypatch):
+    import data.coletores_status as cs
+    monkeypatch.setattr(cs, "obter_status", lambda nome: {"ultimo_sucesso_em": "2026-10-16T21:41:00+00:00"}
+                        if nome == "MACRO (BCB - Selic)" else None)
+    assert ed.ultima_coleta_valida("selic") == "16/10/2026 18:41"
+    assert ed.ultima_coleta_valida("cdi") is None
+
+
+def test_ultima_coleta_valida_com_banco_fora_do_ar_devolve_none(monkeypatch):
+    import data.coletores_status as cs
+    monkeypatch.setattr(cs, "obter_status", lambda nome: (_ for _ in ()).throw(RuntimeError("supabase fora")))
+    assert ed.ultima_coleta_valida("selic") is None
+
+
+def test_selic_usa_historico_oficial_do_copom_quando_sgs_falha():
+    meta = {"valor": 13.75, "vigente_desde": date(2026, 9, 17), "reuniao": 281}
+    with _MultiPatch(obter_selic_meta=lambda: None, obter_selic_meta_copom=lambda: meta):
+        linha = next(l for l in ed._macro_rows() if l["indicador"] == "Selic meta")
+    assert linha["valor"] == 13.75
+    assert linha["referencia"] == "vigente desde 17/09/2026"
+    assert "281ª reunião do Copom" in linha["detalhe"] and "SGS indisponível" in linha["detalhe"]
+
+
+def test_selic_do_sgs_tem_prioridade_sobre_o_copom():
+    selic = pd.DataFrame({"data": pd.to_datetime(["2026-10-16"]).tz_localize(TZ_SP), "selic_meta_pct": [13.75]})
+    chamado = []
+    with _MultiPatch(obter_selic_meta=lambda: selic, obter_selic_meta_copom=lambda: chamado.append(1)):
+        linha = next(l for l in ed._macro_rows() if l["indicador"] == "Selic meta")
+    assert linha["referencia"] == "16/10/2026" and not chamado
+
+
+def test_selic_copom_invalido_mantem_indisponivel_com_os_dois_motivos():
+    with _MultiPatch(obter_selic_meta=lambda: None, obter_selic_meta_copom=lambda: {"valor": "erro"},
+                     motivo_indisponivel=lambda c: {"selic": "SGS 432: timeout",
+                                                    "selic_copom": "histórico do Copom (bcb.gov.br): HTTP 500"}.get(c),
+                     ultima_coleta_valida=lambda _c: None):
+        linha = next(l for l in ed._macro_rows() if l["indicador"] == "Selic meta")
+    assert linha["valor"] is None
+    assert linha["erro"] == "SGS 432: timeout; histórico do Copom (bcb.gov.br): HTTP 500"
+
+
+def test_cdi_nao_tem_plano_b_e_continua_indisponivel():
+    meta = {"valor": 13.75, "vigente_desde": date(2026, 9, 17), "reuniao": 281}
+    with _MultiPatch(obter_cdi=lambda: None, obter_selic_meta_copom=lambda: meta,
+                     ultima_coleta_valida=lambda _c: None):
+        linha = next(l for l in ed._macro_rows() if l["indicador"] == "CDI")
+    assert linha["valor"] is None

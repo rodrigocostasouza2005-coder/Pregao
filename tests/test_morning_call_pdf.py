@@ -323,3 +323,11 @@ def test_editoria_vazia_diz_a_janela_consultada():
     edicao["exterior"]["noticias"] = None
     texto = _plano(_texto(PdfReader(io.BytesIO(pdf_mod.gerar_pdf(edicao)))))
     assert "Nenhuma notícia desta editoria publicada desde 16/10 às 06:00" in texto
+
+
+def test_mensagem_de_erro_nunca_aparece_na_coluna_de_valor():
+    """Erro vai na nota da tabela; a célula de valor diz só 'indisponível'."""
+    linha = {"indicador": "Selic meta", "valor": None, "unidade": "% a.a.", "referencia": "—",
+             "erro": "SGS 432: erro 500 Internal error"}
+    assert pdf_mod._valor_macro(linha) == "indisponível"
+    assert pdf_mod._valor_macro({**linha, "valor": 15.0}) == "15,00% a.a."

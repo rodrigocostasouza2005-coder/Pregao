@@ -100,6 +100,55 @@ def test_tentar_requisitar_excecao_de_conexao_nao_propaga():
     assert r is None and rotulo is None
 
 
+# ============================================================
+# categoria_ultima_falha() - classificacao usada por coletor_local.py
+# pra decidir o exit code sem mascarar uma falha nova (auditoria
+# 2026-10-18, ver data/research/__init__.py:_classificar_falha e
+# coletor_local.py:_falha_critica).
+# ============================================================
+
+def test_categoria_bloqueio_akamai_real_e_bloqueio_externo_conhecido():
+    """Item 1 da missao: XP falhando com o padrao de bloqueio externo
+    JA documentado (pagina real 'Acesso Bloqueado' + Reference ID) ->
+    'bloqueio_externo_conhecido', nao 'erro'."""
+    resposta_403 = _resposta(403, text=_CORPO_BLOQUEIO_AKAMAI_REAL)
+    with patch.object(xp_mod.cffi_requests, "get", return_value=resposta_403), \
+         patch.object(xp_mod.plain_requests, "get", return_value=resposta_403):
+        xp_mod._tentar_requisitar("https://conteudos.xpi.com.br/x", {})
+    assert xp_mod.categoria_ultima_falha() == "bloqueio_externo_conhecido"
+
+
+def test_categoria_403_generico_sem_pagina_akamai_e_erro():
+    """Um 403 QUALQUER (sem a pagina real do Akamai, ex: outro WAF ou
+    bloqueio generico) nao pode virar 'bloqueio_externo_conhecido' so'
+    por ser 403 - so' o padrao especifico ja documentado conta."""
+    resposta_403 = _resposta(403, text="<html><body>Forbidden</body></html>")
+    with patch.object(xp_mod.cffi_requests, "get", return_value=resposta_403), \
+         patch.object(xp_mod.plain_requests, "get", return_value=resposta_403):
+        xp_mod._tentar_requisitar("https://conteudos.xpi.com.br/x", {})
+    assert xp_mod.categoria_ultima_falha() == "erro"
+
+
+def test_categoria_http_500_novo_e_erro_nao_bloqueio_conhecido():
+    """Item 3 da missao: se a XP comecar a devolver um erro DIFERENTE do
+    403/Akamai conhecido (ex: HTTP 500), isso e' uma mudanca real de
+    comportamento - tem que continuar derrubando o exit code, nunca ser
+    mascarado como 'e' o mesmo bloqueio de sempre'."""
+    resposta_500 = _resposta(500, text="Internal Server Error")
+    with patch.object(xp_mod.cffi_requests, "get", return_value=resposta_500), \
+         patch.object(xp_mod.plain_requests, "get", return_value=resposta_500):
+        xp_mod._tentar_requisitar("https://conteudos.xpi.com.br/x", {})
+    assert xp_mod.categoria_ultima_falha() == "erro"
+
+
+def test_categoria_sem_falha_registrada_e_erro_nunca_bloqueio_por_padrao():
+    """Item 6 da missao: motivo ausente (nenhuma falha registrada nesta
+    sessao do processo, ou ultima chamada teve sucesso) nunca pode virar
+    'bloqueio_externo_conhecido' por padrao/default."""
+    xp_mod._ultimo_motivo_falha = None
+    assert xp_mod.categoria_ultima_falha() == "erro"
+
+
 def test_obter_relatorios_todas_as_fontes_bloqueadas_retorna_none():
     xp_mod.obter_relatorios.clear()  # @st.cache_data - evita cache de outro teste
     with patch.object(xp_mod, "_requisitar", return_value=None), \

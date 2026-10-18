@@ -34,6 +34,7 @@ from data.eventos import (
 )
 from data.macro import (
     motivo_indisponivel, obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta,
+    obter_selic_meta_copom,
 )
 from data.news import (
     obter_resumos_prontos, obter_top_mercado, obter_top_mercado_internacional, separar_secoes_resumo,
@@ -203,7 +204,40 @@ def _linha_macro(indicador, valor, unidade, referencia, detalhe=None, erro=None)
             "referencia": referencia or "—", "detalhe": detalhe, "erro": erro}
 
 
-def _macro_rows(agora=None):
+def _taxa_plausivel(valor):
+    """float da taxa anual (%) só se for número finito entre 0 e 100 -
+    qualquer outra coisa (texto, NaN, negativo, absurdo) é tratada como
+    dado inválido, nunca publicada como valor."""
+    try:
+        v = float(valor)
+    except (TypeError, ValueError):
+        return None
+    if v != v or not (0 < v < 100):
+        return None
+    return v
+
+
+_NOME_STATUS_SGS = {"selic": "MACRO (BCB - Selic)", "cdi": "MACRO (BCB - CDI)"}
+
+
+def ultima_coleta_valida(chave):
+    """'dd/mm/aaaa hh:mm' do último sucesso registrado no painel de saúde
+    dos dados (data/coletores_status.py, somente leitura) - é o momento em
+    que alguma execução do Pregão (app ou job) conseguiu ler a série. O
+    VALOR daquela leitura não é guardado, então nunca é exibido. None se
+    não houver registro ou o banco estiver fora do ar."""
+    try:
+        from data.coletores_status import obter_status
+        status = obter_status(_NOME_STATUS_SGS[chave]) or {}
+        bruto = status.get("ultimo_sucesso_em")
+        if not bruto:
+            return None
+        return datetime.fromisoformat(str(bruto).replace("Z", "+00:00")).astimezone(TZ_SP).strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        return None
+
+
+def _macro_rows(agora=None, provedores=None):
     """Linhas da tabela macro do PDF, normalizadas.
 
     Causa dos defeitos da edição de 18/10/2026 (auditoria): (1) as linhas
@@ -216,7 +250,27 @@ def _macro_rows(agora=None):
     corrente e o seguinte, com a data do boletim; sem dado -> 'indisponível'
     com o motivo (nunca um valor estimado)."""
     agora = agora or datetime.now(TZ_SP)
+    provedores = provedores or {}
+    selic_fn = provedores.get("selic", obter_selic_meta)
+    cdi_fn = provedores.get("cdi", obter_cdi)
+    focus_ipca_fn = provedores.get("focus_ipca", obter_focus_ipca)
+    focus_selic_fn = provedores.get("focus_selic", obter_focus_selic)
     linhas = []
+
+    copom_fn = provedores.get("selic_copom", obter_selic_meta_copom)
+
+    def _selic_pelo_copom():
+        """Plano B oficial da meta Selic (histórico do Copom, bcb.gov.br)."""
+        try:
+            meta = copom_fn()
+        except Exception:
+            meta = None
+        if not meta or _taxa_plausivel(meta.get("valor")) is None:
+            return None
+        reuniao = f"{meta['reuniao']}ª reunião do Copom, " if meta.get("reuniao") else "Copom, "
+        return _linha_macro("Selic meta", float(meta["valor"]), "% a.a.",
+                            f"vigente desde {_data_br(meta.get('vigente_desde'))}",
+                            detalhe=f"fonte: {reuniao}histórico oficial em bcb.gov.br (SGS indisponível)")
 
     def _serie(nome, fn, coluna, chave_motivo):
         try:
@@ -230,15 +284,28 @@ def _macro_rows(agora=None):
             validos = dado.dropna(subset=[coluna])
             if not validos.empty:
                 ultimo = validos.iloc[-1]
-                linhas.append(_linha_macro(nome, float(ultimo[coluna]), "% a.a.", _data_br(ultimo.get("data"))))
+                valor = _taxa_plausivel(ultimo[coluna])
+                if valor is not None:
+                    linhas.append(_linha_macro(nome, valor, "% a.a.", _data_br(ultimo.get("data"))))
+                    return
+                motivo = motivo or f"valor recebido fora da faixa de uma taxa anual ({ultimo[coluna]!r})"
+        if chave_motivo == "selic":
+            linha_copom = _selic_pelo_copom()
+            if linha_copom:
+                linhas.append(linha_copom)
                 return
         motivo = motivo or motivo_indisponivel(chave_motivo) or "Banco Central (SGS) sem dado nesta execução"
+        if chave_motivo == "selic" and motivo_indisponivel("selic_copom"):
+            motivo += f"; {motivo_indisponivel('selic_copom')}"
+        ultima = ultima_coleta_valida(chave_motivo)
+        if ultima:
+            motivo += f"; última coleta válida registrada em {ultima} (horário de Brasília)"
         linhas.append(_linha_macro(nome, None, "% a.a.", None, erro=motivo))
 
-    _serie("Selic meta", obter_selic_meta, "selic_meta_pct", "selic")
-    _serie("CDI", obter_cdi, "cdi_anualizado_pct", "cdi")
+    _serie("Selic meta", selic_fn, "selic_meta_pct", "selic")
+    _serie("CDI", cdi_fn, "cdi_anualizado_pct", "cdi")
 
-    for nome, fn in (("Focus IPCA", obter_focus_ipca), ("Focus Selic", obter_focus_selic)):
+    for nome, fn in (("Focus IPCA", focus_ipca_fn), ("Focus Selic", focus_selic_fn)):
         try:
             dado = fn()
         except Exception:

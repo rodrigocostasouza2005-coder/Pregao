@@ -1,5 +1,180 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-18 (3ª passada) — 2 bugs reais encontrados pela VALIDAÇÃO VISUAL do backfill anterior
+
+O backfill autorizado das 6 linhas (PR #60) escreveu, numa primeira
+tentativa, 3 imagens erradas - só descobertas porque cada imagem nova
+foi baixada e **inspecionada visualmente de verdade** antes de declarar
+sucesso (nunca só "a função não lançou exceção"). As 3 foram corrigidas
+pra `None` na hora (mesmo escopo já autorizado). Rastreando a causa
+raiz de cada uma, 2 bugs reais e distintos em
+`data/news.py:_extrair_texto_artigo`/`_imagem_parece_generica`:
+
+1. **`_imagem_parece_generica` só checava o CAMINHO da URL, nunca o
+   HOST**: um ícone de símbolo de Bitcoin (SVG 18x18) hospedado em
+   `s3-symbol-logo.tradingview.com/crypto/XTVCBTC.svg` passou pelo
+   filtro porque `"logo"` estava no hostname, não no caminho. Agora
+   host e caminho entram na mesma checagem.
+2. **O fallback de imagem lazy-loaded ESCALAVA pro seletor "main" (um
+   escopo bem mais amplo - cabeçalho, selo de categoria, branding)
+   mesmo quando a página TINHA um `<article>` de verdade mas nenhuma
+   foto válida dentro dele** - reintroduzindo exatamente o risco de
+   pegar imagem de fora do conteúdo da matéria que a exclusão de
+   `<article>` aninhado/widget existe pra evitar. Caso real: o
+   `<article>` do InfoMoney não tem foto própria (correto, resultado
+   deveria ser `None`), mas o fallback pra `"main"` pegou o logo do
+   produto "IM Trader" no cabeçalho da página, ANTES do `<article>`
+   começar. Corrigido: só tenta o próximo seletor quando o ATUAL não
+   bate em NENHUM bloco - nunca como escalada após uma busca legítima e
+   vazia dentro do `<article>`.
+
+Também adicionada, nesta mesma investigação, uma exclusão por CLASSE
+pro fallback de imagem lazy-loaded: qualquer ancestral com classe
+batendo um marcador de widget (`cta`, `anuncio`, `ads`, `publicidade`,
+`newsletter`, `promo`, `banner`, `cadastro`, `inscricao`,
+`advertisement`, `patrocinado`, `sponsor`, `lead-magnet`) é ignorado -
+achado real: o InfoMoney embute um lead-magnet/newsletter como
+`<div class="im-cta">...<img>...</div>` DENTRO do `<article>`, sem
+nenhum `<article>` aninhado (a exclusão antiga não cobria esse caso).
+
+**Resultado confirmado contra os casos reais**: TradingView/Cointelegraph
+(2 linhas do backfill) agora resolve pra uma imagem REAL e específica
+da matéria (gráfico de candles BTC/USD do próprio TradingView,
+inspecionado visualmente - valores batem com o texto da matéria).
+InfoMoney continua `None` (nenhuma foto real existe na página - 3
+candidatas diferentes tentadas ao longo desta investigação, todas
+genéricas/branding, nenhuma a foto da matéria - `None` é o resultado
+correto, não uma falha de extração).
+
+**`data/news.py`** — `_imagem_parece_generica` (host + caminho, não só
+caminho), fallback de imagem lazy-loaded (exclusão por classe de
+widget, correção do bug de escalada de escopo).
+
+Testes novos: `tests/test_news_qualidade_editorial.py` (+4 casos) -
+logo no hostname rejeitado, imagem dentro de widget CTA ignorada,
+`<article>` sem foto nunca escala pro escopo mais amplo.
+
+803/803 testes passando, `compileall` limpo.
+
+## 2026-10-18 — fix: imagens ilustrativas erradas nos cards de NEWS (3 causas reais, não geração por IA)
+
+Bug reportado pelo Rodrigo: card da Vale (VALE3, minério de ferro,
+expansão de cobre) mostrando uma imagem que não é a foto da matéria.
+Confirmado primeiro que **não existe geração de imagem por IA em
+nenhum lugar do projeto** (buscado o codebase inteiro por qualquer
+integração de geração de imagem - nenhuma encontrada). Rastreando o
+cache de produção (`resumos_ia_cache`) e reprocessando os casos reais
+com o pipeline atual, encontradas 3 causas reais e distintas - todas em
+`data/news.py:_extrair_texto_artigo`, nenhuma delas geração sintética,
+todas "imagem real hospedada pelo veículo, mas não é a foto da
+matéria":
+
+1. **Foto de banco de imagens re-hospedada**: `spacemoney.com.br`
+   publica uma foto do Pexels (`thumbnailUrl` do JSON-LD) no próprio
+   domínio como se fosse a capa - passava em todos os filtros
+   anteriores (URL válida, não bate padrão de logo/favicon). Fix:
+   `_PADROES_IMAGEM_GENERICA` ganhou os nomes de banco de imagens mais
+   comuns (pexels, unsplash, shutterstock, istockphoto, gettyimages,
+   depositphotos, 123rf, vecteezy, pixabay, dreamstime, adobestock,
+   freepik) - o nome do arquivo preserva o padrão do banco de origem
+   mesmo após o re-upload.
+2. **Chave "url" do JSON-LD tratada como imagem**: o node `WebPage` do
+   `@graph` (padrão Yoast SEO, usado por vários publishers BR) tem uma
+   chave `"url"` genérica apontando pro link da PRÓPRIA página -
+   `_urls_imagem_jsonld` tratava isso como candidata a imagem,
+   fazendo `imagem` virar a MESMA URL do artigo (nunca uma imagem de
+   verdade). Removida "url" da lista de chaves candidatas -
+   `contentUrl`/`primaryImageOfPage`/`image`/`thumbnailUrl` continuam
+   (são específicas de imagem, sem essa ambiguidade).
+3. **Logo da organização tratado como imagem**: o node `Organization`
+   do mesmo `@graph` tem um `"logo"` inline (ImageObject com
+   `contentUrl` de verdade) com a MARCA do veículo - a varredura
+   catch-all recursava pra dentro e aceitava o logo do site como foto
+   da matéria. `"logo"`/`"publisher"`/`"author"` agora nunca são
+   percorridas nessa varredura (são sempre identidade de marca/pessoa,
+   nunca o conteúdo visual da própria matéria).
+
+Durante a investigação, o fallback de imagem lazy-loaded adicionado
+ontem (ver entrada "2ª passada" abaixo) também mostrou uma lacuna: sem
+checar a dimensão declarada da própria `<img>`, um avatar de autor
+40x40 era aceito antes de qualquer foto de capa real dentro do bloco
+principal. Corrigido com o mesmo limiar já usado pro `og:image:width`
+(`_LARGURA_MINIMA_IMAGEM_EDITORIAL`), lendo o atributo `width` da
+própria tag.
+
+**`data/news.py`** — `_PADROES_IMAGEM_GENERICA` (+ bancos de imagens,
++ "default"/"avatar", + "news-story"/"illustrations/" do TradingView -
+achado da auditoria integral, ver abaixo), `_urls_imagem_jsonld` (remove
+"url", exclui "logo"/"publisher"/"author" da varredura catch-all),
+fallback de imagem lazy-loaded (guarda de dimensão via atributo `width`
+da tag).
+
+Testes novos: `tests/test_news_qualidade_editorial.py` (+7 casos) -
+banco de imagens rejeitado por nome (isolado e ponta a ponta),
+placeholder do TradingView rejeitado, "url" do WebPage nunca vira
+imagem, logo da Organization nunca vira imagem, avatar pequeno é
+pulado em favor da foto real seguinte.
+
+Confirmado ponta a ponta contra o artigo real do spacemoney.com.br que
+originou o relato (Vale Base Metals/Exiro Nickel/Thompson): antes dos
+3 fixes, `imagem` passava por pexels → URL da própria página → logo do
+site, nessa ordem, conforme cada bloqueio anterior era corrigido;
+depois dos 3, `imagem` corretamente vira `None` (este artigo
+específico não tem foto editorial própria - nenhuma das 3 imagens
+"reais" encontradas era a foto da matéria).
+
+**Auditoria INTEGRAL do cache de produção** (read-only, nenhuma escrita
+- script descartável, credenciais nunca expostas): das 60 linhas
+`origem=news`/`status=concluido` com imagem persistida, reprocessadas
+TODAS com o pipeline corrigido e comparadas 1 a 1 com o valor atual:
+
+- **52 iguais** (84,7% das 60) - imagem já era a correta, sem mudança.
+- **8 divergentes** - valor mudou ao reprocessar com os 3 fixes:
+  - **3 linhas** = as 3 reincidências do MESMO artigo da Vale
+    (spacemoney.com.br/Thompson, cacheado 3x por chegar via links
+    diferentes do Google News) - pexels → `None`. Confirma e fecha o
+    relato original.
+  - **1 linha** = `s.tradingview.com/.../illustrations/news-story.jpg`
+    (br.tradingview.com, matéria da Cointelegraph) - mesmo achado
+    confirmado por 2 linhas distintas com URL idêntica pra conteúdo
+    diferente (placeholder genérico do TradingView). Fix novo nesta
+    mesma passada: `"news-story"`/`"illustrations/"` adicionados a
+    `_PADROES_IMAGEM_GENERICA`.
+  - **1 linha** = `br.advfn.com` com imagem de `investidor10.com.br`
+    (domínio diferente do artigo) → `None` após o fix (causa exata não
+    isolada - resultado ficou mais conservador, não pior).
+  - **3 linhas** (2 chaves de cache, mesmo artigo real de
+    `economia.uol.com.br` sobre fechamento de dólar/bolsa, reprocessado
+    2x em momentos diferentes) = resultado **inconsistente**: imagens de
+    `jornaldebrasilia.com.br`/`static.poder360.com.br` (cache antigo,
+    cross-domain) viraram, numa passada, a `og:image` real declarada
+    pelo próprio UOL (`conteudo.imguol.com.br`, domínio correto) e,
+    noutra passada do MESMO artigo, `None`. Investigado: a `og:image`
+    que o UOL declara pra esse artigo é datada de 2022
+    (`.../2022/01/31/...-1643631825655...`) - um header genérico que o
+    UOL reutiliza em todo artigo do formato recorrente "fechamento
+    dólar/bolsa hoje", não uma foto específica do dia. **Não é um bug
+    de extração** (é literalmente o que o publisher declara como
+    og:image) e **não foi corrigido nesta PR** - nenhum sinal
+    disponível na página isolada (nome de arquivo, dimensão, domínio)
+    diferencia isso de uma foto editorial legítima; só fica visível
+    comparando contra OUTRAS matérias no cache (a mesma URL reaparecendo
+    em artigos de dias diferentes). Registrado como pendência explícita
+    abaixo, não escondido.
+- **0 erros** ao reprocessar (todas as 60 linhas buscadas e comparadas
+  com sucesso - nenhuma falhou por timeout/rede/parsing).
+
+**Pendência explícita, NÃO corrigida nesta PR**: imagem "real"
+(hospedada pelo próprio veículo, og:image declarado de verdade) mas
+RECICLADA entre várias matérias diferentes ao longo do tempo (padrão
+observado no UOL) exigiria um 4º tipo de verificação - comparar a URL
+da imagem contra as de OUTRAS linhas já cacheadas (ex: "essa URL já
+apareceu em N matérias com título/fonte diferentes? então é suspeita")
+- um mecanismo com estado, consultando o cache inteiro, diferente de
+tudo que existe hoje (checagem sempre por página isolada). Fora do
+escopo desta correção (achado novo, não o bug relatado), fica como
+sugestão de investigação futura caso o Rodrigo queira.
+
 ## 2026-10-17 (2ª passada) — correção da causa raiz real do bug de imagens dos cards
 
 Retomando a investigação abaixo (que já deixava em aberto "confirmar
