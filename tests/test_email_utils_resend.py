@@ -1,3 +1,4 @@
+import base64
 import json
 from urllib.error import HTTPError
 from unittest.mock import MagicMock
@@ -33,6 +34,56 @@ def test_resend_envia_texto_e_html(monkeypatch):
     assert payload["to"] == ["destino@example.com"]
     assert payload["text"] == "Texto"
     assert payload["html"] == "<p>HTML</p>"
+
+
+def test_resend_envia_anexo_em_base64(monkeypatch):
+    response = MagicMock()
+    response.status = 200
+    response.__enter__.return_value = response
+    capturado = {}
+
+    def fake_urlopen(request, timeout):
+        capturado["request"] = request
+        return response
+
+    monkeypatch.setenv("EMAIL_PROVIDER", "resend")
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_secret")
+    monkeypatch.setenv("EMAIL_FROM", "Pregao <alerts@example.com>")
+    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
+    monkeypatch.setattr(email_utils, "urlopen", fake_urlopen)
+
+    resultado = email_utils.enviar_email(
+        "Assunto", "Texto", "<p>HTML</p>",
+        anexos=[{"nome": "mc.pdf", "conteudo": b"%PDF-conteudo", "tipo_mime": "application/pdf"}],
+    )
+
+    payload = json.loads(capturado["request"].data.decode("utf-8"))
+    assert resultado == {"ok": True, "erro": None}
+    assert payload["attachments"] == [
+        {"filename": "mc.pdf", "content": base64.b64encode(b"%PDF-conteudo").decode("ascii")}
+    ]
+
+
+def test_resend_sem_anexos_nao_inclui_a_chave_no_payload(monkeypatch):
+    response = MagicMock()
+    response.status = 200
+    response.__enter__.return_value = response
+    capturado = {}
+
+    def fake_urlopen(request, timeout):
+        capturado["request"] = request
+        return response
+
+    monkeypatch.setenv("EMAIL_PROVIDER", "resend")
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_secret")
+    monkeypatch.setenv("EMAIL_FROM", "alerts@example.com")
+    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
+    monkeypatch.setattr(email_utils, "urlopen", fake_urlopen)
+
+    email_utils.enviar_email("Assunto", "Texto")
+
+    payload = json.loads(capturado["request"].data.decode("utf-8"))
+    assert "attachments" not in payload
 
 
 def test_resend_sem_chave_retorna_erro_sem_tentar_rede(monkeypatch):

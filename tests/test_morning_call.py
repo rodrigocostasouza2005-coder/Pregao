@@ -3,9 +3,25 @@ from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 from unittest.mock import MagicMock, patch
 import pandas as pd
+import pytest
 import jobs.morning_call as mc
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
+
+
+@pytest.fixture(autouse=True)
+def _sem_pdf_real(monkeypatch):
+    """Nenhum teste deste módulo deve montar o PDF editorial de verdade
+    (rede real pra cotação/notícia/agenda via data/morning_call_editorial.py
+    + ReportLab) - falha a MONTAGEM DO DADO de propósito (nunca
+    mocka _montar_anexo_pdf em si) pra exercitar o próprio caminho de
+    degradação real em todo teste deste módulo; os testes da seção
+    "ANEXO PDF" abaixo sobrescrevem montar_edicao/gerar_pdf de novo pra
+    testar o caminho de sucesso."""
+    monkeypatch.setattr(
+        mc, "montar_edicao",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("PDF desabilitado neste teste - ver fixture _sem_pdf_real")),
+    )
 
 _COT_INDISPONIVEL = lambda nome, ticker: ({"erro": "indisponível"}, f"- {nome}: indisponível")
 
@@ -151,7 +167,11 @@ def test_html_preserva_links_e_estrutura_minima():
         texto = mc.montar_morning_call(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
     corpo_html = mc.montar_morning_call_html(texto)
     assert "<h1" in corpo_html
-    assert '<a href="https://exemplo.com/a">https://exemplo.com/a</a>' in corpo_html
+    # Estilo do link é decisão editorial (cor/sublinhado inline - ver
+    # montar_morning_call_html) e pode mudar; o que não pode mudar é o
+    # link em si: href correto, texto visível = URL, clicável de verdade.
+    assert '<a href="https://exemplo.com/a"' in corpo_html
+    assert ">https://exemplo.com/a</a>" in corpo_html
     assert "<script" not in corpo_html
     assert "<li>Manchete X" in corpo_html
     assert "<h2" in corpo_html and "FONTES" in corpo_html
@@ -574,7 +594,7 @@ def test_executar_falha_pra_um_assinante_nao_impede_envio_aos_demais(monkeypatch
     chamadas_envio = []
     chamadas_registro = []
 
-    def _enviar(_assunto, _texto, html=None, destinatario=None):
+    def _enviar(_assunto, _texto, html=None, destinatario=None, anexos=None):
         chamadas_envio.append(destinatario)
         if destinatario == "falha@exemplo.com":
             return {"ok": False, "erro": "Resend HTTP 422"}
@@ -606,7 +626,7 @@ def test_executar_falha_pra_todos_os_assinantes_retorna_codigo_de_erro(monkeypat
     merece deixar o job do GitHub Actions vermelho."""
     cliente = _cliente_fake_com_resultado([])
 
-    def _enviar(_assunto, _texto, html=None, destinatario=None):
+    def _enviar(_assunto, _texto, html=None, destinatario=None, anexos=None):
         return {"ok": False, "erro": "Resend HTTP 500"}
 
     monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
@@ -704,6 +724,81 @@ def test_main_sem_env_de_teste_chama_executar_normal(monkeypatch):
     assert codigo == 0
     assert chamadas["executar"] == [1]
     assert chamadas["teste"] == []
+
+
+# ---------------------------------------------------------------------
+# ANEXO PDF (data/morning_call_editorial.py + jobs/morning_call_pdf.py) -
+# montado 1x por execução (nunca por assinante), anexado a TODOS os
+# e-mails dessa execução; falha na geração do PDF nunca pode impedir o
+# envio do e-mail (degrada pra envio sem anexo).
+# ---------------------------------------------------------------------
+
+def test_montar_anexo_pdf_devolve_none_quando_geracao_falha(monkeypatch):
+    monkeypatch.setattr(mc, "montar_edicao", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("falha de dado")))
+    assert mc._montar_anexo_pdf(datetime(2026, 10, 14, 7, tzinfo=TZ_SP)) is None
+
+
+def test_montar_anexo_pdf_devolve_dict_com_nome_e_tipo_mime(monkeypatch):
+    monkeypatch.setattr(mc, "montar_edicao", lambda *_a, **_k: {"edicao": "fake"})
+    monkeypatch.setattr(mc, "gerar_pdf", lambda edicao: b"%PDF-conteudo")
+    anexo = mc._montar_anexo_pdf(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
+    assert anexo["conteudo"] == b"%PDF-conteudo"
+    assert anexo["tipo_mime"] == "application/pdf"
+    assert anexo["nome"] == "pregao-morning-call-2026-10-14.pdf"
+
+
+def test_executar_anexa_pdf_quando_geracao_da_certo(monkeypatch):
+    cliente = _cliente_fake_com_resultado([])
+    chamadas_envio = []
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda *_a, **_k: ["assinante@exemplo.com"])
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
+    monkeypatch.setattr(mc, "_montar_anexo_pdf", lambda *_a, **_k: {
+        "nome": "pregao-morning-call-2026-10-14.pdf", "conteudo": b"%PDF-x", "tipo_mime": "application/pdf",
+    })
+    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: None)
+
+    mc.executar()
+
+    assert len(chamadas_envio) == 1
+    anexos = chamadas_envio[0][1].get("anexos")
+    assert anexos == [{"nome": "pregao-morning-call-2026-10-14.pdf", "conteudo": b"%PDF-x", "tipo_mime": "application/pdf"}]
+
+
+def test_executar_envia_sem_anexo_quando_pdf_falha(monkeypatch):
+    """Falha na geração do PDF editorial nunca pode impedir o envio do
+    e-mail - degrada pra envio sem anexo (anexos=None)."""
+    cliente = _cliente_fake_com_resultado([])
+    chamadas_envio = []
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: cliente)
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda *_a, **_k: ["assinante@exemplo.com"])
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
+    monkeypatch.setattr(mc, "montar_edicao", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("fonte fora do ar")))
+    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: None)
+
+    codigo = mc.executar()
+
+    assert codigo == 0
+    assert len(chamadas_envio) == 1
+    assert chamadas_envio[0][1].get("anexos") is None
+
+
+def test_enviar_teste_anexa_pdf_quando_geracao_da_certo(monkeypatch):
+    chamadas_envio = []
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: "texto")
+    monkeypatch.setattr(mc, "_montar_anexo_pdf", lambda *_a, **_k: {
+        "nome": "pregao-morning-call-2026-10-14.pdf", "conteudo": b"%PDF-x", "tipo_mime": "application/pdf",
+    })
+    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
+
+    mc.enviar_teste("admin-teste@exemplo.com")
+
+    anexos = chamadas_envio[0][1].get("anexos")
+    assert anexos == [{"nome": "pregao-morning-call-2026-10-14.pdf", "conteudo": b"%PDF-x", "tipo_mime": "application/pdf"}]
 
 
 def test_montar_morning_call_html_escapa_conteudo_perigoso():

@@ -1,3 +1,4 @@
+import base64
 import json
 from urllib.error import HTTPError
 from unittest.mock import MagicMock
@@ -34,6 +35,56 @@ def test_brevo_envia_texto_e_html(monkeypatch):
     assert payload["to"] == [{"email": "destino@example.com"}]
     assert payload["textContent"] == "Texto"
     assert payload["htmlContent"] == "<p>HTML</p>"
+
+
+def test_brevo_envia_anexo_em_base64(monkeypatch):
+    response = MagicMock()
+    response.status = 201
+    response.__enter__.return_value = response
+    capturado = {}
+
+    def fake_urlopen(request, timeout):
+        capturado["request"] = request
+        return response
+
+    monkeypatch.setenv("EMAIL_PROVIDER", "brevo")
+    monkeypatch.setenv("BREVO_API_KEY", "xkeysib_test_secret")
+    monkeypatch.setenv("EMAIL_FROM", "pregaoresumos@gmail.com")
+    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
+    monkeypatch.setattr(email_utils, "urlopen", fake_urlopen)
+
+    resultado = email_utils.enviar_email(
+        "Assunto", "Texto", "<p>HTML</p>",
+        anexos=[{"nome": "mc.pdf", "conteudo": b"%PDF-conteudo", "tipo_mime": "application/pdf"}],
+    )
+
+    payload = json.loads(capturado["request"].data.decode("utf-8"))
+    assert resultado == {"ok": True, "erro": None}
+    assert payload["attachment"] == [
+        {"name": "mc.pdf", "content": base64.b64encode(b"%PDF-conteudo").decode("ascii")}
+    ]
+
+
+def test_brevo_sem_anexos_nao_inclui_a_chave_no_payload(monkeypatch):
+    response = MagicMock()
+    response.status = 201
+    response.__enter__.return_value = response
+    capturado = {}
+
+    def fake_urlopen(request, timeout):
+        capturado["request"] = request
+        return response
+
+    monkeypatch.setenv("EMAIL_PROVIDER", "brevo")
+    monkeypatch.setenv("BREVO_API_KEY", "xkeysib_test_secret")
+    monkeypatch.setenv("EMAIL_FROM", "pregaoresumos@gmail.com")
+    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
+    monkeypatch.setattr(email_utils, "urlopen", fake_urlopen)
+
+    email_utils.enviar_email("Assunto", "Texto")
+
+    payload = json.loads(capturado["request"].data.decode("utf-8"))
+    assert "attachment" not in payload
 
 
 def test_brevo_sem_chave_retorna_erro_sem_tentar_rede(monkeypatch):
