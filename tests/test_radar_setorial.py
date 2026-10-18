@@ -140,6 +140,24 @@ def test_nome_de_empresa_ambiguo_exige_maiuscula():
     assert not rs._menciona_setor("TIMES do Brasil mantêm vendas", "TECNOLOGIA & TELECOM")
 
 
+def test_bancos_centrais_nao_sao_o_setor_bancario():
+    """Caso real de 18/10/2026."""
+    assert not rs._menciona_setor("Bancos centrais preveem juros mais altos com corrida por capital", "BANCOS")
+    assert not rs._menciona_setor("Banco Central mantém juros", "BANCOS")
+    assert rs._menciona_setor("Banco Central aperta regra e bancos elevam provisões", "BANCOS")
+
+
+def test_empresas_citadas_vem_so_das_manchetes_publicadas():
+    publicadas = [rs._fonte(_noticia("Bancos ampliam crédito; ITUB4 sobe", "Valor")),
+                  rs._fonte(_noticia("Inadimplência de bancos cai", "Folha"))]
+    nao_publicada = rs._fonte(_noticia("Spread de bancos sobe; BBDC4 cai " + "x " * 60, "Estadão"))
+    bloco = rs.redigir_bloco("BANCOS", publicadas + [nao_publicada])
+    assert [f["veiculo"] for f in bloco["fontes"]] == ["Valor", "Folha"]
+    assert "Citadas nas notícias: ITUB4." in bloco["empresas"]
+    assert "BBDC4" in bloco["empresas"]  # só como principal do setor, não como citada
+    assert "Citadas nas notícias: BBDC4" not in bloco["empresas"]
+
+
 def test_empresas_citadas_so_tickers_de_acao_escritos_no_titulo():
     assert rs._tickers_do_titulo("Mini-índice WINZ26 e PETR4 sobem; VALE3 cai") == ["PETR4", "VALE3"]
 
