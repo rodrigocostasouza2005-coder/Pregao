@@ -17,8 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import data.research.genial_lives as lives_mod
 
 
-def _feed(bozo=False, entries=None):
-    return SimpleNamespace(bozo=bozo, entries=entries or [])
+def _feed(bozo=False, entries=None, bozo_exception=None):
+    return SimpleNamespace(bozo=bozo, entries=entries or [], bozo_exception=bozo_exception)
 
 
 def _entry(titulo="15/10 Morning Call Genial", video_id="abc123", publicado="2026-10-15T10:00:00Z"):
@@ -62,3 +62,37 @@ def test_feed_respondeu_sem_video_de_programa_conhecido_e_lista_vazia_nao_none()
          patch.object(lives_mod.time, "sleep"):
         resultado = lives_mod.obter_relatorios()
     assert resultado == []
+
+
+def test_falha_com_excecao_de_rede_registra_motivo_especifico():
+    """Achado real (producao, GitHub Actions run 38989522110): sem isso,
+    uma falha total do feed aparecia so' como 'falhou apos Xs', sem
+    distinguir erro de DNS/timeout de feed malformado - motivo_falha novo,
+    mesmo padrao de genial.py/xp.py."""
+    erro = ConnectionError("Name or service not known")
+    with patch.object(lives_mod.feedparser, "parse", side_effect=[erro, erro]), \
+         patch.object(lives_mod.time, "sleep"):
+        resultado = lives_mod.obter_relatorios()
+    assert resultado is None
+    assert "Name or service not known" in lives_mod.motivo_ultima_falha()
+
+
+def test_falha_com_feed_malformado_sem_excecao_registra_motivo_generico():
+    with patch.object(lives_mod.feedparser, "parse", return_value=_feed(bozo=True, entries=[])), \
+         patch.object(lives_mod.time, "sleep"):
+        resultado = lives_mod.obter_relatorios()
+    assert resultado is None
+    assert "sem entradas validas" in lives_mod.motivo_ultima_falha()
+
+
+def test_sucesso_depois_de_uma_falha_anterior_limpa_o_motivo():
+    with patch.object(lives_mod.feedparser, "parse", return_value=_feed(bozo=True, entries=[])), \
+         patch.object(lives_mod.time, "sleep"):
+        lives_mod.obter_relatorios()
+    assert lives_mod.motivo_ultima_falha() is not None
+
+    with patch.object(lives_mod.feedparser, "parse", return_value=_feed(entries=[_entry()])), \
+         patch.object(lives_mod.time, "sleep"):
+        resultado = lives_mod.obter_relatorios()
+    assert resultado is not None
+    assert lives_mod.motivo_ultima_falha() is None

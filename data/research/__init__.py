@@ -12,8 +12,12 @@ coletavel sem login:
   ver xp.py). Campos confirmados com requisicao real feita fora do
   sandbox (2026-09-23) - IP deste sandbox de dev continua bloqueado pelo
   CDN da XP, mas o coletor esta ativo por padrao.
-- BTG Research: API interna identificada mas bloqueada por bot-detection
-  (Akamai) - ver genial.py/relatorio da tarefa pros detalhes tecnicos.
+- BTG Research: API real encontrada e responde sem bloqueio (content.
+  btgpactual.com/api/research/content-hub/analysis/filter), mas mistura
+  relatorios publicos com relatorios de area logada sem expor essa
+  distincao no modo lote - coletar dai seria contornar login que a BTG
+  pretende exigir, por isso SEM coletor implementado (ver comentario
+  completo em CASAS['btg'] abaixo e o relatorio da missao 2026-10-17).
 - Itau BBA, BB Investimentos, Santander, Safra, Agora/Bradesco, Inter:
   ainda nao investigadas (ver BACKLOG.md; reconhecimento rapido de
   reachability em data/diagnostico.py).
@@ -91,39 +95,60 @@ CASAS = [
         "disponivel": True,
         "obter_relatorios": genial_lives.obter_relatorios,
         "extrator_texto": genial_lives.obter_texto_transcricao,
+        # achado real (2026-10-17): a execucao de producao no GitHub
+        # Actions (run 38989522110) mostrou essa casa falhando ("[research]
+        # coleta Genial (Lives) falhou apos 4.5s") sem nenhum detalhe -
+        # motivo_ultima_falha novo em genial_lives.py (mesmo padrao de
+        # genial.py/xp.py) pra essa falha aparecer em SAUDE DOS DADOS.
+        "motivo_falha": genial_lives.motivo_ultima_falha,
     },
     {
-        # Investigado de novo em 2026-10-16 (sessao dedicada a BTG/XP/
-        # Genial) - a suposicao antiga ("precisa de Playwright pra passar
-        # do desafio JS") foi TESTADA DE VERDADE (nao so' suposta) contra
-        # os endpoints reais, em runner do GitHub Actions (mesmo tipo de
-        # rede/IP que a producao usa, via workflow_dispatch/push numa
-        # branch de diagnostico, depois removido): Chromium headless NAO
-        # passa da pagina www.btgpactual.com/acoes/ultimos-relatorios (que
-        # e' onde o JS client-side faria as chamadas de API de
-        # relatorios) - net::ERR_HTTP2_PROTOCOL_ERROR em todas as
-        # tentativas, e forcar HTTP/1.1 (que resolveu esse MESMO sintoma
-        # pra Genial, ver genial.py) so' trocou o erro por timeout de 30s,
-        # nunca carregou. 8 tentativas reais ao todo (2 execucoes x 4
-        # variacoes), 0 sucesso - nao e' "nao tentamos", e' "tentamos e
-        # nao passa", de forma repetida.
+        # Investigado de novo em 2026-10-17 (sessao dedicada a BTG/XP/
+        # Genial, continuacao de 2026-10-16) - achado NOVO que muda a
+        # causa raiz anotada abaixo (a pagina www.btgpactual.com/acoes/
+        # ultimos-relatorios continua bloqueada pra Chromium/Playwright,
+        # 0/8 tentativas - isso nao mudou), mas o endpoint real de
+        # listagem de relatorios FOI encontrado e responde sem bloqueio
+        # nenhum, via dominio content.btgpactual.com (mesmo dominio que
+        # ja' serve a pagina de lives sem bot-detection):
         #
-        # A API publica identificada em sessao anterior (BACKLOG.md,
-        # content.btgpactual.com/.../medias/lives) respondeu 200 com dados
-        # reais - MAS e' so' o status de LIVE STREAMING agora mesmo (0 ou
-        # 1 resultado tipico, sem texto/setor/ticker), nao relatorios
-        # escritos; confirmado SEM bot-detection nenhum (nem curl_cffi
-        # precisou - 'requests' puro com TLS padrao ja' funciona, e
-        # robots.txt de content.btgpactual.com permite tudo). O endpoint
-        # de LISTAGEM DE RELATORIOS nunca foi confirmado: a suposicao
-        # antiga ("ALL?...") deu 404 "Not Found" limpo (pagina de erro
-        # JSON normal, nao desafio/bloqueio) - e' o endpoint errado, nao
-        # bloqueado; outras 3 variacoes tentadas (sem segmento, ?type=
-        # REPORT, /REPORT) deram o mesmo 404 limpo. Achar o endpoint
-        # certo exigiria ler o bundle JS da propria pagina pra mapear as
-        # rotas reais - exatamente a pagina que esta bloqueada acima.
-        # Como a API de lives nao serve o proposito (nao e' "research") e
-        # nao ha' endpoint de relatorios confirmado, mantido indisponivel.
+        # 1. https://content.btgpactual.com/research/home (a landing SPA
+        #    de research) carrega 200 com 'requests' puro (sem curl_cffi,
+        #    sem impersonate) e com o UA identificado do projeto - ZERO
+        #    bloqueio, diferente de www.btgpactual.com.
+        # 2. Mapeando o bundle Angular servido por esse dominio (JS
+        #    publico da propria pagina, mesmo princípio ja' usado pro
+        #    __NEXT_DATA__ da Genial e pro wp-json da XP - nao e' scraping
+        #    de pagina bloqueada, e' ler o codigo-fonte publico que ja'
+        #    chega ao navegador de qualquer visitante) ate' achar o
+        #    service real: POST https://content.btgpactual.com/api/
+        #    research/content-hub/analysis/filter (body {} basta) devolve
+        #    200 com relatorios de verdade - titulo, ticker, setor,
+        #    recomendacao, preco-alvo, autor(es), data, categoria. Mais de
+        #    18 mil resultados disponiveis, dados de HOJE confirmados
+        #    (testado 2026-10-17, ver sessao). GET .../content-hub/
+        #    analysis/{id} devolve o detalhe de 1 item.
+        #
+        # MAS (motivo que mantem a casa indisponivel, NAO e' "nao
+        # tentamos"): cada item tem um campo "tier" que so' aparece no
+        # detalhe (nao no /filter em lote) com valor "AREA_PUBLICA" ou
+        # "AREA_LOGADA" - ou seja, a PROPRIA BTG marca parte desse
+        # conteudo como exclusivo de cliente logado, mas o endpoint nao
+        # aplica esse controle pra quem chama sem sessao (devolve o texto
+        # INTEIRO, inclusive de itens AREA_LOGADA, pra uma requisicao
+        # anonima comum). Isso parece falha de autorizacao do lado da
+        # BTG, nao uma porta deliberadamente aberta - e nao ha' como
+        # filtrar por tier ANTES de already ter recebido o conteudo
+        # completo (o /filter em lote nem devolve o campo). Coletar
+        # qualquer coisa desse endpoint em produção, de forma agendada,
+        # seria efetivamente contornar uma restricao de login que a BTG
+        # claramente pretende ter (mesmo principio que ja' impede este
+        # projeto de ler o paywall da XP, ver xp.py) - por isso NENHUM
+        # coletor foi implementado contra esse endpoint, mesmo ele
+        # "funcionando" tecnicamente. Decisao de nao automatizar aqui;
+        # nao e' chamado do Rodrigo decidir sozinho tecnico, mas bypass de
+        # login nao e' algo que este projeto faz por padrao - ver RELATORIO
+        # da missao 2026-10-17 pros detalhes completos antes de reconsiderar.
         "id": "btg",
         "nome": "BTG Research",
         "ativa_por_padrao": False,
@@ -131,12 +156,15 @@ CASAS = [
         "obter_relatorios": None,
         "extrator_texto": None,
         "motivo_indisponivel": (
-            "Pagina de relatorios (www.btgpactual.com) bloqueada pra navegador "
-            "automatizado mesmo com Chromium/Playwright real (testado, nao suposto: "
-            "net::ERR_HTTP2_PROTOCOL_ERROR/timeout, 0/8 tentativas passaram) - sem "
-            "ela nao da pra mapear o endpoint real de LISTAGEM DE RELATORIOS "
-            "(a API publica confirmada, content.btgpactual.com/.../medias/lives, "
-            "so' traz status de live streaming agora mesmo, nao relatorios escritos)."
+            "Pagina de relatorios (www.btgpactual.com) continua bloqueada pra "
+            "navegador automatizado (0/8 tentativas, net::ERR_HTTP2_PROTOCOL_ERROR/"
+            "timeout) - MAS o endpoint real (content.btgpactual.com/api/research/"
+            "content-hub/analysis/filter) foi encontrado e responde sem bloqueio "
+            "nenhum (achado 2026-10-17). Mantido indisponivel por outro motivo: "
+            "esse endpoint mistura relatorios publicos e de area logada sem "
+            "expor o campo que distingue os dois no modo lote, entao coleta-lo "
+            "equivaleria a contornar login que a BTG pretende exigir - fora do "
+            "que este projeto faz (mesmo principio do paywall da XP)."
         ),
     },
 ]
