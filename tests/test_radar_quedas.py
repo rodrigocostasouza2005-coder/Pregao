@@ -385,7 +385,8 @@ def test_resumo_fontes_vigentes_agrupa_por_casa_e_conta_ativos_unicos():
     with patch.object(radar, "listar_carteiras", return_value=linhas):
         resumo = resumo_fontes_vigentes()
     assert resumo == {
-        "Safra Corretora": {"ativos": 2, "verificado_em": recente, "desatualizada": False},
+        "Safra Corretora": {"ativos": 2, "verificado_em": recente, "desatualizada": False,
+                            "carteiras": [], "data_publicacao": None},
     }
     assert "Genial Analisa" not in resumo  # sem linha vigente -> casa ausente (UI rotula "indisponível")
 
@@ -433,3 +434,82 @@ def test_monitoramento_sem_queda_elegivel_e_execucao_valida():
     assert resultado["alertas_novos"] == []
     assert resultado["total_tickers"] == 1
     registrar.assert_not_called()
+
+
+# ---- revisao 2026-10-18 -------------------------------------------------
+
+def test_pregao_do_alerta_vem_da_cotacao_nao_do_relogio():
+    """Num feriado em dia util o Yahoo devolve a cotacao do ultimo pregao
+    real - o alerta precisa carregar ESSA data (chave de idempotencia
+    ticker+pregao), nao a data de hoje."""
+    from datetime import date
+    agora = datetime(2026, 11, 20, 14, 0, tzinfo=timezone.utc)  # feriado (Consciencia Negra)
+    recs = [{"ticker": "PETR4", "casa": "Safra Corretora", "carteira": "Top 10", "empresa": "Petrobras"}]
+    cot = {"preco": 36.0, "fechamento_anterior": 38.0, "erro": None, "pregao": date(2026, 11, 19)}
+    alerta = avaliar_ticker("PETR4", cot, recs, agora=agora)
+    assert alerta["pregao"] == "2026-11-19"
+
+
+def test_pregao_cai_pro_relogio_quando_provedor_nao_informa():
+    agora = datetime(2026, 10, 16, 14, 0, tzinfo=timezone.utc)
+    recs = [{"ticker": "PETR4", "casa": "Safra Corretora", "carteira": "Top 10"}]
+    alerta = avaliar_ticker("PETR4", {"preco": 36.0, "fechamento_anterior": 38.0, "erro": None}, recs, agora=agora)
+    assert alerta["pregao"] == "2026-10-16"
+
+
+def test_processar_monitoramento_usa_data_do_ultimo_pregao_do_provedor():
+    from datetime import date
+    import data.radar_quedas as radar
+    recs = [{"ticker": "PETR4", "casa": "Safra Corretora", "carteira": "Top 10", "empresa": "Petrobras",
+             "fonte_url": "https://www.safra.com.br/x"}]
+    registrados = []
+    with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
+         patch.object(radar, "coletar_carteiras_safra", return_value=recs), \
+         patch.object(radar, "salvar_carteiras", return_value=True), \
+         patch.object(radar, "listar_carteiras", return_value=recs), \
+         patch.object(radar, "obter_cotacao", return_value={"preco": 36.0, "fechamento_anterior": 38.0, "erro": None}), \
+         patch.object(radar, "obter_data_ultimo_pregao", return_value=date(2026, 11, 19)), \
+         patch.object(radar, "registrar_alerta", side_effect=lambda a: (registrados.append(a), (True, 1))[1]):
+        resultado = radar.processar_monitoramento()
+    assert resultado["coleta_ok"] is True
+    assert registrados and registrados[0]["pregao"] == "2026-11-19"
+
+
+def test_linhas_monitorados_consolida_ordena_e_classifica():
+    import data.radar_quedas as radar
+    recs = [
+        {"ticker": "PETR4", "casa": "Safra Corretora", "carteira": "Top 10", "empresa": "Petrobras"},
+        {"ticker": "PETR4", "casa": "Genial Analisa", "carteira": "Dividendos", "empresa": ""},
+        {"ticker": "VALE3", "casa": "Safra Corretora", "carteira": "Top 10", "empresa": "Vale"},
+        {"ticker": "BBAS3", "casa": "Safra Corretora", "carteira": "Top 10", "empresa": "BB"},
+        {"ticker": "ITUB4", "casa": "Safra Corretora", "carteira": "Top 10", "empresa": "Itau"},
+    ]
+    cot = {
+        "PETR4": {"preco": 36.0, "fechamento_anterior": 38.0, "erro": None},   # -5,26% -> ALERTA
+        "VALE3": {"preco": 57.6, "fechamento_anterior": 60.0, "erro": None},   # -4,00% exato -> nao alerta
+        "BBAS3": {"preco": 10.5, "fechamento_anterior": 10.0, "erro": None},   # +5% -> NORMAL
+        "ITUB4": {"erro": "timeout"},
+    }
+    linhas = radar.linhas_monitorados(recs, cot)
+    assert [l["ticker"] for l in linhas] == ["PETR4", "VALE3", "BBAS3", "ITUB4"]
+    petr = linhas[0]
+    assert petr["estado"] == "ALERTA" and petr["casas"] == ["Genial Analisa", "Safra Corretora"]
+    assert petr["empresa"] == "Petrobras"
+    assert linhas[1]["estado"] == "ATENCAO"  # -4,00% exato: atencao, nunca alerta
+    assert linhas[2]["estado"] == "NORMAL"
+    assert linhas[3]["estado"] == "SEM_COTACAO" and linhas[3]["variacao_pct"] is None
+
+
+def test_alertas_periodo_filtra_no_banco_pela_data_do_pregao():
+    import data.radar_quedas as radar
+    cliente = MagicMock()
+    consulta = cliente.table.return_value.select.return_value
+    consulta.gte.return_value.order.return_value.order.return_value.limit.return_value.execute.return_value.data = [{"id": 1}]
+    with patch.object(radar, "obter_cliente", return_value=cliente):
+        radar.alertas_periodo.clear()
+        resultado = radar.alertas_periodo(7)
+    assert resultado == [{"id": 1}]
+    campo, valor = consulta.gte.call_args[0]
+    assert campo == "pregao"
+    esperado = (datetime.now(radar.TZ_SP).date() - timedelta(days=6)).isoformat()
+    assert valor == esperado

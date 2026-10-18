@@ -2421,8 +2421,10 @@ def pregerar_resumos_news(tickers_universo: list) -> dict:
     confirmar a foto so' vale a pena pro conteudo que vai ficar visivel
     pra TODOS os usuarios, nao pro clique individual sob demanda.
 
-    Retorna stats: {"grupos_considerados", "ja_cacheados", "gerados",
-    "falhas", "tempo_esgotado", "tabela_disponivel"} - nunca lança
+    Retorna stats: {"grupos_considerados", "ja_cacheados", "gerados"
+    (resumo real cacheado), "indisponiveis" (tentativa sem resumo),
+    "falhas" (excecao), "tempo_esgotado", "tabela_disponivel",
+    "groq_configurado"} - nunca lança
     excecao (falha isolada de 1 grupo/ticker nao aborta os demais, ver
     try/except por item).
 
@@ -2436,10 +2438,21 @@ def pregerar_resumos_news(tickers_universo: list) -> dict:
     já ter rodado. Nunca bloqueia o caminho sob-demanda (clique no card) -
     só este pré-processamento em lote, que só vale a pena gastar cota se
     o resultado puder ser reaproveitado por todos os usuários depois."""
-    stats = {"grupos_considerados": 0, "ja_cacheados": 0, "gerados": 0, "falhas": 0, "tempo_esgotado": False}
+    stats = {"grupos_considerados": 0, "ja_cacheados": 0, "gerados": 0, "indisponiveis": 0,
+             "falhas": 0, "tempo_esgotado": False, "groq_configurado": None}
     disponivel = ia_cache.tabela_disponivel()
     stats["tabela_disponivel"] = disponivel
     if disponivel is not True:
+        return stats
+
+    # Achado real 2026-10-18 (run 39088619143): sem GROQ_API_KEY no
+    # ambiente, cada grupo baixava/extraia a materia e voltava resumo=None
+    # ("GROQ_API_KEY não configurada"), o cache (que so' grava resumo
+    # real) descartava tudo e o contador ainda reportava "25 gerado(s),
+    # 0 falha(s)". Sem chave nao ha' nada pra pre-gerar - para aqui.
+    api_key, _ = config.obter_credenciais_groq()
+    stats["groq_configurado"] = bool(api_key)
+    if not api_key:
         return stats
 
     limite = time.monotonic() + _ORCAMENTO_PREGERAR_RESUMOS_S
@@ -2486,22 +2499,21 @@ def pregerar_resumos_news(tickers_universo: list) -> dict:
     for chave, g, fontes_ordenadas in pendentes:
         if chave in ja_prontos:
             continue
-        if stats["gerados"] >= _MAX_RESUMOS_POR_EXECUCAO or time.monotonic() > limite:
+        if stats["gerados"] + stats["indisponiveis"] >= _MAX_RESUMOS_POR_EXECUCAO or time.monotonic() > limite:
             stats["tempo_esgotado"] = True
             break
         try:
             titulos_grupo = tuple(g.get("titulos") or [g["titulo"]])
             resultado = obter_resumo_grupo(g["titulo"], fontes_ordenadas, titulos_grupo, validar_imagem=True)
-            # diagnostico temporario (2026-10-15): "gerados" conta toda
-            # TENTATIVA sem excecao, nao so' sucesso real - uma falha
-            # legitima do Groq (cota/extracao) devolve resumo=None SEM
-            # lancar excecao, entao nunca aparecia aqui nem em _falhas.
-            # Imprime so' quando resumo=None, pra confirmar se e' isso
-            # (motivo_indisponivel real) que explica "gerado mas nada
-            # cacheado", em vez de um bug de escrita silenciosa.
-            if not resultado.get("resumo"):
+            # "gerados" conta so' resumo REAL (o unico que o cache grava).
+            # resumo=None sem excecao (cota do Groq, materia sem texto
+            # extraivel, resumo rejeitado pela checagem de consistencia)
+            # vai pra "indisponiveis", com o motivo no log.
+            if resultado.get("resumo"):
+                stats["gerados"] += 1
+            else:
+                stats["indisponiveis"] += 1
                 print(f"[pregerar_resumos_news] '{g['titulo'][:50]}' sem resumo: {resultado.get('motivo_indisponivel')!r}")
-            stats["gerados"] += 1
         except Exception:
             stats["falhas"] += 1
             logging.exception("pregerar_resumos_news: falha ao gerar resumo de '%s'", g.get("titulo"))

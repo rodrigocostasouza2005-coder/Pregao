@@ -19,33 +19,69 @@ def _conteudo():
     return _CAMINHO.read_text(encoding="utf-8")
 
 
-def test_cron_do_morning_call_e_08h_brasilia():
-    """Missão explícita: envio às 08h00 de Brasília (America/Sao_Paulo,
-    UTC-3, sem horário de verão desde 2019) = 11:00 UTC."""
+def _crons_declarados(texto):
+    return re.findall(r'- cron:\s*"([^"]+)"', texto)
+
+
+def _crons_do_if(texto, job):
+    """Lista de crons que o `if:` do job aceita (contains(fromJSON([...]),
+    github.event.schedule))."""
+    bloco_job = texto.split(f"\n  {job}:", 1)[1]
+    condicao_if = bloco_job.split("runs-on:", 1)[0]
+    m = re.search(r"contains\(fromJSON\('(\[[^']+\])'\), github\.event\.schedule\)", condicao_if)
+    assert m is not None, f"job {job} sem contains(fromJSON([...]), github.event.schedule) no if:"
+    return re.findall(r'"([^"]+)"', m.group(1))
+
+
+def test_morning_call_dispara_as_08h_brasilia_com_reservas():
+    """Missão explícita: envio às 08h de Brasília (UTC-3, sem horário de
+    verão desde 2019) - primeiro disparo 08:03 (= 11:03 UTC) e reservas
+    até 09:07, porque o GitHub descarta schedule sob carga (medido:
+    nenhum disparo em 17/10). Idempotência diária evita envio duplo."""
     texto = _conteudo()
-    assert '- cron: "0 11 * * 1-5"' in texto, (
-        "cron do Morning Call não está em '0 11 * * 1-5' (08h BRT) - "
-        "conferir .github/workflows/radar-morning-call.yml"
-    )
-    # Regressão de documentação: não pode sobrar um comentário/cron
-    # antigo dizendo 07:00 (bug real encontrado e corrigido nesta sessão).
+    crons_mc = _crons_do_if(texto, "morning-call")
+    assert crons_mc[0] == "3 11 * * 1-5"
+    assert len(crons_mc) >= 2
+    for cron in crons_mc:
+        minuto, hora = cron.split()[:2]
+        assert hora in ("11", "12"), f"{cron!r} fora da janela 08h-09h BRT"
     assert "07:00 BRT" not in texto
 
 
-def test_cron_do_schedule_bate_com_a_condicao_if_do_job_morning_call():
-    """O `if:` do job morning-call compara github.event.schedule por
-    string literal - precisa citar EXATAMENTE o mesmo cron declarado em
-    `on.schedule`, senão o job nunca dispara via schedule (só via
-    workflow_dispatch manual), sem nenhum erro visível."""
+def test_cron_do_schedule_bate_com_a_condicao_if_dos_jobs():
+    """O `if:` de cada job compara github.event.schedule por string
+    literal - todo cron que o job aceita precisa existir em on.schedule
+    (senão nunca dispara), e todo cron declarado precisa pertencer a
+    exatamente UM job (senão dispara um run vazio, ou os dois)."""
     texto = _conteudo()
-    crons_declarados = re.findall(r'- cron:\s*"([^"]+)"', texto)
-    assert "0 11 * * 1-5" in crons_declarados
+    declarados = _crons_declarados(texto)
+    crons_radar = _crons_do_if(texto, "radar")
+    crons_mc = _crons_do_if(texto, "morning-call")
+    for cron in crons_radar + crons_mc:
+        assert cron in declarados, f"{cron!r} está no if: mas não em on.schedule - job nunca dispara"
+    assert not set(crons_radar) & set(crons_mc), "cron compartilhado entre radar e morning-call"
+    assert set(declarados) == set(crons_radar) | set(crons_mc), "cron declarado sem job correspondente"
 
-    bloco_job = texto.split("morning-call:", 1)[1]
-    condicao_if = bloco_job.split("steps:", 1)[0]
-    m = re.search(r"github\.event\.schedule == '([^']+)'", condicao_if)
-    assert m is not None, "job morning-call não tem comparação de github.event.schedule no if:"
-    assert m.group(1) in crons_declarados, (
-        f"o if: do job morning-call compara contra {m.group(1)!r}, que não está "
-        f"em on.schedule ({crons_declarados!r}) - job nunca dispara sozinho"
-    )
+
+def test_agendamentos_evitam_minutos_redondos():
+    """O GitHub descarta disparos de schedule sob carga e :00/:15/:30/:45
+    são os mais congestionados - nenhum cron dos workflows agendados pode
+    cair nesses minutos."""
+    for nome in ("radar-morning-call.yml", "coletores-nuvem.yml"):
+        texto = (_CAMINHO.parent / nome).read_text(encoding="utf-8")
+        for cron in _crons_declarados(texto):
+            minutos = cron.split()[0]
+            for minuto in minutos.replace("*/", "").split(","):
+                assert minuto.isdigit() and int(minuto) % 15 != 0, f"{nome}: cron {cron!r} usa minuto redondo"
+
+
+def test_concurrency_por_job_nao_por_workflow():
+    """Com um grupo único no workflow, o GitHub mantém só 1 pendente e
+    cancela o anterior - um Radar enfileirado podia derrubar o Morning
+    Call pendente."""
+    texto = _conteudo()
+    topo = texto.split("\njobs:", 1)[0]
+    assert "concurrency:" not in topo
+    for job in ("radar", "morning-call"):
+        bloco = texto.split(f"\n  {job}:", 1)[1].split("steps:", 1)[0]
+        assert "concurrency:" in bloco, f"job {job} sem concurrency própria"

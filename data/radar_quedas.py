@@ -11,12 +11,12 @@ desativa as recomendações vigentes de outra fonte que respondeu
 normalmente. Outras casas só entram quando houver coletor de carteiras
 públicas acessível e dados de validade confiáveis.
 """
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import streamlit as st
 
-from data.prices import obter_cotacao
+from data.prices import obter_cotacao, obter_data_ultimo_pregao
 from data.research.genial_carteiras import coletar_carteiras as _coletar_genial
 from data.research.safra_carteiras import coletar_carteiras as _coletar_safra
 from data.supabase_client import obter_cliente
@@ -42,6 +42,13 @@ IDADE_MAXIMA_CARTEIRA_DIAS = 40
 IDADE_FRESCA_HORAS = 72
 CASA_GENIAL = "Genial Analisa"
 CASA_SAFRA = "Safra Corretora"
+# Casas com coletor de carteira configurado (ordem de exibicao na UI). Uma
+# casa daqui sem carteira vigente aparece como INDISPONIVEL - nunca some
+# da tela, pra cobertura parcial nao parecer cobertura completa.
+CASAS_MONITORADAS = (CASA_SAFRA, CASA_GENIAL)
+# So' pra UI destacar "chegando perto do gatilho" - nao gera alerta nem
+# e-mail (a regra de alerta continua LIMIAR_VARIACAO, estrita).
+LIMIAR_ATENCAO = -2.5
 
 
 def calcular_queda(preco_atual, fechamento_anterior):
@@ -161,12 +168,17 @@ def avaliar_ticker(ticker, cotacao, recomendacoes, agora=None):
     relacionados = [r for r in recomendacoes if normalizar_ticker(r.get("ticker")) == ticker]
     if not relacionados:
         return None
+    # "pregao" = data da ultima negociacao segundo o provedor (ver
+    # processar_monitoramento/obter_data_ultimo_pregao), nao a data do
+    # relogio: num feriado em dia util o Yahoo devolve a cotacao do pregao
+    # anterior, e usar a data de hoje criava um evento "novo" duplicado.
+    pregao = cotacao.get("pregao") or agora.date()
     return {
         "ticker": ticker, "empresa": next((r.get("empresa") for r in relacionados if r.get("empresa")), ""),
         "preco_atual": float(preco), "fechamento_anterior": float(anterior),
         "variacao_pct": variacao, "cotacao_em": cotacao.get("cotacao_em") or agora.isoformat(),
         "tipo_cotacao": cotacao.get("tipo_cotacao") or "ATRASADA/PROVEDOR GRATUITO",
-        "pregao": agora.date().isoformat(),
+        "pregao": pregao.isoformat(),
         "casas": sorted({r.get("casa", "") for r in relacionados if r.get("casa")}),
         "carteiras": sorted({r.get("carteira", "") for r in relacionados if r.get("carteira")}),
         "fontes": sorted({r.get("fonte_url", "") for r in relacionados if r.get("fonte_url")}),
@@ -272,6 +284,10 @@ def processar_monitoramento():
     novos = []
     for ticker in tickers:
         cotacao = obter_cotacao(ticker)
+        if isinstance(cotacao, dict) and not cotacao.get("erro"):
+            pregao = obter_data_ultimo_pregao(ticker)
+            if pregao is not None:
+                cotacao = {**cotacao, "pregao": pregao}
         alerta = avaliar_ticker(ticker, cotacao, recomendacoes)
         if alerta:
             ok, alerta_id = registrar_alerta(alerta)
@@ -287,16 +303,86 @@ def processar_monitoramento():
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def alertas_recentes(limite=100):
+def alertas_periodo(dias=7):
+    """Alertas com pregao nos ultimos `dias` dias corridos (hoje incluso),
+    mais recente primeiro - filtrado NO BANCO (substitui o antigo
+    alertas_recentes(limite=100), cujo corte fixo podia esconder alertas
+    antigos dentro do periodo pedido). None se o Supabase estiver indisponivel."""
     cliente = obter_cliente()
     if cliente is None:
         return None
+    desde = (datetime.now(TZ_SP).date() - timedelta(days=max(int(dias), 1) - 1)).isoformat()
     try:
         resp = (cliente.table("radar_alertas_queda").select("*")
-                .order("alertado_em", desc=True).limit(int(limite)).execute())
+                .gte("pregao", desde)
+                .order("pregao", desc=True).order("variacao_pct").limit(1000).execute())
         return resp.data or []
-    except Exception:
+    except Exception as exc:
+        print(f"[radar_quedas] falha ao ler alertas: {exc!r}")
         return None
+
+
+def classificar_variacao(variacao_pct):
+    """Estado de um ativo monitorado pra UI: ALERTA (regra estrita do
+    monitor, deve_alertar), ATENCAO (<= LIMIAR_ATENCAO, ainda sem alerta),
+    NORMAL, ou SEM_COTACAO (variacao None)."""
+    if variacao_pct is None:
+        return "SEM_COTACAO"
+    if deve_alertar(variacao_pct):
+        return "ALERTA"
+    if variacao_pct <= LIMIAR_ATENCAO:
+        return "ATENCAO"
+    return "NORMAL"
+
+
+def linhas_monitorados(recomendacoes, cotacoes):
+    """Uma linha por TICKER monitorado (consolida casas/carteiras), com a
+    variacao do dia calculada pela MESMA regra do monitor (calcular_queda
+    sobre preco/fechamento anterior). Pura (sem rede) - recomendacoes vem
+    de listar_carteiras(), cotacoes de obter_cotacao() por ticker.
+    Ordenada da maior queda pra maior alta; sem cotacao vai pro fim."""
+    por_ticker = {}
+    for r in recomendacoes or []:
+        ticker = normalizar_ticker(r.get("ticker"))
+        if not ticker:
+            continue
+        linha = por_ticker.setdefault(ticker, {"ticker": ticker, "empresa": "", "casas": set(), "carteiras": set()})
+        linha["empresa"] = linha["empresa"] or (r.get("empresa") or "")
+        if r.get("casa"):
+            linha["casas"].add(r["casa"])
+        if r.get("carteira"):
+            linha["carteiras"].add(r["carteira"])
+    linhas = []
+    for ticker, linha in por_ticker.items():
+        cot = cotacoes.get(ticker) if isinstance(cotacoes, dict) else None
+        valida = isinstance(cot, dict) and not cot.get("erro")
+        preco = cot.get("preco") if valida else None
+        anterior = cot.get("fechamento_anterior") if valida else None
+        variacao = calcular_queda(preco, anterior) if valida else None
+        linhas.append({
+            "ticker": ticker, "empresa": linha["empresa"],
+            "casas": sorted(linha["casas"]), "carteiras": sorted(linha["carteiras"]),
+            "preco": preco if variacao is not None else None,
+            "fechamento_anterior": anterior if variacao is not None else None,
+            "variacao_pct": variacao,
+            "distancia_gatilho_pp": (variacao - LIMIAR_VARIACAO) if variacao is not None else None,
+            "estado": classificar_variacao(variacao),
+        })
+    linhas.sort(key=lambda l: (l["variacao_pct"] is None, l["variacao_pct"] if l["variacao_pct"] is not None else 0))
+    return linhas
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def painel_monitorados():
+    """linhas_monitorados() sobre as carteiras vigentes + cotacao atual de
+    cada ticker (obter_cotacao, cache proprio de 30s). None se o Supabase
+    estiver indisponivel; [] se nenhuma carteira vigente."""
+    recomendacoes = listar_carteiras()
+    if recomendacoes is None:
+        return None
+    tickers = sorted({normalizar_ticker(r.get("ticker")) for r in recomendacoes} - {""})
+    cotacoes = {t: obter_cotacao(t) for t in tickers}
+    return linhas_monitorados(recomendacoes, cotacoes)
 
 
 def _desatualizada(verificado_em, agora=None):
@@ -338,9 +424,14 @@ def resumo_fontes_vigentes():
     por_casa = {}
     for linha in linhas:
         casa = linha.get("casa") or "—"
-        info = por_casa.setdefault(casa, {"ativos": set(), "verificado_em": None})
+        info = por_casa.setdefault(casa, {"ativos": set(), "verificado_em": None, "carteiras": set(), "data_publicacao": None})
         if linha.get("ticker"):
             info["ativos"].add(linha["ticker"])
+        if linha.get("carteira"):
+            info["carteiras"].add(linha["carteira"])
+        publicacao = linha.get("data_publicacao")
+        if publicacao and (info["data_publicacao"] is None or str(publicacao) > str(info["data_publicacao"])):
+            info["data_publicacao"] = publicacao
         verificado = linha.get("verificado_em")
         if verificado and (info["verificado_em"] is None or str(verificado) > str(info["verificado_em"])):
             info["verificado_em"] = verificado
@@ -349,6 +440,8 @@ def resumo_fontes_vigentes():
             "ativos": len(info["ativos"]),
             "verificado_em": info["verificado_em"],
             "desatualizada": _desatualizada(info["verificado_em"]),
+            "carteiras": sorted(info["carteiras"]),
+            "data_publicacao": info["data_publicacao"],
         }
         for casa, info in por_casa.items()
     }

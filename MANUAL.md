@@ -301,3 +301,25 @@ Job independente `python -m jobs.morning_call`; agenda de dias úteis às 07:00 
 3. Rodar o workflow **Radar e Morning Call** manualmente, escolhendo `radar`, `morning_call` ou `ambos`.
 
 Sem migration e secrets, os jobs não conseguem persistir nem enviar e-mails. O agendamento do GitHub Actions é best effort, não um SLA de execução pontual.
+
+## Disparo externo dos agendamentos (recomendado)
+
+O `schedule` do GitHub Actions é "best effort": sob carga, o GitHub atrasa ou **descarta** disparos. Medido em 2026-10-18: entre 14 e 17/10, de ~220 disparos esperados (Radar a cada 15 min + Coletores a cada 30 min + Morning Call), só 23 aconteceram — e nenhum na sexta 17/10 (o Morning Call das 08h não saiu). Os workflows já usam minutos quebrados e disparos de reserva para reduzir a perda, mas a única forma confiável é um agendador externo chamando o `workflow_dispatch`.
+
+Passo a passo (gratuito, ~10 min):
+
+1. **Token do GitHub (só para este repositório):** GitHub → Settings (do seu perfil) → Developer settings → Personal access tokens → **Fine-grained tokens** → *Generate new token*. Em *Repository access*, escolha **Only select repositories → Pregao**. Em *Permissions → Repository permissions*, deixe **Actions: Read and write** (nada mais). Validade: 1 ano. Copie o token (ele só aparece uma vez).
+2. **Agendador:** crie conta em https://cron-job.org e crie 3 jobs, todos com:
+   - *Request method*: `POST`
+   - *Headers*: `Authorization: Bearer SEU_TOKEN`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`
+   - *Timezone*: `America/Sao_Paulo`
+
+   | Job | URL | Body | Horário |
+   |---|---|---|---|
+   | Radar | `https://api.github.com/repos/rodrigocostasouza2005-coder/Pregao/actions/workflows/radar-morning-call.yml/dispatches` | `{"ref":"main","inputs":{"job":"radar"}}` | a cada 15 min, seg–sex, 10h–17h |
+   | Morning Call | mesma URL acima | `{"ref":"main","inputs":{"job":"morning_call"}}` | 08:00, seg–sex |
+   | Coletores | `https://api.github.com/repos/rodrigocostasouza2005-coder/Pregao/actions/workflows/coletores-nuvem.yml/dispatches` | `{"ref":"main"}` | a cada 30 min, seg–sex, 07h–20h |
+
+3. Teste um job com *Run now*: a resposta esperada é **HTTP 204** e um run novo aparece em Actions.
+
+Os agendamentos do próprio GitHub podem continuar ligados: Radar e Morning Call são idempotentes (o Radar não duplica alerta do mesmo ticker/pregão; o Morning Call não reenvia no mesmo dia), então um disparo a mais não gera e-mail duplicado.
