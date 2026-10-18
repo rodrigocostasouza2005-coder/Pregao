@@ -27,6 +27,7 @@ def _sem_rede(**overrides):
         obter_top_mercado_internacional=lambda *_a: [],
         calcular_calendario_cacheado=lambda *_a, **_k: [],
         obter_resumos_prontos=lambda *_a, **_k: {},
+        _noticias_do_setor=lambda _setor: [],
     )
     base.update(overrides)
     return base
@@ -379,9 +380,9 @@ def test_falha_na_leitura_do_cache_nao_derruba_a_edicao():
     assert edicao["capa"]["manchete"]["titulo"] == "X"
 
 
-def test_radar_usa_coletor_por_setor_e_regras_da_edicao():
-    """O radar consulta obter_top_mercado(setor) - o mesmo filtro por
-    setor da aba TOP MERCADO - e aplica a janela e o filtro de pauta."""
+def test_radar_consulta_cada_setor_e_aplica_regras_da_edicao():
+    """O radar pede as notícias de cada setor e aplica a janela, o filtro
+    de pauta e a validação de fonte."""
     pedidos = []
     agora = datetime(2026, 10, 19, 8, tzinfo=TZ_SP)
 
@@ -398,8 +399,27 @@ def test_radar_usa_coletor_por_setor_e_regras_da_edicao():
              "data": "2026-10-18T21:00:00-03:00", "importancia": 9, "tickers": []},
         ]
 
-    with _MultiPatch(obter_top_mercado=por_setor):
+    with _MultiPatch(obter_top_mercado=por_setor,
+                     _noticias_do_setor=lambda setor: por_setor(setor)):
         edicao = ed.montar_edicao(agora)
     assert "BANCOS" in pedidos
     bancos = next(b for b in edicao["radar"]["setores"] if b["setor"] == "BANCOS")
     assert [f["veiculo"] for f in bancos["fontes"]] == ["Valor Econômico", "Folha de S.Paulo"]
+
+
+def test_noticias_do_setor_busca_dedicada_mais_ranking_geral(monkeypatch):
+    from data import news as coletor
+    urls = []
+    monkeypatch.setattr(coletor, "_buscar_feed_de_url", lambda url: urls.append(url) or [{"link": "x"}])
+    monkeypatch.setattr(coletor, "_processar_pool", lambda entries, setor, regiao: [{"titulo": "dedicada"}])
+    monkeypatch.setattr(ed, "obter_top_mercado", lambda *_a: [{"titulo": "geral"}])
+    itens = ed._noticias_do_setor("BANCOS")
+    assert [i["titulo"] for i in itens] == ["dedicada", "geral"]
+    assert len(urls) == 1 and "when%3A3d" in urls[0] and "Ita%C3%BA" in urls[0]
+
+
+def test_noticias_do_setor_none_quando_as_duas_coletas_falham(monkeypatch):
+    from data import news as coletor
+    monkeypatch.setattr(coletor, "_buscar_feed_de_url", lambda url: None)
+    monkeypatch.setattr(ed, "obter_top_mercado", lambda *_a: None)
+    assert ed._noticias_do_setor("BANCOS") is None
