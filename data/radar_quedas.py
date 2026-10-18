@@ -30,6 +30,16 @@ LIMIAR_VARIACAO = -4.0
 # ~10 dias alem do ciclo mensal de 30/31 dias pra nao expirar por um
 # fim de semana prolongado ou alguns dias de bloqueio pontual da fonte.
 IDADE_MAXIMA_CARTEIRA_DIAS = 40
+# Limite BEM mais curto que IDADE_MAXIMA_CARTEIRA_DIAS - so' pra rotular
+# "atualizada" vs "desatualizada" na UI (ver resumo_fontes_vigentes). O
+# cron roda a cada 15min em dia de pregao (.github/workflows/radar-
+# morning-call.yml) e salvar_carteiras() bate verificado_em em TODA
+# confirmacao bem-sucedida, mesmo sem mudanca de composicao - uma casa
+# saudavel nunca deveria ficar mais que um fim de semana (~65h entre a
+# ultima execucao de sexta e a primeira de segunda) sem confirmar. 72h
+# cobre um fim de semana normal + folga, sem marcar falso-desatualizada
+# toda segunda de manha antes do primeiro cron do dia.
+IDADE_FRESCA_HORAS = 72
 CASA_GENIAL = "Genial Analisa"
 CASA_SAFRA = "Safra Corretora"
 
@@ -289,16 +299,39 @@ def alertas_recentes(limite=100):
         return None
 
 
+def _desatualizada(verificado_em, agora=None):
+    """True se `verificado_em` passou de IDADE_FRESCA_HORAS - distinto de
+    _carteira_expirada (IDADE_MAXIMA_CARTEIRA_DIAS): uma linha pode estar
+    "vigente" (ainda aparece em listar_carteiras, dentro do prazo de
+    expiracao) mas com a ultima confirmacao velha o bastante pra avisar o
+    usuario, sem ainda justificar remover a carteira da lista. Mesmo
+    fail-open de _carteira_expirada: campo ausente/malformado -> False."""
+    agora = agora or datetime.now(timezone.utc)
+    if not verificado_em:
+        return False
+    try:
+        quando = datetime.fromisoformat(str(verificado_em).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return (agora - quando) > timedelta(hours=IDADE_FRESCA_HORAS)
+
+
 def resumo_fontes_vigentes():
     """Resumo por casa (CASA_GENIAL/CASA_SAFRA) das carteiras VIGENTES e
     NAO EXPIRADAS (reaproveita listar_carteiras, sem nenhuma chamada de
     rede nova) - pra UI responder 'quais fontes estao atualizadas agora'
-    sem precisar abrir SAUDE DOS DADOS. Uma casa ausente do resultado
-    significa que ela nao tem nenhuma recomendacao vigente e nao-expirada
-    agora (bloqueada na ultima coleta, nunca coletada, ou expirada por
-    IDADE_MAXIMA_CARTEIRA_DIAS) - UI decide o rotulo, esta funcao so'
-    agrega o fato. None se o Supabase estiver indisponivel pra leitura
-    (mesmo contrato de listar_carteiras)."""
+    sem precisar abrir SAUDE DOS DADOS. Cada casa presente carrega
+    "desatualizada" (ver _desatualizada/IDADE_FRESCA_HORAS) pra UI
+    distinguir "atualizada" de "vigente mas sem confirmacao recente" -
+    sem isso, uma carteira confirmada ha' 39 dias (ainda dentro de
+    IDADE_MAXIMA_CARTEIRA_DIAS=40, ainda listada) apareceria como
+    "atualizada" igual a uma confirmada ha' 1 hora. Uma casa AUSENTE do
+    resultado significa que ela nao tem nenhuma recomendacao vigente e
+    nao-expirada agora (bloqueada na ultima coleta, nunca coletada, ou
+    expirada por IDADE_MAXIMA_CARTEIRA_DIAS) - UI decide o rotulo "sem
+    dados"/"indisponivel", esta funcao so' agrega o fato. None se o
+    Supabase estiver indisponivel pra leitura (mesmo contrato de
+    listar_carteiras)."""
     linhas = listar_carteiras()
     if linhas is None:
         return None
@@ -312,6 +345,10 @@ def resumo_fontes_vigentes():
         if verificado and (info["verificado_em"] is None or str(verificado) > str(info["verificado_em"])):
             info["verificado_em"] = verificado
     return {
-        casa: {"ativos": len(info["ativos"]), "verificado_em": info["verificado_em"]}
+        casa: {
+            "ativos": len(info["ativos"]),
+            "verificado_em": info["verificado_em"],
+            "desatualizada": _desatualizada(info["verificado_em"]),
+        }
         for casa, info in por_casa.items()
     }

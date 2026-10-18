@@ -237,6 +237,130 @@ def test_registrar_alerta_cotacao_diferente_do_ultimo_insere_normalmente():
     cliente.table.return_value.insert.assert_called_once()
 
 
+def test_registrar_alerta_fechamento_anterior_diferente_nao_e_tratado_como_mesmo_evento():
+    """_mesma_cotacao exige preco_atual E fechamento_anterior iguais - um
+    preco_atual que bate por coincidencia com o ultimo alerta, mas com
+    fechamento_anterior diferente (ex: ajuste de proventos/split entre
+    pregões), não pode ser tratado como o mesmo evento de queda."""
+    cliente = MagicMock()
+    alerta = {"ticker": "PETR4", "pregao": "2026-10-20", "preco_atual": 95.9, "fechamento_anterior": 90.0}
+    resposta_vazia = MagicMock(data=[])
+    resposta_ultimo = MagicMock(data=[{"preco_atual": 95.9, "fechamento_anterior": 100.0}])  # só fechamento difere
+    resposta_insercao = MagicMock(data=[{"id": 7}])
+    cliente.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = resposta_vazia
+    cliente.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = resposta_ultimo
+    cliente.table.return_value.insert.return_value.execute.return_value = resposta_insercao
+
+    with patch("data.radar_quedas.obter_cliente", return_value=cliente):
+        ok, alerta_id = registrar_alerta(alerta)
+    assert ok is True and alerta_id == 7
+    cliente.table.return_value.insert.assert_called_once()
+
+
+def test_registrar_alerta_sem_pregao_falha_de_forma_segura_sem_inserir():
+    """Alerta malformado (sem a chave 'pregao') nunca pode lançar exceção
+    pro chamador nem inserir - falha segura (ok=False), mesmo
+    comportamento de qualquer outra falha de persistência (nunca envia
+    e-mail de um alerta que não foi confirmado como persistido)."""
+    cliente = MagicMock()
+    with patch("data.radar_quedas.obter_cliente", return_value=cliente):
+        ok, alerta_id = registrar_alerta({"ticker": "PETR4", "preco_atual": 90.0, "fechamento_anterior": 95.0})
+    assert ok is False and alerta_id is None
+    cliente.table.return_value.insert.assert_not_called()
+
+
+class _TabelaAlertasFake:
+    """Fake MINIMO da tabela radar_alertas_queda que persiste de verdade
+    entre chamadas (em memoria) - ao contrario dos outros testes deste
+    arquivo (que so' mockam o retorno de cada chamada isolada), este
+    fake deixa o comportamento de dedupe de registrar_alerta rodar POR
+    INTEIRO contra um estado real que cresce entre pregões simulados."""
+
+    def __init__(self):
+        self.linhas = []
+        self._next_id = 1
+        self._filtros = {}
+        self._limit = None
+        self._order_desc = False
+        self._pendente_insert = None
+
+    def select(self, *_a):
+        self._filtros = {}
+        self._limit = None
+        self._order_desc = False
+        return self
+
+    def eq(self, campo, valor):
+        self._filtros[campo] = valor
+        return self
+
+    def order(self, _campo, desc=False):
+        self._order_desc = desc
+        return self
+
+    def limit(self, n):
+        self._limit = n
+        return self
+
+    def insert(self, payload):
+        self._pendente_insert = dict(payload)
+        return self
+
+    def execute(self):
+        if self._pendente_insert is not None:
+            linha = self._pendente_insert
+            linha["id"] = self._next_id
+            self._next_id += 1
+            self.linhas.append(linha)
+            self._pendente_insert = None
+            return MagicMock(data=[linha])
+        resultado = [l for l in self.linhas if all(l.get(k) == v for k, v in self._filtros.items())]
+        resultado.sort(key=lambda l: l.get("pregao", ""), reverse=self._order_desc)
+        if self._limit:
+            resultado = resultado[: self._limit]
+        return MagicMock(data=resultado)
+
+
+class _ClienteAlertasFake:
+    def __init__(self):
+        self.tabela = _TabelaAlertasFake()
+
+    def table(self, nome):
+        assert nome == "radar_alertas_queda"
+        return self.tabela
+
+
+def test_fluxo_completo_feriado_nao_duplica_email_mas_evento_novo_alerta_em_outro_pregao():
+    """Reproduz 3 pregões em sequência pro mesmo ticker contra um client
+    FAKE que persiste de verdade (não só mocka retorno isolado): pregão 1
+    insere normalmente (candidato real a e-mail); pregão 2 é feriado com
+    a MESMA cotação do pregão 1 (não insere, não é candidato a e-mail -
+    reproduz data.radar_quedas.processar_monitoramento, que só acrescenta
+    a 'novos'/candidatos de e-mail quando ok and alerta_id is not None);
+    pregão 3 é um pregão real com queda NOVA (insere de novo, volta a ser
+    candidato a e-mail)."""
+    cliente = _ClienteAlertasFake()
+    candidatos_email = []
+
+    def _processar(alerta):
+        with patch("data.radar_quedas.obter_cliente", return_value=cliente):
+            ok, alerta_id = registrar_alerta(alerta)
+        if ok and alerta_id is not None:  # mesma condição de processar_monitoramento
+            candidatos_email.append(alerta["pregao"])
+        return ok, alerta_id
+
+    pregao_1 = {"ticker": "PETR4", "pregao": "2026-10-30", "preco_atual": 95.9, "fechamento_anterior": 100.0}
+    pregao_2_feriado = {"ticker": "PETR4", "pregao": "2026-11-02", "preco_atual": 95.9, "fechamento_anterior": 100.0}
+    pregao_3_evento_novo = {"ticker": "PETR4", "pregao": "2026-11-03", "preco_atual": 85.0, "fechamento_anterior": 95.9}
+
+    assert _processar(pregao_1) == (True, 1)
+    assert _processar(pregao_2_feriado) == (True, None)  # mesmo evento - não duplica, não vira e-mail
+    assert _processar(pregao_3_evento_novo) == (True, 2)  # evento novo, pregão novo - insere e vira e-mail
+
+    assert candidatos_email == ["2026-10-30", "2026-11-03"]  # feriado nunca gerou candidato a e-mail
+    assert len(cliente.tabela.linhas) == 2  # só 2 linhas persistidas (pregão do feriado nunca foi inserido)
+
+
 def test_registrar_alerta_falha_de_persistencia_nunca_lanca_excecao():
     cliente = MagicMock()
     cliente.table.side_effect = Exception("Supabase fora do ar")
@@ -245,22 +369,45 @@ def test_registrar_alerta_falha_de_persistencia_nunca_lanca_excecao():
     assert ok is False and alerta_id is None
 
 
-def test_resumo_fontes_vigentes_agrupa_por_casa():
+def test_resumo_fontes_vigentes_agrupa_por_casa_e_conta_ativos_unicos():
     """UI precisa saber 'quais fontes estao atualizadas agora' (secao 7
     do pedido) sem nenhuma chamada de rede nova - so' agrega o que
-    listar_carteiras() (ja filtrado por vigente e nao-expirado) devolve."""
+    listar_carteiras() (ja filtrado por vigente e nao-expirado) devolve.
+    PETR4 repetido (2 carteiras da mesma casa) conta 1 ativo so'."""
     import data.radar_quedas as radar
+    agora = datetime.now(timezone.utc)
+    recente = (agora - timedelta(hours=1)).isoformat()
     linhas = [
-        {"casa": "Safra Corretora", "ticker": "PETR4", "verificado_em": "2026-10-17T10:00:00+00:00"},
-        {"casa": "Safra Corretora", "ticker": "VALE3", "verificado_em": "2026-10-17T10:00:00+00:00"},
-        {"casa": "Safra Corretora", "ticker": "PETR4", "verificado_em": "2026-10-16T10:00:00+00:00"},
+        {"casa": "Safra Corretora", "ticker": "PETR4", "verificado_em": recente},
+        {"casa": "Safra Corretora", "ticker": "VALE3", "verificado_em": recente},
+        {"casa": "Safra Corretora", "ticker": "PETR4", "verificado_em": (agora - timedelta(hours=25)).isoformat()},
     ]
     with patch.object(radar, "listar_carteiras", return_value=linhas):
         resumo = resumo_fontes_vigentes()
     assert resumo == {
-        "Safra Corretora": {"ativos": 2, "verificado_em": "2026-10-17T10:00:00+00:00"},
+        "Safra Corretora": {"ativos": 2, "verificado_em": recente, "desatualizada": False},
     }
-    assert "Genial Analisa" not in resumo  # sem linha vigente -> casa ausente (UI rotula "sem dados")
+    assert "Genial Analisa" not in resumo  # sem linha vigente -> casa ausente (UI rotula "indisponível")
+
+
+def test_resumo_fontes_vigentes_marca_desatualizada_apos_idade_fresca_horas():
+    """Distingue 'atualizada' (confirmação recente) de 'desatualizada'
+    (ainda vigente/não-expirada, mas sem confirmação há mais de
+    IDADE_FRESCA_HORAS) - sem essa distinção, uma carteira confirmada há
+    quase 40 dias (IDADE_MAXIMA_CARTEIRA_DIAS, ainda listada) apareceria
+    como 'atualizada' igual a uma confirmada há 1 hora."""
+    import data.radar_quedas as radar
+    agora = datetime.now(timezone.utc)
+    fresca = (agora - timedelta(hours=1)).isoformat()
+    velha = (agora - timedelta(hours=radar.IDADE_FRESCA_HORAS + 1)).isoformat()
+    linhas = [
+        {"casa": "Safra Corretora", "ticker": "PETR4", "verificado_em": fresca},
+        {"casa": "Genial Analisa", "ticker": "ITUB4", "verificado_em": velha},
+    ]
+    with patch.object(radar, "listar_carteiras", return_value=linhas):
+        resumo = resumo_fontes_vigentes()
+    assert resumo["Safra Corretora"]["desatualizada"] is False
+    assert resumo["Genial Analisa"]["desatualizada"] is True
 
 
 def test_resumo_fontes_vigentes_none_quando_supabase_indisponivel():

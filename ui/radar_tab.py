@@ -373,10 +373,12 @@ def render_radar(prefs: dict):
             partes_fontes = []
             for casa in (CASA_GENIAL, CASA_SAFRA):
                 info = resumo_fontes.get(casa)
-                if info:
+                if info and not info["desatualizada"]:
                     partes_fontes.append(f"🟢 {casa}: atualizada ({info['ativos']} ativos)")
+                elif info:
+                    partes_fontes.append(f"🟡 {casa}: desatualizada (sem confirmação recente, {info['ativos']} ativos)")
                 else:
-                    partes_fontes.append(f"⚪ {casa}: sem carteira vigente agora (bloqueada, sem coleta recente ou expirada)")
+                    partes_fontes.append(f"🔴 {casa}: indisponível (sem carteira vigente - bloqueada, sem coleta ou expirada)")
             st.caption(" · ".join(partes_fontes))
 
         alertas = alertas_recentes()
