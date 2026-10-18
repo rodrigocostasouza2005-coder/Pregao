@@ -109,9 +109,19 @@ def _tickers_disponiveis(relatorios):
 
 
 def _bloco_resumo(resumo: str):
+    # rotulo explicita "gerado por IA" (achado da auditoria 360,
+    # docs/auditoria-redesign-360.md - mesmo principio do achado ja
+    # corrigido no modal de documento da CVM, PR #77): obter_resumo
+    # (data/research/resumir.py) sempre sintetiza o texto via Groq -
+    # sem essa indicacao visivel, o bloco podia passar a impressao de
+    # ser um trecho oficial do proprio relatorio, nao um texto gerado
+    # por modelo de linguagem.
     st.markdown(
-        f"<div class='cinza' style='font-size:0.72rem; white-space:pre-line; padding:0.25rem 0 0.5rem 0.6rem; "
-        f"border-left:2px solid var(--borda); margin-top:0.15rem;'>{resumo}</div>",
+        f"<div style='border-left:2px solid var(--borda); padding:0.25rem 0 0.5rem 0.6rem; margin-top:0.15rem;'>"
+        f"<div class='cinza' style='font-size:0.62rem; text-transform:uppercase; margin-bottom:0.15rem;'>"
+        f"Resumo (gerado por IA)</div>"
+        f"<div class='cinza' style='font-size:0.72rem; white-space:pre-line;'>{resumo}</div>"
+        f"</div>",
         unsafe_allow_html=True,
     )
 
