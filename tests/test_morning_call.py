@@ -23,6 +23,12 @@ def _sem_pdf_real(monkeypatch):
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("PDF desabilitado neste teste - ver fixture _sem_pdf_real")),
     )
 
+@pytest.fixture(autouse=True)
+def _sem_copom_real(monkeypatch):
+    """Plano B da Selic (histórico do Copom) nunca vai à rede nos testes."""
+    monkeypatch.setattr(mc, "obter_selic_meta_copom", lambda: None)
+
+
 _COT_INDISPONIVEL = lambda nome, ticker: ({"erro": "indisponível"}, f"- {nome}: indisponível")
 
 

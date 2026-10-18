@@ -187,6 +187,46 @@ def obter_selic_meta(dias_historico: int = 400) -> pd.DataFrame | None:
         return None
 
 
+_COPOM_HISTORICO_URL = "https://www.bcb.gov.br/api/servico/sitebcb/historicotaxasjuros"
+
+
+def obter_selic_meta_copom() -> dict | None:
+    """Meta Selic VIGENTE pelo histórico oficial de reuniões do Copom no
+    site do Banco Central (www.bcb.gov.br) - plano B pra quando o SGS
+    (api.bcb.gov.br) não responde. Diagnóstico de 18/10/2026 no runner do
+    GitHub: o SGS falhava pra todas as séries (timeout, página "Requisição
+    inválida" ou {"erro": 500}), enquanto este endpoint respondia
+    normalmente. Mesma instituição e mesma informação (a meta definida
+    pelo Copom), sem estimativa nem fonte de terceiros.
+
+    Vigente = registro com DataFimVigencia nula e início já ocorrido.
+    {"valor", "vigente_desde" (date), "reuniao" (int)} ou None (o motivo
+    fica em motivo_indisponivel("selic_copom"))."""
+    try:
+        r = requests.get(_COPOM_HISTORICO_URL, headers=_HEADERS, timeout=(5, 20))
+        r.raise_for_status()
+        registros = (r.json() or {}).get("conteudo") or []
+        hoje = datetime.now(TZ)
+        vigentes = []
+        for reg in registros:
+            if reg.get("DataFimVigencia") is not None:
+                continue
+            inicio = pd.to_datetime(reg.get("DataInicioVigencia"), utc=True)
+            valor = float(reg.get("MetaSelic"))
+            if pd.isna(inicio) or inicio > hoje or not (0 < valor < 100):
+                continue
+            vigentes.append((inicio, valor, reg.get("NumeroReuniaoCopom")))
+        if len(vigentes) != 1:
+            raise ValueError(f"histórico do Copom com {len(vigentes)} meta(s) vigente(s) - esperado exatamente 1")
+        inicio, valor, reuniao = vigentes[0]
+        _MOTIVO_FALHA.pop("selic_copom", None)
+        return {"valor": valor, "vigente_desde": inicio.tz_convert(TZ).date(),
+                "reuniao": int(reuniao) if reuniao is not None else None}
+    except Exception as e:
+        _MOTIVO_FALHA["selic_copom"] = f"histórico do Copom (bcb.gov.br): {str(e)[:150]}"
+        return None
+
+
 @st.cache_data(ttl=_TTL_SERIES, show_spinner="atualizando indicadores macro…")
 def obter_cdi(dias_historico: int = 90) -> pd.DataFrame | None:
     """CDI diario (% a.d.) e CDI anualizado base 252 (% a.a.), lado a lado

@@ -409,3 +409,46 @@ def test_21_sgs_valor_nao_numerico_nunca_vira_numero():
         else:
             raise AssertionError("valor não numérico deveria virar RespostaSgsInvalida")
     _checar("21a motivo diz valor não numérico", "não numérico" in motivo)
+
+
+
+def _resposta_copom(conteudo):
+    from unittest.mock import Mock
+    resposta = Mock()
+    resposta.status_code = 200
+    resposta.raise_for_status.return_value = None
+    resposta.json.return_value = {"conteudo": conteudo}
+    return resposta
+
+
+_COPOM_REAL = [  # formato real do endpoint (diagnóstico de 18/10/2026)
+    {"NumeroReuniaoCopom": 281.0, "DataInicioVigencia": "2026-09-17T03:00:00Z", "DataFimVigencia": None,
+     "MetaSelic": 13.75},
+    {"NumeroReuniaoCopom": 280.0, "DataInicioVigencia": "2026-08-06T03:00:00Z",
+     "DataFimVigencia": "2026-09-16T03:00:00Z", "MetaSelic": 14.0},
+]
+
+
+def test_22_copom_devolve_a_meta_vigente():
+    from datetime import date
+    with patch.object(macro_mod.requests, "get", return_value=_resposta_copom(_COPOM_REAL)):
+        meta = macro_mod.obter_selic_meta_copom()
+    _checar("22a meta vigente", meta == {"valor": 13.75, "vigente_desde": date(2026, 9, 17), "reuniao": 281},
+            f"({meta})")
+
+
+def test_23_copom_sem_meta_vigente_unica_e_indisponivel():
+    duas = [dict(_COPOM_REAL[0]), dict(_COPOM_REAL[0], NumeroReuniaoCopom=282.0)]
+    with patch.object(macro_mod.requests, "get", return_value=_resposta_copom(duas)):
+        _checar("23a duas metas vigentes -> None", macro_mod.obter_selic_meta_copom() is None)
+    _checar("23b motivo registrado", "2 meta(s) vigente(s)" in (macro_mod.motivo_indisponivel("selic_copom") or ""))
+    absurda = [dict(_COPOM_REAL[0], MetaSelic=1375.0)]
+    with patch.object(macro_mod.requests, "get", return_value=_resposta_copom(absurda)):
+        _checar("23c valor fora de faixa -> None", macro_mod.obter_selic_meta_copom() is None)
+
+
+def test_24_copom_fora_do_ar_e_indisponivel_sem_excecao():
+    from requests import Timeout
+    with patch.object(macro_mod.requests, "get", side_effect=Timeout("lento")):
+        _checar("24a timeout -> None", macro_mod.obter_selic_meta_copom() is None)
+    _checar("24b motivo cita a fonte", "bcb.gov.br" in (macro_mod.motivo_indisponivel("selic_copom") or ""))

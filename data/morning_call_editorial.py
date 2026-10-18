@@ -34,6 +34,7 @@ from data.eventos import (
 )
 from data.macro import (
     motivo_indisponivel, obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta,
+    obter_selic_meta_copom,
 )
 from data.news import (
     obter_resumos_prontos, obter_top_mercado, obter_top_mercado_internacional, separar_secoes_resumo,
@@ -256,6 +257,21 @@ def _macro_rows(agora=None, provedores=None):
     focus_selic_fn = provedores.get("focus_selic", obter_focus_selic)
     linhas = []
 
+    copom_fn = provedores.get("selic_copom", obter_selic_meta_copom)
+
+    def _selic_pelo_copom():
+        """Plano B oficial da meta Selic (histórico do Copom, bcb.gov.br)."""
+        try:
+            meta = copom_fn()
+        except Exception:
+            meta = None
+        if not meta or _taxa_plausivel(meta.get("valor")) is None:
+            return None
+        reuniao = f"{meta['reuniao']}ª reunião do Copom, " if meta.get("reuniao") else "Copom, "
+        return _linha_macro("Selic meta", float(meta["valor"]), "% a.a.",
+                            f"vigente desde {_data_br(meta.get('vigente_desde'))}",
+                            detalhe=f"fonte: {reuniao}histórico oficial em bcb.gov.br (SGS indisponível)")
+
     def _serie(nome, fn, coluna, chave_motivo):
         try:
             dado = fn()
@@ -273,7 +289,14 @@ def _macro_rows(agora=None, provedores=None):
                     linhas.append(_linha_macro(nome, valor, "% a.a.", _data_br(ultimo.get("data"))))
                     return
                 motivo = motivo or f"valor recebido fora da faixa de uma taxa anual ({ultimo[coluna]!r})"
+        if chave_motivo == "selic":
+            linha_copom = _selic_pelo_copom()
+            if linha_copom:
+                linhas.append(linha_copom)
+                return
         motivo = motivo or motivo_indisponivel(chave_motivo) or "Banco Central (SGS) sem dado nesta execução"
+        if chave_motivo == "selic" and motivo_indisponivel("selic_copom"):
+            motivo += f"; {motivo_indisponivel('selic_copom')}"
         ultima = ultima_coleta_valida(chave_motivo)
         if ultima:
             motivo += f"; última coleta válida registrada em {ultima} (horário de Brasília)"

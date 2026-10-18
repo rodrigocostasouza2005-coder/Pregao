@@ -15,7 +15,7 @@ from data.eventos import (
     STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_LABEL, STATUS_PRAZO_CVM,
     calcular_calendario_cacheado,
 )
-from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta
+from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta, obter_selic_meta_copom
 from data.morning_call_editorial import (
     _macro_rows, _referencia_cotacao, filtrar_noticias, montar_edicao, nota_sessao,
 )
@@ -251,7 +251,7 @@ def montar_morning_call(agora=None):
     # linhas do Focus (até o ano corrente + 2). Provedores passados daqui
     # pra continuar sendo os deste módulo.
     for linha in _macro_rows(agora, provedores={
-            "selic": obter_selic_meta, "cdi": obter_cdi,
+            "selic": obter_selic_meta, "selic_copom": obter_selic_meta_copom, "cdi": obter_cdi,
             "focus_ipca": obter_focus_ipca, "focus_selic": obter_focus_selic}):
         if linha.get("valor") is None:
             linhas.append(f"- {linha['indicador']}: indisponível ({linha.get('erro') or 'sem dado'})")
