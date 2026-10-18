@@ -6338,3 +6338,22 @@ Pedido explícito do Rodrigo, em branch isolada (`fix/exit-code-classificacao-fa
 **Arquivos alterados**: `coletor_local.py`, `data/research/__init__.py`, `data/research/genial.py`, `data/research/xp.py`, `tests/test_coletor_local.py`, `tests/test_research_genial_conectividade.py`, `tests/test_research_xp.py`, `tests/test_research_classificacao_falha.py` (novo). Nenhum arquivo de NEWS/Radar/Morning Call/UI tocado.
 
 **Pendências**: PR ainda não aberto nesta sessão (próximo passo imediato); aguardando CI real antes de qualquer decisão de merge (não autorizado nesta sessão).
+
+## 2026-10-18 (continuação) — Diagnóstico da intermitência do Genial (Lives): causa externa provável, sem correção de palpite
+
+Pedido do Rodrigo (offline, trabalho autônomo autorizado): investigar a causa raiz da falha intermitente do Genial (Lives) (~70-80% de sucesso) e corrigir SÓ com evidência real - sem retry extra "por garantia".
+
+**Amostra real analisada**: 16 execuções reais do workflow "Coletores na nuvem" (`gh run list --workflow=coletores-nuvem.yml` + `gh run view --log`), de 14/10 a 18/10. Resultado, separando por causa:
+- **4 falhas genuínas de coleta** (0 itens, fetch do feed falhou mesmo): runs `38832834568` (1.7s), `38982985477` (1.7s), `38989522110` (4.5s), `39088619143` (1.9s) - todas RÁPIDAS (nunca um travamento longo), 3 delas disparadas por `schedule` em horários fora da janela documentada do cron (`11,41 10-22 * * 1-5` + `11 23 * * 1-5`) - consistente com o atraso de disparo do GitHub já documentado (PR #56, "Agendamentos do GitHub descartados").
+- **6 falhas que NÃO são da Genial (Lives)**: runs entre `38752038994` e `38797666890` (14-15/10, janela ~14h30-19h40 UTC) mostraram `Genial (Lives): FALHOU` mas com **7 itens** coletados (`salvou=False`) - a causa real, confirmada no mesmo log, é uma falha de PERSISTÊNCIA que afetou TODAS as casas daquela execução (`SEM_CREDENCIAL` ou `Error 42501`, ver logs de `persistencia (self-test)` nos mesmos runs) - **não** tem relação com o feed do YouTube. Ficou fora da amostra de intermitência.
+- Restante das execuções: sucesso normal (0.1-0.5s, 7-8 itens, `salvou=True`).
+
+**Causa raiz**: não foi possível confirmar a causa EXATA das 4 falhas genuínas porque `motivo_ultima_falha()` (texto real do `bozo_exception`/exceção) nunca era impresso no console - só chegava ao Supabase via `registrar_tentativa`, sem acesso de leitura nesta sessão. Esse é o achado real desta investigação: uma lacuna de observabilidade que bloqueou a própria investigação. Teste real contra o feed (`feedparser.parse` direto, 5 chamadas em sequência) não reproduziu nenhum erro - sucesso 100% nesta rede. Hipótese mais provável, sem confirmação definitiva: falha transitória do lado do YouTube (rede/rate-limit no pool de IPs compartilhado dos runners do GitHub Actions) - rápida, intermitente, não um bloqueio sistemático (diferente do Akamai na Genial Analisa/XP, que é ~100% consistente). Não há evidência de timeout mal configurado (as falhas são rápidas, não travamentos) nem de bug de parsing (retry/isolamento por item já cobrem os casos testados).
+
+**Correção aplicada (só a lacuna confirmada, nada especulativo)**: `genial_lives.py` ganhou `print()` por tentativa (mesmo padrão que `genial.py`/`xp.py` já usam) - a próxima falha real vai aparecer com o erro verdadeiro no log do GitHub Actions, sem precisar do Supabase. **Nenhuma mudança de retry/timeout/comportamento** - não há evidência de que isso ajudaria, só um palpite, que o Rodrigo pediu explicitamente para evitar.
+
+**Testes**: 1 novo (`test_falha_imprime_o_erro_real_no_console`, usa `capsys`, confirma o texto real da exceção aparece 2x no log). Suíte completa: 801 passed. `compileall` OK.
+
+**Arquivos alterados**: `data/research/genial_lives.py`, `tests/test_genial_lives.py`, `PROGRESSO.md`.
+
+**Próximo passo concreto**: depois do merge (quando o Rodrigo revisar), observar a PRÓXIMA falha real do Genial (Lives) no log do GitHub Actions - agora vai aparecer o texto exato do erro, o que permite decidir com evidência (não palpite) se é rate-limit, timeout de rede, ou outra causa, e só então considerar uma classificação tipo `categoria_ultima_falha()` (bloqueio_externo_conhecido) ou uma correção de retry - nenhuma das duas foi feita agora por falta de evidência suficiente.
