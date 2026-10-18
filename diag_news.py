@@ -11,6 +11,8 @@ def itens_do_pool(entries):
 
 def antigo():
     salvo = (n._TOKENS_MOVIMENTO, n._mesmo_numero_mesmo_assunto)
+    # sem termos de movimento a exigencia de "conteudo em comum" vira
+    # "qualquer token em comum" (sempre verdade quando a similaridade passa)
     n._TOKENS_MOVIMENTO = set(); n._mesmo_numero_mesmo_assunto = lambda g, i: False
     return salvo
 
