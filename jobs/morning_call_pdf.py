@@ -235,6 +235,10 @@ def _estilos():
            alignment=TA_RIGHT)
     estilo("indice", fontName=F["PregaoSans"], fontSize=8, leading=12.5, textColor=TINTA_SUAVE)
     estilo("remissao", fontName=F["PregaoSansMedia"], fontSize=7, leading=9, textColor=TINTA, spaceBefore=2)
+    # radar setorial: 4 blocos de ~130 palavras precisam caber 2 por coluna
+    estilo("radar_corpo", fontSize=8.7, leading=11.3, alignment=TA_LEFT)
+    estilo("radar_rotulo", fontName=F["PregaoSansNegrito"], fontSize=6.4, leading=8, textColor=CINZA,
+           spaceBefore=4, spaceAfter=1.5)
     estilo("subtitulo_secao", fontName=F["PregaoSansNegrito"], fontSize=7.2, leading=9.5, textColor=TINTA,
            spaceBefore=4, spaceAfter=5)
     return e
@@ -854,23 +858,23 @@ def _fato_radar(fonte, estilos):
     quando = f" ({data.strftime('%d/%m')})" if hasattr(data, "strftime") else ""
     titulo = _t(str(fonte.get("titulo") or "").rstrip(" ."))
     return Paragraph(f'<font name="{F["PregaoSansMedia"]}" size="7">{veiculo}</font>{quando}: '
-                     f'\u201c{titulo}\u201d.', estilos["corpo_estreito"])
+                     f'\u201c{titulo}\u201d.', estilos["radar_corpo"])
 
 
 def _bloco_radar(bloco, estilos):
     def rotulo(texto):
-        return Paragraph(texto, estilos["subtitulo_secao"])
+        return Paragraph(texto, estilos["radar_rotulo"])
 
     flows = [Paragraph(_t(bloco.get("nome")), estilos["manchete"]),
              rotulo("O QUE ACONTECEU")]
     flows += [_fato_radar(f, estilos) for f in bloco.get("fontes") or []]
     flows += [rotulo("POR QUE IMPORTA"),
-              Paragraph(_t(bloco.get("por_que_importa")), estilos["corpo_estreito"]),
+              Paragraph(_t(bloco.get("por_que_importa")), estilos["radar_corpo"]),
               rotulo("EMPRESAS E ATIVOS RELACIONADOS"),
-              Paragraph(_t(bloco.get("empresas")), estilos["corpo_estreito"]),
+              Paragraph(_t(bloco.get("empresas")), estilos["radar_corpo"]),
               rotulo("O QUE ACOMPANHAR"),
-              Paragraph(_t(bloco.get("acompanhar")), estilos["corpo_estreito"]),
-              Spacer(1, 6)]
+              Paragraph(_t(bloco.get("acompanhar")), estilos["radar_corpo"]),
+              Spacer(1, 3)]
     return Grupo(flows)
 
 
