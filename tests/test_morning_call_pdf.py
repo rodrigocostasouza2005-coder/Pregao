@@ -8,10 +8,36 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pytest
+from reportlab.pdfbase.pdfmetrics import getAscent
 
 import jobs.morning_call_pdf as pdf_mod
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
+
+
+class _CanvasRecorder:
+    """Fake mínimo do Canvas do ReportLab - só grava (x, y, texto) de cada
+    drawString, sem desenhar nada de verdade. Usado pra testar POSIÇÃO
+    sem precisar rasterizar um PDF de verdade (ver
+    test_card_indicador_nunca_desenha_variacao_e_barra_na_mesma_linha)."""
+
+    def __init__(self):
+        self.textos = []
+
+    def setFillColor(self, *_a, **_k):
+        pass
+
+    def setStrokeColor(self, *_a, **_k):
+        pass
+
+    def setFont(self, *_a, **_k):
+        pass
+
+    def roundRect(self, *_a, **_k):
+        pass
+
+    def drawString(self, x, y, texto):
+        self.textos.append((x, y, texto))
 
 
 def _indicador(nome, preco=100.0, variacao_pct=1.0, erro=None):
@@ -142,3 +168,54 @@ def test_texto_variacao_e_cor_variacao_cobrem_alta_queda_estavel_e_indisponivel(
 
 def test_quebrar_linhas_nunca_devolve_lista_vazia():
     assert pdf_mod._quebrar_linhas("", pdf_mod.SANS, 9, 100) == [""]
+
+
+# ---------------------------------------------------------------------
+# REGRESSÃO - 3 bugs reais achados por inspeção visual (render de
+# verdade via Playwright/PyMuPDF, 2026-10-17), nenhum pego por teste
+# automatizado até aqui. Cada um ganha um teste geométrico/determinístico
+# que não depende de rasterizar o PDF.
+# ---------------------------------------------------------------------
+
+def test_data_extenso_pt_br_nao_depende_de_locale_do_so():
+    """Bug real: agora.strftime('%A, %d de %B de %Y') lê o locale do
+    processo - sem pt_BR instalado (caso comum de runner Linux do GitHub
+    Actions), saía 'Monday, 19 de october de 2026'. _data_extenso_pt_br
+    usa um mapa PT-BR fixo, nunca o locale do SO."""
+    segunda = datetime(2026, 10, 19, 8, 0, tzinfo=TZ_SP)
+    assert pdf_mod._data_extenso_pt_br(segunda) == "Segunda-feira, 19 de outubro de 2026"
+    sabado = datetime(2026, 10, 24, 8, 0, tzinfo=TZ_SP)
+    assert pdf_mod._data_extenso_pt_br(sabado) == "Sábado, 24 de outubro de 2026"
+
+
+def test_titulo_pagina_interna_fica_abaixo_do_cabecalho():
+    """Bug real: o título de página (BRASIL/EXTERIOR/EMPRESAS E SETORES,
+    serifado 18pt) era desenhado perto demais do rodapé do cabeçalho
+    navy - o topo dos glifos entrava na faixa navy e ficava invisível
+    (texto navy-sobre-navy). Teste geométrico: calcula o topo real do
+    texto (baseline + ascensão da fonte) e confere que fica abaixo do
+    rodapé do cabeçalho, com folga mínima - nunca precisa rasterizar."""
+    fonte, tamanho = pdf_mod.FONTE_TITULO_PAGINA_INTERNA
+    ascensao = getAscent(fonte) / 1000 * tamanho
+    topo_titulo = pdf_mod.Y_TITULO_PAGINA_INTERNA + ascensao
+    base_cabecalho = pdf_mod.PAGINA_ALTURA - pdf_mod.ALTURA_CABECALHO - pdf_mod.ALTURA_FAIXA_AMBAR_CABECALHO
+    folga_minima = 4
+    assert topo_titulo <= base_cabecalho - folga_minima, (
+        f"título entra {topo_titulo - (base_cabecalho - folga_minima):.1f}pt no cabeçalho navy"
+    )
+
+
+def test_card_indicador_nunca_desenha_variacao_e_barra_na_mesma_linha():
+    """Bug real: variação% (esquerda) e barra_fmt/timestamp (direita)
+    eram desenhados na MESMA linha (y) - colidiam quando o card era
+    estreito (layout de 4 colunas da página EXTERIOR). Hoje são sempre
+    empilhados; este teste trava essa garantia independente da largura
+    do card, sem precisar rasterizar um PDF."""
+    rec = _CanvasRecorder()
+    pdf_mod._card_indicador(
+        rec, _indicador("Petróleo Brent", preco=78.34, variacao_pct=0.64),
+        x=0, y=0, largura=120, altura=pdf_mod.ALTURA_CARD_INDICADOR,
+    )
+    y_variacao = next(y for (_x, y, t) in rec.textos if "0,64%" in t)
+    y_barra = next(y for (_x, y, t) in rec.textos if "horário de Brasília" in t)
+    assert y_variacao != y_barra

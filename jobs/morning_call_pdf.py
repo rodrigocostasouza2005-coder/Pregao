@@ -38,6 +38,26 @@ except Exception:  # pragma: no cover - Pillow já é dependência transitiva (s
 PAGINA_LARGURA, PAGINA_ALTURA = A4
 MARGEM = 16 * 2.834645669  # ~16mm em pontos (1mm = 2.834645669pt)
 
+# Geometria do cabeçalho navy (usada por _cabecalho) e do título de página
+# interna (BRASIL/EXTERIOR/EMPRESAS E SETORES) - constantes nomeadas (não
+# literais espalhados) porque um bug real (2026-10-17, achado por inspeção
+# visual real, não por teste automatizado) foi exatamente esses 2 números
+# ficando próximos demais: o título (serifado 18pt) desenhado com y perto
+# demais do rodapé do cabeçalho tinha o topo dos glifos sobreposto pelo
+# retângulo navy (texto navy-sobre-navy = invisível). Ver
+# test_titulo_pagina_interna_nao_sobrepoe_cabecalho em
+# tests/test_morning_call_pdf.py - regressão geométrica, não visual.
+ALTURA_CABECALHO = 22 * 2.834645669
+ALTURA_FAIXA_AMBAR_CABECALHO = 2
+Y_TITULO_PAGINA_INTERNA = PAGINA_ALTURA - 92
+
+# Altura do card de indicador (_card_indicador) - 4 linhas SEMPRE
+# empilhadas (nome/preço/variação/barra), nunca 2 lado a lado na mesma
+# linha. Achado real (mesma inspeção de 2026-10-17): variação% e
+# barra_fmt na mesma linha colidiam no layout de 4 colunas da página
+# EXTERIOR (cards mais estreitos que os 2 de BRASIL/CAPA).
+ALTURA_CARD_INDICADOR = 68
+
 AZUL_MARINHO = HexColor("#0E1B2E")
 BRANCO_QUENTE = HexColor("#F7F3ED")
 CINZA_EDITORIAL = HexColor("#4A4F57")
@@ -51,6 +71,10 @@ SERIF = "Times-Roman"
 SERIF_BOLD = "Times-Bold"
 SANS = "Helvetica"
 SANS_BOLD = "Helvetica-Bold"
+
+# Fonte/tamanho do título de página interna ("Brasil"/"Exterior"/"Empresas
+# e Setores") - usada pela geometria em Y_TITULO_PAGINA_INTERNA acima.
+FONTE_TITULO_PAGINA_INTERNA = (SERIF_BOLD, 18)
 
 _TAG_COR = {
     "FATO": AZUL_MARINHO,
@@ -239,11 +263,11 @@ def _placeholder_foto(c, x, y, largura, altura, rotulo):
 
 
 def _cabecalho(c, agora, pagina_titulo):
-    altura = 22 * 2.834645669
+    altura = ALTURA_CABECALHO
     c.setFillColor(AZUL_MARINHO)
     c.rect(0, PAGINA_ALTURA - altura, PAGINA_LARGURA, altura, stroke=0, fill=1)
     c.setFillColor(AMBAR)
-    c.rect(0, PAGINA_ALTURA - altura - 2, PAGINA_LARGURA, 2, stroke=0, fill=1)
+    c.rect(0, PAGINA_ALTURA - altura - ALTURA_FAIXA_AMBAR_CABECALHO, PAGINA_LARGURA, ALTURA_FAIXA_AMBAR_CABECALHO, stroke=0, fill=1)
     c.setFillColor(BRANCO_QUENTE)
     c.setFont(SERIF_BOLD, 16)
     c.drawString(MARGEM, PAGINA_ALTURA - altura / 2 - 5, "PREGÃO")
@@ -377,7 +401,7 @@ def _pagina_capa(c, edicao):
     cx = MARGEM
     y_cards = y - 60
     for ind in indicadores:
-        _card_indicador(c, ind, cx, y_cards - 68, largura_card - 12, 68)
+        _card_indicador(c, ind, cx, y_cards - ALTURA_CARD_INDICADOR, largura_card - 12, ALTURA_CARD_INDICADOR)
         cx += largura_card
 
     y_destaques = y_cards - 98
@@ -412,8 +436,8 @@ def _pagina_brasil(c, edicao):
     agora = edicao["agora"]
     _cabecalho(c, agora, "BRASIL · JUROS E MERCADO")
     largura_util = PAGINA_LARGURA - 2 * MARGEM
-    y = PAGINA_ALTURA - 92
-    c.setFont(SERIF_BOLD, 18)
+    y = Y_TITULO_PAGINA_INTERNA
+    c.setFont(*FONTE_TITULO_PAGINA_INTERNA)
     c.setFillColor(AZUL_MARINHO)
     c.drawString(MARGEM, y, "Brasil")
 
@@ -423,7 +447,7 @@ def _pagina_brasil(c, edicao):
     cx = MARGEM
     y_cards = y - 36
     for ind in indicadores:
-        _card_indicador(c, ind, cx, y_cards - 68, largura_card - 12, 68)
+        _card_indicador(c, ind, cx, y_cards - ALTURA_CARD_INDICADOR, largura_card - 12, ALTURA_CARD_INDICADOR)
         cx += largura_card
 
     grafico = _grafico_linha_png(brasil.get("historico_ibov"), cor_linha="#E8762C")
@@ -483,8 +507,8 @@ def _pagina_exterior(c, edicao):
     agora = edicao["agora"]
     _cabecalho(c, agora, "EXTERIOR · COMMODITIES")
     largura_util = PAGINA_LARGURA - 2 * MARGEM
-    y = PAGINA_ALTURA - 92
-    c.setFont(SERIF_BOLD, 18)
+    y = Y_TITULO_PAGINA_INTERNA
+    c.setFont(*FONTE_TITULO_PAGINA_INTERNA)
     c.setFillColor(AZUL_MARINHO)
     c.drawString(MARGEM, y, "Exterior")
 
@@ -494,7 +518,7 @@ def _pagina_exterior(c, edicao):
     cx = MARGEM
     y_cards = y - 36
     for ind in indicadores:
-        _card_indicador(c, ind, cx, y_cards - 68, largura_card - 8, 68)
+        _card_indicador(c, ind, cx, y_cards - ALTURA_CARD_INDICADOR, largura_card - 8, ALTURA_CARD_INDICADOR)
         cx += largura_card + 8
 
     grafico = _grafico_linha_png(exterior.get("historico_petroleo"), cor_linha="#0E1B2E")
@@ -533,8 +557,8 @@ def _pagina_empresas(c, edicao):
     agora = edicao["agora"]
     _cabecalho(c, agora, "EMPRESAS, SETORES E AGENDA")
     largura_util = PAGINA_LARGURA - 2 * MARGEM
-    y = PAGINA_ALTURA - 92
-    c.setFont(SERIF_BOLD, 18)
+    y = Y_TITULO_PAGINA_INTERNA
+    c.setFont(*FONTE_TITULO_PAGINA_INTERNA)
     c.setFillColor(AZUL_MARINHO)
     c.drawString(MARGEM, y, "Empresas e Setores")
 
