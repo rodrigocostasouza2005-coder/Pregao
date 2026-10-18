@@ -344,3 +344,55 @@ def test_17_focus_repete_timeout_transitorio():
         resultado = macro_mod._focus_anual("IPCA", ano)
     _checar("17a Focus recupera apos timeout", resultado is not None and resultado["mediana_pct"] == 4.0)
     _checar("17b Focus repetiu uma vez", get.call_count == 2)
+
+
+def _resposta_sgs(conteudo_tipo, corpo_json=None, json_invalido=False):
+    from unittest.mock import Mock
+    resposta = Mock()
+    resposta.status_code = 200
+    resposta.headers = {"Content-Type": conteudo_tipo}
+    resposta.raise_for_status.return_value = None
+    if json_invalido:
+        resposta.json.side_effect = ValueError("Expecting value")
+    else:
+        resposta.json.return_value = corpo_json
+    return resposta
+
+
+def test_18_sgs_pagina_html_com_status_200_vira_motivo_legivel():
+    """Caso real (diagnóstico de 18/10/2026): HTTP 200 + página HTML
+    'Requisição inválida!' - antes virava um ValueError genérico do
+    r.json() e o PDF dizia só 'indisponível'."""
+    resposta = _resposta_sgs("text/html; charset=utf-8", json_invalido=True)
+    with patch.object(macro_mod.requests, "get", return_value=resposta) as get:
+        try:
+            macro_mod._serie_sgs(432, 30)
+        except macro_mod.RespostaSgsInvalida as e:
+            motivo = str(e)
+        else:
+            raise AssertionError("página HTML deveria virar RespostaSgsInvalida")
+    _checar("18a motivo cita a página de erro do BC", "página de erro HTML" in motivo and "432" in motivo)
+    _checar("18b não repete (não é falha transitória de rede)", get.call_count == 1)
+
+
+def test_19_sgs_json_de_erro_com_status_200_vira_motivo_legivel():
+    resposta = _resposta_sgs("application/json; charset=utf-8",
+                             {"erro": {"statusCode": 500, "detail": "Internal error"}})
+    with patch.object(macro_mod.requests, "get", return_value=resposta):
+        try:
+            macro_mod._serie_sgs(4389, 30)
+        except macro_mod.RespostaSgsInvalida as e:
+            motivo = str(e)
+        else:
+            raise AssertionError("JSON de erro deveria virar RespostaSgsInvalida")
+    _checar("19a motivo traz o erro informado pelo BC", "500 Internal error" in motivo and "4389" in motivo)
+
+
+def test_20_selic_indisponivel_guarda_motivo_para_a_edicao():
+    macro_mod.obter_selic_meta.clear()
+    with patch.object(macro_mod, "_serie_sgs",
+                      side_effect=macro_mod.RespostaSgsInvalida("SGS 432: página de erro")), \
+         patch.object(macro_mod, "registrar_tentativa"):
+        assert macro_mod.obter_selic_meta() is None
+    _checar("20a motivo disponível para o PDF", macro_mod.motivo_indisponivel("selic") == "SGS 432: página de erro")
+    macro_mod.obter_selic_meta.clear()

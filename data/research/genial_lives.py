@@ -146,8 +146,22 @@ def obter_relatorios() -> list | None:
             feed = None
             erro_bruto = e
         if feed is not None and not (feed.bozo and not feed.entries):
+            if tentativa > 0:
+                print(f"[genial_lives] conexao OK na tentativa {tentativa + 1}")
             _ultimo_motivo_falha = None
             break
+        # print() de proposito (achado real, auditoria 2026-10-18: sem
+        # isso, as ~4 falhas reais de producao encontradas no historico
+        # do GitHub Actions - runs 38832834568/38982985477/38989522110/
+        # 39088619143, todas rapidas, 1.7-4.5s, NUNCA um travamento -
+        # nao tinham NENHUM detalhe visivel no log puro, so' em
+        # motivo_ultima_falha(), que so' chega no Supabase via
+        # registrar_tentativa - sem acesso ao banco, nao da pra saber se
+        # foi erro de rede/DNS ou resposta vazia/malformada sem abrir o
+        # painel SAUDE DOS DADOS. Mesmo padrao que genial.py/xp.py JA
+        # usam (print por tentativa, visivel nos Logs do GitHub Actions/
+        # Streamlit Cloud) - antes so' faltava aqui.
+        print(f"[genial_lives] tentativa {tentativa + 1} falhou: {erro_bruto!r}")
         if tentativa == 0:
             time.sleep(1.5)
     else:
