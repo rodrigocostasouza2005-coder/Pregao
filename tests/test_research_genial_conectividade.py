@@ -89,3 +89,50 @@ def test_obter_relatorios_retorna_none_quando_conexao_cai():
     genial_mod.obter_relatorios.clear()  # @st.cache_data - evita cache de outro teste
     with patch.object(genial_mod, "_buscar_next_data", return_value=None):
         assert genial_mod.obter_relatorios() is None
+
+
+# ============================================================
+# categoria_ultima_falha() - classificacao usada por coletor_local.py
+# pra decidir o exit code sem mascarar uma falha nova (auditoria
+# 2026-10-18, ver data/research/__init__.py:_classificar_falha e
+# coletor_local.py:_falha_critica).
+# ============================================================
+
+def test_categoria_reset_http2_e_bloqueio_externo_conhecido():
+    """Item 2 da missao: Genial Analisa falhando com o padrao de WAF JA
+    documentado (reset ativo de stream HTTP/2) -> 'bloqueio_externo_
+    conhecido', mesmo principio aplicado a XP."""
+    erro_reset = Exception(
+        "Failed to perform, curl: (92) HTTP/2 stream 1 reset by server (error 0x2 INTERNAL_ERROR)."
+    )
+    with patch.object(genial_mod.cffi_requests, "get", side_effect=erro_reset):
+        genial_mod._tentar_buscar("https://x")
+    assert genial_mod.categoria_ultima_falha() == "bloqueio_externo_conhecido"
+
+
+def test_categoria_timeout_sem_bytes_e_bloqueio_externo_conhecido():
+    """2o sintoma documentado (timeout total, sem nenhum byte recebido) -
+    mesma classificacao do reset de stream."""
+    erro_timeout = TimeoutError(
+        "Operation timed out after 15008 milliseconds with 0 bytes received."
+    )
+    with patch.object(genial_mod.cffi_requests, "get", side_effect=erro_timeout):
+        genial_mod._tentar_buscar("https://x")
+    assert genial_mod.categoria_ultima_falha() == "bloqueio_externo_conhecido"
+
+
+def test_categoria_http_500_novo_e_erro_nao_bloqueio_conhecido():
+    """Mesmo principio do item 3 (XP) aplicado a Genial Analisa: um
+    status HTTP generico/novo (nao e' reset nem timeout silencioso) nao
+    pode ser classificado como o mesmo bloqueio antigo."""
+    resposta_500 = MagicMock(status_code=500, text="")
+    with patch.object(genial_mod.cffi_requests, "get", return_value=resposta_500):
+        genial_mod._tentar_buscar("https://x")
+    assert genial_mod.categoria_ultima_falha() == "erro"
+
+
+def test_categoria_sem_falha_registrada_e_erro_nunca_bloqueio_por_padrao():
+    """Item 6 da missao: motivo ausente/sucesso nunca vira
+    'bloqueio_externo_conhecido' por padrao."""
+    genial_mod._ultimo_motivo_falha = None
+    assert genial_mod.categoria_ultima_falha() == "erro"

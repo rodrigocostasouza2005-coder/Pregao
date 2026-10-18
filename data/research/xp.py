@@ -135,6 +135,29 @@ def motivo_ultima_falha() -> str | None:
     return _ultimo_motivo_falha
 
 
+# Mesmo marcador textual que _detalhe_bloqueio_cdn ja' embute em
+# _ultimo_motivo_falha quando o 403 bate no formato EXATO da pagina real
+# "Acesso Bloqueado" do Akamai (achado real, auditoria 2026-10-18 -
+# correcao do exit code de coletor_local.py). Um 403 de outra causa (sem
+# essa pagina/Reference ID) nao ganha o marcador - fica como falha
+# generica/nao classificada de proposito, ver categoria_ultima_falha().
+_MARCADOR_BLOQUEIO_CDN = "bloqueio de borda do CDN (Akamai)"
+
+
+def categoria_ultima_falha() -> str:
+    """Classifica a ultima falha pra decidir se ela sozinha pode deixar
+    de derrubar o exit code de coletor_local.py (ver data/research/
+    __init__.py:_classificar_falha e coletor_local.py:_falha_critica).
+    So' devolve 'bloqueio_externo_conhecido' quando o motivo da ultima
+    falha tem o marcador do bloqueio de borda do Akamai JA' documentado
+    (pagina real 'Acesso Bloqueado' com Reference ID) - qualquer coisa
+    diferente (sucesso, motivo None, um 403 sem essa pagina especifica,
+    erro novo/desconhecido) devolve 'erro' de proposito, pra nunca
+    mascarar uma mudanca real de comportamento."""
+    motivo = _ultimo_motivo_falha or ""
+    return "bloqueio_externo_conhecido" if _MARCADOR_BLOQUEIO_CDN in motivo else "erro"
+
+
 def _tentar_requisitar(url: str, params: dict, timeout: float = TIMEOUT):
     """Tenta buscar `url` de duas formas ate uma dar certo (200): primeiro
     curl_cffi impersonate="chrome" (contorna bloqueio por fingerprint de
