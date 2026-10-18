@@ -154,7 +154,11 @@ def test_noticias_indisponiveis_cai_no_fallback_textual_em_todas_as_secoes():
         assert secao in texto
 
 
-def test_html_preserva_links_e_estrutura_minima():
+def test_html_e_capa_de_jornal_com_manchete_clicavel_e_cta_pro_pdf():
+    """montar_morning_call_html não reproduz mais o texto inteiro (isso
+    agora só está no PDF anexado, PR #62) - é uma capa curta: manchete
+    principal clicável (texto visível = título da notícia, não a URL
+    crua) + chamada evidente pro PDF completo."""
     with patch.object(mc, "_obter_cotacao_fmt", side_effect=_COT_INDISPONIVEL), \
          patch.object(mc, "obter_selic_meta", return_value=None), \
          patch.object(mc, "obter_cdi", return_value=None), \
@@ -166,15 +170,16 @@ def test_html_preserva_links_e_estrutura_minima():
          ]):
         texto = mc.montar_morning_call(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
     corpo_html = mc.montar_morning_call_html(texto)
-    assert "<h1" in corpo_html
-    # Estilo do link é decisão editorial (cor/sublinhado inline - ver
-    # montar_morning_call_html) e pode mudar; o que não pode mudar é o
-    # link em si: href correto, texto visível = URL, clicável de verdade.
-    assert '<a href="https://exemplo.com/a"' in corpo_html
-    assert ">https://exemplo.com/a</a>" in corpo_html
+    assert "<h1" in corpo_html  # masthead PREGÃO, sempre presente
     assert "<script" not in corpo_html
-    assert "<li>Manchete X" in corpo_html
-    assert "<h2" in corpo_html and "FONTES" in corpo_html
+    # link real, clicável, com o TÍTULO como texto visível (não a URL crua
+    # - decisão editorial explícita: um jornal nunca mostra link cru numa
+    # manchete) - href correto é o que não pode variar.
+    assert '<a href="https://exemplo.com/a"' in corpo_html
+    assert ">Manchete X</a>" in corpo_html
+    # chamada evidente pro PDF em anexo (não um link - é um anexo, não URL)
+    assert "EDIÇÃO COMPLETA EM PDF" in corpo_html
+    assert "anexad" in corpo_html.lower()
 
 
 def test_focus_usa_ano_referencia_como_rotulo_sem_formatar_como_dinheiro():
@@ -804,8 +809,13 @@ def test_enviar_teste_anexa_pdf_quando_geracao_da_certo(monkeypatch):
 
 def test_montar_morning_call_html_escapa_conteudo_perigoso():
     """Título/manchete de notícia é texto de fonte externa - nunca pode
-    injetar HTML/script no e-mail gerado."""
-    texto = "MORNING CALL — 16/10/2026\nPregão\n\n5. EMPRESAS E SETORES\n- <script>alert(1)</script> & \"aspas\""
+    injetar HTML/script no e-mail gerado. Precisa ter " — URL" pra ser
+    extraída como manchete (ver _extrair_manchetes) - sem isso a linha
+    simplesmente não aparece na capa, nunca quebrando a sanitização."""
+    texto = (
+        "MORNING CALL — 16/10/2026\nPregão\n\n"
+        "5. EMPRESAS E SETORES\n- <script>alert(1)</script> & \"aspas\" — https://exemplo.com/x"
+    )
     html_gerado = mc.montar_morning_call_html(texto)
     assert "<script>" not in html_gerado
     assert "&lt;script&gt;" in html_gerado
