@@ -808,3 +808,30 @@ def test_montar_morning_call_html_escapa_conteudo_perigoso():
     html_gerado = mc.montar_morning_call_html(texto)
     assert "<script>" not in html_gerado
     assert "&lt;script&gt;" in html_gerado
+
+
+# ---------------------------------------------------------------------
+# RADAR SETORIAL - chamada curta no e-mail, só quando está no PDF anexo
+# ---------------------------------------------------------------------
+
+def test_anexo_pdf_carrega_nomes_dos_setores_do_radar(monkeypatch):
+    monkeypatch.setattr(mc, "montar_edicao", lambda *_a, **_k: {"radar": {"setores": [
+        {"nome": "Bancos"}, {"nome": "Varejo"}]}})
+    monkeypatch.setattr(mc, "gerar_pdf", lambda edicao: b"%PDF-x")
+    anexo = mc._montar_anexo_pdf(datetime(2026, 10, 19, 7, tzinfo=TZ_SP))
+    assert anexo["radar_setores"] == ["Bancos", "Varejo"]
+
+
+def test_chamada_do_radar_entra_antes_de_limitacoes_e_vira_chip_no_html():
+    texto = "PREGÃO\nsub\n\n1. RESUMO EXECUTIVO\n- x\n\nLIMITAÇÕES\n- y"
+    com = mc._com_chamada_radar(texto, {"radar_setores": ["Bancos", "Varejo", "Saúde", "Saneamento"]})
+    assert com.index("[RADAR SETORIAL]") < com.index("LIMITAÇÕES")
+    assert "Bancos, Varejo, Saúde, Saneamento" in com
+    html = mc.montar_morning_call_html(com)
+    assert "RADAR SETORIAL</span>" in html
+
+
+def test_sem_radar_no_anexo_o_email_nao_anuncia_radar():
+    texto = "PREGÃO\nsub\n\nLIMITAÇÕES\n- y"
+    assert mc._com_chamada_radar(texto, None) == texto
+    assert mc._com_chamada_radar(texto, {"radar_setores": []}) == texto

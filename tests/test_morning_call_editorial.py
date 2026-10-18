@@ -23,8 +23,8 @@ def _sem_rede(**overrides):
         obter_cdi=lambda: None,
         obter_focus_ipca=lambda: None,
         obter_focus_selic=lambda: None,
-        obter_top_mercado=lambda: [],
-        obter_top_mercado_internacional=lambda: [],
+        obter_top_mercado=lambda *_a: [],
+        obter_top_mercado_internacional=lambda *_a: [],
         calcular_calendario_cacheado=lambda *_a, **_k: [],
         obter_resumos_prontos=lambda *_a, **_k: {},
     )
@@ -36,8 +36,9 @@ def _pools(noticias, data="2026-10-14T06:30:00-03:00"):
     """Separa notícias de teste nos dois pools reais (BR / INT), com data
     dentro da janela da edição quando o item não traz uma."""
     itens = [{"data": data, **n} for n in noticias]
-    return dict(obter_top_mercado=lambda: [n for n in itens if n.get("regiao") == "BR"],
-                obter_top_mercado_internacional=lambda: [n for n in itens if n.get("regiao") != "BR"])
+    return dict(obter_top_mercado=lambda setor="TODOS": [n for n in itens if n.get("regiao") == "BR"]
+                if setor == "TODOS" else [],
+                obter_top_mercado_internacional=lambda *_a: [n for n in itens if n.get("regiao") != "BR"])
 
 
 class _MultiPatch:
@@ -293,7 +294,10 @@ def test_montar_edicao_estrutura_completa_sem_rede():
         edicao = ed.montar_edicao(agora)
     assert edicao["agora"] == agora
     assert set(edicao.keys()) == {"agora", "capa", "brasil", "exterior", "empresas", "limitacoes", "fontes",
-                                  "mercados_nota", "janela_noticias"}
+                                  "mercados_nota", "janela_noticias", "radar"}
+    # sem notícia de setor nenhum, o radar sai vazio e registra cada exclusão
+    assert edicao["radar"]["setores"] == []
+    assert all("evidência insuficiente" in e["motivo"] for e in edicao["radar"]["excluidos"])
     assert edicao["brasil"]["noticias"] is None
     assert edicao["empresas"]["agenda"] == []
     # sem notícia nenhuma, a capa não inventa manchete
@@ -373,3 +377,29 @@ def test_falha_na_leitura_do_cache_nao_derruba_a_edicao():
         edicao = ed.montar_edicao(agora)
     assert edicao["brasil"]["noticias"][0]["corpo"] == []
     assert edicao["capa"]["manchete"]["titulo"] == "X"
+
+
+def test_radar_usa_coletor_por_setor_e_regras_da_edicao():
+    """O radar consulta obter_top_mercado(setor) - o mesmo filtro por
+    setor da aba TOP MERCADO - e aplica a janela e o filtro de pauta."""
+    pedidos = []
+    agora = datetime(2026, 10, 19, 8, tzinfo=TZ_SP)
+
+    def por_setor(setor="TODOS"):
+        pedidos.append(setor)
+        if setor == "TODOS":
+            return []
+        return [
+            {"titulo": "Bancos ampliam provisões", "veiculos": ["Valor Econômico"], "link": "https://v/1",
+             "data": "2026-10-18T20:00:00-03:00", "importancia": 5, "tickers": []},
+            {"titulo": "Crédito bancario desacelera, diz BC", "veiculos": ["Folha de S.Paulo"], "link": "https://f/2",
+             "data": "2026-10-18T21:00:00-03:00", "importancia": 4, "tickers": []},
+            {"titulo": "Resultado da Quina: bancos fecham", "veiculos": ["G1"], "link": "https://g/3",
+             "data": "2026-10-18T21:00:00-03:00", "importancia": 9, "tickers": []},
+        ]
+
+    with _MultiPatch(obter_top_mercado=por_setor):
+        edicao = ed.montar_edicao(agora)
+    assert "BANCOS" in pedidos
+    bancos = next(b for b in edicao["radar"]["setores"] if b["setor"] == "BANCOS")
+    assert [f["veiculo"] for f in bancos["fontes"]] == ["Valor Econômico", "Folha de S.Paulo"]

@@ -38,7 +38,9 @@ from data.macro import (
 from data.news import (
     obter_resumos_prontos, obter_top_mercado, obter_top_mercado_internacional, separar_secoes_resumo,
 )
+from data.news import eh_fonte_confiavel
 from data.prices import obter_cotacao_indice, obter_historico
+from data.radar_setorial import montar_radar
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 
@@ -478,6 +480,21 @@ def _agenda_hoje(agora):
         return None
 
 
+def _radar_setorial(agora):
+    """Radar setorial (data/radar_setorial.py) com as notícias do coletor
+    filtrado por setor (mesma função da aba TOP MERCADO do app) e as
+    mesmas regras editoriais desta edição: janela, fora de pauta,
+    duplicata. Falha geral -> None (a seção diz que não saiu)."""
+    try:
+        return montar_radar(
+            agora, buscar=lambda setor: obter_top_mercado(setor), inicio=inicio_janela_noticias(agora),
+            confiavel=eh_fonte_confiavel, mesmo_fato=_mesmo_fato, fora_de_pauta=_fora_de_pauta,
+        )
+    except Exception as exc:
+        print(f"[morning_call] radar setorial indisponível: {exc!r}")
+        return None
+
+
 def montar_edicao(agora=None):
     """Monta a edição completa do Morning Call em PDF - um dict puro
     (capa/brasil/exterior/empresas/fontes/limitações), sem nenhuma
@@ -549,6 +566,7 @@ def montar_edicao(agora=None):
             "agenda": _agenda_hoje(agora),
             "noticias_erro": erro_br,
         },
+        "radar": _radar_setorial(agora),
         "mercados_nota": nota_sessao([ibov, dolar, sp500, nasdaq, ouro, petroleo], agora),
         "janela_noticias": inicio_janela_noticias(agora),
         "limitacoes": LIMITACOES_PADRAO,
