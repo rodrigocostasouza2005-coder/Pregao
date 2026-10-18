@@ -203,6 +203,29 @@ def test_2e_linha_para_item_traz_publicado_em_com_get_seguro():
     _checar("2j linha sem a coluna (banco nao migrado ainda) -> None, sem KeyError", store_mod._linha_para_item(linha_sem)["publicado_em"] is None)
 
 
+def test_2f_mesmo_link_repetido_no_lote_colapsa_pra_1_linha_mantendo_a_ultima():
+    """Achado real documentado na docstring de salvar_itens ('confirmado em
+    teste com a XP': a mesma fonte as vezes lista o mesmo relatorio em mais
+    de 1 categoria) - sem o dedup por link ANTES do upsert, o Postgres
+    rejeita o lote inteiro ('ON CONFLICT DO UPDATE command cannot affect
+    row a second time'). Cobertura automatizada que faltava pra esse
+    comportamento (auditoria BTG/XP/Genial, 2026-10-17) - so' o COMENTARIO
+    existia, nenhum teste validava de fato."""
+    cliente = _cliente_upsert([None])
+    itens = [
+        {"link": "https://x.com/dup", "casa": "XP Investimentos", "titulo": "Versão antiga", "data": "2026-10-16", "autor": "", "tipo": "ACOES", "tickers": ["PETR4"]},
+        {"link": "https://yt/unico", "casa": "Genial (Lives)", "titulo": "Morning Call", "data": "2026-10-16", "autor": "Morning Call", "tipo": "LIVE", "tickers": []},
+        {"link": "https://x.com/dup", "casa": "XP Investimentos", "titulo": "Versão final (mantida)", "data": "2026-10-16", "autor": "", "tipo": "ESTRATEGIA", "tickers": ["PETR4"]},
+    ]
+    with patch.object(store_mod, "obter_cliente", return_value=cliente):
+        ok = store_mod.salvar_itens(itens)
+    payload = cliente.table.return_value.upsert.call_args_list[0].args[0]
+    _checar("2k upsert OK com link duplicado no lote de entrada", ok is True)
+    _checar("2l payload tem so' 2 linhas (3 itens, 1 link repetido)", len(payload) == 2, f"(len={len(payload)})")
+    linha_dup = next(l for l in payload if l["link"] == "https://x.com/dup")
+    _checar("2m mantem a ULTIMA ocorrencia do link duplicado, nao a primeira", linha_dup["titulo"] == "Versão final (mantida)", f"(titulo={linha_dup['titulo']!r})")
+
+
 # ============================================================
 # 3. resumir.py - prompt do Morning Call reescrito (estrutura real)
 # ============================================================
