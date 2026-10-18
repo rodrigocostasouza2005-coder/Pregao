@@ -6338,3 +6338,21 @@ Pedido explícito do Rodrigo, em branch isolada (`fix/exit-code-classificacao-fa
 **Arquivos alterados**: `coletor_local.py`, `data/research/__init__.py`, `data/research/genial.py`, `data/research/xp.py`, `tests/test_coletor_local.py`, `tests/test_research_genial_conectividade.py`, `tests/test_research_xp.py`, `tests/test_research_classificacao_falha.py` (novo). Nenhum arquivo de NEWS/Radar/Morning Call/UI tocado.
 
 **Pendências**: PR ainda não aberto nesta sessão (próximo passo imediato); aguardando CI real antes de qualquer decisão de merge (não autorizado nesta sessão).
+
+## 2026-10-18 (continuação) — Fonte alternativa pra Genial Analisa/XP: 3ª rodada de busca, conclusão fundamentada de "não existe"
+
+Pedido explícito do Rodrigo (prioridade máxima pra Genial Analisa): investigar de verdade se existe caminho público/legítimo alternativo pro bloqueio de borda Akamai, antes de desistir. Branch isolada `feat/research-genial-xp-fonte-alternativa-20261018`, a partir de `main` pós-merge do PR #61 (`905b1d0`).
+
+**4 caminhos testados de verdade pra Genial Analisa** (não suposição, com request real via ferramenta de fetch com rede própria, fora deste sandbox - confirma que o bloqueio não é limitação local):
+1. Página HTML específica já indexada (não só a home) - mesmo timeout silencioso de sempre, zona inteira confirmada de novo.
+2. Canal oficial no Telegram (@GenialAnalise, >9900 inscritos) - a pré-visualização pública (`t.me/s/GenialAnalise`, sem login) não expõe histórico de mensagens pra esse canal: devolve só a "capa" (nome/descrição/foto) com botão "View in Telegram" (deep link pro app) - confirmado via HTTP direto, com cookie de sessão do Telegram persistido entre requisições (a classe CSS do corpo das mensagens, `tgme_widget_message`, simplesmente não existe na resposta). Acessar mensagens de verdade exigiria app/API do Telegram com conta - fora do que "público sem login" permite.
+3. Bucket S3 achado por busca (`genial-documents.s3.amazonaws.com`, domínio diferente, SEM bloqueio - 200 OK confirmado) - mas serve documentos institucionais/jurídicos/de fundos (formulário de referência CVM, termos, materiais de divulgação), nenhum relatório de ações/setor/macro. Domínio certo, conteúdo errado.
+4. Matérias de terceiros (Money Times) citando a visão da Genial sobre tickers específicos - descartado por integridade de origem: seria registrar "Money Times" como se fosse "Genial Analisa", além de já ser o tipo de conteúdo que o coletor de NEWS deveria cobrir (não uma função nova do research).
+
+**Mesma lógica pra XP Research**: achou matérias da InfoMoney (que pertence ao grupo XP) comentando recomendação/preço-alvo dos analistas da XP - mesmo problema de origem (seria InfoMoney, não XP Investimentos) e mesma sobreposição com NEWS. Nenhum feed/sitemap/API fora do domínio já bloqueado foi encontrado.
+
+**Conclusão**: nenhuma alternativa legítima encontrada pra nenhuma das duas casas - é uma conclusão fundamentada (vários caminhos reais testados ao longo de 3 rodadas desde 16/10), não "não tentamos". Nenhuma tentativa de bypass de Akamai, rotação de IP ou falsificação de identidade foi feita. **Nenhuma implementação de código** - só as docstrings de `data/research/genial.py`/`xp.py` atualizadas com a 3ª rodada de busca, pro histórico ficar completo antes de qualquer sessão futura tentar de novo.
+
+**Arquivos alterados**: `data/research/genial.py`, `data/research/xp.py` (só docstring/comentário, nenhuma mudança de comportamento). Suíte completa: 800 passed (sem mudança, confirma que nada de funcional foi alterado). `python -m compileall` OK.
+
+**Pendências**: nenhuma de código. Externas, sem mudança: XP (contato `bloqueio-cdn@xpi.com.br`), Genial Analisa (nenhum canal de contato conhecido). PR aberto, sem merge (aguardando revisão do Rodrigo).
