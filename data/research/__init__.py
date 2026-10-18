@@ -12,12 +12,12 @@ coletavel sem login:
   ver xp.py). Campos confirmados com requisicao real feita fora do
   sandbox (2026-09-23) - IP deste sandbox de dev continua bloqueado pelo
   CDN da XP, mas o coletor esta ativo por padrao.
-- BTG Research: API real encontrada e responde sem bloqueio (content.
-  btgpactual.com/api/research/content-hub/analysis/filter), mas mistura
-  relatorios publicos com relatorios de area logada sem expor essa
-  distincao no modo lote - coletar dai seria contornar login que a BTG
-  pretende exigir, por isso SEM coletor implementado (ver comentario
-  completo em CASAS['btg'] abaixo e o relatorio da missao 2026-10-17).
+- BTG Research: API real (content.btgpactual.com/api/research/content-hub/
+  analysis/filter) coletavel - achado que corrigiu a investigacao anterior
+  (2026-10-17): o campo "tier" (AREA_PUBLICA/AREA_LOGADA) JA' vem no
+  proprio lote, nao so' no detalhe - coletor filtra por AREA_PUBLICA antes
+  de persistir, nunca toca em conteudo de area logada (ver data/research/
+  btg.py e CASAS['btg'] abaixo pros detalhes completos da investigacao).
 - Itau BBA, BB Investimentos, Santander, Safra, Agora/Bradesco, Inter:
   ainda nao investigadas (ver BACKLOG.md; reconhecimento rapido de
   reachability em data/diagnostico.py).
@@ -35,7 +35,7 @@ import streamlit as st
 
 from data.coletores_status import registrar_tentativa
 
-from . import genial, genial_lives, store, xp
+from . import btg, genial, genial_lives, store, xp
 from .base import TEMPO_MAX_COLETA_S
 
 # nao tenta recoletar a mesma casa antes desse tempo desde a ULTIMA
@@ -103,69 +103,50 @@ CASAS = [
         "motivo_falha": genial_lives.motivo_ultima_falha,
     },
     {
-        # Investigado de novo em 2026-10-17 (sessao dedicada a BTG/XP/
-        # Genial, continuacao de 2026-10-16) - achado NOVO que muda a
-        # causa raiz anotada abaixo (a pagina www.btgpactual.com/acoes/
-        # ultimos-relatorios continua bloqueada pra Chromium/Playwright,
-        # 0/8 tentativas - isso nao mudou), mas o endpoint real de
-        # listagem de relatorios FOI encontrado e responde sem bloqueio
-        # nenhum, via dominio content.btgpactual.com (mesmo dominio que
-        # ja' serve a pagina de lives sem bot-detection):
+        # Investigado de novo em 2026-10-17 (reinvestigacao da mesma
+        # sessao, apos pedido explicito do Rodrigo pra nao parar so' no
+        # diagnostico): a conclusao anterior ("tier so' aparece no
+        # detalhe, filtrar exigiria N+1 requisicoes contra conteudo ja'
+        # recebido") estava ERRADA - testada de novo com requisicao real,
+        # o campo "tier" ("AREA_PUBLICA"/"AREA_LOGADA") JA' vem no proprio
+        # POST /filter em lote, item por item, sem precisar de nenhuma
+        # chamada de detalhe. Confirmado com 300 itens reais (12 paginas),
+        # tier presente em 100% deles, 123/300 (41%) e 68/200 (34%) em
+        # amostras distintas "AREA_PUBLICA" - volume real suficiente pra
+        # coletor. robots.txt de content.btgpactual.com permite tudo
+        # ("Allow: /"); nenhum bloqueio observado em dezenas de requisicoes
+        # reais, com o UA identificado do projeto OU um UA de navegador
+        # comum - sem diferenca nenhuma (diferente de genial.py/xp.py,
+        # que SAO bloqueados por fingerprint/WAF - aqui nao ha' bloqueio
+        # algum pra contornar).
         #
-        # 1. https://content.btgpactual.com/research/home (a landing SPA
-        #    de research) carrega 200 com 'requests' puro (sem curl_cffi,
-        #    sem impersonate) e com o UA identificado do projeto - ZERO
-        #    bloqueio, diferente de www.btgpactual.com.
-        # 2. Mapeando o bundle Angular servido por esse dominio (JS
-        #    publico da propria pagina, mesmo princípio ja' usado pro
-        #    __NEXT_DATA__ da Genial e pro wp-json da XP - nao e' scraping
-        #    de pagina bloqueada, e' ler o codigo-fonte publico que ja'
-        #    chega ao navegador de qualquer visitante) ate' achar o
-        #    service real: POST https://content.btgpactual.com/api/
-        #    research/content-hub/analysis/filter (body {} basta) devolve
-        #    200 com relatorios de verdade - titulo, ticker, setor,
-        #    recomendacao, preco-alvo, autor(es), data, categoria. Mais de
-        #    18 mil resultados disponiveis, dados de HOJE confirmados
-        #    (testado 2026-10-17, ver sessao). GET .../content-hub/
-        #    analysis/{id} devolve o detalhe de 1 item.
+        # Coletor implementado (data/research/btg.py) filtra por
+        # tier=="AREA_PUBLICA" ANTES de qualquer persistencia - usa o
+        # controle de acesso que a BTG expoe, em vez de ignora-lo; nunca
+        # inclui item AREA_LOGADA nem item sem tier reconhecido. A pagina
+        # www.btgpactual.com/acoes/ultimos-relatorios (SPA diferente,
+        # dominio diferente) continua bloqueada pra Chromium/Playwright
+        # (0/8 tentativas, auditorias anteriores) - mas o coletor nunca
+        # depende dela, le direto a API publica de content.btgpactual.com.
         #
-        # MAS (motivo que mantem a casa indisponivel, NAO e' "nao
-        # tentamos"): cada item tem um campo "tier" que so' aparece no
-        # detalhe (nao no /filter em lote) com valor "AREA_PUBLICA" ou
-        # "AREA_LOGADA" - ou seja, a PROPRIA BTG marca parte desse
-        # conteudo como exclusivo de cliente logado, mas o endpoint nao
-        # aplica esse controle pra quem chama sem sessao (devolve o texto
-        # INTEIRO, inclusive de itens AREA_LOGADA, pra uma requisicao
-        # anonima comum). Isso parece falha de autorizacao do lado da
-        # BTG, nao uma porta deliberadamente aberta - e nao ha' como
-        # filtrar por tier ANTES de already ter recebido o conteudo
-        # completo (o /filter em lote nem devolve o campo). Coletar
-        # qualquer coisa desse endpoint em produção, de forma agendada,
-        # seria efetivamente contornar uma restricao de login que a BTG
-        # claramente pretende ter (mesmo principio que ja' impede este
-        # projeto de ler o paywall da XP, ver xp.py) - por isso NENHUM
-        # coletor foi implementado contra esse endpoint, mesmo ele
-        # "funcionando" tecnicamente. Decisao de nao automatizar aqui;
-        # nao e' chamado do Rodrigo decidir sozinho tecnico, mas bypass de
-        # login nao e' algo que este projeto faz por padrao - ver RELATORIO
-        # da missao 2026-10-17 pros detalhes completos antes de reconsiderar.
+        # Link persistido e' o endpoint de detalhe da API (real, publico,
+        # estavel, unico por item) - nao foi encontrada no bundle Angular
+        # publico (111 chunks JS verificados) uma rota de pagina com slug
+        # amigavel confirmada; usar o endpoint de API e' honesto (nao
+        # inventa uma URL de pagina nao verificada).
         "id": "btg",
-        "nome": "BTG Research",
-        "ativa_por_padrao": False,
-        "disponivel": False,
-        "obter_relatorios": None,
-        "extrator_texto": None,
-        "motivo_indisponivel": (
-            "Pagina de relatorios (www.btgpactual.com) continua bloqueada pra "
-            "navegador automatizado (0/8 tentativas, net::ERR_HTTP2_PROTOCOL_ERROR/"
-            "timeout) - MAS o endpoint real (content.btgpactual.com/api/research/"
-            "content-hub/analysis/filter) foi encontrado e responde sem bloqueio "
-            "nenhum (achado 2026-10-17). Mantido indisponivel por outro motivo: "
-            "esse endpoint mistura relatorios publicos e de area logada sem "
-            "expor o campo que distingue os dois no modo lote, entao coleta-lo "
-            "equivaleria a contornar login que a BTG pretende exigir - fora do "
-            "que este projeto faz (mesmo principio do paywall da XP)."
-        ),
+        "nome": "BTG Pactual Research",
+        "fonte": "content.btgpactual.com (API de research, filtrado por tier publico)",
+        "ativa_por_padrao": True,
+        "disponivel": True,
+        "obter_relatorios": btg.obter_relatorios,
+        # nao usa o generico (baixa a pagina com curl_cffi impersonate,
+        # pensado pra HTML/PDF) - link e' um endpoint JSON da propria API
+        # publica; obter_texto_publico reconsulta e RECONFIRMA tier antes
+        # de devolver texto (defesa em profundidade contra item que tenha
+        # virado AREA_LOGADA depois da coleta).
+        "extrator_texto": btg.obter_texto_publico,
+        "motivo_falha": btg.motivo_ultima_falha,
     },
 ]
 
