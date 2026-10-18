@@ -821,6 +821,29 @@ def test_montar_morning_call_html_escapa_conteudo_perigoso():
     assert "&lt;script&gt;" in html_gerado
 
 
+def test_html_nao_vaza_interpretacao_de_tendencias_e_riscos():
+    """Regressão achada na própria inspeção visual (2026-10-18): o
+    extrator genérico de "- [TAG] resto" (_extrair_chamadas_tag) também
+    pegava as 3 linhas "[INTERPRETAÇÃO]" de "6. TENDÊNCIAS E RISCOS A
+    ACOMPANHAR" (ver montar_morning_call) - inflava a capa de volta pra
+    quase o texto inteiro, contra o pedido explícito de "chamadas
+    curtas". _TAGS_FORA_DA_CAPA filtra isso; outras tags no mesmo
+    formato (ex: RADAR SETORIAL) continuam aparecendo normalmente."""
+    texto = (
+        "MORNING CALL — 19/10/2026\nPregão\n\n"
+        "1. RESUMO EXECUTIVO\n- Ibovespa: alta de 1%\n\n"
+        "6. TENDÊNCIAS E RISCOS A ACOMPANHAR\n"
+        "- [INTERPRETAÇÃO] Risco global: acompanhe os futuros.\n"
+        "- [INTERPRETAÇÃO] Brasil: observe juros futuros.\n\n"
+        "LIMITAÇÕES\n- [RADAR SETORIAL] No PDF anexo: Bancos, Varejo."
+    )
+    html_gerado = mc.montar_morning_call_html(texto)
+    assert "INTERPRETAÇÃO" not in html_gerado
+    assert "Risco global" not in html_gerado
+    assert "RADAR SETORIAL" in html_gerado
+    assert "Bancos, Varejo" in html_gerado
+
+
 # ---------------------------------------------------------------------
 # RADAR SETORIAL - chamada curta no e-mail, só quando está no PDF anexo
 # ---------------------------------------------------------------------
