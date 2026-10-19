@@ -38,8 +38,9 @@ import requests
 import streamlit as st
 
 from data.news import (
-    SELO_CONFIRMADA, SELO_MENCAO, eh_fonte_confiavel, obter_noticias, obter_noticias_watchlist,
-    obter_resumo_grupo, obter_resumos_prontos, ordenar_fontes_para_resumo, separar_secoes_resumo,
+    SELO_CONFIRMADA, SELO_MENCAO, eh_fonte_confiavel, extrair_por_que_importa, obter_noticias,
+    obter_noticias_watchlist, obter_resumo_grupo, obter_resumos_prontos, ordenar_fontes_para_resumo,
+    separar_secoes_resumo,
 )
 from data.research import store as research_store
 from data.research.genial import obter_recomendacoes
@@ -333,6 +334,11 @@ div[class*="st-key-news-live-card-"] {
 }
 .news-meta-line a { color: var(--destaque); text-decoration: none; }
 .news-meta-line a:hover { text-decoration: underline; }
+.news-resumo-rotulo {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; color: var(--cinza);
+    text-transform: uppercase; margin-bottom: 0.4rem; opacity: 0.85;
+}
+.news-resumo-rotulo span { font-weight: 400; text-transform: none; }
 .news-corpo-p {
     font-size: 0.92rem; line-height: 1.68; color: var(--neutro); margin-bottom: 0.85rem;
     max-width: 68ch;
@@ -341,6 +347,22 @@ div[class*="st-key-news-live-card-"] {
     font-size: 0.7rem; color: var(--cinza); opacity: 0.8; margin: -0.3rem 0 0.9rem 0;
     font-style: italic;
 }
+/* "Por que importa": relevância econômica/financeira do fato (quando a
+   fonte sustentar) - mesma densidade/borda lateral do bloco de impacto
+   potencial abaixo, mas em --cinza (não --destaque): é uma seção à
+   parte do RESUMO, mas tipicamente mais próxima de fato apoiado em algo
+   que a própria fonte já deu (ex: participação no índice/na receita) do
+   que uma leitura especulativa - a cor mais neutra reflete isso, sem
+   competir visualmente com o destaque reservado pra "Impacto potencial"
+   (único bloco sempre e exclusivamente interpretação analítica). */
+.news-importa-wrap {
+    border-left: 2px solid var(--cinza); padding: 0.1rem 0 0.1rem 0.7rem; margin: 0.3rem 0 0.7rem 0;
+}
+.news-importa-titulo {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; color: var(--cinza);
+    text-transform: uppercase; margin-bottom: 0.25rem;
+}
+.news-importa-corpo { font-size: 0.86rem; line-height: 1.6; color: var(--neutro); opacity: 0.92; }
 .news-leitura-wrap {
     border-left: 2px solid var(--destaque); padding: 0.1rem 0 0.1rem 0.7rem; margin: 0.3rem 0 1rem 0;
 }
@@ -521,6 +543,13 @@ div[class*="st-key-news-live-card-"] {
         line-height: 1.4 !important;
         margin: 0.15rem 0 0.55rem !important;
     }
+    .news-resumo-rotulo { font-size: 0.64rem !important; margin-bottom: 0.3rem !important; }
+    .news-importa-wrap {
+        padding-left: 0.5rem !important;
+        margin: 0.25rem 0 0.5rem !important;
+    }
+    .news-importa-titulo { margin-bottom: 0.15rem !important; }
+    .news-importa-corpo { font-size: 0.8rem !important; line-height: 1.45 !important; }
     .news-leitura-wrap {
         padding-left: 0.5rem !important;
         margin: 0.25rem 0 0.6rem !important;
@@ -876,12 +905,22 @@ def _meta_line_dialog(n: dict) -> str:
 @st.dialog("NOTÍCIA", width="large")
 def _abrir_card(n: dict, watchlist: list):
     """Card editorial completo do grupo - capa, manchete, metadados
-    essenciais, resumo em parágrafos (editorial, gerado aqui na hora do
-    clique, nunca antes - cache de obter_resumo_grupo) e LEITURA DE
-    MERCADO quando houver base; veículos/tickers/contexto de research
-    ficam em área secundária discreta no rodapé, sem listas/divisores
-    internos competindo com o conteúdo (reescrito na FASE C, 2026-10-09 -
-    ver PROGRESSO.md)."""
+    essenciais e o resumo (editorial, gerado aqui na hora do clique,
+    nunca antes - cache de obter_resumo_grupo), em até 3 blocos
+    rotulados, cada um só quando houver base real (nunca força seção sem
+    evidência - ver data/news.py:_PROMPT_SISTEMA_RESUMO):
+    1. RESUMO (GERADO POR IA) - síntese factual do que a fonte reportou.
+    2. Por que importa - relevância econômica/financeira do fato,
+       quando a fonte sustentar isso (ver extrair_por_que_importa).
+    3. Impacto potencial - leitura analítica de que ativos/setores podem
+       ser afetados e por quê, SEMPRE marcada como interpretação (não
+       fato confirmado) - ver separar_secoes_resumo (bloco LEITURA DE
+       MERCADO internamente, renomeado só na exibição).
+    Veículos/tickers/contexto de research ficam em área secundária
+    discreta no rodapé, sem listas/divisores internos competindo com o
+    conteúdo (card reescrito na FASE C, 2026-10-09; blocos 2/3 e rótulo
+    de IA adicionados no redesign editorial de 2026-10-19 - ver
+    PROGRESSO.md)."""
     with st.spinner("Gerando resumo..."):
         fontes_ordenadas = ordenar_fontes_para_resumo(n["fontes"])
         titulos_grupo = tuple(n.get("titulos") or [n["titulo"]])
@@ -894,6 +933,17 @@ def _abrir_card(n: dict, watchlist: list):
 
     if resultado["resumo"]:
         paragrafos, leitura_mercado = separar_secoes_resumo(resultado["resumo"])
+        por_que_importa = extrair_por_que_importa(resultado["resumo"])
+
+        # rotulo explicita "gerado por IA" (mesmo principio/convencao ja
+        # aplicada no modal da CVM e no bloco de resumo do RESEARCH -
+        # auditoria 360): sem isso, o texto sintetizado podia passar a
+        # impressao de ser um trecho/citacao oficial da materia, nao uma
+        # sintese de modelo de linguagem.
+        st.markdown(
+            "<div class='news-resumo-rotulo'>Resumo <span>(gerado por IA)</span></div>",
+            unsafe_allow_html=True,
+        )
         for p in paragrafos:
             st.markdown(f"<div class='news-corpo-p'>{html.escape(p)}</div>", unsafe_allow_html=True)
         if resultado.get("parcial"):
@@ -902,13 +952,22 @@ def _abrir_card(n: dict, watchlist: list):
                 "(manchetes/trechos de várias fontes) — o texto completo da matéria não foi acessado.</div>",
                 unsafe_allow_html=True,
             )
+        if por_que_importa:
+            st.markdown(
+                "<div class='news-importa-wrap'>"
+                "<div class='news-importa-titulo'>Por que importa</div>"
+                f"<div class='news-importa-corpo'>{html.escape(por_que_importa)}</div>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
         if leitura_mercado:
             st.markdown(
                 "<div class='news-leitura-wrap'>"
-                "<div class='news-leitura-titulo'>Leitura de mercado</div>"
+                "<div class='news-leitura-titulo'>Impacto potencial</div>"
                 f"<div class='news-leitura-corpo'>{html.escape(leitura_mercado)}</div>"
                 "<div class='news-leitura-nota'>Interpretação analítica a partir do texto acima — não é "
-                "um fato confirmado pela fonte.</div>"
+                "um fato confirmado pela fonte; quando o efeito sobre um ativo/setor específico não é "
+                "claro, o texto admite essa incerteza em vez de afirmar.</div>"
                 "</div>",
                 unsafe_allow_html=True,
             )
