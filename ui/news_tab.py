@@ -1001,10 +1001,39 @@ def _abrir_card(n: dict, watchlist: list):
         )
         for p in paragrafos:
             st.markdown(f"<div class='news-corpo-p'>{html.escape(p)}</div>", unsafe_allow_html=True)
-        if resultado.get("parcial"):
+        qualidade_texto = resultado.get("qualidade_texto")
+        if qualidade_texto == "full_text":
+            aviso_evidencia = (
+                "Resumo gerado a partir do texto extraído de uma matéria. "
+                "Confira a fonte original para contexto adicional."
+            )
+        elif qualidade_texto == "partial_text":
+            aviso_evidencia = (
+                "Leitura parcial: resumo baseado em fragmentos de texto extraídos "
+                "e manchetes; não representa necessariamente a matéria completa."
+            )
+        elif qualidade_texto == "snippet_only":
+            aviso_evidencia = (
+                "Atenção: não foi possível extrair o corpo da matéria. "
+                "Esta síntese usa apenas manchetes; pode omitir fatos importantes."
+            )
+        elif qualidade_texto == "extraction_failed":
+            aviso_evidencia = (
+                "Não foi possível acessar texto suficiente da matéria. "
+                "Abra a fonte original; não há base confiável para resumir o conteúdo."
+            )
+        elif resultado.get("parcial"):
+            # Compatibilidade com entradas antigas do cache sem qualidade_texto.
+            aviso_evidencia = (
+                "Leitura parcial: síntese baseada em trechos/manchetes de várias fontes; "
+                "o texto completo não foi confirmado."
+            )
+        else:
+            aviso_evidencia = None
+
+        if aviso_evidencia:
             st.markdown(
-                "<div class='news-parcial-nota'>Síntese com base nas informações públicas disponíveis "
-                "(manchetes/trechos de várias fontes) — o texto completo da matéria não foi acessado.</div>",
+                f"<div class='news-parcial-nota'>{html.escape(aviso_evidencia)}</div>",
                 unsafe_allow_html=True,
             )
         if por_que_importa:
