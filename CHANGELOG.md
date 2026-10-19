@@ -45,8 +45,15 @@ Correções:
    colunas wire empilham); modal usa o registro de imagem quando o resumo
    não trouxe foto.
 
-Testes: `tests/test_news_imagens_pipeline.py` (38 casos, tudo mockado).
-Suíte: 946 passed. Validação visual em harness local
+Ajustes da validação de integração (mesmo dia): listas wire (TOP
+MERCADO, VISÃO GERAL, EQUITY) leem as miniaturas com cache de 2 min, em
+vez de ir ao Supabase a cada rerun; lote com falha em `obter_varios` passa
+a ir pro log; testes do coletor deixam de executar a etapa real de
+imagens (+3 testes do coletor: roda sem Groq, não roda sem persistência,
+exceção não muda o exit code).
+
+Testes: `tests/test_news_imagens_pipeline.py` (40 casos, tudo mockado).
+Suíte: 951 passed. Validação visual em harness local
 (`docs/evidencias/imagens-news-20261019/`) — dados sintéticos; sem acesso
 a sites reais nem ao Supabase neste ambiente.
 

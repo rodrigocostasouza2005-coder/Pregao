@@ -297,7 +297,10 @@ def obter_varios(chaves: list) -> dict:
                 .eq("status", "concluido")
                 .execute()
             )
-        except Exception:
+        except Exception as e:
+            # lote perdido = esses cards só ficam sem resumo/foto nesta
+            # renderização (nunca derruba o feed); fica no log pra diagnóstico
+            print(f"[ia_cache] obter_varios: lote {inicio // _LOTE_IN + 1} falhou ({type(e).__name__})")
             continue
         encontrados.update({
             linha["chave_documento"]: linha["resultado"]

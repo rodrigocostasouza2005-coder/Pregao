@@ -11,9 +11,9 @@ BR/INT em cada linha, ver ui/news_tab.py:_bloco_rank_coluna)."""
 
 import streamlit as st
 
-from data.news import obter_resumos_prontos, obter_top_mercado, obter_top_mercado_internacional, obter_top_mercado_tudo
+from data.news import obter_top_mercado, obter_top_mercado_internacional, obter_top_mercado_tudo
 from data.news_setores import NOMES_SETORES
-from ui.news_tab import _injetar_css, _renderizar_lista
+from ui.news_tab import _injetar_css, _prontos_para_lista, _renderizar_lista
 
 _REGIOES = ["BRASIL", "INTERNACIONAL", "TUDO"]
 _SETORES = ["TODOS"] + NOMES_SETORES
@@ -66,9 +66,6 @@ def render_top_mercado(prefs: dict):
 
         # fotos já validadas pelo coletor: 1 leitura em lote pra lista
         # inteira, nunca rede/IA por linha; falha do cache = lista sem foto
-        try:
-            prontos = obter_resumos_prontos(itens)
-        except Exception:
-            prontos = {}
+        prontos = _prontos_para_lista(itens)
         _renderizar_lista(itens, mostrar_ticker=True, prefixo="top", watchlist=prefs.get("watchlist") or [],
                           resumos_prontos=prontos)

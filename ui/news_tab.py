@@ -1026,6 +1026,19 @@ def _bloco_contexto_research(tickers: list, watchlist: list):
         )
 
 
+@st.cache_data(ttl=120, show_spinner=False, max_entries=64)
+def _prontos_para_lista(grupos: list) -> dict:
+    """obter_resumos_prontos com cache curto pras listas wire (TOP MERCADO,
+    VISÃO GERAL, EQUITY): a VISÃO GERAL reroda a cada interação da página,
+    e sem isto cada rerun era mais uma ida ao Supabase só pras miniaturas.
+    2 min é bem menor que o ciclo do coletor (30 min) que grava as fotos.
+    Falha -> {} (lista sem miniatura, nunca quebra)."""
+    try:
+        return obter_resumos_prontos(grupos)
+    except Exception:
+        return {}
+
+
 def _thumb_wire_html(imagem: str | None) -> str:
     """Miniatura compacta da lista wire (TOP MERCADO / VISÃO GERAL): 40x40,
     recorte uniforme; sem foto confiável, um quadrado neutro vazio (mantém
@@ -1509,9 +1522,6 @@ def render_news_ticker(ticker: str, prefs: dict):
         st.info("Nenhuma notícia recente encontrada.")
         return
 
-    try:
-        prontos = obter_resumos_prontos(noticias[:8])
-    except Exception:
-        prontos = {}
+    prontos = _prontos_para_lista(noticias[:8])
     _renderizar_lista(noticias[:8], mostrar_ticker=False, prefixo=f"eq-{ticker}", watchlist=prefs.get("watchlist") or [],
                       resumos_prontos=prontos)

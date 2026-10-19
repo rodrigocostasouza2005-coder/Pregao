@@ -615,3 +615,15 @@ def test_12f_leitura_em_lote_divide_chaves_grandes():
         achados = ia_cache.obter_varios(chaves + chaves[:10])
     assert len(achados) == 250
     assert [len(l) for l in cli.lotes] == [100, 100, 50]
+
+
+def test_12g_lista_wire_nao_consulta_o_banco_a_cada_rerun():
+    news_tab._prontos_para_lista.clear()
+    itens = [_grupo("Fato da visão geral", "https://news.google.com/vg")]
+    with patch.object(news_tab, "obter_resumos_prontos", return_value={"x": {}}) as m:
+        news_tab._prontos_para_lista(itens)
+        news_tab._prontos_para_lista(itens)
+    assert m.call_count == 1
+    news_tab._prontos_para_lista.clear()
+    with patch.object(news_tab, "obter_resumos_prontos", side_effect=RuntimeError("supabase fora")):
+        assert news_tab._prontos_para_lista(itens) == {}
