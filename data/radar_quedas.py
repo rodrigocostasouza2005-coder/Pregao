@@ -282,23 +282,41 @@ def processar_monitoramento():
         return {"coleta_ok": True, "alertas_novos": [], "erro": f"Supabase indisponível para leitura. {resumo_fontes}", "fontes": status_fontes}
     tickers = sorted({normalizar_ticker(r.get("ticker")) for r in recomendacoes} - {""})
     novos = []
+    falhas_cotacao = 0
     for ticker in tickers:
         cotacao = obter_cotacao(ticker)
         if isinstance(cotacao, dict) and not cotacao.get("erro"):
             pregao = obter_data_ultimo_pregao(ticker)
             if pregao is not None:
                 cotacao = {**cotacao, "pregao": pregao}
+        else:
+            # Sem isto, um provedor de cotação bloqueado (ex: IP de
+            # datacenter do runner, diferente do IP onde o app roda - já
+            # documentado pra yfinance em data/prices.py) faz TODOS os
+            # tickers caírem em avaliar_ticker()->None silenciosamente: a
+            # execução reporta coleta_ok=True e "nenhuma queda" fica
+            # indistinguível de "não conseguimos nem checar". Ver
+            # jobs/radar_quedas.py, que propaga este dado pro painel
+            # SAÚDE DOS DADOS via `erro`/`parcial`.
+            falhas_cotacao += 1
         alerta = avaliar_ticker(ticker, cotacao, recomendacoes)
         if alerta:
             ok, alerta_id = registrar_alerta(alerta)
             if ok and alerta_id is not None:
                 alerta["id"] = alerta_id
                 novos.append(alerta)
-    parcial = any(not status.startswith("ok") for status in status_fontes.values())
+    mensagens = []
+    if any(not status.startswith("ok") for status in status_fontes.values()):
+        mensagens.append(f"Execução parcial: {resumo_fontes}")
+    if falhas_cotacao:
+        mensagens.append(
+            f"Cotação indisponível para {falhas_cotacao}/{len(tickers)} ticker(s) monitorado(s) "
+            "(provedor de cotação - ver data/prices.py:obter_cotacao)"
+        )
     return {
         "coleta_ok": True, "alertas_novos": novos, "total_tickers": len(tickers),
-        "fontes": status_fontes,
-        "erro": (f"Execução parcial: {resumo_fontes}" if parcial else None),
+        "fontes": status_fontes, "cotacoes_falhas": falhas_cotacao,
+        "erro": ("; ".join(mensagens) if mensagens else None),
     }
 
 
