@@ -51,18 +51,43 @@ group by 1 having count(*) > 1 order by 2 desc limit 10;
 Os registros de resumo (`origem = 'news'`) não são alterados por esta
 mudança. Os de imagem usam chave própria (`news_imagem:` + chave do resumo).
 
-## 3a. Amostra real reprodutível (qualquer máquina com internet, sem credenciais)
+## 3a. Amostra real reprodutível (qualquer máquina com internet; não precisa de credenciais)
 
 ```
 python docs/evidencias/imagens-news-20261019/validar_amostra_real.py --n 10 --saida /tmp/amostra-fotos
 ```
 
-O script roda o MESMO extrator e a MESMA validação do coletor contra
-matérias reais do TOP MERCADO (1 por veículo antes de repetir), sem gravar
-nada e sem chamar IA. Ele gera `amostra.csv` e `amostra.html` (foto ao
-lado do título, com link para a matéria original). Abra o HTML e preencha
-a coluna `foto_e_da_materia` do CSV comparando com a matéria original.
-Saída com código 2 = nenhuma notícia coletada (sem acesso às fontes).
+- Roda o MESMO extrator e a MESMA validação do coletor contra matérias
+  reais do TOP MERCADO, pegando 1 matéria por veículo antes de repetir.
+- **Somente leitura, garantido no próprio script**: o cliente Supabase fica
+  desligado (a coleta do TOP MERCADO gravaria em `coletores_status`), o
+  registro de status vira no-op e qualquer chamada de IA levanta erro.
+  Nenhum e-mail é enviado.
+- Gera `amostra.csv` e `amostra.html` (foto ao lado do título, com link
+  para a matéria original).
+- Classificação inicial automática, **nunca "correto"**:
+
+  | Status | Classificação inicial |
+  |---|---|
+  | foto validada por rede | `pendente_inspecao_visual` |
+  | 401/403/429/5xx/timeout da imagem, ou página inacessível | `bloqueado` |
+  | página sem foto, foto inválida (404, não imagem) ou repetida | `sem_imagem` |
+
+- Abra o HTML e, para cada `pendente_inspecao_visual`, compare com a
+  matéria original. Troque a classificação no CSV por `correto`,
+  `incorreto` ou `inconclusivo` (e por `bloqueado` se a foto não carregar
+  no navegador). Use a coluna `observacao` para o motivo.
+- Apure:
+
+  ```
+  python docs/evidencias/imagens-news-20261019/validar_amostra_real.py --apurar /tmp/amostra-fotos/amostra.csv
+  ```
+
+  A taxa de correspondência é `correto / (correto + incorreto)`. Bloqueados,
+  sem imagem e inconclusivos ficam fora do denominador. Se sobrar alguma
+  linha sem classificação final, o script sai com código 3.
+- Código de saída 2 na coleta = nenhuma notícia coletada (sem acesso às
+  fontes). Nada foi validado.
 
 ## 3. Conferência visual (https://pregao.streamlit.app)
 

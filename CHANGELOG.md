@@ -67,8 +67,15 @@ todos os bugs reproduzidos em teste antes da correção:
 - URL assinada/expirável nunca fica "confirmada" (reavaliada em 6h);
 - `validar_amostra_real.py`: amostra real reprodutível, somente leitura.
 
-Testes: `tests/test_news_imagens_pipeline.py` (51 casos, tudo mockado).
-Suíte: 962 passed (Python 3.13 e 3.12). Validação visual em harness local
+- `validar_amostra_real.py` passa a ser somente leitura de fato: a coleta
+  do TOP MERCADO chamava `registrar_tentativa` (grava em
+  `coletores_status`) e o script desliga Supabase/registro/IA antes de
+  coletar; a classificação automática nunca marca "correto" (bloqueio,
+  timeout, 401/403 = `bloqueado`) e `--apurar` calcula a taxa só sobre
+  correto + incorreto.
+
+Testes: `tests/test_news_imagens_pipeline.py` (54 casos, tudo mockado).
+Suíte: 966 passed (Python 3.13 e 3.12). Validação visual em harness local
 (`docs/evidencias/imagens-news-20261019/`) — dados sintéticos; sem acesso
 a sites reais nem ao Supabase neste ambiente.
 

@@ -734,26 +734,99 @@ def test_13g_url_assinada_nunca_fica_confirmada_pra_sempre():
     assert news._imagem_precisa_reavaliar(None, reg, agora + timedelta(hours=7))
 
 
-def test_13h_script_de_amostra_real_funciona_com_mocks(tmp_path):
-    """O roteiro pós-deploy depende deste script - garante que ele roda e
-    gera CSV/HTML (aqui com mocks; em produção, contra matérias reais)."""
+def _carregar_script_amostra():
     import importlib.util
-    import sys as _sys
     from pathlib import Path
     caminho = Path(news.__file__).resolve().parents[1] / "docs/evidencias/imagens-news-20261019/validar_amostra_real.py"
     spec = importlib.util.spec_from_file_location("validar_amostra_real", caminho)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    g1 = dict(_grupo("Vale amplia cobre", "https://news.google.com/v1"), veiculos=["Valor"])
-    g2 = dict(_grupo("Copom mantém Selic", "https://news.google.com/v2"), veiculos=["Folha"])
-    respostas = {"https://news.google.com/v1": ("t", "https://cdn.v.com/vale.jpg", "https://valor.com/vale", None),
-                 "https://news.google.com/v2": ("t", None, "https://folha.com/copom", None)}
-    with patch.object(news, "obter_top_mercado", return_value=[g1, g2]), \
+    return mod
+
+
+def _rodar_script_amostra(mod, tmp_path, grupos, respostas, head=None, head_exc=None):
+    """Roda main() com o isolamento de produção ATIVO, mas restaurando os
+    atributos globais na saída (patch.object devolve o original mesmo que o
+    script os reatribua) - nunca contamina os outros testes."""
+    import sys as _sys
+    import data.coletores_status as cs
+    import data.supabase_client as sc
+    criados = []
+    head_kw = {"side_effect": head_exc} if head_exc else {"return_value": head or _img_ok()}
+    with patch.object(sc, "create_client", side_effect=lambda *a: criados.append(a)), \
+         patch.object(news, "registrar_tentativa", side_effect=AssertionError("gravaria coletores_status")), \
+         patch.object(cs, "registrar_tentativa", side_effect=AssertionError("gravaria coletores_status")), \
+         patch.object(news, "_chamar_groq", side_effect=AssertionError("chamaria IA")), \
+         patch.object(news, "obter_top_mercado", return_value=grupos), \
          patch.object(news, "obter_top_mercado_internacional", return_value=[]), \
          patch.object(news, "_extrair_texto_artigo", side_effect=lambda link: respostas[link]), \
-         patch.object(news.requests, "head", return_value=_img_ok()), \
-         patch.object(_sys, "argv", ["x", "--n", "5", "--saida", str(tmp_path)]):
+         patch.object(news.requests, "head", **head_kw), \
+         patch.object(news.requests, "get", **head_kw), \
+         patch.object(_sys, "argv", ["x", "--n", "10", "--saida", str(tmp_path)]):
         mod.main()
-    csv_txt = (tmp_path / "amostra.csv").read_text(encoding="utf-8")
-    assert "confirmada" in csv_txt and "sem_imagem" in csv_txt and "https://valor.com/vale" in csv_txt
-    assert "https://cdn.v.com/vale.jpg" in (tmp_path / "amostra.html").read_text(encoding="utf-8")
+        # depois do isolamento: nenhum cliente Supabase, status/IA neutralizados
+        assert sc.create_client is None and sc.obter_cliente() is None
+        assert news.registrar_tentativa("x", "y", execucao_ok=True) is None
+        with pytest.raises(RuntimeError):
+            news._chamar_groq("a", "b")
+    assert criados == []  # nenhum cliente Supabase foi criado
+    import csv as _csv
+    with open(tmp_path / "amostra.csv", encoding="utf-8") as f:
+        return list(_csv.DictReader(f))
+
+
+def test_13h_script_de_amostra_real_e_somente_leitura_e_nunca_marca_correto(tmp_path):
+    mod = _carregar_script_amostra()
+    g = lambda t, k, v: dict(_grupo(t, f"https://news.google.com/{k}"), veiculos=[v])
+    grupos = [g("Vale amplia cobre", "v1", "Valor"), g("Copom mantém Selic", "v2", "Folha"),
+              g("Itaú lucra mais", "v3", "Estadão")]
+    respostas = {
+        "https://news.google.com/v1": ("t", "https://cdn.v.com/vale.jpg", "https://valor.com/vale", None),
+        "https://news.google.com/v2": ("t", None, "https://folha.com/copom", None),
+        "https://news.google.com/v3": (None, None, "https://estadao.com/itau",
+                                       "falha HTTP ao acessar a matéria (HTTPError)"),  # 403 na página
+    }
+    linhas = _rodar_script_amostra(mod, tmp_path, grupos, respostas)
+    por_veiculo = {l["veiculo"]: l for l in linhas}
+    assert por_veiculo["Valor"]["status"] == "confirmada"
+    assert por_veiculo["Valor"]["classificacao"] == "pendente_inspecao_visual"  # nunca "correto" automático
+    assert por_veiculo["Folha"]["classificacao"] == "sem_imagem"
+    assert por_veiculo["Estadão"]["classificacao"] == "bloqueado"
+    assert all(l["classificacao"] != "correto" for l in linhas)
+    html_txt = (tmp_path / "amostra.html").read_text(encoding="utf-8")
+    assert "https://cdn.v.com/vale.jpg" in html_txt and "onerror" in html_txt
+
+
+@pytest.mark.parametrize("head_kw,esperado", [
+    ({"head_exc": requests.Timeout("lento")}, "bloqueado"),
+    ({"head": _Resp(403, {})}, "bloqueado"),
+    ({"head": _Resp(404, {})}, "sem_imagem"),
+])
+def test_13i_timeout_403_404_da_imagem_nunca_contam_como_correto(tmp_path, head_kw, esperado):
+    mod = _carregar_script_amostra()
+    grupos = [dict(_grupo("Petrobras sobe", "https://news.google.com/p"), veiculos=["InfoMoney"])]
+    respostas = {"https://news.google.com/p": ("t", "https://cdn.im.com/petr.jpg", "https://infomoney.com/p", None)}
+    linhas = _rodar_script_amostra(mod, tmp_path, grupos, respostas, **head_kw)
+    assert linhas[0]["classificacao"] == esperado
+
+
+def test_13j_apuracao_so_conta_casos_efetivamente_verificados(tmp_path):
+    mod = _carregar_script_amostra()
+    import csv as _csv
+    caminho = tmp_path / "classificado.csv"
+    classes = ["correto"] * 6 + ["incorreto"] + ["bloqueado", "sem_imagem", "inconclusivo"]
+    with open(caminho, "w", newline="", encoding="utf-8") as f:
+        w = _csv.DictWriter(f, fieldnames=["titulo", "classificacao"])
+        w.writeheader()
+        w.writerows({"titulo": f"t{i}", "classificacao": c} for i, c in enumerate(classes))
+    r = mod.apurar(caminho)
+    assert r["verificados"] == 7 and abs(r["taxa_correspondencia"] - 6 / 7) < 1e-9
+    assert r["linhas_sem_classificacao_final"] == []
+    # pendente de inspeção nunca entra como correto: apuração fica incompleta
+    with open(caminho, "w", newline="", encoding="utf-8") as f:
+        w = _csv.DictWriter(f, fieldnames=["titulo", "classificacao"])
+        w.writeheader()
+        w.writerows([{"titulo": "a", "classificacao": "pendente_inspecao_visual"},
+                     {"titulo": "b", "classificacao": "bloqueado"}])
+    r = mod.apurar(caminho)
+    assert r["linhas_sem_classificacao_final"] == [1] and r["taxa_correspondencia"] is None
