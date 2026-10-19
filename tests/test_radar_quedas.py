@@ -46,6 +46,7 @@ def test_monitoramento_nao_usa_carteiras_antigas_quando_todas_fontes_falham():
     import data.radar_quedas as radar
     with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
          patch.object(radar, "coletar_carteiras_safra", return_value=None), \
+         patch.object(radar, "coletar_carteiras_itau", return_value=None), \
          patch.object(radar, "listar_carteiras", return_value=[{"ticker": "PETR4"}]), \
          patch.object(radar, "obter_cotacao") as cotacao:
         resultado = radar.processar_monitoramento()
@@ -63,6 +64,7 @@ def test_monitoramento_continua_quando_so_uma_fonte_falha():
                   "carteira": "Top 10 Ações", "fonte_url": "https://safra/x"}
     with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
          patch.object(radar, "coletar_carteiras_safra", return_value=[item_safra]), \
+         patch.object(radar, "coletar_carteiras_itau", return_value=None), \
          patch.object(radar, "salvar_carteiras", return_value=True) as salvar, \
          patch.object(radar, "listar_carteiras", return_value=[item_safra]), \
          patch.object(radar, "obter_cotacao", return_value={"erro": "indisponível"}) as cotacao:
@@ -85,6 +87,7 @@ def test_monitoramento_para_persistir_uma_fonte_nao_bloqueia_a_outra():
 
     with patch.object(radar, "coletar_carteiras_genial", return_value=[item_genial]), \
          patch.object(radar, "coletar_carteiras_safra", return_value=[item_safra]), \
+         patch.object(radar, "coletar_carteiras_itau", return_value=None), \
          patch.object(radar, "salvar_carteiras", side_effect=_salvar), \
          patch.object(radar, "listar_carteiras", return_value=[item_safra]), \
          patch.object(radar, "obter_cotacao", return_value={"erro": "indisponível"}):
@@ -99,6 +102,7 @@ def test_monitoramento_rejeita_snapshot_vazio_e_preserva_carteiras_dessa_casa():
     import data.radar_quedas as radar
     with patch.object(radar, "coletar_carteiras_genial", return_value=[]), \
          patch.object(radar, "coletar_carteiras_safra", return_value=None), \
+         patch.object(radar, "coletar_carteiras_itau", return_value=None), \
          patch.object(radar, "salvar_carteiras") as salvar, \
          patch.object(radar, "listar_carteiras") as listar, \
          patch.object(radar, "obter_cotacao") as cotacao:
@@ -425,6 +429,7 @@ def test_monitoramento_sem_queda_elegivel_e_execucao_valida():
     cotacao_sem_queda = {"preco": 99.0, "fechamento_anterior": 100.0, "cotacao_em": "2026-10-16T10:00:00-03:00"}
     with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
          patch.object(radar, "coletar_carteiras_safra", return_value=[item]), \
+         patch.object(radar, "coletar_carteiras_itau", return_value=None), \
          patch.object(radar, "salvar_carteiras", return_value=True), \
          patch.object(radar, "listar_carteiras", return_value=[item]), \
          patch.object(radar, "obter_cotacao", return_value=cotacao_sem_queda), \
@@ -465,6 +470,7 @@ def test_processar_monitoramento_usa_data_do_ultimo_pregao_do_provedor():
     registrados = []
     with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
          patch.object(radar, "coletar_carteiras_safra", return_value=recs), \
+         patch.object(radar, "coletar_carteiras_itau", return_value=None), \
          patch.object(radar, "salvar_carteiras", return_value=True), \
          patch.object(radar, "listar_carteiras", return_value=recs), \
          patch.object(radar, "obter_cotacao", return_value={"preco": 36.0, "fechamento_anterior": 38.0, "erro": None}), \
