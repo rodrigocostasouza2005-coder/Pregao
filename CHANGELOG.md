@@ -1,5 +1,84 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-19 — Fotos das notícias: imagem desacoplada do resumo de IA, validação com estado e reavaliação
+
+**Causa raiz** (rastreada no código atual, ponta a ponta): a foto de um card
+só era persistida DENTRO do resultado de um resumo de IA bem-sucedido
+(`ia_cache.obter_resumo_com_cache` só grava resumo real). O coletor de
+produção roda sem `GROQ_API_KEY` (achado do run 39088619143) e
+`pregerar_resumos_news` para antes de baixar qualquer matéria; com cota
+esgotada, paywall/JS sem texto ou resumo reprovado, a og:image já achada
+era descartada junto. Resultado: quase nenhum card ganhava foto, e TOP
+MERCADO/VISÃO GERAL nem tinham miniatura.
+
+Correções:
+
+1. **Registro próprio de imagem** na mesma tabela `resumos_ia_cache` (sem
+   schema novo): chave derivada da chave do resumo, `origem='news_imagem'`,
+   upsert idempotente (`ia_cache.salvar_registro_imagem`). Lido na mesma
+   leitura em lote do feed (`obter_resumos_prontos`, agora em lotes de 100
+   chaves).
+2. **`pregerar_imagens_news`** (chamado pelo `coletor_local.py`, sem IA,
+   roda mesmo sem Groq): baixa a página da matéria (manchete do card
+   primeiro), aplica os filtros de genérica e verifica por rede.
+3. **Verificação com estado** (`_verificar_imagem_url`): distingue falha
+   temporária (timeout, conexão, 429, 5xx) de permanente (404/410, não
+   imagem, SVG, pixel, redirecionamento pra placeholder). Timeout na
+   validação não apaga mais a foto pra sempre.
+4. **Política de reavaliação**: confirmada nunca; erro temporário em 2h;
+   não-verificada em 6h; ausente/inválida em 24h; repetida em 72h; no
+   máximo 4 tentativas por grupo.
+5. **Associação**: a mesma URL de foto em matérias de assunto diferente
+   (og:image reciclada, ex. UOL "fechamento") é descartada; a própria URL
+   da matéria nunca vira foto (o fallback do trafilatura escapava desse
+   filtro — bug real pego pelo teste); SVG/ICO e arquivos de
+   compartilhamento fixos (`og-image.png`, `share.jpg`...) recusados. Os
+   filtros atuais são reaplicados NA LEITURA: foto de banco de imagens
+   cacheada antes do PR #60 some sem backfill.
+6. **UI**: capa do modal recortada 16:9 dentro do `.news-capa` (antes
+   `st.image` solto mostrava retrato em altura total); segunda via com
+   fallback em vez de `st.image(url)` quebrado; no celular a capa COM foto
+   era espremida em 64px (seletor `:has(.news-capa-fallback)` casava com o
+   fallback oculto); imagem que falhava antes do listener instalar ficava
+   quebrada (varredura adicionada); miniatura 30px em TOP MERCADO, VISÃO
+   GERAL e no bloco de notícias da EQUITY (oculta no celular, onde as
+   colunas wire empilham); modal usa o registro de imagem quando o resumo
+   não trouxe foto.
+
+Ajustes da validação de integração (mesmo dia): listas wire (TOP
+MERCADO, VISÃO GERAL, EQUITY) leem as miniaturas com cache de 2 min, em
+vez de ir ao Supabase a cada rerun; lote com falha em `obter_varios` passa
+a ir pro log; testes do coletor deixam de executar a etapa real de
+imagens (+3 testes do coletor: roda sem Groq, não roda sem persistência,
+exceção não muda o exit code).
+
+Revisão de correspondência notícia ↔ foto (2ª rodada, mesmo dia),
+todos os bugs reproduzidos em teste antes da correção:
+- foto reciclada no formato diário recorrente ("Ibovespa fecha em alta
+  hoje" x "... em queda hoje", dias diferentes) passava como o mesmo fato
+  (sobreposição de títulos 0,75); agora o mesmo fato também exige ≤12h
+  entre as publicações e direção de mercado compatível;
+- link que redireciona pra home/login/assinatura/consentimento não vira
+  foto (a og:image dessas páginas é a capa padrão do site);
+- JSON-LD: imagem de matéria relacionada (`hasPart`, `relatedLink`,
+  `mentions`, `itemListElement`...) ignorada; `ImageObject.url` dentro de
+  `image` passa a ser aceito (formato schema.org mais comum, ignorado antes);
+- 401/403 na validação = bloqueio (temporário), não imagem inexistente;
+- URL assinada/expirável nunca fica "confirmada" (reavaliada em 6h);
+- `validar_amostra_real.py`: amostra real reprodutível, somente leitura.
+
+- `validar_amostra_real.py` passa a ser somente leitura de fato: a coleta
+  do TOP MERCADO chamava `registrar_tentativa` (grava em
+  `coletores_status`) e o script desliga Supabase/registro/IA antes de
+  coletar; a classificação automática nunca marca "correto" (bloqueio,
+  timeout, 401/403 = `bloqueado`) e `--apurar` calcula a taxa só sobre
+  correto + incorreto.
+
+Testes: `tests/test_news_imagens_pipeline.py` (54 casos, tudo mockado).
+Suíte: 966 passed (Python 3.13 e 3.12). Validação visual em harness local
+(`docs/evidencias/imagens-news-20261019/`) — dados sintéticos; sem acesso
+a sites reais nem ao Supabase neste ambiente.
+
 ## 2026-10-18 (3ª passada) — 2 bugs reais encontrados pela VALIDAÇÃO VISUAL do backfill anterior
 
 O backfill autorizado das 6 linhas (PR #60) escreveu, numa primeira

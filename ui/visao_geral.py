@@ -21,7 +21,7 @@ from data.news import obter_top_mercado_tudo
 from data.prices import obter_cotacao, obter_cotacao_indice, obter_historico, obter_historico_intraday
 from ui import graficos, workspace
 from ui.mercado_tab import _painel_altas_baixas, _painel_globais, _painel_mais_negociados, _painel_setorial
-from ui.news_tab import _injetar_css, _renderizar_lista
+from ui.news_tab import _injetar_css, _prontos_para_lista, _renderizar_lista
 
 _PERIODOS_IBOV = ["1D", "1S", "1M", "3M", "6M", "1A", "5A"]
 _QTD_NOTICIAS = 4
@@ -193,7 +193,9 @@ def _painel_noticias_resumo(prefs):
         return
     # A visão geral é um resumo executivo, não o feed completo: quatro manchetes
     # no máximo, sem texto longo nem contexto extra. O feed completo fica em NEWS.
-    _renderizar_lista(itens[:_QTD_NOTICIAS], mostrar_ticker=True, prefixo="vg", watchlist=prefs.get("watchlist") or [])
+    prontos = _prontos_para_lista(itens[:_QTD_NOTICIAS])
+    _renderizar_lista(itens[:_QTD_NOTICIAS], mostrar_ticker=True, prefixo="vg", watchlist=prefs.get("watchlist") or [],
+                      resumos_prontos=prontos)
 
 
 def _painel_watchlist_compacta(prefs):
