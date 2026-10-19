@@ -1,0 +1,24 @@
+desktop {"cls":"w-thumb","src":"st:8765/img/vale-cobre.jpg","ok":true,"vis":"block","w":28,"h":28}
+desktop {"cls":"w-thumb","src":"g/petrobras-plataforma.jpg","ok":true,"vis":"block","w":28,"h":28}
+desktop {"cls":"w-thumb","src":"st:8765/img/fed-powell.jpg","ok":true,"vis":"block","w":28,"h":28}
+desktop {"cls":"w-thumb","src":":8765/img/itau-agencia.jpg","ok":true,"vis":"block","w":28,"h":28}
+desktop {"cls":"w-thumb","src":":8765/img/QUEBRADA-404.jpg","ok":false,"vis":"none","w":0,"h":0}
+desktop {"cls":"news-item-thumb-wrap","src":"st:8765/img/vale-cobre.jpg","ok":true,"vis":"block","w":58,"h":58}
+desktop {"cls":"news-item-thumb-wrap","src":"g/petrobras-plataforma.jpg","ok":true,"vis":"block","w":58,"h":58}
+desktop {"cls":"news-item-thumb-wrap","src":"st:8765/img/fed-powell.jpg","ok":true,"vis":"block","w":58,"h":58}
+desktop {"cls":"news-item-thumb-wrap","src":":8765/img/itau-agencia.jpg","ok":true,"vis":"block","w":58,"h":58}
+desktop {"cls":"news-item-thumb-wrap","src":":8765/img/QUEBRADA-404.jpg","ok":false,"vis":"none","w":0,"h":0}
+desktop {"cls":"news-capa","src":"AAAAAAAAAAAAAAAAAAAAAAH//Z","ok":true,"vis":"block","w":694,"h":389}
+desktop fallbacks visiveis 8 scrollWidth 1440 viewport 1440
+mobile {"cls":"w-thumb","src":"st:8765/img/vale-cobre.jpg","ok":true,"vis":"block","w":0,"h":0}
+mobile {"cls":"w-thumb","src":"g/petrobras-plataforma.jpg","ok":true,"vis":"block","w":0,"h":0}
+mobile {"cls":"w-thumb","src":"st:8765/img/fed-powell.jpg","ok":true,"vis":"block","w":0,"h":0}
+mobile {"cls":"w-thumb","src":":8765/img/itau-agencia.jpg","ok":true,"vis":"block","w":0,"h":0}
+mobile {"cls":"w-thumb","src":":8765/img/QUEBRADA-404.jpg","ok":false,"vis":"none","w":0,"h":0}
+mobile {"cls":"news-item-thumb-wrap","src":"st:8765/img/vale-cobre.jpg","ok":true,"vis":"block","w":52,"h":52}
+mobile {"cls":"news-item-thumb-wrap","src":"g/petrobras-plataforma.jpg","ok":true,"vis":"block","w":52,"h":52}
+mobile {"cls":"news-item-thumb-wrap","src":"st:8765/img/fed-powell.jpg","ok":true,"vis":"block","w":52,"h":52}
+mobile {"cls":"news-item-thumb-wrap","src":":8765/img/itau-agencia.jpg","ok":true,"vis":"block","w":52,"h":52}
+mobile {"cls":"news-item-thumb-wrap","src":":8765/img/QUEBRADA-404.jpg","ok":false,"vis":"none","w":0,"h":0}
+mobile {"cls":"news-capa","src":"AAAAAAAAAAAAAAAAAAAAAAH//Z","ok":true,"vis":"block","w":375,"h":102}
+mobile fallbacks visiveis 8 scrollWidth 390 viewport 390
