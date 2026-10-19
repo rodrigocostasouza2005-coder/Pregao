@@ -18,6 +18,7 @@ from .base import HEADERS, TIMEOUT, permitido
 
 BASE_URL = "https://hub-conteudo.cloud.itau.com.br"
 LISTAGEM_URL = BASE_URL + "/investimentos/carteiras-recomendadas/"
+LISTAGEM_URL_ALTERNATIVA = "https://www.itau.com.br/investimentos/carteiras-recomendadas/"
 CASA = "Itaú Investimentos"
 CARTEIRA = "Top 5"
 MESES = {
@@ -50,12 +51,12 @@ def _get(url):
         return None
 
 
-def _url_artigo_mes(html, hoje):
+def _url_artigo_mes(html, hoje, base_url=LISTAGEM_URL):
     soup = BeautifulSoup(html, "html.parser")
     mes = _normalizar(MESES[hoje.month])
     ano = str(hoje.year)
     for link in soup.find_all("a", href=True):
-        href = urljoin(BASE_URL, link["href"])
+        href = urljoin(base_url, link["href"])
         slug = _normalizar(href)
         if "carteira-top-5" in slug and mes in slug and ano in slug:
             return href
@@ -150,12 +151,17 @@ def parsear_artigo(html, url, hoje=None):
 
 def coletar_carteiras(hoje=None):
     hoje = hoje or date.today()
-    html = _get(LISTAGEM_URL)
-    if not html:
-        return None
-    url = _url_artigo_mes(html, hoje)
+    url = None
+    # Os dois domínios são oficiais; as listagens podem atualizar em momentos diferentes.
+    for listagem_url in (LISTAGEM_URL, LISTAGEM_URL_ALTERNATIVA):
+        html = _get(listagem_url)
+        if not html:
+            continue
+        url = _url_artigo_mes(html, hoje, base_url=listagem_url)
+        if url:
+            break
     if not url:
-        print(f"[radar_itau] carteira Top 5 de {MESES[hoje.month]}/{hoje.year} não encontrada na página oficial")
+        print(f"[radar_itau] carteira Top 5 de {MESES[hoje.month]}/{hoje.year} não encontrada nas listagens oficiais")
         return None
     artigo = _get(url)
     if not artigo:
