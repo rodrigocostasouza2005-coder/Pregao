@@ -578,6 +578,25 @@ REGISTRO_PAINEIS = [
     ("globais", "Mercados globais", _painel_globais),
 ]
 
+# achado real da missao de redesign 2026-10-19 (harness com dados reais
+# de B3/Yahoo, medido via getComputedStyle/scrollHeight no DOM real -
+# ui/workspace.py:_ALTURA_PADRAO_REM=18rem generico escondia a maior
+# parte do conteudo em 4 dos 5 paineis, com scroll interno pouco
+# visivel: altas_baixas mostrava so' ~30% do conteudo (983px reais vs
+# 288px visiveis - 10 altas + 10 baixas, qtd padrao, cortava no meio da
+# lista de ALTAS), mais_negociados ~46%, setorial ~42% (so' 6 dos ~17
+# setores apareciam sem rolar), treemap ~52% (caixas cortadas na borda
+# de baixo, ja visivel na captura). "mercados globais" e' o unico que
+# ja cabia certo no padrao (nao entra aqui). Mesmo mecanismo ja
+# estabelecido em ui/macro_tab.py:_ALTURAS_PADRAO - so' faltava
+# aplicado aqui.
+_ALTURAS_PADRAO = {
+    "altas_baixas": 62.0,
+    "mais_negociados": 40.0,
+    "setorial": 44.0,
+    "treemap": 36.0,
+}
+
 
 def render_mercado(prefs: dict, persistir_fn=None):
     """Ponto de entrada da aba MERCADO, chamado pelo app.py.
@@ -597,4 +616,6 @@ def render_mercado(prefs: dict, persistir_fn=None):
     # visibilidade/layout salvos do usuario. 2o prefs: repassado como
     # argumento pra cada _painel_*(prefs) do registro acima (todos tem
     # essa mesma assinatura de 1 argumento).
-    workspace.renderizar_workspace("MERCADO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn)
+    workspace.renderizar_workspace(
+        "MERCADO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn, alturas_padrao=_ALTURAS_PADRAO,
+    )

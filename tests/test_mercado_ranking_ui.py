@@ -318,6 +318,45 @@ def test_5d_mais_negociados_sem_dado_nao_quebra():
     _checar("5d sem dado -> nenhum botao criado, sem excecao", mock_button.call_count == 0)
 
 
+# ============================================================
+# 6. altura dos paineis workspace (achado real da missao de redesign
+# 2026-10-19, medido com dados reais no DOM - ver changelog do commit):
+# _ALTURA_PADRAO_REM generico (18rem) escondia 50-70% do conteudo em 4
+# dos 5 paineis de MERCADO (scroll interno pouco visivel). Mesmo
+# mecanismo ja usado por ui/macro_tab.py:_ALTURAS_PADRAO - confirma que
+# render_mercado passa um override pra cada painel que de fato precisa.
+# ============================================================
+
+def test_6_alturas_padrao_cobre_os_paineis_que_cortavam_conteudo():
+    ids_registro = {pid for pid, _rotulo, _fn in mercado_tab_mod.REGISTRO_PAINEIS}
+    _checar(
+        "6a todo painel em _ALTURAS_PADRAO existe de verdade em REGISTRO_PAINEIS (sem id solto/typo)",
+        set(mercado_tab_mod._ALTURAS_PADRAO.keys()) <= ids_registro,
+        f"(extra={set(mercado_tab_mod._ALTURAS_PADRAO.keys()) - ids_registro})",
+    )
+    esperado = {"altas_baixas", "mais_negociados", "setorial", "treemap"}
+    _checar(
+        "6b os 4 paineis que cortavam conteudo tem override (globais ja cabia certo, nao precisa)",
+        esperado <= set(mercado_tab_mod._ALTURAS_PADRAO.keys()),
+        f"(faltando={esperado - set(mercado_tab_mod._ALTURAS_PADRAO.keys())})",
+    )
+    _checar(
+        "6c cada altura e' maior que o padrao generico (18rem) - override que nao aumenta nao resolve nada",
+        all(v > 18.0 for v in mercado_tab_mod._ALTURAS_PADRAO.values()),
+        f"(valores={mercado_tab_mod._ALTURAS_PADRAO})",
+    )
+
+
+def test_6d_render_mercado_repassa_alturas_padrao_pro_workspace():
+    chamadas = []
+    with patch.object(mercado_tab_mod, "_painel_termometro", return_value=True), \
+         patch.object(mercado_tab_mod.workspace, "renderizar_workspace",
+                       side_effect=lambda *a, **k: chamadas.append(k)):
+        mercado_tab_mod.render_mercado(_PREFS)
+    _checar("6d renderizar_workspace recebeu alturas_padrao=_ALTURAS_PADRAO (nao o padrao None)",
+            len(chamadas) == 1 and chamadas[0].get("alturas_padrao") is mercado_tab_mod._ALTURAS_PADRAO)
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
