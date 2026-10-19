@@ -47,6 +47,7 @@ com o Python)."""
 
 import json
 import math
+import re
 
 import streamlit as st
 
@@ -145,8 +146,33 @@ def _injetar_css_base():
     st.markdown(f"<style>{_CSS_BASE}</style>", unsafe_allow_html=True)
 
 
+def _slug_aba(aba_id: str) -> str:
+    """aba_id -> fatia ASCII seguro, usado em todo key= de widget desta
+    aba E em todo seletor CSS/JS que precisa localizar esse widget pela
+    classe `st-key-<key>` que o Streamlit gera a partir do key=.
+
+    Achado real (missao de redesign 2026-10-19, confirmado inspecionando
+    a classe de verdade no DOM): o Streamlit sanitiza o key= no lado
+    dele (client-side) trocando cada caractere fora de [A-Za-z0-9_-] por
+    "-" antes de virar classe CSS - "VISÃO GERAL" virava a classe
+    "...VIS-O-GERAL..." de verdade, mas _gerar_css/_script_js
+    construiam o seletor com aba_id CRU ("...VISÃO GERAL..." - acento E
+    espaco nunca sanitizados aqui), um seletor que nunca batia com
+    classe nenhuma. Resultado pra VISÃO GERAL (unica aba com acento+
+    espaco - MERCADO/MACRO sao só ASCII, nunca expuseram o bug): CSS de
+    posicao/altura/overflow NUNCA era aplicado (paineis caiam de volta
+    pro fluxo normal do navegador, sem recortar conteudo - por isso
+    nunca "parecia" quebrado visualmente) E o script de arrastar/
+    redimensionar nunca achava os elementos (`bridge_classe`/
+    `workspace_classe` em _script_js) - a feature de workspace inteira
+    era silenciosamente inerte nessa aba. Sanitizar aba_id ANTES de virar
+    key= (aqui) garante que a classe real sempre bate com o seletor
+    gerado, sem depender de replicar o algoritmo exato do Streamlit."""
+    return re.sub(r"[^A-Za-z0-9_-]", "-", aba_id)
+
+
 def _bridge_key(aba_id: str) -> str:
-    return f"workspace_bridge_{aba_id}"
+    return f"workspace_bridge_{_slug_aba(aba_id)}"
 
 
 def _layout_valido(dados) -> bool:
@@ -203,17 +229,18 @@ def layout_efetivo(aba_id: str, registro: list, prefs: dict, alturas_padrao: dic
 
 
 def _gerar_css(aba_id: str, layout: dict, visiveis: set) -> str:
+    slug = _slug_aba(aba_id)
     alturas = [d["y"] + d["h"] for pid, d in layout.items() if pid in visiveis]
     altura_total = (max(alturas) if alturas else _ALTURA_PADRAO_REM) + 2.0
     regras = [
-        f'div[class*="st-key-workspace_livre_{aba_id}"] {{ '
+        f'div[class*="st-key-workspace_livre_{slug}"] {{ '
         f"position: relative; width: 100%; min-height: {altura_total:.2f}rem; }}"
     ]
     for pid, d in layout.items():
         if pid not in visiveis:
             continue
         regras.append(
-            f'div[class*="st-key-painel-outer-{aba_id}-{pid}"] {{ '
+            f'div[class*="st-key-painel-outer-{slug}-{pid}"] {{ '
             f'position: absolute; left: {d["x"]:.3f}%; top: {d["y"]:.3f}rem; '
             f'width: {d["w"]:.3f}%; height: {d["h"]:.3f}rem; '
             f"box-sizing: border-box; overflow: auto; margin: 0 !important; }}"
@@ -291,7 +318,7 @@ def _controle_rapido_workspace(aba_id: str, pid: str, registro: list, prefs: dic
     pro layout padrão empilhado) e ocultar (reusa ui/paineis.py -
     _esconder_painel, mesma estrutura de dados/prefs do sistema antigo,
     reexibir continua sendo em CONFIG, igual já funciona hoje)."""
-    chave_wrap = f"painel-ctrl-{aba_id}-{pid}"
+    chave_wrap = f"painel-ctrl-{_slug_aba(aba_id)}-{pid}"
     with st.container(key=chave_wrap):
         with st.popover("⚙", use_container_width=False):
             if st.button("RESTAURAR TAMANHO/POSIÇÃO", key=f"{chave_wrap}-restaurar", width="stretch"):
@@ -331,13 +358,14 @@ def _script_js(aba_id: str, ordem: list, layout: dict) -> str:
     disparos redundantes convergem pro mesmo resultado)."""
     payload_layout = json.dumps(layout)
     payload_paineis = json.dumps(ordem)
-    bridge_classe = f"st-key-workspace_bridge_wrap_{aba_id}"
-    workspace_classe = f"st-key-workspace_livre_{aba_id}"
+    slug = _slug_aba(aba_id)
+    bridge_classe = f"st-key-workspace_bridge_wrap_{slug}"
+    workspace_classe = f"st-key-workspace_livre_{slug}"
 
     return f"""
 <script>
 (function() {{
-    const ABA_ID = {json.dumps(aba_id)};
+    const ABA_ID = {json.dumps(slug)};
     const PAINEIS = {payload_paineis};
     const BRIDGE_CLASSE = {json.dumps(bridge_classe)};
     const WORKSPACE_CLASSE = {json.dumps(workspace_classe)};
@@ -540,7 +568,7 @@ def renderizar_workspace(aba_id: str, registro: list, prefs: dict, *args, persis
         st.info("Nenhum painel visível nesta aba — ajuste em MAIS › Configurações.")
         return
 
-    with st.container(key=f"workspace_toolbar_{aba_id}"):
+    with st.container(key=f"workspace_toolbar_{_slug_aba(aba_id)}"):
         # achado real (2026-10-08, Playwright a 390px E 768px): esse
         # controle vivia num st.columns([5, 1.3]) - uma FRACAO da
         # largura, nao um valor fixo em px, entao o botao "RESTAURAR
@@ -555,12 +583,12 @@ def renderizar_workspace(aba_id: str, registro: list, prefs: dict, *args, persis
             "Arraste pelo título pra mover · arraste a borda/canto inferior-direito pra redimensionar</div>",
             unsafe_allow_html=True,
         )
-        if st.button("↺ RESTAURAR LAYOUT", key=f"restaurar_layout_{aba_id}", width="stretch"):
+        if st.button("↺ RESTAURAR LAYOUT", key=f"restaurar_layout_{_slug_aba(aba_id)}", width="stretch"):
             _restaurar_layout_aba(aba_id, prefs, persistir_fn)
             st.rerun()
 
     bridge_key = _bridge_key(aba_id)
-    with st.container(key=f"workspace_bridge_wrap_{aba_id}"):
+    with st.container(key=f"workspace_bridge_wrap_{_slug_aba(aba_id)}"):
         st.text_input(
             "workspace_bridge", key=bridge_key, label_visibility="collapsed",
             on_change=_aplicar_bridge, args=(aba_id, ids_validos, prefs, persistir_fn),
@@ -569,9 +597,9 @@ def renderizar_workspace(aba_id: str, registro: list, prefs: dict, *args, persis
     layout = layout_efetivo(aba_id, registro, prefs, alturas_padrao=alturas_padrao)
     st.markdown(f"<style>{_gerar_css(aba_id, layout, set(ordem))}</style>", unsafe_allow_html=True)
 
-    with st.container(key=f"workspace_livre_{aba_id}"):
+    with st.container(key=f"workspace_livre_{_slug_aba(aba_id)}"):
         for pid in ordem:
-            with st.container(border=True, key=f"painel-outer-{aba_id}-{pid}"):
+            with st.container(border=True, key=f"painel-outer-{_slug_aba(aba_id)}-{pid}"):
                 _controle_rapido_workspace(aba_id, pid, registro, prefs, persistir_fn)
                 mapa[pid](*args, **kwargs)
 

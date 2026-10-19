@@ -241,8 +241,26 @@ REGISTRO_PAINEIS = [
     ("watchlist_compacta", "Minha watchlist", _painel_watchlist_compacta),
 ]
 
+# achado real da missao de redesign 2026-10-19: corrigir
+# ui/workspace.py:_slug_aba (aba_id "VISÃO GERAL" com acento+espaco
+# nunca batia com a classe CSS real que o Streamlit gera, deixando o
+# CSS de altura/posicao INERTE nesta aba - ver commit da correcao)
+# expos esta mesma lacuna ja' corrigida em MERCADO: 4 dos 8 paineis
+# cortavam conteudo no _ALTURA_PADRAO_REM generico (18rem) assim que o
+# CSS passou a aplicar de verdade. altas_baixas/mais_negociados/
+# setorial sao as MESMAS funcoes de ui/mercado_tab.py (reaproveitadas
+# direto, linha 23 deste arquivo) - mesma altura ja calibrada la'.
+_ALTURAS_PADRAO = {
+    "ibov_grafico": 29.0,
+    "altas_baixas": 62.0,
+    "mais_negociados": 40.0,
+    "setorial": 44.0,
+}
+
 
 def render_visao_geral(prefs: dict, persistir_fn=None):
     """Ponto de entrada da aba VISÃO GERAL, chamado pelo app.py.
     `persistir_fn` (opcional): ver ui/workspace.py:renderizar_workspace."""
-    workspace.renderizar_workspace("VISÃO GERAL", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn)
+    workspace.renderizar_workspace(
+        "VISÃO GERAL", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn, alturas_padrao=_ALTURAS_PADRAO,
+    )
