@@ -826,6 +826,11 @@ def _editoria(nome, chave, itens, erro, agora, estilos, registro, excluir=None, 
             aviso = "As notícias desta editoria estão na capa (pág. 1), com veículo, data e link."
         else:
             aviso = _texto_editoria_vazia(edicao_janela)
+            if chave == "empresas":
+                # o radar faz buscas próprias por setor e pode citar empresas
+                # (19/10: "Magazine Luiza salta 7%") - "nenhuma notícia" seria falso
+                aviso = ("Nenhuma notícia de empresa entre as manchetes de maior repercussão coletadas "
+                         "para esta edição. Notícias de empresas por setor estão no Radar setorial.")
         return [CondPageBreak(80), KeepTogether([cabecalho, Paragraph(aviso, estilos["aviso"])]), Spacer(1, 16)]
 
     ordenados = sorted(itens, key=lambda i: i.get("importancia") or 0, reverse=True)
@@ -1171,19 +1176,35 @@ def _sessao_da_edicao(edicao):
     return None
 
 
-def _linha_referencia_masthead(agora, sessao):
-    """'Mercados: fechamento de sex 16/10 · gerado dom 18/10, 14h59
-    (Brasília)' - a data dos mercados e o horário de geração são coisas
-    diferentes e aparecem separadas (antes: 'Edição das 8h' fixo e
-    'Dados até 14:59', que sugeria cotação das 14h59 de domingo)."""
-    gerado = f"Gerada {_dia_curto(agora)}, {agora.hour}h{agora.minute:02d} (Brasília)"
+def _linha_edicao_masthead(agora):
+    """Linha de cima: horário PREVISTO x horário EFETIVO de geração - a
+    edição de 19/10/2026 dizia "Edição das 8h" e foi gerada às 8h15."""
+    return (f"Edição prevista para 8h · gerada {_dia_curto(agora)}, "
+            f"{agora.hour}h{agora.minute:02d} (Brasília) · São Paulo")
+
+
+def _linha_referencia_masthead(agora, sessao, largura_max=None):
+    """Linha de baixo: a que momento as cotações se referem. O Ibovespa
+    dá a sessão da B3 ('fechamento de sex 16/10' antes da abertura, 'sessão
+    de seg 19/10' com o pregão aberto); dólar e futuros negociam fora do
+    pregão e têm o horário de cada um na faixa da capa e em Mercados.
+    `largura_max` (pt): sem espaço, a remissão final sai - nunca sobrepõe
+    a data por extenso (defeito visto na validação de 19/10, 10h36)."""
     if sessao is None:
-        bolsa = "Ibovespa indisponível"
+        bolsa = "Ibovespa: cotação indisponível"
     elif sessao < agora.date():
         bolsa = f"Ibovespa: fechamento de {_dia_curto(sessao)}"
     else:
         bolsa = f"Ibovespa: sessão de {_dia_curto(sessao)}"
-    return f"{gerado} · {bolsa} · demais cotações com horário em Mercados"
+    completa = f"{bolsa} · demais cotações com horário em Mercados"
+    if largura_max is None or stringWidth(completa, F["PregaoSans"], 7.2) <= largura_max:
+        return completa
+    return bolsa
+
+
+def _largura_livre_masthead(agora):
+    """Espaço (pt) à direita da data por extenso, com 12pt de respiro."""
+    return LARGURA_UTIL - stringWidth(_data_extenso_pt_br(agora), F["PregaoSerifItalico"], 9) - 12
 
 
 def _desenhar_masthead(c, agora, sessao=None):
@@ -1193,9 +1214,7 @@ def _desenhar_masthead(c, agora, sessao=None):
     c.drawString(MARGEM_X, topo - 7, _espacar("MORNING CALL"))
     c.setFont(F["PregaoSans"], 7.2)
     c.setFillColor(CINZA)
-    # horário PREVISTO da edição (o efetivo de geração vem embaixo, junto
-    # da data, e pode ser outro - ex.: 19/10/2026, prevista 8h, gerada 8h15)
-    c.drawRightString(PAGINA_LARGURA - MARGEM_X, topo - 7, "Edição da manhã, prevista para 8h · São Paulo")
+    c.drawRightString(PAGINA_LARGURA - MARGEM_X, topo - 7, _linha_edicao_masthead(agora))
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, topo - 12, PAGINA_LARGURA - MARGEM_X, topo - 12)
@@ -1216,15 +1235,18 @@ def _desenhar_masthead(c, agora, sessao=None):
     c.drawString(MARGEM_X, y_regua - 13, _data_extenso_pt_br(agora))
     c.setFont(F["PregaoSans"], 7.2)
     c.setFillColor(CINZA)
-    c.drawRightString(PAGINA_LARGURA - MARGEM_X, y_regua - 12.5, _linha_referencia_masthead(agora, sessao))
+    c.drawRightString(PAGINA_LARGURA - MARGEM_X, y_regua - 12.5,
+                      _linha_referencia_masthead(agora, sessao, largura_max=_largura_livre_masthead(agora)))
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, y_regua - 19, PAGINA_LARGURA - MARGEM_X, y_regua - 19)
 
 
-def _referencia_curta(barra_fmt):
-    """'16/10 17:18 (horário de Brasília)' -> '16/10 17:18'; 'fech. 16/10'
-    fica igual. Sem referência -> '' (nunca inventa horário)."""
+def _referencia_faixa(barra_fmt):
+    """Referência compacta pra faixa da capa: '16/10 17:18 (horário de
+    Brasília)' -> '16/10 17:18'; 'fech. 16/10' fica igual. Sem referência
+    -> '' (nunca inventa horário). A tabela de Mercados usa
+    _referencia_curta, que mantém '(cache)' e mostra '—'."""
     texto = str(barra_fmt or "")
     achado = re.search(r"(fech\. )?\d{2}/\d{2}( \d{2}:\d{2})?", texto)
     return achado.group(0) if achado else ""
@@ -1266,7 +1288,7 @@ def _desenhar_faixa_mercados(c, edicao, y_topo):
         c.setFillColor(_cor_variacao(var))
         texto_var = _texto_variacao(var)
         c.drawString(x, y_var, texto_var)
-        ref = _referencia_curta(ind.get("barra_fmt"))
+        ref = _referencia_faixa(ind.get("barra_fmt"))
         if ref:
             c.setFont(F["PregaoSans"], 6.2)
             c.setFillColor(CINZA)
