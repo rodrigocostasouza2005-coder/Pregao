@@ -9,6 +9,8 @@ user_prefs já usada pelas preferências/assinantes do Morning Call (ver
 data/user_prefs.py) - nenhuma tabela nem lista paralela de usuários.
 """
 
+import streamlit as st
+
 import config
 from data.supabase_client import obter_cliente
 
@@ -21,7 +23,8 @@ def _admin_autorizado(email_admin: str) -> bool:
     ]
 
 
-def obter_usuarios_admin(email_admin: str, cliente=None) -> list[dict] | None:
+@st.cache_data(ttl=90, show_spinner=False)
+def obter_usuarios_admin(email_admin: str, _cliente=None) -> list[dict] | None:
     """Lista normalizada de usuários (1 dict por `sub`) pro painel admin.
 
     None quando: `email_admin` não está em config.obter_emails_admin()
@@ -30,10 +33,20 @@ def obter_usuarios_admin(email_admin: str, cliente=None) -> list[dict] | None:
     lançar excessão. Lista [] é o caso real "banco disponível, zero
     linhas em user_prefs ainda" - mesma distinção None/[] já usada em
     data/user_prefs.py:listar_assinantes_morning_call, pelo mesmo motivo
-    (quem chama nunca deve ler None como "zero usuários")."""
+    (quem chama nunca deve ler None como "zero usuários").
+
+    @st.cache_data (ttl=90s, achado real da missão de redesign/performance
+    2026-10-19): ui/usuarios_tab.py:render_usuarios chama esta função sem
+    nenhum cache e tem busca/filtros interativos (st.text_input/
+    st.selectbox) na MESMA tela - cada tecla digitada na busca disparava
+    um rerun que refazia a varredura paginada INTEIRA de user_prefs no
+    Supabase, mesmo a busca/filtro sendo em memória (_filtrar, depois da
+    consulta). `_cliente` com underscore = fora da chave de cache
+    (convenção do Streamlit pra parâmetro não-hasheável, ex. cliente
+    MagicMock em teste) - cache é só por email_admin."""
     if not _admin_autorizado(email_admin):
         return None
-    cliente = cliente if cliente is not None else obter_cliente()
+    cliente = _cliente if _cliente is not None else obter_cliente()
     if cliente is None:
         return None
     usuarios = []
