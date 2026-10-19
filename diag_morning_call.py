@@ -94,6 +94,22 @@ for l in edicao["brasil"]["indicadores"]:
         p(" ", json.dumps({k: l.get(k) for k in ("indicador", "valor", "referencia", "erro")},
                           ensure_ascii=False, default=str))
 
+p("\n== TEXTO DO PDF (editoria x manchete) ==")
+import io
+from pypdf import PdfReader
+texto_pdf = "\n".join(pg.extract_text() for pg in PdfReader(io.BytesIO(open("saida_diag/morning_call_real.pdf", "rb").read())).pages)
+origem = next((n for sec, ch, n in (("brasil", "noticias", "BRASIL"), ("empresas", "cards", "EMPRESAS"),
+                                    ("exterior", "noticias", "MUNDO")) if any(f is m for f in fatos(sec, ch))), None)
+p("manchete vem de:", origem, "| itens na editoria:", {n: len(fatos(sec, ch)) for sec, ch, n in
+  (("brasil", "noticias", "BRASIL"), ("empresas", "cards", "EMPRESAS"), ("exterior", "noticias", "MUNDO"))})
+p("PDF contem 'Nenhuma notícia desta editoria':", "Nenhuma notícia desta editoria" in texto_pdf)
+p("PDF contem 'manchete da capa':", "manchete da capa" in texto_pdf)
+p("PDF contem 'Certidão Única':", "Certidão Única" in texto_pdf)
+if origem and len([1 for sec, ch, n in (("empresas", "cards", "EMPRESAS"),) if n == origem]):
+    check("manchete da capa" in texto_pdf or len(fatos("empresas", "cards")) > 1,
+          "Empresas nao fica vazia quando a manchete de empresa vai para a capa")
+check("Certidão Única" not in texto_pdf, "Certidao Unica de Debitos fora do PDF")
+
 p("\nTOTAL FORA:", fora)
 open("saida_diag/relatorio.txt", "w").write("\n".join(out))
 print("\n".join(out))

@@ -542,7 +542,10 @@ def _mesmo_fato(a, b):
 # and built to go viral: ... fair foods"): o ranking de importância de
 # data/news.py soma recência e veículo, sem exigir assunto de mercado - uma
 # matéria recente de 1 veículo entrava sozinha. Agora a matéria precisa de
-# um termo de mercado/economia no título OU de 2+ veículos cobrindo o fato.
+# assunto financeiro substantivo no título (termo de mercado/economia,
+# empresa ou ticker, "%"). Quantidade de veículos NÃO basta: "Saiba como
+# emitir a nova Certidão Única de Débitos do Estado de São Paulo" (validação
+# real de 18/10/2026) era replicada por vários veículos e entrava.
 _TERMOS_FINANCEIROS = (
     # pt
     "acao", "acoes", "bolsa", "bolsas", "ibovespa", "mercado", "mercados", "dolar", "cambio", "juros", "selic",
@@ -553,25 +556,55 @@ _TERMOS_FINANCEIROS = (
     "economico", "economica", "emprego", "desemprego", "salario", "tarifa", "tarifas", "exportacao",
     "exportacoes", "importacao", "safra", "ipo", "aquisicao", "fusao", "privatizacao", "valor de mercado",
     "preco", "precos", "titulos", "debentures", "rating", "recessao", "eleicao", "eleicoes", "pesquisa",
+    # regulação, tributação, crédito, indicadores, instituições
+    "regulacao", "regulamentacao", "regulador", "reguladora", "cvm", "cade", "aneel", "anatel", "anp", "ans",
+    "tributo", "tributos", "tributacao", "icms", "imposto de renda", "reforma tributaria", "emprestimo",
+    "emprestimos", "financiamento", "inadimplencia", "endividamento", "caged", "pnad", "producao industrial",
+    "varejo", "fmi", "banco mundial", "bce", "opep", "empresa", "empresas", "companhia", "estatal", "estatais",
     # en
     "stock", "stocks", "shares", "market", "markets", "investors", "earnings", "revenue", "profit", "guidance",
     "inflation", "rates", "rate", "yields", "bond", "bonds", "treasury", "dollar", "oil", "gold", "economy",
     "economic", "recession", "gdp", "jobs", "payrolls", "tariff", "tariffs", "deal", "merger", "acquisition",
     "ipo", "bank", "banks", "central bank", "deficit", "debt", "crypto", "bitcoin", "s&p", "nasdaq", "dow",
     "wall street", "trade", "prices", "price", "sales", "layoffs", "valuation", "funding",
+    "imf", "world bank", "ecb", "opec", "budget", "tax", "taxes", "credit", "loans", "lending", "regulators",
+    "regulation", "antitrust", "company", "companies",
+)
+
+# Formato de serviço/tutorial/utilidade pública ("Saiba como emitir...",
+# "Como consultar...", "passo a passo", "how to"). Não exclui sozinho: a
+# matéria só fica se o título também tiver tema de impacto de mercado
+# (_TERMOS_IMPACTO_MERCADO, empresa ou ticker) - "Saiba como fica o IR com
+# a reforma tributária" entra; "Saiba como emitir a certidão" sai.
+_FORMATO_SERVICO = re.compile(
+    r"^(saiba|veja|entenda|confira|aprenda|descubra)\s+(como|onde|quando|quem|qual|quais)\b"
+    r"|^como\s+(emitir|tirar|fazer|consultar|solicitar|pedir|baixar|acessar|renovar|agendar|cadastrar|obter"
+    r"|regularizar|declarar|sacar|receber)\b"
+    r"|\bpasso\s+a\s+passo\b|\btutorial\b|^how\s+to\b")
+
+# Subconjunto estrito pro formato de serviço: tema com impacto material no
+# mercado (fica de fora o vocabulário que aparece em serviço ao cidadão -
+# "receita", "imposto", "tesouro", "credito", "preco" etc.).
+_TERMOS_IMPACTO_MERCADO = (
+    "ibovespa", "bolsa", "acoes", "mercado", "mercados", "dolar", "cambio", "juros", "selic", "copom", "inflacao",
+    "ipca", "pib", "fiscal", "deficit", "reforma tributaria", "lucro", "prejuizo", "balanco", "resultado",
+    "resultados", "dividendos", "dividendo", "fed", "banco central", "regulacao", "cvm",
+    "stocks", "markets", "earnings", "inflation", "rates", "tariffs",
 )
 
 
 def tem_relevancia_financeira(item):
-    """Piso de relevância do PDF: termo de mercado/economia ou "%" no
-    título, ticker da B3 no título, ou o fato confirmado por >= 2 veículos
-    distintos. Matéria de comportamento/variedades sem nada disso sai."""
+    """Piso de relevância do PDF, pelo ASSUNTO do título (nunca pela
+    quantidade de veículos): termo de mercado/economia, "%", ticker da B3
+    ou empresa acompanhada. Matéria em formato de serviço/tutorial precisa
+    de tema de impacto de mercado (_TERMOS_IMPACTO_MERCADO, empresa ou
+    ticker) - utilidade pública sem impacto financeiro sai."""
     titulo = item.get("titulo") or ""
-    texto = _sem_acento(titulo).lower()
-    if _tem_marcador(texto, _TERMOS_FINANCEIROS) or "%" in texto or _TICKER_NO_TITULO.search(titulo):
-        return True
-    veiculos = {str(v).strip().lower() for v in (item.get("veiculos") or []) if str(v).strip()}
-    return len(veiculos) >= 2
+    texto = _sem_acento(titulo).lower().strip()
+    empresa = bool(_TICKER_NO_TITULO.search(titulo)) or e_noticia_de_empresa(titulo)
+    if _FORMATO_SERVICO.search(texto):
+        return empresa or _tem_marcador(texto, _TERMOS_IMPACTO_MERCADO)
+    return empresa or "%" in texto or _tem_marcador(texto, _TERMOS_FINANCEIROS)
 
 
 def filtrar_noticias(itens, agora, exigir_relevancia=False):
