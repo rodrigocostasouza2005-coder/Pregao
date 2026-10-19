@@ -15,7 +15,7 @@ from data.eventos import (
     STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_LABEL, STATUS_PRAZO_CVM,
     calcular_calendario_cacheado,
 )
-from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta
+from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta, obter_selic_meta_copom
 from data.morning_call_editorial import (
     _macro_rows, _referencia_cotacao, filtrar_noticias, montar_edicao, nota_sessao,
 )
@@ -251,7 +251,7 @@ def montar_morning_call(agora=None):
     # linhas do Focus (até o ano corrente + 2). Provedores passados daqui
     # pra continuar sendo os deste módulo.
     for linha in _macro_rows(agora, provedores={
-            "selic": obter_selic_meta, "cdi": obter_cdi,
+            "selic": obter_selic_meta, "selic_copom": obter_selic_meta_copom, "cdi": obter_cdi,
             "focus_ipca": obter_focus_ipca, "focus_selic": obter_focus_selic}):
         if linha.get("valor") is None:
             linhas.append(f"- {linha['indicador']}: indisponível ({linha.get('erro') or 'sem dado'})")
@@ -508,6 +508,7 @@ def _montar_anexo_pdf(agora):
     except Exception as exc:
         print(f"[morning_call] geração do PDF editorial falhou (enviando sem anexo): {exc!r}")
         return None
+    print(f"[morning_call] {_resumo_edicao(edicao, pdf_bytes)}")
     radar = edicao.get("radar") if isinstance(edicao, dict) else None
     return {
         "nome": f"pregao-morning-call-{agora.strftime('%Y-%m-%d')}.pdf",
@@ -517,6 +518,33 @@ def _montar_anexo_pdf(agora):
         # jobs/email_utils.py só lê nome/conteudo/tipo_mime
         "radar_setores": [b.get("nome") for b in (radar or {}).get("setores") or [] if b.get("nome")],
     }
+
+
+def _resumo_edicao(edicao, pdf_bytes):
+    """Linha de log da edição montada - o que de fato foi pro anexo, pra
+    conferir a execução real no log do Actions (nunca inclui destinatário
+    nem segredo)."""
+    if not isinstance(edicao, dict):
+        return f"PDF gerado ({len(pdf_bytes or b'')} bytes)"
+    partes = []
+    for chave, campo in (("brasil", "noticias"), ("empresas", "cards"), ("exterior", "noticias")):
+        itens = (edicao.get(chave) or {}).get(campo) or []
+        com_texto = sum(1 for i in itens if i.get("corpo"))
+        partes.append(f"{chave}={len(itens)} ({com_texto} com texto)")
+    macro = [i for i in (edicao.get("brasil") or {}).get("indicadores") or [] if "indicador" in i]
+    indisponiveis = [i["indicador"] for i in macro if i.get("valor") is None]
+    partes.append("macro indisponível: " + (", ".join(indisponiveis) if indisponiveis else "nenhum"))
+    radar = edicao.get("radar") or {}
+    partes.append("radar: " + (", ".join(b.get("nome", "?") for b in radar.get("setores") or []) or "vazio"))
+    agenda = (edicao.get("empresas") or {}).get("agenda")
+    partes.append("agenda: " + ("indisponível" if agenda is None else f"{len(agenda)} evento(s)"))
+    try:
+        from pypdf import PdfReader
+        import io
+        partes.append(f"PDF {len(PdfReader(io.BytesIO(pdf_bytes)).pages)} página(s), {len(pdf_bytes)} bytes")
+    except Exception:
+        partes.append(f"PDF {len(pdf_bytes or b'')} bytes")
+    return "edição montada: " + "; ".join(partes)
 
 
 def _com_chamada_radar(texto, anexo_pdf):

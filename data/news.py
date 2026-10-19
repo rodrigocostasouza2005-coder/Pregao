@@ -2550,10 +2550,19 @@ def pregerar_resumos_news(tickers_universo: list) -> dict:
     limite = time.monotonic() + _ORCAMENTO_PREGERAR_RESUMOS_S
 
     grupos = []
-    try:
-        grupos.extend(obter_top_mercado_tudo("TODOS") or [])
-    except Exception:
-        logging.exception("pregerar_resumos_news: falha ao coletar TOP MERCADO")
+    # O Morning Call (data/morning_call_editorial.py) publica as manchetes
+    # dos pools Brasil e internacional SEPARADOS (top 20 de cada); o TOP
+    # MERCADO "tudo" corta o total em 20 e, em dia de muito noticiário no
+    # Brasil, deixa o internacional inteiro de fora - essas matérias nunca
+    # recebiam resumo e saíam no PDF só com manchete. As 3 listas entram
+    # aqui; a chave de cache abaixo remove os grupos repetidos.
+    for nome_fonte, coletar in (("TOP MERCADO", obter_top_mercado_tudo),
+                                ("TOP MERCADO Brasil", obter_top_mercado),
+                                ("TOP MERCADO internacional", obter_top_mercado_internacional)):
+        try:
+            grupos.extend(coletar("TODOS") or [])
+        except Exception:
+            logging.exception("pregerar_resumos_news: falha ao coletar %s", nome_fonte)
 
     for ticker in tickers_universo:
         if time.monotonic() > limite:

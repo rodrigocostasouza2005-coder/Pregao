@@ -29,6 +29,19 @@ import data.news as news_mod
 _FALHAS = []
 
 
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _pools_separados_sem_rede(monkeypatch):
+    """pregerar_resumos_news também coleta os pools Brasil e internacional
+    separados (os que o Morning Call publica). Os testes deste arquivo
+    controlam só o TOP MERCADO combinado - os outros dois ficam vazios
+    aqui, nunca indo à rede (no CI eles traziam notícias reais)."""
+    monkeypatch.setattr(news_mod, "obter_top_mercado", lambda *_a, **_k: [])
+    monkeypatch.setattr(news_mod, "obter_top_mercado_internacional", lambda *_a, **_k: [])
+
+
 def _checar(nome, condicao, detalhe=""):
     status = "OK" if condicao else "FALHOU"
     print(f"[{status}] {nome} {detalhe}")
