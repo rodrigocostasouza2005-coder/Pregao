@@ -160,7 +160,7 @@ def test_2a_obter_resumos_prontos_mapeia_por_link_do_grupo():
         resultado = news_mod.obter_resumos_prontos([grupo1, grupo2])
 
     _checar("2a so' 1 chamada em lote (nunca 1 por grupo)", mock_varios.call_count == 1)
-    _checar("2b grupo1 (cacheado) aparece mapeado pelo SEU link", resultado.get("https://link-a.com") == {"resumo": "resumo A", "imagem": "https://img-a.jpg"})
+    _checar("2b grupo1 (cacheado) aparece mapeado pelo SEU link", {k: (resultado.get("https://link-a.com") or {}).get(k) for k in ("resumo", "imagem")} == {"resumo": "resumo A", "imagem": "https://img-a.jpg"})
     _checar("2c grupo2 (nao cacheado) nao aparece (nunca inventa resumo)", "https://link-b.com" not in resultado)
 
 

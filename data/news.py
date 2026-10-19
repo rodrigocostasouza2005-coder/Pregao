@@ -1516,6 +1516,14 @@ _PADROES_IMAGEM_GENERICA = (
 )
 
 
+_NOMES_ARQUIVO_IMAGEM_GENERICA = frozenset(
+    f"{nome}.{ext}"
+    for nome in ("og-image", "og_image", "ogimage", "og", "share", "social", "social-share",
+                 "compartilhamento", "facebook", "twitter", "capa-padrao", "fallback", "thumb")
+    for ext in ("jpg", "jpeg", "png", "webp", "gif")
+)
+
+
 def _imagem_parece_generica(url: str) -> bool:
     """True se o CAMINHO ou o HOST da URL (sem acento/minusculo) bater
     com um padrao conhecido de logo/favicon/placeholder - nunca mexe na
@@ -1529,8 +1537,19 @@ def _imagem_parece_generica(url: str) -> bool:
     entra na mesma checagem de agora em diante (mesmos padroes, mesmo
     heuristica - CDN com "logo"/"icon"/etc no proprio nome de dominio e'
     tao forte quanto no caminho)."""
-    sem_acento_url = _sem_acento(urlparse(url).netloc + urlparse(url).path)
-    return any(p in sem_acento_url for p in _PADROES_IMAGEM_GENERICA)
+    partes = urlparse(url)
+    sem_acento_url = _sem_acento(partes.netloc + partes.path)
+    if any(p in sem_acento_url for p in _PADROES_IMAGEM_GENERICA):
+        return True
+    # 2026-10-19: SVG quase nunca é foto editorial (logo/ícone/ilustração
+    # vetorial), e alguns publishers usam um arquivo de compartilhamento
+    # FIXO pra qualquer matéria sem foto ("/og-image.png", "/share.jpg") -
+    # nome exato do arquivo, nunca substring (evita rejeitar
+    # ".../share-de-mercado-2026.jpg", que é uma foto real).
+    nome_arquivo = sem_acento_url.rsplit("/", 1)[-1]
+    if nome_arquivo.endswith(".svg") or nome_arquivo.endswith(".ico"):
+        return True
+    return nome_arquivo in _NOMES_ARQUIVO_IMAGEM_GENERICA
 
 
 # dimensao minima aceita quando a PROPRIA pagina declara og:image:width/
@@ -1585,36 +1604,145 @@ _HEADERS_IMAGEM = {
 }
 
 
-def _url_imagem_utilizavel(url: str) -> bool:
-    """HEAD curto (GET como fallback, pra servidor que nao suporta HEAD)
-    confirmando que a URL responde com Content-Type de imagem de verdade
-    e um tamanho minimo (descarta pixel de rastreio/ícone disfarçado de
-    foto) - nunca baixa o corpo inteiro (so' cabecalhos, ou um stream que
-    fecha logo apos ler o cabecalho). Qualquer falha (timeout, erro HTTP,
-    tipo errado) -> False, nunca lança exceção pra quem chama."""
+# Resultado de _verificar_imagem_url (2026-10-19): a versão booleana
+# antiga tratava timeout/5xx/429 (falha TEMPORÁRIA da CDN) igual a 404/
+# tipo errado (falha PERMANENTE) - e como o resultado ia pro cache sem TTL
+# junto com o resumo, um soluço de rede na hora da validação apagava a foto
+# daquele card pra sempre. Agora quem chama distingue os dois casos (ver
+# avaliar_imagem_grupo e a política de reavaliação _TTL_REAVALIAR_IMAGEM).
+IMAGEM_OK = "ok"
+IMAGEM_INVALIDA = "invalida"
+IMAGEM_ERRO_TEMPORARIO = "temporaria"
+
+# Estado da imagem de um grupo, guardado junto do resultado (resumo ou
+# registro próprio de imagem - ver ia_cache.salvar_registro_imagem):
+# - confirmada: declarada pela PRÓPRIA página da matéria (og:image/JSON-LD/
+#   <img> do <article>), passou nos filtros de genérica e respondeu como
+#   imagem raster na verificação de rede;
+# - nao_verificada: mesma origem/filtros, mas a verificação de rede não
+#   rodou (clique sob demanda) ou falhou de forma temporária - pode ser
+#   exibida (o navegador tenta e cai no fallback), é reavaliada depois;
+# - ausente: página acessível sem nenhuma foto editorial confiável;
+# - invalida: a candidata existia mas é inacessível/não-imagem/genérica;
+# - generica_repetida: a MESMA URL aparece em matérias diferentes (foto de
+#   arquivo/padrão do veículo, não a foto do fato);
+# - erro_temporario: não deu pra baixar a página (rede/timeout/bloqueio).
+STATUS_IMAGEM_CONFIRMADA = "confirmada"
+STATUS_IMAGEM_NAO_VERIFICADA = "nao_verificada"
+STATUS_IMAGEM_AUSENTE = "ausente"
+STATUS_IMAGEM_INVALIDA = "invalida"
+STATUS_IMAGEM_REPETIDA = "generica_repetida"
+STATUS_IMAGEM_ERRO_TEMPORARIO = "erro_temporario"
+_STATUS_IMAGEM_EXIBIVEL = (STATUS_IMAGEM_CONFIRMADA, STATUS_IMAGEM_NAO_VERIFICADA)
+
+
+def _agora_iso_utc() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _verificar_imagem_url(url: str) -> str:
+    """HEAD curto (GET em stream como fallback, pra servidor que não
+    suporta HEAD) confirmando que a URL responde com Content-Type de
+    imagem raster e tamanho mínimo. Nunca baixa o corpo inteiro e nunca
+    lança exceção. Retorna IMAGEM_OK, IMAGEM_INVALIDA (404/410, tipo
+    errado, SVG, pixel de rastreio, redirecionamento pra placeholder) ou
+    IMAGEM_ERRO_TEMPORARIO (timeout, conexão, 429, 5xx)."""
     if not url or not isinstance(url, str):
-        return False
+        return IMAGEM_INVALIDA
+    resposta = None
     try:
-        r = requests.head(url, headers=_HEADERS_IMAGEM, timeout=(3, 5), allow_redirects=True)
-        if r.status_code >= 400 or r.status_code == 405 or not r.headers.get("Content-Type"):
-            r = requests.get(url, headers=_HEADERS_IMAGEM, timeout=(3, 5), stream=True)
-        if r.status_code >= 400:
-            return False
-        tipo = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-        if not tipo.startswith("image/"):
-            return False
-        tamanho = r.headers.get("Content-Length")
+        resposta = requests.head(url, headers=_HEADERS_IMAGEM, timeout=(3, 5), allow_redirects=True)
+        if resposta.status_code >= 400 or resposta.status_code == 405 or not resposta.headers.get("Content-Type"):
+            _fechar_resposta(resposta)
+            # GET já segue redirecionamentos por padrão no requests
+            resposta = requests.get(url, headers=_HEADERS_IMAGEM, timeout=(3, 5), stream=True)
+        codigo = resposta.status_code
+        # 401/403: bloqueio de bot/hotlink do servidor, não prova de que a
+        # imagem não existe - o navegador (sem referer) costuma carregar;
+        # fica "não verificada", com fallback se falhar e reavaliação depois
+        if codigo in (401, 403, 429) or codigo >= 500:
+            return IMAGEM_ERRO_TEMPORARIO
+        if codigo >= 400:
+            return IMAGEM_INVALIDA
+        # redirecionamento: a URL FINAL também precisa passar no filtro de
+        # genérica (CDN que redireciona imagem expirada pro logo/placeholder
+        # do site responde 200 image/png - acessível, mas não é a foto)
+        url_final = getattr(resposta, "url", None)
+        if isinstance(url_final, str) and url_final != url and _imagem_parece_generica(url_final):
+            return IMAGEM_INVALIDA
+        tipo = (resposta.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if not tipo.startswith("image/") or tipo == "image/svg+xml":
+            return IMAGEM_INVALIDA
+        tamanho = resposta.headers.get("Content-Length")
         if tamanho is not None:
             try:
                 if int(tamanho) < 1024:  # provavel icone/pixel de rastreio, nao foto editorial
-                    return False
+                    return IMAGEM_INVALIDA
             except ValueError:
                 pass
-        return True
+        return IMAGEM_OK
+    except (requests.Timeout, requests.ConnectionError):
+        return IMAGEM_ERRO_TEMPORARIO
     except requests.RequestException:
-        return False
+        return IMAGEM_INVALIDA
     except Exception:
+        return IMAGEM_INVALIDA
+    finally:
+        _fechar_resposta(resposta)
+
+
+def _fechar_resposta(resposta) -> None:
+    """Libera a conexão do GET em stream (nunca lê o corpo da imagem)."""
+    fechar = getattr(resposta, "close", None)
+    if callable(fechar):
+        try:
+            fechar()
+        except Exception:
+            pass
+
+
+def _url_imagem_utilizavel(url: str) -> bool:
+    """Versão booleana de _verificar_imagem_url (True só quando a imagem
+    respondeu como foto de verdade) - qualquer falha -> False."""
+    return _verificar_imagem_url(url) == IMAGEM_OK
+
+
+# segmentos EXATOS do caminho (nunca substring: "/cadastro-positivo-..." é
+# matéria) e prefixos de host de páginas que não são a matéria
+_SEGMENTOS_PAGINA_NAO_MATERIA = frozenset((
+    "login", "signin", "entrar", "assine", "assinatura", "subscribe", "paywall",
+    "cadastro", "acesso-restrito", "consent", "consentimento",
+))
+_HOSTS_PAGINA_NAO_MATERIA = ("consent.", "login.", "accounts.", "assine.", "assinatura.")
+
+
+def _pagina_nao_e_materia(url: str | None) -> bool:
+    """True quando a URL final (depois dos redirecionamentos) é a home do
+    site ou uma página de login/assinatura/consentimento."""
+    if not url:
         return False
+    partes = urlparse(url)
+    caminho = (partes.path or "").strip("/").lower()
+    if not caminho:
+        return True
+    if (partes.netloc or "").lower().startswith(_HOSTS_PAGINA_NAO_MATERIA):
+        return True
+    return any(seg in _SEGMENTOS_PAGINA_NAO_MATERIA for seg in caminho.split("/"))
+
+
+# Parâmetros de URL assinada/expirável (CDN S3/CloudFront/GCS/Akamai/
+# Azure): a URL responde hoje e quebra quando a assinatura vence - nunca é
+# marcada como "confirmada" (que não é mais reavaliada), só
+# "nao_verificada". Comparação pelo NOME exato do parâmetro.
+_PARAMS_URL_ASSINADA = frozenset((
+    "x-amz-signature", "x-amz-expires", "x-goog-signature", "x-goog-expires", "signature",
+    "expires", "sig", "se", "token", "hdnts", "policy", "key-pair-id",
+))
+
+
+def _url_assinada(url: str) -> bool:
+    from urllib.parse import parse_qsl
+    return any(k.lower() in _PARAMS_URL_ASSINADA for k, _ in parse_qsl(urlparse(url).query, keep_blank_values=True))
 
 
 def _extrair_texto_artigo(link_google_news: str) -> tuple:
@@ -1682,6 +1810,11 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
         validada = _url_imagem_valida(candidata_abs)
         if not validada or _imagem_parece_generica(validada):
             return None
+        # a própria URL da matéria nunca é a foto dela (metadado mal
+        # preenchido aponta pra página - mesma família do bug do "url"
+        # do JSON-LD, ver abaixo)
+        if validada.split("#")[0].rstrip("/") == (link_real or "").split("#")[0].rstrip("/"):
+            return None
         return validada
 
     for seletor, atributo in (
@@ -1741,23 +1874,56 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
     # conteúdo visual da matéria em si.
     if not imagem:
         _CHAVES_IMAGEM_JSONLD = ("image", "thumbnailUrl", "contentUrl", "primaryImageOfPage")
-        _CHAVES_NUNCA_IMAGEM_JSONLD = ("logo", "publisher", "author")
+        # 2026-10-19: + nós que listam OUTRAS matérias/entidades (relacionadas,
+        # breadcrumb, site, menções) - a imagem de um "hasPart"/"relatedLink"
+        # é a foto de outra notícia, nunca desta
+        _CHAVES_NUNCA_IMAGEM_JSONLD = ("logo", "publisher", "author", "creator", "sourceOrganization",
+                                       "hasPart", "relatedLink", "significantLink", "mentions", "about",
+                                       "isPartOf", "itemListElement", "breadcrumb", "potentialAction")
 
-        def _urls_imagem_jsonld(obj):
+        # achado real (auditoria 2026-10-19, validação com rede de verdade -
+        # infomoney.com.br, matéria de autoria "Reuters"): a exclusão de
+        # "author"/"publisher"/"logo" acima só protege contra RECURSAR pra
+        # dentro dessas chaves quando elas aparecem como propriedade de OUTRO
+        # node (ex: NewsArticle.author = {...}); não protege quando o node
+        # Person/Organization em si é um item SOLTO do array "@graph" (padrão
+        # comum do Yoast SEO - cada entidade é um node de primeiro nível,
+        # referenciada de outro lugar só por "@id"). Varrendo o @graph like
+        # uma lista comum, o node {"@type": "Person", "name": "Reuters",
+        # "image": {...}} bate direto na chave "image" de _CHAVES_IMAGEM_JSONLD
+        # igual bateria num NewsArticle de verdade - vira o avatar/badge do
+        # AUTOR (aqui, o logo genérico "reuters.png" que o InfoMoney usa pra
+        # qualquer matéria assinada pela agência) em vez da foto da matéria.
+        # Person/Organization nunca têm foto de CONTEÚDO (sempre avatar/marca),
+        # então um node desse tipo nunca é fonte de imagem, independente de
+        # como foi alcançado.
+        _TIPOS_ENTIDADE_NUNCA_IMAGEM = frozenset(("Person", "Organization"))
+
+        def _urls_imagem_jsonld(obj, via_imagem=False):
             achados = []
             if isinstance(obj, str):
                 return achados
             if isinstance(obj, list):
                 for item in obj:
-                    achados.extend(_urls_imagem_jsonld(item))
+                    achados.extend(_urls_imagem_jsonld(item, via_imagem))
                 return achados
             if isinstance(obj, dict):
+                # 2026-10-19: {"image": {"@type": "ImageObject", "url": ...}} é
+                # o formato schema.org mais comum - aí "url" É a foto. Só
+                # vale dentro de um ImageObject alcançado por uma chave de
+                # imagem (nunca o "url" genérico de WebPage/Organization).
+                tipo = obj.get("@type")
+                tipos = tipo if isinstance(tipo, list) else [tipo]
+                if any(t in _TIPOS_ENTIDADE_NUNCA_IMAGEM for t in tipos if t):
+                    return achados
+                if via_imagem and "ImageObject" in tipos and isinstance(obj.get("url"), str):
+                    achados.append(obj["url"])
                 for chave in _CHAVES_IMAGEM_JSONLD:
                     valor = obj.get(chave)
                     if isinstance(valor, str):
                         achados.append(valor)
                     elif isinstance(valor, (dict, list)):
-                        achados.extend(_urls_imagem_jsonld(valor))
+                        achados.extend(_urls_imagem_jsonld(valor, via_imagem=True))
                 for chave, valor in obj.items():
                     if chave in _CHAVES_IMAGEM_JSONLD or chave in _CHAVES_NUNCA_IMAGEM_JSONLD:
                         continue
@@ -1794,9 +1960,10 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
         dados = json.loads(bruto) if bruto else {}
         texto = (dados.get("text") or "").strip() or None
         if not imagem:
-            candidata_trafilatura = _url_imagem_valida(dados.get("image"))
-            if candidata_trafilatura and not _imagem_parece_generica(candidata_trafilatura):
-                imagem = candidata_trafilatura
+            # mesmo filtro dos outros caminhos (genérica + nunca a URL da
+            # própria matéria) - o trafilatura reaproveita a og:image que
+            # os filtros acima já recusaram
+            imagem = _candidata_imagem(dados.get("image"))
     except Exception:
         pass
 
@@ -1884,6 +2051,12 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
             # o PROXIMO seletor (escopo mais amplo) quando o ATUAL nao
             # bateu em NADA (ver achado real no comentario acima).
             break
+
+    # 2026-10-19: o link redirecionou pra fora da matéria (home do site,
+    # login/assinatura, consentimento) - a og:image dessa página é a capa
+    # padrão do veículo, não a foto da notícia. Nunca vira imagem.
+    if imagem and _pagina_nao_e_materia(link_real):
+        imagem = None
 
     # Segundo extrator menos restritivo: usa parágrafos de article/main,
     # remove navegação/rodapé e só aceita texto com tamanho mínimo. Não
@@ -2476,8 +2649,17 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
 
     ultimo_motivo = "nenhuma fonte disponível no grupo"
     fragmentos_curtos = []
+    # 1a imagem encontrada em QUALQUER fonte do grupo, mesmo quando o resumo
+    # falha (paywall/JS sem texto, cota/chave do Groq, resumo reprovado) -
+    # devolvida à parte em "imagem_candidata" (nunca em "imagem", que
+    # continua sendo SÓ a foto da página que gerou o texto) pra quem chama
+    # poder persistir a foto sem depender do resumo (ver
+    # pregerar_resumos_news e ia_cache.salvar_registro_imagem).
+    imagem_candidata = None
     for veiculo, link in fontes_ordenadas:
         texto, imagem, link_real, motivo_extracao = _extrair_texto_artigo(link)
+        if imagem and imagem_candidata is None:
+            imagem_candidata = {"imagem": imagem, "fonte": link_real}
         if texto is None:
             ultimo_motivo = motivo_extracao or ultimo_motivo
             continue
@@ -2506,16 +2688,28 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
                 ultimo_motivo = f"resumo gerado é inconsistente com a fonte ({motivo_inconsistencia}) — descartado"
                 resumo = None
         if resumo:
-            if validar_imagem and imagem and not _url_imagem_utilizavel(imagem):
-                imagem = None
+            # Validação de imagem com 3 estados - ver PR #89
+            # (STATUS_IMAGEM_*/_verificar_imagem_url); _sanitizar_por_que_importa
+            # (PR #88) é ortogonal, opera no texto do resumo, não na imagem.
+            imagem_status = STATUS_IMAGEM_NAO_VERIFICADA if imagem else STATUS_IMAGEM_AUSENTE
+            if validar_imagem and imagem:
+                verificacao = _verificar_imagem_url(imagem)
+                if verificacao == IMAGEM_OK and not _url_assinada(imagem):
+                    imagem_status = STATUS_IMAGEM_CONFIRMADA
+                elif verificacao == IMAGEM_INVALIDA:
+                    imagem, imagem_status = None, STATUS_IMAGEM_INVALIDA
+                # erro temporário: mantém a URL (não-verificada) - o
+                # navegador tenta e cai no fallback se falhar; nunca apaga
+                # a foto por causa de um soluço de rede na validação
             resumo = _sanitizar_por_que_importa(resumo, titulo, texto)
             return {"resumo": resumo, "link_original": link_real, "imagem": imagem,
+                    "imagem_status": imagem_status, "imagem_verificada_em": _agora_iso_utc(),
                     "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": False,
                     "qualidade_texto": "full_text"}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
             # falha do Groq em si (cota/config), nao da fonte - tentar as
             # proximas fontes do grupo so repetiria o mesmo erro a toa
-            return {"resumo": None, "link_original": link_real, "imagem": None, "motivo_indisponivel": motivo_groq}
+            return {"resumo": None, "link_original": link_real, "imagem": None, "motivo_indisponivel": motivo_groq, "imagem_candidata": imagem_candidata}
         ultimo_motivo = motivo_groq or ultimo_motivo
 
     titulos_unicos = tuple(dict.fromkeys(titulos))
@@ -2541,9 +2735,9 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
             resumo = _sanitizar_por_que_importa(resumo, titulo, texto_combinado)
             return {"resumo": resumo, "link_original": None, "imagem": None,
                     "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": True,
-                    "qualidade_texto": "partial_text"}
+                    "qualidade_texto": "partial_text", "imagem_candidata": imagem_candidata}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
-            return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": motivo_groq}
+            return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": motivo_groq, "imagem_candidata": imagem_candidata}
         ultimo_motivo = motivo_groq or ultimo_motivo
 
     if len(titulos_unicos) >= 2:
@@ -2561,13 +2755,13 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
             resumo = _sanitizar_por_que_importa(resumo, titulo, manchetes_base)
             return {"resumo": resumo, "link_original": None, "imagem": None,
                     "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": True,
-                    "qualidade_texto": "snippet_only"}
+                    "qualidade_texto": "snippet_only", "imagem_candidata": imagem_candidata}
         if motivo_groq == "cota" or "GROQ_API_KEY" in (motivo_groq or ""):
-            return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": motivo_groq}
+            return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": motivo_groq, "imagem_candidata": imagem_candidata}
         ultimo_motivo = motivo_groq or ultimo_motivo
 
     return {"resumo": None, "link_original": None, "imagem": None, "motivo_indisponivel": ultimo_motivo,
-            "qualidade_texto": "extraction_failed"}
+            "qualidade_texto": "extraction_failed", "imagem_candidata": imagem_candidata}
 
 
 def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (), validar_imagem: bool = False) -> dict:
@@ -2591,26 +2785,254 @@ def obter_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = ()
     )
 
 
+def _chave_grupo(g: dict) -> str:
+    fontes_ordenadas = ordenar_fontes_para_resumo(g["fontes"])
+    return ia_cache.chave_news(g["titulo"], tuple(link for _, link in fontes_ordenadas))
+
+
+def _imagem_do_resultado(resumo: dict | None, registro_imagem: dict | None) -> tuple:
+    """(url, status) da foto exibível de UM grupo, combinando a linha do
+    resumo (legado: foto da página que gerou o texto) e o registro próprio
+    de imagem. Reaplica os filtros ATUAIS de genérica na leitura: linhas
+    cacheadas antes de um filtro novo existir (ex: banco de imagens, PR
+    #60) deixam de ser exibidas sem precisar de backfill no banco."""
+    rejeitadas = set((registro_imagem or {}).get("imagens_rejeitadas") or ())
+    ordem = (resumo, registro_imagem)
+    if (registro_imagem or {}).get("imagem_status") == STATUS_IMAGEM_CONFIRMADA:
+        ordem = (registro_imagem, resumo)
+    for origem in ordem:
+        if not origem:
+            continue
+        url = _url_imagem_valida(origem.get("imagem"))
+        if url in rejeitadas:
+            continue  # reavaliação posterior reprovou exatamente esta URL
+        status = origem.get("imagem_status") or (STATUS_IMAGEM_NAO_VERIFICADA if url else None)
+        if url and status in _STATUS_IMAGEM_EXIBIVEL and not _imagem_parece_generica(url):
+            return url, status
+    if registro_imagem and registro_imagem.get("imagem_status"):
+        return None, registro_imagem["imagem_status"]
+    return None, None
+
+
+def _tokens_titulo_imagem(titulo: str) -> set:
+    return {t for t in _tokenizar(titulo or "") if len(t) > 2}
+
+
+_JANELA_MESMO_FATO_IMAGEM = timedelta(hours=12)
+
+
+def _mesmo_fato_para_imagem(a: tuple, b: tuple) -> bool:
+    """a/b = (titulo, tokens, data_iso|None). Mesmo fato (foto compartilhada
+    legítima) só com títulos parecidos E sem direção de mercado oposta E
+    publicados a menos de 12h um do outro (quando as datas existem).
+    Achado da revisão de 2026-10-19: só a similaridade de título deixava
+    passar justamente o formato diário recorrente ("Ibovespa fecha em alta
+    hoje" x "Ibovespa fecha em queda hoje", dias diferentes, sobreposição
+    0,75) - o caso UOL com a mesma og:image em toda edição."""
+    titulo_a, tok_a, data_a = a
+    titulo_b, tok_b, data_b = b
+    if _similaridade(tok_a, tok_b) < 0.6:
+        return False
+    dir_a, dir_b = _direcao_mercado(titulo_a), _direcao_mercado(titulo_b)
+    if dir_a and dir_b and dir_a != dir_b:
+        return False
+    if data_a and data_b:
+        try:
+            dt_a, dt_b = (d if isinstance(d, datetime) else datetime.fromisoformat(str(d)) for d in (data_a, data_b))
+            if abs(dt_a - dt_b) >= _JANELA_MESMO_FATO_IMAGEM:
+                return False
+        except (TypeError, ValueError):
+            pass  # data ilegível/naive x aware: decide só pelo título
+    return True
+
+
+def _descartar_imagens_repetidas(itens: list) -> set:
+    """itens: [(id, titulo, url_imagem)] ou [(id, titulo, url_imagem,
+    data_iso)]. Devolve os ids cuja foto é a MESMA URL (sem query string)
+    usada por outra matéria de OUTRO fato - padrão real (UOL "fechamento
+    dólar/bolsa hoje", PROGRESSO 2026-10-18): og:image legítima do
+    veículo, reciclada em matérias de dias/fatos diferentes, que não
+    representa nenhuma delas. Duas manchetes do MESMO fato (grupo não
+    fundido - ver _mesmo_fato_para_imagem) com a mesma foto continuam
+    aceitas - aí a foto é de fato daquela matéria."""
+    por_url = {}
+    for item in itens:
+        ident, titulo, url = item[0], item[1], item[2]
+        data = item[3] if len(item) > 3 else None
+        if not url:
+            continue
+        base = url.split("?")[0].split("#")[0].lower()
+        por_url.setdefault(base, []).append((ident, (titulo or "", _tokens_titulo_imagem(titulo), data)))
+    descartar = set()
+    for ocorrencias in por_url.values():
+        if len(ocorrencias) < 2:
+            continue
+        for i, (id_a, info_a) in enumerate(ocorrencias):
+            for id_b, info_b in ocorrencias[i + 1:]:
+                if id_a != id_b and not _mesmo_fato_para_imagem(info_a, info_b):
+                    descartar.update((id_a, id_b))
+    return descartar
+
+
 def obter_resumos_prontos(grupos: list) -> dict:
     """Leitura em LOTE (1 unica query, NUNCA gera) dos resumos/imagens JA
     cacheados pros grupos dados - usada pelo feed editorial (fase 3) pra
     mostrar resumo curto + foto direto no card da lista, sem chamada de
     rede nem de IA por card (ver ia_cache.obter_varios). Grupo ainda sem
-    resumo cacheado simplesmente nao aparece no dict retornado - quem
-    chama mostra so' titulo+meta pra esse card (nunca inventa resumo).
+    resumo NEM imagem cacheados simplesmente nao aparece no dict
+    retornado - quem chama mostra so' titulo+meta pra esse card (nunca
+    inventa resumo).
+
+    2026-10-19: a mesma query também lê o registro PRÓPRIO de imagem de
+    cada grupo (ia_cache.chave_imagem_news) - a foto aparece mesmo quando
+    o resumo ainda não existe/falhou ("resumo": None no retorno). O campo
+    "imagem" do retorno é sempre a foto JÁ filtrada pra exibição (status
+    exibível, filtros atuais de genérica, sem foto reciclada entre
+    matérias diferentes do mesmo lote); "imagem_status" diz por quê.
 
     Retorna {link_do_grupo: resultado} - 'link' e' a mesma chave que a
     UI ja usa pra identificar um grupo na lista (ver ui/news_tab.py)."""
-    link_por_chave = {}
+    chaves_por_link = {}
+    titulo_por_link = {}
     for g in grupos:
-        fontes_ordenadas = ordenar_fontes_para_resumo(g["fontes"])
-        links = tuple(link for _, link in fontes_ordenadas)
-        chave = ia_cache.chave_news(g["titulo"], links)
-        link_por_chave[chave] = g["link"]
-    if not link_por_chave:
+        chave = _chave_grupo(g)
+        chaves_por_link[g["link"]] = (chave, ia_cache.chave_imagem_news(chave))
+        titulo_por_link[g["link"]] = (g.get("titulo") or "", g.get("data"))
+    if not chaves_por_link:
         return {}
-    encontrados = ia_cache.obter_varios(list(link_por_chave.keys()))
-    return {link_por_chave[chave]: resultado for chave, resultado in encontrados.items()}
+    todas = [c for par in chaves_por_link.values() for c in par]
+    encontrados = ia_cache.obter_varios(todas)
+
+    prontos = {}
+    for link, (chave, chave_img) in chaves_por_link.items():
+        resumo = encontrados.get(chave)
+        registro = encontrados.get(chave_img)
+        if resumo is None and registro is None:
+            continue
+        url, status = _imagem_do_resultado(resumo, registro)
+        resultado = dict(resumo) if resumo else {"resumo": None}
+        resultado["imagem"] = url
+        resultado["imagem_status"] = status
+        prontos[link] = resultado
+
+    repetidas = _descartar_imagens_repetidas(
+        [(link, titulo_por_link[link][0], r.get("imagem"), titulo_por_link[link][1]) for link, r in prontos.items()]
+    )
+    for link in repetidas:
+        prontos[link]["imagem"] = None
+        prontos[link]["imagem_status"] = STATUS_IMAGEM_REPETIDA
+    return prontos
+
+
+def imagem_pronta_do_grupo(g: dict, resultado_atual: dict | None = None) -> str | None:
+    """Foto exibível de UM grupo (modal da notícia): mesmas regras de
+    obter_resumos_prontos (filtros atuais, registro de imagem, URL
+    reprovada na reavaliação) aplicadas ao resultado que o modal acabou de
+    obter (resultado_atual, quando houver) + registro de imagem cacheado.
+    1 leitura, nunca gera nada; qualquer falha -> None (capa neutra)."""
+    try:
+        chave = _chave_grupo(g)
+        chave_img = ia_cache.chave_imagem_news(chave)
+        encontrados = ia_cache.obter_varios([chave, chave_img])
+        resumo = resultado_atual if resultado_atual is not None else encontrados.get(chave)
+        return _imagem_do_resultado(resumo, encontrados.get(chave_img))[0]
+    except Exception:
+        return None
+
+
+# --- Avaliação de imagem por grupo (2026-10-19) ---------------------------
+# Política de reavaliação: confirmada nunca é reavaliada; erro temporário
+# volta logo; "sem foto" e "inválida" esperam mais (a página raramente muda
+# a og:image depois de publicada). Limite de tentativas por grupo - as
+# notícias saem do feed em poucos dias, não vale insistir indefinidamente.
+_TTL_REAVALIAR_IMAGEM = {
+    STATUS_IMAGEM_NAO_VERIFICADA: timedelta(hours=6),
+    STATUS_IMAGEM_ERRO_TEMPORARIO: timedelta(hours=2),
+    STATUS_IMAGEM_AUSENTE: timedelta(hours=24),
+    STATUS_IMAGEM_INVALIDA: timedelta(hours=24),
+    STATUS_IMAGEM_REPETIDA: timedelta(hours=72),
+}
+_MAX_TENTATIVAS_IMAGEM = 4
+_MAX_FONTES_IMAGEM = 2
+_ORCAMENTO_PREGERAR_IMAGENS_S = 3 * 60
+_MAX_IMAGENS_POR_EXECUCAO = 30
+
+
+def _imagem_precisa_reavaliar(resumo: dict | None, registro: dict | None, agora: datetime | None = None) -> bool:
+    agora = agora or datetime.now(timezone.utc)
+    url, _ = _imagem_do_resultado(resumo, None)
+    if url and (resumo or {}).get("imagem_status") != STATUS_IMAGEM_NAO_VERIFICADA:
+        return False  # o resumo já trouxe foto (confirmada ou legada)
+    if not registro:
+        return True
+    status = registro.get("imagem_status")
+    if status == STATUS_IMAGEM_CONFIRMADA:
+        return False
+    if int(registro.get("imagem_tentativas") or 0) >= _MAX_TENTATIVAS_IMAGEM:
+        return False
+    try:
+        verificada = datetime.fromisoformat(str(registro.get("imagem_verificada_em")).replace("Z", "+00:00"))
+        if verificada.tzinfo is None:
+            verificada = verificada.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return True
+    return agora - verificada >= _TTL_REAVALIAR_IMAGEM.get(status, timedelta(hours=24))
+
+
+def _fontes_para_imagem(g: dict, fontes_ordenadas: tuple) -> list:
+    """A matéria da MANCHETE do card (g['link']) primeiro - é a foto que
+    melhor representa o título exibido; as demais fontes do grupo (mesmo
+    fato, outro veículo) só entram se ela não tiver foto confiável."""
+    principal = [f for f in fontes_ordenadas if f[1] == g.get("link")]
+    outras = [f for f in fontes_ordenadas if f[1] != g.get("link")]
+    return (principal + outras)[:_MAX_FONTES_IMAGEM]
+
+
+def avaliar_imagem_grupo(g: dict, fontes_ordenadas: tuple, tentativas_anteriores: int = 0) -> dict:
+    """Busca e valida a foto de UM grupo sem IA nenhuma: baixa a página
+    da matéria (mesmo extrator do resumo - _extrair_texto_artigo, só
+    metadados públicos, sem contornar paywall), aplica os filtros de
+    genérica e confirma por rede (_verificar_imagem_url). Nunca lança
+    exceção. Retorna o registro pronto pra ia_cache.salvar_registro_imagem."""
+    algum_download_ok = False
+    rejeitadas = []
+    nao_verificada = None
+    for _veiculo, link in _fontes_para_imagem(g, fontes_ordenadas):
+        try:
+            _texto, imagem, link_real, motivo = _extrair_texto_artigo(link)
+        except Exception as exc:
+            logging.warning("avaliar_imagem_grupo: falha ao extrair %s (%s)", _dominio_raiz(link or ""), type(exc).__name__)
+            continue
+        if motivo is None or imagem or (motivo and "sem texto" in motivo):
+            algum_download_ok = True
+        if not imagem:
+            continue
+        verificacao = _verificar_imagem_url(imagem)
+        fonte = _dominio_raiz(link_real or link or "")
+        if verificacao == IMAGEM_OK and _url_assinada(imagem):
+            verificacao = IMAGEM_ERRO_TEMPORARIO  # responde hoje, expira depois: reavaliar
+        if verificacao == IMAGEM_OK:
+            return {"tipo": "imagem", "imagem": imagem, "imagem_status": STATUS_IMAGEM_CONFIRMADA,
+                    "imagem_fonte": fonte, "imagem_verificada_em": _agora_iso_utc(),
+                    "imagem_tentativas": tentativas_anteriores + 1, "imagens_rejeitadas": rejeitadas}
+        if verificacao == IMAGEM_ERRO_TEMPORARIO:
+            if nao_verificada is None:
+                nao_verificada = (imagem, fonte)
+        else:
+            rejeitadas.append(imagem)
+    if nao_verificada:
+        status, (imagem, fonte) = STATUS_IMAGEM_NAO_VERIFICADA, nao_verificada
+    else:
+        imagem, fonte = None, None
+        if rejeitadas:
+            status = STATUS_IMAGEM_INVALIDA
+        elif algum_download_ok:
+            status = STATUS_IMAGEM_AUSENTE
+        else:
+            status = STATUS_IMAGEM_ERRO_TEMPORARIO
+    return {"tipo": "imagem", "imagem": imagem, "imagem_status": status, "imagem_fonte": fonte,
+            "imagem_verificada_em": _agora_iso_utc(), "imagem_tentativas": tentativas_anteriores + 1,
+            "imagens_rejeitadas": rejeitadas}
 
 
 # --- Pre-processamento em lote (reformulacao editorial, 2026-10-15) -----
@@ -2647,6 +3069,56 @@ def obter_resumos_prontos(grupos: list) -> dict:
 # e' compartilhada com o research) - nunca roda indefinidamente.
 _ORCAMENTO_PREGERAR_RESUMOS_S = 4 * 60
 _MAX_RESUMOS_POR_EXECUCAO = 25
+
+
+def _coletar_pendentes_pregerar(tickers_universo: list, limite: float, stats: dict) -> list:
+    """Grupos do TOP MERCADO (3 pools) + fatia de tickers, sem repetição
+    (dedup pela chave de cache) - compartilhado pela pré-geração de
+    resumos e pela de imagens (a coleta em si é st.cache_data, então a 2ª
+    chamada no mesmo processo do coletor não bate na rede de novo).
+    Retorna [(chave, grupo, fontes_ordenadas)]."""
+    grupos = []
+    # O Morning Call (data/morning_call_editorial.py) publica as manchetes
+    # dos pools Brasil e internacional SEPARADOS (top 20 de cada); o TOP
+    # MERCADO "tudo" corta o total em 20 e, em dia de muito noticiário no
+    # Brasil, deixa o internacional inteiro de fora - essas matérias nunca
+    # recebiam resumo e saíam no PDF só com manchete. As 3 listas entram
+    # aqui; a chave de cache abaixo remove os grupos repetidos.
+    for nome_fonte, coletar in (("TOP MERCADO", obter_top_mercado_tudo),
+                                ("TOP MERCADO Brasil", obter_top_mercado),
+                                ("TOP MERCADO internacional", obter_top_mercado_internacional)):
+        try:
+            grupos.extend(coletar("TODOS") or [])
+        except Exception:
+            logging.exception("pregerar_resumos_news: falha ao coletar %s", nome_fonte)
+
+    for ticker in tickers_universo:
+        if time.monotonic() > limite:
+            stats["tempo_esgotado"] = True
+            break
+        try:
+            r = obter_noticias(ticker)
+            if r:
+                grupos.extend(r)
+        except Exception:
+            stats["falhas"] += 1
+            logging.exception("pregerar_resumos_news: falha ao coletar noticias de %s", ticker)
+
+    # dedup por chave de cache (um mesmo fato pode aparecer no TOP
+    # MERCADO E na busca por ticker) - mais recente primeiro, ja' e' a
+    # ordem devolvida por obter_noticias/obter_top_mercado_tudo
+    pendentes = []
+    vistos = set()
+    for g in grupos:
+        fontes_ordenadas = ordenar_fontes_para_resumo(g["fontes"])
+        links = tuple(link for _, link in fontes_ordenadas)
+        chave = ia_cache.chave_news(g["titulo"], links)
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        pendentes.append((chave, g, fontes_ordenadas))
+
+    return pendentes
 
 
 def pregerar_resumos_news(tickers_universo: list) -> dict:
@@ -2693,47 +3165,7 @@ def pregerar_resumos_news(tickers_universo: list) -> dict:
         return stats
 
     limite = time.monotonic() + _ORCAMENTO_PREGERAR_RESUMOS_S
-
-    grupos = []
-    # O Morning Call (data/morning_call_editorial.py) publica as manchetes
-    # dos pools Brasil e internacional SEPARADOS (top 20 de cada); o TOP
-    # MERCADO "tudo" corta o total em 20 e, em dia de muito noticiário no
-    # Brasil, deixa o internacional inteiro de fora - essas matérias nunca
-    # recebiam resumo e saíam no PDF só com manchete. As 3 listas entram
-    # aqui; a chave de cache abaixo remove os grupos repetidos.
-    for nome_fonte, coletar in (("TOP MERCADO", obter_top_mercado_tudo),
-                                ("TOP MERCADO Brasil", obter_top_mercado),
-                                ("TOP MERCADO internacional", obter_top_mercado_internacional)):
-        try:
-            grupos.extend(coletar("TODOS") or [])
-        except Exception:
-            logging.exception("pregerar_resumos_news: falha ao coletar %s", nome_fonte)
-
-    for ticker in tickers_universo:
-        if time.monotonic() > limite:
-            stats["tempo_esgotado"] = True
-            break
-        try:
-            r = obter_noticias(ticker)
-            if r:
-                grupos.extend(r)
-        except Exception:
-            stats["falhas"] += 1
-            logging.exception("pregerar_resumos_news: falha ao coletar noticias de %s", ticker)
-
-    # dedup por chave de cache (um mesmo fato pode aparecer no TOP
-    # MERCADO E na busca por ticker) - mais recente primeiro, ja' e' a
-    # ordem devolvida por obter_noticias/obter_top_mercado_tudo
-    pendentes = []
-    vistos = set()
-    for g in grupos:
-        fontes_ordenadas = ordenar_fontes_para_resumo(g["fontes"])
-        links = tuple(link for _, link in fontes_ordenadas)
-        chave = ia_cache.chave_news(g["titulo"], links)
-        if chave in vistos:
-            continue
-        vistos.add(chave)
-        pendentes.append((chave, g, fontes_ordenadas))
+    pendentes = _coletar_pendentes_pregerar(tickers_universo, limite, stats)
 
     stats["grupos_considerados"] = len(pendentes)
     if not pendentes:
@@ -2755,6 +3187,9 @@ def pregerar_resumos_news(tickers_universo: list) -> dict:
             # resumo=None sem excecao (cota do Groq, materia sem texto
             # extraivel, resumo rejeitado pela checagem de consistencia)
             # vai pra "indisponiveis", com o motivo no log.
+            candidata = resultado.get("imagem_candidata") if not resultado.get("imagem") else None
+            if candidata and candidata.get("imagem"):
+                _persistir_candidata_imagem(chave, g, candidata["imagem"], candidata.get("fonte"))
             if resultado.get("resumo"):
                 stats["gerados"] += 1
             else:
@@ -2764,4 +3199,88 @@ def pregerar_resumos_news(tickers_universo: list) -> dict:
             stats["falhas"] += 1
             logging.exception("pregerar_resumos_news: falha ao gerar resumo de '%s'", g.get("titulo"))
 
+    return stats
+
+
+def _persistir_candidata_imagem(chave: str, g: dict, imagem: str, link_fonte: str | None) -> None:
+    """Foto achada durante a geração de um resumo que NÃO a guardou em
+    "imagem" (resumo falhou, ou saiu de fragmentos de várias fontes) -
+    verifica por rede e grava o registro próprio de imagem do grupo, pra
+    ela aparecer no card mesmo sem resumo. Nunca lança exceção."""
+    try:
+        verificacao = _verificar_imagem_url(imagem)
+        if verificacao == IMAGEM_INVALIDA:
+            return
+        status = (STATUS_IMAGEM_CONFIRMADA if verificacao == IMAGEM_OK and not _url_assinada(imagem)
+                  else STATUS_IMAGEM_NAO_VERIFICADA)
+        registro = {"tipo": "imagem", "imagem": imagem, "imagem_status": status,
+                    "imagem_fonte": _dominio_raiz(link_fonte or ""), "imagem_verificada_em": _agora_iso_utc(),
+                    "imagem_tentativas": 1, "imagens_rejeitadas": []}
+        ia_cache.salvar_registro_imagem(ia_cache.chave_imagem_news(chave), g.get("link"), registro)
+    except Exception:
+        logging.exception("_persistir_candidata_imagem: falha ao gravar imagem de '%s'", g.get("titulo"))
+
+
+def pregerar_imagens_news(tickers_universo: list) -> dict:
+    """Pré-geração das FOTOS dos grupos de NEWS, independente da IA
+    (2026-10-19). Mesmo universo de pregerar_resumos_news; pra cada grupo
+    sem foto exibível (ou cujo registro venceu a política de reavaliação,
+    _imagem_precisa_reavaliar) baixa a página da matéria, valida a foto
+    (avaliar_imagem_grupo) e grava o registro de imagem
+    (ia_cache.salvar_registro_imagem - upsert idempotente). Roda mesmo sem
+    GROQ_API_KEY: nenhuma chamada de IA acontece aqui.
+
+    Orçamento próprio de tempo e de quantidade por execução. Falha de um
+    grupo nunca interrompe os demais nem a coleta; nunca lança exceção.
+    Log por grupo só com domínio + status (URL de imagem pode carregar
+    token assinado da CDN - nunca vai pro log)."""
+    stats = {"grupos_considerados": 0, "ja_com_imagem": 0, "avaliados": 0, "salvos": 0, "falhas": 0,
+             "tempo_esgotado": False, "por_status": {}}
+    disponivel = ia_cache.tabela_disponivel()
+    stats["tabela_disponivel"] = disponivel
+    if disponivel is not True:
+        return stats
+
+    limite = time.monotonic() + _ORCAMENTO_PREGERAR_IMAGENS_S
+    pendentes = _coletar_pendentes_pregerar(tickers_universo, limite, stats)
+    stats["grupos_considerados"] = len(pendentes)
+    if not pendentes:
+        return stats
+
+    chaves_img = {chave: ia_cache.chave_imagem_news(chave) for chave, _, _ in pendentes}
+    encontrados = ia_cache.obter_varios([c for chave in chaves_img for c in (chave, chaves_img[chave])])
+
+    conhecidas = []
+    for chave, g, _ in pendentes:
+        url, _status = _imagem_do_resultado(encontrados.get(chave), encontrados.get(chaves_img[chave]))
+        if url:
+            conhecidas.append((chave, g.get("titulo"), url, g.get("data")))
+
+    for chave, g, fontes_ordenadas in pendentes:
+        resumo, registro = encontrados.get(chave), encontrados.get(chaves_img[chave])
+        if not _imagem_precisa_reavaliar(resumo, registro):
+            if _imagem_do_resultado(resumo, registro)[0]:
+                stats["ja_com_imagem"] += 1
+            continue
+        if stats["avaliados"] >= _MAX_IMAGENS_POR_EXECUCAO or time.monotonic() > limite:
+            stats["tempo_esgotado"] = True
+            break
+        stats["avaliados"] += 1
+        try:
+            novo = avaliar_imagem_grupo(g, fontes_ordenadas, int((registro or {}).get("imagem_tentativas") or 0))
+            if novo.get("imagem"):
+                outras = [c for c in conhecidas if c[0] != chave]
+                if chave in _descartar_imagens_repetidas(outras + [(chave, g.get("titulo"), novo["imagem"], g.get("data"))]):
+                    novo["imagens_rejeitadas"] = list(novo.get("imagens_rejeitadas") or []) + [novo["imagem"]]
+                    novo["imagem"], novo["imagem_status"] = None, STATUS_IMAGEM_REPETIDA
+                else:
+                    conhecidas.append((chave, g.get("titulo"), novo["imagem"], g.get("data")))
+            status = novo["imagem_status"]
+            stats["por_status"][status] = stats["por_status"].get(status, 0) + 1
+            if ia_cache.salvar_registro_imagem(chaves_img[chave], g.get("link"), novo):
+                stats["salvos"] += 1
+            print(f"[pregerar_imagens_news] {status:<17} {novo.get('imagem_fonte') or '-':<28} '{g['titulo'][:60]}'")
+        except Exception:
+            stats["falhas"] += 1
+            logging.exception("pregerar_imagens_news: falha ao avaliar imagem de '%s'", g.get("titulo"))
     return stats

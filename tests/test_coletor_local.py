@@ -13,6 +13,19 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import coletor_local
+import pytest
+
+_STATS_IMAGENS_VAZIO = {"grupos_considerados": 0, "ja_com_imagem": 0, "avaliados": 0, "salvos": 0,
+                        "falhas": 0, "tempo_esgotado": False, "por_status": {}, "tabela_disponivel": True}
+
+
+@pytest.fixture(autouse=True)
+def mock_pregerar_imagens():
+    """Nenhum teste deste arquivo pode executar a etapa REAL de imagens de
+    NEWS (consultaria o Supabase e baixaria feeds/páginas se a máquina
+    tiver credenciais) - os testes que a cobrem usam este mock."""
+    with patch.object(coletor_local, "pregerar_imagens_news", return_value=dict(_STATS_IMAGENS_VAZIO)) as m:
+        yield m
 
 _FALHAS = []
 
@@ -539,3 +552,39 @@ if __name__ == "__main__":
         print(f"FALHARAM {len(_FALHAS)}: {_FALHAS}")
         sys.exit(1)
     print("TODOS OS TESTES DO COLETOR LOCAL PASSARAM")
+
+
+def _rodar_main_news(stats_news: dict, diagnostico_ok: bool = True) -> int:
+    stats_eventos = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
+                     "tempo_esgotado": False, "tabela_disponivel": True}
+    with patch.object(coletor_local, "diagnosticar_persistencia",
+                      return_value={"ok": diagnostico_ok, "etapa": "OK" if diagnostico_ok else "INSERT", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=stats_news), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats_eventos), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa"):
+        return coletor_local.main()
+
+
+def test_8a_imagens_de_news_rodam_mesmo_sem_groq(mock_pregerar_imagens):
+    """2026-10-19: a etapa de fotos não depende da IA - sem GROQ_API_KEY
+    (resumos pulados) ela continua rodando."""
+    stats_news = dict(_STATS_NEWS_VAZIO, indisponiveis=0, groq_configurado=False)
+    codigo = _rodar_main_news(stats_news)
+    _checar("8a pregerar_imagens_news chamado sem Groq", mock_pregerar_imagens.call_count == 1)
+    _checar("8b exit code 0", codigo == 0, f"(codigo={codigo})")
+
+
+def test_8c_imagens_nao_rodam_com_persistencia_quebrada(mock_pregerar_imagens):
+    _rodar_main_news(dict(_STATS_NEWS_VAZIO), diagnostico_ok=False)
+    _checar("8c sem persistência, etapa de imagens não roda (nada pra gravar)", mock_pregerar_imagens.call_count == 0)
+
+
+def test_8d_excecao_nas_imagens_nao_derruba_o_coletor(mock_pregerar_imagens):
+    mock_pregerar_imagens.side_effect = RuntimeError("falha inesperada")
+    codigo = _rodar_main_news(dict(_STATS_NEWS_VAZIO, indisponiveis=0))
+    _checar("8d exceção na etapa de imagens não muda o exit code", codigo == 0, f"(codigo={codigo})")
