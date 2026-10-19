@@ -77,9 +77,13 @@ def parsear_artigo(html, url, hoje=None):
     agora = datetime.now(timezone.utc).isoformat()
     for tabela in soup.find_all("table"):
         linhas = tabela.find_all("tr")
-        cabecalho = _normalizar(" ".join(c.get_text(" ", strip=True) for c in (linhas[0].find_all(["th", "td"]) if linhas else [])))
+        celulas_cabecalho = linhas[0].find_all(["th", "td"]) if linhas else []
+        nomes_colunas = [_normalizar(c.get_text(" ", strip=True)) for c in celulas_cabecalho]
+        cabecalho = " ".join(nomes_colunas)
         if not any(p in cabecalho for p in ("empresa", "companhia", "acoes")):
             continue
+        idx_preco = next((i for i, nome in enumerate(nomes_colunas)
+                          if "preco justo" in nome or "preco alvo" in nome), None)
         for linha in linhas[1:]:
             celulas = [c.get_text(" ", strip=True) for c in linha.find_all(["th", "td"])]
             if not celulas:
@@ -89,14 +93,22 @@ def parsear_artigo(html, url, hoje=None):
             if not tickers:
                 continue
             ticker = tickers[0]
-            empresa = next((c.strip() for c in celulas if c.strip() and not TICKER_RE.fullmatch(c.strip().upper())), "")
+            empresa = next((c.strip() for c in celulas if c.strip() and TICKER_RE.search(c.upper())), "")
+            preco_alvo = None
+            if idx_preco is not None and idx_preco < len(celulas):
+                valor = re.sub(r"[^0-9,.]", "", celulas[idx_preco])
+                if valor:
+                    try:
+                        preco_alvo = float(valor.replace(".", "").replace(",", "."))
+                    except ValueError:
+                        preco_alvo = None
             itens.append({
                 "casa": CASA,
                 "carteira": CARTEIRA,
                 "ticker": ticker,
                 "empresa": empresa,
                 "recomendacao": "CARTEIRA MENSAL",
-                "preco_alvo": None,
+                "preco_alvo": preco_alvo,
                 "data_publicacao": f"{hoje.year}-{hoje.month:02d}-01",
                 "validade_ate": None,
                 "fonte_url": url,
