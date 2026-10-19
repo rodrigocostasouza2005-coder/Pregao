@@ -238,10 +238,11 @@ def test_todas_as_linhas_de_fonte_do_pdf_tem_data():
 
 def test_masthead_separa_sessao_de_mercado_e_geracao():
     linha = pdf_mod._linha_referencia_masthead(DOMINGO, date(2026, 10, 16))
-    assert linha == ("Gerada dom 18/10, 14h59 (Brasília) · Ibovespa: fechamento de sex 16/10 · "
-                     "demais cotações com horário em Mercados")
+    assert linha == "Ibovespa: fechamento de sex 16/10 · demais cotações com horário em Mercados"
+    assert pdf_mod._linha_edicao_masthead(DOMINGO) == (
+        "Edição prevista para 8h · gerada dom 18/10, 14h59 (Brasília) · São Paulo")
     assert "Ibovespa: sessão de seg 19/10" in pdf_mod._linha_referencia_masthead(SEGUNDA, date(2026, 10, 19))
-    assert "Ibovespa indisponível" in pdf_mod._linha_referencia_masthead(SEGUNDA, None)
+    assert "Ibovespa: cotação indisponível" in pdf_mod._linha_referencia_masthead(SEGUNDA, None)
 
 
 def test_pdf_nao_tem_mais_edicao_das_8h_fixa():
@@ -249,7 +250,7 @@ def test_pdf_nao_tem_mais_edicao_das_8h_fixa():
     capa = leitor.pages[0].extract_text()
     assert "Edição das 8h" not in capa and "Dados até" not in capa
     assert "Ibovespa: fechamento de sex 16/10" in capa
-    assert "prevista para 8h" in capa and "Gerada seg 19/10, 8h00" in capa
+    assert "Edição prevista para 8h · gerada seg 19/10, 8h00" in capa
 
 
 def test_sessao_mercado_vem_do_primeiro_indicador_com_sessao():
@@ -467,10 +468,35 @@ def test_chamada_sem_texto_da_capa_nao_se_repete_na_pagina_2():
     assert "Resumos indisponíveis nesta edição" not in capa  # o aviso fica na pág. 2
 
 
-def test_referencia_curta_das_cotacoes_da_capa():
-    assert pdf_mod._referencia_curta("16/10 17:18 (horário de Brasília)") == "16/10 17:18"
-    assert pdf_mod._referencia_curta("fech. 16/10") == "fech. 16/10"
-    assert pdf_mod._referencia_curta(None) == ""
+def test_referencia_das_cotacoes_na_faixa_da_capa_e_na_tabela():
+    assert pdf_mod._referencia_faixa("16/10 17:18 (horário de Brasília)") == "16/10 17:18"
+    assert pdf_mod._referencia_faixa("fech. 16/10") == "fech. 16/10"
+    assert pdf_mod._referencia_faixa(None) == ""
+    # a tabela de Mercados continua com '—' e com a marca de cache
+    assert pdf_mod._referencia_curta(None) == "—"
+    assert pdf_mod._referencia_curta("fech. 16/10 (cache)") == "fech. 16/10 (cache)"
+
+
+def test_masthead_nunca_sobrepoe_a_data_por_extenso():
+    """Validação real de 19/10 (10h36): a linha de referência invadia a
+    data por extenso. Agora ela cabe no espaço livre ou perde a remissão."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    for agora in (SEGUNDA, DOMINGO, datetime(2026, 9, 30, 8, 3, tzinfo=TZ_SP)):
+        for sessao in (None, agora.date(), date(2026, 10, 16)):
+            livre = pdf_mod._largura_livre_masthead(agora)
+            linha = pdf_mod._linha_referencia_masthead(agora, sessao, largura_max=livre)
+            assert stringWidth(linha, pdf_mod.F["PregaoSans"], 7.2) <= livre, (agora, sessao, linha)
+    assert pdf_mod._linha_edicao_masthead(datetime(2026, 10, 19, 8, 15, tzinfo=TZ_SP)) == (
+        "Edição prevista para 8h · gerada seg 19/10, 8h15 (Brasília) · São Paulo")
+
+
+def test_empresas_vazia_nao_afirma_que_nao_ha_noticia_de_empresa():
+    estilos = pdf_mod._estilos()
+    flows = pdf_mod._editoria("Empresas e setores", "empresas", [], None, SEGUNDA, estilos, {},
+                              edicao_janela=datetime(2026, 10, 16, 6, tzinfo=TZ_SP))
+    textos = [getattr(f, "text", "") for kt in flows for f in getattr(kt, "_content", [])]
+    assert any("Radar setorial" in t for t in textos)
+    assert not any("Nenhuma notícia desta editoria" in t for t in textos)
 
 
 def test_sessao_da_bolsa_vem_do_ibovespa_nao_do_dolar():
