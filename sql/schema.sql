@@ -29,3 +29,28 @@ drop trigger if exists trg_user_prefs_updated_at on user_prefs;
 create trigger trg_user_prefs_updated_at
 before update on user_prefs
 for each row execute function set_updated_at();
+
+-- 2026-10-18 (painel administrativo USUÁRIOS, ver data/admin_usuarios.py) —
+-- migracao idempotente (ADD COLUMN IF NOT EXISTS em tudo, rodar de novo
+-- nao apaga nem altera nenhuma linha ja existente), mesmo padrao ja
+-- estabelecido em sql/research.sql pra colunas novas numa tabela
+-- existente.
+--
+-- created_at  = quando o registro desta linha foi criado. AVISO HONESTO:
+--               pra quem JA tinha linha em user_prefs antes desta
+--               migracao, o DEFAULT now() abaixo grava a DATA DA
+--               MIGRACAO, nao a data real de cadastro (esse dado nunca
+--               existiu antes - nao tem como reconstruir retroativamente
+--               sem inventar historico). So' e' a data de cadastro real
+--               pra quem criar a linha DEPOIS desta migracao (ver
+--               data/user_prefs.py:registrar_acesso). A UI do painel
+--               (ui/usuarios_tab.py) avisa disso explicitamente.
+-- last_seen_at = ultimo acesso identificado (ver registrar_acesso) - nulo
+--                pra quem ainda nao acessou de novo depois do deploy
+--                desta migracao; a UI mostra "sem registro", nunca trata
+--                nulo como "inativo ha muito tempo" (seria inventar dado).
+alter table user_prefs add column if not exists created_at timestamptz not null default now();
+alter table user_prefs add column if not exists last_seen_at timestamptz;
+
+create index if not exists idx_user_prefs_created_at on user_prefs (created_at);
+create index if not exists idx_user_prefs_last_seen_at on user_prefs (last_seen_at);

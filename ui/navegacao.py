@@ -97,6 +97,7 @@ AREAS = (
         Subaba("config", "Configurações"),
         Subaba("sistema", "Sistema", admin=True),
         Subaba("saude", "Saúde dos Dados", admin=True),
+        Subaba("usuarios", "Usuários", admin=True),
     )),
 )
 
@@ -116,6 +117,7 @@ ROTA_LEGADO = {
     "CONFIG": ("mais", "config"),
     "SISTEMA": ("mais", "sistema"),
     "SAÚDE DOS DADOS": ("mais", "saude"),
+    "USUÁRIOS": ("mais", "usuarios"),
 }
 
 

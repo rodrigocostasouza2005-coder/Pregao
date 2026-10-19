@@ -164,6 +164,11 @@ def render_preferencias(prefs: dict, usuario: dict, persistir_fn):
         )
         if ativo != prefs.get("morning_call_email_ativo", False):
             prefs["morning_call_email_ativo"] = ativo
+            # marca como "ja perguntado" tambem aqui: quem muda a
+            # preferencia direto em MORNING CALL › Preferências (sem
+            # passar pelo banner de onboarding) nao deve ver a oferta
+            # reaparecer depois.
+            prefs["morning_call_email_perguntado"] = True
             if persistir_fn():
                 st.toast(
                     "Preferência de Morning Call por e-mail salva." if ativo

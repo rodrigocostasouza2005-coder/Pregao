@@ -322,6 +322,7 @@ ICONES_SECAO = {
     "CONFIG": ":material/settings:",
     "SISTEMA": ":material/bolt:",
     "SAÚDE DOS DADOS": ":material/monitor_heart:",
+    "USUÁRIOS": ":material/group:",
 }
 
 # --- E-mails com acesso a paineis de admin (DIAGNOSTICO DE FONTES, SISTEMA,
@@ -442,6 +443,13 @@ PREFS_PADRAO = {
     # usuario (novo ou existente antes desta mudanca) recebe e-mail
     # automatico, nunca presume consentimento.
     "morning_call_email_ativo": False,
+    # marca que o usuario JA' respondeu a oferta de inscricao (aceitou OU
+    # recusou) - independente do valor de morning_call_email_ativo, serve
+    # so' pra "ja perguntei, nao repetir" (ver app.py: banner de onboarding
+    # e data/user_prefs.py:deve_oferecer_morning_call). Sem essa chave
+    # separada, nao daria pra distinguir "nunca vi a pergunta" de "vi e
+    # recusei" - os dois tem morning_call_email_ativo=False.
+    "morning_call_email_perguntado": False,
     # ordem/visibilidade/tamanho dos paineis dentro de cada aba que adota
     # o sistema de paineis registrados (ver ui/paineis.py) -
     # {aba_id: [painel_id, ...]} pra ordem e tamanho, {aba_id: [painel_id
