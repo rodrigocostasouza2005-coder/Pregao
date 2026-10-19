@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""DIAG TEMPORARIO v12 (somente leitura, NAO MERGEAR): edicao REAL com o
-codigo do PR #81 (951bb63) - PDF completo + texto do e-mail + auditoria
+"""DIAG TEMPORARIO v13 (somente leitura, NAO MERGEAR): edicao REAL com o
+codigo do PR #81 (701ac42) - PDF completo + texto do e-mail + auditoria
 editorial. Sem secrets (sem Supabase/resumos, sem e-mail)."""
 import io, os, re, sys
 from datetime import datetime
