@@ -12,12 +12,12 @@ def test_parser_itau_top5_aceita_tabela_com_cinco_tickers():
     html = """
     <h1>Carteira Top 5 Outubro 2026</h1>
     <table>
-      <tr><th>Empresas</th><th>Recomendação</th><th>Peso</th></tr>
-      <tr><td>Embraer (EMBJ3)</td><td>OP</td><td>20%</td></tr>
-      <tr><td>XP Inc. (XPBR31)</td><td>OP</td><td>20%</td></tr>
-      <tr><td>PETROBRAS (PETR4)</td><td>OP</td><td>20%</td></tr>
-      <tr><td>Sabesp (SBSP3)</td><td>OP</td><td>20%</td></tr>
-      <tr><td>Eneva (ENEV3)</td><td>OP</td><td>20%</td></tr>
+      <tr><th>Empresas</th><th>Recomendação</th><th>Peso</th><th>Preço justo</th></tr>
+      <tr><td>Embraer (EMBJ3)</td><td>OP</td><td>20%</td><td>124,00</td></tr>
+      <tr><td>XP Inc. (XPBR31)</td><td>OP</td><td>20%</td><td>118,0</td></tr>
+      <tr><td>PETROBRAS (PETR4)</td><td>OP</td><td>20%</td><td>64,0</td></tr>
+      <tr><td>Sabesp (SBSP3)</td><td>OP</td><td>20%</td><td>33,1</td></tr>
+      <tr><td>Eneva (ENEV3)</td><td>OP</td><td>20%</td><td>32,7</td></tr>
     </table>
     """
     itens = parsear_artigo(html, "https://hub-conteudo.cloud.itau.com.br/investimentos/carteira-top-5-outubro-2026/", date(2026, 10, 19))
@@ -25,6 +25,8 @@ def test_parser_itau_top5_aceita_tabela_com_cinco_tickers():
     assert {x["ticker"] for x in itens} == {"PETR4", "XPBR31", "EMBJ3", "SBSP3", "ENEV3"}
     assert all(x["casa"] == CASA and x["carteira"] == CARTEIRA for x in itens)
     assert all(x["fonte_url"].startswith("https://hub-conteudo.cloud.itau.com.br/") for x in itens)
+    alvos = {x["ticker"]: x["preco_alvo"] for x in itens}
+    assert alvos == {"EMBJ3": 124.0, "XPBR31": 118.0, "PETR4": 64.0, "SBSP3": 33.1, "ENEV3": 32.7}
 
 
 def test_parser_itau_rejeita_pagina_de_mes_incorreto():
