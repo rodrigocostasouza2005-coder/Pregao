@@ -296,7 +296,7 @@ def test_montar_edicao_estrutura_completa_sem_rede():
         edicao = ed.montar_edicao(agora)
     assert edicao["agora"] == agora
     assert set(edicao.keys()) == {"agora", "capa", "brasil", "exterior", "empresas", "limitacoes", "fontes",
-                                  "mercados_nota", "janela_noticias", "radar"}
+                                  "mercados_nota", "janela_noticias", "radar", "sessao_mercado"}
     # sem notícia de setor nenhum, o radar sai vazio e registra cada exclusão
     assert edicao["radar"]["setores"] == []
     assert all("evidência insuficiente" in e["motivo"] for e in edicao["radar"]["excluidos"])
@@ -310,16 +310,16 @@ def test_montar_edicao_estrutura_completa_sem_rede():
 
 def test_montar_edicao_capa_usa_top3_por_importancia():
     noticias = [
-        {"titulo": "Baixa importância", "link": "https://x/1", "regiao": "INT", "tickers": [], "importancia": 1},
-        {"titulo": "Alta importância", "link": "https://x/2", "regiao": "INT", "tickers": [], "importancia": 9},
-        {"titulo": "Média importância", "link": "https://x/3", "regiao": "BR", "tickers": [], "importancia": 5},
+        {"titulo": "Mercado: Baixa importância", "link": "https://x/1", "regiao": "INT", "tickers": [], "importancia": 1},
+        {"titulo": "Mercado: Alta importância", "link": "https://x/2", "regiao": "INT", "tickers": [], "importancia": 9},
+        {"titulo": "Mercado: Média importância", "link": "https://x/3", "regiao": "BR", "tickers": [], "importancia": 5},
     ]
     agora = datetime(2026, 10, 14, 7, tzinfo=TZ_SP)
     with _MultiPatch(**_pools(noticias)):
         edicao = ed.montar_edicao(agora)
     titulos_capa = [d["titulo"] for d in edicao["capa"]["destaques"]]
-    assert titulos_capa[0] == "Alta importância"
-    assert "Baixa importância" in titulos_capa  # só 3 notícias no total, as 3 entram
+    assert titulos_capa[0] == "Mercado: Alta importância"
+    assert "Mercado: Baixa importância" in titulos_capa  # só 3 notícias no total, as 3 entram
 
 
 def _fato(titulo, importancia, corpo=None):
@@ -369,7 +369,7 @@ def test_corpo_vem_do_bloco_resumo_do_cache_sem_a_leitura_de_mercado():
 
 
 def test_falha_na_leitura_do_cache_nao_derruba_a_edicao():
-    noticia = {"titulo": "X", "link": "https://x/1", "regiao": "BR", "tickers": [], "importancia": 1}
+    noticia = {"titulo": "Ibovespa X", "link": "https://x/1", "regiao": "BR", "tickers": [], "importancia": 1}
 
     def _quebra(_g):
         raise RuntimeError("cache fora do ar")
@@ -378,7 +378,7 @@ def test_falha_na_leitura_do_cache_nao_derruba_a_edicao():
     with _MultiPatch(**_pools([noticia], data="2026-10-18T09:00:00-03:00"), obter_resumos_prontos=_quebra):
         edicao = ed.montar_edicao(agora)
     assert edicao["brasil"]["noticias"][0]["corpo"] == []
-    assert edicao["capa"]["manchete"]["titulo"] == "X"
+    assert edicao["capa"]["manchete"]["titulo"] == "Ibovespa X"
 
 
 def test_radar_consulta_cada_setor_e_aplica_regras_da_edicao():
@@ -501,3 +501,25 @@ def test_cdi_nao_tem_plano_b_e_continua_indisponivel():
                      ultima_coleta_valida=lambda _c: None):
         linha = next(l for l in ed._macro_rows() if l["indicador"] == "CDI")
     assert linha["valor"] is None
+
+
+def test_resumo_cacheado_chega_tambem_na_editoria_mundo():
+    """O PDF publica o RESUMO cacheado de matérias internacionais (pool
+    INT separado) - mesma regra do pool Brasil, sem chamar IA."""
+    mundo = {"titulo": "Fed holds rates", "link": "https://int/1", "regiao": "INT", "tickers": [],
+             "importancia": 9, "veiculos": ["Reuters"], "fontes": [], "data": "2026-10-18T20:00:00-03:00"}
+    pronto = {"resumo": "RESUMO:\nO Fed manteve os juros.\n\nLEITURA DE MERCADO:\nOpinião do modelo."}
+    with _MultiPatch(**_pools([mundo]), obter_resumos_prontos=lambda grupos: {"https://int/1": pronto}):
+        edicao = ed.montar_edicao(datetime(2026, 10, 19, 7, tzinfo=TZ_SP))
+    item = edicao["exterior"]["noticias"][0]
+    assert item["corpo"] == ["O Fed manteve os juros."]
+    assert "Opinião" not in " ".join(item["corpo"])
+
+
+def test_sem_resumo_cacheado_mundo_sai_so_com_manchete_e_fonte():
+    mundo = {"titulo": "Fed holds rates", "link": "https://int/1", "regiao": "INT", "tickers": [],
+             "importancia": 9, "veiculos": ["Reuters"], "fontes": [], "data": "2026-10-18T20:00:00-03:00"}
+    with _MultiPatch(**_pools([mundo]), obter_resumos_prontos=lambda grupos: {}):
+        edicao = ed.montar_edicao(datetime(2026, 10, 19, 7, tzinfo=TZ_SP))
+    item = edicao["exterior"]["noticias"][0]
+    assert item["corpo"] == [] and item["veiculo"] == "Reuters" and item["link"] == "https://int/1"
