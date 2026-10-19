@@ -20,11 +20,11 @@ def test_parser_itau_top5_aceita_tabela_com_cinco_tickers():
       <tr><td>Eneva (ENEV3)</td><td>OP</td><td>20%</td></tr>
     </table>
     """
-    itens = parsear_artigo(html, "https://www.itau.com.br/investimentos/carteira-top-5-outubro-2026/", date(2026, 10, 19))
+    itens = parsear_artigo(html, "https://hub-conteudo.cloud.itau.com.br/investimentos/carteira-top-5-outubro-2026/", date(2026, 10, 19))
     assert itens is not None
     assert {x["ticker"] for x in itens} == {"PETR4", "XPBR31", "EMBJ3", "SBSP3", "ENEV3"}
     assert all(x["casa"] == CASA and x["carteira"] == CARTEIRA for x in itens)
-    assert all(x["fonte_url"].startswith("https://www.itau.com.br/") for x in itens)
+    assert all(x["fonte_url"].startswith("https://hub-conteudo.cloud.itau.com.br/") for x in itens)
 
 
 def test_parser_itau_rejeita_pagina_de_mes_incorreto():
@@ -52,7 +52,7 @@ def test_localiza_link_oficial_da_carteira_do_mes():
     <a href="/investimentos/carteiras-recomendadas/carteira-top-5-outubro-2026/">Outubro</a>
     <a href="/investimentos/carteiras-recomendadas/carteira-top-5-outubro-2025/">Ano anterior</a>
     """
-    assert _url_artigo_mes(html, date(2026, 10, 19)) == "https://www.itau.com.br/investimentos/carteiras-recomendadas/carteira-top-5-outubro-2026/"
+    assert _url_artigo_mes(html, date(2026, 10, 19)) == "https://hub-conteudo.cloud.itau.com.br/investimentos/carteiras-recomendadas/carteira-top-5-outubro-2026/"
 
 
 def test_parser_itau_rejeita_composicao_incompleta():
