@@ -1,5 +1,51 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-19 — Fotos das notícias: validação com rede REAL encontra causa raiz nova (`selectolax`) + bug de avatar no JSON-LD
+
+Retoma a PR #83 (imagem desacoplada do resumo de IA - ver entrada abaixo),
+que não teve acesso de rede pra validar contra fontes reais. Esta rodada
+teve (confirmado: `news.google.com`, UOL, InfoMoney etc. respondendo 200).
+
+- **Causa raiz NOVA, mais fundamental que a da PR #83**: `requirements.txt`
+  nunca fixava `selectolax` (dependência transitiva do
+  `googlenewsdecoder`) - uma instalação nova pega a `1.0.0+`, que removeu
+  o backend que o decoder usa, e `gnewsdecoder` fica `None` (mesmo
+  `ImportError` do hotfix `9f26234`, que só evitou o crash no startup,
+  nunca restaurou a função). Sem decoder, `_resolver_link_real` NUNCA
+  resolve nenhum link `news.google.com/rss/articles/...` - a origem de
+  praticamente toda matéria do app (busca por ticker, TOP MERCADO Brasil,
+  feed NOTÍCIAS) - então nem o texto nem a foto são extraídos pra essas
+  matérias, resumo de IA incluso. Confirmado real: amostra de 25 matérias
+  do TOP MERCADO foi 24/25 "não foi possível resolver o link original do
+  Google News" com `selectolax` sem pin; 0/25 depois de fixar
+  `selectolax<1.0`. **Fixado em `requirements.txt`.**
+- **Bug real de correspondência (JSON-LD)**: matéria assinada "Reuters" no
+  InfoMoney devolvia como foto o avatar do autor (`reuters.png`, selo
+  genérico de qualquer matéria da agência) em vez da foto da matéria - o
+  node `{"@type": "Person", "image": {...}}` é um item solto do array
+  `@graph` (padrão Yoast SEO), não alcançado via a chave `author` (que já
+  era excluída) - batia direto na chave `"image"` genérica, igual um
+  `NewsArticle` de verdade bateria. `data/news.py:_urls_imagem_jsonld`
+  passa a excluir qualquer node `Person`/`Organization` como fonte de
+  imagem, independente de como foi alcançado.
+- **Amostra real validada** (TOP MERCADO Brasil+Internacional, depois dos
+  2 fixes acima): 32 fotos confirmadas por rede (inspecionadas manualmente
+  título × imagem, nenhuma incorreta encontrada), 5 bloqueios reais
+  (401/403 contra Reuters.com/FT.com/paywall - confirmado fora do
+  pipeline, não é bug), 3 sem imagem útil de verdade.
+- **2 limitações reais, documentadas e NÃO corrigidas** (risco de piorar
+  o que já foi corrigido antes, sem evidência suficiente do ganho):
+  Getty Images/istockphoto são rejeitados mesmo quando é a foto editorial
+  real (Hollywood Reporter, caso real confirmado); dedup de imagem
+  repetida só funciona dentro do mesmo lote de coleta, um publisher de
+  cauda longa pode reusar a mesma imagem-padrão em tickers diferentes
+  processados em execuções separadas do coletor (caso real confirmado:
+  `acionista.com.br`).
+
+Arquivos: `requirements.txt`, `data/news.py`,
+`tests/test_news_imagens_pipeline.py` (+1 caso), `PROGRESSO.md`. Suíte:
+1031 passed.
+
 ## 2026-10-19 — PREGÃO 2.0: navegação em 7 áreas + MAIS, com subabas e rotas na URL
 
 Reorganização da navegação (matriz completa em `docs/arquitetura-pregao-2.md`).
@@ -27,6 +73,85 @@ Nada foi removido: cada aba antiga virou subaba de uma área.
 - **Pendências declaradas na própria tela:** agenda de divulgações
   econômicas, teses/itens salvos persistentes, séries históricas de
   fundamentos, valuation por cenários.
+
+## 2026-10-19 — Fotos das notícias: imagem desacoplada do resumo de IA, validação com estado e reavaliação
+
+**Causa raiz** (rastreada no código atual, ponta a ponta): a foto de um card
+só era persistida DENTRO do resultado de um resumo de IA bem-sucedido
+(`ia_cache.obter_resumo_com_cache` só grava resumo real). O coletor de
+produção roda sem `GROQ_API_KEY` (achado do run 39088619143) e
+`pregerar_resumos_news` para antes de baixar qualquer matéria; com cota
+esgotada, paywall/JS sem texto ou resumo reprovado, a og:image já achada
+era descartada junto. Resultado: quase nenhum card ganhava foto, e TOP
+MERCADO/VISÃO GERAL nem tinham miniatura.
+
+Correções:
+
+1. **Registro próprio de imagem** na mesma tabela `resumos_ia_cache` (sem
+   schema novo): chave derivada da chave do resumo, `origem='news_imagem'`,
+   upsert idempotente (`ia_cache.salvar_registro_imagem`). Lido na mesma
+   leitura em lote do feed (`obter_resumos_prontos`, agora em lotes de 100
+   chaves).
+2. **`pregerar_imagens_news`** (chamado pelo `coletor_local.py`, sem IA,
+   roda mesmo sem Groq): baixa a página da matéria (manchete do card
+   primeiro), aplica os filtros de genérica e verifica por rede.
+3. **Verificação com estado** (`_verificar_imagem_url`): distingue falha
+   temporária (timeout, conexão, 429, 5xx) de permanente (404/410, não
+   imagem, SVG, pixel, redirecionamento pra placeholder). Timeout na
+   validação não apaga mais a foto pra sempre.
+4. **Política de reavaliação**: confirmada nunca; erro temporário em 2h;
+   não-verificada em 6h; ausente/inválida em 24h; repetida em 72h; no
+   máximo 4 tentativas por grupo.
+5. **Associação**: a mesma URL de foto em matérias de assunto diferente
+   (og:image reciclada, ex. UOL "fechamento") é descartada; a própria URL
+   da matéria nunca vira foto (o fallback do trafilatura escapava desse
+   filtro — bug real pego pelo teste); SVG/ICO e arquivos de
+   compartilhamento fixos (`og-image.png`, `share.jpg`...) recusados. Os
+   filtros atuais são reaplicados NA LEITURA: foto de banco de imagens
+   cacheada antes do PR #60 some sem backfill.
+6. **UI**: capa do modal recortada 16:9 dentro do `.news-capa` (antes
+   `st.image` solto mostrava retrato em altura total); segunda via com
+   fallback em vez de `st.image(url)` quebrado; no celular a capa COM foto
+   era espremida em 64px (seletor `:has(.news-capa-fallback)` casava com o
+   fallback oculto); imagem que falhava antes do listener instalar ficava
+   quebrada (varredura adicionada); miniatura 30px em TOP MERCADO, VISÃO
+   GERAL e no bloco de notícias da EQUITY (oculta no celular, onde as
+   colunas wire empilham); modal usa o registro de imagem quando o resumo
+   não trouxe foto.
+
+Ajustes da validação de integração (mesmo dia): listas wire (TOP
+MERCADO, VISÃO GERAL, EQUITY) leem as miniaturas com cache de 2 min, em
+vez de ir ao Supabase a cada rerun; lote com falha em `obter_varios` passa
+a ir pro log; testes do coletor deixam de executar a etapa real de
+imagens (+3 testes do coletor: roda sem Groq, não roda sem persistência,
+exceção não muda o exit code).
+
+Revisão de correspondência notícia ↔ foto (2ª rodada, mesmo dia),
+todos os bugs reproduzidos em teste antes da correção:
+- foto reciclada no formato diário recorrente ("Ibovespa fecha em alta
+  hoje" x "... em queda hoje", dias diferentes) passava como o mesmo fato
+  (sobreposição de títulos 0,75); agora o mesmo fato também exige ≤12h
+  entre as publicações e direção de mercado compatível;
+- link que redireciona pra home/login/assinatura/consentimento não vira
+  foto (a og:image dessas páginas é a capa padrão do site);
+- JSON-LD: imagem de matéria relacionada (`hasPart`, `relatedLink`,
+  `mentions`, `itemListElement`...) ignorada; `ImageObject.url` dentro de
+  `image` passa a ser aceito (formato schema.org mais comum, ignorado antes);
+- 401/403 na validação = bloqueio (temporário), não imagem inexistente;
+- URL assinada/expirável nunca fica "confirmada" (reavaliada em 6h);
+- `validar_amostra_real.py`: amostra real reprodutível, somente leitura.
+
+- `validar_amostra_real.py` passa a ser somente leitura de fato: a coleta
+  do TOP MERCADO chamava `registrar_tentativa` (grava em
+  `coletores_status`) e o script desliga Supabase/registro/IA antes de
+  coletar; a classificação automática nunca marca "correto" (bloqueio,
+  timeout, 401/403 = `bloqueado`) e `--apurar` calcula a taxa só sobre
+  correto + incorreto.
+
+Testes: `tests/test_news_imagens_pipeline.py` (54 casos, tudo mockado).
+Suíte: 966 passed (Python 3.13 e 3.12). Validação visual em harness local
+(`docs/evidencias/imagens-news-20261019/`) — dados sintéticos; sem acesso
+a sites reais nem ao Supabase neste ambiente.
 
 ## 2026-10-18 (3ª passada) — 2 bugs reais encontrados pela VALIDAÇÃO VISUAL do backfill anterior
 

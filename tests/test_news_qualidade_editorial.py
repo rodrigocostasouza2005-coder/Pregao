@@ -481,7 +481,7 @@ def test_2v_gerar_resumo_grupo_com_validar_imagem_descarta_imagem_invalida():
                        return_value=("Texto longo o suficiente extraído da matéria real, com conteúdo jornalístico de verdade.",
                                      "https://veiculo.com/foto-quebrada.jpg", "https://veiculo.com/materia", None)), \
          patch.object(news_mod, "_chamar_groq", return_value=("RESUMO:\nA empresa Gama reportou receita de R$ 3 bilhões no trimestre.", None)), \
-         patch.object(news_mod, "_url_imagem_utilizavel", return_value=False) as mock_validador:
+         patch.object(news_mod, "_verificar_imagem_url", return_value=news_mod.IMAGEM_INVALIDA) as mock_validador:
         resultado = news_mod._gerar_resumo_grupo(
             "Gama reporta receita",
             (("Fonte", "https://news.google.com/gama"),),
@@ -500,7 +500,7 @@ def test_2z_sem_validar_imagem_nunca_chama_o_validador_de_rede():
                        return_value=("Texto longo o suficiente extraído da matéria real, com conteúdo jornalístico de verdade.",
                                      "https://veiculo.com/foto.jpg", "https://veiculo.com/materia", None)), \
          patch.object(news_mod, "_chamar_groq", return_value=("RESUMO:\nA empresa Delta reportou lucro de R$ 1 bilhão no trimestre.", None)), \
-         patch.object(news_mod, "_url_imagem_utilizavel") as mock_validador:
+         patch.object(news_mod, "_verificar_imagem_url") as mock_validador:
         resultado = news_mod._gerar_resumo_grupo(
             "Delta reporta lucro",
             (("Fonte", "https://news.google.com/delta"),),
