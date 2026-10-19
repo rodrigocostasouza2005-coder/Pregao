@@ -72,7 +72,7 @@ import config
 from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
 from data.eventos import salvar_snapshot_calendario
 from data.eventos_coleta import coletar_eventos_universo
-from data.news import pregerar_resumos_news
+from data.news import pregerar_imagens_news, pregerar_resumos_news
 from data.research import coletar_todas_disponiveis
 from data.research.historico import coletar_snapshot_genial
 from data.research.store import apagar_itens_antigos
@@ -297,6 +297,22 @@ def main() -> int:
             f"  resumos de NEWS: pre-processamento pulado - persistencia indisponivel "
             f"(etapa {diagnostico['etapa']}: {diagnostico['detalhe']}). Zero chamada de IA foi feita."
         )
+    # fotos dos cards de NEWS (2026-10-19, ver data/news.py:
+    # pregerar_imagens_news) - passo SEPARADO dos resumos e sem IA: roda
+    # mesmo sem GROQ_API_KEY (antes a foto só era gravada junto de um
+    # resumo bem-sucedido, então sem chave nenhum card ganhava foto).
+    if diagnostico["ok"]:
+        try:
+            stats_img = pregerar_imagens_news(fatia_news)
+            logger.info(
+                f"  imagens de NEWS: {stats_img['grupos_considerados']} grupo(s), "
+                f"{stats_img['ja_com_imagem']} ja' com foto, {stats_img['avaliados']} avaliado(s) "
+                f"{stats_img.get('por_status') or {}}, {stats_img['salvos']} gravado(s), "
+                f"{stats_img['falhas']} falha(s)" + (" - orcamento esgotado" if stats_img["tempo_esgotado"] else "")
+            )
+        except Exception:
+            logger.exception("  imagens de NEWS: falha inesperada (resumos e demais coletores seguem normalmente)")
+
     registrar_tentativa(
         "NEWS (resumos)", "Groq + extração de matéria",
         execucao_ok=erro_news is None, persistencia_ok=diagnostico["ok"],

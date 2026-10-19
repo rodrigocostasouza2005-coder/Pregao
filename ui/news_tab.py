@@ -38,8 +38,9 @@ import requests
 import streamlit as st
 
 from data.news import (
-    SELO_CONFIRMADA, SELO_MENCAO, eh_fonte_confiavel, obter_noticias, obter_noticias_watchlist,
-    obter_resumo_grupo, obter_resumos_prontos, ordenar_fontes_para_resumo, separar_secoes_resumo,
+    SELO_CONFIRMADA, SELO_MENCAO, eh_fonte_confiavel, extrair_por_que_importa, imagem_pronta_do_grupo,
+    obter_noticias, obter_noticias_watchlist, obter_resumo_grupo, obter_resumos_prontos,
+    ordenar_fontes_para_resumo, separar_secoes_resumo,
 )
 from data.research import store as research_store
 from data.research.genial import obter_recomendacoes
@@ -77,6 +78,7 @@ _TRUNCA_MANCHETE = 92
 # devolve a largura pra manchete. "N fontes" virou "NF" compacto.
 _COLS_PADRAO = [70, 60, 440, 45, 35]  # HORA, SELO, MANCHETE, FONTES, ABRIR(↗)
 _COLS_RANK = [60, 70, 60, 380, 45, 35]  # RANK+BR/INT, HORA, SELO, MANCHETE, FONTES, ABRIR(↗)
+_PESO_COL_THUMB = 36  # miniatura opcional (TOP MERCADO / VISÃO GERAL), antes das demais
 
 # CSS proprio do layout wire, injetado via st.markdown (nao mexe em
 # style.css, que e' de outra sessao) - reaproveita as variaveis de tema
@@ -216,6 +218,20 @@ div[class*="st-key-top-manchete-"] button p {
    materia, nunca domina o conteudo) e hierarquia por tamanho/peso de
    fonte, nao por caixa colorida. */
 .news-divider { border-bottom: 1px solid var(--borda); margin: 0.35rem 0 0.7rem 0; }
+/* miniatura da lista wire (TOP MERCADO / VISÃO GERAL) - pequena de
+   propósito: identifica a matéria sem virar portal de notícias */
+.w-thumb {
+    position: relative; width: 30px; height: 30px; overflow: hidden; margin: 1px 0;
+    border: 1px solid var(--borda); background: var(--painel-bg);
+}
+.w-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.w-thumb-fallback { position: absolute; inset: 0; }
+/* celular: as colunas da lista wire empilham (uma por linha) - a
+   miniatura viraria mais uma linha por item; some só aqui (o feed
+   NOTÍCIAS mantém a miniatura lado a lado com o título) */
+@media (max-width: 640px) {
+    div[data-testid="stColumn"]:has(.w-thumb) { display: none !important; }
+}
 .news-item-thumb-wrap {
     position: relative; width: 60px; height: 60px; flex: 0 0 60px;
     border: 1px solid var(--borda); background: var(--painel-bg); overflow: hidden;
@@ -333,6 +349,11 @@ div[class*="st-key-news-live-card-"] {
 }
 .news-meta-line a { color: var(--destaque); text-decoration: none; }
 .news-meta-line a:hover { text-decoration: underline; }
+.news-resumo-rotulo {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; color: var(--cinza);
+    text-transform: uppercase; margin-bottom: 0.4rem; opacity: 0.85;
+}
+.news-resumo-rotulo span { font-weight: 400; text-transform: none; }
 .news-corpo-p {
     font-size: 0.92rem; line-height: 1.68; color: var(--neutro); margin-bottom: 0.85rem;
     max-width: 68ch;
@@ -341,6 +362,22 @@ div[class*="st-key-news-live-card-"] {
     font-size: 0.7rem; color: var(--cinza); opacity: 0.8; margin: -0.3rem 0 0.9rem 0;
     font-style: italic;
 }
+/* "Por que importa": relevância econômica/financeira do fato (quando a
+   fonte sustentar) - mesma densidade/borda lateral do bloco de impacto
+   potencial abaixo, mas em --cinza (não --destaque): é uma seção à
+   parte do RESUMO, mas tipicamente mais próxima de fato apoiado em algo
+   que a própria fonte já deu (ex: participação no índice/na receita) do
+   que uma leitura especulativa - a cor mais neutra reflete isso, sem
+   competir visualmente com o destaque reservado pra "Impacto potencial"
+   (único bloco sempre e exclusivamente interpretação analítica). */
+.news-importa-wrap {
+    border-left: 2px solid var(--cinza); padding: 0.1rem 0 0.1rem 0.7rem; margin: 0.3rem 0 0.7rem 0;
+}
+.news-importa-titulo {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; color: var(--cinza);
+    text-transform: uppercase; margin-bottom: 0.25rem;
+}
+.news-importa-corpo { font-size: 0.86rem; line-height: 1.6; color: var(--neutro); opacity: 0.92; }
 .news-leitura-wrap {
     border-left: 2px solid var(--destaque); padding: 0.1rem 0 0.1rem 0.7rem; margin: 0.3rem 0 1rem 0;
 }
@@ -432,11 +469,14 @@ div[class*="st-key-news-live-card-"] {
 /* Capa em fallback: nao reservar um retangulo gigante sem imagem real. */
 .news-capa-fallback { min-height: 0; }
 @media (max-width: 640px) {
-    .news-capa:has(.news-capa-fallback) {
+    /* só a capa SEM foto (:not(:has(img))) - a capa com foto também
+       carrega o fallback oculto no DOM, e o seletor antigo
+       (:has(.news-capa-fallback)) espremia a foto real numa faixa de 64px */
+    .news-capa:not(:has(img)) {
         height: 64px !important;
         aspect-ratio: auto !important;
     }
-    .news-capa:has(.news-capa-fallback) .news-capa-fallback span {
+    .news-capa:not(:has(img)) .news-capa-fallback span {
         font-size: 0.72rem !important;
     }
     div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) {
@@ -521,6 +561,13 @@ div[class*="st-key-news-live-card-"] {
         line-height: 1.4 !important;
         margin: 0.15rem 0 0.55rem !important;
     }
+    .news-resumo-rotulo { font-size: 0.64rem !important; margin-bottom: 0.3rem !important; }
+    .news-importa-wrap {
+        padding-left: 0.5rem !important;
+        margin: 0.25rem 0 0.5rem !important;
+    }
+    .news-importa-titulo { margin-bottom: 0.15rem !important; }
+    .news-importa-corpo { font-size: 0.8rem !important; line-height: 1.45 !important; }
     .news-leitura-wrap {
         padding-left: 0.5rem !important;
         margin: 0.25rem 0 0.6rem !important;
@@ -748,26 +795,45 @@ def _baixar_imagem_capa(url: str) -> bytes | None:
         return None
 
 
+_LARGURA_MAX_CAPA = 960
+
+
+@st.cache_data(ttl=3600, max_entries=80, show_spinner=False)
+def _capa_data_uri(url: str) -> str | None:
+    """Capa já baixada no servidor (_baixar_imagem_capa), reduzida pra no
+    máximo _LARGURA_MAX_CAPA px e embutida como data URI - entra DENTRO do
+    .news-capa (recorte 16:9 uniforme via object-fit, sem distorcer), em
+    vez do st.image solto de antes, que exibia a foto na proporção
+    original (retrato de 1200px de altura ocupava a tela inteira do modal).
+    Qualquer falha -> None (quem chama cai pra segunda via/fallback)."""
+    dados = _baixar_imagem_capa(url)
+    if not dados:
+        return None
+    try:
+        import base64
+        from PIL import Image
+        with Image.open(BytesIO(dados)) as img:
+            img = img.convert("RGB")
+            if img.width > _LARGURA_MAX_CAPA:
+                img = img.resize((_LARGURA_MAX_CAPA, max(1, round(img.height * _LARGURA_MAX_CAPA / img.width))))
+            saida = BytesIO()
+            img.save(saida, format="JPEG", quality=82, optimize=True)
+        return "data:image/jpeg;base64," + base64.b64encode(saida.getvalue()).decode("ascii")
+    except Exception:
+        return None
+
+
 def _renderizar_capa(imagem: str | None, veiculo_principal: str) -> None:
-    """Renderiza a capa com st.image a partir de bytes baixados pelo backend.
-    Isso evita depender do navegador para acessar o host externo da foto."""
+    """Renderiza a capa a partir de bytes baixados pelo backend (evita
+    hotlink/CORS/Safari). Se o download no servidor falhar, a segunda via
+    é o <img> direto com fallback automático (listener global de
+    injetar_fallback_imagem) - nunca um st.image(url) solto, que mostrava
+    o ícone de imagem quebrada quando o navegador também não conseguia."""
     marca = veiculo_principal or "NOTÍCIA"
-    dados = _baixar_imagem_capa(imagem) if imagem else None
-    if dados:
-        st.image(dados, use_container_width=True)
-    elif imagem and isinstance(imagem, str) and imagem.startswith(("https://", "http://")):
-        # Segunda via: se o download/validação do proxy falhar (CDN que
-        # rejeita User-Agent ou Content-Type incorreto), deixar o renderer
-        # do Streamlit tentar buscar a URL pública diretamente.
-        try:
-            st.image(imagem, use_container_width=True)
-        except Exception:
-            st.markdown(_capa_html(None, marca), unsafe_allow_html=True)
+    if imagem and isinstance(imagem, str) and imagem.startswith(("https://", "http://")):
+        st.markdown(_capa_html(_capa_data_uri(imagem) or imagem, marca), unsafe_allow_html=True)
     else:
-        st.markdown(
-            _capa_html(None, marca),
-            unsafe_allow_html=True,
-        )
+        st.markdown(_capa_html(None, marca), unsafe_allow_html=True)
 
 
 def _capa_html(imagem: str | None, veiculo_principal: str) -> str:
@@ -824,14 +890,29 @@ _SCRIPT_FALLBACK_IMAGEM = """
     const doc = window.parent.document;
     if (doc.__pregaoImgFallbackInstalado) return;
     doc.__pregaoImgFallbackInstalado = true;
-    doc.addEventListener('error', function(ev) {
-        const img = ev.target;
-        if (!img || img.tagName !== 'IMG') return;
-        if (!img.closest('.news-item-thumb-wrap, .news-capa')) return;
+    const SELETOR = '.news-item-thumb-wrap img, .news-capa img, .w-thumb img';
+    function aplicarFallback(img) {
         img.style.display = 'none';
         const fallback = img.nextElementSibling;
         if (fallback) fallback.style.display = 'flex';
+    }
+    doc.addEventListener('error', function(ev) {
+        const img = ev.target;
+        if (!img || img.tagName !== 'IMG' || !img.matches(SELETOR)) return;
+        aplicarFallback(img);
     }, true);
+    // corrida real (validação visual 2026-10-19, celular): a imagem pode
+    // falhar ANTES deste iframe instalar o listener - o evento 'error' já
+    // passou e o <img> quebrado ficava visível. Varre as imagens que já
+    // terminaram de carregar sem pixel nenhum (agora e a cada 1,5s, pra
+    // cobrir reruns do Streamlit) - custo desprezível.
+    function varrer() {
+        doc.querySelectorAll(SELETOR).forEach(function(img) {
+            if (img.complete && img.naturalWidth === 0 && img.style.display !== 'none') aplicarFallback(img);
+        });
+    }
+    varrer();
+    setInterval(varrer, 1500);
 })();
 </script>
 """
@@ -876,24 +957,48 @@ def _meta_line_dialog(n: dict) -> str:
 @st.dialog("NOTÍCIA", width="large")
 def _abrir_card(n: dict, watchlist: list):
     """Card editorial completo do grupo - capa, manchete, metadados
-    essenciais, resumo em parágrafos (editorial, gerado aqui na hora do
-    clique, nunca antes - cache de obter_resumo_grupo) e LEITURA DE
-    MERCADO quando houver base; veículos/tickers/contexto de research
-    ficam em área secundária discreta no rodapé, sem listas/divisores
-    internos competindo com o conteúdo (reescrito na FASE C, 2026-10-09 -
-    ver PROGRESSO.md)."""
+    essenciais e o resumo (editorial, gerado aqui na hora do clique,
+    nunca antes - cache de obter_resumo_grupo), em até 3 blocos
+    rotulados, cada um só quando houver base real (nunca força seção sem
+    evidência - ver data/news.py:_PROMPT_SISTEMA_RESUMO):
+    1. RESUMO (GERADO POR IA) - síntese factual do que a fonte reportou.
+    2. Por que importa - relevância econômica/financeira do fato,
+       quando a fonte sustentar isso (ver extrair_por_que_importa).
+    3. Impacto potencial - leitura analítica de que ativos/setores podem
+       ser afetados e por quê, SEMPRE marcada como interpretação (não
+       fato confirmado) - ver separar_secoes_resumo (bloco LEITURA DE
+       MERCADO internamente, renomeado só na exibição).
+    Veículos/tickers/contexto de research ficam em área secundária
+    discreta no rodapé, sem listas/divisores internos competindo com o
+    conteúdo (card reescrito na FASE C, 2026-10-09; blocos 2/3 e rótulo
+    de IA adicionados no redesign editorial de 2026-10-19 - ver
+    PROGRESSO.md)."""
     with st.spinner("Gerando resumo..."):
         fontes_ordenadas = ordenar_fontes_para_resumo(n["fontes"])
         titulos_grupo = tuple(n.get("titulos") or [n["titulo"]])
         resultado = obter_resumo_grupo(n["titulo"], fontes_ordenadas, titulos_grupo)
 
     veiculo_principal = (n.get("veiculos") or [""])[0]
-    _renderizar_capa(resultado.get("imagem"), veiculo_principal)
+    # foto da página que gerou o resumo ou, sem ela, a já validada pelo
+    # coletor (registro próprio de imagem - existe mesmo sem resumo), com
+    # os mesmos filtros de leitura do feed (genérica, URL reprovada)
+    _renderizar_capa(imagem_pronta_do_grupo(n, resultado), veiculo_principal)
     st.markdown(f"<div class='news-headline'>{html.escape(n['titulo'])}</div>", unsafe_allow_html=True)
     st.markdown(_meta_line_dialog(n), unsafe_allow_html=True)
 
     if resultado["resumo"]:
         paragrafos, leitura_mercado = separar_secoes_resumo(resultado["resumo"])
+        por_que_importa = extrair_por_que_importa(resultado["resumo"])
+
+        # rotulo explicita "gerado por IA" (mesmo principio/convencao ja
+        # aplicada no modal da CVM e no bloco de resumo do RESEARCH -
+        # auditoria 360): sem isso, o texto sintetizado podia passar a
+        # impressao de ser um trecho/citacao oficial da materia, nao uma
+        # sintese de modelo de linguagem.
+        st.markdown(
+            "<div class='news-resumo-rotulo'>Resumo <span>(gerado por IA)</span></div>",
+            unsafe_allow_html=True,
+        )
         for p in paragrafos:
             st.markdown(f"<div class='news-corpo-p'>{html.escape(p)}</div>", unsafe_allow_html=True)
         if resultado.get("parcial"):
@@ -902,13 +1007,22 @@ def _abrir_card(n: dict, watchlist: list):
                 "(manchetes/trechos de várias fontes) — o texto completo da matéria não foi acessado.</div>",
                 unsafe_allow_html=True,
             )
+        if por_que_importa:
+            st.markdown(
+                "<div class='news-importa-wrap'>"
+                "<div class='news-importa-titulo'>Por que importa</div>"
+                f"<div class='news-importa-corpo'>{html.escape(por_que_importa)}</div>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
         if leitura_mercado:
             st.markdown(
                 "<div class='news-leitura-wrap'>"
-                "<div class='news-leitura-titulo'>Leitura de mercado</div>"
+                "<div class='news-leitura-titulo'>Impacto potencial</div>"
                 f"<div class='news-leitura-corpo'>{html.escape(leitura_mercado)}</div>"
                 "<div class='news-leitura-nota'>Interpretação analítica a partir do texto acima — não é "
-                "um fato confirmado pela fonte.</div>"
+                "um fato confirmado pela fonte; quando o efeito sobre um ativo/setor específico não é "
+                "claro, o texto admite essa incerteza em vez de afirmar.</div>"
                 "</div>",
                 unsafe_allow_html=True,
             )
@@ -1005,11 +1119,48 @@ def _bloco_contexto_research(tickers: list, watchlist: list):
         )
 
 
-def _linha_noticia(n: dict, idx: int, mostrar_ticker: bool, prefixo: str, watchlist: list):
+@st.cache_data(ttl=120, show_spinner=False, max_entries=64)
+def _prontos_para_lista(grupos: list) -> dict:
+    """obter_resumos_prontos com cache curto pras listas wire (TOP MERCADO,
+    VISÃO GERAL, EQUITY): a VISÃO GERAL reroda a cada interação da página,
+    e sem isto cada rerun era mais uma ida ao Supabase só pras miniaturas.
+    2 min é bem menor que o ciclo do coletor (30 min) que grava as fotos.
+    Falha -> {} (lista sem miniatura, nunca quebra)."""
+    try:
+        return obter_resumos_prontos(grupos)
+    except Exception:
+        return {}
+
+
+def _thumb_wire_html(imagem: str | None) -> str:
+    """Miniatura compacta da lista wire (TOP MERCADO / VISÃO GERAL): 40x40,
+    recorte uniforme; sem foto confiável, um quadrado neutro vazio (mantém
+    o alinhamento da coluna sem chamar atenção). Mesmo fallback automático
+    da thumb do feed se a URL falhar no navegador."""
+    if not imagem:
+        return "<div class='w-thumb'><div class='w-thumb-fallback'></div></div>"
+    return (
+        "<div class='w-thumb'>"
+        f"<img src='{html.escape(imagem)}' loading='lazy' decoding='async' referrerpolicy='no-referrer' alt=''>"
+        "<div class='w-thumb-fallback' style='display:none;'></div>"
+        "</div>"
+    )
+
+
+def _linha_noticia(n: dict, idx: int, mostrar_ticker: bool, prefixo: str, watchlist: list,
+                   resumos_prontos: dict | None = None):
     eh_ranking = "importancia" in n
     cols_pesos = _COLS_RANK if eh_ranking else _COLS_PADRAO
+    com_thumb = resumos_prontos is not None
+    if com_thumb:
+        cols_pesos = [_PESO_COL_THUMB] + cols_pesos
     colunas = st.columns(cols_pesos, gap="xsmall", vertical_alignment="center")
     i = 0
+
+    if com_thumb:
+        with colunas[i]:
+            st.markdown(_thumb_wire_html((resumos_prontos.get(n["link"]) or {}).get("imagem")), unsafe_allow_html=True)
+        i += 1
 
     if eh_ranking:
         with colunas[i]:
@@ -1051,7 +1202,8 @@ def _linha_noticia(n: dict, idx: int, mostrar_ticker: bool, prefixo: str, watchl
 
 
 @st.fragment
-def _renderizar_lista(itens: list, mostrar_ticker: bool, prefixo: str, watchlist: list):
+def _renderizar_lista(itens: list, mostrar_ticker: bool, prefixo: str, watchlist: list,
+                      resumos_prontos: dict | None = None):
     """Reusado pela aba TOP MERCADO - lista + card, sem nenhum resumo
     automatico (so sob demanda, dentro do card). @st.fragment: clicar
     numa manchete (pra abrir o card) so' reroda ISSO aqui, nao a pagina
@@ -1059,7 +1211,7 @@ def _renderizar_lista(itens: list, mostrar_ticker: bool, prefixo: str, watchlist
     do zero (embora os DADOS ja viessem de cache, reconstruir todos os
     widgets da lista inteira a cada clique era a lentidao real)."""
     for idx, n in enumerate(itens):
-        _linha_noticia(n, idx, mostrar_ticker, prefixo, watchlist)
+        _linha_noticia(n, idx, mostrar_ticker, prefixo, watchlist, resumos_prontos)
 
 
 # ===================== feed editorial (fase 3) =====================
@@ -1418,7 +1570,9 @@ def render_news(prefs: dict):
         limite_preparo = 3
         preparados = 0
         for noticia in noticias_mostradas:
-            if noticia["link"] in resumos_prontos:
+            # só pula quem já tem RESUMO - card com foto mas sem resumo
+            # (registro de imagem do coletor) ainda vale o preparo
+            if (resumos_prontos.get(noticia["link"]) or {}).get("resumo"):
                 continue
             if preparados >= limite_preparo:
                 break
@@ -1427,7 +1581,10 @@ def render_news(prefs: dict):
                 titulos = tuple(noticia.get("titulos") or (noticia["titulo"],))
                 resultado = obter_resumo_grupo(noticia["titulo"], fontes, titulos)
                 if resultado and (resultado.get("resumo") or resultado.get("imagem")):
-                    resumos_prontos[noticia["link"]] = resultado
+                    anterior = resumos_prontos.get(noticia["link"]) or {}
+                    resumos_prontos[noticia["link"]] = {
+                        **resultado, "imagem": resultado.get("imagem") or anterior.get("imagem"),
+                    }
             except Exception:
                 # Falha isolada de uma materia nao pode derrubar o feed.
                 pass
@@ -1458,4 +1615,6 @@ def render_news_ticker(ticker: str, prefs: dict):
         st.info("Nenhuma notícia recente encontrada.")
         return
 
-    _renderizar_lista(noticias[:8], mostrar_ticker=False, prefixo=f"eq-{ticker}", watchlist=prefs.get("watchlist") or [])
+    prontos = _prontos_para_lista(noticias[:8])
+    _renderizar_lista(noticias[:8], mostrar_ticker=False, prefixo=f"eq-{ticker}", watchlist=prefs.get("watchlist") or [],
+                      resumos_prontos=prontos)
