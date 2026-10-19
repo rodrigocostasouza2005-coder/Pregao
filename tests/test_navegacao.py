@@ -96,6 +96,32 @@ def test_rota_da_url():
     assert navegacao.rota_da_url({"aba": "macro"}) == ("macro", None)
 
 
+def test_ticker_da_url():
+    assert navegacao.ticker_da_url({}) is None
+    assert navegacao.ticker_da_url({"ticker": ""}) is None
+    assert navegacao.ticker_da_url({"ticker": "  "}) is None
+    assert navegacao.ticker_da_url({"ticker": "petr4"}) == "PETR4"
+    assert navegacao.ticker_da_url({"aba": "radar", "ticker": "VALE3"}) == "VALE3"
+
+
+def test_link_direto_por_ticker_consome_antes_da_nav_instanciar():
+    """O bloco que consome ?ticker=X em app.py (link direto do Radar e
+    outras tabelas HTML densas) precisa rodar ANTES de
+    navegacao.render_nav_principal no mesmo rerun - mesma restricao ja
+    documentada em _ir_com_ticker (escrever depois derruba com
+    StreamlitWidgetAlreadyInstantiatedError). Teste estatico (nao
+    execucao) porque app.py inteiro exige login Google real - mesmo
+    padrao de test_app_despacha_todas_as_rotas/
+    test_ticker_externo_tem_chave_propria... em test_pregao2_modulos.py."""
+    fonte = (RAIZ / "app.py").read_text(encoding="utf-8")
+    pos_ticker_url = fonte.index("navegacao.ticker_da_url(st.query_params)")
+    pos_render_nav = fonte.index("navegacao.render_nav_principal(areas_nav)")
+    assert pos_ticker_url < pos_render_nav
+    bloco = fonte[pos_ticker_url:pos_render_nav]
+    assert 'del st.query_params["ticker"]' in bloco
+    assert '_ir_com_ticker("EQUITY"' in bloco
+
+
 def test_app_despacha_todas_as_rotas():
     """Nenhuma subaba aponta pra pagina vazia: cada rota tem bloco no app.py."""
     fonte = (RAIZ / "app.py").read_text(encoding="utf-8")

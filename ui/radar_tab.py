@@ -17,6 +17,7 @@ comparativo setorial (que itera ~10-15 pares) só roda dentro de um
 por IA sob demanda" que o projeto já usa em RESEARCH/NEWS/CVM."""
 
 import html
+import urllib.parse
 from datetime import date
 
 import streamlit as st
@@ -101,6 +102,14 @@ div[data-testid="stElementContainer"]:has(.radar-stub) + div[data-testid="stElem
 .rq-tabela .rq-sub { margin-left: 0.45rem; }
 .rq-tabela tr.rq-linha-alerta td { background: color-mix(in srgb, var(--baixa) 9%, transparent); }
 .rq-ticker { color: var(--destaque); font-weight: 700; }
+/* achado P1 da auditoria 360 (docs/auditoria-redesign-360.md secao 4):
+   .rq-ticker ja tinha o tratamento visual de "isto e' clicavel", mas
+   era so' <span> sem destino - agora e' <a href="?ticker=X"> (link
+   direto, lido em app.py via ui.navegacao.ticker_da_url). Especificidade
+   maior que ".rq-tabela a" (regra generica dos links de FONTE abaixo)
+   pra manter a cor/peso de destaque em vez de virar cinza. */
+.rq-tabela a.rq-ticker { color: var(--destaque); font-weight: 700; text-decoration: none; }
+.rq-tabela a.rq-ticker:hover { text-decoration: underline; }
 .rq-sub { color: var(--cinza); font-size: 0.66rem; }
 .rq-baixa { color: var(--baixa); }
 .rq-alta { color: var(--alta); }
@@ -488,8 +497,9 @@ def _tabela_monitorados_html(linhas, prefs) -> str:
             else f"{config.formatar_numero(l['distancia_gatilho_pp'], 2, prefs['formato_numerico'])} p.p."
         )
         origem = html.escape(" · ".join(l["casas"]))
+        link_ticker = urllib.parse.quote(l["ticker"])
         corpo.append(
-            f"<tr{classe_linha}><td class='rq-esq'><span class='rq-ticker'>{html.escape(l['ticker'])}</span>"
+            f"<tr{classe_linha}><td class='rq-esq'><a class='rq-ticker' href='?ticker={link_ticker}'>{html.escape(l['ticker'])}</a>"
             f"<span class='rq-sub rq-sec'>{html.escape(l['empresa'] or '')}</span></td>"
             f"<td class='rq-esq rq-sec rq-cinza'>{origem}</td>"
             f"<td class='rq-sec'>{_fmt_num(l['fechamento_anterior'], 2, prefs)}</td>"
@@ -518,9 +528,10 @@ def _tabela_alertas_html(alertas, prefs) -> str:
             f"<a href='{html.escape(u, quote=True)}' target='_blank' rel='noopener'>↗</a>"
             for u in (a.get("fontes") or []) if str(u).startswith("https://")
         ) or "—"
+        link_ticker = urllib.parse.quote(a.get("ticker", ""))
         corpo.append(
             f"<tr><td class='rq-esq'>{_data_br(a.get('pregao'))}</td>"
-            f"<td class='rq-esq'><span class='rq-ticker'>{html.escape(a.get('ticker', ''))}</span>"
+            f"<td class='rq-esq'><a class='rq-ticker' href='?ticker={link_ticker}'>{html.escape(a.get('ticker', ''))}</a>"
             f"<span class='rq-sub rq-sec'>{html.escape(a.get('empresa') or '')}</span></td>"
             f"<td class='rq-baixa'>{_pct(variacao, prefs)}</td>"
             f"<td class='rq-sec'>{_fmt_num(a.get('fechamento_anterior'), 2, prefs)}</td>"
