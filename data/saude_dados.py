@@ -111,7 +111,8 @@ def classificar_estado(status: dict | None, idade_maxima_horas: float | None = N
         return "DADOS_DESATUALIZADOS", f"{ESTADOS['DADOS_DESATUALIZADOS']} (ultimo sucesso ha {idade_h:.0f}h)"
 
     if parcial:
-        return "PARCIAL", ESTADOS["PARCIAL"] + " (algumas fontes/itens nao confirmados)"
+        detalhe = f": {erro}" if erro else " (algumas fontes/itens nao confirmados)"
+        return "PARCIAL", ESTADOS["PARCIAL"] + detalhe
 
     if registros_novos:
         return "SUCESSO_COM_NOVIDADE", f"{ESTADOS['SUCESSO_COM_NOVIDADE']} ({registros_novos})"

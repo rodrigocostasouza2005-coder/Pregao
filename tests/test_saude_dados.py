@@ -90,6 +90,41 @@ def test_5_parcial():
     _checar("5 parcial=True -> PARCIAL", codigo == "PARCIAL")
 
 
+def test_5b_parcial_com_erro_mostra_o_detalhe_real():
+    """Achado real (2026-10-19, Radar de quedas): sem o detalhe, uma
+    falha grave (ex: cotacao indisponivel pra 10/10 tickers monitorados)
+    e uma fonte de carteira so' 1h desatualizada caem na MESMA frase
+    generica "algumas fontes/itens nao confirmados" - o painel deixa de
+    refletir a gravidade real da execucao. Ver data/radar_quedas.py:
+    processar_monitoramento, que agora preenche `erro` com o detalhe
+    mesmo quando coleta_ok=True."""
+    status = {
+        "execucao_ok": True,
+        "persistencia_ok": True,
+        "registros_novos": 0,
+        "parcial": True,
+        "ultimo_erro": "Cotação indisponível para 10/10 ticker(s) monitorado(s)",
+        "ultimo_sucesso_em": _ha(0.1),
+    }
+    codigo, rotulo = saude_mod.classificar_estado(status, idade_maxima_horas=6)
+    _checar("5b parcial com erro -> ainda PARCIAL", codigo == "PARCIAL")
+    _checar("5b rotulo menciona o detalhe real do erro", "10/10" in rotulo, rotulo)
+
+
+def test_5c_parcial_sem_erro_mantem_frase_generica():
+    """Sem `ultimo_erro`, mantem a frase antiga - nao regride o caso ja'
+    coberto pelo teste 5."""
+    status = {
+        "execucao_ok": True,
+        "persistencia_ok": True,
+        "registros_novos": 0,
+        "parcial": True,
+        "ultimo_sucesso_em": _ha(0.1),
+    }
+    _, rotulo = saude_mod.classificar_estado(status, idade_maxima_horas=6)
+    _checar("5c sem erro -> frase generica", "algumas fontes/itens nao confirmados" in rotulo, rotulo)
+
+
 def test_6_falha_execucao_generica():
     status = {
         "execucao_ok": False,

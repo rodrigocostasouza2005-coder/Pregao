@@ -436,6 +436,71 @@ def test_monitoramento_sem_queda_elegivel_e_execucao_valida():
     registrar.assert_not_called()
 
 
+def test_monitoramento_todas_cotacoes_falham_fica_visivel_no_erro():
+    """Achado real (2026-10-19): quando o provedor de cotacao (yfinance)
+    falha pra TODOS os tickers monitorados - por exemplo um bloqueio só
+    no IP do runner que roda o job, diferente do IP onde o app serve a
+    UI -, a execucao antes reportava coleta_ok=True e erro=None, igual a
+    um dia real sem nenhuma queda >4%. As duas situacoes agora precisam
+    ficar distinguiveis em `resultado` (ver jobs/radar_quedas.py e
+    data/saude_dados.py, que propagam isto pro painel SAUDE DOS DADOS)."""
+    import data.radar_quedas as radar
+    item = {"ticker": "PETR4", "casa": "Safra Corretora", "carteira": "Top 10 Ações"}
+    with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
+         patch.object(radar, "coletar_carteiras_safra", return_value=[item]), \
+         patch.object(radar, "salvar_carteiras", return_value=True), \
+         patch.object(radar, "listar_carteiras", return_value=[item]), \
+         patch.object(radar, "obter_cotacao", return_value={"erro": "indisponível"}):
+        resultado = radar.processar_monitoramento()
+    assert resultado["coleta_ok"] is True
+    assert resultado["cotacoes_falhas"] == 1
+    assert resultado["total_tickers"] == 1
+    assert resultado["erro"] and "cotação indisponível" in resultado["erro"].lower()
+    assert "1/1" in resultado["erro"]
+
+
+def test_monitoramento_cotacao_falha_parcial_nao_conta_ticker_ok():
+    """2 tickers monitorados, só 1 com falha de cotação - cotacoes_falhas
+    reflete exatamente 1, nao os 2."""
+    import data.radar_quedas as radar
+    itens = [
+        {"ticker": "PETR4", "casa": "Safra Corretora", "carteira": "Top 10 Ações"},
+        {"ticker": "VALE3", "casa": "Safra Corretora", "carteira": "Top 10 Ações"},
+    ]
+    respostas = {
+        "PETR4": {"erro": "indisponível"},
+        "VALE3": {"preco": 99.0, "fechamento_anterior": 100.0, "cotacao_em": "2026-10-19T10:00:00-03:00"},
+    }
+    with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
+         patch.object(radar, "coletar_carteiras_safra", return_value=itens), \
+         patch.object(radar, "salvar_carteiras", return_value=True), \
+         patch.object(radar, "listar_carteiras", return_value=itens), \
+         patch.object(radar, "obter_cotacao", side_effect=lambda t: respostas[t]):
+        resultado = radar.processar_monitoramento()
+    assert resultado["coleta_ok"] is True
+    assert resultado["cotacoes_falhas"] == 1
+    assert resultado["total_tickers"] == 2
+    assert "1/2" in resultado["erro"]
+
+
+def test_monitoramento_sem_falha_de_cotacao_nao_gera_erro_espurio():
+    """Execucao totalmente saudavel (todas as fontes OK, todas as
+    cotacoes OK) continua sem `erro` - a mensagem nova nao aparece por
+    acaso quando nada deu errado."""
+    import data.radar_quedas as radar
+    item = {"ticker": "PETR4", "casa": "Safra Corretora", "carteira": "Top 10 Ações"}
+    cotacao_ok = {"preco": 99.0, "fechamento_anterior": 100.0, "cotacao_em": "2026-10-19T10:00:00-03:00"}
+    with patch.object(radar, "coletar_carteiras_genial", return_value=[item]), \
+         patch.object(radar, "coletar_carteiras_safra", return_value=[item]), \
+         patch.object(radar, "salvar_carteiras", return_value=True), \
+         patch.object(radar, "listar_carteiras", return_value=[item]), \
+         patch.object(radar, "obter_cotacao", return_value=cotacao_ok):
+        resultado = radar.processar_monitoramento()
+    assert resultado["coleta_ok"] is True
+    assert resultado["cotacoes_falhas"] == 0
+    assert resultado["erro"] is None
+
+
 # ---- revisao 2026-10-18 -------------------------------------------------
 
 def test_pregao_do_alerta_vem_da_cotacao_nao_do_relogio():
