@@ -10,7 +10,6 @@ from plotly.subplots import make_subplots
 import config
 from data.macro import (
     TZ,
-    motivo_indisponivel,
     obter_cdi,
     obter_cenario_global,
     obter_curva_pre,
@@ -554,9 +553,10 @@ def render_macro_calendario(prefs):
         st.markdown('<div class="painel-titulo">ÚLTIMA DECISÃO DO COPOM (REALIZADO)</div>', unsafe_allow_html=True)
         copom = _copom_vigente()
         if copom is None:
+            # motivo tecnico (excecao crua) fica no log/SAUDE DOS DADOS, nao na tela
             st.markdown(
-                f"<div class='cinza' style='font-size:0.78rem;'>Indisponível no momento"
-                f" ({motivo_indisponivel('selic_copom') or 'histórico do Copom não respondeu'}).</div>",
+                "<div class='cinza' style='font-size:0.78rem;'>Indisponível no momento: o histórico de "
+                "decisões do Copom (bcb.gov.br) não respondeu. Nenhum valor anterior é exibido como atual.</div>",
                 unsafe_allow_html=True,
             )
         else:

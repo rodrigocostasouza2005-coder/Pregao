@@ -1145,8 +1145,8 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
         flex-wrap: wrap !important;
         gap: 0.35rem !important;
     }
-    .st-key-empresa_contexto [data-testid="stColumn"],
-    .st-key-vg_atalhos [data-testid="stColumn"] {
+    .st-key-empresa_contexto div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+    .st-key-vg_atalhos div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
         flex: 1 1 calc(50% - 0.35rem) !important;
         min-width: calc(50% - 0.35rem) !important;
         width: calc(50% - 0.35rem) !important;
