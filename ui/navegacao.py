@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 import streamlit as st
 
 KEY_AREA = "nav_area"
+KEY_TICKER_EXTERNO = "empresa_ticker_externo"
 _KEY_URL_SINCRONIZADA = "_nav_url_sincronizada"
 _KEY_AVISO = "_nav_aviso"
 
@@ -187,6 +188,11 @@ def ir_para(area_id: str, sub_id: str | None = None, ticker: str | None = None):
     if ticker:
         st.session_state["ticker_selecionado"] = ticker
         st.session_state["ticker_selecionado_valido"] = ticker
+        # chave PROPRIA do ticker aberto por vinculo (nao a memoria do
+        # seletor, "ticker_selecionado_valido", que tambem guarda o ultimo
+        # ticker escolhido - usar ela fazia um ticker removido da watchlist
+        # reaparecer em ANALISES > Empresas como opcao temporaria)
+        st.session_state[KEY_TICKER_EXTERNO] = ticker
 
 
 def ir_para_legado(secao: str, ticker: str | None = None):

@@ -472,6 +472,8 @@ with st.sidebar:
             )
             if col_remover.button("x", key=f"remover_{t}"):
                 prefs["watchlist"].remove(t)
+                if st.session_state.get(navegacao.KEY_TICKER_EXTERNO) == t:
+                    st.session_state.pop(navegacao.KEY_TICKER_EXTERNO)
                 _persistir_prefs()
                 st.rerun()
 
@@ -577,7 +579,7 @@ if rota == ("analises", "empresas"):
         # ticker aberto por um vinculo (setor/ranking/busca) que ainda nao
         # esta na watchlist: entra como opcao TEMPORARIA do seletor (com
         # botao pra adicionar), em vez de mexer na watchlist sem pedir
-        ticker_externo = st.session_state.get("ticker_selecionado_valido")
+        ticker_externo = st.session_state.get(navegacao.KEY_TICKER_EXTERNO)
         opcoes_ticker = list(prefs["watchlist"])
         if ticker_externo and ticker_externo not in opcoes_ticker:
             opcoes_ticker.append(ticker_externo)
@@ -594,6 +596,7 @@ if rota == ("analises", "empresas"):
             if ticker_selecionado not in prefs["watchlist"]:
                 if st.button(f"+ ADICIONAR {ticker_selecionado} À WATCHLIST", key="empresa_add_watchlist"):
                     prefs["watchlist"].append(ticker_selecionado)
+                    st.session_state.pop(navegacao.KEY_TICKER_EXTERNO, None)
                     _persistir_prefs()
                     st.rerun()
             analises_tab.barra_contexto_empresa(ticker_selecionado, prefs)
@@ -674,7 +677,9 @@ if rota == ("analises", "empresas"):
                 st.markdown('<div class="painel-titulo">PREÇOS</div>', unsafe_allow_html=True)
 
                 if cotacao.get("erro"):
-                    st.warning(f"Não foi possível obter a cotação de {ticker_sel}: {cotacao['erro']}")
+                    # motivo tecnico (cotacao['erro'], ex: KeyError do yfinance) nao vai
+                    # pra tela - so' o fato de a fonte nao ter respondido
+                    st.warning(f"Cotação de {ticker_sel} indisponível no momento (fonte: Yahoo Finance).")
                 else:
                     fmt = prefs["formato_numerico"]
                     sinal_classe = "alta" if cotacao["variacao"] >= 0 else "baixa"

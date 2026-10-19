@@ -479,14 +479,12 @@ def render_macro_cambio_commodities(prefs):
     """Dolar e moedas vem do letreiro/MERCADO; aqui o painel de
     commodities/Treasuries/VIX (config.CENARIO_GLOBAL) + dolar do
     proprio ticker tape (config.INDICES_TICKER_TAPE), mesma fonte."""
-    from data.prices import obter_cotacao_indice
-
     with st.container(border=True):
         st.markdown('<div class="painel-titulo">CÂMBIO</div>', unsafe_allow_html=True)
         cambio = {nome: simbolo for nome, simbolo in config.INDICES_TICKER_TAPE.items() if simbolo.endswith("=X")}
         partes = []
         for nome, simbolo in cambio.items():
-            cot = obter_cotacao_indice(nome, simbolo)
+            cot = _cotacao_cambio(nome, simbolo)
             if cot.get("erro"):
                 partes.append(f"<div style='min-width:9rem;'><span class='cinza' style='font-size:0.7rem;'>{nome}</span><br>"
                               f"<span class='cinza'>indisponível</span></div>")
@@ -503,6 +501,16 @@ def render_macro_cambio_commodities(prefs):
             st.caption("Fonte: Yahoo Finance — cotação com atraso típico de mercado.")
     with st.container(border=True):
         _painel_cenario_global(prefs)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _cotacao_cambio(nome, simbolo):
+    # data/prices.py:obter_cotacao_indice nao tem cache proprio (o
+    # letreiro chama em todo refresh) - aqui evita 1 chamada ao Yahoo por
+    # par de moeda a cada rerun desta subaba
+    from data.prices import obter_cotacao_indice
+
+    return obter_cotacao_indice(nome, simbolo)
 
 
 @st.cache_data(ttl=1800, show_spinner=False)

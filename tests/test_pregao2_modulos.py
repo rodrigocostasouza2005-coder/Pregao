@@ -151,3 +151,64 @@ mc.render_preferencias(prefs, {"email": "teste@exemplo.com"}, persistir)
     at.toggle(key="toggle_morning_call_email").set_value(True).run()
     assert at.session_state["prefs"]["morning_call_email_ativo"] is True
     assert at.session_state["salvos"] == 1
+
+
+# --- revisao de integracao (PR #82) ---------------------------------------------
+
+def test_ticker_externo_tem_chave_propria_e_sai_ao_remover_da_watchlist():
+    """Regressao: ANALISES > Empresas usava a MEMORIA do seletor
+    (ticker_selecionado_valido) como "ticker aberto por vinculo" - um
+    ticker removido da watchlist pela barra lateral reaparecia la'."""
+    from ui import navegacao
+
+    fonte = (Path(__file__).parent.parent / "app.py").read_text(encoding="utf-8")
+    bloco = fonte.split('if rota == ("analises", "empresas"):', 1)[1][:1500]
+    assert "navegacao.KEY_TICKER_EXTERNO" in bloco
+    assert 'get("ticker_selecionado_valido")' not in bloco
+    remover = fonte.split('prefs["watchlist"].remove(t)', 1)[1][:200]
+    assert "KEY_TICKER_EXTERNO" in remover
+    with patch.object(navegacao.st, "session_state", {}) as estado:
+        navegacao.ir_para("analises", "empresas", "WEGE3")
+        assert estado[navegacao.KEY_TICKER_EXTERNO] == "WEGE3"
+
+
+def test_nenhum_erro_tecnico_cru_nas_telas_tocadas():
+    raiz = Path(__file__).parent.parent
+    assert "{cotacao['erro']}" not in (raiz / "app.py").read_text(encoding="utf-8")
+    for nome in ("morning_call_tab.py", "macro_tab.py", "analises_tab.py", "setores_tab.py", "secoes.py",
+                 "navegacao.py"):
+        texto = (raiz / "ui" / nome).read_text(encoding="utf-8")
+        assert "__name__}" not in texto and "{exc}" not in texto and "{e}" not in texto, nome
+    assert "motivo_indisponivel(" not in (raiz / "ui" / "macro_tab.py").read_text(encoding="utf-8")
+
+
+def test_fundamentos_distingue_fonte_fora_de_campo_ausente_e_data_da_coleta():
+    from ui.analises_tab import _rotulo_coleta
+
+    vazio = {"valor_mercado": None, "pl": None, "beta": 1.1}
+    assert _rotulo_coleta(vazio) is None
+    assert _rotulo_coleta({"pl": 5.0, "_coletado_em": "2026-10-16T12:30:00+00:00"}) == "16/10 09:30"
+    assert _rotulo_coleta({"pl": 5.0}) == "—"
+
+
+def test_appteste_fundamentos_marca_ticker_indisponivel():
+    from streamlit.testing.v1 import AppTest
+
+    script = '''
+from unittest.mock import patch
+import ui.analises_tab as at_mod
+def _ind(t):
+    base = {k: None for k in ("valor_mercado", "pl", "pvp", "dividend_yield", "beta", "roe", "margem_liquida",
+                              "margem_operacional", "margem_ebitda", "divida_liquida", "divida_liquida_ebitda")}
+    if t == "PETR4":
+        base.update(pl=4.2, _coletado_em="2026-10-18T13:00:00+00:00")
+    return base
+with patch.object(at_mod, "obter_indicadores", side_effect=_ind):
+    at_mod.render_fundamentos({"formato_numerico": "BR", "watchlist": ["PETR4", "VALE3"]})
+'''
+    app = AppTest.from_string(script, default_timeout=30).run()
+    assert not app.exception
+    html_tabela = next(m.value for m in app.markdown if "PETR4" in m.value)
+    linha_vale = html_tabela.split("VALE3", 1)[1]
+    assert "indisponível agora" in linha_vale.split("</tr>", 1)[0]
+    assert "18/10 10:00" in html_tabela

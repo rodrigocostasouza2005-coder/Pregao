@@ -104,10 +104,15 @@ def test_app_despacha_todas_as_rotas():
 
 
 def test_app_reconfirma_admin_no_despacho():
+    """Toda subaba admin=True (hoje Sistema/Saude; USUARIOS do PR #72 ao
+    integrar) reconfirma _eh_admin no despacho - esconder da nav nunca e'
+    a unica barreira."""
     fonte = (RAIZ / "app.py").read_text(encoding="utf-8")
-    for sub in ("sistema", "saude"):
-        bloco = fonte.split(f'if rota == ("mais", "{sub}"):', 1)[1][:200]
-        assert "if _eh_admin:" in bloco
+    admins = [(a.id, s.id) for a in AREAS for s in a.subabas if s.admin]
+    assert ("mais", "sistema") in admins and ("mais", "saude") in admins
+    for area, sub in admins:
+        bloco = fonte.split(f'if rota == ("{area}", "{sub}"):', 1)[1][:300]
+        assert "if _eh_admin:" in bloco, sub
 
 
 def test_nenhum_resquicio_da_navegacao_antiga():

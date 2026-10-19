@@ -92,7 +92,8 @@ def render_edicao_atual(prefs: dict):
                     st.session_state["mc_previa"] = _previa(_hora_ref())
                 except Exception as exc:
                     st.session_state["mc_previa"] = None
-                    st.error(f"Não foi possível montar a prévia agora ({type(exc).__name__}).")
+                    print(f"[morning_call_tab] previa falhou: {exc!r}")
+                    st.error("Não foi possível montar a prévia agora (fontes indisponíveis). Tente novamente em alguns minutos.")
         if st.session_state.get("mc_previa"):
             _exibir_texto(st.session_state["mc_previa"])
 
@@ -112,7 +113,8 @@ def render_relatorio_completo(prefs: dict):
                     st.session_state["mc_pdf"] = _pdf(_hora_ref())
                 except Exception as exc:
                     st.session_state["mc_pdf"] = None
-                    st.error(f"Não foi possível gerar o PDF agora ({type(exc).__name__}).")
+                    print(f"[morning_call_tab] PDF falhou: {exc!r}")
+                    st.error("Não foi possível gerar o PDF agora (fontes indisponíveis). Tente novamente em alguns minutos.")
         if st.session_state.get("mc_pdf"):
             st.download_button(
                 "BAIXAR PDF", st.session_state["mc_pdf"],

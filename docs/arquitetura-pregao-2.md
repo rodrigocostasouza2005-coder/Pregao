@@ -92,15 +92,60 @@ Juros) — mesma função, mesmo cache, sem coleta extra.
 | Valuation por cenários/sensibilidade | sem modelo próprio | definir metodologia antes de exibir |
 | PDF de edições anteriores do Morning Call | PDF não é armazenado | storage + gravação no job |
 
-## 5. Compatibilidade com PRs abertos (19/10/2026)
+## 5. Compatibilidade com PRs abertos (verificado em 19/10/2026)
 
-- **#72 (USUÁRIOS admin + oferta de Morning Call):** a aba USUÁRIOS vira
-  `Subaba("usuarios", "Usuários", admin=True)` em MAIS, com despacho
-  `if rota == ("mais", "usuarios"):` reconfirmando `_eh_admin`. A linha
-  `prefs["morning_call_email_perguntado"] = True` do toggle passa a ir em
-  `ui/morning_call_tab.py:render_preferencias`.
-- **#70 (atalho CTRL K):** independente da navegação; o bloco entra no cabeçalho
-  sem mudança.
-- **#76 (MAIS NEGOCIADOS clicável):** usa `_ir_para_equity`, que agora navega para
-  ANÁLISES › Empresas; conflito só no texto do `help`.
-- **#75, #77, #79, #80, #71, #78:** sem sobreposição relevante.
+Cada PR aberto foi mesclado localmente sobre o #82 numa worktree isolada (nada
+publicado nas branches deles) e a suíte completa rodou em cada combinação.
+
+| PR | Merge sobre o #82 | Suíte | Observação |
+|---|---|---|---|
+| #70 (auditoria 360, CTRL K) | limpo | 938 ok | atalho entra no cabeçalho sem depender da navegação |
+| #71 (e-mail do Morning Call) | limpo | 936 ok | só `jobs/morning_call.py` |
+| #72 (USUÁRIOS + oferta de Morning Call) | **conflito em `app.py`** | 966 ok após resolução | ver plano abaixo |
+| #75, #77, #79, #80 | limpo | ok | sem sobreposição |
+| #76 (MAIS NEGOCIADOS clicável) | limpo | 937 ok | o botão novo usa `_ir_para_equity` (já leva a ANÁLISES › Empresas); o `help` dele ainda diz "EQUITY" — ajuste de texto no próprio #76 |
+| #78 (testes do workspace) | limpo | 951 ok | — |
+| #81 (Morning Call editorial) | limpo | 959 ok | altera `data/radar_setorial.py`; conferido que `CATALOGO` mantém as chaves `nome`/`importa`/`acompanhar` e os mesmos setores de `news_setores.SETORES`, que o #82 consome |
+
+**Plano seguro para o #72** (validado localmente, 966 testes verdes). Aceitar o
+lado do #72 nos hunks de navegação reintroduz `secoes`/`secao_atual`, que não
+existem mais (o app quebraria com `NameError`), e **o bloco de despacho de
+USUÁRIOS some** porque cai dentro de um hunk conflitante. Resolução:
+
+1. Imports: lado do #82 + `deve_oferecer_morning_call, email_valido, registrar_acesso`
+   de `data.user_prefs`; manter `from ui.usuarios_tab import render_usuarios`.
+2. Banner de oferta do Morning Call (#72): manter, antes da navegação; trocar
+   "em CONFIG" por "em MORNING CALL › Preferências" nos dois textos.
+3. Navegação e CONFIG: lado do #82.
+4. `ui/navegacao.py`: `Subaba("usuarios", "Usuários", admin=True)` em MAIS e
+   `"USUÁRIOS": ("mais", "usuarios")` em `ROTA_LEGADO`.
+5. `app.py`: `if rota == ("mais", "usuarios"):` com `if _eh_admin: render_usuarios(usuario)`
+   senão "Acesso restrito a administradores." (o teste
+   `test_app_reconfirma_admin_no_despacho` exige isso para toda subaba admin).
+6. `ui/morning_call_tab.py:render_preferencias`: ao mudar o toggle, gravar também
+   `prefs["morning_call_email_perguntado"] = True` (linha que o #72 punha em CONFIG).
+
+## 6. O que foi validado e como
+
+- **Simulado (harness local, `app.py` real, login falso, preferências em memória):**
+  32 rotas em 1366px e 390px, cliques, vínculos, voltar/avançar, recarregar,
+  teclado, bloqueio de rotas admin, remoção de ticker da watchlist. Sem rede para
+  Yahoo/Google News/BCB e sem Supabase: todas as telas foram vistas **apenas nos
+  estados de indisponibilidade**. Nenhum dado de exemplo foi injetado.
+- **AppTest/unitários:** navegação, memória de subaba, URL inválida, vínculos,
+  histórico do Morning Call (sem `destinatario`, só leitura), Fundamentos
+  (fonte fora × campo ausente × data da coleta).
+- **Não validado:** produção, dados reais, layout com dados preenchidos (tabelas
+  longas, gráficos), desempenho com fontes respondendo.
+
+## 7. Limitações conhecidas
+
+- Voltar/avançar recarrega a página: filtros guardados só na sessão se perdem.
+- Vínculo notícia → empresa só aparece quando o ticker está escrito na manchete
+  (`n["tickers"]`); notícias do feed da watchlist (achadas por busca do nome da
+  empresa) não ganham o botão, de propósito.
+- Atalho para um módulo oculto em "módulos visíveis" não navega (a rota cai na
+  subaba atual sem aviso).
+- `config.ICONES_SECAO` ficou sem uso; mantido para não conflitar com o #72.
+- `data/prices.py:obter_cotacao_indice` não tem cache próprio (letreiro, pré-existente);
+  a subaba Câmbio usa um wrapper com cache de 60 s.
