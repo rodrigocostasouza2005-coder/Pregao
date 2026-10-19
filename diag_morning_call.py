@@ -44,6 +44,7 @@ for item in brasil_bruto + empresas_bruto + exterior_bruto:
 def fatos(secao, chave):
     return (edicao.get(secao) or {}).get(chave) or []
 
+brutos = {i.get("link"): i for i in brasil_bruto + empresas_bruto + exterior_bruto}
 publicados = fatos("brasil", "noticias") + fatos("empresas", "cards") + fatos("exterior", "noticias")
 fora = 0
 def check(ok, rotulo):
@@ -64,7 +65,9 @@ for secao, chave, nome in (("brasil", "noticias", "BRASIL"), ("empresas", "cards
             check(ed.e_noticia_de_empresa(t), "empresa/ticker no titulo")
         if nome == "BRASIL":
             check(not ed.e_noticia_de_empresa(t), "nao e noticia de empresa")
-        check(ed.tem_relevancia_financeira(f), "piso de relevancia")
+        bruto = brutos.get(f.get("link")) or f
+        p(f"    veiculos do grupo: {len(bruto.get('veiculos') or [])}")
+        check(ed.tem_relevancia_financeira(bruto), "piso de relevancia (item bruto)")
         check(not ed._fora_de_pauta(t), "nao fora de pauta")
         check(bool(pdf._momento_publicacao(f.get("data"), agora)), "linha de fonte com data")
 

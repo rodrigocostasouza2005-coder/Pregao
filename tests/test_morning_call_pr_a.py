@@ -274,3 +274,15 @@ def test_montar_edicao_passa_fatos_publicados_ao_radar():
     with _MultiPatch(**_pools(noticias, data="2026-10-19T06:00:00-03:00"), _radar_setorial=falso_radar):
         ed.montar_edicao(SEGUNDA)
     assert [f["link"] for f in capturado["publicados"]] == ["https://x/1"]
+
+
+def test_editoria_cuja_unica_materia_e_a_manchete_nao_diz_que_nao_ha_noticia():
+    """Caso real (validação de 18/10, 22h24): a única notícia de Empresas
+    (Petrobras) abriu a capa e a editoria dizia 'Nenhuma notícia...'."""
+    estilos = pdf_mod._estilos()
+    manchete = {"titulo": "Petrobras (PETR4) sobe mais de 6%", "importancia": 9}
+    flows = pdf_mod._editoria("Empresas e setores", "empresas", [manchete], None, SEGUNDA, estilos, {},
+                              excluir=manchete)
+    textos = [getattr(f, "text", "") for kt in flows for f in getattr(kt, "_content", [])]
+    assert any("manchete da capa" in t for t in textos)
+    assert not any("Nenhuma notícia" in t for t in textos)
