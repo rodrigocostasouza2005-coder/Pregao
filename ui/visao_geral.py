@@ -20,7 +20,7 @@ from data.mercado import obter_cotacoes_lote, obter_mercados_globais
 from data.news import obter_top_mercado_tudo
 from data.prices import obter_cotacao, obter_cotacao_indice, obter_historico, obter_historico_intraday
 from ui import graficos, workspace
-from ui.mercado_tab import _painel_altas_baixas, _painel_globais, _painel_mais_negociados, _painel_setorial
+from ui.mercado_tab import _ir_para_equity, _painel_altas_baixas, _painel_globais, _painel_mais_negociados, _painel_setorial
 from ui.news_tab import _injetar_css, _renderizar_lista
 
 _PERIODOS_IBOV = ["1D", "1S", "1M", "3M", "6M", "1A", "5A"]
@@ -202,25 +202,52 @@ def _painel_watchlist_compacta(prefs):
     if not watchlist:
         st.markdown("<div class='cinza' style='font-size:0.78rem;'>Adicione tickers na barra lateral.</div>", unsafe_allow_html=True)
         return
-    linhas = []
     # obter_cotacoes_lote (N+1 real corrigido, 2026-10-08): 1 UNICA
     # requisicao em lote pra watchlist inteira, em vez de 1
     # yf.Ticker().fast_info POR TICKER (obter_cotacao) - com watchlist
     # grande e cache expirado, essa tela ficava bloqueada numa sequencia
     # de round-trips sequenciais ao Yahoo.
     cotacoes = obter_cotacoes_lote(tuple(watchlist))
+    # ticker vira um st.button de verdade (on_click=_ir_para_equity, mesmo
+    # mecanismo ja' usado no ranking de MERCADO - ui/mercado_tab.py), nao
+    # mais um <span style="color:var(--destaque)"> dentro de uma tabela em
+    # HTML puro: achado real da auditoria 360 (docs/auditoria-redesign-360.md)
+    # - o ticker JA' tinha a mesma cor/peso visual usados pra sinalizar
+    # "isto e' clicavel" em outras telas, mas aqui nao levava a lugar
+    # nenhum (falsa affordance).
+    # linha com margem propria MAIOR que o row-gap interno das colunas
+    # (achado real, auditoria 360, confirmado em screenshot: abaixo de
+    # 640px o st.columns da linha quebra em 2 blocos empilhados - mesmo
+    # comportamento ja documentado pros outros st.columns do projeto
+    # nesse breakpoint, ver style.css - e como o row-gap GLOBAL entre
+    # colunas empilhadas e' 0.7rem (style.css, breakpoint 640px) e a
+    # margem ENTRE linhas era so' 0.3rem, preco/variacao ficava mais
+    # perto do botao da PROXIMA linha do que do seu proprio ticker -
+    # ambiguo sobre a quem pertencia. 1.1rem (> 0.7rem) desambigua.
+    st.markdown(
+        "<style>div[class*='st-key-vg_watchlist_row_']{margin-bottom:1.1rem;}</style>",
+        unsafe_allow_html=True,
+    )
     for t in watchlist:
         cot = cotacoes.get(t, {"erro": "sem dado"})
-        if cot.get("erro"):
-            linhas.append(f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>{t}</td><td colspan='2' class='cinza'>—</td></tr>")
-            continue
-        cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
-        linhas.append(
-            f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'><span style='color:var(--destaque); font-weight:600;'>{t}</span></td>"
-            f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>R$ {config.formatar_numero(cot['preco'], 2, prefs['formato_numerico'])}</td>"
-            f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='{cls}'>{_fmt_pct(cot['variacao_pct'], prefs)}</td></tr>"
-        )
-    st.markdown(f"<table style='width:100%; font-size:0.8rem; border-collapse:collapse;'>{''.join(linhas)}</table>", unsafe_allow_html=True)
+        with st.container(key=f"vg_watchlist_row_{t}"):
+            col_ticker, col_valor = st.columns([1.3, 2], vertical_alignment="center")
+            with col_ticker:
+                st.button(
+                    t, key=f"vg_watchlist_ticker_{t}", width="stretch",
+                    on_click=_ir_para_equity, args=(t, prefs), help=f"Abrir {t} em EQUITY",
+                )
+            with col_valor:
+                if cot.get("erro"):
+                    st.markdown("<div class='cinza' style='font-size:0.8rem; text-align:right;'>—</div>", unsafe_allow_html=True)
+                    continue
+                cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
+                st.markdown(
+                    f"<div style='display:flex; justify-content:space-between; font-size:0.8rem;'>"
+                    f"<span class='neutro'>R$ {config.formatar_numero(cot['preco'], 2, prefs['formato_numerico'])}</span>"
+                    f"<span class='{cls}'>{_fmt_pct(cot['variacao_pct'], prefs)}</span></div>",
+                    unsafe_allow_html=True,
+                )
 
 
 # paineis registrados (ver ui/paineis.py/ui/workspace.py) - ETAPA 5

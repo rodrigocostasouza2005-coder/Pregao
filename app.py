@@ -466,6 +466,36 @@ with st.container(key="header_fixo"):
                 if st.button("SAIR", key="sair_btn"):
                     st.logout()
 
+        # atalho CTRL K (MAC: CMD K) -> foca a busca global (achado da
+        # auditoria 360: o rotulo "CTRL K" ao lado da busca - col_ctrlk,
+        # acima - era so' decorativo, sem nenhum keybinding real). Mesma
+        # tecnica ja' validada em producao por ui/workspace.py (JS via
+        # st.iframe com acesso a window.parent.document, mesma origem) -
+        # aqui so' um keydown global, sem ponte de volta pro Python (so'
+        # foca o <input> real do st.selectbox da busca via querySelector
+        # pela classe "st-key-<key>" que o proprio Streamlit atribui ao
+        # widget; digitar depois disso abre a lista de sugestoes
+        # normalmente, confirmado com Playwright num harness isolado -
+        # ver docs/auditoria-redesign-360.md). Guard em
+        # doc.__pregaoCtrlKInstalled evita escutar o keydown em duplicado
+        # a cada rerun (o Streamlit recria este iframe sempre).
+        st.iframe(
+            "<script>(function(){"
+            "var doc=window.parent.document;"
+            "if(doc.__pregaoCtrlKInstalled)return;"
+            "doc.__pregaoCtrlKInstalled=true;"
+            "doc.addEventListener('keydown',function(ev){"
+            "var isK=(ev.key==='k'||ev.key==='K');"
+            "if(!isK||!(ev.ctrlKey||ev.metaKey))return;"
+            "var campo=doc.querySelector('[class*=\"st-key-busca_global_ticker\"] input');"
+            "if(!campo)return;"
+            "ev.preventDefault();"
+            "campo.focus();"
+            "},true);"
+            "})();</script>",
+            height=1,
+        )
+
     _ticker_tape()
 
     # navegacao (camada 3) tambem dentro do wrapper sticky (pedido do
