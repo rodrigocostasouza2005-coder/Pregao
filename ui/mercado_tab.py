@@ -358,7 +358,8 @@ def _painel_mais_negociados(prefs):
             with col_ticker:
                 st.button(
                     p["ticker"], key=f"mn_ticker_{p['ticker']}", width="stretch",
-                    on_click=_ir_para_equity, args=(p["ticker"], prefs), help=f"Abrir {p['ticker']} em EQUITY",
+                    on_click=_ir_para_equity, args=(p["ticker"], prefs),
+                    help=f"Abrir {p['ticker']} em ANÁLISES › Empresas",
                 )
             with col_volume:
                 st.markdown(
