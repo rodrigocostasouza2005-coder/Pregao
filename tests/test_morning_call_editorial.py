@@ -163,18 +163,23 @@ def test_macro_rows_selic_e_cdi_com_colunas_reais():
     assert por_nome["CDI"]["unidade"] == "% a.a."
 
 
-def test_macro_rows_indisponivel_com_motivo_quando_provedor_falha():
+def test_macro_rows_indisponivel_com_motivo_quando_provedor_falha(capsys):
     with _MultiPatch(obter_selic_meta=lambda: (_ for _ in ()).throw(RuntimeError("fora do ar"))):
         linhas = ed._macro_rows()
     linha_selic = next(l for l in linhas if l["indicador"] == "Selic meta")
     assert linha_selic["valor"] is None
-    assert "fora do ar" in linha_selic["erro"]
+    assert linha_selic["erro"].startswith("a fonte oficial (Banco Central, SGS) não respondeu")
+    # o detalhe técnico vai pro log do job, não pro leitor
+    assert "fora do ar" not in linha_selic["erro"]
+    assert "fora do ar" in capsys.readouterr().out
 
 
-def test_macro_rows_usa_motivo_registrado_pelo_sgs():
+def test_macro_rows_usa_motivo_registrado_pelo_sgs_so_no_log(capsys):
     with _MultiPatch(motivo_indisponivel=lambda chave: "SGS 432: página de erro HTML" if chave == "selic" else None):
         linhas = ed._macro_rows()
-    assert next(l for l in linhas if l["indicador"] == "Selic meta")["erro"] == "SGS 432: página de erro HTML"
+    erro = next(l for l in linhas if l["indicador"] == "Selic meta")["erro"]
+    assert "SGS 432" not in erro and "HTML" not in erro
+    assert "SGS 432: página de erro HTML" in capsys.readouterr().out
 
 
 def test_coletar_noticias_classifica_por_regiao_e_ticker():
@@ -296,7 +301,7 @@ def test_montar_edicao_estrutura_completa_sem_rede():
         edicao = ed.montar_edicao(agora)
     assert edicao["agora"] == agora
     assert set(edicao.keys()) == {"agora", "capa", "brasil", "exterior", "empresas", "limitacoes", "fontes",
-                                  "mercados_nota", "janela_noticias", "radar"}
+                                  "mercados_nota", "janela_noticias", "radar", "sessao_mercado", "resumos"}
     # sem notícia de setor nenhum, o radar sai vazio e registra cada exclusão
     assert edicao["radar"]["setores"] == []
     assert all("evidência insuficiente" in e["motivo"] for e in edicao["radar"]["excluidos"])
@@ -310,16 +315,16 @@ def test_montar_edicao_estrutura_completa_sem_rede():
 
 def test_montar_edicao_capa_usa_top3_por_importancia():
     noticias = [
-        {"titulo": "Baixa importância", "link": "https://x/1", "regiao": "INT", "tickers": [], "importancia": 1},
-        {"titulo": "Alta importância", "link": "https://x/2", "regiao": "INT", "tickers": [], "importancia": 9},
-        {"titulo": "Média importância", "link": "https://x/3", "regiao": "BR", "tickers": [], "importancia": 5},
+        {"titulo": "Mercado: Baixa importância", "link": "https://x/1", "regiao": "INT", "tickers": [], "importancia": 1},
+        {"titulo": "Mercado: Alta importância", "link": "https://x/2", "regiao": "INT", "tickers": [], "importancia": 9},
+        {"titulo": "Mercado: Média importância", "link": "https://x/3", "regiao": "BR", "tickers": [], "importancia": 5},
     ]
     agora = datetime(2026, 10, 14, 7, tzinfo=TZ_SP)
     with _MultiPatch(**_pools(noticias)):
         edicao = ed.montar_edicao(agora)
     titulos_capa = [d["titulo"] for d in edicao["capa"]["destaques"]]
-    assert titulos_capa[0] == "Alta importância"
-    assert "Baixa importância" in titulos_capa  # só 3 notícias no total, as 3 entram
+    assert titulos_capa[0] == "Mercado: Alta importância"
+    assert "Mercado: Baixa importância" in titulos_capa  # só 3 notícias no total, as 3 entram
 
 
 def _fato(titulo, importancia, corpo=None):
@@ -369,7 +374,7 @@ def test_corpo_vem_do_bloco_resumo_do_cache_sem_a_leitura_de_mercado():
 
 
 def test_falha_na_leitura_do_cache_nao_derruba_a_edicao():
-    noticia = {"titulo": "X", "link": "https://x/1", "regiao": "BR", "tickers": [], "importancia": 1}
+    noticia = {"titulo": "Ibovespa X", "link": "https://x/1", "regiao": "BR", "tickers": [], "importancia": 1}
 
     def _quebra(_g):
         raise RuntimeError("cache fora do ar")
@@ -378,7 +383,7 @@ def test_falha_na_leitura_do_cache_nao_derruba_a_edicao():
     with _MultiPatch(**_pools([noticia], data="2026-10-18T09:00:00-03:00"), obter_resumos_prontos=_quebra):
         edicao = ed.montar_edicao(agora)
     assert edicao["brasil"]["noticias"][0]["corpo"] == []
-    assert edicao["capa"]["manchete"]["titulo"] == "X"
+    assert edicao["capa"]["manchete"]["titulo"] == "Ibovespa X"
 
 
 def test_radar_consulta_cada_setor_e_aplica_regras_da_edicao():
@@ -450,8 +455,10 @@ def test_indisponivel_informa_ultima_coleta_valida_sem_inventar_valor():
                      ultima_coleta_valida=lambda c: "16/10/2026 18:41" if c == "selic" else None):
         linhas = {l["indicador"]: l for l in ed._macro_rows()}
     assert linhas["Selic meta"]["valor"] is None
-    assert linhas["Selic meta"]["erro"] == ("SGS 432: página de erro HTML; última coleta válida registrada em "
-                                           "16/10/2026 18:41 (horário de Brasília)")
+    assert linhas["Selic meta"]["erro"] == (
+        "a fonte oficial (Banco Central, SGS) não respondeu nesta execução; o histórico oficial do Copom "
+        "também não respondeu; última leitura bem-sucedida em 16/10/2026 18:41 (horário de Brasília), "
+        "valor não republicado")
 
 
 def test_ultima_coleta_valida_le_o_painel_de_saude_e_converte_para_brasilia(monkeypatch):
@@ -492,7 +499,9 @@ def test_selic_copom_invalido_mantem_indisponivel_com_os_dois_motivos():
                      ultima_coleta_valida=lambda _c: None):
         linha = next(l for l in ed._macro_rows() if l["indicador"] == "Selic meta")
     assert linha["valor"] is None
-    assert linha["erro"] == "SGS 432: timeout; histórico do Copom (bcb.gov.br): HTTP 500"
+    assert linha["erro"] == ("a fonte oficial (Banco Central, SGS) não respondeu nesta execução; "
+                             "o histórico oficial do Copom também não respondeu")
+    assert "timeout" not in linha["erro"] and "HTTP 500" not in linha["erro"]
 
 
 def test_cdi_nao_tem_plano_b_e_continua_indisponivel():

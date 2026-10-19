@@ -956,7 +956,8 @@ def test_email_erro_do_bcb_nunca_sai_como_taxa(monkeypatch):
     monkeypatch.setattr(ed, "ultima_coleta_valida", lambda c: None)
     texto = _montar_com(_noticias_por_regiao=[], obter_selic_meta=None, obter_cdi=None)
     linha = next(l for l in texto.splitlines() if l.startswith("- Selic meta"))
-    assert linha.startswith("- Selic meta: indisponível (SGS 432")
+    assert linha.startswith("- Selic meta: indisponível (a fonte oficial (Banco Central, SGS) não respondeu")
+    assert "SGS 432" not in linha and "500" not in linha
     assert "% a.a." not in linha
 
 
