@@ -1026,7 +1026,7 @@ def _abrir_card(n: dict, watchlist: list):
             # Compatibilidade com entradas antigas do cache sem qualidade_texto.
             aviso_evidencia = (
                 "Leitura parcial: síntese baseada em trechos/manchetes de várias fontes; "
-                "o texto completo não foi confirmado."
+                "o texto completo da matéria não foi acessado."
             )
         else:
             aviso_evidencia = None
