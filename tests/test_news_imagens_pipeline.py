@@ -627,3 +627,133 @@ def test_12g_lista_wire_nao_consulta_o_banco_a_cada_rerun():
     news_tab._prontos_para_lista.clear()
     with patch.object(news_tab, "obter_resumos_prontos", side_effect=RuntimeError("supabase fora")):
         assert news_tab._prontos_para_lista(itens) == {}
+
+
+# ------------------- revisão de correspondência (2026-10-19, 2ª rodada)
+
+def test_13a_formato_diario_recorrente_com_mesma_foto_e_descartado():
+    """Bug achado na revisão: 'Ibovespa fecha em alta hoje' x 'Ibovespa
+    fecha em queda hoje' (dias diferentes) tinham sobreposição 0,75 e
+    passavam como o MESMO fato - a og:image reciclada era aceita."""
+    foto = "https://conteudo.imguol.com.br/c/noticias/fechamento.jpg"
+    ids = news._descartar_imagens_repetidas([
+        ("seg", "Ibovespa fecha em alta hoje; dólar cai", foto, "2026-10-19T17:30:00-03:00"),
+        ("ter", "Ibovespa fecha em queda hoje; dólar sobe", foto, "2026-10-20T17:30:00-03:00"),
+    ])
+    assert ids == {"seg", "ter"}
+    # mesmo dia, direção oposta, títulos quase iguais -> fatos diferentes
+    ids = news._descartar_imagens_repetidas([
+        ("a", "Petrobras sobe 3% na abertura", foto, "2026-10-19T10:05:00-03:00"),
+        ("b", "Petrobras cai 3% na abertura", foto, "2026-10-19T10:40:00-03:00"),
+    ])
+    assert ids == {"a", "b"}
+    # mesmo fato em 2 veículos, horas próximas -> foto mantida
+    ids = news._descartar_imagens_repetidas([
+        ("x", "Vale anuncia expansão de cobre no Pará", foto, "2026-10-19T09:00:00-03:00"),
+        ("y", "Vale anuncia expansão de cobre no Pará, diz empresa", foto, "2026-10-19T11:00:00-03:00"),
+    ])
+    assert ids == set()
+
+
+def test_13b_obter_resumos_prontos_usa_a_data_do_grupo():
+    foto = "https://conteudo.imguol.com.br/fechamento.jpg"
+    g1 = dict(_grupo("Ibovespa fecha em alta hoje", "https://news.google.com/d1"), data="2026-10-19T17:30:00-03:00")
+    g2 = dict(_grupo("Ibovespa fecha em alta hoje", "https://news.google.com/d2"), data="2026-10-20T17:30:00-03:00")
+    linhas = {news._chave_grupo(g1): {"resumo": "a", "imagem": foto},
+              news._chave_grupo(g2): {"resumo": "b", "imagem": foto}}
+    with patch.object(news.ia_cache, "obter_varios", return_value=linhas):
+        prontos = news.obter_resumos_prontos([g1, g2])
+    assert prontos[g1["link"]]["imagem"] is None and prontos[g2["link"]]["imagem"] is None
+
+
+@pytest.mark.parametrize("url_final", [
+    "https://www.veiculo.com.br/",
+    "https://www.veiculo.com.br/assine/?origem=paywall",
+    "https://login.veiculo.com.br/entrar?next=/materia",
+    "https://consent.google.com/ml?continue=https://x",
+])
+def test_13c_redirecionamento_pra_fora_da_materia_nao_vira_foto(url_final):
+    html_txt = ("<html><head><meta property='og:image' content='https://cdn.veiculo.com.br/capa-do-site.jpg'>"
+                f"</head><body><article>{_TEXTO}</article></body></html>")
+    _t, imagem, _l, _m = _extrair_com_html(html_txt, url_final)
+    assert imagem is None
+
+
+def test_13d_materia_com_slug_parecido_continua_aceita():
+    assert not news._pagina_nao_e_materia("https://www.veiculo.com.br/economia/cadastro-positivo-2026/")
+    assert not news._pagina_nao_e_materia("https://www.veiculo.com.br/mercado/vale-cobre")
+    html_txt = ("<html><head><meta property='og:image' content='https://cdn.veiculo.com.br/2026/10/cadastro.jpg'>"
+                f"</head><body><article>{_TEXTO}</article></body></html>")
+    _t, imagem, _l, _m = _extrair_com_html(html_txt, "https://www.veiculo.com.br/economia/cadastro-positivo-2026")
+    assert imagem == "https://cdn.veiculo.com.br/2026/10/cadastro.jpg"
+
+
+def test_13e_jsonld_nao_pega_foto_de_materia_relacionada():
+    import json
+    ld = {"@context": "https://schema.org", "@graph": [
+        {"@type": "WebPage", "url": "https://www.veiculo.com.br/mercado/vale-cobre",
+         "hasPart": [{"@type": "NewsArticle", "headline": "Outra matéria",
+                      "image": "https://cdn.veiculo.com.br/outra-materia.jpg"}],
+         "relatedLink": {"@type": "NewsArticle", "image": "https://cdn.veiculo.com.br/relacionada.jpg"}},
+        {"@type": "BreadcrumbList", "itemListElement": [{"item": {"image": "https://cdn.veiculo.com.br/secao.jpg"}}]},
+    ]}
+    html_txt = (f"<html><head><script type='application/ld+json'>{json.dumps(ld)}</script></head>"
+                f"<body><article>{_TEXTO}</article></body></html>")
+    _t, imagem, _l, _m = _extrair_com_html(html_txt)
+    assert imagem is None
+    ld["@graph"].append({"@type": "NewsArticle", "image": {"@type": "ImageObject",
+                                                             "url": "https://cdn.veiculo.com.br/vale-carajas.jpg"}})
+    html_txt = (f"<html><head><script type='application/ld+json'>{json.dumps(ld)}</script></head>"
+                f"<body><article>{_TEXTO}</article></body></html>")
+    _t, imagem, _l, _m = _extrair_com_html(html_txt)
+    assert imagem == "https://cdn.veiculo.com.br/vale-carajas.jpg"
+
+
+def test_13f_403_e_bloqueio_temporario_e_foto_fica_nao_verificada():
+    g = _grupo("Itaú reporta lucro", "https://news.google.com/403")
+    with patch.object(news, "_extrair_texto_artigo",
+                      return_value=("t", "https://img.cdn.com/itau.jpg", "https://cdn.com/m", None)), \
+         patch.object(news.requests, "head", return_value=_Resp(403, {})), \
+         patch.object(news.requests, "get", return_value=_Resp(403, {})):
+        reg = news.avaliar_imagem_grupo(g, _fontes(g))
+    assert reg["imagem"] == "https://img.cdn.com/itau.jpg"
+    assert reg["imagem_status"] == news.STATUS_IMAGEM_NAO_VERIFICADA
+
+
+def test_13g_url_assinada_nunca_fica_confirmada_pra_sempre():
+    assinada = "https://bucket.s3.amazonaws.com/foto.jpg?X-Amz-Expires=3600&X-Amz-Signature=abc"
+    assert news._url_assinada(assinada)
+    assert not news._url_assinada("https://cdn.x.com/foto.jpg?w=1200&base=2")
+    g = _grupo("Fato com foto assinada", "https://news.google.com/sig")
+    with patch.object(news, "_extrair_texto_artigo", return_value=("t", assinada, "https://x.com/m", None)), \
+         patch.object(news.requests, "head", return_value=_img_ok(assinada)):
+        reg = news.avaliar_imagem_grupo(g, _fontes(g))
+    assert reg["imagem"] == assinada and reg["imagem_status"] == news.STATUS_IMAGEM_NAO_VERIFICADA
+    agora = datetime.now(timezone.utc)
+    assert not news._imagem_precisa_reavaliar(None, reg, agora + timedelta(hours=1))
+    assert news._imagem_precisa_reavaliar(None, reg, agora + timedelta(hours=7))
+
+
+def test_13h_script_de_amostra_real_funciona_com_mocks(tmp_path):
+    """O roteiro pós-deploy depende deste script - garante que ele roda e
+    gera CSV/HTML (aqui com mocks; em produção, contra matérias reais)."""
+    import importlib.util
+    import sys as _sys
+    from pathlib import Path
+    caminho = Path(news.__file__).resolve().parents[1] / "docs/evidencias/imagens-news-20261019/validar_amostra_real.py"
+    spec = importlib.util.spec_from_file_location("validar_amostra_real", caminho)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    g1 = dict(_grupo("Vale amplia cobre", "https://news.google.com/v1"), veiculos=["Valor"])
+    g2 = dict(_grupo("Copom mantém Selic", "https://news.google.com/v2"), veiculos=["Folha"])
+    respostas = {"https://news.google.com/v1": ("t", "https://cdn.v.com/vale.jpg", "https://valor.com/vale", None),
+                 "https://news.google.com/v2": ("t", None, "https://folha.com/copom", None)}
+    with patch.object(news, "obter_top_mercado", return_value=[g1, g2]), \
+         patch.object(news, "obter_top_mercado_internacional", return_value=[]), \
+         patch.object(news, "_extrair_texto_artigo", side_effect=lambda link: respostas[link]), \
+         patch.object(news.requests, "head", return_value=_img_ok()), \
+         patch.object(_sys, "argv", ["x", "--n", "5", "--saida", str(tmp_path)]):
+        mod.main()
+    csv_txt = (tmp_path / "amostra.csv").read_text(encoding="utf-8")
+    assert "confirmada" in csv_txt and "sem_imagem" in csv_txt and "https://valor.com/vale" in csv_txt
+    assert "https://cdn.v.com/vale.jpg" in (tmp_path / "amostra.html").read_text(encoding="utf-8")

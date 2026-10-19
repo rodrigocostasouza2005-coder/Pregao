@@ -1600,7 +1600,10 @@ def _verificar_imagem_url(url: str) -> str:
             # GET já segue redirecionamentos por padrão no requests
             resposta = requests.get(url, headers=_HEADERS_IMAGEM, timeout=(3, 5), stream=True)
         codigo = resposta.status_code
-        if codigo == 429 or codigo >= 500:
+        # 401/403: bloqueio de bot/hotlink do servidor, não prova de que a
+        # imagem não existe - o navegador (sem referer) costuma carregar;
+        # fica "não verificada", com fallback se falhar e reavaliação depois
+        if codigo in (401, 403, 429) or codigo >= 500:
             return IMAGEM_ERRO_TEMPORARIO
         if codigo >= 400:
             return IMAGEM_INVALIDA
@@ -1645,6 +1648,44 @@ def _url_imagem_utilizavel(url: str) -> bool:
     """Versão booleana de _verificar_imagem_url (True só quando a imagem
     respondeu como foto de verdade) - qualquer falha -> False."""
     return _verificar_imagem_url(url) == IMAGEM_OK
+
+
+# segmentos EXATOS do caminho (nunca substring: "/cadastro-positivo-..." é
+# matéria) e prefixos de host de páginas que não são a matéria
+_SEGMENTOS_PAGINA_NAO_MATERIA = frozenset((
+    "login", "signin", "entrar", "assine", "assinatura", "subscribe", "paywall",
+    "cadastro", "acesso-restrito", "consent", "consentimento",
+))
+_HOSTS_PAGINA_NAO_MATERIA = ("consent.", "login.", "accounts.", "assine.", "assinatura.")
+
+
+def _pagina_nao_e_materia(url: str | None) -> bool:
+    """True quando a URL final (depois dos redirecionamentos) é a home do
+    site ou uma página de login/assinatura/consentimento."""
+    if not url:
+        return False
+    partes = urlparse(url)
+    caminho = (partes.path or "").strip("/").lower()
+    if not caminho:
+        return True
+    if (partes.netloc or "").lower().startswith(_HOSTS_PAGINA_NAO_MATERIA):
+        return True
+    return any(seg in _SEGMENTOS_PAGINA_NAO_MATERIA for seg in caminho.split("/"))
+
+
+# Parâmetros de URL assinada/expirável (CDN S3/CloudFront/GCS/Akamai/
+# Azure): a URL responde hoje e quebra quando a assinatura vence - nunca é
+# marcada como "confirmada" (que não é mais reavaliada), só
+# "nao_verificada". Comparação pelo NOME exato do parâmetro.
+_PARAMS_URL_ASSINADA = frozenset((
+    "x-amz-signature", "x-amz-expires", "x-goog-signature", "x-goog-expires", "signature",
+    "expires", "sig", "se", "token", "hdnts", "policy", "key-pair-id",
+))
+
+
+def _url_assinada(url: str) -> bool:
+    from urllib.parse import parse_qsl
+    return any(k.lower() in _PARAMS_URL_ASSINADA for k, _ in parse_qsl(urlparse(url).query, keep_blank_values=True))
 
 
 def _extrair_texto_artigo(link_google_news: str) -> tuple:
@@ -1776,23 +1817,36 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
     # conteúdo visual da matéria em si.
     if not imagem:
         _CHAVES_IMAGEM_JSONLD = ("image", "thumbnailUrl", "contentUrl", "primaryImageOfPage")
-        _CHAVES_NUNCA_IMAGEM_JSONLD = ("logo", "publisher", "author")
+        # 2026-10-19: + nós que listam OUTRAS matérias/entidades (relacionadas,
+        # breadcrumb, site, menções) - a imagem de um "hasPart"/"relatedLink"
+        # é a foto de outra notícia, nunca desta
+        _CHAVES_NUNCA_IMAGEM_JSONLD = ("logo", "publisher", "author", "creator", "sourceOrganization",
+                                       "hasPart", "relatedLink", "significantLink", "mentions", "about",
+                                       "isPartOf", "itemListElement", "breadcrumb", "potentialAction")
 
-        def _urls_imagem_jsonld(obj):
+        def _urls_imagem_jsonld(obj, via_imagem=False):
             achados = []
             if isinstance(obj, str):
                 return achados
             if isinstance(obj, list):
                 for item in obj:
-                    achados.extend(_urls_imagem_jsonld(item))
+                    achados.extend(_urls_imagem_jsonld(item, via_imagem))
                 return achados
             if isinstance(obj, dict):
+                # 2026-10-19: {"image": {"@type": "ImageObject", "url": ...}} é
+                # o formato schema.org mais comum - aí "url" É a foto. Só
+                # vale dentro de um ImageObject alcançado por uma chave de
+                # imagem (nunca o "url" genérico de WebPage/Organization).
+                tipo = obj.get("@type")
+                tipos = tipo if isinstance(tipo, list) else [tipo]
+                if via_imagem and "ImageObject" in tipos and isinstance(obj.get("url"), str):
+                    achados.append(obj["url"])
                 for chave in _CHAVES_IMAGEM_JSONLD:
                     valor = obj.get(chave)
                     if isinstance(valor, str):
                         achados.append(valor)
                     elif isinstance(valor, (dict, list)):
-                        achados.extend(_urls_imagem_jsonld(valor))
+                        achados.extend(_urls_imagem_jsonld(valor, via_imagem=True))
                 for chave, valor in obj.items():
                     if chave in _CHAVES_IMAGEM_JSONLD or chave in _CHAVES_NUNCA_IMAGEM_JSONLD:
                         continue
@@ -1920,6 +1974,12 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
             # o PROXIMO seletor (escopo mais amplo) quando o ATUAL nao
             # bateu em NADA (ver achado real no comentario acima).
             break
+
+    # 2026-10-19: o link redirecionou pra fora da matéria (home do site,
+    # login/assinatura, consentimento) - a og:image dessa página é a capa
+    # padrão do veículo, não a foto da notícia. Nunca vira imagem.
+    if imagem and _pagina_nao_e_materia(link_real):
+        imagem = None
 
     # Segundo extrator menos restritivo: usa parágrafos de article/main,
     # remove navegação/rodapé e só aceita texto com tamanho mínimo. Não
@@ -2469,7 +2529,7 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
             imagem_status = STATUS_IMAGEM_NAO_VERIFICADA if imagem else STATUS_IMAGEM_AUSENTE
             if validar_imagem and imagem:
                 verificacao = _verificar_imagem_url(imagem)
-                if verificacao == IMAGEM_OK:
+                if verificacao == IMAGEM_OK and not _url_assinada(imagem):
                     imagem_status = STATUS_IMAGEM_CONFIRMADA
                 elif verificacao == IMAGEM_INVALIDA:
                     imagem, imagem_status = None, STATUS_IMAGEM_INVALIDA
@@ -2590,27 +2650,58 @@ def _tokens_titulo_imagem(titulo: str) -> set:
     return {t for t in _tokenizar(titulo or "") if len(t) > 2}
 
 
+_JANELA_MESMO_FATO_IMAGEM = timedelta(hours=12)
+
+
+def _mesmo_fato_para_imagem(a: tuple, b: tuple) -> bool:
+    """a/b = (titulo, tokens, data_iso|None). Mesmo fato (foto compartilhada
+    legítima) só com títulos parecidos E sem direção de mercado oposta E
+    publicados a menos de 12h um do outro (quando as datas existem).
+    Achado da revisão de 2026-10-19: só a similaridade de título deixava
+    passar justamente o formato diário recorrente ("Ibovespa fecha em alta
+    hoje" x "Ibovespa fecha em queda hoje", dias diferentes, sobreposição
+    0,75) - o caso UOL com a mesma og:image em toda edição."""
+    titulo_a, tok_a, data_a = a
+    titulo_b, tok_b, data_b = b
+    if _similaridade(tok_a, tok_b) < 0.6:
+        return False
+    dir_a, dir_b = _direcao_mercado(titulo_a), _direcao_mercado(titulo_b)
+    if dir_a and dir_b and dir_a != dir_b:
+        return False
+    if data_a and data_b:
+        try:
+            dt_a, dt_b = (d if isinstance(d, datetime) else datetime.fromisoformat(str(d)) for d in (data_a, data_b))
+            if abs(dt_a - dt_b) >= _JANELA_MESMO_FATO_IMAGEM:
+                return False
+        except (TypeError, ValueError):
+            pass  # data ilegível/naive x aware: decide só pelo título
+    return True
+
+
 def _descartar_imagens_repetidas(itens: list) -> set:
-    """itens: [(id, titulo, url_imagem)]. Devolve os ids cuja foto é a
-    MESMA URL (sem query string) usada por outra matéria de assunto
-    DIFERENTE - padrão real (UOL "fechamento dólar/bolsa hoje", PROGRESSO
-    2026-10-18): og:image legítima do veículo, reciclada em matérias de
-    dias/fatos diferentes, que não representa nenhuma delas. Duas
-    manchetes do MESMO fato (títulos parecidos, grupo não fundido) com a
-    mesma foto continuam aceitas - aí a foto é de fato daquela matéria."""
+    """itens: [(id, titulo, url_imagem)] ou [(id, titulo, url_imagem,
+    data_iso)]. Devolve os ids cuja foto é a MESMA URL (sem query string)
+    usada por outra matéria de OUTRO fato - padrão real (UOL "fechamento
+    dólar/bolsa hoje", PROGRESSO 2026-10-18): og:image legítima do
+    veículo, reciclada em matérias de dias/fatos diferentes, que não
+    representa nenhuma delas. Duas manchetes do MESMO fato (grupo não
+    fundido - ver _mesmo_fato_para_imagem) com a mesma foto continuam
+    aceitas - aí a foto é de fato daquela matéria."""
     por_url = {}
-    for ident, titulo, url in itens:
+    for item in itens:
+        ident, titulo, url = item[0], item[1], item[2]
+        data = item[3] if len(item) > 3 else None
         if not url:
             continue
         base = url.split("?")[0].split("#")[0].lower()
-        por_url.setdefault(base, []).append((ident, _tokens_titulo_imagem(titulo)))
+        por_url.setdefault(base, []).append((ident, (titulo or "", _tokens_titulo_imagem(titulo), data)))
     descartar = set()
     for ocorrencias in por_url.values():
         if len(ocorrencias) < 2:
             continue
-        for i, (id_a, tok_a) in enumerate(ocorrencias):
-            for id_b, tok_b in ocorrencias[i + 1:]:
-                if id_a != id_b and _similaridade(tok_a, tok_b) < 0.5:
+        for i, (id_a, info_a) in enumerate(ocorrencias):
+            for id_b, info_b in ocorrencias[i + 1:]:
+                if id_a != id_b and not _mesmo_fato_para_imagem(info_a, info_b):
                     descartar.update((id_a, id_b))
     return descartar
 
@@ -2638,7 +2729,7 @@ def obter_resumos_prontos(grupos: list) -> dict:
     for g in grupos:
         chave = _chave_grupo(g)
         chaves_por_link[g["link"]] = (chave, ia_cache.chave_imagem_news(chave))
-        titulo_por_link[g["link"]] = g.get("titulo") or ""
+        titulo_por_link[g["link"]] = (g.get("titulo") or "", g.get("data"))
     if not chaves_por_link:
         return {}
     todas = [c for par in chaves_por_link.values() for c in par]
@@ -2657,7 +2748,7 @@ def obter_resumos_prontos(grupos: list) -> dict:
         prontos[link] = resultado
 
     repetidas = _descartar_imagens_repetidas(
-        [(link, titulo_por_link.get(link), r.get("imagem")) for link, r in prontos.items()]
+        [(link, titulo_por_link[link][0], r.get("imagem"), titulo_por_link[link][1]) for link, r in prontos.items()]
     )
     for link in repetidas:
         prontos[link]["imagem"] = None
@@ -2750,6 +2841,8 @@ def avaliar_imagem_grupo(g: dict, fontes_ordenadas: tuple, tentativas_anteriores
             continue
         verificacao = _verificar_imagem_url(imagem)
         fonte = _dominio_raiz(link_real or link or "")
+        if verificacao == IMAGEM_OK and _url_assinada(imagem):
+            verificacao = IMAGEM_ERRO_TEMPORARIO  # responde hoje, expira depois: reavaliar
         if verificacao == IMAGEM_OK:
             return {"tipo": "imagem", "imagem": imagem, "imagem_status": STATUS_IMAGEM_CONFIRMADA,
                     "imagem_fonte": fonte, "imagem_verificada_em": _agora_iso_utc(),
@@ -2950,7 +3043,8 @@ def _persistir_candidata_imagem(chave: str, g: dict, imagem: str, link_fonte: st
         verificacao = _verificar_imagem_url(imagem)
         if verificacao == IMAGEM_INVALIDA:
             return
-        status = STATUS_IMAGEM_CONFIRMADA if verificacao == IMAGEM_OK else STATUS_IMAGEM_NAO_VERIFICADA
+        status = (STATUS_IMAGEM_CONFIRMADA if verificacao == IMAGEM_OK and not _url_assinada(imagem)
+                  else STATUS_IMAGEM_NAO_VERIFICADA)
         registro = {"tipo": "imagem", "imagem": imagem, "imagem_status": status,
                     "imagem_fonte": _dominio_raiz(link_fonte or ""), "imagem_verificada_em": _agora_iso_utc(),
                     "imagem_tentativas": 1, "imagens_rejeitadas": []}
@@ -2992,7 +3086,7 @@ def pregerar_imagens_news(tickers_universo: list) -> dict:
     for chave, g, _ in pendentes:
         url, _status = _imagem_do_resultado(encontrados.get(chave), encontrados.get(chaves_img[chave]))
         if url:
-            conhecidas.append((chave, g.get("titulo"), url))
+            conhecidas.append((chave, g.get("titulo"), url, g.get("data")))
 
     for chave, g, fontes_ordenadas in pendentes:
         resumo, registro = encontrados.get(chave), encontrados.get(chaves_img[chave])
@@ -3008,11 +3102,11 @@ def pregerar_imagens_news(tickers_universo: list) -> dict:
             novo = avaliar_imagem_grupo(g, fontes_ordenadas, int((registro or {}).get("imagem_tentativas") or 0))
             if novo.get("imagem"):
                 outras = [c for c in conhecidas if c[0] != chave]
-                if chave in _descartar_imagens_repetidas(outras + [(chave, g.get("titulo"), novo["imagem"])]):
+                if chave in _descartar_imagens_repetidas(outras + [(chave, g.get("titulo"), novo["imagem"], g.get("data"))]):
                     novo["imagens_rejeitadas"] = list(novo.get("imagens_rejeitadas") or []) + [novo["imagem"]]
                     novo["imagem"], novo["imagem_status"] = None, STATUS_IMAGEM_REPETIDA
                 else:
-                    conhecidas.append((chave, g.get("titulo"), novo["imagem"]))
+                    conhecidas.append((chave, g.get("titulo"), novo["imagem"], g.get("data")))
             status = novo["imagem_status"]
             stats["por_status"][status] = stats["por_status"].get(status, 0) + 1
             if ia_cache.salvar_registro_imagem(chaves_img[chave], g.get("link"), novo):

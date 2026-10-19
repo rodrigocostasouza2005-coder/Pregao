@@ -51,6 +51,19 @@ group by 1 having count(*) > 1 order by 2 desc limit 10;
 Os registros de resumo (`origem = 'news'`) não são alterados por esta
 mudança. Os de imagem usam chave própria (`news_imagem:` + chave do resumo).
 
+## 3a. Amostra real reprodutível (qualquer máquina com internet, sem credenciais)
+
+```
+python docs/evidencias/imagens-news-20261019/validar_amostra_real.py --n 10 --saida /tmp/amostra-fotos
+```
+
+O script roda o MESMO extrator e a MESMA validação do coletor contra
+matérias reais do TOP MERCADO (1 por veículo antes de repetir), sem gravar
+nada e sem chamar IA. Ele gera `amostra.csv` e `amostra.html` (foto ao
+lado do título, com link para a matéria original). Abra o HTML e preencha
+a coluna `foto_e_da_materia` do CSV comparando com a matéria original.
+Saída com código 2 = nenhuma notícia coletada (sem acesso às fontes).
+
 ## 3. Conferência visual (https://pregao.streamlit.app)
 
 Escolha de 8 a 12 matérias de fontes diferentes (InfoMoney, Valor, g1,

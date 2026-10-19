@@ -52,8 +52,23 @@ a ir pro log; testes do coletor deixam de executar a etapa real de
 imagens (+3 testes do coletor: roda sem Groq, não roda sem persistência,
 exceção não muda o exit code).
 
-Testes: `tests/test_news_imagens_pipeline.py` (40 casos, tudo mockado).
-Suíte: 951 passed. Validação visual em harness local
+Revisão de correspondência notícia ↔ foto (2ª rodada, mesmo dia),
+todos os bugs reproduzidos em teste antes da correção:
+- foto reciclada no formato diário recorrente ("Ibovespa fecha em alta
+  hoje" x "... em queda hoje", dias diferentes) passava como o mesmo fato
+  (sobreposição de títulos 0,75); agora o mesmo fato também exige ≤12h
+  entre as publicações e direção de mercado compatível;
+- link que redireciona pra home/login/assinatura/consentimento não vira
+  foto (a og:image dessas páginas é a capa padrão do site);
+- JSON-LD: imagem de matéria relacionada (`hasPart`, `relatedLink`,
+  `mentions`, `itemListElement`...) ignorada; `ImageObject.url` dentro de
+  `image` passa a ser aceito (formato schema.org mais comum, ignorado antes);
+- 401/403 na validação = bloqueio (temporário), não imagem inexistente;
+- URL assinada/expirável nunca fica "confirmada" (reavaliada em 6h);
+- `validar_amostra_real.py`: amostra real reprodutível, somente leitura.
+
+Testes: `tests/test_news_imagens_pipeline.py` (51 casos, tudo mockado).
+Suíte: 962 passed (Python 3.13 e 3.12). Validação visual em harness local
 (`docs/evidencias/imagens-news-20261019/`) — dados sintéticos; sem acesso
 a sites reais nem ao Supabase neste ambiente.
 
