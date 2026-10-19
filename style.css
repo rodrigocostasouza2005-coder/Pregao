@@ -272,6 +272,81 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .ciano { color: var(--ciano); }
 .alerta { color: var(--destaque); }
 
+/* Morning Call: leitura editorial estruturada (ui/morning_call_tab.py) -----
+   mesmo texto plano do e-mail/job (jobs/morning_call.py), so' que
+   renderizado com hierarquia (titulo/secao/bullet) em vez de um bloco
+   unico pre-wrap - achado real da missao de redesign 2026-10-19
+   (screenshot do Rodrigo: "bloco monoespacado"). So' tokens de tema. */
+.mc-masthead-titulo {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    margin-bottom: 0.1rem;
+}
+.mc-masthead-sub {
+    color: var(--cinza);
+    font-size: 0.74rem;
+    margin-bottom: 0.35rem;
+}
+.mc-masthead-meta {
+    color: var(--cinza);
+    font-size: 0.66rem;
+    line-height: 1.4;
+    padding-bottom: 0.55rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--borda);
+}
+.mc-secao-titulo {
+    color: var(--destaque);
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    font-size: 0.74rem;
+    margin: 0.85rem 0 0.35rem 0;
+    padding-bottom: 0.2rem;
+    border-bottom: 1px solid var(--borda);
+}
+.mc-secao-titulo:first-child { margin-top: 0; }
+.mc-bullet {
+    font-size: 0.8rem;
+    line-height: 1.5;
+    padding: 0.14rem 0 0.14rem 0.9rem;
+    position: relative;
+}
+.mc-bullet::before {
+    content: "–";
+    position: absolute;
+    left: 0;
+    color: var(--cinza);
+}
+.mc-bullet a { color: var(--destaque); text-decoration: none; }
+.mc-bullet a:hover { text-decoration: underline; }
+.mc-nota {
+    font-size: 0.76rem;
+    color: var(--cinza);
+    padding: 0.1rem 0 0.3rem 0;
+}
+.mc-tag {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 0.03rem 0.32rem;
+    border: 1px solid var(--borda);
+    border-radius: 2px;
+    margin-right: 0.4rem;
+    color: var(--cinza);
+}
+.mc-bullet-interpretacao {
+    font-style: italic;
+    color: var(--cinza);
+}
+.mc-bullet-interpretacao .mc-tag {
+    border-color: var(--destaque);
+    color: var(--destaque);
+}
+
 /* sidebar -------------------------------------------------------------------- */
 section[data-testid="stSidebar"] {
     background-color: var(--painel-bg);

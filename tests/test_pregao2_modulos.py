@@ -70,6 +70,59 @@ def test_texto_para_html_escapa_antes_de_linkificar():
     assert "<a href='https://exemplo.com/a?b=1&amp;c=2'" in saida
 
 
+def test_parse_edicao_separa_cabecalho_de_secoes_numeradas_e_planas():
+    """Achado real da missao de redesign 2026-10-19 (screenshot do
+    Rodrigo): a tela jogava o texto inteiro num bloco monoespacado unico.
+    _parse_edicao precisa separar titulo/subtitulo/meta (antes da 1a
+    secao numerada) das secoes - numeradas ("N. TITULO") OU so' maiusculas
+    no fim (LIMITACOES/FONTES, sem numero)."""
+    texto = (
+        "MORNING CALL — 19/10/2026\n"
+        "Pregão | Briefing informativo baseado nos últimos dados disponíveis\n"
+        "\n"
+        "Gerado em 19/10/2026 08:03 (horário de Brasília)\n"
+        "\n"
+        "1. RESUMO EXECUTIVO\n"
+        "- Ibovespa: alta de 1,20% na última sessão disponível.\n"
+        "\n"
+        "LIMITAÇÕES\n"
+        "- Conteúdo informativo, não constitui recomendação de investimento.\n"
+    )
+    dados = mc_tab._parse_edicao(texto)
+    assert dados["masthead"] == [
+        "MORNING CALL — 19/10/2026",
+        "Pregão | Briefing informativo baseado nos últimos dados disponíveis",
+        "Gerado em 19/10/2026 08:03 (horário de Brasília)",
+    ]
+    titulos = [s["titulo"] for s in dados["secoes"]]
+    assert titulos == ["RESUMO EXECUTIVO", "LIMITAÇÕES"]
+    assert dados["secoes"][0]["bullets"] == ["- Ibovespa: alta de 1,20% na última sessão disponível."]
+
+
+def test_html_bullet_distingue_interpretacao_direcao_manchete_e_nota():
+    # [INTERPRETAÇÃO] vira selo com tratamento proprio (leitura de cenario, nao fato)
+    interp = mc_tab._html_bullet("- [INTERPRETAÇÃO] acompanhe os futuros americanos.")
+    assert "mc-bullet-interpretacao" in interp and "<span class='mc-tag'>INTERPRETAÇÃO</span>" in interp
+
+    # bullet de direcao (RESUMO EXECUTIVO) ganha cor semantica
+    alta = mc_tab._html_bullet("- Ibovespa: alta de 1,20% na última sessão disponível.")
+    assert "mc-bullet alta" in alta
+    queda = mc_tab._html_bullet("- Dólar (USD/BRL): queda de 0,30% na última sessão disponível.")
+    assert "mc-bullet baixa" in queda
+    estavel = mc_tab._html_bullet("- Ibovespa: estável de 0,00% na última sessão disponível.")
+    assert "mc-bullet cinza" in estavel
+
+    # manchete com link: mostra o titulo + "abrir", nunca a URL crua no texto visivel
+    manchete = mc_tab._html_bullet("- Petrobras divulga resultado do trimestre — https://exemplo.com/a")
+    assert "Petrobras divulga resultado do trimestre" in manchete
+    assert "href='https://exemplo.com/a'" in manchete
+    assert manchete.endswith("abrir ↗</a></div>")  # texto visivel do link e' "abrir ↗", nunca a URL crua
+
+    # linha sem "- " na frente (ex.: intro da AGENDA DE HOJE) vira nota, sem marcador de bullet
+    nota = mc_tab._html_bullet("Eventos do calendário de resultados corporativos (CVM) com data de hoje.")
+    assert "mc-nota" in nota and "mc-bullet" not in nota
+
+
 def test_tela_do_morning_call_nunca_importa_envio_de_email():
     fonte = Path(mc_tab.__file__).read_text(encoding="utf-8")
     assert "enviar_email" not in fonte.replace("sem enviar_email", "")

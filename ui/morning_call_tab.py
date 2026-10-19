@@ -19,6 +19,10 @@ from data.morning_call_historico import listar_edicoes
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 _URL = re.compile(r"https?://[^\s<>\"')]+")
+_RE_SECAO_NUMERADA = re.compile(r"^(\d+)\.\s+(.+)$")
+_RE_CHAMADA_TAG = re.compile(r"^- \[([^\]]+)\]\s*(.*)$")
+_RE_MANCHETE_LINK = re.compile(r"^- (.+?) — (https?://\S+)$")
+_RE_DIRECAO = re.compile(r": (alta|queda|estável) de ")
 
 
 def texto_para_html(texto: str) -> str:
@@ -34,6 +38,100 @@ def _exibir_texto(texto: str):
         f"{texto_para_html(texto)}</div>",
         unsafe_allow_html=True,
     )
+
+
+def _parse_edicao(texto: str) -> dict:
+    """Quebra o texto plano do Morning Call (jobs/morning_call.py:
+    montar_morning_call, mesmo contrato que o e-mail ja' parseia em
+    _extrair_*) em cabecalho (titulo/subtitulo/meta - tudo antes da 1a
+    secao numerada) + lista de secoes (numeradas "N. TITULO" ou as
+    secoes finais so' maiusculas, LIMITACOES/FONTES). Aqui renderiza o
+    CORPO INTEIRO (nao so' a capa/teaser do e-mail) - achado real da
+    missao de redesign 2026-10-19: a tela so' jogava o texto cru num
+    <div white-space:pre-wrap> unico, sem nenhuma hierarquia."""
+    masthead, secoes, atual = [], [], None
+    for linha in (texto or "").split("\n"):
+        linha = linha.rstrip()
+        if not linha:
+            continue
+        m = _RE_SECAO_NUMERADA.match(linha)
+        if m:
+            atual = {"titulo": m.group(2), "bullets": []}
+            secoes.append(atual)
+            continue
+        if atual is not None and linha.isupper() and len(linha) > 2:
+            atual = {"titulo": linha, "bullets": []}
+            secoes.append(atual)
+            continue
+        (atual["bullets"] if atual is not None else masthead).append(linha)
+    return {"masthead": masthead, "secoes": secoes}
+
+
+def _cor_direcao(bruto: str) -> str | None:
+    m = _RE_DIRECAO.search(bruto)
+    if not m:
+        return None
+    return {"alta": "alta", "queda": "baixa", "estável": "cinza"}.get(m.group(1))
+
+
+def _html_bullet(linha: str) -> str:
+    """1 linha do corpo -> 1 bloco HTML: chamada [TAG] vira selo (TAG
+    INTERPRETACAO com tratamento proprio - leitura de cenario, nunca
+    fato), manchete com link mostra so' o titulo + "abrir" (mesma
+    convencao do NEWS, nao a URL crua), bullet de direcao (RESUMO
+    EXECUTIVO: "alta/queda/estavel de X%") ganha cor semantica, texto
+    sem "- " na frente (linha de contexto, ex. AGENDA DE HOJE) vira nota
+    sem marcador - nunca tratado como item de lista igual aos outros."""
+    if not linha.startswith("- "):
+        return f"<div class='mc-nota'>{texto_para_html(linha)}</div>"
+    m_tag = _RE_CHAMADA_TAG.match(linha)
+    if m_tag:
+        tag, resto = m_tag.group(1), m_tag.group(2)
+        classe = "mc-bullet mc-bullet-interpretacao" if tag == "INTERPRETAÇÃO" else "mc-bullet"
+        return f"<div class='{classe}'><span class='mc-tag'>{html.escape(tag)}</span>{texto_para_html(resto)}</div>"
+    m_link = _RE_MANCHETE_LINK.match(linha)
+    if m_link:
+        titulo, url = m_link.group(1), m_link.group(2)
+        return (f"<div class='mc-bullet'>{html.escape(titulo)} "
+                f"<a href='{html.escape(url)}' target='_blank' rel='noopener'>abrir ↗</a></div>")
+    bruto = linha[2:]
+    cor = _cor_direcao(bruto)
+    classe = f"mc-bullet {cor}" if cor else "mc-bullet"
+    return f"<div class='{classe}'>{texto_para_html(bruto)}</div>"
+
+
+def _exibir_edicao_estruturada(texto: str):
+    """Visao editorial do Morning Call (cabecalho + secoes + bullets),
+    sem alterar 1 caractere do conteudo/fontes/numeros - so' hierarquia
+    visual em cima do mesmo texto que o e-mail/PDF usam. Mesmo motivo de
+    confianca do resto do produto (nunca reescrever o dado, so' a
+    apresentacao) - ver docstring do modulo."""
+    dados = _parse_edicao(texto)
+    if not dados["secoes"] and not dados["masthead"]:
+        st.caption("Edição vazia.")
+        return
+    if dados["masthead"]:
+        titulo = dados["masthead"][0]
+        subtitulo = dados["masthead"][1] if len(dados["masthead"]) > 1 else ""
+        meta = " ".join(dados["masthead"][2:]).strip()
+        partes = [f"<div class='mc-masthead-titulo'>{html.escape(titulo)}</div>"]
+        if subtitulo:
+            partes.append(f"<div class='mc-masthead-sub'>{html.escape(subtitulo)}</div>")
+        if meta:
+            partes.append(f"<div class='mc-masthead-meta'>{texto_para_html(meta)}</div>")
+        st.markdown("".join(partes), unsafe_allow_html=True)
+    # 1 st.markdown so' pro corpo inteiro (nao 1 por secao): .mc-secao-
+    # titulo:first-child so' deve zerar a margem da 1a secao de verdade -
+    # com 1 div por secao, cada titulo seria ":first-child" da PROPRIA
+    # div, zerando a margem de TODAS (bug real, visto no harness
+    # Playwright desta sessao - sem respiro visual entre secoes).
+    corpo = []
+    for secao in dados["secoes"]:
+        corpo.append(f"<div class='mc-secao-titulo'>{html.escape(secao['titulo'])}</div>")
+        corpo += [_html_bullet(b) for b in secao["bullets"] if b.strip()]
+    st.markdown("".join(corpo), unsafe_allow_html=True)
+    with st.expander("Ver texto original (sem formatação)"):
+        _exibir_texto(texto)
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -81,7 +179,7 @@ def render_edicao_atual(prefs: dict):
             _cabecalho_edicao(publicada)
             st.caption("Texto exatamente como foi enviado por e-mail. Fatos, [INTERPRETAÇÃO] e projeções vêm "
                        "marcados no próprio texto; cada seção cita as fontes.")
-            _exibir_texto(publicada["conteudo"])
+            _exibir_edicao_estruturada(publicada["conteudo"])
 
     with st.expander("Gerar prévia com os dados de agora (não envia e-mail)"):
         st.caption("Monta o briefing com as mesmas funções do envio agendado — leva alguns segundos e consulta "
@@ -95,7 +193,7 @@ def render_edicao_atual(prefs: dict):
                     print(f"[morning_call_tab] previa falhou: {exc!r}")
                     st.error("Não foi possível montar a prévia agora (fontes indisponíveis). Tente novamente em alguns minutos.")
         if st.session_state.get("mc_previa"):
-            _exibir_texto(st.session_state["mc_previa"])
+            _exibir_edicao_estruturada(st.session_state["mc_previa"])
 
 
 def render_relatorio_completo(prefs: dict):
@@ -140,7 +238,7 @@ def render_historico(prefs: dict):
             with st.expander(rotulo):
                 if ed["conteudo"]:
                     _cabecalho_edicao(ed)
-                    _exibir_texto(ed["conteudo"])
+                    _exibir_edicao_estruturada(ed["conteudo"])
                 else:
                     st.caption("Texto não registrado nesta execução.")
 
