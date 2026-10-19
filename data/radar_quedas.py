@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """Radar persistente de quedas em carteiras recomendadas.
 
-Fontes estruturadas habilitadas: recomendações públicas da Genial Analisa
-e a carteira mensal pública "Top 10 Ações" da Safra Corretora (2026-10-16
-- ver data/research/safra_carteiras.py pra evidência real de que essa
-fonte é acessível, diferente de Genial/XP/BTG, bloqueadas na borda
-Akamai mesmo fora do sandbox). Cada casa é tratada de forma INDEPENDENTE
+Fontes estruturadas habilitadas: carteira Top 5 pública do Itaú Investimentos,
+carteiras mensais públicas da Genial Analisa e da Safra Corretora. A fonte
+Itaú Investimentos NÃO é rotulada como Itaú BBA Research: são produtos
+editoriais distintos. Cada casa é tratada de forma INDEPENDENTE
 em processar_monitoramento(): uma fonte bloqueada nunca invalida nem
 desativa as recomendações vigentes de outra fonte que respondeu
 normalmente. Outras casas só entram quando houver coletor de carteiras
@@ -24,7 +23,7 @@ from data.supabase_client import obter_cliente
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 LIMIAR_VARIACAO = -4.0
-# Carteiras aqui sao produtos MENSAIS (Genial/Safra) - uma linha "vigente"
+# Carteiras aqui sao produtos MENSAIS (Itaú/Genial/Safra) - uma linha "vigente"
 # cuja ultima confirmacao real (verificado_em) passou desse limite quer
 # dizer que a fonte ficou fora do ar por tempo demais pra continuar
 # confiando nela como "carteira atual" (ver listar_carteiras). Folga de
