@@ -1,0 +1,32 @@
+# -*- coding: utf-8 -*-
+from datetime import date
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from data.research.itau_carteiras import CASA, CARTEIRA, parsear_artigo
+
+
+def test_parser_itau_top5_aceita_tabela_com_cinco_tickers():
+    html = """
+    <h1>Carteira Top 5 Outubro 2026</h1>
+    <table>
+      <tr><th>Empresas</th><th>Recomendação</th><th>Peso</th></tr>
+      <tr><td>Petrobras (PETR4)</td><td>OP</td><td>20%</td></tr>
+      <tr><td>Vale (VALE3)</td><td>OP</td><td>20%</td></tr>
+      <tr><td>Embraer (EMBJ3)</td><td>OP</td><td>20%</td></tr>
+      <tr><td>Sabesp (SBSP3)</td><td>OP</td><td>20%</td></tr>
+      <tr><td>Eneva (ENEV3)</td><td>OP</td><td>20%</td></tr>
+    </table>
+    """
+    itens = parsear_artigo(html, "https://www.itau.com.br/investimentos/carteira-top-5-outubro-2026/", date(2026, 10, 19))
+    assert itens is not None
+    assert {x["ticker"] for x in itens} == {"PETR4", "VALE3", "EMBJ3", "SBSP3", "ENEV3"}
+    assert all(x["casa"] == CASA and x["carteira"] == CARTEIRA for x in itens)
+    assert all(x["fonte_url"].startswith("https://www.itau.com.br/") for x in itens)
+
+
+def test_parser_itau_rejeita_pagina_de_mes_incorreto():
+    html = "<h1>Carteira Top 5 Setembro 2026</h1><table><tr><th>Empresas</th></tr></table>"
+    assert parsear_artigo(html, "https://example.com", date(2026, 10, 19)) is None
