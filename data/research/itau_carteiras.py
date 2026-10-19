@@ -26,6 +26,7 @@ MESES = {
     9: "setembro", 10: "outubro", 11: "novembro", 12: "dezembro",
 }
 TICKER_RE = re.compile(r"\b([A-Z]{4}\d{1,2})\b")
+EMPRESA_TICKER_RE = re.compile(r"^\s*(.+?)\s*\(([A-Z]{4}\d{1,2})\)")
 MIN_TICKERS = 5
 
 
