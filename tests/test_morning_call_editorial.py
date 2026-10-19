@@ -296,7 +296,7 @@ def test_montar_edicao_estrutura_completa_sem_rede():
         edicao = ed.montar_edicao(agora)
     assert edicao["agora"] == agora
     assert set(edicao.keys()) == {"agora", "capa", "brasil", "exterior", "empresas", "limitacoes", "fontes",
-                                  "mercados_nota", "janela_noticias", "radar"}
+                                  "mercados_nota", "janela_noticias", "radar", "sessao_mercado"}
     # sem notícia de setor nenhum, o radar sai vazio e registra cada exclusão
     assert edicao["radar"]["setores"] == []
     assert all("evidência insuficiente" in e["motivo"] for e in edicao["radar"]["excluidos"])
@@ -310,16 +310,16 @@ def test_montar_edicao_estrutura_completa_sem_rede():
 
 def test_montar_edicao_capa_usa_top3_por_importancia():
     noticias = [
-        {"titulo": "Baixa importância", "link": "https://x/1", "regiao": "INT", "tickers": [], "importancia": 1},
-        {"titulo": "Alta importância", "link": "https://x/2", "regiao": "INT", "tickers": [], "importancia": 9},
-        {"titulo": "Média importância", "link": "https://x/3", "regiao": "BR", "tickers": [], "importancia": 5},
+        {"titulo": "Mercado: Baixa importância", "link": "https://x/1", "regiao": "INT", "tickers": [], "importancia": 1},
+        {"titulo": "Mercado: Alta importância", "link": "https://x/2", "regiao": "INT", "tickers": [], "importancia": 9},
+        {"titulo": "Mercado: Média importância", "link": "https://x/3", "regiao": "BR", "tickers": [], "importancia": 5},
     ]
     agora = datetime(2026, 10, 14, 7, tzinfo=TZ_SP)
     with _MultiPatch(**_pools(noticias)):
         edicao = ed.montar_edicao(agora)
     titulos_capa = [d["titulo"] for d in edicao["capa"]["destaques"]]
-    assert titulos_capa[0] == "Alta importância"
-    assert "Baixa importância" in titulos_capa  # só 3 notícias no total, as 3 entram
+    assert titulos_capa[0] == "Mercado: Alta importância"
+    assert "Mercado: Baixa importância" in titulos_capa  # só 3 notícias no total, as 3 entram
 
 
 def _fato(titulo, importancia, corpo=None):
@@ -369,7 +369,7 @@ def test_corpo_vem_do_bloco_resumo_do_cache_sem_a_leitura_de_mercado():
 
 
 def test_falha_na_leitura_do_cache_nao_derruba_a_edicao():
-    noticia = {"titulo": "X", "link": "https://x/1", "regiao": "BR", "tickers": [], "importancia": 1}
+    noticia = {"titulo": "Ibovespa X", "link": "https://x/1", "regiao": "BR", "tickers": [], "importancia": 1}
 
     def _quebra(_g):
         raise RuntimeError("cache fora do ar")
@@ -378,7 +378,7 @@ def test_falha_na_leitura_do_cache_nao_derruba_a_edicao():
     with _MultiPatch(**_pools([noticia], data="2026-10-18T09:00:00-03:00"), obter_resumos_prontos=_quebra):
         edicao = ed.montar_edicao(agora)
     assert edicao["brasil"]["noticias"][0]["corpo"] == []
-    assert edicao["capa"]["manchete"]["titulo"] == "X"
+    assert edicao["capa"]["manchete"]["titulo"] == "Ibovespa X"
 
 
 def test_radar_consulta_cada_setor_e_aplica_regras_da_edicao():
