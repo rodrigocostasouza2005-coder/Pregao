@@ -413,6 +413,13 @@ def _painel_watchlist(prefs: dict, relatorios: list, recomendacoes: list, swing:
                 recomendacao_ticker = {
                     "ticker": ticker, "recomendacao": snap.get("recomendacao"),
                     "preco_alvo": snap.get("preco_alvo"), "potencial_pct": snap.get("potencial_pct"),
+                    # achado real (auditoria 2026-10-18): capturado_em existe
+                    # no snapshot (ultimo_snapshot ORDENA por ele) mas nunca
+                    # era copiado pra ca - a linha "Genial: COMPRA..." nunca
+                    # mostrava NENHUMA data, e _expander_historico_recomendacao
+                    # so' aparece com 2+ snapshots (o caso mais comum, 1
+                    # snapshot so', ficava sem data visivel em lugar nenhum).
+                    "capturado_em": snap.get("capturado_em"),
                 }
         swing_ticker = [
             s for s in swing
@@ -438,10 +445,17 @@ def _painel_watchlist(prefs: dict, relatorios: list, recomendacoes: list, swing:
             preco_alvo = recomendacao_ticker.get("preco_alvo")
             potencial_txt = f"{config.formatar_numero(potencial, 1, fmt)}%" if potencial is not None else "—"
             preco_alvo_txt = f"R$ {config.formatar_numero(preco_alvo, 2, fmt)}" if preco_alvo is not None else "—"
+            # capturado_em so' existe no fallback de snapshot persistido (ver
+            # acima) - recomendacao AO VIVO da Genial nunca teve data nenhuma
+            # exposta pela fonte, entao aqui nao mostra nada (nunca inventa
+            # data que a propria fonte nao da').
+            capturado_em = recomendacao_ticker.get("capturado_em")
+            data_txt = f" · atualizado em {_fmt_capturado_em(capturado_em)}" if capturado_em else ""
             st.markdown(
                 f"<div style='font-size:0.78rem;'>Genial: <b>{html.escape(str(recomendacao_ticker['recomendacao']))}</b>"
                 f" · potencial <span class='{sinal}'>{potencial_txt}</span>"
-                f" · preço-alvo {preco_alvo_txt}</div>",
+                f" · preço-alvo {preco_alvo_txt}"
+                f"<span class='cinza'>{data_txt}</span></div>",
                 unsafe_allow_html=True,
             )
             _expander_historico_recomendacao(ticker, fmt)
