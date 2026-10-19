@@ -1,188 +1,44 @@
-agora: 2026-10-18T23:14:05.029582-03:00 | erros de coleta: {}
-bruto: brasil 15 empresas 1 exterior 24
-sessao_mercado: 2026-10-16
-masthead: Mercados: fechamento de sex 16/10 · gerado dom 18/10, 23h14 (Brasília)
-paginas: 4
 
-== DESCARTADOS PELO FILTRO (dentro da janela) ==
-  sem_relevancia | Saiba como emitir a nova Certidão Única de Débitos do Estado de São Paulo
-  fora_de_pauta | Tesouro Selic, Tesouro Reserva ou CDB: qual rende mais R$ 10 mil e onde vale a pena investir?
-  sem_relevancia | Entenda por que ICL distorce mensagens de Vorcaro sobre CNN
-  fora_de_pauta | My wife says we can’t afford to retire. I vetoed her $8,000 trip to Italy. We’re in our 60s and have $4 million. Do I keep working?
-  fora_de_pauta | ‘Some people did everything right’: I lost my home in the Great Recession. I rent in my 50s. Why is that judged as failure?
-  fora_de_pauta | My sister moved in with our mother, 78, and says she deserves the $925,000 family home. Is she right?
-  sem_relevancia | Cheddar cheese recalled across several states over dangerous E. coli
-  sem_relevancia | Don't fall for this - how to protect yourself from AI scams
-  sem_relevancia | Carvana is winning customers, but faces a costly problem
-  fora_de_pauta | I’m 64 with two sons, but only one works in the family business. Is it ethical to leave him 70% of the company?
-  fora_de_pauta | I’m 63 and diagnosed with lymphoma. Should I take my Social Security next year?
+===== CENARIO agora: agora=2026-10-18T23:19:14.844420-03:00 =====
+PDF: pregao-morning-call-2026-10-18.pdf 169115 bytes, 4 paginas
+capa (primeiras linhas): M O R N I N G   C A L L | Edição das 8h · São Paulo | P R E G Ã O | Domingo, 18 de outubro de 2026 | Dados até 23:19, horário de Brasília | IBOVESPA
+assunto: [PREGÃO] Morning Call — 18/10/2026
+texto e-mail: 12049 chars; html: 5195 chars; secoes faltantes: []
+   Gerado em 18/10/2026 23:19 (horário de Brasília, UTC-3 fixo - sem horário de verão desde 2019) · período analisado: última barra/leitura disponível em cada fonte (ver horário por linha abaixo) · fonte
+   - Ibovespa: alta de 0,54% na última sessão disponível.
+   - Dólar (USD/BRL): queda de 0,63% na última sessão disponível.
+   - Ibovespa: 205.430,00; variação sobre o fechamento anterior: 0,54%; referência: 16/10 17:18 (horário de Brasília)
+   - Dólar (USD/BRL): 5,06; variação sobre o fechamento anterior: -0,63%; referência: 18/10 22:38 (horário de Brasília)
+   - Selic meta (vigente desde 17/09/2026): 13,75% a.a. — fonte: 281ª reunião do Copom, histórico oficial em bcb.gov.br (SGS indisponível)
+   - CDI: indisponível (SGS 12: o Banco Central respondeu com página de erro HTML ('Requisição inválida') em vez dos dados)
+   - Focus IPCA 2026 (boletim 09/10/2026): 5,22% — mediana de 144 respondentes
+   - Focus IPCA 2027 (boletim 09/10/2026): 4,30% — mediana de 144 respondentes
+   - Focus Selic 2026 (boletim 09/10/2026): 13,25% — mediana de 139 respondentes
+   - Focus Selic 2027 (boletim 09/10/2026): 12,00% — mediana de 138 respondentes
+   - Ibovespa sobe 0,54% com apoio de ações do petróleo e fecha aos 205 mil pontos — https://news.google.com/rss/articles/CBMisAFBVV95cUxOMXJEanNLaFJnUDVnZGJEenhBRF9KbDg0OEhwWmJHQXU0ZVBrbkdNMFd0MldNUGJSV
+   - Dólar fecha a R$ 5,07; Bolsa sobe nesta sexta, mas acumula queda na semana — https://news.google.com/rss/articles/CBMiuwFBVV95cUxOWS0wZXRDOU5paWtGU215NmtTck9lbmtxY3FMUjFBZTVKMFUyTDdNbmJqMG9iOVRGZHF5
+   - Petrobras salta 4%, bate novo recorde e segura Ibovespa no positivo em meio a cautela eleitoral — https://news.google.com/rss/articles/CBMi3AFBVV95cUxOemlCVFBmU0cyaEpWR0l6Z2lqeVdxbzJWMFdGTEw3NEJhSUZ
+   - Ibovespa recua 1,74% na semana com pesquisas eleitorais; veja maiores altas e quedas — https://news.google.com/rss/articles/CBMi1wFBVV95cUxNa0VNQi1FVE9aRm8xNmktTjlHVkhwVDVLTURjNUsxTFpzOFUxZk1wQWd2U2
+   - Indicadores macro: Banco Central do Brasil (Selic/CDI) e Boletim Focus (BCB).
 
-== BRASIL ==
-- Ibovespa sobe 0,54% com apoio de ações do petróleo e fecha aos 205 mil pontos | ADVFN | sex 16/10, 22h25
-  [OK] editoria pelo assunto
-  [OK] nao e noticia de empresa
-    veiculos do grupo: 20
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Lula desafia Flávio Bolsonaro a abrir sigilos bancário e fiscal | Agenda do Poder | dom 18/10, 22h11
-  [OK] editoria pelo assunto
-  [OK] nao e noticia de empresa
-    veiculos do grupo: 13
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Ajuste fiscal e Banco Master dominam repercussão de entrevista de Flávio à Globo | Band | sáb 17/10, 10h36
-  [OK] editoria pelo assunto
-  [OK] nao e noticia de empresa
-    veiculos do grupo: 10
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Tesouro Direto hoje: Prefixados voltam aos 13% após rali de eleições | ISTOÉ DINHEIRO | sex 16/10, 14h39 | PUBLICADO OUTRO DIA
-  [OK] editoria pelo assunto
-  [OK] nao e noticia de empresa
-    veiculos do grupo: 6
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Taxas de juros abrem em alta com trade eleitoral, mas desaceleram com dólar | ISTOÉ DINHEIRO | sex 16/10, 9h31
-  [OK] editoria pelo assunto
-  [OK] nao e noticia de empresa
-    veiculos do grupo: 4
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- IPCA-15 e reta final das eleições movem a semana | SpaceMoney | dom 18/10, 17h19
-  [OK] editoria pelo assunto
-  [OK] nao e noticia de empresa
-    veiculos do grupo: 3
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Ibovespa a 240 mil pontos? Inter explica por que ainda vê espaço para a bolsa subir | Money Times | dom 18/10, 15h30
-  [OK] editoria pelo assunto
-  [OK] nao e noticia de empresa
-    veiculos do grupo: 3
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Especialistas alertam para risco fiscal do programa Prospera MEI | InfoMoney | dom 18/10, 19h06
-  [OK] editoria pelo assunto
-  [OK] nao e noticia de empresa
-    veiculos do grupo: 3
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-
-== EMPRESAS ==
-- Petrobras (PETR4) sobe mais de 6% e escapa do tombo do Ibovespa; veja o que movimentou a bolsa na semana | ADVFN | sáb 17/10, 9h58
-  [OK] editoria pelo assunto
-  [OK] empresa/ticker no titulo
-    veiculos do grupo: 23
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-
-== MUNDO ==
-- Bitcoin se estabiliza perto de US$ 82 mil após Warsh, do Fed, não sinalizar alta de juros | Bloomberg Línea | sex 16/10, 12h45
-  [OK] editoria pelo assunto
-    veiculos do grupo: 7
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Déficit orçamentário dos EUA se aproxima de US$ 2 trilhões no ano fiscal de 2026 | ADVFN | sex 16/10, 20h29
-  [OK] editoria pelo assunto
-    veiculos do grupo: 5
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Os Futuros de Ouro caíram durante a sessão dos Estados Unidos | ADVFN | sex 16/10, 16h45
-  [OK] editoria pelo assunto
-    veiculos do grupo: 3
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Anthropic commits 5% of shares to new public benefit fund that could address AI job disruption | CNBC | dom 18/10, 19h55
-  [OK] editoria pelo assunto
-    veiculos do grupo: 2
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Nasdaq futures gain as investors buy the dip in the AI trade: Live updates | CNBC | dom 18/10, 21h41
-  [OK] editoria pelo assunto
-    veiculos do grupo: 1
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- 'Just another scare': Wall Street sees the AI trade strong despite tech's latest rout | Fortune | dom 18/10, 12h59
-  [OK] editoria pelo assunto
-    veiculos do grupo: 2
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- AI Cloud Firm Nscale Faces Investor Pushback Over IPO Valuation | Bloomberg | dom 18/10, 18h13
-  [OK] editoria pelo assunto
-    veiculos do grupo: 1
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- AI Agents Trading Stocks While You Sleep? Charles Schwab’s CEO Is Skeptical | Wall Street Journal | dom 18/10, 17h23
-  [OK] editoria pelo assunto
-    veiculos do grupo: 1
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-
-== CAPA ==
-manchete: Petrobras (PETR4) sobe mais de 6% e escapa do tombo do Ibovespa; veja o que movimentou a bolsa na semana | outro dia: False
-
-== RADAR ==
-setor: Saúde
-    Hapvida sobe 40% em duas semanas, mas ainda vale a pena apostar nas ações? | Estadão
-  [OK] evidencia nao publicada nas editorias
-    Hapvida reduz tempo para diagnóstico de câncer de mama; cerca de 70% de pacientes são acolhidos em até 14 dias | Diário de São Paulo
-  [OK] evidencia nao publicada nas editorias
-    ANS sugere traçar diretrizes para tratamento de pessoas com autismo por planos de saúde | Futuro da Saúde
-  [OK] evidencia nao publicada nas editorias
-setor: Mineração e siderurgia
-    Vale diz que alta de custos torna 10% da oferta global de minério de ferro inviável | Bloomberg Línea
-  [OK] evidencia nao publicada nas editorias
-    Goldman corta projeções de Usiminas e CSN antes do 3T; Morgan vê margens sob pressão | InfoMoney
-  [OK] evidencia nao publicada nas editorias
-    Vale cede controle de Thompson: mantém 18,9% e offtake de níquel | Ativovirtual
-  [OK] evidencia nao publicada nas editorias
-setor: Petróleo e gás
-    El Niño e petróleo ameaçam a queda de juros em 2027 | O Globo
-  [OK] evidencia nao publicada nas editorias
-    Como a Arábia Saudita pretende transportar mais petróleo para o mercado global? | Times Brasil | CNBC
-  [OK] evidencia nao publicada nas editorias
-    Com forte valorização da Petrobras (PETR4), Ibovespa fecha em alta; dólar recua a R$ 5,07 | Valor Investe
-  [OK] evidencia nao publicada nas editorias
-setor: Bancos
-    Itaú, Bradesco, BB, BTG e Santander: quem deve surpreender nos balanços, segundo o Citi? | Estadão
-  [OK] evidencia nao publicada nas editorias
-    Eneva Itaú: acordo de R$ 1,77 bi em ações preferenciais | ADVFN
-  [OK] evidencia nao publicada nas editorias
-    CNI: indústria depende mais de bancos tradicionais para obter crédito | CNN Brasil
-  [OK] evidencia nao publicada nas editorias
-excluido: Tecnologia e telecom - evidência insuficiente: 0 notícia(s) válida(s) de 0 veículo(s) na janela da edição
-excluido: Saneamento - evidência insuficiente: nenhum veículo da lista de fontes confiáveis
-
-== MACRO ==
-  {"indicador": "Selic meta", "valor": 13.75, "referencia": "vigente desde 17/09/2026", "erro": null}
-  {"indicador": "CDI", "valor": null, "referencia": "—", "erro": "SGS 12: o Banco Central respondeu com página de erro HTML ('Requisição inválida') em vez dos dados"}
-  {"indicador": "Focus IPCA 2026", "valor": 5.2245, "referencia": "boletim 09/10/2026", "erro": null}
-  {"indicador": "Focus IPCA 2027", "valor": 4.3, "referencia": "boletim 09/10/2026", "erro": null}
-  {"indicador": "Focus Selic 2026", "valor": 13.25, "referencia": "boletim 09/10/2026", "erro": null}
-  {"indicador": "Focus Selic 2027", "valor": 12.0, "referencia": "boletim 09/10/2026", "erro": null}
-
-== TEXTO DO PDF (editoria x manchete) ==
-manchete vem de: EMPRESAS | itens na editoria: {'BRASIL': 8, 'EMPRESAS': 1, 'MUNDO': 8}
-PDF contem 'Nenhuma notícia desta editoria': False
-PDF contem 'manchete da capa': True
-PDF contem 'Certidão Única': False
-  [OK] Empresas nao fica vazia quando a manchete de empresa vai para a capa
-  [OK] Certidao Unica de Debitos fora do PDF
-
-TOTAL FORA: 0
+===== CENARIO seg0803: agora=2026-10-19T08:03:00-03:00 =====
+PDF: pregao-morning-call-2026-10-19.pdf 168370 bytes, 4 paginas
+capa (primeiras linhas): M O R N I N G   C A L L | Edição das 8h · São Paulo | P R E G Ã O | Segunda-feira, 19 de outubro de 2026 | Dados até 08:03, horário de Brasília | IBOVESPA
+assunto: [PREGÃO] Morning Call — 19/10/2026
+texto e-mail: 12050 chars; html: 5196 chars; secoes faltantes: []
+   Gerado em 19/10/2026 08:03 (horário de Brasília, UTC-3 fixo - sem horário de verão desde 2019) · período analisado: última barra/leitura disponível em cada fonte (ver horário por linha abaixo) · fonte
+   - Ibovespa: alta de 0,54% na última sessão disponível.
+   - Dólar (USD/BRL): queda de 0,63% na última sessão disponível.
+   - Ibovespa: 205.430,00; variação sobre o fechamento anterior: 0,54%; referência: 16/10 17:18 (horário de Brasília)
+   - Dólar (USD/BRL): 5,06; variação sobre o fechamento anterior: -0,63%; referência: 18/10 22:38 (horário de Brasília)
+   - Selic meta (vigente desde 17/09/2026): 13,75% a.a. — fonte: 281ª reunião do Copom, histórico oficial em bcb.gov.br (SGS indisponível)
+   - CDI: indisponível (SGS 12: o Banco Central respondeu com página de erro HTML ('Requisição inválida') em vez dos dados)
+   - Focus IPCA 2026 (boletim 09/10/2026): 5,22% — mediana de 144 respondentes
+   - Focus IPCA 2027 (boletim 09/10/2026): 4,30% — mediana de 144 respondentes
+   - Focus Selic 2026 (boletim 09/10/2026): 13,25% — mediana de 139 respondentes
+   - Focus Selic 2027 (boletim 09/10/2026): 12,00% — mediana de 138 respondentes
+   - Ibovespa sobe 0,54% com apoio de ações do petróleo e fecha aos 205 mil pontos — https://news.google.com/rss/articles/CBMisAFBVV95cUxOMXJEanNLaFJnUDVnZGJEenhBRF9KbDg0OEhwWmJHQXU0ZVBrbkdNMFd0MldNUGJSV
+   - Dólar fecha a R$ 5,07; Bolsa sobe nesta sexta, mas acumula queda na semana — https://news.google.com/rss/articles/CBMiuwFBVV95cUxOWS0wZXRDOU5paWtGU215NmtTck9lbmtxY3FMUjFBZTVKMFUyTDdNbmJqMG9iOVRGZHF5
+   - Petrobras salta 4%, bate novo recorde e segura Ibovespa no positivo em meio a cautela eleitoral — https://news.google.com/rss/articles/CBMi3AFBVV95cUxOemlCVFBmU0cyaEpWR0l6Z2lqeVdxbzJWMFdGTEw3NEJhSUZ
+   - Ibovespa recua 1,74% na semana com pesquisas eleitorais; veja maiores altas e quedas — https://news.google.com/rss/articles/CBMi1wFBVV95cUxNa0VNQi1FVE9aRm8xNmktTjlHVkhwVDVLTURjNUsxTFpzOFUxZk1wQWd2U2
+   - Indicadores macro: Banco Central do Brasil (Selic/CDI) e Boletim Focus (BCB).
