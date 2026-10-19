@@ -294,8 +294,13 @@ def test_pdf_publica_os_quatro_setores_com_rotulos_e_links():
     assert "R A D A R" in texto or "RADAR SETORIAL" in texto.upper()
     for bloco in edicao["radar"]["setores"]:
         assert bloco["nome"] in texto
-    for rotulo in ("O QUE ACONTECEU", "POR QUE IMPORTA", "EMPRESAS E ATIVOS RELACIONADOS", "O QUE ACOMPANHAR"):
+    for rotulo in ("O QUE ACONTECEU", "POR QUE IMPORTA", "EMPRESAS E ATIVOS RELACIONADOS"):
         assert texto.count(rotulo) == 4
+    # "O QUE ACOMPANHAR": 4x no radar (1 por setor) + 1x na página 2
+    # analítica (seção E, "O que acompanhar" - mesmo texto, origem
+    # diferente - ver jobs/morning_call_pdf.py:_secao_acompanhar,
+    # 2026-10-19). edicao_tipica() já inclui sintese_pagina2 por padrão.
+    assert texto.count("O QUE ACOMPANHAR") == 5
     assert "Não é recomendação de compra ou venda" in texto
     assert "Radar setorial" in texto  # índice da capa
     links = {a["/A"]["/URI"] for p in leitor.pages for a in (p.get("/Annots") or [])

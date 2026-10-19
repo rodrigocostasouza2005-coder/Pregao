@@ -6,6 +6,7 @@ acentuação, links, paginação (manchete nunca órfã, editoria nunca no pé
 da página, capa sem transbordo), limite de extensão e ausência dos
 elementos do layout antigo (chips FATO, "sem foto disponível"...)."""
 import io
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,7 @@ from pypdf import PdfReader
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import data.morning_call_editorial as editorial_mod  # noqa: E402
 import jobs.morning_call_pdf as pdf_mod  # noqa: E402
 import morning_call_amostras as amostras  # noqa: E402
 
@@ -55,9 +57,20 @@ def test_gera_pdf_valido_nos_tres_volumes(tipica, cheia, vazia):
 
 
 def test_extensao_decorre_do_conteudo_com_limite(tipica, cheia, vazia):
-    """O número de páginas acompanha o conteúdo (não é fixo em 4) e
-    fica num limite razoável mesmo com o volume máximo da camada de dados."""
-    assert len(vazia[2].pages) < len(tipica[2].pages) < len(cheia[2].pages)
+    """O número de páginas acompanha o conteúdo (não é fixo em 4) e fica
+    num limite razoável mesmo com o volume máximo da camada de dados.
+
+    Desde a página 2 analítica (ver data/morning_call_editorial.py:
+    sintese_pagina2), a extensão da página 2 é CURADA (no máx. 1 item em
+    Brasil em foco, 3 em Empresas em foco, 3 em Cenário internacional,
+    5 em O que acompanha) e não cresce linearmente com o volume de
+    matérias candidatas - de propósito, é o ponto inteiro do redesenho
+    (página de agregador crescia sem limite; a análise não). Por isso
+    `cheia` (que só adiciona MAIS matérias candidatas de baixa
+    importância, nunca mais ITENS CURADOS) pode empatar com `tipica` em
+    número de páginas - `vazia` continua estritamente a mais curta."""
+    assert len(vazia[2].pages) < len(tipica[2].pages)
+    assert len(tipica[2].pages) <= len(cheia[2].pages)
     assert len(tipica[2].pages) <= 4
     assert len(cheia[2].pages) <= 8
 
@@ -85,7 +98,22 @@ def test_acentuacao_portuguesa_preservada(tipica):
         assert trecho in texto, trecho
 
 
-def test_links_das_materias_continuam_clicaveis(tipica):
+def _itens_citados_pagina2(ed):
+    """Mesmos itens que data/morning_call_editorial.py:sintese_pagina2
+    seleciona pra B/C/D (os 3 blocos que anexam _linha_fonte com link) -
+    a página 2 agora é curada (5 blocos curtos, não um dump de toda
+    notícia), então os testes de link/veículo verificam só quem FOI
+    citado, não a lista bruta de notícias da amostra."""
+    sintese = editorial_mod.sintese_pagina2(ed, ed["agora"])
+    citados = []
+    if sintese["brasil_foco"]:
+        citados.append(sintese["brasil_foco"]["item"])
+    citados += [b["item"] for b in sintese["empresas_foco"]]
+    citados += [b["item"] for b in sintese["cenario_internacional"]]
+    return citados
+
+
+def test_links_das_materias_citadas_continuam_clicaveis(tipica):
     _, _, leitor = tipica
     uris = set()
     for pagina in leitor.pages:
@@ -93,25 +121,33 @@ def test_links_das_materias_continuam_clicaveis(tipica):
             acao = anot.get_object().get("/A")
             if acao and "/URI" in acao:
                 uris.add(str(acao["/URI"]))
-    ed = amostras.edicao_tipica()
-    todas = ed["brasil"]["noticias"] + ed["exterior"]["noticias"] + ed["empresas"]["cards"]
-    for item in todas:
+    citados = _itens_citados_pagina2(amostras.edicao_tipica())
+    assert citados, "nenhum item citado na página 2 da amostra típica"
+    for item in citados:
         assert item["link"] in uris, item["titulo"]
 
 
-def test_veiculo_de_cada_materia_aparece(tipica):
+def test_veiculo_de_cada_materia_citada_aparece(tipica):
     texto = _texto(tipica[2]).upper()
-    for veiculo in ("INFOMONEY", "VALOR ECONÔMICO", "REUTERS", "MONEY TIMES", "BLOOMBERG LÍNEA"):
-        assert veiculo in texto
+    citados = _itens_citados_pagina2(amostras.edicao_tipica())
+    assert citados, "nenhum item citado na página 2 da amostra típica"
+    for item in citados:
+        assert item["veiculo"].upper() in texto, item["titulo"]
 
 
 def test_elementos_do_layout_antigo_nao_voltam(tipica, vazia):
     """Cards/chips/placeholders do layout de dashboard: nunca mais."""
     for _, _, leitor in (tipica, vazia):
         texto = _texto(leitor)
-        for proibido in ("FATO", "INTERPRETAÇÃO", "ACOMPANHAR", "sem foto disponível",
+        for proibido in ("FATO", "INTERPRETAÇÃO", "sem foto disponível",
                          "Tendências e riscos", "INSIGHT", "Panorama"):
             assert proibido not in texto, proibido
+        # "ACOMPANHAR" sozinho (chip do layout antigo) nunca mais - mas a
+        # página 2 analítica (2026-10-19) tem uma seção de PROSA chamada
+        # "O que acompanhar" (ver jobs/morning_call_pdf.py:_secao_acompanhar),
+        # então só o CHIP isolado (sem o "QUE " na frente) é proibido.
+        for trecho in re.findall(r".{0,4}ACOMPANHAR", texto):
+            assert "QUE" in trecho, f"chip 'ACOMPANHAR' isolado do layout antigo voltou: {trecho!r}"
 
 
 def test_manchete_nunca_orfa_no_pe_da_coluna(cheia, tipica):
@@ -129,25 +165,19 @@ def test_manchete_nunca_orfa_no_pe_da_coluna(cheia, tipica):
 
 
 def test_editoria_nunca_fica_sozinha_no_pe_da_pagina(cheia, tipica):
-    """O cabeçalho de uma editoria de notícias sai na mesma página da
-    primeira matéria dela (achado real da inspeção: 'MUNDO' sozinho no pé
-    da página 2, matéria na 3); Mercados/Agenda vão inteiros com o
-    cabeçalho (KeepTogether), então basta não estarem colados na base."""
+    """O cabeçalho de uma editoria sai na mesma página do seu próprio
+    conteúdo (achado real da inspeção: 'MUNDO' sozinho no pé da página 2,
+    matéria na 3) - nenhum cabeçalho registrado pode estar colado na
+    base. Desde a página 2 analítica (ver jobs/morning_call_pdf.py:
+    _pagina2), o cabeçalho único ("sintese") e a 1ª subseção (O que move
+    os mercados) vão no MESMO KeepTogether por construção - a garantia
+    estrutural substitui a verificação por item de antes (que dependia
+    de 3 cabeçalhos "brasil"/"empresas"/"exterior" que não existem mais,
+    ver registro["paginas"])."""
     for nome, (_, registro, _) in (("típica", tipica), ("cheia", cheia)):
-        marcas = registro["marcas"]
         for chave, pagina, y in registro["cabecalhos"]:
             assert y > pdf_mod.MARGEM_BASE + 40, f"{nome}: {chave} colado na base (pág. {pagina})"
-        ed = getattr(amostras, "edicao_tipica" if nome == "típica" else "edicao_cheia")()
-        manchete_capa = ed["capa"]["manchete"]["titulo"]
-        for chave, lista in (("brasil", ed["brasil"]["noticias"]), ("exterior", ed["exterior"]["noticias"]),
-                             ("empresas", ed["empresas"]["cards"])):
-            titulos = [i["titulo"] for i in sorted(lista, key=lambda i: -i["importancia"])
-                       if i.get("corpo") and i["titulo"] != manchete_capa]
-            if not titulos:
-                continue
-            pagina_cab = registro["paginas"][chave]
-            pagina_primeira = next(p for rot, p, _ in marcas if rot == ("manchete", titulos[0]))
-            assert pagina_primeira == pagina_cab, f"{nome}: {chave} na pág. {pagina_cab}, 1ª matéria na {pagina_primeira}"
+        assert "sintese" in registro["paginas"], f"{nome}: página 2 (sintese) não registrou página"
 
 
 def test_capa_cabe_numa_pagina_e_indice_bate_com_paginas_reais(tipica, cheia):
@@ -318,11 +348,16 @@ def test_agenda_vazia_nao_afirma_ausencia_de_eventos():
     assert "Nenhuma divulgação de resultado prevista" not in texto
 
 
-def test_editoria_vazia_diz_a_janela_consultada():
+def test_cenario_internacional_vazio_e_honesto():
     edicao = amostras.edicao_tipica()
     edicao["exterior"]["noticias"] = None
+    # a síntese da página 2 é pré-calculada (ver tests/morning_call_amostras.py)
+    # a partir do que o dict tinha ANTES desta mutação - recalcula aqui, igual
+    # data/morning_call_editorial.py:montar_edicao faria numa edição real sem
+    # notícia internacional nenhuma.
+    edicao["sintese_pagina2"] = editorial_mod.sintese_pagina2(edicao, edicao["agora"])
     texto = _plano(_texto(PdfReader(io.BytesIO(pdf_mod.gerar_pdf(edicao)))))
-    assert "Nenhuma notícia desta editoria publicada desde 16/10 às 06:00" in texto
+    assert "Nenhuma notícia internacional com relevância financeira suficiente nesta edição." in texto
 
 
 def test_mensagem_de_erro_nunca_aparece_na_coluna_de_valor():

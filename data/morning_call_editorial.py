@@ -29,7 +29,7 @@ import pandas as pd
 
 import config
 from data.eventos import (
-    STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_LABEL, STATUS_PRAZO_CVM,
+    PRIORIDADE_STATUS, STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_LABEL, STATUS_PRAZO_CVM,
     calcular_calendario_cacheado,
 )
 from data.macro import (
@@ -791,6 +791,342 @@ def _radar_setorial(agora, publicados=None):
         return None
 
 
+# ============================================================
+# Síntese analítica da página 2 (PR da "página 2 analítica", 2026-10-19)
+# ============================================================
+#
+# Objetivo: a página 2 deixa de ser uma lista de manchetes (layout de
+# agregador) e passa a ser 5 blocos curtos (ver sintese_pagina2) que
+# conectam fato -> por que importa -> o que acompanhar, usando SÓ o que
+# já está em `edicao` (nenhuma rede nova, nenhuma 2ª consulta às fontes).
+#
+# Determinístico primeiro, Groq depois (nunca o contrário): toda frase
+# analítica nasce de um template fixo que só concatena fato real (título
+# + veículo + data, já presentes no item) com uma cláusula curta e FIXA
+# de "por que esse tema importa" (_CLAUSULA_TEMA) - zero invenção
+# possível, porque não há geração livre de texto nesse caminho. O Groq
+# (_sintese_mercados_ia) é só um POLIMENTO de prosa OPCIONAL por cima
+# desse texto determinístico, nunca a fonte dos fatos: o prompt manda
+# reescrever só o texto dado, e _ia_nao_adiciona_numero valida que
+# nenhum número novo (%, R$, pontos) aparece na saída antes de usar -
+# se falhar a validação, falhar a chamada, ou GROQ_API_KEY ausente, o
+# texto determinístico (sempre correto, sempre disponível) é o que vai
+# pro PDF. Essa é a mesma lição que já levou a remover as "3
+# interpretações genéricas fixas" de uma versão anterior deste módulo
+# (ver docstring do arquivo): texto igual todo dia é enchimento, não
+# informação - aqui o fato mudando todo dia é que ancora cada frase.
+
+_TEMAS_SINTESE = (
+    ("juros", ("selic", "copom", "fed", "juros", "taxa de juros", "banco central")),
+    ("inflacao", ("inflacao", "ipca", "igp", "cpi", "nucleo de inflacao", "precos ao consumidor")),
+    ("cambio", ("dolar", "cambio", "usd/brl", "moeda")),
+    ("fiscal", ("fiscal", "deficit", "superavit", "divida publica", "orcamento", "arcabouco fiscal",
+               "arrecadacao")),
+    ("commodities", ("petroleo", "brent", "minerio", "ouro", "commodities", "commodity", "opep")),
+    ("bolsa", ("ibovespa", "bolsa", "s&p 500", "nasdaq", "wall street")),
+    ("empresas", ("lucro", "prejuizo", "balanco", "resultado", "resultados", "receita", "dividendo",
+                 "dividendos", "valor de mercado")),
+)
+
+# Cláusula curta e FIXA por tema - nunca cita número/entidade do dia (só
+# o fato real que vem antes dela faz isso); troque com cautela, cada uma
+# precisa ser verdadeira em qualquer dia em que aquele tema aparecer.
+_CLAUSULA_TEMA = {
+    "juros": "tema que afeta diretamente o custo de crédito e a precificação de títulos de renda fixa",
+    "inflacao": "indicador acompanhado de perto pelo Banco Central nas decisões de juros",
+    "cambio": "variável que pesa sobre custos e receitas de empresas com exposição ao dólar",
+    "fiscal": "fator observado por investidores na avaliação do risco fiscal do país",
+    "commodities": "insumo relevante para Petrobras, Vale e outros pesos do Ibovespa",
+    "bolsa": "termômetro do apetite por risco dos investidores",
+    "empresas": "fator com efeito direto sobre os fundamentos da companhia citada",
+}
+
+_NOME_TEMA = {
+    "juros": "juros", "inflacao": "a inflação", "cambio": "o câmbio", "fiscal": "o quadro fiscal",
+    "commodities": "as commodities", "bolsa": "a bolsa", "empresas": "os resultados corporativos",
+}
+
+
+def _tema_do_item(item):
+    """Tema do item pelo PRÓPRIO título/corpo (nunca por regra externa de
+    coleta) - mesmo espírito de editoria_por_assunto. None se nenhum
+    termo bater (fica sem cláusula de 'por que importa', nunca inventa
+    uma)."""
+    corpo_amostra = " ".join((item.get("corpo") or [])[:1])[:220]
+    texto = _sem_acento(f"{item.get('titulo') or ''} {corpo_amostra}").lower()
+    for tema, palavras in _TEMAS_SINTESE:
+        if any(p in texto for p in palavras):
+            return tema
+    return None
+
+
+def _sem_manchete(itens, manchete):
+    """Itens da editoria SEM a matéria que já abriu a capa (evita repetir
+    literalmente a manchete da capa na página 2 - ela já foi mostrada)."""
+    if not itens:
+        return []
+    return [i for i in itens if manchete is None or i is not manchete]
+
+
+def _frase_fato(item):
+    """'<Título>, segundo <veículo>.' - a MESMA frase-fato em todo bloco
+    da página 2 (B/C/D reaproveitam); nunca reescreve o título (ele é a
+    manchete real, já aprovada pelo piso de relevância)."""
+    titulo = (item.get("titulo") or "").strip().rstrip(". ")
+    veiculo = item.get("veiculo") or "fonte não identificada"
+    return f"{titulo}, segundo {veiculo}."
+
+
+def _clausula_tema(item):
+    tema = _tema_do_item(item)
+    if tema is None:
+        return ""
+    return f" É um {_CLAUSULA_TEMA[tema]}."
+
+
+def _segunda_frase_real(item, ja_usadas):
+    """1 frase ADICIONAL de corpo (texto real já validado pelo pipeline de
+    notícias, nunca gerada aqui) que ainda não apareceu em outro bloco
+    desta edição - é o que deixa aprofundar (B/C/D) diferente de repetir
+    A. `ja_usadas` é um set mutável (by referência) com as frases já
+    publicadas nesta edição inteira, pra nenhuma frase real sair 2x."""
+    for frase in (item.get("corpo") or [])[:3]:
+        frase = frase.strip()
+        if frase and frase not in ja_usadas:
+            ja_usadas.add(frase)
+            return frase
+    return None
+
+
+def _paragrafos_mercados_determinista(brasil, exterior, empresas):
+    """Seção A ("O que move os mercados"), sempre disponível (sem rede,
+    sem IA): 1 frase-fato + cláusula de tema por editoria com conteúdo,
+    juntando Brasil+Mundo numa frase SÓ quando os temas do topo de cada
+    pool coincidem (conexão sustentada pelo próprio tema, nunca uma
+    causalidade inventada - a frase deixa isso explícito). Devolve
+    (paragrafos, itens_citados) - itens_citados alimenta B/C/D pra não
+    repetir o mesmo item sem acrescentar nada."""
+    topo_br = brasil[0] if brasil else None
+    topo_ext = exterior[0] if exterior else None
+    topo_emp = empresas[0] if empresas else None
+    citados = []
+    paragrafos = []
+
+    tema_br = _tema_do_item(topo_br) if topo_br else None
+    tema_ext = _tema_do_item(topo_ext) if topo_ext else None
+
+    if topo_br and tema_br and tema_br == tema_ext:
+        paragrafos.append(
+            f"{_NOME_TEMA[tema_br].capitalize()} aparece nos dois lados nesta edição: no Brasil, "
+            f"{_frase_fato(topo_br)} No exterior, {_frase_fato(topo_ext)} As fontes consultadas não "
+            "estabelecem relação causal direta entre os dois movimentos; a coincidência de tema é o que "
+            "justifica juntá-los aqui."
+        )
+        citados += [topo_br, topo_ext]
+    else:
+        if topo_br:
+            paragrafos.append(f"No Brasil, {_frase_fato(topo_br)}{_clausula_tema(topo_br)}")
+            citados.append(topo_br)
+        if topo_ext:
+            paragrafos.append(f"No exterior, {_frase_fato(topo_ext)}{_clausula_tema(topo_ext)}")
+            citados.append(topo_ext)
+
+    if topo_emp and all(topo_emp is not c for c in citados):
+        paragrafos.append(f"Em empresas, {_frase_fato(topo_emp)}{_clausula_tema(topo_emp)}")
+        citados.append(topo_emp)
+
+    if not paragrafos:
+        paragrafos = ["Sem notícias com relevância financeira suficiente nas fontes consultadas "
+                      "para esta edição."]
+    return paragrafos[:3], citados
+
+
+_NUMERO_NOVO = re.compile(r"(?:r\$\s?)?\d+(?:[.,]\d+)?\s?(?:%|pontos?|bilh(?:ao|oes)|milh(?:ao|oes))?",
+                          re.IGNORECASE)
+
+
+def _numeros(texto):
+    return {_sem_acento(n).lower().replace(" ", "") for n in _NUMERO_NOVO.findall(texto or "")}
+
+
+#  SEM acento de propósito: comparada contra _sem_acento(texto_ia) em
+# _ia_sintese_segura - uma entrada acentuada aqui nunca bateria contra o
+# texto já normalizado (bug real encontrado por teste, 2026-10-19).
+_FRASES_RECOMENDACAO = ("compre", "venda", "recomendamos comprar", "recomendamos vender",
+                        "e hora de comprar", "e hora de vender", "vale a pena comprar", "vale a pena vender")
+
+
+def _ia_sintese_segura(texto_ia, texto_base):
+    """Guarda-corpo antes de aceitar QUALQUER texto do Groq pra página 2:
+    nenhum número novo (o Groq só pode reorganizar os números que já
+    estavam no texto determinístico, nunca somar/inventar outro), nenhuma
+    frase de recomendação de compra/venda, tamanho plausível pra prosa
+    (não um bloco vazio nem um ensaio). Falhar qualquer checagem == usar
+    o texto determinístico (nunca um meio-termo)."""
+    if not texto_ia or not texto_ia.strip():
+        return False
+    if len(texto_ia) > len(texto_base) * 2.5 + 200:
+        return False
+    if _numeros(texto_ia) - _numeros(texto_base):
+        return False
+    texto_norm = _sem_acento(texto_ia).lower()
+    if any(f in texto_norm for f in _FRASES_RECOMENDACAO):
+        return False
+    return True
+
+
+def _chamar_groq_sintese(prompt_usuario):
+    chave, modelo = config.obter_credenciais_groq()
+    if not chave:
+        return None
+    try:
+        import requests
+        r = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {chave}", "Content-Type": "application/json"},
+            json={
+                "model": modelo,
+                "messages": [
+                    {"role": "system", "content": (
+                        "Você é um editor financeiro brasileiro. Reescreva o texto do usuário em 2 ou 3 "
+                        "parágrafos curtos, mais fluidos, SEM adicionar nenhum fato, número, data, nome de "
+                        "empresa ou causalidade que não esteja no texto original. Nunca recomende compra ou "
+                        "venda. Se não houver nada a melhorar, devolva o texto original sem alteração."
+                    )},
+                    {"role": "user", "content": prompt_usuario},
+                ],
+                "temperature": 0.2,
+                "max_tokens": 500,
+                "reasoning_effort": config.GROQ_REASONING_EFFORT,
+            },
+            timeout=20,
+        )
+        if r.status_code != 200:
+            return None
+        return r.json()["choices"][0]["message"]["content"].strip()
+    except Exception as exc:
+        print(f"[morning_call] síntese via Groq indisponível: {exc!r}")
+        return None
+
+
+def _sintese_mercados_ia(paragrafos_base):
+    """Tenta um polimento de prosa dos parágrafos determinísticos via
+    Groq; devolve (paragrafos_finais, modo) - modo='ia' só quando a
+    chamada respondeu E passou por _ia_sintese_segura; qualquer outro
+    caso devolve os parágrafos determinísticos originais com modo
+    'fallback' (edição continua idêntica sem Groq configurado/disponível)."""
+    texto_base = "\n\n".join(paragrafos_base)
+    resposta = _chamar_groq_sintese(texto_base)
+    if resposta and _ia_sintese_segura(resposta, texto_base):
+        novos = [p.strip() for p in resposta.split("\n\n") if p.strip()]
+        if novos:
+            return novos[:3], "ia"
+    return paragrafos_base, "fallback"
+
+
+def _bloco_brasil_foco(brasil, ja_usadas):
+    """B: tema doméstico MAIS relevante - 1 item só, fato + tema +
+    (quando existir) 1 frase real adicional do próprio corpo, nunca
+    repetida de outro bloco."""
+    if not brasil:
+        return None
+    item = brasil[0]
+    texto = _frase_fato(item) + _clausula_tema(item)
+    extra = _segunda_frase_real(item, ja_usadas)
+    if extra:
+        texto += f" {extra}"
+    return {"item": item, "texto": texto}
+
+
+def _bloco_empresas_foco(empresas, ja_usadas, limite=3):
+    """C: até `limite` notícias corporativas com impacto material - cada
+    uma só com o que a própria matéria afirma (nunca conclusão sobre
+    fundamentos a partir da variação do dia)."""
+    blocos = []
+    for item in (empresas or [])[:limite]:
+        texto = _frase_fato(item) + _clausula_tema(item)
+        extra = _segunda_frase_real(item, ja_usadas)
+        if extra:
+            texto += f" {extra}"
+        blocos.append({"item": item, "texto": texto})
+    return blocos
+
+
+def _bloco_cenario_internacional(exterior, ja_citados_a, ja_usadas, limite=3):
+    """D: cenário internacional - prioriza itens que a seção A ainda NÃO
+    citou (acrescenta informação em vez de repetir); se só sobrar o item
+    já citado em A, ainda assim entra aqui com uma frase real adicional
+    (aprofundar é aceitável, repetir sem nada novo não)."""
+    candidatos = [i for i in (exterior or []) if all(i is not c for c in ja_citados_a)] or list(exterior or [])[:1]
+    blocos = []
+    for item in candidatos[:limite]:
+        ja_citado_em_a = any(item is c for c in ja_citados_a)
+        extra = _segunda_frase_real(item, ja_usadas)
+        if ja_citado_em_a and not extra:
+            continue  # sem informação nova pra acrescentar: não repete
+        texto = _frase_fato(item) + _clausula_tema(item)
+        if extra:
+            texto += f" {extra}"
+        blocos.append({"item": item, "texto": texto})
+    return blocos
+
+
+def _bloco_acompanhar(agenda, limite=5):
+    """E: só eventos REAIS da agenda (data/eventos.py, já no dict) - data/
+    horário só quando o status é CONFIRMADO ou ESTIMADO (nunca inventa
+    uma data pra evento sem nenhuma fonte); vazio -> lista vazia (o PDF
+    mostra a mesma mensagem honesta já usada na Agenda do dia). Prioriza
+    CONFIRMADO > ESTIMADO > PRAZO_CVM (PRIORIDADE_STATUS) e limita a
+    `limite` linhas - a agenda completa já tem tabela própria na página
+    de Mercados/Agenda; aqui é só o que merece destaque na análise."""
+    ordenados = sorted(agenda or [], key=lambda e: PRIORIDADE_STATUS.get(e.get("status_rotulo"), 0), reverse=True)
+    linhas = []
+    vistos = set()  # (empresa, tipo, periodo, horario, status): mesmo evento repetido na agenda não duplica a linha
+    for evento in ordenados:
+        empresa = evento.get("empresa") or evento.get("ticker") or "Empresa não identificada"
+        tipo = str(evento.get("tipo_evento") or "evento").lower()
+        horario = evento.get("horario") or "sem horário divulgado"
+        status = str(evento.get("status_rotulo") or "").lower()
+        periodo = evento.get("periodo") or "período não informado"
+        chave = (empresa, tipo, periodo, horario, status)
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        linhas.append(f"{empresa}: {tipo} ({periodo}), {horario} — data {status or 'sem status informado'}.")
+        if len(linhas) >= limite:
+            break
+    return linhas
+
+
+def sintese_pagina2(edicao, agora=None):
+    """Monta os 5 blocos da página 2 analítica a partir do que JÁ está em
+    `edicao` (sem nenhuma consulta nova a fonte/rede/IA fora do polimento
+    opcional da seção A) - ver cabeçalho da seção acima pro porquê de
+    cada escolha de design. Nunca lança exceção: falha em qualquer bloco
+    degrada pra lista/texto vazio honesto, igual ao resto do módulo."""
+    manchete = (edicao.get("capa") or {}).get("manchete")
+    brasil = _sem_manchete((edicao.get("brasil") or {}).get("noticias"), manchete)
+    exterior = _sem_manchete((edicao.get("exterior") or {}).get("noticias"), manchete)
+    empresas = _sem_manchete((edicao.get("empresas") or {}).get("cards"), manchete)
+
+    paragrafos_base, citados_a = _paragrafos_mercados_determinista(brasil, exterior, empresas)
+    paragrafos_mercados, modo_mercados = _sintese_mercados_ia(paragrafos_base)
+
+    ja_usadas = set()  # frases de corpo já publicadas nesta edição, não repete em outro bloco
+    brasil_foco = _bloco_brasil_foco(brasil, ja_usadas)
+    empresas_foco = _bloco_empresas_foco(empresas, ja_usadas)
+    cenario_internacional = _bloco_cenario_internacional(exterior, citados_a, ja_usadas)
+    acompanhar = _bloco_acompanhar((edicao.get("empresas") or {}).get("agenda"))
+
+    return {
+        "mercados": {"paragrafos": paragrafos_mercados, "modo": modo_mercados},
+        "brasil_foco": brasil_foco,
+        "empresas_foco": empresas_foco,
+        "cenario_internacional": cenario_internacional,
+        "acompanhar": acompanhar,
+    }
+
+
 def montar_edicao(agora=None):
     """Monta a edição completa do Morning Call em PDF - um dict puro
     (capa/brasil/exterior/empresas/fontes/limitações), sem nenhuma
@@ -874,4 +1210,5 @@ def montar_edicao(agora=None):
         "limitacoes": LIMITACOES_PADRAO,
         "fontes": FONTES_PADRAO,
     }
+    edicao["sintese_pagina2"] = sintese_pagina2(edicao, agora)
     return edicao

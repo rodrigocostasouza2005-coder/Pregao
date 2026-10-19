@@ -858,6 +858,135 @@ def _editoria(nome, chave, itens, erro, agora, estilos, registro, excluir=None, 
 
 
 # ============================================================
+# Página 2 analítica (PR da "página 2 analítica", 2026-10-19)
+# ============================================================
+#
+# Substitui as 3 editorias de manchetes cruas (Brasil/Empresas e
+# setores/Mundo) por 5 blocos curtos de SÍNTESE
+# (data/morning_call_editorial.py:sintese_pagina2) - fato real + por que
+# importa + fonte com link, nunca um resumo novo gerado aqui (esta
+# camada só desenha o que a camada de dados já decidiu). `_editoria` (a
+# função antiga) continua existindo e testada por tests/test_morning_call_pr_a.py
+# - só deixou de ser chamada por `_montar` pra Brasil/Empresas/Mundo.
+
+_SUBTITULO_VAZIO = {
+    "mercados": "Sem notícias com relevância financeira suficiente nas fontes consultadas para esta edição.",
+    "brasil": "Nenhuma notícia doméstica com relevância financeira suficiente nesta edição.",
+    "empresas": "Nenhuma notícia corporativa com impacto material identificada nesta edição.",
+    "exterior": "Nenhuma notícia internacional com relevância financeira suficiente nesta edição.",
+    "acompanhar": "Nenhum evento com data confirmada ou estimada no calendário desta edição.",
+}
+
+
+def _bloco_item_com_fonte(texto, item, agora, estilos, estilo_texto="corpo"):
+    """Paragraph do texto analítico + a linha de fonte (_linha_fonte, com
+    link clicável quando existe) do item que o sustenta - nenhuma frase
+    desta página sai sem a atribuição visível logo abaixo dela."""
+    flows = [Paragraph(_t(texto), estilos[estilo_texto])]
+    linha = _linha_fonte(item, agora, estilos) if item else None
+    if linha:
+        flows.append(linha)
+    return flows
+
+
+def _subsecao(titulo, estilos):
+    # SEM _espacar(): essa função insere espaço fino (U+2009) pensado pro
+    # c.drawString direto do canvas (ver CabecalhoEditoria.draw) - dentro
+    # de um Paragraph (pipeline de texto diferente do ReportLab) o espaço
+    # fino não aparece de forma confiável entre PALAVRAS, "BRASIL EM
+    # FOCO" virava "BRASILEMFOCO" na inspeção visual real (2026-10-19).
+    # Mesmo padrão já usado por outros subtitulo_secao deste arquivo (ver
+    # _mercados: "BOLSAS, CÂMBIO E COMMODITIES" sem _espacar).
+    return Paragraph(_t(titulo.upper()), estilos["subtitulo_secao"])
+
+
+def _secao_mercados(sintese, agora, estilos):
+    bloco = sintese.get("mercados") or {}
+    paragrafos = bloco.get("paragrafos") or [_SUBTITULO_VAZIO["mercados"]]
+    flows = [_subsecao("O que move os mercados", estilos)]
+    # os itens citados por cada parágrafo não vêm de volta no dict (a
+    # síntese guarda só o texto final, inclusive quando o Groq reescreveu
+    # a prosa) - a fonte de CADA fato citado aparece nos blocos B/C/D
+    # abaixo, que sempre citam o próprio item; aqui, sem polimento de IA
+    # aplicado ao texto, a atribuição "segundo <veículo>" já está em cada
+    # frase (ver _frase_fato) - evita duplicar _linha_fonte pros mesmos
+    # itens que B/C/D já atribuem com link completo.
+    for paragrafo in paragrafos:
+        flows.append(Paragraph(_t(paragrafo), estilos["corpo"]))
+    if bloco.get("modo") == "ia":
+        flows.append(Paragraph("Texto com polimento de prosa por IA a partir dos fatos acima; "
+                               "nenhum dado novo foi adicionado nesta etapa.", estilos["nota"]))
+    flows.append(Spacer(1, 10))
+    return flows
+
+
+def _secao_brasil_foco(brasil_foco, agora, estilos):
+    flows = [_subsecao("Brasil em foco", estilos)]
+    if not brasil_foco:
+        flows.append(Paragraph(_SUBTITULO_VAZIO["brasil"], estilos["aviso"]))
+    else:
+        flows += _bloco_item_com_fonte(brasil_foco["texto"], brasil_foco["item"], agora, estilos)
+    flows.append(Spacer(1, 10))
+    return flows
+
+
+def _secao_empresas_foco(empresas_foco, agora, estilos):
+    flows = [_subsecao("Empresas em foco", estilos)]
+    if not empresas_foco:
+        flows.append(Paragraph(_SUBTITULO_VAZIO["empresas"], estilos["aviso"]))
+    else:
+        for n, bloco in enumerate(empresas_foco):
+            if n:
+                flows.append(Spacer(1, 4))
+            flows += _bloco_item_com_fonte(bloco["texto"], bloco["item"], agora, estilos)
+    flows.append(Spacer(1, 10))
+    return flows
+
+
+def _secao_cenario_internacional(cenario, agora, estilos):
+    flows = [_subsecao("Cenário internacional", estilos)]
+    if not cenario:
+        flows.append(Paragraph(_SUBTITULO_VAZIO["exterior"], estilos["aviso"]))
+    else:
+        for n, bloco in enumerate(cenario):
+            if n:
+                flows.append(Spacer(1, 4))
+            flows += _bloco_item_com_fonte(bloco["texto"], bloco["item"], agora, estilos)
+    flows.append(Spacer(1, 10))
+    return flows
+
+
+def _secao_acompanhar(linhas, estilos):
+    flows = [_subsecao("O que acompanhar", estilos)]
+    if not linhas:
+        flows.append(Paragraph(_SUBTITULO_VAZIO["acompanhar"], estilos["aviso"]))
+    else:
+        for linha in linhas:
+            flows.append(Paragraph(f"• {_t(linha)}", estilos["corpo_estreito"]))
+        flows.append(Paragraph("Fonte: calendário de eventos do Pregão (datas anunciadas e prazos da CVM) "
+                               "— ver Agenda do dia para a lista completa.", estilos["nota"]))
+    return flows
+
+
+def _pagina2(edicao, estilos, registro):
+    """A página 2 inteira: análise do dia em 5 blocos curtos, a partir de
+    data/morning_call_editorial.py:sintese_pagina2 (já pronta em
+    `edicao["sintese_pagina2"]` - esta função só desenha). Edição sem a
+    chave (edição de amostra antiga, ou montar_edicao de uma versão
+    anterior) degrada para os 5 avisos de 'vazio', nunca lança excessão."""
+    sintese = edicao.get("sintese_pagina2") or {}
+    agora = edicao["agora"]
+    cabecalho = CabecalhoEditoria("O que move os mercados", "sintese", registro)
+    flows = [CondPageBreak(ESPACO_MIN_EDITORIA), KeepTogether([cabecalho] + _secao_mercados(sintese, agora, estilos))]
+    flows += _secao_brasil_foco(sintese.get("brasil_foco"), agora, estilos)
+    flows += _secao_empresas_foco(sintese.get("empresas_foco") or [], agora, estilos)
+    flows += _secao_cenario_internacional(sintese.get("cenario_internacional") or [], agora, estilos)
+    flows += _secao_acompanhar(sintese.get("acompanhar") or [], estilos)
+    flows.append(Spacer(1, 18))
+    return flows
+
+
+# ============================================================
 # Radar setorial
 # ============================================================
 
@@ -1477,19 +1606,7 @@ def _montar(edicao, registro, paginas_indice, paginas=None):
     historia += direita or [Spacer(1, 1)]
     historia.append(FrameBreak())
 
-    manchete = (edicao.get("capa") or {}).get("manchete")
-    brasil = edicao.get("brasil") or {}
-    exterior = edicao.get("exterior") or {}
-    empresas = edicao.get("empresas") or {}
-    historia += _editoria("Brasil", "brasil", brasil.get("noticias"), brasil.get("noticias_erro"),
-                          agora, estilos, registro, excluir=manchete,
-                          edicao_janela=edicao.get("janela_noticias"))
-    historia += _editoria("Empresas e setores", "empresas", empresas.get("cards"), empresas.get("noticias_erro"),
-                          agora, estilos, registro, excluir=manchete,
-                          edicao_janela=edicao.get("janela_noticias"))
-    historia += _editoria("Mundo", "exterior", exterior.get("noticias"), exterior.get("noticias_erro"),
-                          agora, estilos, registro, excluir=manchete,
-                          edicao_janela=edicao.get("janela_noticias"))
+    historia += _pagina2(edicao, estilos, registro)
     historia += _radar(edicao, estilos, registro)
     historia += _mercados(edicao, estilos, registro)
     historia += _agenda(edicao, estilos, registro)
@@ -1500,7 +1617,7 @@ def _montar(edicao, registro, paginas_indice, paginas=None):
     return buffer.getvalue()
 
 
-_NOMES_INDICE = (("brasil", "Brasil"), ("empresas", "Empresas e setores"), ("exterior", "Mundo"),
+_NOMES_INDICE = (("sintese", "O que move os mercados"),
                  ("radar", "Radar setorial"), ("mercados", "Mercados"), ("agenda", "Agenda do dia"))
 
 

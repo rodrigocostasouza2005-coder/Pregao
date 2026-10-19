@@ -11,7 +11,7 @@ RESUMO/LEITURA DE MERCADO já separado em parágrafos de corpo)."""
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from data.morning_call_editorial import selecionar_manchete
+from data.morning_call_editorial import selecionar_manchete, sintese_pagina2
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 
@@ -129,7 +129,7 @@ def edicao_tipica():
     ]
     todas = sorted(brasil + empresas + exterior, key=lambda i: i["importancia"], reverse=True)
     manchete, chamadas = selecionar_manchete(todas)
-    return {
+    edicao = {
         "agora": agora,
         "capa": {"indicadores": [ibov, dolar], "destaques": todas[:3], "manchete": manchete, "chamadas": chamadas},
         "brasil": {
@@ -173,6 +173,8 @@ def edicao_tipica():
             "Notícias: Google News (agregador); veículo original e link em cada matéria.",
         ),
     }
+    edicao["sintese_pagina2"] = sintese_pagina2(edicao, agora)
+    return edicao
 
 
 def edicao_vazia():
@@ -180,7 +182,7 @@ def edicao_vazia():
     adverso que o renderer precisa sobreviver sem inventar conteúdo."""
     agora = datetime(2026, 10, 19, 8, 0, tzinfo=TZ_SP)
     sem = lambda n: _ind(n, None, None, barra=None, erro="sem dado")  # noqa: E731
-    return {
+    edicao = {
         "agora": agora,
         "capa": {"indicadores": [sem("Ibovespa"), sem("Dólar (USD/BRL)")], "destaques": [],
                  "manchete": None, "chamadas": []},
@@ -192,6 +194,8 @@ def edicao_vazia():
         "limitacoes": ("Conteúdo informativo, não constitui recomendação de investimento.",),
         "fontes": ("Cotações: Yahoo Finance (yfinance).",),
     }
+    edicao["sintese_pagina2"] = sintese_pagina2(edicao, agora)
+    return edicao
 
 
 def edicao_cheia():
@@ -212,6 +216,9 @@ def edicao_cheia():
     ed["empresas"]["agenda"] = ed["empresas"]["agenda"] * 6
     todas = ed["brasil"]["noticias"] + ed["empresas"]["cards"] + ed["exterior"]["noticias"]
     ed["capa"]["manchete"], ed["capa"]["chamadas"] = selecionar_manchete(todas)
+    # recalcula a síntese da página 2 sobre o dict JÁ com os extras de volume
+    # (edicao_tipica() calculou a dela antes desses acréscimos, ficaria stale)
+    ed["sintese_pagina2"] = sintese_pagina2(ed, ed["agora"])
     return ed
 
 

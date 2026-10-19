@@ -296,7 +296,8 @@ def test_montar_edicao_estrutura_completa_sem_rede():
         edicao = ed.montar_edicao(agora)
     assert edicao["agora"] == agora
     assert set(edicao.keys()) == {"agora", "capa", "brasil", "exterior", "empresas", "limitacoes", "fontes",
-                                  "mercados_nota", "janela_noticias", "radar", "sessao_mercado"}
+                                  "mercados_nota", "janela_noticias", "radar", "sessao_mercado",
+                                  "sintese_pagina2"}
     # sem notícia de setor nenhum, o radar sai vazio e registra cada exclusão
     assert edicao["radar"]["setores"] == []
     assert all("evidência insuficiente" in e["motivo"] for e in edicao["radar"]["excluidos"])
@@ -306,6 +307,13 @@ def test_montar_edicao_estrutura_completa_sem_rede():
     assert edicao["capa"]["manchete"] is None and edicao["capa"]["chamadas"] == []
     # as 3 "interpretações" genéricas fixas (iguais todo dia) saíram da edição
     assert "interpretacoes" not in edicao["exterior"]
+    # sem notícia nenhuma, a síntese da página 2 degrada honesta (nunca inventa fato)
+    sintese = edicao["sintese_pagina2"]
+    assert sintese["mercados"]["modo"] == "fallback"
+    assert "Sem notícias" in sintese["mercados"]["paragrafos"][0]
+    assert sintese["brasil_foco"] is None
+    assert sintese["empresas_foco"] == []
+    assert sintese["cenario_internacional"] == []
 
 
 def test_montar_edicao_capa_usa_top3_por_importancia():
