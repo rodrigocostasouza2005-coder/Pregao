@@ -30,3 +30,17 @@ def test_parser_itau_top5_aceita_tabela_com_cinco_tickers():
 def test_parser_itau_rejeita_pagina_de_mes_incorreto():
     html = "<h1>Carteira Top 5 Setembro 2026</h1><table><tr><th>Empresas</th></tr></table>"
     assert parsear_artigo(html, "https://example.com", date(2026, 10, 19)) is None
+
+
+def test_parser_itau_aceita_linhas_textuais_da_pagina_oficial():
+    html = """
+    <h1>Carteira Top 5 Outubro 2026</h1>
+    <p>Embraer (EMBJ3) | Bens de Capital | OP | 20%</p>
+    <p>XP Inc. (XPBR31) | Bancos e Serviços Financeiros | OP | 20%</p>
+    <p>Eneva (ENEV3) | Energia | OP | 20%</p>
+    <p>SABESP (SBSP3) | Utilities | OP | 20%</p>
+    <p>PETROBRAS (PETR4) | Petróleo | OP | 20%</p>
+    """
+    itens = parsear_artigo(html, "https://www.itau.com.br/investimentos/carteira-top-5-outubro-2026/", date(2026, 10, 19))
+    assert itens is not None
+    assert {x["ticker"] for x in itens} == {"EMBJ3", "XPBR31", "ENEV3", "SBSP3", "PETR4"}
