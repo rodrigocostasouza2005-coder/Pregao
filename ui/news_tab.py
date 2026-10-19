@@ -43,6 +43,7 @@ from data.news import (
 )
 from data.research import store as research_store
 from data.research.genial import obter_recomendacoes
+from ui import navegacao
 from ui.research_tab import _abrir_resumo_live, _casas_ativas, _EXTRATOR_POR_CASA
 
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -930,6 +931,39 @@ def _abrir_card(n: dict, watchlist: list):
     )
 
     _bloco_contexto_research(_tickers_do_item(n), watchlist)
+    _vinculos_noticia(n)
+
+
+def _ir_para_empresa(ticker: str):
+    navegacao.ir_para("analises", "empresas", ticker)
+
+
+def _ir_para_setor(setor: str):
+    # import tardio: ui.setores_tab importa ui.top_mercado_tab, que importa
+    # este modulo
+    from ui.setores_tab import ir_para_setor
+
+    ir_para_setor(setor)
+
+
+def _vinculos_noticia(n: dict):
+    """Noticia -> empresa / setor (PREGAO 2.0, ui/navegacao.py). So' usa
+    o que o coletor ja' identificou no grupo (n["tickers"]: ticker citado
+    explicitamente; n["setores"]: data/news_setores.classificar_setores na
+    coleta) - nenhuma associacao nova por semelhanca de nome. Mesma
+    noticia, mesmo registro: o vinculo leva pra outra AREA, nao copia."""
+    tickers = list(n.get("tickers") or [])[:4]
+    setores = list(n.get("setores") or [])[:2]
+    if not tickers and not setores:
+        return
+    alvos = [(f"{t} ↗", _ir_para_empresa, t, "Abrir a empresa em ANÁLISES › Empresas") for t in tickers]
+    alvos += [(f"Setor: {s} ↗", _ir_para_setor, s, "Abrir em SETORES › Visão por Setor") for s in setores]
+    chave_base = abs(hash(n["link"]))
+    cols = st.columns(len(alvos))
+    for i, (rotulo, fn, arg, ajuda) in enumerate(alvos):
+        with cols[i]:
+            st.button(rotulo, key=f"news_vinculo_{chave_base}_{i}", on_click=fn, args=(arg,), help=ajuda,
+                      width="stretch")
 
 
 def abrir_card_noticia(n: dict, watchlist: list):

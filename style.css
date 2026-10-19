@@ -436,6 +436,46 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
     font-weight: 600;
 }
 
+/* subnavegacao (PREGAO 2.0, ui/navegacao.py:render_subnav): mesma linguagem
+   da navegacao principal (texto + sublinhado, sem caixa preenchida), um
+   degrau menor - deixa claro que e' o 2o nivel. Escopada a .st-key-nav_sub
+   pra nao afetar os pills de filtro do resto do app. */
+/* quebra de linha (regra generica de stButtonGroup > div, acima) em vez de
+   scroll horizontal: no celular (390px, Playwright) o scroll cortava a
+   ultima subaba na borda sem nenhum indicio de que havia mais opcoes */
+.st-key-nav_sub [data-testid="stButtonGroup"] {
+    gap: 0.1rem !important;
+    border-bottom: 1px solid var(--borda);
+}
+.st-key-nav_sub [data-testid="stButtonGroup"] button {
+    background-color: transparent !important;
+    border: none !important;
+    border-bottom: 2px solid transparent !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    color: var(--cinza) !important;
+    font-size: 0.74rem !important;
+    padding: 0.35rem 0.8rem !important;
+    min-height: 34px !important;
+    flex: 0 0 auto !important;
+    white-space: nowrap;
+}
+.st-key-nav_sub [data-testid="stButtonGroup"] button:hover { color: var(--destaque) !important; }
+.st-key-nav_sub [data-testid="stButtonGroup"] button:focus-visible,
+.st-key-nav_secao [data-testid="stButtonGroup"] button:focus-visible {
+    outline: 2px solid var(--destaque) !important;
+    outline-offset: -2px;
+}
+.st-key-nav_sub [data-testid="stButtonGroup"] button[aria-checked="true"],
+.st-key-nav_sub [data-testid="stButtonGroup"] button[aria-pressed="true"] {
+    background-color: transparent !important;
+    border-bottom: 2px solid var(--destaque) !important;
+    color: var(--destaque) !important;
+    font-weight: 600;
+}
+.st-key-nav_sub { margin-bottom: 0.4rem; gap: 0 !important; }
+.st-key-nav_sub iframe { display: block; }
+
 /* alertas (avisos) - barra fina de uma linha, sem bloco colorido alto ------------- */
 [data-testid="stAlert"] {
     background-color: var(--bg) !important;
@@ -1092,5 +1132,29 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
     .st-key-nav_secao [data-testid="stButtonGroup"] button {
         padding-left: 0.58rem !important;
         padding-right: 0.58rem !important;
+    }
+}
+
+/* barras de vinculos contextuais (PREGAO 2.0: empresa -> noticias/radar/
+   setor, atalhos da Visao Geral, setores -> empresas): no celular o
+   Streamlit empilha cada coluna em largura total - 5 botoes viravam ~250px
+   de altura (Playwright, 390px). Grade de 2 por linha, botao mais baixo. */
+@media (max-width: 640px) {
+    .st-key-empresa_contexto [data-testid="stHorizontalBlock"],
+    .st-key-vg_atalhos [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+        gap: 0.35rem !important;
+    }
+    .st-key-empresa_contexto [data-testid="stColumn"],
+    .st-key-vg_atalhos [data-testid="stColumn"] {
+        flex: 1 1 calc(50% - 0.35rem) !important;
+        min-width: calc(50% - 0.35rem) !important;
+        width: calc(50% - 0.35rem) !important;
+    }
+    .st-key-empresa_contexto button,
+    .st-key-vg_atalhos button {
+        min-height: 2rem !important;
+        padding: 0.15rem 0.4rem !important;
+        font-size: 0.72rem !important;
     }
 }
