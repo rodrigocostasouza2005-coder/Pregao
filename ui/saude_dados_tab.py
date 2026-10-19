@@ -112,6 +112,28 @@ def render_saude_dados():
 
     painel = saude_dados.obter_painel_saude()
 
+    # Resumo compacto (achado real da missao de redesign 2026-10-19,
+    # secao 3.6: "resumo compacto com metricas reais disponiveis" -
+    # antes a tela ia direto pras tabelas por categoria, sem nenhum
+    # "estado geral" visivel sem rolar/ler tudo). Mesma classificacao
+    # JA' usada por linha (_COR_POR_ESTADO), so' agregada - nunca uma
+    # metrica nova/paralela.
+    if painel:
+        contagem = {"alta": 0, "alerta": 0, "baixa": 0, "cinza": 0}
+        for item in painel:
+            contagem[_COR_POR_ESTADO.get(item["codigo_estado"], "cinza")] += 1
+        st.markdown(
+            "<div style='display:flex; gap:1.2rem; flex-wrap:wrap; font-size:0.72rem; "
+            "margin-bottom:0.7rem; padding-bottom:0.5rem; border-bottom:1px solid var(--borda);'>"
+            f"<span class='alta'>● {contagem['alta']} SAUDÁVE{'L' if contagem['alta'] == 1 else 'IS'}</span>"
+            f"<span class='alerta'>● {contagem['alerta']} EM ATENÇÃO</span>"
+            f"<span class='baixa'>● {contagem['baixa']} EM FALHA</span>"
+            f"<span class='cinza'>● {contagem['cinza']} NÃO COMPROVADO{'' if contagem['cinza'] == 1 else 'S'}</span>"
+            f"<span class='cinza'>· {len(painel)} coletor{'' if len(painel) == 1 else 'es'} monitorado{'' if len(painel) == 1 else 's'}</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
     categorias = {}
     for item in painel:
         categorias.setdefault(item["categoria"], []).append(item)
