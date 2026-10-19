@@ -537,7 +537,7 @@ def renderizar_workspace(aba_id: str, registro: list, prefs: dict, *args, persis
     ordem = [pid for pid in ordem_efetiva(aba_id, registro, prefs) if _pid_visivel_salvo(aba_id, pid, prefs)]
 
     if not ordem:
-        st.info("Nenhum painel visível nesta aba — ajuste em CONFIG, seção LAYOUT.")
+        st.info("Nenhum painel visível nesta aba — ajuste em MAIS › Configurações.")
         return
 
     with st.container(key=f"workspace_toolbar_{aba_id}"):

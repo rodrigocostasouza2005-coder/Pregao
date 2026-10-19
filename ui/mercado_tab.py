@@ -19,7 +19,7 @@ from data.mercado import (
     obter_mais_negociados, obter_mercados_globais, obter_panorama_ibovespa, obter_termometro,
 )
 from data.prices import obter_cotacao_indice
-from ui import graficos, workspace
+from ui import graficos, navegacao, workspace
 
 _JANELAS_DESEMPENHO = ["DIA", "SEMANA", "MÊS"]
 _JANELA_ROTULO_PARA_CHAVE = {"DIA": "dia", "SEMANA": "semana", "MÊS": "mes"}
@@ -46,8 +46,9 @@ def _nome_papel(ticker: str) -> str:
 
 def _ir_para_equity(ticker: str, prefs: dict):
     """Callback (on_click) do botao de ticker do ranking - reaproveita o
-    MESMO mecanismo de navegacao da busca global (app.py:_ir_com_ticker):
-    troca a secao ativa pra EQUITY com esse ticker pre-selecionado.
+    MESMO mecanismo de navegacao da busca global (app.py:_ir_com_ticker,
+    ui/navegacao.py:ir_para): abre ANALISES > Empresas (antiga EQUITY)
+    com esse ticker pre-selecionado.
     Precisa ser on_click (nao escrita direta no corpo do script): o
     segmented_control da navegacao (key="secao_ativa") ja foi instanciado
     mais acima no MESMO run (MERCADO/VISAO GERAL renderizam depois do nav
@@ -56,14 +57,11 @@ def _ir_para_equity(ticker: str, prefs: dict):
     um callback de on_click roda ANTES do proximo rerun começar, entao o
     valor novo já está lá quando o nav for instanciado de novo."""
     if "EQUITY" not in (prefs.get("abas_visiveis") or []):
-        st.toast("A aba EQUITY está escondida nas suas preferências (CONFIG).", icon="⚠️")
+        navegacao.avisar("ANÁLISES › Empresas está oculta nas suas preferências (MAIS › Configurações).")
         return
     if ticker not in prefs["watchlist"]:
         prefs["watchlist"].append(ticker)
-    st.session_state["secao_ativa"] = "EQUITY"
-    st.session_state["secao_ativa_valido"] = "EQUITY"
-    st.session_state["ticker_selecionado"] = ticker
-    st.session_state["ticker_selecionado_valido"] = ticker
+    navegacao.ir_para_legado("EQUITY", ticker)
 
 
 def _tema_atual(prefs):
@@ -210,7 +208,7 @@ def _linha_ranking(numero: int, p: dict, campo: str, prefs: dict, max_abs: float
         st.button(
             p["ticker"], key=f"rank_ticker_{numero}_{p['ticker']}", width="stretch",
             on_click=_ir_para_equity, args=(p["ticker"], prefs),
-            help=f"Abrir {p['ticker']} em EQUITY",
+            help=f"Abrir {p['ticker']} em ANÁLISES › Empresas",
         )
     with col_nome_valor:
         st.markdown(

@@ -1,5 +1,33 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-19 — PREGÃO 2.0: navegação em 7 áreas + MAIS, com subabas e rotas na URL
+
+Reorganização da navegação (matriz completa em `docs/arquitetura-pregao-2.md`).
+Nada foi removido: cada aba antiga virou subaba de uma área.
+
+- **Áreas:** MERCADO (Visão Geral, Painel, Agenda, Mercados Globais) ·
+  NOTÍCIAS (Destaques, Brasil, Internacional, Empresas, Documentos CVM) ·
+  RADAR (Alertas, Carteiras Recomendadas, Oportunidades, Acompanhamento) ·
+  ANÁLISES (Empresas, Fundamentos, Valuation, Teses) · MACRO (Indicadores,
+  Juros, Câmbio e Commodities, Calendário Econômico) · SETORES (Mapa
+  Setorial, Visão por Setor, Catalisadores) · MORNING CALL (Edição Atual,
+  Relatório Completo, Histórico, Preferências) · MAIS (Watchlist,
+  Configurações; Sistema e Saúde dos Dados só para admin).
+- **Rotas na URL** (`?aba=radar&sub=alertas`): link direto, recarregar e
+  voltar/avançar do navegador funcionam; rota inválida ou oculta cai na
+  padrão com aviso. Cada área lembra a última subaba aberta.
+- **Workspaces preservados** (Visão Geral, Painel, Indicadores): mesmas
+  chaves de layout, nenhuma configuração do usuário perdida.
+- **Vínculos:** notícia → empresa/setor (só tickers citados e setores já
+  classificados na coleta), empresa → notícias/radar/fundamentos/valuation/
+  setor, setor → empresas/notícias, juros → setores (texto editorial do
+  catálogo), atalhos da Visão Geral.
+- **Morning Call no app:** edição publicada, histórico (sem expor
+  destinatários), prévia e PDF sob demanda — nunca envia e-mail.
+- **Pendências declaradas na própria tela:** agenda de divulgações
+  econômicas, teses/itens salvos persistentes, séries históricas de
+  fundamentos, valuation por cenários.
+
 ## 2026-10-18 (3ª passada) — 2 bugs reais encontrados pela VALIDAÇÃO VISUAL do backfill anterior
 
 O backfill autorizado das 6 linhas (PR #60) escreveu, numa primeira

@@ -127,7 +127,11 @@ def _serie_sgs(codigo: int, dias_historico: int) -> pd.DataFrame:
         raise ValueError(f"SGS {codigo} retornou lista vazia")
     df = pd.DataFrame(dados)
     df["data"] = pd.to_datetime(df["data"], format="%d/%m/%Y", dayfirst=True).dt.tz_localize(TZ)
-    df["valor"] = df["valor"].astype(float)
+    # valor não numérico (ex.: texto de erro dentro do JSON) nunca vira
+    # número: a série inteira é tratada como resposta inválida
+    df["valor"] = pd.to_numeric(df["valor"], errors="coerce")
+    if df["valor"].isna().any():
+        raise RespostaSgsInvalida(f"SGS {codigo}: resposta com valor não numérico")
     return df[["data", "valor"]]
 
 
@@ -180,6 +184,46 @@ def obter_selic_meta(dias_historico: int = 400) -> pd.DataFrame | None:
         _MOTIVO_FALHA["selic"] = str(e)[:200]
         registrar_tentativa("MACRO (BCB - Selic)", "Banco Central (SGS)", execucao_ok=False,
                              erro=str(e)[:300], categoria="Macro")
+        return None
+
+
+_COPOM_HISTORICO_URL = "https://www.bcb.gov.br/api/servico/sitebcb/historicotaxasjuros"
+
+
+def obter_selic_meta_copom() -> dict | None:
+    """Meta Selic VIGENTE pelo histórico oficial de reuniões do Copom no
+    site do Banco Central (www.bcb.gov.br) - plano B pra quando o SGS
+    (api.bcb.gov.br) não responde. Diagnóstico de 18/10/2026 no runner do
+    GitHub: o SGS falhava pra todas as séries (timeout, página "Requisição
+    inválida" ou {"erro": 500}), enquanto este endpoint respondia
+    normalmente. Mesma instituição e mesma informação (a meta definida
+    pelo Copom), sem estimativa nem fonte de terceiros.
+
+    Vigente = registro com DataFimVigencia nula e início já ocorrido.
+    {"valor", "vigente_desde" (date), "reuniao" (int)} ou None (o motivo
+    fica em motivo_indisponivel("selic_copom"))."""
+    try:
+        r = requests.get(_COPOM_HISTORICO_URL, headers=_HEADERS, timeout=(5, 20))
+        r.raise_for_status()
+        registros = (r.json() or {}).get("conteudo") or []
+        hoje = datetime.now(TZ)
+        vigentes = []
+        for reg in registros:
+            if reg.get("DataFimVigencia") is not None:
+                continue
+            inicio = pd.to_datetime(reg.get("DataInicioVigencia"), utc=True)
+            valor = float(reg.get("MetaSelic"))
+            if pd.isna(inicio) or inicio > hoje or not (0 < valor < 100):
+                continue
+            vigentes.append((inicio, valor, reg.get("NumeroReuniaoCopom")))
+        if len(vigentes) != 1:
+            raise ValueError(f"histórico do Copom com {len(vigentes)} meta(s) vigente(s) - esperado exatamente 1")
+        inicio, valor, reuniao = vigentes[0]
+        _MOTIVO_FALHA.pop("selic_copom", None)
+        return {"valor": valor, "vigente_desde": inicio.tz_convert(TZ).date(),
+                "reuniao": int(reuniao) if reuniao is not None else None}
+    except Exception as e:
+        _MOTIVO_FALHA["selic_copom"] = f"histórico do Copom (bcb.gov.br): {str(e)[:150]}"
         return None
 
 

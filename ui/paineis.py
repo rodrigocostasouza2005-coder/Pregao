@@ -180,7 +180,7 @@ def renderizar(aba_id: str, registro: list, prefs: dict, *args, persistir_fn=Non
     ordem = [pid for pid in ordem_efetiva(aba_id, registro, prefs) if _pid_visivel_salvo(aba_id, pid, prefs)]
 
     if not ordem:
-        st.info("Nenhum painel visível nesta aba — ajuste em CONFIG, seção LAYOUT.")
+        st.info("Nenhum painel visível nesta aba — ajuste em MAIS › Configurações.")
         return
 
     fracoes = {pid: _FRACOES[_tamanho_efetivo(aba_id, pid, prefs)] for pid in ordem}
