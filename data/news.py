@@ -1824,6 +1824,24 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
                                        "hasPart", "relatedLink", "significantLink", "mentions", "about",
                                        "isPartOf", "itemListElement", "breadcrumb", "potentialAction")
 
+        # achado real (auditoria 2026-10-19, validação com rede de verdade -
+        # infomoney.com.br, matéria de autoria "Reuters"): a exclusão de
+        # "author"/"publisher"/"logo" acima só protege contra RECURSAR pra
+        # dentro dessas chaves quando elas aparecem como propriedade de OUTRO
+        # node (ex: NewsArticle.author = {...}); não protege quando o node
+        # Person/Organization em si é um item SOLTO do array "@graph" (padrão
+        # comum do Yoast SEO - cada entidade é um node de primeiro nível,
+        # referenciada de outro lugar só por "@id"). Varrendo o @graph like
+        # uma lista comum, o node {"@type": "Person", "name": "Reuters",
+        # "image": {...}} bate direto na chave "image" de _CHAVES_IMAGEM_JSONLD
+        # igual bateria num NewsArticle de verdade - vira o avatar/badge do
+        # AUTOR (aqui, o logo genérico "reuters.png" que o InfoMoney usa pra
+        # qualquer matéria assinada pela agência) em vez da foto da matéria.
+        # Person/Organization nunca têm foto de CONTEÚDO (sempre avatar/marca),
+        # então um node desse tipo nunca é fonte de imagem, independente de
+        # como foi alcançado.
+        _TIPOS_ENTIDADE_NUNCA_IMAGEM = frozenset(("Person", "Organization"))
+
         def _urls_imagem_jsonld(obj, via_imagem=False):
             achados = []
             if isinstance(obj, str):
@@ -1839,6 +1857,8 @@ def _extrair_texto_artigo(link_google_news: str) -> tuple:
                 # imagem (nunca o "url" genérico de WebPage/Organization).
                 tipo = obj.get("@type")
                 tipos = tipo if isinstance(tipo, list) else [tipo]
+                if any(t in _TIPOS_ENTIDADE_NUNCA_IMAGEM for t in tipos if t):
+                    return achados
                 if via_imagem and "ImageObject" in tipos and isinstance(obj.get("url"), str):
                     achados.append(obj["url"])
                 for chave in _CHAVES_IMAGEM_JSONLD:

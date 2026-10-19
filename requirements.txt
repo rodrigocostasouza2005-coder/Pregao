@@ -26,6 +26,25 @@ pypdf>=4.0
 reportlab>=4.0
 trafilatura>=2.2
 googlenewsdecoder>=0.2
+# selectolax (dependencia TRANSITIVA do googlenewsdecoder, nao declarada
+# aqui antes): achado real nesta auditoria (2026-10-19, validacao com
+# acesso de rede de verdade) - o hotfix 9f26234 (2026-10-05) so' impediu
+# o ImportError de derrubar o app inteiro (selectolax>=1.0 removeu o
+# backend "Modest" que o googlenewsdecoder 0.2.x importa), mas deixou
+# gnewsdecoder=None em qualquer ambiente que instale selectolax>=1.0 do
+# zero (ex: redeploy no Streamlit Community Cloud, que reinstala
+# requirements.txt) - sem decoder, _resolver_link_real NUNCA resolve
+# nenhum link do Google News (news.google.com/rss/articles/...), que e'
+# a origem de QUASE TODA materia do app (toda busca por ticker, TOP
+# MERCADO Brasil, feed NOTICIAS) - nao so' a foto, o TEXTO da materia
+# tambem para de ser extraido, e o resumo de IA junto. Confirmado
+# reproduzindo contra fontes reais: 24 de 25 materias de uma amostra do
+# TOP MERCADO voltavam "nao foi possivel resolver o link original do
+# Google News" com selectolax 1.0.0 (o pip instala por padrao, sem este
+# pin) e 0 dessas falhavam depois de fixar <1.0 (volta a usar o backend
+# Modest que o googlenewsdecoder 0.2.x espera). Fixar aqui pra nao
+# depender de qual versao o resolvedor de dependencias do pip escolher.
+selectolax<1.0
 youtube-transcript-api>=1.2
 # playwright fica de fora por enquanto: precisa de binario de navegador
 # no servidor (Fase de research do BTG). Ver nota no relatorio sobre

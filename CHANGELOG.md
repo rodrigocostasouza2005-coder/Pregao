@@ -1,5 +1,51 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-19 — Fotos das notícias: validação com rede REAL encontra causa raiz nova (`selectolax`) + bug de avatar no JSON-LD
+
+Retoma a PR #83 (imagem desacoplada do resumo de IA - ver entrada abaixo),
+que não teve acesso de rede pra validar contra fontes reais. Esta rodada
+teve (confirmado: `news.google.com`, UOL, InfoMoney etc. respondendo 200).
+
+- **Causa raiz NOVA, mais fundamental que a da PR #83**: `requirements.txt`
+  nunca fixava `selectolax` (dependência transitiva do
+  `googlenewsdecoder`) - uma instalação nova pega a `1.0.0+`, que removeu
+  o backend que o decoder usa, e `gnewsdecoder` fica `None` (mesmo
+  `ImportError` do hotfix `9f26234`, que só evitou o crash no startup,
+  nunca restaurou a função). Sem decoder, `_resolver_link_real` NUNCA
+  resolve nenhum link `news.google.com/rss/articles/...` - a origem de
+  praticamente toda matéria do app (busca por ticker, TOP MERCADO Brasil,
+  feed NOTÍCIAS) - então nem o texto nem a foto são extraídos pra essas
+  matérias, resumo de IA incluso. Confirmado real: amostra de 25 matérias
+  do TOP MERCADO foi 24/25 "não foi possível resolver o link original do
+  Google News" com `selectolax` sem pin; 0/25 depois de fixar
+  `selectolax<1.0`. **Fixado em `requirements.txt`.**
+- **Bug real de correspondência (JSON-LD)**: matéria assinada "Reuters" no
+  InfoMoney devolvia como foto o avatar do autor (`reuters.png`, selo
+  genérico de qualquer matéria da agência) em vez da foto da matéria - o
+  node `{"@type": "Person", "image": {...}}` é um item solto do array
+  `@graph` (padrão Yoast SEO), não alcançado via a chave `author` (que já
+  era excluída) - batia direto na chave `"image"` genérica, igual um
+  `NewsArticle` de verdade bateria. `data/news.py:_urls_imagem_jsonld`
+  passa a excluir qualquer node `Person`/`Organization` como fonte de
+  imagem, independente de como foi alcançado.
+- **Amostra real validada** (TOP MERCADO Brasil+Internacional, depois dos
+  2 fixes acima): 32 fotos confirmadas por rede (inspecionadas manualmente
+  título × imagem, nenhuma incorreta encontrada), 5 bloqueios reais
+  (401/403 contra Reuters.com/FT.com/paywall - confirmado fora do
+  pipeline, não é bug), 3 sem imagem útil de verdade.
+- **2 limitações reais, documentadas e NÃO corrigidas** (risco de piorar
+  o que já foi corrigido antes, sem evidência suficiente do ganho):
+  Getty Images/istockphoto são rejeitados mesmo quando é a foto editorial
+  real (Hollywood Reporter, caso real confirmado); dedup de imagem
+  repetida só funciona dentro do mesmo lote de coleta, um publisher de
+  cauda longa pode reusar a mesma imagem-padrão em tickers diferentes
+  processados em execuções separadas do coletor (caso real confirmado:
+  `acionista.com.br`).
+
+Arquivos: `requirements.txt`, `data/news.py`,
+`tests/test_news_imagens_pipeline.py` (+1 caso), `PROGRESSO.md`. Suíte:
+1031 passed.
+
 ## 2026-10-19 — PREGÃO 2.0: navegação em 7 áreas + MAIS, com subabas e rotas na URL
 
 Reorganização da navegação (matriz completa em `docs/arquitetura-pregao-2.md`).

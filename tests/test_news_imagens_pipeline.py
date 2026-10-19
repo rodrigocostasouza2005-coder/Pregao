@@ -709,6 +709,36 @@ def test_13e_jsonld_nao_pega_foto_de_materia_relacionada():
     assert imagem == "https://cdn.veiculo.com.br/vale-carajas.jpg"
 
 
+def test_13e2_jsonld_nao_pega_avatar_de_autor_pessoa_ou_organizacao():
+    """Achado real (auditoria 2026-10-19, validação com rede de verdade -
+    infomoney.com.br, matéria assinada "Reuters"): a exclusão de
+    "author"/"publisher"/"logo" só protege contra recursar pra DENTRO
+    dessas chaves quando aparecem como propriedade de outro node; não
+    protege quando o Person/Organization é, ele mesmo, um item solto do
+    array "@graph" (padrão Yoast SEO) - esse node bate direto na chave
+    "image" genérica e o avatar do autor (aqui, o logo "reuters.png" que
+    o veículo usa pra qualquer matéria da agência) virava a foto do card."""
+    import json
+    ld = {"@context": "https://schema.org", "@graph": [
+        {"@type": "Person", "name": "Reuters",
+         "image": {"@type": "ImageObject", "url": "https://cdn.veiculo.com.br/avatar-reuters.png"}},
+        {"@type": "Organization", "name": "Veículo",
+         "logo": {"@type": "ImageObject", "url": "https://cdn.veiculo.com.br/logo-veiculo.png"},
+         "image": "https://cdn.veiculo.com.br/marca-veiculo.png"},
+        {"@type": "NewsArticle", "headline": "Vale amplia produção de cobre no Pará"},
+    ]}
+    html_txt = (f"<html><head><script type='application/ld+json'>{json.dumps(ld)}</script></head>"
+                f"<body><article>{_TEXTO}</article></body></html>")
+    _t, imagem, _l, _m = _extrair_com_html(html_txt)
+    assert imagem is None
+
+    ld["@graph"].append({"@type": "NewsArticle", "image": "https://cdn.veiculo.com.br/vale-carajas.jpg"})
+    html_txt = (f"<html><head><script type='application/ld+json'>{json.dumps(ld)}</script></head>"
+                f"<body><article>{_TEXTO}</article></body></html>")
+    _t, imagem, _l, _m = _extrair_com_html(html_txt)
+    assert imagem == "https://cdn.veiculo.com.br/vale-carajas.jpg"
+
+
 def test_13f_403_e_bloqueio_temporario_e_foto_fica_nao_verificada():
     g = _grupo("Itaú reporta lucro", "https://news.google.com/403")
     with patch.object(news, "_extrair_texto_artigo",
