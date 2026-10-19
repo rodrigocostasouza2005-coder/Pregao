@@ -27,15 +27,16 @@ from data.prices import (
 )
 from data.research import CASAS as CASAS_RESEARCH
 from data.user_prefs import obter_prefs, salvar_prefs
-from ui import busca, graficos, paineis
-from ui.calendario_tab import render_calendario
+from ui import (
+    analises_tab, busca, graficos, macro_tab, morning_call_tab, navegacao, paineis, radar_tab, secoes,
+    setores_tab,
+)
 from ui.cvm_tab import render_cvm, render_cvm_ticker
 from ui.macro_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MACRO
 from ui.macro_tab import render_macro
 from ui.mercado_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MERCADO
 from ui.mercado_tab import render_mercado
 from ui.news_tab import injetar_fallback_imagem, render_news, render_news_ticker
-from ui.radar_tab import render_radar
 from ui.research_tab import render_research
 from ui.saude_dados_tab import render_saude_dados
 from ui.sistema_tab import render_sistema
@@ -267,51 +268,47 @@ def _ticker_tape():
 if not st.session_state.banco_ok:
     st.warning("Sem conexão com o Supabase — preferências e watchlist valem só para esta sessão.")
 
-# --- secoes de navegacao: ordem/visibilidade vem das preferencias, CONFIG
-# sempre por ultimo. So a secao ativa executa (diferente de st.tabs(), que
-# roda o conteudo de TODAS as abas em toda rerun e so esconde por CSS) -
-# alem de mais rapido, uma excecao numa secao nao derruba as outras (era
-# o caso do bug que deixava RESEARCH e CONFIG em branco juntos).
+# --- navegacao PREGAO 2.0 (ver ui/navegacao.py e docs/arquitetura-pregao-2.md):
+# 7 areas + MAIS, cada uma com subabas. So a subaba ativa executa
+# (diferente de st.tabs(), que roda o conteudo de TODAS as abas em toda
+# rerun e so esconde por CSS) - alem de mais rapido, uma excecao numa
+# secao nao derruba as outras (era o caso do bug que deixava RESEARCH e
+# CONFIG em branco juntos). abas_visiveis (preferencia antiga) continua
+# valendo: esconde as subabas cujo conteudo vem de uma aba escondida.
 abas_visiveis = [a for a in prefs["abas_visiveis"] if a in config.ABAS_DISPONIVEIS]
 if not abas_visiveis:
     abas_visiveis = list(config.ABAS_DISPONIVEIS)
-secoes = abas_visiveis + ["CONFIG"]
-# SISTEMA: so pros e-mails admin, e so no menu deles - de proposito NAO
-# entra em config.ABAS_DISPONIVEIS (isso faria abas_conhecidas oferecer
-# a aba pra todo mundo, ver migracao de abas novas la em cima)
+# SISTEMA/SAÚDE DOS DADOS: so pros e-mails admin - de proposito NAO entram
+# em config.ABAS_DISPONIVEIS (isso faria abas_conhecidas oferecer a aba
+# pra todo mundo, ver migracao de abas novas la em cima); em
+# ui/navegacao.py sao subabas admin=True do MAIS, e o despacho mais
+# abaixo reconfirma _eh_admin (esconder da nav nunca e' a unica barreira).
 _eh_admin = usuario["email"] in config.obter_emails_admin()
-if _eh_admin:
-    # SAÚDE DOS DADOS: mesmo tratamento de SISTEMA (so' admin, fora de
-    # ABAS_DISPONIVEIS) - painel operacional de monitoramento dos
-    # coletores (ver ui/saude_dados_tab.py/data/saude_dados.py, FASE 2
-    # da auditoria 2026-10-09), mesmo publico que DIAGNÓSTICO DE FONTES.
-    secoes = secoes + ["SISTEMA", "SAÚDE DOS DADOS"]
-rotulos_secao = [f"{config.ICONES_SECAO.get(chave, '')} {chave}".strip() for chave in secoes]
-mapa_rotulo_secao = dict(zip(rotulos_secao, secoes))
-padrao_rotulo_secao, mem_secao = _escolha_estavel("secao_ativa", rotulos_secao, rotulos_secao[0])
+areas_nav = navegacao.disponiveis(abas_visiveis, _eh_admin)
+navegacao.aplicar_url_de_entrada(areas_nav)
 
 
-# --- busca global (ETAPA 8): ativo qualquer, atalhos pra abrir em EQUITY/
-# NOTICIAS ja com o ticker escolhido, ou so adicionar na watchlist sem
-# sair da aba atual. Renderizada ANTES do nav (rotulos_secao/mapa_rotulo_secao
-# ja calculados acima, mas o WIDGET do nav em si so' instancia depois -
-# ver comentario em _ir_com_ticker sobre por que essa ordem importa) -
-# funciona em qualquer aba (nao so nas que mostram ticker). EQUITY
-# (seletor de ticker) e NEWS (obter_noticias_watchlist) so mostram dado
-# de tickers da watchlist - por isso "abrir em X" adiciona o ticker na
-# watchlist primeiro se ele ainda nao estiver la (mesma validacao ja
-# usada no fluxo da sidebar).
-def _ir_com_ticker(chave_secao_destino: str, ticker: str, chave_pill_ticker: str | None):
+# --- busca global (ETAPA 8): ativo qualquer, atalhos pra abrir em ANÁLISES›
+# Empresas / NOTÍCIAS›Empresas ja com o ticker escolhido, ou so adicionar
+# na watchlist sem sair da aba atual. Renderizada ANTES do nav (ver
+# comentario em _ir_com_ticker sobre por que essa ordem importa) -
+# funciona em qualquer aba (nao so nas que mostram ticker). Empresas
+# (seletor de ticker) e NOTÍCIAS›Empresas (obter_noticias_watchlist) so
+# mostram dado de tickers da watchlist - por isso "abrir em X" adiciona o
+# ticker na watchlist primeiro se ele ainda nao estiver la (mesma
+# validacao ja usada no fluxo da sidebar).
+def _ir_com_ticker(secao_legado: str, ticker: str, chave_pill_ticker: str | None):
     """Muda de secao + preseleciona o ticker, com efeito no MESMO rerun
-    (sem chamar st.rerun()) - escrever em st.session_state['secao_ativa']
-    (a key do proprio widget do nav) só é permitido ANTES desse widget
-    ser instanciado nesse rerun; por isso esta funcao roda (e e' chamada)
-    ANTES do st.segmented_control do nav mais abaixo. Descoberto na
+    (sem chamar st.rerun()) - escrever nas chaves dos widgets da nav
+    (ui/navegacao.py:ir_para) só é permitido ANTES desses widgets serem
+    instanciados nesse rerun; por isso esta funcao roda (e e' chamada)
+    ANTES de navegacao.render_nav_principal mais abaixo. Descoberto na
     pratica: tentar escrever DEPOIS derruba com
     StreamlitWidgetAlreadyInstantiatedError."""
-    rotulo_alvo = next((r for r, c in mapa_rotulo_secao.items() if c == chave_secao_destino), None)
-    if rotulo_alvo is None:
-        st.warning(f"A aba {chave_secao_destino} está escondida nas suas preferências (CONFIG).")
+    area_id, sub_id = navegacao.ROTA_LEGADO[secao_legado]
+    _, _, rota_ok = navegacao.resolver(areas_nav, area_id, sub_id)
+    if not rota_ok:
+        st.warning(f"{navegacao.rotulo_rota(area_id, sub_id)} está oculta nas suas preferências (MAIS › Configurações).")
         return
     if ticker not in prefs["watchlist"]:
         if not validar_ticker(ticker):
@@ -319,10 +316,7 @@ def _ir_com_ticker(chave_secao_destino: str, ticker: str, chave_pill_ticker: str
             return
         prefs["watchlist"].append(ticker)
         _persistir_prefs()
-    st.session_state["secao_ativa"] = rotulo_alvo
-    st.session_state[mem_secao] = rotulo_alvo
-    st.session_state["ticker_selecionado"] = ticker
-    st.session_state["ticker_selecionado_valido"] = ticker
+    navegacao.ir_para(area_id, sub_id, ticker)
     if chave_pill_ticker:
         st.session_state[chave_pill_ticker] = ticker
 
@@ -336,8 +330,8 @@ def _ir_com_ticker(chave_secao_destino: str, ticker: str, chave_pill_ticker: str
 # divergisse da estimativa em CSS). O fragment do ticker (_ticker_tape, com
 # seu run_every) pode morar dentro deste container normal sem problema - so'
 # os BOTOES da camada 1 e' que precisam ficar FORA de qualquer fragment:
-# "EQUITY ↗"/"NOTÍCIAS ↗" escrevem em st.session_state['secao_ativa']
-# esperando um rerun DA PAGINA INTEIRA (pra secao_atual, mais abaixo, pegar
+# "↗"/"▣" escrevem nas chaves da nav (ui/navegacao.py:ir_para)
+# esperando um rerun DA PAGINA INTEIRA (pra rota, mais abaixo, pegar
 # o valor novo) - dentro de um fragment, um clique so' dispara rerun do
 # fragment, e a pagina nunca trocaria de aba.
 with st.container(key="header_fixo"):
@@ -356,16 +350,16 @@ with st.container(key="header_fixo"):
         with col_busca:
             ticker_busca_global = busca.buscar_ativo(
                 "Busca global", chave="busca_global_ticker", extras=prefs["watchlist"],
-                ajuda="Busca por ticker ou nome — abre direto na EQUITY ou NOTÍCIAS desse ativo",
+                ajuda="Busca por ticker ou nome — abre direto em ANÁLISES › Empresas ou NOTÍCIAS desse ativo",
             )
         with col_ctrlk:
             st.markdown('<div class="pregao-ctrlk">CTRL K</div>', unsafe_allow_html=True)
         ja_na_watchlist = bool(ticker_busca_global) and ticker_busca_global in prefs["watchlist"]
         with col_eq:
-            if st.button("↗", key="busca_global_eq", width="stretch", disabled=not ticker_busca_global, help="Abrir na EQUITY"):
+            if st.button("↗", key="busca_global_eq", width="stretch", disabled=not ticker_busca_global, help="Abrir em ANÁLISES › Empresas"):
                 _ir_com_ticker("EQUITY", ticker_busca_global, None)
         with col_news:
-            if st.button("▣", key="busca_global_news", width="stretch", disabled=not ticker_busca_global, help="Abrir nas NOTÍCIAS"):
+            if st.button("▣", key="busca_global_news", width="stretch", disabled=not ticker_busca_global, help="Abrir em NOTÍCIAS › Empresas"):
                 _ir_com_ticker("NEWS", ticker_busca_global, "news_pill_ticker")
         with col_add:
             if st.button(
@@ -400,16 +394,18 @@ with st.container(key="header_fixo"):
 
     # navegacao (camada 3) tambem dentro do wrapper sticky (pedido do
     # Rodrigo, 2026-09-28: "cabecalho ate as abas" fixo ao rolar a pagina,
-    # nao so' o header+ticker) - watchlist (camada 4) e conteudo continuam
-    # FORA, em fluxo normal (rolam com a pagina).
-    with st.container(key="nav_secao"):
-        sel_secao = st.segmented_control(
-            "Seção", rotulos_secao, default=padrao_rotulo_secao,
-            label_visibility="collapsed", key="secao_ativa",
-        )
-rotulo_secao_atual = sel_secao or padrao_rotulo_secao
-st.session_state[mem_secao] = rotulo_secao_atual
-secao_atual = mapa_rotulo_secao[rotulo_secao_atual]
+    # nao so' o header+ticker) - subabas e conteudo continuam FORA, em
+    # fluxo normal (rolam com a pagina; no celular o header fixo ja ocupa
+    # bastante altura, uma 4a faixa fixa sobraria pouco pro conteudo).
+    area_atual = navegacao.render_nav_principal(areas_nav)
+
+_area_obj = next(a for a in areas_nav if a.id == area_atual)
+sub_atual = navegacao.render_subnav(_area_obj)
+navegacao.publicar_url(area_atual, sub_atual)
+rota = (area_atual, sub_atual)
+_aviso_nav = navegacao.consumir_aviso()
+if _aviso_nav:
+    st.info(_aviso_nav)
 
 
 # --- sidebar: gestao da watchlist ------------------------------------------
@@ -476,37 +472,134 @@ with st.sidebar:
             )
             if col_remover.button("x", key=f"remover_{t}"):
                 prefs["watchlist"].remove(t)
+                if st.session_state.get(navegacao.KEY_TICKER_EXTERNO) == t:
+                    st.session_state.pop(navegacao.KEY_TICKER_EXTERNO)
                 _persistir_prefs()
                 st.rerun()
 
     _fragmento_watchlist()
 
 
-# --- aba VISÃO GERAL (home - resumo do mercado, ver ui/visao_geral.py) -----
-if secao_atual == "VISÃO GERAL":
+# =============================================================================
+# DESPACHO PELA ROTA (ui/navegacao.py). Cada bloco reaproveita o render da
+# aba antiga correspondente (matriz completa em docs/arquitetura-pregao-2.md).
+# =============================================================================
+
+# --- MERCADO › Visão Geral (home - resumo do mercado, ver ui/visao_geral.py) --
+if rota == ("mercado", "visao-geral"):
     with st.container():
         render_visao_geral(prefs, persistir_fn=_persistir_prefs)
+        secoes.render_atalhos_visao_geral()
 
-
-# --- aba RADAR (inteligência de investimentos, ver ui/radar_tab.py) --------
-if secao_atual == "RADAR":
+# --- MERCADO › Painel (antiga aba MERCADO: workspace personalizavel) ---------
+if rota == ("mercado", "painel"):
     with st.container():
-        render_radar(prefs)
+        render_mercado(prefs, persistir_fn=_persistir_prefs)
 
+if rota == ("mercado", "agenda"):
+    secoes.render_agenda(prefs)
 
-# --- aba EQUITY --------------------------------------------------------------
-if secao_atual == "EQUITY":
+if rota == ("mercado", "globais"):
+    secoes.render_mercados_globais(prefs)
+
+# --- NOTÍCIAS -----------------------------------------------------------------
+if rota == ("noticias", "destaques"):
+    render_top_mercado(prefs, regiao_fixa="TUDO", titulo="DESTAQUES")
+if rota == ("noticias", "brasil"):
+    render_top_mercado(prefs, regiao_fixa="BRASIL", titulo="BRASIL")
+if rota == ("noticias", "internacional"):
+    render_top_mercado(prefs, regiao_fixa="INTERNACIONAL", titulo="INTERNACIONAL")
+if rota == ("noticias", "empresas"):
     with st.container():
-        if not prefs["watchlist"]:
+        render_news(prefs)
+# --- antiga aba CVM (documentos oficiais: fato relevante, comunicado,
+# resultados, proventos, calendario - watchlist inteira, ver ui/cvm_tab.py)
+if rota == ("noticias", "documentos"):
+    with st.container():
+        render_cvm(prefs)
+
+# --- RADAR (ver ui/radar_tab.py) ---------------------------------------------
+if rota == ("radar", "alertas"):
+    radar_tab.render_radar_alertas(prefs)
+if rota == ("radar", "carteiras"):
+    radar_tab.render_radar_carteiras(prefs)
+    # antiga aba RESEARCH: recomendacoes/relatorios das casas de analise
+    with st.container():
+        render_research(prefs)
+if rota == ("radar", "oportunidades"):
+    radar_tab.render_radar_oportunidades(prefs)
+if rota == ("radar", "acompanhamento"):
+    radar_tab.render_radar_acompanhamento(prefs)
+
+# --- ANÁLISES › Fundamentos/Valuation/Teses -------------------------------------
+if rota == ("analises", "fundamentos"):
+    analises_tab.render_fundamentos(prefs)
+if rota == ("analises", "valuation"):
+    radar_tab.render_valuation(prefs)
+if rota == ("analises", "teses"):
+    radar_tab.render_teses(prefs)
+
+# --- MACRO (Indicadores = workspace completo da antiga aba MACRO) -------------
+if rota == ("macro", "indicadores"):
+    with st.container():
+        render_macro(prefs, persistir_fn=_persistir_prefs)
+if rota == ("macro", "juros"):
+    macro_tab.render_macro_juros(prefs)
+if rota == ("macro", "cambio"):
+    macro_tab.render_macro_cambio_commodities(prefs)
+if rota == ("macro", "calendario"):
+    macro_tab.render_macro_calendario(prefs)
+
+# --- SETORES (ver ui/setores_tab.py) -------------------------------------------
+if rota == ("setores", "mapa"):
+    setores_tab.render_mapa_setorial(prefs)
+if rota == ("setores", "setor"):
+    setores_tab.render_visao_setor(prefs)
+if rota == ("setores", "catalisadores"):
+    setores_tab.render_catalisadores_setor(prefs)
+
+# --- MORNING CALL (ver ui/morning_call_tab.py - nunca envia e-mail) -------------
+if rota == ("morning-call", "edicao"):
+    morning_call_tab.render_edicao_atual(prefs)
+if rota == ("morning-call", "relatorio"):
+    morning_call_tab.render_relatorio_completo(prefs)
+if rota == ("morning-call", "historico"):
+    morning_call_tab.render_historico(prefs)
+if rota == ("morning-call", "preferencias"):
+    morning_call_tab.render_preferencias(prefs, usuario, _persistir_prefs)
+
+# --- MAIS › Watchlist -------------------------------------------------------------
+if rota == ("mais", "watchlist"):
+    secoes.render_watchlist(prefs)
+
+
+# --- ANÁLISES › Empresas (antiga aba EQUITY) ----------------------------------
+if rota == ("analises", "empresas"):
+    with st.container():
+        # ticker aberto por um vinculo (setor/ranking/busca) que ainda nao
+        # esta na watchlist: entra como opcao TEMPORARIA do seletor (com
+        # botao pra adicionar), em vez de mexer na watchlist sem pedir
+        ticker_externo = st.session_state.get(navegacao.KEY_TICKER_EXTERNO)
+        opcoes_ticker = list(prefs["watchlist"])
+        if ticker_externo and ticker_externo not in opcoes_ticker:
+            opcoes_ticker.append(ticker_externo)
+        if not opcoes_ticker:
             st.info("Adicione um ticker na barra lateral para começar.")
         else:
-            padrao_ticker, mem_ticker = _escolha_estavel("ticker_selecionado", prefs["watchlist"], prefs["watchlist"][0])
+            padrao_ticker, mem_ticker = _escolha_estavel("ticker_selecionado", opcoes_ticker, opcoes_ticker[0])
             sel = st.segmented_control(
-                "Ticker", prefs["watchlist"], default=padrao_ticker,
+                "Ticker", opcoes_ticker, default=padrao_ticker,
                 label_visibility="collapsed", key="ticker_selecionado",
             )
             ticker_selecionado = sel or padrao_ticker
             st.session_state[mem_ticker] = ticker_selecionado
+            if ticker_selecionado not in prefs["watchlist"]:
+                if st.button(f"+ ADICIONAR {ticker_selecionado} À WATCHLIST", key="empresa_add_watchlist"):
+                    prefs["watchlist"].append(ticker_selecionado)
+                    st.session_state.pop(navegacao.KEY_TICKER_EXTERNO, None)
+                    _persistir_prefs()
+                    st.rerun()
+            analises_tab.barra_contexto_empresa(ticker_selecionado, prefs)
 
             if len(prefs["watchlist"]) > 1:
                 @st.fragment(run_every=prefs["atualizacao_intervalo"])
@@ -584,7 +677,9 @@ if secao_atual == "EQUITY":
                 st.markdown('<div class="painel-titulo">PREÇOS</div>', unsafe_allow_html=True)
 
                 if cotacao.get("erro"):
-                    st.warning(f"Não foi possível obter a cotação de {ticker_sel}: {cotacao['erro']}")
+                    # motivo tecnico (cotacao['erro'], ex: KeyError do yfinance) nao vai
+                    # pra tela - so' o fato de a fonte nao ter respondido
+                    st.warning(f"Cotação de {ticker_sel} indisponível no momento (fonte: Yahoo Finance).")
                 else:
                     fmt = prefs["formato_numerico"]
                     sinal_classe = "alta" if cotacao["variacao"] >= 0 else "baixa"
@@ -927,100 +1022,43 @@ if secao_atual == "EQUITY":
                 render_cvm_ticker(ticker_selecionado, prefs)
 
 
-# --- aba MACRO -----------------------------------------------------------
-if secao_atual == "MACRO":
+# --- MAIS › Sistema / Saúde dos Dados (so admin): _eh_admin reconfirmado
+# aqui (nao so' na nav) - mesmo que a rota chegasse a uma subaba admin por
+# URL ou estado de sessao reaproveitado, quem nao e' admin nunca ve o
+# conteudo (navegacao.disponiveis ja' nem oferece a rota pra ele).
+if rota == ("mais", "sistema"):
     with st.container():
-        render_macro(prefs, persistir_fn=_persistir_prefs)
+        if _eh_admin:
+            render_sistema(prefs)
+        else:
+            st.error("Acesso restrito a administradores.")
 
-
-# --- aba RESEARCH ---------------------------------------------------------
-if secao_atual == "RESEARCH":
+if rota == ("mais", "saude"):
     with st.container():
-        render_research(prefs)
+        if _eh_admin:
+            render_saude_dados()
+        else:
+            st.error("Acesso restrito a administradores.")
 
 
-# --- aba NEWS --------------------------------------------------------------
-if secao_atual == "NEWS":
-    with st.container():
-        render_news(prefs)
-
-
-# --- aba TOP MERCADO --------------------------------------------------------
-if secao_atual == "TOP MERCADO":
-    with st.container():
-        render_top_mercado(prefs)
-
-
-# --- aba MERCADO (visao ampla do pregao: altas/baixas, setorial, treemap) ---
-if secao_atual == "MERCADO":
-    with st.container():
-        render_mercado(prefs, persistir_fn=_persistir_prefs)
-
-
-# --- aba SISTEMA (so admin) -------------------------------------------------
-if secao_atual == "SISTEMA":
-    with st.container():
-        render_sistema(prefs)
-
-
-# --- aba SAÚDE DOS DADOS (so admin, ver ui/saude_dados_tab.py) --------------
-if secao_atual == "SAÚDE DOS DADOS":
-    with st.container():
-        render_saude_dados()
-
-
-# --- aba CVM (documentos oficiais: fato relevante, comunicado, resultados,
-# proventos, calendario - watchlist inteira, ver ui/cvm_tab.py) -------------
-if secao_atual == "CVM":
-    with st.container():
-        render_cvm(prefs)
-
-
-# --- aba CALENDÁRIO (agenda de resultados corporativos, ver
-# ui/calendario_tab.py) -------------------------------------------------------
-if secao_atual == "CALENDÁRIO":
-    with st.container():
-        render_calendario(prefs)
-
-
-# --- aba CONFIG --------------------------------------------------------------
-if secao_atual == "CONFIG":
+# --- MAIS › Configurações (antiga aba CONFIG) ---------------------------------
+if rota == ("mais", "config"):
     with st.container(border=True):
         st.markdown('<div class="painel-titulo">CONFIG</div>', unsafe_allow_html=True)
 
-        # Notificação por e-mail do Morning Call: toggle INLINE com efeito
-        # imediato, fora do formulário em lote abaixo - mesmo padrão já
-        # usado pro tamanho/visibilidade de painel (ui/paineis.py,
-        # _controle_rapido_painel), pedido do Rodrigo (2026-09-26) de
-        # nunca exigir um botão "SALVAR" separado pra uma preferência
-        # simples de sim/não. Default sempre DESLIGADO (config.PREFS_PADRAO
-        # - ver data/user_prefs.py): sem esse opt-in explícito, o usuário
-        # nunca entra na lista de assinantes do envio automático (ver
-        # jobs/morning_call.py:listar_assinantes_morning_call).
+        # Notificação por e-mail do Morning Call: o toggle de efeito
+        # imediato (opt-in explícito, default DESLIGADO) mudou pra
+        # MORNING CALL › Preferências (ui/morning_call_tab.py:
+        # render_preferencias) - mesmo comportamento, mesma chave de prefs.
         st.markdown(
             "<div class='cinza' style='font-size:0.68rem; margin-bottom:0.3rem;'>NOTIFICAÇÕES</div>",
             unsafe_allow_html=True,
         )
-        morning_call_email_ativo = st.toggle(
-            "RECEBER MORNING CALL POR E-MAIL",
-            value=prefs.get("morning_call_email_ativo", False),
-            help=(
-                "Envia o briefing diário (mercados, macro, agenda, notícias) por "
-                f"e-mail às 08h BRT, em dias úteis, para {usuario['email']}. "
-                "Pode ser desligado a qualquer momento - efeito imediato."
-            ),
-            key="toggle_morning_call_email",
+        navegacao.link(
+            "MORNING CALL POR E-MAIL: "
+            + ("ATIVADO" if prefs.get("morning_call_email_ativo", False) else "DESATIVADO") + " — ALTERAR ↗",
+            "morning-call", "preferencias", chave="config_ir_mc_prefs",
         )
-        if morning_call_email_ativo != prefs.get("morning_call_email_ativo", False):
-            prefs["morning_call_email_ativo"] = morning_call_email_ativo
-            if _persistir_prefs():
-                st.toast(
-                    "Preferência de Morning Call por e-mail salva." if morning_call_email_ativo
-                    else "Você não vai mais receber o Morning Call por e-mail.",
-                )
-            else:
-                st.warning("Preferência aplicada nesta sessão (banco indisponível, não foi salva).")
-            st.rerun()
 
         with st.form("form_config"):
             c1, c2 = st.columns(2)
@@ -1060,7 +1098,7 @@ if secao_atual == "CONFIG":
                                                      index=list(config.VELOCIDADES_TICKER_TAPE.keys()).index(prefs["ticker_tape_velocidade"]))
 
             novas_abas = st.multiselect(
-                "ABAS VISÍVEIS (a ordem de seleção define a ordem de exibição)",
+                "MÓDULOS VISÍVEIS (esconde as subabas que exibem o conteúdo de cada módulo)",
                 config.ABAS_DISPONIVEIS, default=abas_visiveis,
             )
 

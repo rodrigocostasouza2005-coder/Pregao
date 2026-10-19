@@ -26,8 +26,14 @@ _BUSCADORES = {
 
 
 @st.fragment
-def render_top_mercado(prefs: dict):
+def render_top_mercado(prefs: dict, regiao_fixa: str | None = None, setor_fixo: str | None = None,
+                       titulo: str = "TOP MERCADO"):
     """Ponto de entrada da aba TOP MERCADO, chamado pelo app.py.
+
+    regiao_fixa/setor_fixo (PREGAO 2.0, ui/navegacao.py): NOTICIAS >
+    Destaques/Brasil/Internacional ja sao a escolha de regiao, e SETORES >
+    Visao por Setor ja escolheu o setor - o pill correspondente some
+    (mesma busca/cache/ranking de sempre, nenhuma coleta paralela).
 
     @st.fragment (perf, 2026-10-01): pills de região/setor disparavam
     rerun da pagina inteira a cada clique (sintoma: tela pula pro topo).
@@ -35,12 +41,12 @@ def render_top_mercado(prefs: dict):
     _injetar_css()
 
     with st.container(border=True):
-        st.markdown('<div class="painel-titulo">TOP MERCADO</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="painel-titulo">{titulo}</div>', unsafe_allow_html=True)
 
-        regiao = st.pills(
+        regiao = regiao_fixa or st.pills(
             "Região", _REGIOES, default="BRASIL", selection_mode="single", key="top_pill_regiao",
         ) or "BRASIL"
-        setor = st.pills(
+        setor = setor_fixo or st.pills(
             "Setor", _SETORES, default="TODOS", selection_mode="single", key="top_pill_setor",
         ) or "TODOS"
 
