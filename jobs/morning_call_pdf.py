@@ -782,6 +782,21 @@ def _bloco_abre(item, agora, estilos, registro, estilo_manchete, estilo_linha_fi
     return topo, _prender_fonte(unidades, _linha_fonte(item, agora, estilos))
 
 
+def _nota_sem_resumo(edicao):
+    """Aviso único (no alto da pág. 2) quando nenhuma matéria tem resumo:
+    o Pregão não gera texto na hora do envio - publica só o que já foi
+    resumido antes - e não inventa resumo. None quando há resumo."""
+    resumos = edicao.get("resumos")
+    if not isinstance(resumos, dict) or resumos.get("com_texto") or not resumos.get("total"):
+        return None
+    if resumos.get("falha_leitura"):
+        return ("Resumos indisponíveis nesta edição: a leitura dos resumos falhou. Cada manchete traz "
+                "veículo, data de publicação e link para a matéria original.")
+    return ("Resumos indisponíveis nesta edição: nenhuma destas matérias tinha resumo pronto no Pregão, "
+            "que não gera texto na hora do envio. Cada manchete traz veículo, data de publicação e link "
+            "para a matéria original.")
+
+
 def _texto_editoria_vazia(janela):
     if janela is not None and hasattr(janela, "strftime"):
         return (f"Nenhuma notícia desta editoria publicada desde {janela.strftime('%d/%m às %H:%M')} "
@@ -789,20 +804,26 @@ def _texto_editoria_vazia(janela):
     return "Nenhuma notícia desta editoria nas fontes consultadas para esta edição."
 
 
-def _editoria(nome, chave, itens, erro, agora, estilos, registro, excluir=None, edicao_janela=None):
+def _editoria(nome, chave, itens, erro, agora, estilos, registro, excluir=None, edicao_janela=None, nota=None):
     """Uma editoria inteira. A hierarquia vem do conteúdo, não de um molde
     fixo: a matéria mais importante com texto abre a editoria (manchete
     maior, linha-fina, texto em 2 colunas); as demais com texto seguem em
     2 colunas equilibradas; as sem texto viram 'Curtas'."""
-    na_capa = excluir is not None and any(i is excluir for i in (itens or []))
-    itens = [i for i in (itens or []) if i is not excluir and i.get("titulo")]
+    if excluir is None:
+        excluir = []
+    elif isinstance(excluir, dict):
+        excluir = [excluir]
+    na_capa = [i for i in (itens or []) if any(i is e for e in excluir)]
+    itens = [i for i in (itens or []) if not any(i is e for e in excluir) and i.get("titulo")]
     cabecalho = CabecalhoEditoria(nome, chave, registro)
     if not itens:
         if erro:
             aviso = f"Noticiário desta editoria indisponível nesta edição ({_t(erro)})."
-        elif na_capa:
+        elif len(na_capa) == 1 and na_capa[0] is excluir[0]:
             # a única matéria da editoria abriu a capa: "nenhuma notícia" seria falso
-            aviso = f"A notícia desta editoria é a manchete da capa: {_t(excluir.get('titulo'))}."
+            aviso = f"A notícia desta editoria é a manchete da capa: {_t(na_capa[0].get('titulo'))}."
+        elif na_capa:
+            aviso = "As notícias desta editoria estão na capa (pág. 1), com veículo, data e link."
         else:
             aviso = _texto_editoria_vazia(edicao_janela)
         return [CondPageBreak(80), KeepTogether([cabecalho, Paragraph(aviso, estilos["aviso"])]), Spacer(1, 16)]
@@ -851,7 +872,11 @@ def _editoria(nome, chave, itens, erro, agora, estilos, registro, excluir=None, 
             if len(notas) > 4:
                 flows.append(Colunas(notas))
         else:
-            flows.append(KeepTogether([cabecalho, rotulo]))
+            topo_curtas = [cabecalho, rotulo]
+            if nota:
+                topo_curtas.append(Paragraph(_t(nota), estilos["nota"]))
+                topo_curtas.append(Spacer(1, 5))
+            flows.append(KeepTogether(topo_curtas))
             flows.append(Colunas(notas))
     flows.append(Spacer(1, 18))
     return flows
@@ -1151,14 +1176,14 @@ def _linha_referencia_masthead(agora, sessao):
     (Brasília)' - a data dos mercados e o horário de geração são coisas
     diferentes e aparecem separadas (antes: 'Edição das 8h' fixo e
     'Dados até 14:59', que sugeria cotação das 14h59 de domingo)."""
-    gerado = f"gerado {_dia_curto(agora)}, {agora.hour}h{agora.minute:02d} (Brasília)"
+    gerado = f"Gerada {_dia_curto(agora)}, {agora.hour}h{agora.minute:02d} (Brasília)"
     if sessao is None:
-        mercados = "Mercados: cotações indisponíveis"
+        bolsa = "Ibovespa indisponível"
     elif sessao < agora.date():
-        mercados = f"Mercados: fechamento de {_dia_curto(sessao)}"
+        bolsa = f"Ibovespa: fechamento de {_dia_curto(sessao)}"
     else:
-        mercados = f"Mercados: sessão de {_dia_curto(sessao)}"
-    return f"{mercados} · {gerado}"
+        bolsa = f"Ibovespa: sessão de {_dia_curto(sessao)}"
+    return f"{gerado} · {bolsa} · demais cotações com horário em Mercados"
 
 
 def _desenhar_masthead(c, agora, sessao=None):
@@ -1168,7 +1193,9 @@ def _desenhar_masthead(c, agora, sessao=None):
     c.drawString(MARGEM_X, topo - 7, _espacar("MORNING CALL"))
     c.setFont(F["PregaoSans"], 7.2)
     c.setFillColor(CINZA)
-    c.drawRightString(PAGINA_LARGURA - MARGEM_X, topo - 7, "São Paulo")
+    # horário PREVISTO da edição (o efetivo de geração vem embaixo, junto
+    # da data, e pode ser outro - ex.: 19/10/2026, prevista 8h, gerada 8h15)
+    c.drawRightString(PAGINA_LARGURA - MARGEM_X, topo - 7, "Edição da manhã, prevista para 8h · São Paulo")
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, topo - 12, PAGINA_LARGURA - MARGEM_X, topo - 12)
@@ -1193,6 +1220,14 @@ def _desenhar_masthead(c, agora, sessao=None):
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, y_regua - 19, PAGINA_LARGURA - MARGEM_X, y_regua - 19)
+
+
+def _referencia_curta(barra_fmt):
+    """'16/10 17:18 (horário de Brasília)' -> '16/10 17:18'; 'fech. 16/10'
+    fica igual. Sem referência -> '' (nunca inventa horário)."""
+    texto = str(barra_fmt or "")
+    achado = re.search(r"(fech\. )?\d{2}/\d{2}( \d{2}:\d{2})?", texto)
+    return achado.group(0) if achado else ""
 
 
 def _desenhar_faixa_mercados(c, edicao, y_topo):
@@ -1229,7 +1264,13 @@ def _desenhar_faixa_mercados(c, edicao, y_topo):
         var = ind.get("variacao_pct")
         c.setFont(F["PregaoMono"], 7.6)
         c.setFillColor(_cor_variacao(var))
-        c.drawString(x, y_var, _texto_variacao(var))
+        texto_var = _texto_variacao(var)
+        c.drawString(x, y_var, texto_var)
+        ref = _referencia_curta(ind.get("barra_fmt"))
+        if ref:
+            c.setFont(F["PregaoSans"], 6.2)
+            c.setFillColor(CINZA)
+            c.drawString(x + stringWidth(texto_var, F["PregaoMono"], 7.6) + 4, y_var, ref)
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, y_topo - ALTURA_FAIXA_MERCADOS + 6, PAGINA_LARGURA - MARGEM_X, y_topo - ALTURA_FAIXA_MERCADOS + 6)
@@ -1368,7 +1409,14 @@ def _capa(edicao, estilos, registro, paginas_indice, altura_colunas, paginas=Non
     else:
         colofao_na_capa = bool(colofao)
     direita = _caber(blocos_dir, largura_dir, altura_colunas, fixos_no_fim=fixos)
-    return topo, esquerda, direita, colofao_na_capa
+    # chamada SEM texto já mostra na capa tudo o que a edição tem dela
+    # (título, veículo, data, link) - repeti-la idêntica na página 2 só
+    # ocupava espaço (edição de 19/10/2026). Chamada COM texto continua
+    # dentro: a capa traz só a primeira frase e a remissão.
+    na_direita = {id(f) for f in direita}
+    sem_texto_na_capa = [item for item, bloco in zip(chamadas, blocos_dir)
+                         if not item.get("corpo") and all(id(f) in na_direita for f in bloco)]
+    return topo, esquerda, direita, colofao_na_capa, sem_texto_na_capa
 
 
 def _altura(flows, largura):
@@ -1435,11 +1483,12 @@ def _montar(edicao, registro, paginas_indice, paginas=None):
     y_conteudo = PAGINA_ALTURA - MARGEM_TOPO - ALTURA_MASTHEAD - ALTURA_FAIXA_MERCADOS
     # 1ª medida só do topo (manchete + linha-fina), pra saber quanto sobra
     # pras colunas; depois monta a capa já com essa altura disponível
-    topo_previa, _, _, _ = _capa(edicao, estilos, None, [], altura_colunas=PAGINA_ALTURA)
+    topo_previa, _, _, _, _ = _capa(edicao, estilos, None, [], altura_colunas=PAGINA_ALTURA)
     altura_topo = _altura(topo_previa, LARGURA_UTIL) + 4 if topo_previa else 0
     y_colunas = y_conteudo - altura_topo
-    topo, esquerda, direita, colofao_na_capa = _capa(edicao, estilos, registro, paginas_indice,
-                                                     altura_colunas=y_colunas - base - 2, paginas=paginas)
+    topo, esquerda, direita, colofao_na_capa, na_capa = _capa(edicao, estilos, registro, paginas_indice,
+                                                              altura_colunas=y_colunas - base - 2,
+                                                              paginas=paginas)
     frames_capa = [
         Frame(MARGEM_X, y_colunas, LARGURA_UTIL, max(altura_topo, 1), id="topo",
               leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0),
@@ -1478,17 +1527,19 @@ def _montar(edicao, registro, paginas_indice, paginas=None):
     historia.append(FrameBreak())
 
     manchete = (edicao.get("capa") or {}).get("manchete")
+    excluir = ([manchete] if manchete else []) + na_capa
+    nota_resumo = _nota_sem_resumo(edicao)
     brasil = edicao.get("brasil") or {}
     exterior = edicao.get("exterior") or {}
     empresas = edicao.get("empresas") or {}
     historia += _editoria("Brasil", "brasil", brasil.get("noticias"), brasil.get("noticias_erro"),
-                          agora, estilos, registro, excluir=manchete,
-                          edicao_janela=edicao.get("janela_noticias"))
+                          agora, estilos, registro, excluir=excluir,
+                          edicao_janela=edicao.get("janela_noticias"), nota=nota_resumo)
     historia += _editoria("Empresas e setores", "empresas", empresas.get("cards"), empresas.get("noticias_erro"),
-                          agora, estilos, registro, excluir=manchete,
+                          agora, estilos, registro, excluir=excluir,
                           edicao_janela=edicao.get("janela_noticias"))
     historia += _editoria("Mundo", "exterior", exterior.get("noticias"), exterior.get("noticias_erro"),
-                          agora, estilos, registro, excluir=manchete,
+                          agora, estilos, registro, excluir=excluir,
                           edicao_janela=edicao.get("janela_noticias"))
     historia += _radar(edicao, estilos, registro)
     historia += _mercados(edicao, estilos, registro)

@@ -249,6 +249,14 @@ def ultima_coleta_valida(chave):
         return None
 
 
+def _motivo_publico_macro(motivo_dado):
+    """Motivo de indisponibilidade em linguagem de leitor - nunca nome de
+    exceção, host, porta ou timeout (esses ficam no log)."""
+    if motivo_dado and motivo_dado.startswith("valor recebido fora da faixa"):
+        return "valor recebido do Banco Central fora da faixa esperada para uma taxa anual, descartado"
+    return "a fonte oficial (Banco Central, SGS) não respondeu nesta execução"
+
+
 def _macro_rows(agora=None, provedores=None):
     """Linhas da tabela macro do PDF, normalizadas.
 
@@ -306,13 +314,21 @@ def _macro_rows(agora=None, provedores=None):
             if linha_copom:
                 linhas.append(linha_copom)
                 return
-        motivo = motivo or motivo_indisponivel(chave_motivo) or "Banco Central (SGS) sem dado nesta execução"
+        tecnico = motivo or motivo_indisponivel(chave_motivo) or "Banco Central (SGS) sem dado nesta execução"
         if chave_motivo == "selic" and motivo_indisponivel("selic_copom"):
-            motivo += f"; {motivo_indisponivel('selic_copom')}"
+            tecnico += f"; {motivo_indisponivel('selic_copom')}"
+        # Detalhe técnico (timeout, HTTPSConnectionPool, status HTTP...) só
+        # no log do job; o leitor do PDF/e-mail recebe o motivo em português
+        # (edição enviada em 19/10/2026 mostrava "HTTPSConnectionPool(host=
+        # 'api.bcb.gov.br'...): Read timed out" na tabela de juros).
+        print(f"[morning_call] {nome} indisponível: {tecnico}")
+        publico = _motivo_publico_macro(motivo)
+        if chave_motivo == "selic":
+            publico += "; o histórico oficial do Copom também não respondeu"
         ultima = ultima_coleta_valida(chave_motivo)
         if ultima:
-            motivo += f"; última coleta válida registrada em {ultima} (horário de Brasília)"
-        linhas.append(_linha_macro(nome, None, "% a.a.", None, erro=motivo))
+            publico += f"; última leitura bem-sucedida em {ultima} (horário de Brasília), valor não republicado"
+        linhas.append(_linha_macro(nome, None, "% a.a.", None, erro=publico))
 
     _serie("Selic meta", selic_fn, "selic_meta_pct", "selic")
     _serie("CDI", cdi_fn, "cdi_anualizado_pct", "cdi")
@@ -483,10 +499,31 @@ _SERVICO_FINANCAS_PESSOAIS = ("qual rende mais", "quanto rende", "onde investir"
                               "quanto eu teria", "como investir", "how much should i", "should i ")
 
 
+# Manchete opinativa (caso real, edição enviada em 19/10/2026: "O
+# Estelionato Eleitoral e a Irresponsabilidade Fiscal do Governo Lula" abriu
+# a capa e passava no piso de relevância só pela palavra "fiscal").
+# Adjetivação de juízo no título ou rótulo de seção de opinião = artigo de
+# opinião, não fato. Lista curta e de alto sinal de propósito: notícia
+# política factual ("Haddad anuncia corte de gastos") não é afetada.
+_TERMOS_OPINIAO = (
+    "estelionato", "irresponsabilidade", "irresponsavel", "vergonha", "vergonhoso", "vergonhosa", "vexame",
+    "farsa", "desgoverno", "descalabro", "hipocrisia", "covardia", "delirio", "insanidade",
+)
+_ROTULO_OPINIAO = re.compile(r"^\s*(opiniao|artigo|editorial|coluna|cronica|op-ed|opinion|column)\s*[:|\-–—]",
+                             re.IGNORECASE)
+
+
+def e_opiniao(titulo):
+    texto = _sem_acento(titulo).lower()
+    return bool(_ROTULO_OPINIAO.match(texto)) or _tem_marcador(texto, _TERMOS_OPINIAO)
+
+
 def _fora_de_pauta(titulo):
     texto = _sem_acento(titulo).lower()
     titulo_limpo = str(titulo or "").strip()
     if _CARTA_DE_LEITOR.match(titulo_limpo) or _CARTA_COM_CITACAO.match(titulo_limpo):
+        return True
+    if e_opiniao(titulo):
         return True
     if any(t in texto for t in _SERVICO_FINANCAS_PESSOAIS):
         return True
@@ -593,6 +630,11 @@ _TERMOS_IMPACTO_MERCADO = (
 )
 
 
+_SEM_SENTIDO_ECONOMICO = re.compile(
+    r"\bsigilos?\s+(?:(?:bancarios?|fisca(?:l|is)|telefonicos?|telematicos?)(?:\s*,\s*|\s+e\s+)?)+"
+    r"|\bnotas?\s+fisca(?:l|is)\b")
+
+
 def tem_relevancia_financeira(item):
     """Piso de relevância do PDF, pelo ASSUNTO do título (nunca pela
     quantidade de veículos): termo de mercado/economia, "%", ticker da B3
@@ -600,7 +642,9 @@ def tem_relevancia_financeira(item):
     de tema de impacto de mercado (_TERMOS_IMPACTO_MERCADO, empresa ou
     ticker) - utilidade pública sem impacto financeiro sai."""
     titulo = item.get("titulo") or ""
-    texto = _sem_acento(titulo).lower().strip()
+    # "abrir sigilos bancário, telefônico e fiscal" (debate eleitoral, 19/10)
+    # e "nota fiscal" não são política fiscal nem crédito bancário
+    texto = _SEM_SENTIDO_ECONOMICO.sub(" ", _sem_acento(titulo).lower()).strip()
     empresa = bool(_TICKER_NO_TITULO.search(titulo)) or e_noticia_de_empresa(titulo)
     if _FORMATO_SERVICO.search(texto):
         return empresa or _tem_marcador(texto, _TERMOS_IMPACTO_MERCADO)
@@ -669,18 +713,26 @@ def _item_fato(item, pronto=None):
     }
 
 
+def obter_resumos_prontos_com_status(itens):
+    """(resumos, falhou) - mesma leitura de _resumos_cacheados, separando
+    "a leitura do cache falhou" (falhou=True) de "nenhuma matéria tinha
+    resumo pronto" (dict vazio, falhou=False). O motivo vai pro log."""
+    grupos = [{"titulo": i.get("titulo"), "fontes": i.get("fontes") or [], "link": i.get("link")}
+              for i in itens if i.get("link")]
+    if not grupos:
+        return {}, False
+    try:
+        return obter_resumos_prontos(grupos) or {}, False
+    except Exception as exc:
+        print(f"[morning_call] leitura dos resumos cacheados falhou: {exc!r}")
+        return {}, True
+
+
 def _resumos_cacheados(itens):
     """{link_do_grupo: resultado} dos resumos JÁ cacheados - uma única
     leitura em lote (obter_resumos_prontos nunca gera resumo nem chama IA).
     Falha de leitura -> {} (a edição sai só com manchetes, nunca quebra)."""
-    grupos = [{"titulo": i.get("titulo"), "fontes": i.get("fontes") or [], "link": i.get("link")}
-              for i in itens if i.get("link")]
-    if not grupos:
-        return {}
-    try:
-        return obter_resumos_prontos(grupos) or {}
-    except Exception:
-        return {}
+    return obter_resumos_prontos_com_status(itens)[0]
 
 
 # "IBOVESPA fecha hoje com alta de 0,54%" virou manchete de uma edição de
@@ -828,7 +880,8 @@ def montar_edicao(agora=None):
     brasil_sel = _top(brasil_bruto, 8)
     exterior_sel = _top(exterior_bruto, 8)
     empresas_sel = _top(empresas_bruto, 6)
-    prontos = _resumos_cacheados(brasil_sel + exterior_sel + empresas_sel)
+    selecionadas = brasil_sel + exterior_sel + empresas_sel
+    prontos, falha_resumos = obter_resumos_prontos_com_status(selecionadas)
 
     def _fatos(itens):
         return [_item_fato(i, prontos.get(i.get("link"))) for i in itens]
@@ -868,7 +921,11 @@ def montar_edicao(agora=None):
             "noticias_erro": erro_br,
         },
         "radar": _radar_setorial(agora, publicados=todos_fatos),
-        "sessao_mercado": sessao_mercado([ibov, dolar, sp500, nasdaq, ouro, petroleo]),
+        # sessão da B3 = a do Ibovespa; dólar e futuros negociam fora do
+        # pregão e têm horário próprio na tabela (nunca "fechamento de sexta")
+        "sessao_mercado": sessao_mercado([ibov]),
+        "resumos": {"total": len(todos_fatos), "com_texto": sum(1 for f in todos_fatos if f.get("corpo")),
+                    "falha_leitura": falha_resumos},
         "mercados_nota": nota_sessao([ibov, dolar, sp500, nasdaq, ouro, petroleo], agora),
         "janela_noticias": inicio_janela_noticias(agora),
         "limitacoes": LIMITACOES_PADRAO,

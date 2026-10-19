@@ -163,18 +163,23 @@ def test_macro_rows_selic_e_cdi_com_colunas_reais():
     assert por_nome["CDI"]["unidade"] == "% a.a."
 
 
-def test_macro_rows_indisponivel_com_motivo_quando_provedor_falha():
+def test_macro_rows_indisponivel_com_motivo_quando_provedor_falha(capsys):
     with _MultiPatch(obter_selic_meta=lambda: (_ for _ in ()).throw(RuntimeError("fora do ar"))):
         linhas = ed._macro_rows()
     linha_selic = next(l for l in linhas if l["indicador"] == "Selic meta")
     assert linha_selic["valor"] is None
-    assert "fora do ar" in linha_selic["erro"]
+    assert linha_selic["erro"].startswith("a fonte oficial (Banco Central, SGS) não respondeu")
+    # o detalhe técnico vai pro log do job, não pro leitor
+    assert "fora do ar" not in linha_selic["erro"]
+    assert "fora do ar" in capsys.readouterr().out
 
 
-def test_macro_rows_usa_motivo_registrado_pelo_sgs():
+def test_macro_rows_usa_motivo_registrado_pelo_sgs_so_no_log(capsys):
     with _MultiPatch(motivo_indisponivel=lambda chave: "SGS 432: página de erro HTML" if chave == "selic" else None):
         linhas = ed._macro_rows()
-    assert next(l for l in linhas if l["indicador"] == "Selic meta")["erro"] == "SGS 432: página de erro HTML"
+    erro = next(l for l in linhas if l["indicador"] == "Selic meta")["erro"]
+    assert "SGS 432" not in erro and "HTML" not in erro
+    assert "SGS 432: página de erro HTML" in capsys.readouterr().out
 
 
 def test_coletar_noticias_classifica_por_regiao_e_ticker():
@@ -296,7 +301,7 @@ def test_montar_edicao_estrutura_completa_sem_rede():
         edicao = ed.montar_edicao(agora)
     assert edicao["agora"] == agora
     assert set(edicao.keys()) == {"agora", "capa", "brasil", "exterior", "empresas", "limitacoes", "fontes",
-                                  "mercados_nota", "janela_noticias", "radar", "sessao_mercado"}
+                                  "mercados_nota", "janela_noticias", "radar", "sessao_mercado", "resumos"}
     # sem notícia de setor nenhum, o radar sai vazio e registra cada exclusão
     assert edicao["radar"]["setores"] == []
     assert all("evidência insuficiente" in e["motivo"] for e in edicao["radar"]["excluidos"])
@@ -450,8 +455,10 @@ def test_indisponivel_informa_ultima_coleta_valida_sem_inventar_valor():
                      ultima_coleta_valida=lambda c: "16/10/2026 18:41" if c == "selic" else None):
         linhas = {l["indicador"]: l for l in ed._macro_rows()}
     assert linhas["Selic meta"]["valor"] is None
-    assert linhas["Selic meta"]["erro"] == ("SGS 432: página de erro HTML; última coleta válida registrada em "
-                                           "16/10/2026 18:41 (horário de Brasília)")
+    assert linhas["Selic meta"]["erro"] == (
+        "a fonte oficial (Banco Central, SGS) não respondeu nesta execução; o histórico oficial do Copom "
+        "também não respondeu; última leitura bem-sucedida em 16/10/2026 18:41 (horário de Brasília), "
+        "valor não republicado")
 
 
 def test_ultima_coleta_valida_le_o_painel_de_saude_e_converte_para_brasilia(monkeypatch):
@@ -492,7 +499,9 @@ def test_selic_copom_invalido_mantem_indisponivel_com_os_dois_motivos():
                      ultima_coleta_valida=lambda _c: None):
         linha = next(l for l in ed._macro_rows() if l["indicador"] == "Selic meta")
     assert linha["valor"] is None
-    assert linha["erro"] == "SGS 432: timeout; histórico do Copom (bcb.gov.br): HTTP 500"
+    assert linha["erro"] == ("a fonte oficial (Banco Central, SGS) não respondeu nesta execução; "
+                             "o histórico oficial do Copom também não respondeu")
+    assert "timeout" not in linha["erro"] and "HTTP 500" not in linha["erro"]
 
 
 def test_cdi_nao_tem_plano_b_e_continua_indisponivel():

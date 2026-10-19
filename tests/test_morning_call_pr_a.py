@@ -238,16 +238,18 @@ def test_todas_as_linhas_de_fonte_do_pdf_tem_data():
 
 def test_masthead_separa_sessao_de_mercado_e_geracao():
     linha = pdf_mod._linha_referencia_masthead(DOMINGO, date(2026, 10, 16))
-    assert linha == "Mercados: fechamento de sex 16/10 · gerado dom 18/10, 14h59 (Brasília)"
-    assert pdf_mod._linha_referencia_masthead(SEGUNDA, date(2026, 10, 19)).startswith("Mercados: sessão de seg 19/10")
-    assert pdf_mod._linha_referencia_masthead(SEGUNDA, None).startswith("Mercados: cotações indisponíveis")
+    assert linha == ("Gerada dom 18/10, 14h59 (Brasília) · Ibovespa: fechamento de sex 16/10 · "
+                     "demais cotações com horário em Mercados")
+    assert "Ibovespa: sessão de seg 19/10" in pdf_mod._linha_referencia_masthead(SEGUNDA, date(2026, 10, 19))
+    assert "Ibovespa indisponível" in pdf_mod._linha_referencia_masthead(SEGUNDA, None)
 
 
 def test_pdf_nao_tem_mais_edicao_das_8h_fixa():
     leitor = PdfReader(io.BytesIO(pdf_mod.gerar_pdf(amostras.edicao_tipica(), {})))
     capa = leitor.pages[0].extract_text()
     assert "Edição das 8h" not in capa and "Dados até" not in capa
-    assert "Mercados: fechamento de sex 16/10" in capa
+    assert "Ibovespa: fechamento de sex 16/10" in capa
+    assert "prevista para 8h" in capa and "Gerada seg 19/10, 8h00" in capa
 
 
 def test_sessao_mercado_vem_do_primeiro_indicador_com_sessao():
@@ -335,3 +337,146 @@ def test_editoria_cuja_unica_materia_e_a_manchete_nao_diz_que_nao_ha_noticia():
     textos = [getattr(f, "text", "") for kt in flows for f in getattr(kt, "_content", [])]
     assert any("manchete da capa" in t for t in textos)
     assert not any("Nenhuma notícia" in t for t in textos)
+
+
+# ------------------------------------------------------------------
+# 10. Edição REAL enviada em 19/10/2026 (texto do e-mail, mesma execução)
+# ------------------------------------------------------------------
+
+def test_manchete_opinativa_sai_mesmo_com_termo_fiscal():
+    """Abriu a capa em 19/10 e passava no piso só por "fiscal"."""
+    titulo = "O Estelionato Eleitoral e a Irresponsabilidade Fiscal do Governo Lula"
+    assert ed.e_opiniao(titulo)
+    assert ed.filtrar_noticias([_item(titulo, veiculos=_VEICULOS_REPLICADOS)], SEGUNDA, exigir_relevancia=True) == []
+    for titulo in ("Opinião: o Copom errou ao manter os juros", "Editorial: a farsa do arcabouço"):
+        assert ed.e_opiniao(titulo), titulo
+
+
+def test_sigilo_fiscal_de_debate_eleitoral_nao_conta_como_politica_fiscal():
+    titulo = "Lula desafia Flávio Bolsonaro a abrir sigilos bancário, telefônico e fiscal em debate"
+    assert not ed.tem_relevancia_financeira(_item(titulo))
+    assert not ed.tem_relevancia_financeira(_item("Saiba como emitir nota fiscal eletrônica de serviço"))
+
+
+def test_politica_com_impacto_fiscal_ou_regulatorio_concreto_continua_elegivel():
+    for titulo in ("Ajuste fiscal e desaceleração econômica podem acelerar queda da Selic",
+                   "Ajuste fiscal e Banco Master dominam repercussão de entrevista de Flávio à Globo",
+                   "Haddad anuncia corte de R$ 15 bi em gastos para cumprir meta fiscal",
+                   "Câmara aprova projeto que muda regras de tributação de fundos exclusivos",
+                   "Pesquisa eleitoral mexe com juros futuros e dólar"):
+        item = _item(titulo)
+        assert not ed.e_opiniao(titulo), titulo
+        assert ed.tem_relevancia_financeira(item), titulo
+        assert ed.filtrar_noticias([item], SEGUNDA, exigir_relevancia=True) == [item], titulo
+
+
+def test_noticias_internacionais_da_edicao_real_vao_para_mundo():
+    for titulo in ("Bitcoin se mantém acima de US$ 80 mil enquanto os mercados reduzem apostas em alta de juros pelo Fed",
+                   "Déficit orçamentário dos EUA se aproxima de US$ 2 trilhões no ano fiscal de 2026"):
+        assert ed.editoria_por_assunto(titulo, "BR") == "INT", titulo
+
+
+def test_coluna_em_primeira_pessoa_e_cronica_policial_sem_mercado_saem():
+    coluna = ("‘My husband suffered a massive stroke at 53’: I’m 64 and will rent for the rest "
+              "of my life — but I’m still hopeful")
+    policial = "OpenAI bugging suspect WhatsApp'ed Saudi royal days before arrest, feds reveal"
+    itens = [_item(coluna), _item(policial), _item("Big tech is wobbling. Goldman Sachs says it's time to buy these stocks")]
+    titulos = [i["titulo"] for i in ed.filtrar_noticias(itens, SEGUNDA, exigir_relevancia=True)]
+    assert titulos == ["Big tech is wobbling. Goldman Sachs says it's time to buy these stocks"]
+
+
+def test_sem_noticia_elegivel_nao_preenche_com_irrelevante():
+    """Sem matéria com relevância, a editoria fica vazia (e o PDF diz isso);
+    nada de completar uma cota mínima com variedades."""
+    itens = [_item("Celebrity chef opens new restaurant in Manhattan"),
+             _item("O Estelionato Eleitoral e a Irresponsabilidade Fiscal do Governo Lula"),
+             _item("Saiba como emitir a nova Certidão Única de Débitos do Estado de São Paulo",
+                   veiculos=_VEICULOS_REPLICADOS)]
+    assert ed.filtrar_noticias(itens, SEGUNDA, exigir_relevancia=True) == []
+    noticias = [{"titulo": i["titulo"], "link": f"https://x/{n}", "regiao": "BR", "tickers": [], "importancia": 9}
+                for n, i in enumerate(itens)]
+    with _MultiPatch(**_pools(noticias, data="2026-10-19T06:00:00-03:00")):
+        edicao = ed.montar_edicao(SEGUNDA)
+    assert edicao["brasil"]["noticias"] is None and edicao["capa"]["manchete"] is None
+
+
+# ------------------------------------------------------------------
+# 11. CDI/Selic: indisponibilidade limpa, detalhe técnico só no log
+# ------------------------------------------------------------------
+
+def test_cdi_indisponivel_sem_detalhe_tecnico_no_pdf_nem_no_email(capsys):
+    tecnico = ("HTTPSConnectionPool(host='api.bcb.gov.br', port=443): Read timed out. (read timeout=25)")
+    with _MultiPatch(motivo_indisponivel=lambda c: tecnico if c == "cdi" else None,
+                     ultima_coleta_valida=lambda c: "18/10/2026 01:31" if c == "cdi" else None):
+        linhas = {l["indicador"]: l for l in ed._macro_rows(SEGUNDA)}
+    cdi = linhas["CDI"]
+    assert cdi["valor"] is None
+    for proibido in ("HTTPSConnectionPool", "timeout", "timed out", "api.bcb.gov.br", "port="):
+        assert proibido not in cdi["erro"]
+    assert cdi["erro"] == ("a fonte oficial (Banco Central, SGS) não respondeu nesta execução; última leitura "
+                           "bem-sucedida em 18/10/2026 01:31 (horário de Brasília), valor não republicado")
+    assert tecnico in capsys.readouterr().out
+    nota = pdf_mod._nota_macro(list(linhas.values()))
+    assert "HTTPSConnectionPool" not in nota and "Indisponível (CDI)" in nota
+
+
+# ------------------------------------------------------------------
+# 12. Resumos: falha de leitura x ausência; nunca inventados
+# ------------------------------------------------------------------
+
+def test_zero_resumos_tem_aviso_transparente_e_falha_de_leitura_e_distinta():
+    noticias = [{"titulo": "Copom mantém Selic", "link": "https://x/1", "regiao": "BR", "tickers": [], "importancia": 9}]
+    with _MultiPatch(**_pools(noticias, data="2026-10-19T06:00:00-03:00")):
+        sem_cache = ed.montar_edicao(SEGUNDA)
+    assert sem_cache["resumos"] == {"total": 1, "com_texto": 0, "falha_leitura": False}
+    assert sem_cache["brasil"]["noticias"][0]["corpo"] == []
+    assert "não gera texto na hora do envio" in pdf_mod._nota_sem_resumo(sem_cache)
+
+    def _quebra(_g):
+        raise RuntimeError("supabase fora do ar")
+
+    with _MultiPatch(**_pools(noticias, data="2026-10-19T06:00:00-03:00"), obter_resumos_prontos=_quebra):
+        falhou = ed.montar_edicao(SEGUNDA)
+    assert falhou["resumos"]["falha_leitura"] is True
+    assert "a leitura dos resumos falhou" in pdf_mod._nota_sem_resumo(falhou)
+
+
+def test_com_resumo_nao_ha_aviso():
+    assert pdf_mod._nota_sem_resumo({"resumos": {"total": 3, "com_texto": 1, "falha_leitura": False}}) is None
+
+
+# ------------------------------------------------------------------
+# 13. Capa x corpo e referências das cotações
+# ------------------------------------------------------------------
+
+def test_chamada_sem_texto_da_capa_nao_se_repete_na_pagina_2():
+    edicao = amostras.edicao_tipica()
+    for secao, campo in (("brasil", "noticias"), ("exterior", "noticias"), ("empresas", "cards")):
+        for item in edicao[secao][campo]:
+            item["corpo"] = []
+    todas = edicao["brasil"]["noticias"] + edicao["exterior"]["noticias"] + edicao["empresas"]["cards"]
+    manchete, chamadas = ed.selecionar_manchete(todas)
+    edicao["capa"].update(manchete=manchete, chamadas=chamadas)
+    leitor = PdfReader(io.BytesIO(pdf_mod.gerar_pdf(edicao, {})))
+    capa = leitor.pages[0].extract_text()
+    resto = "\n".join(p.extract_text() for p in leitor.pages[1:])
+    na_capa = [c["titulo"] for c in chamadas if c["titulo"][:40] in capa.replace("\n", " ")]
+    assert na_capa, "nenhuma chamada coube na capa - o teste não exercita nada"
+    for titulo in na_capa:
+        assert titulo[:40] not in resto.replace("\n", " "), titulo
+    assert "Resumos indisponíveis nesta edição" not in capa  # o aviso fica na pág. 2
+
+
+def test_referencia_curta_das_cotacoes_da_capa():
+    assert pdf_mod._referencia_curta("16/10 17:18 (horário de Brasília)") == "16/10 17:18"
+    assert pdf_mod._referencia_curta("fech. 16/10") == "fech. 16/10"
+    assert pdf_mod._referencia_curta(None) == ""
+
+
+def test_sessao_da_bolsa_vem_do_ibovespa_nao_do_dolar():
+    noticias = []
+    cot = {"Ibovespa": {"erro": None, "preco": 205430.0, "variacao_pct": 0.54, "_barra_em": "2026-10-16T00:00:00-03:00"},
+           "Dólar (USD/BRL)": {"erro": None, "preco": 5.07, "variacao_pct": -0.48, "_barra_em": "2026-10-19T00:00:00-03:00"}}
+    with _MultiPatch(**_pools(noticias), obter_cotacao_indice=lambda nome, _t: dict(cot.get(nome, {"erro": "x"}))):
+        edicao = ed.montar_edicao(SEGUNDA)
+    assert edicao["sessao_mercado"] == date(2026, 10, 16)
