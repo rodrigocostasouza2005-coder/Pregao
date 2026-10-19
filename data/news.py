@@ -1181,20 +1181,36 @@ _VEICULOS_PROVAVEL_PAYWALL = {"valor", "estadao", "folha", "bloomberg", "wall st
 # FASE C (2026-10-09, modal editorial de NEWS): formato antigo era 4 campos
 # fixos numa linha cada ("O QUE ACONTECEU: ...") - lia como log de debug e
 # sempre sobrava campo vazio ("NÚMEROS: não informado") quando a fonte não
-# dava pra preencher os 4. Formato novo tem 2 blocos com marcador próprio
-# (RESUMO:/LEITURA DE MERCADO:, ver _separar_secoes_resumo) - RESUMO é
-# prosa editorial em paragrafos curtos (proporcional ao conteudo real, nunca
-# infla pra preencher), LEITURA DE MERCADO e' OMITIDA pelo proprio modelo
-# quando nao ha' base (nunca "não informado") em vez de um campo vazio pra
-# UI filtrar depois. Budget de tokens maior que o formato antigo (paragrafos
-# por extenso gastam mais que 1 linha por campo) - ainda proprio do NEWS,
+# dava pra preencher os 4. Formato novo tem blocos com marcador próprio
+# (RESUMO:/POR QUE IMPORTA:/LEITURA DE MERCADO:, ver separar_secoes_resumo/
+# extrair_por_que_importa) - RESUMO é prosa editorial em paragrafos curtos
+# (proporcional ao conteudo real, nunca infla pra preencher), POR QUE
+# IMPORTA e LEITURA DE MERCADO sao OMITIDOS pelo proprio modelo quando nao
+# ha' base (nunca "não informado") em vez de um campo vazio pra UI filtrar
+# depois. Budget de tokens maior que o formato antigo (paragrafos por
+# extenso gastam mais que 1 linha por campo) - ainda proprio do NEWS,
 # maior que config.GROQ_MAX_TOKENS (compartilhado com o research, que usa
 # um formato mais enxuto).
-_MAX_TOKENS_RESUMO_NEWS = 900
+#
+# v5 (2026-10-19, redesign editorial do card de NEWS - pedido do Rodrigo:
+# resumo "visualmente ruim" e "sem análise suficientemente útil"): orçamento
+# subiu de 900 pra 1000 pra acomodar o novo bloco opcional POR QUE IMPORTA
+# (ver comentario acima) sem aumentar o risco de corte no meio da resposta
+# (mesmo motivo do reasoning_effort="low" em config.py).
+_MAX_TOKENS_RESUMO_NEWS = 1000
 
-# marcadores do formato novo - usados tanto no prompt quanto no parser
-# (_separar_secoes_resumo) - precisam casar exatamente
+# marcadores do formato - usados tanto no prompt quanto no parser
+# (separar_secoes_resumo/extrair_por_que_importa) - precisam casar
+# exatamente. "LEITURA DE MERCADO" e' exibida na UI como "Impacto
+# potencial" (ver ui/news_tab.py) - o MARCADOR em si (usado no prompt e no
+# cache ja gravado em produção) fica com o nome antigo de proposito: mudar
+# o texto do marcador exigiria reconhecer os DOIS marcadores (antigo e
+# novo) pra nao perder a compatibilidade com resumo ja cacheado, sem
+# nenhum ganho real (o rotulo exibido ja' muda, que e' o que importa pro
+# usuario) - so' a palavra mostrada na tela precisava mudar, nao o
+# contrato interno do parser/cache.
 _MARCADOR_RESUMO = "RESUMO:"
+_MARCADOR_IMPORTA = "POR QUE IMPORTA:"
 _MARCADOR_LEITURA = "LEITURA DE MERCADO:"
 
 # regras de fidelidade (nunca invente numero/citacao/causalidade/
@@ -1236,6 +1252,19 @@ _FRASES_PROIBIDAS_RESUMO = (
     "poderia ser colada em QUALQUER notícia de mercado sem mudar nada"
 )
 
+_REGRAS_IMPACTO_CAUSAL = (
+    "- Nunca diga que um ativo/empresa/setor foi 'beneficiado' ou "
+    "'prejudicado' sem explicar O MECANISMO concreto (ex: não basta dizer "
+    "'é positivo pro papel' - diga o quê, especificamente, torna isso "
+    "positivo: queda de custo, aumento de demanda, redução de dívida etc, "
+    "segundo a própria fonte).\n"
+    "- Se o efeito sobre um ativo/setor específico não for claro a partir "
+    "do texto, diga explicitamente que é incerto (ex: 'ainda não é claro "
+    "se isso afeta X' / 'não há, no texto, base pra saber se Y sai "
+    "beneficiada ou prejudicada') em vez de arriscar uma afirmação "
+    "categórica sem base."
+)
+
 _PROMPT_SISTEMA_RESUMO = (
     "Você é um editor financeiro que escreve, em português brasileiro "
     "natural, preciso e profissional, um resumo editorial de uma matéria "
@@ -1248,14 +1277,22 @@ _PROMPT_SISTEMA_RESUMO = (
     "anúncio ou navegação misturados - ignore esse ruído e resuma só o "
     "conteúdo jornalístico.\n\n"
     "Formato de saída, EXATAMENTE nesta estrutura (sem nenhum outro texto "
-    "antes ou depois):\n\n"
+    "antes ou depois) - os blocos "
+    f"{_MARCADOR_IMPORTA} e {_MARCADOR_LEITURA} são OPCIONAIS (ver regras "
+    "de cada um abaixo: escreva só quando houver base real, nunca pra "
+    "preencher a estrutura):\n\n"
     f"{_MARCADOR_RESUMO}\n"
     "<1 a 5 parágrafos curtos, cada um separado por uma linha em branco>\n\n"
+    f"{_MARCADOR_IMPORTA}\n"
+    "<parágrafo curto, só se houver base - ver regra abaixo>\n\n"
     f"{_MARCADOR_LEITURA}\n"
     "<parágrafo curto, só se houver base - ver regra abaixo>\n\n"
     f"REGRAS DO BLOCO {_MARCADOR_RESUMO}\n"
     "- Priorize, NESTA ORDEM e só quando a fonte sustentar cada um (nunca "
     f"force os 4 pra toda matéria):\n{_ANGULOS_PRIORIDADE_RESUMO}\n"
+    "- Este bloco é a síntese do FATO reportado pela fonte - nunca sua "
+    "opinião nem uma leitura especulativa (isso vai nos blocos "
+    f"{_MARCADOR_IMPORTA}/{_MARCADOR_LEITURA} abaixo).\n"
     "- Uma reação de mercado (preço, volume, etc.) só entra quando a "
     "PRÓPRIA FONTE relata como já tendo acontecido (ex: 'as ações caíram "
     "3% após o anúncio') - nunca sua previsão do que pode/deve acontecer.\n"
@@ -1287,11 +1324,24 @@ _PROMPT_SISTEMA_RESUMO = (
     "texto é sobre OUTRO fato/dia/ativo - nesse caso, responda "
     "exatamente SEM_CONTEUDO em vez de inventar uma reconciliação.\n"
     f"- NUNCA use frases genéricas de preenchimento, como {_FRASES_PROIBIDAS_RESUMO}.\n\n"
+    f"REGRAS DO BLOCO {_MARCADOR_IMPORTA}\n"
+    "- Só escreva este bloco se houver base real no texto pra explicar a "
+    "RELEVÂNCIA econômica/financeira do fato (ex: tamanho da empresa/do "
+    "mercado afetado, participação na receita/no índice, porte do valor "
+    "envolvido) - não é uma repetição do resumo, é a resposta a 'por que "
+    "isso importa pra quem investe'.\n"
+    "- Prefira relevância apoiada em algo que a própria fonte já deu "
+    "(um número, uma proporção, uma posição de mercado) a uma afirmação "
+    "genérica de importância.\n"
+    f"- Se não houver base suficiente, OMITA O BLOCO INTEIRO (não escreva "
+    f"{_MARCADOR_IMPORTA} nem 'não informado' nem nada parecido).\n"
+    f"- NUNCA use frases genéricas de preenchimento, como {_FRASES_PROIBIDAS_RESUMO}.\n\n"
     f"REGRAS DO BLOCO {_MARCADOR_LEITURA}\n"
     "- Só escreva este bloco se houver base real no texto pra discutir "
-    "relevância pro investidor: por que a notícia pode importar, quais "
-    "ativos/setores/variáveis macro podem ser afetados, e o que ainda "
-    "falta saber.\n"
+    "impacto potencial pro investidor: quais ativos/empresas/setores/"
+    "variáveis macro específicos podem ser afetados e POR QUE (o "
+    "mecanismo causal), e o que ainda falta saber.\n"
+    f"{_REGRAS_IMPACTO_CAUSAL}\n"
     "- Deixe claro quando for SUA interpretação analítica (use linguagem "
     "como 'pode sinalizar', 'tende a', 'a depender de') - nunca apresente "
     "uma inferência sua como se fosse um fato que a fonte confirmou.\n"
@@ -1310,9 +1360,13 @@ _PROMPT_SISTEMA_RESUMO_MANCHETES = (
     "bloquearam o download). SEMPRE com suas próprias palavras, e NUNCA "
     "apenas reescreva a manchete principal com outras palavras.\n\n"
     "Formato de saída, EXATAMENTE nesta estrutura (sem nenhum outro texto "
-    "antes ou depois):\n\n"
+    f"antes ou depois) - os blocos {_MARCADOR_IMPORTA} e {_MARCADOR_LEITURA} "
+    "são OPCIONAIS (só com base clara nas manchetes, nunca pra preencher a "
+    "estrutura):\n\n"
     f"{_MARCADOR_RESUMO}\n"
     "<1 a 3 parágrafos curtos, separados por linha em branco>\n\n"
+    f"{_MARCADOR_IMPORTA}\n"
+    "<parágrafo curto, só se houver base clara nas manchetes>\n\n"
     f"{_MARCADOR_LEITURA}\n"
     "<parágrafo curto, só se houver base clara nas manchetes>\n\n"
     "Como só tem as manchetes (não o texto completo), vá direto ao que "
@@ -1327,11 +1381,14 @@ _PROMPT_SISTEMA_RESUMO_MANCHETES = (
     "conta se alguma manchete citar um evento futuro explícito. Nunca "
     "conecte duas manchetes com uma relação de causa->consequência que "
     "nenhuma delas afirma, e nunca afirme que o fato é positivo/negativo "
-    "pra uma ação sem que alguma manchete sustente essa leitura. Se a "
+    f"pra uma ação sem que alguma manchete sustente essa leitura - e, se o "
+    "efeito sobre um ativo/setor específico não for claro, diga que é "
+    "incerto em vez de arriscar. Se a "
     f"informação for pouca, prefira um resumo curto e honesto. NUNCA use "
     f"frases genéricas de preenchimento, como {_FRASES_PROIBIDAS_RESUMO}. "
-    f"Se não houver base pro bloco {_MARCADOR_LEITURA}, OMITA O BLOCO "
-    f"INTEIRO (não escreva {_MARCADOR_LEITURA} nem 'não informado'). "
+    f"Se não houver base pros blocos {_MARCADOR_IMPORTA}/{_MARCADOR_LEITURA}, "
+    f"OMITA O BLOCO INTEIRO que faltar base (não escreva o marcador nem "
+    "'não informado'). "
     "Se as manchetes não derem pra montar nem o RESUMO, responda "
     "exatamente: SEM_CONTEUDO"
 )
@@ -1935,23 +1992,71 @@ def _leitura_sem_base(texto: str) -> bool:
 # tests/test_news_fase3.py, cenarios 4e/4l) com um texto de exemplo que so'
 # MENCIONA a palavra "resumo" no meio da frase.
 _RE_MARCADOR_RESUMO = re.compile(r"(?m)^[ \t]*" + re.escape(_MARCADOR_RESUMO))
+_RE_MARCADOR_IMPORTA = re.compile(r"(?m)^[ \t]*" + re.escape(_MARCADOR_IMPORTA))
 _RE_MARCADOR_LEITURA = re.compile(r"(?m)^[ \t]*" + re.escape(_MARCADOR_LEITURA))
 
 
+def _extrair_bloco_por_que_importa(texto: str) -> tuple:
+    """Separa o bloco opcional POR QUE IMPORTA (relevância econômica/
+    financeira, ver _PROMPT_SISTEMA_RESUMO) do resto do texto bruto do
+    resumo, ANTES do parsing normal de separar_secoes_resumo - devolve
+    (bloco: str|None, texto_sem_o_bloco: str). bloco=None (texto
+    devolvido sem alteração) quando o marcador não aparece - formato
+    antigo (resumo já cacheado antes desta mudança, 2026-10-19) ou
+    resposta do modelo sem esse bloco opcional.
+
+    Função separada de propósito (v5, 2026-10-19 - card de NEWS ganhou
+    o bloco "Por que importa", ver PR do redesign editorial): mantém
+    separar_secoes_resumo devolvendo SEMPRE (paragrafos, leitura_mercado)
+    - mesmo contrato de sempre, usado também por
+    data/morning_call_editorial.py - sem precisar ensinar aquele outro
+    consumidor (fora do escopo desta mudança, sessão paralela em
+    PR #84) sobre um 3º bloco que ele nunca pediu. separar_secoes_resumo
+    chama esta função internamente só pra garantir que o texto do bloco
+    POR QUE IMPORTA nunca vaze pra dentro de "paragrafos" (ver abaixo) -
+    extrair_por_que_importa (função pública, usada só por
+    ui/news_tab.py) é quem de fato expõe o conteúdo do bloco pra UI."""
+    match_importa = _RE_MARCADOR_IMPORTA.search(texto)
+    if not match_importa:
+        return None, texto
+
+    resto = texto[match_importa.end():]
+    match_fim = _RE_MARCADOR_LEITURA.search(resto)
+    if match_fim:
+        bloco = resto[: match_fim.start()].strip()
+        texto_sem_bloco = texto[: match_importa.start()].rstrip() + "\n\n" + resto[match_fim.start():]
+    else:
+        bloco = resto.strip()
+        texto_sem_bloco = texto[: match_importa.start()].rstrip()
+    return (bloco or None), texto_sem_bloco
+
+
 def separar_secoes_resumo(resumo: str) -> tuple:
-    """Quebra o texto bruto do resumo (formato RESUMO:/LEITURA DE MERCADO:,
-    ver _PROMPT_SISTEMA_RESUMO) em (paragrafos_corpo: list[str],
-    leitura_mercado: str|None) - usado pela UI pra renderizar o modal
-    editorial (ver ui/news_tab.py:_abrir_card). Os marcadores so' contam
-    quando abrem uma LINHA (ver _RE_MARCADOR_*) - nunca quando a palavra
-    aparece no meio de uma frase comum do proprio resumo. Tolerante a
-    formato inesperado (o modelo nem sempre segue a estrutura à risca):
-    sem os marcadores, devolve o texto inteiro quebrado em parágrafos e
+    """Quebra o texto bruto do resumo (formato RESUMO:/[POR QUE IMPORTA:]/
+    LEITURA DE MERCADO:, ver _PROMPT_SISTEMA_RESUMO) em (paragrafos_corpo:
+    list[str], leitura_mercado: str|None) - usado pela UI pra renderizar o
+    modal editorial (ver ui/news_tab.py:_abrir_card) e por
+    data/morning_call_editorial.py. Os marcadores so' contam quando abrem
+    uma LINHA (ver _RE_MARCADOR_*) - nunca quando a palavra aparece no
+    meio de uma frase comum do proprio resumo. Tolerante a formato
+    inesperado (o modelo nem sempre segue a estrutura à risca): sem os
+    marcadores, devolve o texto inteiro quebrado em parágrafos e
     leitura_mercado=None - nunca lança excecao, nunca inventa conteúdo.
     leitura_mercado vem None tanto quando o marcador não aparece quanto
     quando aparece mas o conteúdo é, na prática, um campo vazio (ver
-    _leitura_sem_base) - a UI nunca precisa saber a diferença."""
+    _leitura_sem_base) - a UI nunca precisa saber a diferença.
+
+    O bloco opcional POR QUE IMPORTA (v5, 2026-10-19) é removido ANTES do
+    resto do parsing (ver _extrair_bloco_por_que_importa) - "paragrafos"
+    nunca inclui o texto desse bloco, mesmo contrato de sempre pra quem já
+    usa esta função (Morning Call inclusive); use extrair_por_que_importa
+    pra ler o conteúdo desse bloco."""
     texto = (resumo or "").strip()
+    if not texto:
+        return [], None
+
+    _, texto = _extrair_bloco_por_que_importa(texto)
+    texto = texto.strip()
     if not texto:
         return [], None
 
@@ -1970,6 +2075,22 @@ def separar_secoes_resumo(resumo: str) -> tuple:
 
     paragrafos = [p.strip() for p in re.split(r"\n\s*\n", corpo) if p.strip()]
     return paragrafos, leitura
+
+
+def extrair_por_que_importa(resumo: str) -> str | None:
+    """Texto do bloco opcional POR QUE IMPORTA (relevância econômica/
+    financeira do fato, ver _PROMPT_SISTEMA_RESUMO) - None quando o
+    modelo omitiu por falta de base (mesma disciplina de
+    leitura_mercado/_leitura_sem_base) ou quando o resumo é do formato
+    anterior a esta mudança (cache antigo, sem o marcador). Usado só por
+    ui/news_tab.py pra renderizar a seção "Por que importa" separada da
+    síntese factual (RESUMO) e do impacto potencial (LEITURA DE
+    MERCADO) - nunca por separar_secoes_resumo, que ignora este bloco de
+    propósito (ver _extrair_bloco_por_que_importa)."""
+    bloco, _ = _extrair_bloco_por_que_importa((resumo or "").strip())
+    if bloco and not _leitura_sem_base(bloco):
+        return bloco
+    return None
 
 
 # --- Gate de qualidade: rejeitar resumo generico (v3, 2026-10-15) -------
@@ -2249,6 +2370,27 @@ def _validar_consistencia(resumo: str, titulo: str, texto_base: str) -> str | No
     return _causalidade_sem_evidencia(corpo, texto_base)
 
 
+def _sanitizar_por_que_importa(resumo: str, titulo: str, texto_base: str) -> str:
+    """Remove o bloco POR QUE IMPORTA do resumo bruto se ele não passar
+    pelos MESMOS gates de qualidade já aplicados ao bloco RESUMO
+    (_resumo_e_generico/_causalidade_sem_evidencia) - nunca descarta o
+    resumo inteiro por causa desse bloco opcional (seria jogar fora um
+    RESUMO/LEITURA DE MERCADO perfeitamente bons só por 1 parágrafo extra
+    ruim); só omite a seção, mesma filosofia de
+    _leitura_sem_base/_resumo_e_generico ("nunca mostra uma seção fraca,
+    simplesmente não mostra"). Chamado nos 3 pontos de retorno de
+    _gerar_resumo_grupo (texto completo / fragmentos combinados / só-
+    manchetes) depois que o resumo já passou pelos gates do bloco
+    RESUMO - este aqui audita só o bloco novo, que nenhum gate anterior
+    cobria (ver _extrair_bloco_por_que_importa)."""
+    bloco, texto_sem_bloco = _extrair_bloco_por_que_importa(resumo)
+    if not bloco:
+        return resumo
+    if _resumo_e_generico(bloco, titulo) or _causalidade_sem_evidencia(bloco, texto_base):
+        return texto_sem_bloco
+    return resumo
+
+
 def _combinar_fragmentos(fragmentos: list, titulos_unicos: tuple) -> str:
     """Junta pedaços curtos de texto de fontes diferentes do grupo (cada
     um curto demais sozinho pra resumir, ver _MIN_CHARS_TEXTO) com as
@@ -2366,6 +2508,7 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
         if resumo:
             if validar_imagem and imagem and not _url_imagem_utilizavel(imagem):
                 imagem = None
+            resumo = _sanitizar_por_que_importa(resumo, titulo, texto)
             return {"resumo": resumo, "link_original": link_real, "imagem": imagem,
                     "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": False,
                     "qualidade_texto": "full_text"}
@@ -2395,6 +2538,7 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
                 ultimo_motivo = f"resumo gerado é inconsistente com a fonte ({motivo_inconsistencia}) — descartado"
                 resumo = None
         if resumo:
+            resumo = _sanitizar_por_que_importa(resumo, titulo, texto_combinado)
             return {"resumo": resumo, "link_original": None, "imagem": None,
                     "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": True,
                     "qualidade_texto": "partial_text"}
@@ -2414,6 +2558,7 @@ def _gerar_resumo_grupo(titulo: str, fontes_ordenadas: tuple, titulos: tuple = (
                 ultimo_motivo = f"resumo gerado é inconsistente com a fonte ({motivo_inconsistencia}) — descartado"
                 resumo = None
         if resumo:
+            resumo = _sanitizar_por_que_importa(resumo, titulo, manchetes_base)
             return {"resumo": resumo, "link_original": None, "imagem": None,
                     "motivo_indisponivel": None, "modelo": modelo_groq_usado, "parcial": True,
                     "qualidade_texto": "snippet_only"}

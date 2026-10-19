@@ -153,7 +153,20 @@ def chave_research(link: str) -> str:
 # Nenhuma linha e' apagada da tabela: o grupo so' deixa de bater na chave
 # antiga (nunca mais servida) e gera uma linha nova na proxima visita,
 # igual a qualquer mudanca no conjunto de fontes de um grupo.
-_VERSAO_CHAVE_NEWS = "v4"
+#
+# v5 (2026-10-19, redesign editorial do card de NEWS - pedido do Rodrigo:
+# resumo "visualmente ruim" e sem analise suficientemente util). O
+# CONTEUDO esperado ganhou um bloco novo opcional (POR QUE IMPORTA -
+# relevancia economica/financeira do fato, ver
+# data/news.py:_PROMPT_SISTEMA_RESUMO) e o bloco LEITURA DE MERCADO
+# (exibido na UI como "Impacto potencial") ganhou regra explicita pra
+# nunca dizer "beneficiada"/"prejudicada" sem explicar o mecanismo causal,
+# e pra admitir incerteza quando o efeito sobre um ativo/setor especifico
+# nao for claro. Resumo v4 ja' cacheado nunca teve chance de gerar esses
+# blocos (prompt antigo nem pedia) - bump de versao forca reprocessamento
+# 1x por grupo, mesmo padrao v1->v2->v3->v4 acima; nenhuma linha e'
+# apagada da tabela.
+_VERSAO_CHAVE_NEWS = "v5"
 
 
 def chave_news(titulo: str, links: tuple) -> str:
