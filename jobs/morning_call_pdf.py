@@ -125,7 +125,6 @@ _MESES_PT = (
     "janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
     "agosto", "setembro", "outubro", "novembro", "dezembro",
 )
-_DIAS_CURTOS = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
 _MESES_CURTOS = ("jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez")
 
 
@@ -224,9 +223,8 @@ def _estilos():
     estilo("corpo_estreito_seguinte", alignment=TA_LEFT, firstLineIndent=9)
     estilo("corpo_chamada", fontSize=9, leading=12.2, textColor=TINTA_SUAVE)
     estilo("curta", fontName=F["PregaoSerifSemi"], fontSize=9.8, leading=12.4, spaceAfter=1.5)
-    estilo("fonte", fontName=F["PregaoSans"], fontSize=7.5, leading=9.6, textColor=CINZA, spaceBefore=3)
-    estilo("nota", fontName=F["PregaoSans"], fontSize=7.6, leading=10.2, textColor=CINZA)
-    estilo("colofao", fontName=F["PregaoSans"], fontSize=7.5, leading=9.8, textColor=CINZA)
+    estilo("fonte", fontName=F["PregaoSans"], fontSize=6.9, leading=9, textColor=CINZA, spaceBefore=3)
+    estilo("nota", fontName=F["PregaoSans"], fontSize=7.2, leading=9.8, textColor=CINZA)
     estilo("aviso", fontName=F["PregaoSerifItalico"], fontSize=9.4, leading=12.9, textColor=CINZA)
     estilo("tabela", fontName=F["PregaoSans"], fontSize=8, leading=10.2)
     estilo("tabela_num", fontName=F["PregaoMono"], fontSize=8, leading=10.2, alignment=TA_RIGHT)
@@ -564,15 +562,8 @@ def _data_curta(valor):
         return ""
 
 
-def _dia_curto(dia):
-    """'sex 16/10' - dia da semana + data, sem ambiguidade de 'hoje'."""
-    return f"{_DIAS_CURTOS[dia.weekday()]} {dia.strftime('%d/%m')}"
-
-
 def _momento_publicacao(iso, agora):
-    """'sex 16/10, 18h42' - sempre com dia da semana e data, inclusive
-    para matéria do mesmo dia da edição: um PDF lido no dia seguinte (ou
-    gerado no domingo à tarde) não pode deixar só '7h02' sem dia."""
+    """'17 out, 18h42' (ou só '18h42' se for do mesmo dia da edição)."""
     if not iso:
         return ""
     try:
@@ -581,7 +572,10 @@ def _momento_publicacao(iso, agora):
             quando = quando.astimezone(agora.tzinfo)
     except ValueError:
         return ""
-    return f"{_dia_curto(quando)}, {quando.hour}h{quando.minute:02d}"
+    hora = f"{quando.hour}h{quando.minute:02d}"
+    if quando.date() == agora.date():
+        return hora
+    return f"{quando.day} {_MESES_CURTOS[quando.month - 1]}, {hora}"
 
 
 # ============================================================
@@ -627,10 +621,7 @@ def _linha_fonte(item, agora, estilos):
         rotulo = _t(veiculo.upper())
         partes.append(f'<a href="{escape(link_valido, {'"': "&quot;"})}" color="#3B3835">{rotulo}</a>' if link_valido else rotulo)
     momento = _momento_publicacao(item.get("data"), agora)
-    if momento and item.get("publicado_outro_dia"):
-        # título diz "hoje/nesta semana" mas a matéria é de outro dia
-        partes.append(_t(f"publicado {momento} (o “hoje” do título é desse dia)"))
-    elif momento:
+    if momento:
         partes.append(_t(momento))
     if link_valido:
         partes.append(f'<a href="{escape(link_valido, {'"': "&quot;"})}" color="#6F6A63"><u>texto completo</u></a>')
@@ -794,15 +785,11 @@ def _editoria(nome, chave, itens, erro, agora, estilos, registro, excluir=None, 
     fixo: a matéria mais importante com texto abre a editoria (manchete
     maior, linha-fina, texto em 2 colunas); as demais com texto seguem em
     2 colunas equilibradas; as sem texto viram 'Curtas'."""
-    na_capa = excluir is not None and any(i is excluir for i in (itens or []))
     itens = [i for i in (itens or []) if i is not excluir and i.get("titulo")]
     cabecalho = CabecalhoEditoria(nome, chave, registro)
     if not itens:
         if erro:
             aviso = f"Noticiário desta editoria indisponível nesta edição ({_t(erro)})."
-        elif na_capa:
-            # a única matéria da editoria abriu a capa: "nenhuma notícia" seria falso
-            aviso = f"A notícia desta editoria é a manchete da capa: {_t(excluir.get('titulo'))}."
         else:
             aviso = _texto_editoria_vazia(edicao_janela)
         return [CondPageBreak(80), KeepTogether([cabecalho, Paragraph(aviso, estilos["aviso"])]), Spacer(1, 16)]
@@ -995,20 +982,9 @@ def _nota_macro(linhas_macro):
 
 
 def _tabela_macro(linhas_macro, estilos):
-    """Duas naturezas de número na mesma tabela, separadas por
-    subcabeçalho: taxa vigente/observada (Selic meta, CDI) e expectativa
-    do mercado (Focus) - o leitor não confunde projeção com taxa atual."""
     linhas = [[Paragraph("INDICADOR", estilos["tabela_cab"]), Paragraph("REFERÊNCIA", estilos["tabela_cab"]),
                Paragraph("VALOR", estilos["tabela_cab_num"])]]
-    subcabecalhos = []
-    grupo_atual = None
     for linha in linhas_macro:
-        grupo = ("EXPECTATIVAS (FOCUS)" if str(linha.get("indicador") or "").startswith("Focus")
-                 else "VIGENTE / OBSERVADO")
-        if grupo != grupo_atual:
-            grupo_atual = grupo
-            subcabecalhos.append(len(linhas))
-            linhas.append([Paragraph(grupo, estilos["tabela_cab"]), "", ""])
         referencia = str(linha.get("referencia") or "—")
         # "indisponível" em fonte de texto: na mono da coluna numérica a
         # palavra quebrava em duas linhas ("indisponíve / l") na edição real
@@ -1017,9 +993,7 @@ def _tabela_macro(linhas_macro, estilos):
                        Paragraph(_t(referencia), estilos["tabela"]),
                        Paragraph(_t(_valor_macro(linha)), estilos[estilo_valor])])
     tabela = Table(linhas, colWidths=[None, 30 * MM, 22 * MM], hAlign="LEFT")
-    tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE,
-                                   *[("SPAN", (0, i), (-1, i)) for i in subcabecalhos],
-                                   *[("TOPPADDING", (0, i), (-1, i), 6) for i in subcabecalhos]))
+    tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE))
     return tabela
 
 
@@ -1116,7 +1090,7 @@ def _colofao(edicao, estilos, registro, largura=None):
         texto.append("<b>Fontes.</b> " + " ".join(_t(f) for f in fontes))
     if limitacoes:
         texto.append("<b>Sobre esta edição.</b> " + " ".join(_t(l) for l in limitacoes))
-    estilo = estilos["colofao"]
+    estilo = ParagraphStyle("colofao", parent=estilos["nota"], fontName=F["PregaoSans"], fontSize=6.6, leading=8.8)
     if largura is not None:  # versão de capa: um parágrafo por bloco, na coluna estreita
         return [Filete(espessura=0.6, cor=TINTA, antes=14, depois=5)] + [
             Paragraph(t, ParagraphStyle("colofao_capa", parent=estilo, spaceAfter=3)) for t in texto]
@@ -1134,41 +1108,14 @@ LARGURA_ESQ_CAPA = 0.66
 ALTURA_FAIXA_MERCADOS = 50
 
 
-def _sessao_da_edicao(edicao):
-    """Data da sessão de mercado mostrada - edicao['sessao_mercado'] ou,
-    em edição sem a chave, a primeira sessão conhecida dos indicadores."""
-    if edicao.get("sessao_mercado"):
-        return edicao["sessao_mercado"]
-    for secao in ("brasil", "exterior"):
-        for ind in (edicao.get(secao) or {}).get("indicadores") or []:
-            if ind.get("sessao"):
-                return ind["sessao"]
-    return None
-
-
-def _linha_referencia_masthead(agora, sessao):
-    """'Mercados: fechamento de sex 16/10 · gerado dom 18/10, 14h59
-    (Brasília)' - a data dos mercados e o horário de geração são coisas
-    diferentes e aparecem separadas (antes: 'Edição das 8h' fixo e
-    'Dados até 14:59', que sugeria cotação das 14h59 de domingo)."""
-    gerado = f"gerado {_dia_curto(agora)}, {agora.hour}h{agora.minute:02d} (Brasília)"
-    if sessao is None:
-        mercados = "Mercados: cotações indisponíveis"
-    elif sessao < agora.date():
-        mercados = f"Mercados: fechamento de {_dia_curto(sessao)}"
-    else:
-        mercados = f"Mercados: sessão de {_dia_curto(sessao)}"
-    return f"{mercados} · {gerado}"
-
-
-def _desenhar_masthead(c, agora, sessao=None):
+def _desenhar_masthead(c, agora):
     topo = PAGINA_ALTURA - MARGEM_TOPO
     c.setFillColor(TINTA)
     c.setFont(F["PregaoSansNegrito"], 7.2)
     c.drawString(MARGEM_X, topo - 7, _espacar("MORNING CALL"))
     c.setFont(F["PregaoSans"], 7.2)
     c.setFillColor(CINZA)
-    c.drawRightString(PAGINA_LARGURA - MARGEM_X, topo - 7, "São Paulo")
+    c.drawRightString(PAGINA_LARGURA - MARGEM_X, topo - 7, "Edição das 8h · São Paulo")
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, topo - 12, PAGINA_LARGURA - MARGEM_X, topo - 12)
@@ -1189,7 +1136,8 @@ def _desenhar_masthead(c, agora, sessao=None):
     c.drawString(MARGEM_X, y_regua - 13, _data_extenso_pt_br(agora))
     c.setFont(F["PregaoSans"], 7.2)
     c.setFillColor(CINZA)
-    c.drawRightString(PAGINA_LARGURA - MARGEM_X, y_regua - 12.5, _linha_referencia_masthead(agora, sessao))
+    c.drawRightString(PAGINA_LARGURA - MARGEM_X, y_regua - 12.5,
+                      f"Dados até {agora.strftime('%H:%M')}, horário de Brasília")
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, y_regua - 19, PAGINA_LARGURA - MARGEM_X, y_regua - 19)
@@ -1451,7 +1399,7 @@ def _montar(edicao, registro, paginas_indice, paginas=None):
 
     def desenhar_capa(c, d):
         c.saveState()
-        _desenhar_masthead(c, agora, _sessao_da_edicao(edicao))
+        _desenhar_masthead(c, agora)
         _desenhar_faixa_mercados(c, edicao, PAGINA_ALTURA - MARGEM_TOPO - ALTURA_MASTHEAD)
         # filete vertical entre a manchete e as chamadas
         c.setStrokeColor(FILETE)

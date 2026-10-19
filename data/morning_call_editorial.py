@@ -175,18 +175,6 @@ def nota_sessao(indicadores, agora):
     return texto + "."
 
 
-def sessao_mercado(indicadores):
-    """Data (date) da sessão de mercado que a edição mostra - a do
-    primeiro indicador com sessão conhecida (Ibovespa vem primeiro), ou
-    None quando nenhuma cotação saiu. O masthead mostra essa data
-    separada do horário de geração: domingo à tarde a edição é 'gerada
-    dom 18/10, 14h59' mas os mercados são o fechamento de sex 16/10."""
-    for indicador in indicadores or []:
-        if indicador and indicador.get("sessao"):
-            return indicador["sessao"]
-    return None
-
-
 def _serie_fechamento(ticker, periodo_label="1M"):
     """Série (data, close) pro mini-gráfico de página - None/lista vazia
     em qualquer falha (ticker sem histórico, fonte fora do ar) nunca
@@ -369,90 +357,10 @@ def _coletar_noticias():
         if itens is None and regiao not in erros:
             erros[regiao] = "coleta do Google News falhou nesta execução"
         pools[regiao] = itens if isinstance(itens, list) else []
-    brasil, empresas, exterior = [], [], []
-    for item in pools["BR"] + pools["INT"]:
-        regiao = editoria_por_assunto(item.get("titulo"), item.get("regiao") or "BR")
-        if regiao == "INT":
-            exterior.append({**item, "regiao": "INT"})
-        elif e_noticia_de_empresa(item.get("titulo")):
-            empresas.append({**item, "regiao": "BR"})
-        else:
-            brasil.append({**item, "regiao": "BR"})
-    return erros, brasil, empresas, exterior
-
-
-# --- Editoria pelo ASSUNTO, não pela coleta --------------------------
-# Causa (edição de 18/10/2026): a editoria vinha da coleta - tudo do pool
-# Google News Brasil caía em "Brasil", inclusive "Déficit orçamentário dos
-# EUA se aproxima de US$ 2 trilhões" e "Bitcoin... após Warsh, do Fed" (o
-# próprio pool BR busca o tema "Fed"). Regra: título com marcador
-# estrangeiro e SEM marcador brasileiro vai pra Mundo; título com marcador
-# brasileiro vindo do pool internacional vai pra Brasil; sem marcador
-# nenhum, fica na editoria da coleta.
-_MARCADORES_EXTERIOR = (
-    "eua", "estados unidos", "americano", "americana", "americanos", "fed", "federal reserve", "trump",
-    "wall street", "treasury", "treasuries", "casa branca", "powell", "warsh", "china", "chines", "chinesa",
-    "pequim", "europa", "europeu", "europeia", "bce", "zona do euro", "japao", "reino unido", "alemanha",
-    "nasdaq", "s&p 500", "dow jones", "russia", "ucrania", "israel", "ira", "argentina", "milei",
-)
-_MARCADORES_BRASIL = (
-    "brasil", "brasileiro", "brasileira", "brasileiros", "brasileiras", "ibovespa", "b3", "copom", "selic",
-    "ipca", "lula", "haddad", "galipolo", "tesouro direto", "bndes", "petrobras", "real", "reais", "r$",
-    "brazil", "brazilian", "sao paulo", "brasilia", "stf", "congresso", "camara", "senado", "inss",
-)
-
-
-def _tem_marcador(texto, marcadores):
-    return any(re.search(rf"(?<![a-z0-9]){re.escape(m)}(?![a-z0-9])", texto) for m in marcadores)
-
-
-def editoria_por_assunto(titulo, regiao_coleta):
-    """'BR' ou 'INT' pelo assunto do título; sem marcador, a da coleta."""
-    texto = _sem_acento(titulo).lower()
-    exterior = _tem_marcador(texto, _MARCADORES_EXTERIOR)
-    brasil = _tem_marcador(texto, _MARCADORES_BRASIL) or bool(_TICKER_NO_TITULO.search(str(titulo or "")))
-    if exterior and not brasil:
-        return "INT"
-    if brasil and not exterior and regiao_coleta == "INT":
-        return "BR"
-    return regiao_coleta
-
-
-# --- Empresas: só com a empresa no PRÓPRIO título ----------------------
-# Causa (18/10/2026): "Plano econômico de Flávio pode garantir equilíbrio
-# fiscal..." caiu em Empresas porque os tickers vêm de TODOS os títulos do
-# grupo de notícias (data/news.py:_processar_pool). Aqui vale só o título
-# publicado: ticker de ação escrito nele ou nome de empresa conhecida
-# (config.NOMES_ATIVOS_BUSCA, somente leitura). Resumo de pregão que só
-# cita a empresa como motor do índice ("Ibovespa reage com Petrobras...")
-# continua em Brasil.
-_TICKER_NO_TITULO = re.compile(r"\b[A-Z]{4}(?:3|4|5|6|11|32|33|34)\b")
-_INICIO_RESUMO_DE_PREGAO = re.compile(r"^\s*(ibovespa|bolsa|b3|d[oó]lar|mercado|mercados|juros|tesouro direto)\b",
-                                      re.IGNORECASE)
-_NOMES_GENERICOS_DEMAIS = {"B3"}  # a bolsa, não a empresa B3SA3, na maioria dos títulos
-
-
-def _nomes_de_empresas():
-    nomes = set()
-    for nome in getattr(config, "NOMES_ATIVOS_BUSCA", {}).values():
-        base = re.sub(r"\s*\(.*?\)\s*", " ", str(nome)).strip()
-        if base and base not in _NOMES_GENERICOS_DEMAIS:
-            nomes.add(base)
-    return sorted(nomes, key=len, reverse=True)
-
-
-_NOMES_EMPRESAS = _nomes_de_empresas()
-
-
-def e_noticia_de_empresa(titulo):
-    titulo = str(titulo or "")
-    if _INICIO_RESUMO_DE_PREGAO.match(titulo):
-        return False
-    if _TICKER_NO_TITULO.search(titulo):
-        return True
-    # nome com maiúscula, palavra inteira; "Vale a pena"/"Vale + infinitivo" não é a Vale
-    return any(re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])(?! a pena)(?! [a-zà-ú]+(?:ar|er|ir)\b)", titulo)
-               for n in _NOMES_EMPRESAS)
+    brasil, empresas = [], []
+    for item in pools["BR"]:
+        (empresas if item.get("tickers") else brasil).append(item)
+    return erros, brasil, empresas, list(pools["INT"])
 
 
 # Itens de serviço que o pool de "negócios" do Google News às vezes traz
@@ -472,23 +380,9 @@ _TERMOS_FORA_DE_PAUTA = ("quina", "mega-sena", "mega sena", "lotofacil", "lotoma
 _CARTA_DE_LEITOR = re.compile(r"^(i['\u2019]m|i am|my|we['\u2019]re|should i)\b", re.IGNORECASE)
 
 
-# Mesma carta de leitor, mas aberta por uma citação: "‘Some people did
-# everything right’: I lost my home in the Great Recession..." (Mundo,
-# edição de 18/10/2026) escapava da regra acima.
-_CARTA_COM_CITACAO = re.compile(r"^[\"'‘’“”].{3,}?[\"'‘’“”]\s*:\s*(i\b|i['’]m\b|my\b|we\b)", re.IGNORECASE)
-
-# Matéria de serviço de finanças pessoais ("Tesouro Selic, Tesouro Reserva
-# ou CDB: qual rende mais R$ 10 mil...") - útil no app, não é fato de mercado.
-_SERVICO_FINANCAS_PESSOAIS = ("qual rende mais", "quanto rende", "onde investir", "vale a pena investir",
-                              "quanto eu teria", "como investir", "how much should i", "should i ")
-
-
 def _fora_de_pauta(titulo):
     texto = _sem_acento(titulo).lower()
-    titulo_limpo = str(titulo or "").strip()
-    if _CARTA_DE_LEITOR.match(titulo_limpo) or _CARTA_COM_CITACAO.match(titulo_limpo):
-        return True
-    if any(t in texto for t in _SERVICO_FINANCAS_PESSOAIS):
+    if _CARTA_DE_LEITOR.match(str(titulo or "").strip()):
         return True
     return any(re.search(rf"(?<![a-z]){re.escape(t)}(?![a-z])", texto) for t in _TERMOS_FORA_DE_PAUTA)
 
@@ -538,84 +432,12 @@ def _mesmo_fato(a, b):
     return bool(pa & pb) and bool(wa & wb)
 
 
-# Piso de relevância financeira. Causa (Mundo, 18/10/2026: "Deep-fried
-# and built to go viral: ... fair foods"): o ranking de importância de
-# data/news.py soma recência e veículo, sem exigir assunto de mercado - uma
-# matéria recente de 1 veículo entrava sozinha. Agora a matéria precisa de
-# assunto financeiro substantivo no título (termo de mercado/economia,
-# empresa ou ticker, "%"). Quantidade de veículos NÃO basta: "Saiba como
-# emitir a nova Certidão Única de Débitos do Estado de São Paulo" (validação
-# real de 18/10/2026) era replicada por vários veículos e entrava.
-_TERMOS_FINANCEIROS = (
-    # pt
-    "acao", "acoes", "bolsa", "bolsas", "ibovespa", "mercado", "mercados", "dolar", "cambio", "juros", "selic",
-    "copom", "inflacao", "ipca", "igp", "pib", "fiscal", "deficit", "superavit", "divida", "tesouro", "imposto",
-    "tributaria", "arrecadacao", "orcamento", "petroleo", "brent", "minerio", "commodities", "commodity", "ouro",
-    "bitcoin", "cripto", "lucro", "prejuizo", "receita", "balanco", "resultado", "resultados", "dividendos",
-    "dividendo", "trimestre", "investidores", "investimento", "credito", "banco central", "bancos", "fed", "economia",
-    "economico", "economica", "emprego", "desemprego", "salario", "tarifa", "tarifas", "exportacao",
-    "exportacoes", "importacao", "safra", "ipo", "aquisicao", "fusao", "privatizacao", "valor de mercado",
-    "preco", "precos", "titulos", "debentures", "rating", "recessao", "eleicao", "eleicoes", "pesquisa",
-    # regulação, tributação, crédito, indicadores, instituições
-    "regulacao", "regulamentacao", "regulador", "reguladora", "cvm", "cade", "aneel", "anatel", "anp", "ans",
-    "tributo", "tributos", "tributacao", "icms", "imposto de renda", "reforma tributaria", "emprestimo",
-    "emprestimos", "financiamento", "inadimplencia", "endividamento", "caged", "pnad", "producao industrial",
-    "varejo", "fmi", "banco mundial", "bce", "opep", "empresa", "empresas", "companhia", "estatal", "estatais",
-    # en
-    "stock", "stocks", "shares", "market", "markets", "investors", "earnings", "revenue", "profit", "guidance",
-    "inflation", "rates", "rate", "yields", "bond", "bonds", "treasury", "dollar", "oil", "gold", "economy",
-    "economic", "recession", "gdp", "jobs", "payrolls", "tariff", "tariffs", "deal", "merger", "acquisition",
-    "ipo", "bank", "banks", "central bank", "deficit", "debt", "crypto", "bitcoin", "s&p", "nasdaq", "dow",
-    "wall street", "trade", "prices", "price", "sales", "layoffs", "valuation", "funding",
-    "imf", "world bank", "ecb", "opec", "budget", "tax", "taxes", "credit", "loans", "lending", "regulators",
-    "regulation", "antitrust", "company", "companies",
-)
-
-# Formato de serviço/tutorial/utilidade pública ("Saiba como emitir...",
-# "Como consultar...", "passo a passo", "how to"). Não exclui sozinho: a
-# matéria só fica se o título também tiver tema de impacto de mercado
-# (_TERMOS_IMPACTO_MERCADO, empresa ou ticker) - "Saiba como fica o IR com
-# a reforma tributária" entra; "Saiba como emitir a certidão" sai.
-_FORMATO_SERVICO = re.compile(
-    r"^(saiba|veja|entenda|confira|aprenda|descubra)\s+(como|onde|quando|quem|qual|quais)\b"
-    r"|^como\s+(emitir|tirar|fazer|consultar|solicitar|pedir|baixar|acessar|renovar|agendar|cadastrar|obter"
-    r"|regularizar|declarar|sacar|receber)\b"
-    r"|\bpasso\s+a\s+passo\b|\btutorial\b|^how\s+to\b")
-
-# Subconjunto estrito pro formato de serviço: tema com impacto material no
-# mercado (fica de fora o vocabulário que aparece em serviço ao cidadão -
-# "receita", "imposto", "tesouro", "credito", "preco" etc.).
-_TERMOS_IMPACTO_MERCADO = (
-    "ibovespa", "bolsa", "acoes", "mercado", "mercados", "dolar", "cambio", "juros", "selic", "copom", "inflacao",
-    "ipca", "pib", "fiscal", "deficit", "reforma tributaria", "lucro", "prejuizo", "balanco", "resultado",
-    "resultados", "dividendos", "dividendo", "fed", "banco central", "regulacao", "cvm",
-    "stocks", "markets", "earnings", "inflation", "rates", "tariffs",
-)
-
-
-def tem_relevancia_financeira(item):
-    """Piso de relevância do PDF, pelo ASSUNTO do título (nunca pela
-    quantidade de veículos): termo de mercado/economia, "%", ticker da B3
-    ou empresa acompanhada. Matéria em formato de serviço/tutorial precisa
-    de tema de impacto de mercado (_TERMOS_IMPACTO_MERCADO, empresa ou
-    ticker) - utilidade pública sem impacto financeiro sai."""
-    titulo = item.get("titulo") or ""
-    texto = _sem_acento(titulo).lower().strip()
-    empresa = bool(_TICKER_NO_TITULO.search(titulo)) or e_noticia_de_empresa(titulo)
-    if _FORMATO_SERVICO.search(texto):
-        return empresa or _tem_marcador(texto, _TERMOS_IMPACTO_MERCADO)
-    return empresa or "%" in texto or _tem_marcador(texto, _TERMOS_FINANCEIROS)
-
-
-def filtrar_noticias(itens, agora, exigir_relevancia=False):
+def filtrar_noticias(itens, agora):
     """Seleção editorial do PDF (não altera o pipeline de notícias):
     descarta itens fora da janela da edição (publicados antes de 06:00 do
     dia útil anterior, ou com data no futuro), itens fora de pauta
     (loterias) e duplicatas do mesmo fato (fica o de maior importância).
-    Item sem data é descartado - não dá pra afirmar que é recente.
-
-    `exigir_relevancia=True` (caminho do PDF) aplica também o piso de
-    tem_relevancia_financeira; o e-mail de texto chama sem ele."""
+    Item sem data é descartado - não dá pra afirmar que é recente."""
     inicio = inicio_janela_noticias(agora)
     limite_futuro = agora + timedelta(hours=1)
     candidatos = []
@@ -624,8 +446,6 @@ def filtrar_noticias(itens, agora, exigir_relevancia=False):
         if momento is None or momento < inicio or momento > limite_futuro:
             continue
         if _fora_de_pauta(item.get("titulo")):
-            continue
-        if exigir_relevancia and not tem_relevancia_financeira(item):
             continue
         candidatos.append(item)
     candidatos.sort(key=lambda i: i.get("importancia") or 0, reverse=True)
@@ -683,22 +503,7 @@ def _resumos_cacheados(itens):
         return {}
 
 
-# "IBOVESPA fecha hoje com alta de 0,54%" virou manchete de uma edição de
-# DOMINGO (publicada no sábado, sobre o pregão de sexta). O título é da
-# fonte e não é reescrito; a edição marca quando ele usa referência
-# relativa ("hoje", "nesta sexta"...) e foi publicado em outro dia.
-_REFERENCIA_RELATIVA = re.compile(
-    r"\b(hoje|ontem|amanha|nesta|neste|esta semana|today|yesterday|tomorrow|this week)\b", re.IGNORECASE)
-
-
-def titulo_relativo_de_outro_dia(item, agora):
-    if not _REFERENCIA_RELATIVA.search(_sem_acento(item.get("titulo"))):
-        return False
-    momento = _data_item(item)
-    return momento is not None and momento.astimezone(TZ_SP).date() != agora.date()
-
-
-def selecionar_manchete(fatos, n_chamadas=5, agora=None):
+def selecionar_manchete(fatos, n_chamadas=5):
     """(manchete, chamadas) da capa - a manchete é a matéria de MAIOR
     importância editorial (data/news.py:_calcular_importancia: veículos,
     recência, termos de mercado) entre as que têm texto publicável;
@@ -709,15 +514,7 @@ def selecionar_manchete(fatos, n_chamadas=5, agora=None):
     if not ordenados:
         return None, []
     com_texto = [f for f in ordenados if f.get("corpo")]
-    candidatas = com_texto or ordenados
-    manchete = candidatas[0]
-    if agora is not None and titulo_relativo_de_outro_dia(manchete, agora):
-        # prefere um título sem "hoje/nesta..." de outro dia, desde que
-        # tenha importância comparável (>= 80% da primeira)
-        limite = (manchete.get("importancia") or 0) * 0.8
-        alternativa = next((f for f in candidatas[1:] if (f.get("importancia") or 0) >= limite
-                            and not titulo_relativo_de_outro_dia(f, agora)), None)
-        manchete = alternativa or manchete
+    manchete = com_texto[0] if com_texto else ordenados[0]
     chamadas = [f for f in ordenados if f is not manchete][:n_chamadas]
     return manchete, chamadas
 
@@ -773,18 +570,15 @@ def _noticias_do_setor(setor):
     return dedicadas + list(gerais or [])
 
 
-def _radar_setorial(agora, publicados=None):
+def _radar_setorial(agora):
     """Radar setorial (data/radar_setorial.py) com as notícias do coletor
     filtrado por setor (mesma função da aba TOP MERCADO do app) e as
     mesmas regras editoriais desta edição: janela, fora de pauta,
-    duplicata. `publicados` = fatos já publicados nas editorias: o radar
-    não os reaproveita como evidência (ver montar_radar). Falha geral ->
-    None (a seção diz que não saiu)."""
+    duplicata. Falha geral -> None (a seção diz que não saiu)."""
     try:
         return montar_radar(
             agora, buscar=_noticias_do_setor, inicio=inicio_janela_noticias(agora),
             confiavel=eh_fonte_confiavel, mesmo_fato=_mesmo_fato, fora_de_pauta=_fora_de_pauta,
-            publicados=publicados,
         )
     except Exception as exc:
         print(f"[morning_call] radar setorial indisponível: {exc!r}")
@@ -812,12 +606,10 @@ def montar_edicao(agora=None):
     erros_noticias, brasil_bruto, empresas_bruto, exterior_bruto = _coletar_noticias()
     # filtro editorial (janela, fora de pauta, duplicatas) no pool Brasil
     # inteiro antes de separar Brasil/Empresas, pra dedupe valer entre as duas
-    # + piso de relevância financeira (só no PDF; o e-mail de texto não usa)
-    br_ok = {id(i) for i in filtrar_noticias((brasil_bruto or []) + (empresas_bruto or []), agora,
-                                             exigir_relevancia=True)}
+    br_ok = {id(i) for i in filtrar_noticias((brasil_bruto or []) + (empresas_bruto or []), agora)}
     brasil_bruto = [i for i in brasil_bruto or [] if id(i) in br_ok]
     empresas_bruto = [i for i in empresas_bruto or [] if id(i) in br_ok]
-    exterior_bruto = filtrar_noticias(exterior_bruto or [], agora, exigir_relevancia=True)
+    exterior_bruto = filtrar_noticias(exterior_bruto or [], agora)
     erro_br = erros_noticias.get("BR")
     erro_int = erros_noticias.get("INT")
     # Limite de extensão da edição (o PDF cresce com o conteúdo, mas não
@@ -837,10 +629,7 @@ def montar_edicao(agora=None):
     noticias_exterior_fatos = _fatos(exterior_sel)
     noticias_empresas = _fatos(empresas_sel)
     todos_fatos = noticias_brasil + noticias_empresas + noticias_exterior_fatos
-    for fato in todos_fatos:
-        # "hoje/nesta semana" num título de outro dia: o PDF diz quando saiu
-        fato["publicado_outro_dia"] = titulo_relativo_de_outro_dia(fato, agora)
-    manchete, chamadas = selecionar_manchete(todos_fatos, agora=agora)
+    manchete, chamadas = selecionar_manchete(todos_fatos)
 
     edicao = {
         "agora": agora,
@@ -867,8 +656,7 @@ def montar_edicao(agora=None):
             "agenda": _agenda_hoje(agora),
             "noticias_erro": erro_br,
         },
-        "radar": _radar_setorial(agora, publicados=todos_fatos),
-        "sessao_mercado": sessao_mercado([ibov, dolar, sp500, nasdaq, ouro, petroleo]),
+        "radar": _radar_setorial(agora),
         "mercados_nota": nota_sessao([ibov, dolar, sp500, nasdaq, ouro, petroleo], agora),
         "janela_noticias": inicio_janela_noticias(agora),
         "limitacoes": LIMITACOES_PADRAO,

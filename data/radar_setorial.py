@@ -412,40 +412,15 @@ _TOKEN_ALEATORIO = re.compile(r"\((?=[A-Za-z0-9]*[a-z])(?=[A-Za-z0-9]*[A-Z][A-Za
 _AVISO_LEGAL = re.compile(r"^\s*(edital|aviso|ata|convoca[cç][aã]o|fato relevante:?\s*$)\b", re.IGNORECASE)
 
 
-def _chave_titulo(titulo):
-    return " ".join(_sem_acento(titulo).lower().split())
-
-
-def _ja_publicado(fonte, publicados, mesmo_fato):
-    """A notícia já saiu numa editoria da edição (Brasil/Empresas/Mundo):
-    mesmo link, mesmo título normalizado ou mesmo fato (`mesmo_fato`)."""
-    for pub in publicados:
-        if fonte["link"] and fonte["link"] == pub.get("link"):
-            return True
-        if _chave_titulo(fonte["titulo"]) == _chave_titulo(pub.get("titulo")):
-            return True
-        if mesmo_fato(fonte, pub):
-            return True
-    return False
-
-
-def evidencias_do_setor(setor, itens, inicio, agora, confiavel=None, mesmo_fato=None, fora_de_pauta=None,
-                        publicados=None):
+def evidencias_do_setor(setor, itens, inicio, agora, confiavel=None, mesmo_fato=None, fora_de_pauta=None):
     """(fontes, motivo) - fontes validadas do setor, sem duplicata do
     mesmo fato, mais importantes primeiro. motivo != None quando a
     evidência é insuficiente: menos de MIN_FONTES de veículos diferentes
-    ou nenhum veículo da lista de confiáveis do app.
-
-    `publicados` = fatos já publicados nas editorias da mesma edição: não
-    contam como evidência do radar (o leitor não lê o mesmo fato duas
-    vezes); quando isso deixa o setor sem evidência, o motivo diz quantas
-    foram descartadas por já terem saído."""
+    ou nenhum veículo da lista de confiáveis do app."""
     confiavel = confiavel or (lambda _v: True)
     mesmo_fato = mesmo_fato or (lambda a, b: a["titulo"] == b["titulo"])
     fora_de_pauta = fora_de_pauta or (lambda _t: False)
-    publicados = [p for p in (publicados or []) if p]
     candidatos = []
-    ja_publicadas = 0
     for item in sorted(itens or [], key=lambda i: -(i.get("importancia") or 0)):
         ok, _motivo = validar_fonte(item, inicio, agora)
         titulo = str(item.get("titulo") or "")
@@ -456,19 +431,13 @@ def evidencias_do_setor(setor, itens, inicio, agora, confiavel=None, mesmo_fato=
         fonte = _fonte(item)
         if any(mesmo_fato(fonte, f) for f in candidatos):
             continue
-        if publicados and _ja_publicado(fonte, publicados, mesmo_fato):
-            ja_publicadas += 1
-            continue
         candidatos.append(fonte)
     # veículos da lista de confiáveis primeiro, depois importância
     candidatos.sort(key=lambda f: (not confiavel(f["veiculo"]), -f["importancia"]))
     veiculos = {f["veiculo"] for f in candidatos}
     if len(candidatos) < MIN_FONTES or len(veiculos) < MIN_FONTES:
-        motivo = (f"evidência insuficiente: {len(candidatos)} notícia(s) válida(s) de "
-                  f"{len(veiculos)} veículo(s) na janela da edição")
-        if ja_publicadas:
-            motivo += f" ({ja_publicadas} já publicada(s) nas editorias, não repetida(s) no radar)"
-        return candidatos, motivo
+        return candidatos, (f"evidência insuficiente: {len(candidatos)} notícia(s) válida(s) de "
+                            f"{len(veiculos)} veículo(s) na janela da edição")
     if not any(confiavel(v) for v in veiculos):
         return candidatos, "evidência insuficiente: nenhum veículo da lista de fontes confiáveis"
     return candidatos, None
@@ -542,12 +511,11 @@ def redigir_bloco(setor, fontes):
 
 
 def montar_radar(agora, buscar, inicio, confiavel=None, mesmo_fato=None, fora_de_pauta=None,
-                 n=QTD_SETORES, catalogo=None, publicados=None):
+                 n=QTD_SETORES, catalogo=None):
     """Radar da edição: segue plano_do_dia, consulta `buscar(setor)` (lista
     de notícias do coletor) até ter n setores com evidência suficiente ou
     esgotar MAX_TENTATIVAS. Devolve {"setores", "excluidos", "plano",
-    "historico"} - "excluidos" registra cada setor pulado e o motivo.
-    `publicados`: ver evidencias_do_setor."""
+    "historico"} - "excluidos" registra cada setor pulado e o motivo."""
     ordem = plano_do_dia(agora.date(), catalogo, n)
     setores, excluidos = [], []
     for setor in ordem[:MAX_TENTATIVAS]:
@@ -562,8 +530,7 @@ def montar_radar(agora, buscar, inicio, confiavel=None, mesmo_fato=None, fora_de
         if itens is None:
             excluidos.append({"setor": setor, "nome": CATALOGO[setor]["nome"], "motivo": "coleta falhou"})
             continue
-        fontes, motivo = evidencias_do_setor(setor, itens, inicio, agora, confiavel, mesmo_fato, fora_de_pauta,
-                                             publicados)
+        fontes, motivo = evidencias_do_setor(setor, itens, inicio, agora, confiavel, mesmo_fato, fora_de_pauta)
         if motivo:
             excluidos.append({"setor": setor, "nome": CATALOGO[setor]["nome"], "motivo": motivo})
             continue
