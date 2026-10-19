@@ -112,15 +112,64 @@ def test_fed_cpi_e_resultados_continuam_na_edicao():
     assert len(ed.filtrar_noticias(itens, SEGUNDA, exigir_relevancia=True)) == 3
 
 
-def test_piso_de_relevancia_termo_ou_dois_veiculos():
+def test_piso_de_relevancia_pelo_assunto_nunca_pela_quantidade_de_veiculos():
     sem_termo_um_veiculo = _item("Celebrity chef opens new restaurant in Manhattan")
-    sem_termo_dois_veiculos = _item("Governo anuncia novo programa nacional", veiculos=("g1", "Folha"))
+    sem_termo_varios_veiculos = _item("Governo anuncia novo programa nacional", veiculos=("g1", "Folha", "CNN"))
     assert not ed.tem_relevancia_financeira(sem_termo_um_veiculo)
-    assert ed.tem_relevancia_financeira(sem_termo_dois_veiculos)
+    assert not ed.tem_relevancia_financeira(sem_termo_varios_veiculos)
     assert ed.tem_relevancia_financeira(_item("VALE3 sobe na abertura"))
     # o e-mail de texto (jobs/morning_call.py) chama sem o piso: comportamento inalterado
     assert ed.filtrar_noticias([sem_termo_um_veiculo], SEGUNDA) == [sem_termo_um_veiculo]
     assert ed.filtrar_noticias([sem_termo_um_veiculo], SEGUNDA, exigir_relevancia=True) == []
+
+
+_VEICULOS_REPLICADOS = ("Agência SP", "g1", "Folha de S.Paulo", "Estadão", "CNN Brasil")
+
+
+def test_certidao_unica_de_debitos_sai_mesmo_replicada_por_varios_veiculos():
+    """Caso real (validação de dom 18/10/2026, 22h27): serviço ao cidadão
+    replicado por vários veículos entrava na editoria Brasil do PDF."""
+    item = _item("Saiba como emitir a nova Certidão Única de Débitos do Estado de São Paulo",
+                 veiculos=_VEICULOS_REPLICADOS)
+    assert not ed.tem_relevancia_financeira(item)
+    assert ed.filtrar_noticias([item], SEGUNDA, exigir_relevancia=True) == []
+
+
+def test_servico_e_utilidade_publica_sem_impacto_financeiro_saem():
+    for titulo in ("Como consultar a restituição do imposto de renda na Receita",
+                   "Veja como tirar a segunda via do documento pelo aplicativo",
+                   "Passo a passo para agendar atendimento no Poupatempo",
+                   "How to renew your passport before the holidays"):
+        assert not ed.tem_relevancia_financeira(_item(titulo, veiculos=_VEICULOS_REPLICADOS)), titulo
+
+
+def test_titulo_com_saiba_como_nao_e_excluido_por_si_so():
+    """Não há regra genérica contra "Saiba como": com tema de impacto de
+    mercado, empresa ou ticker, a matéria explicativa continua entrando."""
+    for titulo in ("Saiba como fica o IR com a reforma tributária",
+                   "Saiba como a alta da Selic muda o cenário para os bancos",
+                   "Entenda como a Vale pode ser afetada pela desaceleração da China",
+                   "Veja como o Copom deve decidir os juros nesta semana",
+                   "Saiba como a Petrobras (PETR4) vai pagar dividendos extraordinários"):
+        assert ed.tem_relevancia_financeira(_item(titulo)), titulo
+
+
+def test_noticias_legitimas_de_impacto_material_continuam_entrando():
+    """Empresas, resultados, política monetária e fiscal, regulação,
+    indicadores, crédito e tributação - com um único veículo."""
+    for titulo in ("Itaú lucra R$ 11 bilhões no terceiro trimestre",
+                   "Magazine Luiza anuncia nova rodada de reestruturação",
+                   "Copom mantém Selic e sinaliza cautela",
+                   "Governo revisa meta fiscal de 2027",
+                   "Aneel aprova reajuste nas contas de luz",
+                   "CVM abre processo contra gestora",
+                   "Caged: país cria 180 mil vagas em setembro",
+                   "Inadimplência das famílias atinge recorde",
+                   "Senado aprova reforma tributária em segundo turno",
+                   "ICMS sobre combustíveis volta a subir em janeiro",
+                   "IMF/World Bank meetings leave developing countries with more questions than answers",
+                   "ECB holds rates as inflation cools"):
+        assert ed.tem_relevancia_financeira(_item(titulo, veiculos=("Valor Econômico",))), titulo
 
 
 # ------------------------------------------------------------------
