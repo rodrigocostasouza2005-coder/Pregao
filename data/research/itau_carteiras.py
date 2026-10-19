@@ -102,6 +102,29 @@ def parsear_artigo(html, url, hoje=None):
                 "verificado_em": agora,
                 "status_coleta": "COLETADO",
             })
+    # Alguns componentes do site são renderizados como texto acessível no
+    # HTML, não como elemento <table>. Fallback conservador para linhas
+    # com o formato "Embraer (EMBJ3) | ...": só aceita ticker entre
+    # parênteses, exatamente como a tabela oficial expõe a composição.
+    if len({item["ticker"] for item in itens}) < MIN_TICKERS:
+        for linha_texto in soup.get_text("\\n", strip=True).splitlines():
+            match = EMPRESA_TICKER_RE.match(linha_texto)
+            if not match:
+                continue
+            empresa, ticker = match.groups()
+            itens.append({
+                "casa": CASA,
+                "carteira": CARTEIRA,
+                "ticker": ticker,
+                "empresa": empresa.strip(),
+                "recomendacao": "CARTEIRA MENSAL",
+                "preco_alvo": None,
+                "data_publicacao": f"{hoje.year}-{hoje.month:02d}-01",
+                "validade_ate": None,
+                "fonte_url": url,
+                "verificado_em": agora,
+                "status_coleta": "COLETADO",
+            })
     # Deduplicar por ticker e rejeitar qualquer extração parcial.
     unicos = {}
     for item in itens:
