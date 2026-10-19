@@ -1,5 +1,5 @@
-agora: 2026-10-19T10:36:27.349363-03:00 | erros coleta: {} | paginas: 4 4
-masthead: Gerada seg 19/10, 10h36 (Brasília) · Ibovespa: sessão de seg 19/10 · demais cotações com horário em Mercados
+agora: 2026-10-19T10:52:16.523136-03:00 | erros coleta: {} | paginas: 4 4
+masthead: Ibovespa: sessão de seg 19/10 · demais cotações com horário em Mercados
 resumos: {'total': 16, 'com_texto': 0, 'falha_leitura': False} | nota: Resumos indisponíveis nesta edição: nenhuma destas matérias tinha resumo pronto no Pregão, que não gera texto na hora do envio. Cada manchete traz veículo, data de publicação e link para a matéria original.
 
 == DESCARTADOS (na janela) ==
@@ -12,48 +12,47 @@ resumos: {'total': 16, 'com_texto': 0, 'falha_leitura': False} | nota: Resumos i
   fora_de_pauta | ‘I’m naturally skeptical’: I receive 10 calls a day offering me $15,000 loans at 8% interest. Is this a scam?
   sem_relevancia | OpenAI bugging suspect WhatsApp'ed Saudi royal days before arrest, feds reveal
   fora_de_pauta | ‘My husband suffered a massive stroke at 53’: I’m 64 and will rent for the rest of my life — but I’m still hopeful
-  sem_relevancia | Jamie Dimon’s National-Security Pledge Finances $230 Billion in First Year
 
 == BRASIL ==
 - Focus aponta PIB menor e dólar mais baixo até 2027 | ADVFN | seg 19/10, 10h33
-- Ibovespa abre em alta enquanto dólar e petróleo apresentam queda no início da semana | Estadão | seg 19/10, 10h33
-- Ibovespa na semana cai 1,74% e dólar sobe 1,75%; veja a agenda | Brasilagro | seg 19/10, 9h03
+- Ibovespa abre em alta enquanto dólar e petróleo apresentam queda no início da semana | InfoMoney | seg 19/10, 10h33
 - Abertura | Semana tem eleições, balanços corporativos e IPCA-15 no radar | Acia Araçatuba | seg 19/10, 9h43
 - Ibovespa: Reta final das eleições no Brasil, balanços das empresas de IA e persistência dos riscos geopolíticos; veja destaques da semana | Empiricus | seg 19/10, 10h34
+- Ibovespa na semana cai 1,74% e dólar sobe 1,75%; veja a agenda | InfoMoney | seg 19/10, 9h03
+- Tesouro entra na última semana da eleição com taxas em queda; IPCA+ 2050 vai a 6,66% | Estadão | seg 19/10, 10h37
 - Por que o ajuste fiscal de Flávio deixa mais dúvidas que certezas | Band | sáb 17/10, 0h15
 - Ibovespa futuro, dólar e notícias de empresas | Finance News | seg 19/10, 9h27
-- Dólar recua a R$ 5,04 na última semana antes do segundo turno das eleições | Metrópoles | seg 19/10, 10h00
 
 == EMPRESAS ==
 
 == MUNDO ==
 - Bitcoin se mantém acima de US$ 80 mil enquanto os mercados reduzem apostas em alta de juros pelo Fed | Bloomberg Línea | sex 16/10, 18h35
 - Ouro sobe e futuros superam US$ 4.200 após comentários de Warsh sobre juros do Fed | ADVFN | seg 19/10, 2h00
-- Tech stocks stumbled. Now comes a crucial week for Wall Street. | CoinDesk | seg 19/10, 8h30
 - Déficit orçamentário dos EUA se aproxima de US$ 2 trilhões no ano fiscal de 2026 | ADVFN | sex 16/10, 20h29
-- Fed vê boom da IA agravando dor de cabeça da inflação, mas outros podem ter que arcar com o remédio | Money Times | seg 19/10, 9h56
+- Fed vê boom da IA agravando dor de cabeça da inflação, mas outros podem ter que arcar com o remédio | Kinvo | seg 19/10, 9h56
+- Tech stocks stumbled. Now comes a crucial week for Wall Street. | MarketWatch | seg 19/10, 8h30
+- Wall Street tem tom misto com pressão ‘tech’ e Fed | ADVFN | sex 16/10, 10h37
 - A big 'yikes' still hangs over the AI trade as Meta and Tesla report: What to watch this week | Barron's | seg 19/10, 7h00
 - Gold Rises Amid Falling Oil Prices | Wall Street Journal | seg 19/10, 4h56
-- Oil slips from five-month high with Hormuz transits in focus | Oilprice | dom 18/10, 19h23
 
 manchete: Focus aponta PIB menor e dólar mais baixo até 2027
-chamadas: ['Ibovespa abre em alta enquanto dólar e petróleo apresentam q', 'Bitcoin se mantém acima de US$ 80 mil enquanto os mercados r', 'Ibovespa na semana cai 1,74% e dólar sobe 1,75%; veja a agen', 'Abertura | Semana tem eleições, balanços corporativos e IPCA', 'Ibovespa: Reta final das eleições no Brasil, balanços das em']
+chamadas: ['Ibovespa abre em alta enquanto dólar e petróleo apresentam q', 'Bitcoin se mantém acima de US$ 80 mil enquanto os mercados r', 'Abertura | Semana tem eleições, balanços corporativos e IPCA', 'Ibovespa: Reta final das eleições no Brasil, balanços das em', 'Ibovespa na semana cai 1,74% e dólar sobe 1,75%; veja a agen']
 
 == MACRO ==
   Selic meta 13.75 19/10/2026 | None
-  CDI 13.65 15/10/2026 | None
+  CDI None — | a fonte oficial (Banco Central, SGS) não respondeu nesta execução
   Focus IPCA 2026 5.219 boletim 16/10/2026 | None
   Focus IPCA 2027 4.3206 boletim 16/10/2026 | None
   Focus Selic 2026 13.25 boletim 16/10/2026 | None
   Focus Selic 2027 12.0 boletim 16/10/2026 | None
 
 == ATIVOS ==
-  Ibovespa 207246.515625 0.8842504137662464 19/10 10:21 (horário de Brasília)
-  Dólar (USD/BRL) 5.047900199890137 -0.9555361470835756 19/10 10:36 (horário de Brasília)
-  S&P 500 futuro 7740.0 0.46402959405522926 19/10 10:26 (horário de Brasília)
-  Nasdaq futuro 29764.5 1.2690743922562646 19/10 10:26 (horário de Brasília)
-  Ouro 4179.7001953125 -0.03348167494326976 19/10 10:26 (horário de Brasília)
-  Petróleo Brent 107.86000061035156 -1.8204988065615848 19/10 10:26 (horário de Brasília)
+  Ibovespa 207181.796875 0.8527463734605463 19/10 10:37 (horário de Brasília)
+  Dólar (USD/BRL) 5.0493998527526855 -0.926111572932947 19/10 10:52 (horário de Brasília)
+  S&P 500 futuro 7741.0 0.4770094428399909 19/10 10:42 (horário de Brasília)
+  Nasdaq futuro 29765.0 1.2707755643638468 19/10 10:42 (horário de Brasília)
+  Ouro 4174.0 -0.16981410371471417 19/10 10:42 (horário de Brasília)
+  Petróleo Brent 108.16999816894531 -1.5383237138331214 19/10 10:42 (horário de Brasília)
 
 == VARREDURA DE TEXTO TECNICO NO PDF E NO E-MAIL ==
   'HTTPSConnectionPool': pdf=False email=False

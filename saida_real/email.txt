@@ -1,18 +1,18 @@
 MORNING CALL — 19/10/2026
 Pregão | Briefing informativo baseado nos últimos dados disponíveis
 
-Gerado em 19/10/2026 10:36 (horário de Brasília, UTC-3 fixo - sem horário de verão desde 2019) · período analisado: última barra/leitura disponível em cada fonte (ver horário por linha abaixo) · fontes consultadas: Yahoo Finance (cotações), Banco Central do Brasil/Boletim Focus (indicadores), CVM (agenda de resultados), Google News (notícias) - detalhe completo na seção FONTES.
+Gerado em 19/10/2026 10:52 (horário de Brasília, UTC-3 fixo - sem horário de verão desde 2019) · período analisado: última barra/leitura disponível em cada fonte (ver horário por linha abaixo) · fontes consultadas: Yahoo Finance (cotações), Banco Central do Brasil/Boletim Focus (indicadores), CVM (agenda de resultados), Google News (notícias) - detalhe completo na seção FONTES.
 
 1. RESUMO EXECUTIVO
-- Ibovespa: alta de 0,71% na última sessão disponível.
-- Dólar (USD/BRL): queda de 0,94% na última sessão disponível.
+- Ibovespa: alta de 0,95% na última sessão disponível.
+- Dólar (USD/BRL): queda de 1,03% na última sessão disponível.
 - Detalhamento completo de mercados, macro, agenda, notícias e riscos nas seções abaixo; nenhum número deste resumo substitui a conferência na fonte original.
 
 2. BRASIL
-- Ibovespa: 206.892,81; variação sobre o fechamento anterior: 0,71%; referência: 19/10 10:22 (horário de Brasília)
-- Dólar (USD/BRL): 5,05; variação sobre o fechamento anterior: -0,94%; referência: 19/10 10:37 (horário de Brasília)
+- Ibovespa: 207.387,56; variação sobre o fechamento anterior: 0,95%; referência: 19/10 10:38 (horário de Brasília)
+- Dólar (USD/BRL): 5,04; variação sobre o fechamento anterior: -1,03%; referência: 19/10 10:53 (horário de Brasília)
 - Selic meta (19/10/2026): 13,75% a.a.
-- CDI (15/10/2026): 13,65% a.a.
+- CDI: indisponível (a fonte oficial (Banco Central, SGS) não respondeu nesta execução)
 - Focus IPCA 2026 (boletim 16/10/2026): 5,22% — mediana de 137 respondentes
 - Focus IPCA 2027 (boletim 16/10/2026): 4,32% — mediana de 137 respondentes
 - Focus Selic 2026 (boletim 16/10/2026): 13,25% — mediana de 133 respondentes
@@ -23,14 +23,14 @@ Gerado em 19/10/2026 10:36 (horário de Brasília, UTC-3 fixo - sem horário de 
 - Abertura | Semana tem eleições, balanços corporativos e IPCA-15 no radar — https://news.google.com/rss/articles/CBMidkFVX3lxTFBFTHlvX01nWmtQcnlWR0llVWhHdzdrcURIdXdObFVwYUlNaWI1T1BLODM0TDAyVjNqZVhVX1ZIZnN3YU45RFdWUnhtRVFyQ2swVTFwQ2tCLWxzbEhOVXVWdEpwdWhmWVJfZV9JVHBzM3hrMXBXaUE?oc=5
 - Ibovespa: Reta final das eleições no Brasil, balanços das empresas de IA e persistência dos riscos geopolíticos; veja destaques da semana — https://news.google.com/rss/articles/CBMimwJBVV95cUxQVjFQUlcxQ1lRcFBlRGxWSmU4dlFDNlN4VVhZWXRRQ3pwaWp5Uk8tcmFZMnQ5UmtpV1J1VmEwQW00RmVvV1E0V0tHNGppZHR5ZVJYc1UyOXlqXzlnaG5BVzE0R19JVnNBc3U5cEdRSG02b0ZsaFduemczbFZLZmFscHdVeDNPazVpNVAxQk42MEJQdUttMmFuNjZMTm5vWlp6WTR4cW1reWhYY2F2b0xkaFExOUFDN0JtNVFRa1luVXNXQ3J5T0RQT3phSXhPNlBVbnRrU1lQWDJkY1ZNU3FTNjI5Wk1lLWNLazRWY3VkUE43SldEcVNxSmVLdVFRZkxldi03Rnc2Z3BrRnUxaTFIdVRPb3U2dmxLNDhr?oc=5
 - Ouro sobe e futuros superam US$ 4.200 após comentários de Warsh sobre juros do Fed — https://news.google.com/rss/articles/CBMimAFBVV95cUxNclBwSWhoNjJuRXE4djlVeUNPVEd2UkVVcTZnVUdseTVieVB4X0ZUMEJjSWplczBNNEhyZVR0V3BybjB2elpXdy1nNUJfX0JRN013NVg0Rl9EOGNZcjlQejNMWmcwSmhaYVF3b25oR3RqQnNzeEpYRkxXY1FQY1d5N3Nlb3dERUdyQ3RtbXVqN1Vmb043eWtYbw?oc=5
+- Tesouro entra na última semana da eleição com taxas em queda; IPCA+ 2050 vai a 6,66% — https://news.google.com/rss/articles/CBMi4AFBVV95cUxPcFdXR2czaGw5SWtUYjVRTG5wTXo4Z1huVXFxd2Z1cy1LTjVRalZpX0NVbzJsV1BnQ3BFMnRUY2ZBdndvN0htYlQ5R0cySFE4WFRpZ2FndktEc0JGZTZtWVRBWDNUWGROSzB6LTFxYVAzUExic01pWWpmal9SZzNnOU1Sb0g2SHgwb1h4UzEwTWxZY1dDQXFDS0Z2RzZQNnNmWExKTUttQTNVT3pOTS1lTVJ1UzF6RnBaakVkcXRfREpDV1JDYk5Gc3FHVTNBcHZOdDlWVlhoMXBHYnFqWEFPYw?oc=5
 - Lula desafia Flávio Bolsonaro a abrir sigilos bancário, telefônico e fiscal em debate — https://news.google.com/rss/articles/CBMiyAFBVV95cUxNUkJiOXdad2lydC1vcWNMOWEtc3NjY3ZWUVVlaEx3cnRKdGlyQ0tacjl5NFdRVHduckE5NXU1TDY1NDZyaUJadXNRejBkTlctbVFKX1RrVW9mOG5OamZ0VUNJbkRZX09DdEhzOW5yYWlTUGdkMTNHck04dy1heWJZRmt3V1dXeTl4WldWcEZBZFY5UW96MVUzWlJQeUlHM0YzWHFZWklIOVZBZXpEQ0JELTlRZVd3TnpGYVgwWnc3NWhyWnRaYjFPbg?oc=5
-- Por que o ajuste fiscal de Flávio deixa mais dúvidas que certezas — https://news.google.com/rss/articles/CBMisgFBVV95cUxPSko1SGo1c1RPSHBxUnozT2RBbXFiVkV1aC02YWVCbFZwR3dFX09tbXJWelNYRDlTdFpXUE4yb2FMZkZIZnJ1NEg3b3lTcThhZjBzX1pnZ3QxUTBxQkplcV9ONEZjY2R3TFJyT1BLdU8tY3o0SXNHNnJDcmNRUXdSY1o0UExmTlAzQ1lPZEVSa2F6MlpDcFdHRTdGLTA0ZTZsNlVYN25aQk1KLVBzWmNteVJ3?oc=5
 
 3. EXTERIOR
-- S&P 500 futuro: 7.739,25; variação sobre o fechamento anterior: 0,45%; referência: 19/10 10:27 (horário de Brasília)
-- Nasdaq futuro: 29.765,25; variação sobre o fechamento anterior: 1,27%; referência: 19/10 10:27 (horário de Brasília)
-- Ouro: 4.180,60; variação sobre o fechamento anterior: -0,01%; referência: 19/10 10:27 (horário de Brasília)
-- Petróleo Brent: 107,69; variação sobre o fechamento anterior: -1,98%; referência: 19/10 10:27 (horário de Brasília)
+- S&P 500 futuro: 7.743,25; variação sobre o fechamento anterior: 0,51%; referência: 19/10 10:43 (horário de Brasília)
+- Nasdaq futuro: 29.781,00; variação sobre o fechamento anterior: 1,33%; referência: 19/10 10:43 (horário de Brasília)
+- Ouro: 4.171,80; variação sobre o fechamento anterior: -0,22%; referência: 19/10 10:43 (horário de Brasília)
+- Petróleo Brent: 108,35; variação sobre o fechamento anterior: -1,37%; referência: 19/10 10:43 (horário de Brasília)
 - Tech stocks stumbled. Now comes a crucial week for Wall Street. — https://www.marketwatch.com/story/tech-stocks-stumbled-now-comes-a-crucial-week-for-wall-street-2a093abe?mod=mw_rss_topstories
 - A big 'yikes' still hangs over the AI trade as Meta and Tesla report: What to watch this week — https://news.google.com/rss/articles/CBMi4AFBVV95cUxOWHpmR1M1ak5abS10aHNhOWZJOTJ5Y2lTNGxSZ05UVHVZRkFGS29OYkU3eUt4UTg0ZGxvSFpIOVJ6SlZpZjFlYTlDVF96WUVjYnBZS1hjUURKZEVURGtrM093bTgtb3MtcVZkMlNyTnpWV0cyMF9oM2lQTlpKbm9KY2FwT1NGUGZNZFZaNGFzaU5uV3o4blZhdWJxT1c2OWlma01KMGhnT0ExVmUzRzVHLXY1ZmJ3ckdFRDktUC1STWxmQkhtZHd2QWg1THhWTHc0aVRWd1dsYWdZN2txWGJ6aQ?oc=5
 - Gold Rises Amid Falling Oil Prices — https://news.google.com/rss/articles/CBMiugFBVV95cUxOZU5uN1haS1FQQW82aVdiWmxlbDJrMkszT091U2xWR3dGOTdBeVZ6Z0gzSGpqQ2ZNTE96MG1kckxxY2NVV0I0THpteE9lWGZTdHUxa01OTzJkUndWcVVRWDVZWHVYeFZPcm5VckhaZFBVRDRjcmgyRDg5OUJ1WFBlTlotVGlnekE3SVFDVkpFMHBQbTVPWmd4WTNSSTd1X0ZJNDFlUmVWcGxlSE5oWG1ENmZoYk1oVTdKZlE?oc=5
