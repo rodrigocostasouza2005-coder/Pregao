@@ -1,15 +1,19 @@
-agora: 2026-10-18T22:27:06.654746-03:00 | erros de coleta: {}
-bruto: brasil 16 empresas 1 exterior 23
+agora: 2026-10-18T23:14:05.029582-03:00 | erros de coleta: {}
+bruto: brasil 15 empresas 1 exterior 24
 sessao_mercado: 2026-10-16
-masthead: Mercados: fechamento de sex 16/10 · gerado dom 18/10, 22h27 (Brasília)
+masthead: Mercados: fechamento de sex 16/10 · gerado dom 18/10, 23h14 (Brasília)
 paginas: 4
 
 == DESCARTADOS PELO FILTRO (dentro da janela) ==
+  sem_relevancia | Saiba como emitir a nova Certidão Única de Débitos do Estado de São Paulo
   fora_de_pauta | Tesouro Selic, Tesouro Reserva ou CDB: qual rende mais R$ 10 mil e onde vale a pena investir?
+  sem_relevancia | Entenda por que ICL distorce mensagens de Vorcaro sobre CNN
   fora_de_pauta | My wife says we can’t afford to retire. I vetoed her $8,000 trip to Italy. We’re in our 60s and have $4 million. Do I keep working?
   fora_de_pauta | ‘Some people did everything right’: I lost my home in the Great Recession. I rent in my 50s. Why is that judged as failure?
   fora_de_pauta | My sister moved in with our mother, 78, and says she deserves the $925,000 family home. Is she right?
   sem_relevancia | Cheddar cheese recalled across several states over dangerous E. coli
+  sem_relevancia | Don't fall for this - how to protect yourself from AI scams
+  sem_relevancia | Carvana is winning customers, but faces a costly problem
   fora_de_pauta | I’m 64 with two sons, but only one works in the family business. Is it ethical to leave him 70% of the company?
   fora_de_pauta | I’m 63 and diagnosed with lymphoma. Should I take my Social Security next year?
 
@@ -17,7 +21,7 @@ paginas: 4
 - Ibovespa sobe 0,54% com apoio de ações do petróleo e fecha aos 205 mil pontos | ADVFN | sex 16/10, 22h25
   [OK] editoria pelo assunto
   [OK] nao e noticia de empresa
-    veiculos do grupo: 19
+    veiculos do grupo: 20
   [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
@@ -35,10 +39,17 @@ paginas: 4
   [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
-- Saiba como emitir a nova Certidão Única de Débitos do Estado de São Paulo | Agenciasp | sex 16/10, 10h20
+- Tesouro Direto hoje: Prefixados voltam aos 13% após rali de eleições | ISTOÉ DINHEIRO | sex 16/10, 14h39 | PUBLICADO OUTRO DIA
   [OK] editoria pelo assunto
   [OK] nao e noticia de empresa
     veiculos do grupo: 6
+  [OK] piso de relevancia (item bruto)
+  [OK] nao fora de pauta
+  [OK] linha de fonte com data
+- Taxas de juros abrem em alta com trade eleitoral, mas desaceleram com dólar | ISTOÉ DINHEIRO | sex 16/10, 9h31
+  [OK] editoria pelo assunto
+  [OK] nao e noticia de empresa
+    veiculos do grupo: 4
   [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
@@ -60,13 +71,6 @@ paginas: 4
   [OK] editoria pelo assunto
   [OK] nao e noticia de empresa
     veiculos do grupo: 3
-  [OK] piso de relevancia (item bruto)
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Dólar ronda estabilidade com Datafolha e cenário externo no radar | ISTOÉ DINHEIRO | sex 16/10, 9h54
-  [OK] editoria pelo assunto
-  [OK] nao e noticia de empresa
-    veiculos do grupo: 4
   [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
@@ -117,13 +121,13 @@ paginas: 4
   [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
-- AI Cloud Firm Nscale Faces Investor Pushback Over IPO Valuation | Bloomberg | dom 18/10, 20h47
+- AI Cloud Firm Nscale Faces Investor Pushback Over IPO Valuation | Bloomberg | dom 18/10, 18h13
   [OK] editoria pelo assunto
     veiculos do grupo: 1
   [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
-- IMF/World Bank meetings leave developing countries with more questions than answers | Reuters | dom 18/10, 19h00
+- AI Agents Trading Stocks While You Sleep? Charles Schwab’s CEO Is Skeptical | Wall Street Journal | dom 18/10, 17h23
   [OK] editoria pelo assunto
     veiculos do grupo: 1
   [OK] piso de relevancia (item bruto)
@@ -172,5 +176,13 @@ excluido: Saneamento - evidência insuficiente: nenhum veículo da lista de font
   {"indicador": "Focus IPCA 2027", "valor": 4.3, "referencia": "boletim 09/10/2026", "erro": null}
   {"indicador": "Focus Selic 2026", "valor": 13.25, "referencia": "boletim 09/10/2026", "erro": null}
   {"indicador": "Focus Selic 2027", "valor": 12.0, "referencia": "boletim 09/10/2026", "erro": null}
+
+== TEXTO DO PDF (editoria x manchete) ==
+manchete vem de: EMPRESAS | itens na editoria: {'BRASIL': 8, 'EMPRESAS': 1, 'MUNDO': 8}
+PDF contem 'Nenhuma notícia desta editoria': False
+PDF contem 'manchete da capa': True
+PDF contem 'Certidão Única': False
+  [OK] Empresas nao fica vazia quando a manchete de empresa vai para a capa
+  [OK] Certidao Unica de Debitos fora do PDF
 
 TOTAL FORA: 0
