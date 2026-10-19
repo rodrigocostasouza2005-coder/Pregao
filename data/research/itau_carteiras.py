@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup
 
 from .base import HEADERS, TIMEOUT, permitido
 
-BASE_URL = "https://www.itau.com.br"
+BASE_URL = "https://hub-conteudo.cloud.itau.com.br"
 LISTAGEM_URL = BASE_URL + "/investimentos/carteiras-recomendadas/"
 CASA = "Itaú Investimentos"
 CARTEIRA = "Top 5"
