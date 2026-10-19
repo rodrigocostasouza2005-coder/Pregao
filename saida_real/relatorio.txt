@@ -1,7 +1,7 @@
-agora: 2026-10-18T22:24:21.406944-03:00 | erros de coleta: {}
-bruto: brasil 17 empresas 1 exterior 22
+agora: 2026-10-18T22:27:06.654746-03:00 | erros de coleta: {}
+bruto: brasil 16 empresas 1 exterior 23
 sessao_mercado: 2026-10-16
-masthead: Mercados: fechamento de sex 16/10 · gerado dom 18/10, 22h24 (Brasília)
+masthead: Mercados: fechamento de sex 16/10 · gerado dom 18/10, 22h27 (Brasília)
 paginas: 4
 
 == DESCARTADOS PELO FILTRO (dentro da janela) ==
@@ -14,52 +14,60 @@ paginas: 4
   fora_de_pauta | I’m 63 and diagnosed with lymphoma. Should I take my Social Security next year?
 
 == BRASIL ==
+- Ibovespa sobe 0,54% com apoio de ações do petróleo e fecha aos 205 mil pontos | ADVFN | sex 16/10, 22h25
+  [OK] editoria pelo assunto
+  [OK] nao e noticia de empresa
+    veiculos do grupo: 19
+  [OK] piso de relevancia (item bruto)
+  [OK] nao fora de pauta
+  [OK] linha de fonte com data
 - Lula desafia Flávio Bolsonaro a abrir sigilos bancário e fiscal | Agenda do Poder | dom 18/10, 22h11
   [OK] editoria pelo assunto
   [OK] nao e noticia de empresa
-  [OK] piso de relevancia
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Dólar cai 0,28% e fecha cotado a R$ 5,06 | ADVFN | sex 16/10, 21h30
-  [OK] editoria pelo assunto
-  [OK] nao e noticia de empresa
-  [OK] piso de relevancia
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Dólar fecha a R$ 5,07; Bolsa sobe nesta sexta, mas acumula queda na semana | Bora Investir B3 | sex 16/10, 21h10 | PUBLICADO OUTRO DIA
-  [OK] editoria pelo assunto
-  [OK] nao e noticia de empresa
-  [OK] piso de relevancia
+    veiculos do grupo: 13
+  [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
 - Ajuste fiscal e Banco Master dominam repercussão de entrevista de Flávio à Globo | Band | sáb 17/10, 10h36
   [OK] editoria pelo assunto
   [OK] nao e noticia de empresa
-  [OK] piso de relevancia
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Ibovespa a 240 mil pontos? Inter explica por que ainda vê espaço para a bolsa subir | Investidor10 | dom 18/10, 15h30
-  [OK] editoria pelo assunto
-  [OK] nao e noticia de empresa
-  [OK] piso de relevancia
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- Ibovespa Fecha em Alta Moderada em Mais um Pregão Marcado por Pesquisas Eleitorais | Forbes Brasil | sex 16/10, 18h22
-  [OK] editoria pelo assunto
-  [OK] nao e noticia de empresa
-  [OK] piso de relevancia
+    veiculos do grupo: 10
+  [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
 - Saiba como emitir a nova Certidão Única de Débitos do Estado de São Paulo | Agenciasp | sex 16/10, 10h20
   [OK] editoria pelo assunto
   [OK] nao e noticia de empresa
-  [FORA] piso de relevancia
+    veiculos do grupo: 6
+  [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
 - IPCA-15 e reta final das eleições movem a semana | SpaceMoney | dom 18/10, 17h19
   [OK] editoria pelo assunto
   [OK] nao e noticia de empresa
-  [OK] piso de relevancia
+    veiculos do grupo: 3
+  [OK] piso de relevancia (item bruto)
+  [OK] nao fora de pauta
+  [OK] linha de fonte com data
+- Ibovespa a 240 mil pontos? Inter explica por que ainda vê espaço para a bolsa subir | Money Times | dom 18/10, 15h30
+  [OK] editoria pelo assunto
+  [OK] nao e noticia de empresa
+    veiculos do grupo: 3
+  [OK] piso de relevancia (item bruto)
+  [OK] nao fora de pauta
+  [OK] linha de fonte com data
+- Especialistas alertam para risco fiscal do programa Prospera MEI | InfoMoney | dom 18/10, 19h06
+  [OK] editoria pelo assunto
+  [OK] nao e noticia de empresa
+    veiculos do grupo: 3
+  [OK] piso de relevancia (item bruto)
+  [OK] nao fora de pauta
+  [OK] linha de fonte com data
+- Dólar ronda estabilidade com Datafolha e cenário externo no radar | ISTOÉ DINHEIRO | sex 16/10, 9h54
+  [OK] editoria pelo assunto
+  [OK] nao e noticia de empresa
+    veiculos do grupo: 4
+  [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
 
@@ -67,49 +75,58 @@ paginas: 4
 - Petrobras (PETR4) sobe mais de 6% e escapa do tombo do Ibovespa; veja o que movimentou a bolsa na semana | ADVFN | sáb 17/10, 9h58
   [OK] editoria pelo assunto
   [OK] empresa/ticker no titulo
-  [OK] piso de relevancia
+    veiculos do grupo: 23
+  [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
 
 == MUNDO ==
 - Bitcoin se estabiliza perto de US$ 82 mil após Warsh, do Fed, não sinalizar alta de juros | Bloomberg Línea | sex 16/10, 12h45
   [OK] editoria pelo assunto
-  [OK] piso de relevancia
+    veiculos do grupo: 7
+  [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
 - Déficit orçamentário dos EUA se aproxima de US$ 2 trilhões no ano fiscal de 2026 | ADVFN | sex 16/10, 20h29
   [OK] editoria pelo assunto
-  [OK] piso de relevancia
+    veiculos do grupo: 5
+  [OK] piso de relevancia (item bruto)
+  [OK] nao fora de pauta
+  [OK] linha de fonte com data
+- Os Futuros de Ouro caíram durante a sessão dos Estados Unidos | ADVFN | sex 16/10, 16h45
+  [OK] editoria pelo assunto
+    veiculos do grupo: 3
+  [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
 - Anthropic commits 5% of shares to new public benefit fund that could address AI job disruption | CNBC | dom 18/10, 19h55
   [OK] editoria pelo assunto
-  [OK] piso de relevancia
+    veiculos do grupo: 2
+  [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
 - Nasdaq futures gain as investors buy the dip in the AI trade: Live updates | CNBC | dom 18/10, 21h41
   [OK] editoria pelo assunto
-  [OK] piso de relevancia
+    veiculos do grupo: 1
+  [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
 - 'Just another scare': Wall Street sees the AI trade strong despite tech's latest rout | Fortune | dom 18/10, 12h59
   [OK] editoria pelo assunto
-  [OK] piso de relevancia
+    veiculos do grupo: 2
+  [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
 - AI Cloud Firm Nscale Faces Investor Pushback Over IPO Valuation | Bloomberg | dom 18/10, 20h47
   [OK] editoria pelo assunto
-  [OK] piso de relevancia
+    veiculos do grupo: 1
+  [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
 - IMF/World Bank meetings leave developing countries with more questions than answers | Reuters | dom 18/10, 19h00
   [OK] editoria pelo assunto
-  [OK] piso de relevancia
-  [OK] nao fora de pauta
-  [OK] linha de fonte com data
-- These surprising stocks could be some of the biggest drivers of S&P 500 earnings growth | MarketWatch | dom 18/10, 11h00
-  [OK] editoria pelo assunto
-  [OK] piso de relevancia
+    veiculos do grupo: 1
+  [OK] piso de relevancia (item bruto)
   [OK] nao fora de pauta
   [OK] linha de fonte com data
 
@@ -156,4 +173,4 @@ excluido: Saneamento - evidência insuficiente: nenhum veículo da lista de font
   {"indicador": "Focus Selic 2026", "valor": 13.25, "referencia": "boletim 09/10/2026", "erro": null}
   {"indicador": "Focus Selic 2027", "valor": 12.0, "referencia": "boletim 09/10/2026", "erro": null}
 
-TOTAL FORA: 1
+TOTAL FORA: 0
