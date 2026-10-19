@@ -1,5 +1,89 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-19 — PREGÃO 2.0: navegação em 7 áreas + MAIS, com subabas e rotas na URL
+
+Reorganização da navegação (matriz completa em `docs/arquitetura-pregao-2.md`).
+Nada foi removido: cada aba antiga virou subaba de uma área.
+
+- **Áreas:** MERCADO (Visão Geral, Painel, Agenda, Mercados Globais) ·
+  NOTÍCIAS (Destaques, Brasil, Internacional, Empresas, Documentos CVM) ·
+  RADAR (Alertas, Carteiras Recomendadas, Oportunidades, Acompanhamento) ·
+  ANÁLISES (Empresas, Fundamentos, Valuation, Teses) · MACRO (Indicadores,
+  Juros, Câmbio e Commodities, Calendário Econômico) · SETORES (Mapa
+  Setorial, Visão por Setor, Catalisadores) · MORNING CALL (Edição Atual,
+  Relatório Completo, Histórico, Preferências) · MAIS (Watchlist,
+  Configurações; Sistema e Saúde dos Dados só para admin).
+- **Rotas na URL** (`?aba=radar&sub=alertas`): link direto, recarregar e
+  voltar/avançar do navegador funcionam; rota inválida ou oculta cai na
+  padrão com aviso. Cada área lembra a última subaba aberta.
+- **Workspaces preservados** (Visão Geral, Painel, Indicadores): mesmas
+  chaves de layout, nenhuma configuração do usuário perdida.
+- **Vínculos:** notícia → empresa/setor (só tickers citados e setores já
+  classificados na coleta), empresa → notícias/radar/fundamentos/valuation/
+  setor, setor → empresas/notícias, juros → setores (texto editorial do
+  catálogo), atalhos da Visão Geral.
+- **Morning Call no app:** edição publicada, histórico (sem expor
+  destinatários), prévia e PDF sob demanda — nunca envia e-mail.
+- **Pendências declaradas na própria tela:** agenda de divulgações
+  econômicas, teses/itens salvos persistentes, séries históricas de
+  fundamentos, valuation por cenários.
+
+## 2026-10-18 (3ª passada) — 2 bugs reais encontrados pela VALIDAÇÃO VISUAL do backfill anterior
+
+O backfill autorizado das 6 linhas (PR #60) escreveu, numa primeira
+tentativa, 3 imagens erradas - só descobertas porque cada imagem nova
+foi baixada e **inspecionada visualmente de verdade** antes de declarar
+sucesso (nunca só "a função não lançou exceção"). As 3 foram corrigidas
+pra `None` na hora (mesmo escopo já autorizado). Rastreando a causa
+raiz de cada uma, 2 bugs reais e distintos em
+`data/news.py:_extrair_texto_artigo`/`_imagem_parece_generica`:
+
+1. **`_imagem_parece_generica` só checava o CAMINHO da URL, nunca o
+   HOST**: um ícone de símbolo de Bitcoin (SVG 18x18) hospedado em
+   `s3-symbol-logo.tradingview.com/crypto/XTVCBTC.svg` passou pelo
+   filtro porque `"logo"` estava no hostname, não no caminho. Agora
+   host e caminho entram na mesma checagem.
+2. **O fallback de imagem lazy-loaded ESCALAVA pro seletor "main" (um
+   escopo bem mais amplo - cabeçalho, selo de categoria, branding)
+   mesmo quando a página TINHA um `<article>` de verdade mas nenhuma
+   foto válida dentro dele** - reintroduzindo exatamente o risco de
+   pegar imagem de fora do conteúdo da matéria que a exclusão de
+   `<article>` aninhado/widget existe pra evitar. Caso real: o
+   `<article>` do InfoMoney não tem foto própria (correto, resultado
+   deveria ser `None`), mas o fallback pra `"main"` pegou o logo do
+   produto "IM Trader" no cabeçalho da página, ANTES do `<article>`
+   começar. Corrigido: só tenta o próximo seletor quando o ATUAL não
+   bate em NENHUM bloco - nunca como escalada após uma busca legítima e
+   vazia dentro do `<article>`.
+
+Também adicionada, nesta mesma investigação, uma exclusão por CLASSE
+pro fallback de imagem lazy-loaded: qualquer ancestral com classe
+batendo um marcador de widget (`cta`, `anuncio`, `ads`, `publicidade`,
+`newsletter`, `promo`, `banner`, `cadastro`, `inscricao`,
+`advertisement`, `patrocinado`, `sponsor`, `lead-magnet`) é ignorado -
+achado real: o InfoMoney embute um lead-magnet/newsletter como
+`<div class="im-cta">...<img>...</div>` DENTRO do `<article>`, sem
+nenhum `<article>` aninhado (a exclusão antiga não cobria esse caso).
+
+**Resultado confirmado contra os casos reais**: TradingView/Cointelegraph
+(2 linhas do backfill) agora resolve pra uma imagem REAL e específica
+da matéria (gráfico de candles BTC/USD do próprio TradingView,
+inspecionado visualmente - valores batem com o texto da matéria).
+InfoMoney continua `None` (nenhuma foto real existe na página - 3
+candidatas diferentes tentadas ao longo desta investigação, todas
+genéricas/branding, nenhuma a foto da matéria - `None` é o resultado
+correto, não uma falha de extração).
+
+**`data/news.py`** — `_imagem_parece_generica` (host + caminho, não só
+caminho), fallback de imagem lazy-loaded (exclusão por classe de
+widget, correção do bug de escalada de escopo).
+
+Testes novos: `tests/test_news_qualidade_editorial.py` (+4 casos) -
+logo no hostname rejeitado, imagem dentro de widget CTA ignorada,
+`<article>` sem foto nunca escala pro escopo mais amplo.
+
+803/803 testes passando, `compileall` limpo.
+
 ## 2026-10-18 — fix: imagens ilustrativas erradas nos cards de NEWS (3 causas reais, não geração por IA)
 
 Bug reportado pelo Rodrigo: card da Vale (VALE3, minério de ferro,

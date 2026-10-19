@@ -15,9 +15,11 @@ from data.eventos import (
     STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_LABEL, STATUS_PRAZO_CVM,
     calcular_calendario_cacheado,
 )
-from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta
-from data.morning_call_editorial import montar_edicao
-from data.news import obter_top_mercado_tudo
+from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta, obter_selic_meta_copom
+from data.morning_call_editorial import (
+    _macro_rows, _referencia_cotacao, filtrar_noticias, montar_edicao, nota_sessao,
+)
+from data.news import obter_top_mercado, obter_top_mercado_internacional
 from data.prices import obter_cotacao_indice
 from data.supabase_client import obter_cliente
 from data.user_prefs import listar_assinantes_morning_call
@@ -73,9 +75,12 @@ def _obter_cotacao_fmt(titulo, ticker):
         erro = cot.get("erro", "sem dado") if isinstance(cot, dict) else "sem dado"
         return cot, f"- {titulo}: indisponível ({erro})"
     variacao = cot.get("variacao_pct")
-    barra = cot.get("_barra_em") or "barra indisponível"
-    coleta = cot.get("_coletado_em") or "coleta indisponível"
-    linha = f"- {titulo}: {_fmt_num(cot.get('preco'))}; variação da última barra: {_fmt_num(variacao)}%; barra: {barra}; coleta: {coleta}"
+    # mesma referência do PDF (data/morning_call_editorial.py): horário do
+    # último negócio em Brasília ou "fech. dd/mm" - antes saía o índice cru
+    # da barra diária ("2026-10-16T00:00:00-04:00"), meia-noite do fuso da bolsa
+    referencia, _sessao = _referencia_cotacao(cot)
+    linha = (f"- {titulo}: {_fmt_num(cot.get('preco'))}; variação sobre o fechamento anterior: "
+             f"{_fmt_num(variacao)}%; referência: {referencia or 'indisponível'}")
     return cot, linha
 
 
@@ -94,7 +99,39 @@ def _bullet_variacao(nome, cot):
         direcao = "queda"
     else:
         direcao = "estável"
-    return f"- {nome}: {direcao} de {_fmt_num(abs(variacao))}% na última barra disponível."
+    return f"- {nome}: {direcao} de {_fmt_num(abs(variacao))}% na última sessão disponível."
+
+
+def _noticias_por_regiao():
+    """Pools Brasil e internacional coletados SEPARADOS (mesmas funções das
+    abas BRASIL/INTERNACIONAL do app) - o ranking combinado
+    (obter_top_mercado_tudo) cortava o top 20 de BR+INT juntos, e num dia
+    de muito noticiário no Brasil a seção EXTERIOR saía vazia (edição de
+    18/10/2026). Uma região que falha vira um marcador de erro na lista;
+    as duas falhando, lança exceção (seção diz que a coleta falhou)."""
+    itens, erros = [], 0
+    for regiao, fn in (("BR", obter_top_mercado), ("INT", obter_top_mercado_internacional)):
+        try:
+            resultado = fn()
+        except Exception as exc:
+            resultado, motivo = None, f"{type(exc).__name__}: {exc}"
+        else:
+            motivo = "coleta do Google News falhou nesta execução"
+        if resultado is None:
+            erros += 1
+            itens.append({"_erro_regiao": regiao, "erro": motivo})
+        else:
+            itens += [{**i, "regiao": i.get("regiao") or regiao} for i in resultado]
+    if erros == 2:
+        raise RuntimeError("coleta do Google News falhou para Brasil e exterior")
+    return itens
+
+
+def _marca_erro(item, erros):
+    if "_erro_regiao" in item:
+        erros[item["_erro_regiao"]] = item.get("erro")
+        return True
+    return False
 
 
 def _linhas_noticias(itens, limite):
@@ -195,6 +232,12 @@ def montar_morning_call(agora=None):
         "1. RESUMO EXECUTIVO",
         _bullet_variacao("Ibovespa", cot_ibov),
         _bullet_variacao("Dólar (USD/BRL)", cot_dolar),
+    ]
+    sessao = nota_sessao([{"sessao": _referencia_cotacao(c)[1]} for c in (cot_ibov, cot_dolar)
+                          if isinstance(c, dict) and not c.get("erro")], agora)
+    if sessao:
+        linhas.append(f"- {sessao}")
+    linhas += [
         "- Detalhamento completo de mercados, macro, agenda, notícias e riscos nas seções "
         "abaixo; nenhum número deste resumo substitui a conferência na fonte original.",
         "",
@@ -202,56 +245,32 @@ def montar_morning_call(agora=None):
         linha_ibov,
         linha_dolar,
     ]
-    for nome, fn in (("Selic", obter_selic_meta), ("CDI", obter_cdi),
-                     ("Focus IPCA", obter_focus_ipca), ("Focus Selic", obter_focus_selic)):
-        try:
-            dado = fn()
-            if isinstance(dado, pd.DataFrame) and not dado.empty:
-                # Selic/CDI sao series por "data"; Focus e' 1 linha por ano de
-                # referencia ("ano_referencia", sem coluna "data") - bug real
-                # corrigido (2026-10-15): o codigo so conhecia a coluna "data",
-                # entao toda linha de Focus caia no fallback "data não
-                # informada" truncado em 10 chars ("data não i") e
-                # ano_referencia/numero_respondentes apareciam formatados como
-                # dinheiro (ex: "2.026,00" em vez de "2026").
-                coluna_rotulo = "data" if "data" in dado.columns else (
-                    "ano_referencia" if "ano_referencia" in dado.columns else None
-                )
-                colunas_inteiras = {"ano_referencia", "numero_respondentes"}
-                colunas_valor = [col for col in dado.columns if col != coluna_rotulo]
-                amostra = dado.tail(3)
-                for _, registro in amostra.iterrows():
-                    bruto_rotulo = registro.get(coluna_rotulo) if coluna_rotulo else None
-                    data_reg = (
-                        f"{int(bruto_rotulo)}" if coluna_rotulo == "ano_referencia" and pd.notna(bruto_rotulo)
-                        else str(bruto_rotulo)[:10] if pd.notna(bruto_rotulo) else "data não informada"
-                    )
-                    valores = []
-                    for coluna in colunas_valor:
-                        valor = registro.get(coluna)
-                        if not pd.notna(valor):
-                            continue
-                        if coluna in colunas_inteiras:
-                            valores.append(f"{coluna}={int(valor)}")
-                        elif isinstance(valor, (int, float)):
-                            valores.append(f"{coluna}={_fmt_num(valor)}")
-                        else:
-                            valores.append(f"{coluna}={str(valor)[:19]}")
-                    linhas.append(f"- {nome} ({data_reg}): " + (", ".join(valores) if valores else "sem valor estruturado"))
-            else:
-                linhas.append(f"- {nome}: indisponível")
-        except Exception:
-            linhas.append(f"- {nome}: indisponível")
+    # Mesmas linhas normalizadas do PDF (data/morning_call_editorial.py:
+    # _macro_rows) - antes o e-mail listava os nomes crus das colunas
+    # ("mediana_pct=5,22; media_pct=...; numero_respondentes=144") e as 3
+    # linhas do Focus (até o ano corrente + 2). Provedores passados daqui
+    # pra continuar sendo os deste módulo.
+    for linha in _macro_rows(agora, provedores={
+            "selic": obter_selic_meta, "selic_copom": obter_selic_meta_copom, "cdi": obter_cdi,
+            "focus_ipca": obter_focus_ipca, "focus_selic": obter_focus_selic}):
+        if linha.get("valor") is None:
+            linhas.append(f"- {linha['indicador']}: indisponível ({linha.get('erro') or 'sem dado'})")
+            continue
+        texto = f"- {linha['indicador']} ({linha['referencia']}): {_fmt_num(linha['valor'])}{linha['unidade']}"
+        if linha.get("detalhe"):
+            texto += f" — mediana de {linha['detalhe']}" if linha["indicador"].startswith("Focus") else f" — {linha['detalhe']}"
+        linhas.append(texto)
 
     # Noticias: mesma coleta (data/news.py), nunca refeita/reclassificada
     # com regra propria - so' separa por regiao/tickers que o coletor ja'
     # calcula (BR com ticker reconhecido -> EMPRESAS E SETORES; BR sem
     # ticker -> macro Brasil; INT -> EXTERIOR).
     noticias_erro = None
+    erros_regiao = {}
     noticias_br_macro, noticias_br_empresa, noticias_intl = [], [], []
     try:
-        noticias = obter_top_mercado_tudo()
-        candidatos = noticias if isinstance(noticias, list) else []
+        candidatos = filtrar_noticias(
+            [i for i in _noticias_por_regiao() if not _marca_erro(i, erros_regiao)], agora)
         for item in candidatos:
             if item.get("regiao") == "BR":
                 (noticias_br_empresa if item.get("tickers") else noticias_br_macro).append(item)
@@ -262,6 +281,8 @@ def montar_morning_call(agora=None):
 
     if noticias_erro:
         linhas.append(f"- Notícias indisponíveis nesta execução ({noticias_erro}).")
+    elif erros_regiao.get("BR"):
+        linhas.append(f"- Notícias do Brasil indisponíveis nesta execução ({erros_regiao['BR']}).")
     elif noticias_br_macro:
         linhas += _linhas_noticias(noticias_br_macro, 8)
     else:
@@ -270,6 +291,8 @@ def montar_morning_call(agora=None):
     linhas += ["", "3. EXTERIOR", linha_sp, linha_nasdaq, linha_ouro, linha_petroleo]
     if noticias_erro:
         linhas.append(f"- Notícias indisponíveis nesta execução ({noticias_erro}).")
+    elif erros_regiao.get("INT"):
+        linhas.append(f"- Notícias internacionais indisponíveis nesta execução ({erros_regiao['INT']}).")
     elif noticias_intl:
         linhas += _linhas_noticias(noticias_intl, 8)
     else:
@@ -312,154 +335,220 @@ def montar_morning_call(agora=None):
     return "\n".join(linhas)
 
 
-_URL_RE = re.compile(r'(https?://[^\s<>"]+)')
 _RE_TITULO_SECAO = re.compile(r"^\d+\.\s")
-_RE_TAG_BULLET = re.compile(r"^\[([^\]]+)\]\s*(.*)$")
+_RE_MANCHETE_COM_LINK = re.compile(r"^- (.+?) — (https?://\S+)$")
+_RE_CHAMADA_TAG = re.compile(r"^- \[([^\]]+)\]\s*(.*)$")
 
-# Identidade visual do Morning Call (mesma paleta/tipografia do PDF
-# editorial - jobs/morning_call_pdf.py - pra coerência visual entre as
-# 2 versões): azul-marinho + branco quente + cinza editorial + âmbar de
-# destaque; serifada pra manchetes/título, sans-serif pro corpo. Só
-# fontes web-safe (sem @font-face: clientes de e-mail bloqueiam fonte
-# externa) e só estilo inline (sem <style>: Gmail/Outlook descartam ou
-# reinterpretam bloco <style> de formas inconsistentes).
-_AZUL_MARINHO = "#0E1B2E"
-_BRANCO_QUENTE = "#F7F3ED"
-_CINZA_EDITORIAL = "#4A4F57"
-_AMBAR = "#E8762C"
-_CINZA_FUNDO = "#EFEAE2"
-_CINZA_BORDA = "#D9D4CC"
+# Identidade visual do Morning Call - MESMA paleta do PDF editorial
+# (jobs/morning_call_pdf.py, PR #62: papel branco + tinta grafite, âmbar
+# só como acento - fontes embutidas Source Serif 4/Libre Franklin/IBM
+# Plex Mono) - mesmos valores hex, pra e-mail e PDF nunca mais destoarem
+# (gap que o próprio PR #62 deixou registrado: "o HTML do e-mail continua
+# com a identidade antiga... fica pra um PR separado" - este é esse PR).
+# E-mail não pode embutir as TTF (clientes de e-mail bloqueiam
+# @font-face), por isso usa pilha de fonte web-safe com o mesmo ESPÍRITO
+# tipográfico (serifada pra manchete, sans humanista pro corpo) - nunca
+# a fonte exata, que não existe fora do PDF.
+_TINTA = "#161514"
+_TINTA_SUAVE = "#3B3835"
+_CINZA = "#6F6A63"
+_FILETE = "#CFC9BF"
+_BRANCO = "#FFFFFF"
+_FUNDO = "#EFEAE2"
+_AMBAR = "#FFA028"
+_ALTA = "#1E7A4C"
+_BAIXA = "#B4291F"
 _SERIF = "Georgia,'Times New Roman',Times,serif"
 _SANS = "Arial,Helvetica,sans-serif"
 
 
-def _linkificar(texto_escapado: str) -> str:
-    return _URL_RE.sub(
-        lambda m: f'<a href="{m.group(1)}" style="color:{_AMBAR};text-decoration:underline;">{m.group(1)}</a>',
-        texto_escapado,
-    )
+def _extrair_manchetes(texto: str, limite: int = 3) -> list:
+    """Manchetes com link (formato "- título — URL", emitido por
+    _linhas_noticias em BRASIL/EXTERIOR/EMPRESAS E SETORES) na ordem em
+    que aparecem no texto - mesma fonte única de sempre, nenhuma nova
+    consulta/ranking. Linha de mercado ("- Ibovespa: 148.320,50; ...")
+    nunca bate nesse padrão (usa ": ", não " — "), por isso nunca vira
+    manchete por engano."""
+    manchetes = []
+    for linha in texto.split("\n"):
+        m = _RE_MANCHETE_COM_LINK.match(linha.strip())
+        if m:
+            manchetes.append({"titulo": m.group(1), "link": m.group(2)})
+            if len(manchetes) >= limite:
+                break
+    return manchetes
+
+
+def _extrair_resumo_executivo(texto: str) -> list:
+    """As 2 primeiras linhas de "1. RESUMO EXECUTIVO" (Ibovespa/Dólar -
+    ver montar_morning_call) - nunca a 3ª linha fixa ("Detalhamento
+    completo... nas seções abaixo"), que não faz sentido numa versão
+    resumida sem essas seções."""
+    linhas = texto.split("\n")
+    dentro = False
+    bullets = []
+    for linha in linhas:
+        linha_strip = linha.strip()
+        if linha_strip == "1. RESUMO EXECUTIVO":
+            dentro = True
+            continue
+        if dentro:
+            if _RE_TITULO_SECAO.match(linha_strip):
+                break
+            if linha_strip.startswith("- "):
+                bullets.append(linha_strip[2:])
+    return bullets[:2]
+
+
+_TAGS_FORA_DA_CAPA = {"INTERPRETAÇÃO"}  # 3 bullets de "6. TENDÊNCIAS E
+# RISCOS A ACOMPANHAR" (ver montar_morning_call) - análise completa só
+# faz sentido com o resto da seção ao redor, que só está no PDF; sem o
+# filtro, inflava a capa de volta pra "quase texto inteiro", contra o
+# pedido explícito de "chamadas curtas".
+
+
+def _extrair_chamadas_tag(texto: str) -> list:
+    """Bullets "- [TAG] resto" em qualquer lugar do texto, EXCETO as em
+    _TAGS_FORA_DA_CAPA - genérico de propósito (hoje só "[RADAR
+    SETORIAL]", injetada por _com_chamada_radar antes de LIMITAÇÕES),
+    pra qualquer chamada futura NO MESMO FORMATO aparecer na capa sem
+    precisar de código novo aqui, mas sem reintroduzir seção inteira por
+    engano. Nunca confundida com manchete: essa tem link (" — URL"),
+    chamada de tag não tem."""
+    chamadas = []
+    for linha in texto.split("\n"):
+        m = _RE_CHAMADA_TAG.match(linha.strip())
+        if m and m.group(1) not in _TAGS_FORA_DA_CAPA:
+            chamadas.append({"tag": m.group(1), "texto": m.group(2)})
+    return chamadas
+
+
+def _cor_bullet_resumo(bullet_texto: str) -> str:
+    if "alta" in bullet_texto:
+        return _ALTA
+    if "queda" in bullet_texto:
+        return _BAIXA
+    return _TINTA_SUAVE
 
 
 def montar_morning_call_html(texto: str) -> str:
-    """HTML gerado a partir do MESMO texto simples (fonte única - nunca
-    reconsulta nem reformula dado), com apresentação editorial (mesma
-    identidade visual do PDF - jobs/morning_call_pdf.py: azul-marinho +
-    âmbar + serifada/sans-serif), compatível com clientes de e-mail
+    """HTML construído a partir do MESMO texto simples (fonte única -
+    nunca reconsulta nem reformula dado): não é mais a reprodução
+    completa de todas as seções, e sim uma CAPA DE JORNAL - manchete
+    principal + chamadas secundárias + resumo de mercado + uma chamada
+    evidente pra abrir o PDF completo (anexo), que tem Brasil/Exterior/
+    Empresas e Setores/Mercados/Agenda Econômica/Fontes na íntegra (ver
+    jobs/morning_call_pdf.py, PR #62). Compatível com clientes de e-mail
     comuns: tabela única pra centralizar a largura de leitura (técnica
     padrão pra Outlook, que ignora `margin:auto` em bloco solto), só
-    tags básicas (h1/h2/p/ul/li/a/table) com estilo inline, sem CSS
-    externo/JS/<style>. Links (incluindo os das manchetes, reaproveitados
-    de data/news.py) continuam clicáveis; nenhum conteúdo novo é
-    adicionado - texto e HTML nunca divergem em conteúdo, só em
-    apresentação (exigido pelo enviar_email(texto, html=...) de
-    jobs/email_utils.py).
-
-    Linhas marcadas "[TAG] resto do texto" (hoje só "[INTERPRETAÇÃO]",
-    emitidas por montar_morning_call em TENDÊNCIAS E RISCOS) ganham um
-    chip âmbar - mesma distinção visual FATO x INTERPRETAÇÃO do PDF,
-    lida do PRÓPRIO texto (nenhuma reclassificação nova feita aqui)."""
+    tags básicas (h1/h2/p/a/table) com estilo inline, sem CSS externo/
+    JS/<style>. Links (reaproveitados de data/news.py) continuam
+    clicáveis; nenhum conteúdo novo é adicionado - só uma SELEÇÃO do
+    texto já gerado, nunca um fato reformulado ou um número novo."""
     linhas = texto.split("\n")
-    conteudo: list = []
-    buffer_lista: list = []
+    titulo = linhas[0] if linhas else ""
+    byline = linhas[1] if len(linhas) > 1 else ""
 
-    def fechar_lista():
-        if buffer_lista:
-            conteudo.append(
-                f'<ul style="margin:0 0 16px 0;padding:0 0 0 20px;font-family:{_SANS};'
-                f'font-size:14px;line-height:1.6;color:{_AZUL_MARINHO};">'
-                + "".join(buffer_lista) + "</ul>"
-            )
-            buffer_lista.clear()
+    manchetes = _extrair_manchetes(texto, limite=3)
+    resumo_bullets = _extrair_resumo_executivo(texto)
 
-    for i, linha in enumerate(linhas):
-        linha = linha.rstrip()
-        if not linha:
-            fechar_lista()
-            continue
-        if i == 0:
-            conteudo.append(
-                f'<h1 style="margin:0;padding:0;font-family:{_SERIF};font-size:24px;'
-                f'font-weight:bold;color:{_BRANCO_QUENTE};">{_html_escape.escape(linha)}</h1>'
+    partes = []
+
+    # -- manchete principal + chamadas secundárias -------------------
+    if manchetes:
+        principal = manchetes[0]
+        partes.append(
+            f'<tr><td style="padding:22px 28px 4px 28px;">'
+            f'<a href="{_html_escape.escape(principal["link"])}" '
+            f'style="font-family:{_SERIF};font-size:23px;line-height:1.3;font-weight:bold;'
+            f'color:{_TINTA};text-decoration:none;">{_html_escape.escape(principal["titulo"])}</a>'
+            f'</td></tr>'
+        )
+        for item in manchetes[1:]:
+            partes.append(
+                f'<tr><td style="padding:10px 28px 0 28px;border-top:1px solid {_FILETE};">'
+                f'<a href="{_html_escape.escape(item["link"])}" '
+                f'style="font-family:{_SERIF};font-size:15px;line-height:1.35;font-weight:bold;'
+                f'color:{_TINTA};text-decoration:none;">{_html_escape.escape(item["titulo"])}</a>'
+                f'</td></tr>'
             )
-            continue
-        if i == 1:
-            conteudo.append(
-                f'<p style="margin:16px 0 0 0;font-family:{_SANS};font-size:13px;'
-                f'font-style:italic;color:{_CINZA_EDITORIAL};">{_html_escape.escape(linha)}</p>'
-            )
-            continue
-        if _RE_TITULO_SECAO.match(linha) or linha in ("LIMITAÇÕES", "FONTES"):
-            fechar_lista()
-            conteudo.append(
-                f'<h2 style="margin:28px 0 14px 0;padding:10px 16px;background-color:{_AZUL_MARINHO};'
-                f'border-left:5px solid {_AMBAR};font-family:{_SERIF};font-size:14px;'
-                f'font-weight:bold;letter-spacing:1px;text-transform:uppercase;'
-                f'color:{_BRANCO_QUENTE};">{_html_escape.escape(linha)}</h2>'
-            )
-            continue
-        if linha.startswith("- "):
-            item = linha[2:]
-            tag_match = _RE_TAG_BULLET.match(item)
-            if tag_match:
-                rotulo, resto = tag_match.group(1), tag_match.group(2)
-                chip = (
-                    f'<span style="display:inline-block;background-color:{_AMBAR};color:{_BRANCO_QUENTE};'
-                    f'font-family:{_SANS};font-size:10px;font-weight:bold;letter-spacing:0.5px;'
-                    f'padding:1px 6px;border-radius:3px;margin-right:6px;">'
-                    f'{_html_escape.escape(rotulo)}</span>'
-                )
-                texto_item = (
-                    f'<span style="font-style:italic;color:{_CINZA_EDITORIAL};">'
-                    f'{_linkificar(_html_escape.escape(resto))}</span>'
-                )
-                buffer_lista.append(f"<li>{chip}{texto_item}</li>")
-            else:
-                buffer_lista.append(f"<li>{_linkificar(_html_escape.escape(item))}</li>")
-            continue
-        fechar_lista()
-        conteudo.append(
-            f'<p style="margin:0 0 20px 0;padding-bottom:12px;border-bottom:1px solid {_CINZA_BORDA};'
-            f'font-family:{_SANS};font-size:11px;color:{_CINZA_EDITORIAL};">'
-            f'{_linkificar(_html_escape.escape(linha))}</p>'
+    else:
+        partes.append(
+            f'<tr><td style="padding:22px 28px 4px 28px;font-family:{_SANS};font-size:13px;'
+            f'font-style:italic;color:{_CINZA};">Sem manchete de destaque confirmada nesta '
+            f'coleta — veja Brasil/Exterior no PDF em anexo.</td></tr>'
         )
 
-    fechar_lista()
+    # -- resumo do dia (Ibovespa/Dólar) -------------------------------
+    if resumo_bullets:
+        linhas_resumo = "".join(
+            f'<span style="display:block;margin-top:4px;color:{_cor_bullet_resumo(b)};">'
+            f'{_html_escape.escape(b)}</span>'
+            for b in resumo_bullets
+        )
+        partes.append(
+            f'<tr><td style="padding:16px 28px 0 28px;font-family:{_SANS};font-size:12.5px;'
+            f'line-height:1.5;">'
+            f'<span style="font-family:{_SANS};font-size:10px;font-weight:bold;letter-spacing:1px;'
+            f'color:{_CINZA};">RESUMO DO DIA</span>{linhas_resumo}</td></tr>'
+        )
+
+    # -- CTA pro PDF em anexo (nunca um link - é um anexo, não uma URL) --
+    partes.append(
+        f'<tr><td style="padding:22px 28px 0 28px;">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        f'style="background-color:{_TINTA};">'
+        f'<tr><td style="padding:3px;background-color:{_AMBAR};font-size:1px;line-height:1px;">&nbsp;</td></tr>'
+        f'<tr><td style="padding:16px 20px;">'
+        f'<span style="display:block;font-family:{_SANS};font-size:9.5px;font-weight:bold;'
+        f'letter-spacing:1.5px;color:{_AMBAR};">EDIÇÃO COMPLETA EM PDF</span>'
+        f'<span style="display:block;margin-top:5px;font-family:{_SERIF};font-size:14px;'
+        f'color:{_BRANCO};">Brasil, Exterior, Empresas e Setores, Mercados, Agenda Econômica e '
+        f'Fontes — no PDF anexado a este e-mail.</span>'
+        f'</td></tr></table></td></tr>'
+    )
+
+    # -- chamadas "[TAG] resto" (hoje só RADAR SETORIAL) --------------
+    for chamada in _extrair_chamadas_tag(texto):
+        partes.append(
+            f'<tr><td style="padding:10px 28px 0 28px;font-family:{_SANS};font-size:11px;'
+            f'line-height:1.5;color:{_TINTA_SUAVE};">'
+            f'<span style="display:inline-block;background-color:{_AMBAR};color:{_TINTA};'
+            f'font-size:9px;font-weight:bold;letter-spacing:0.5px;padding:1px 6px;'
+            f'margin-right:6px;">{_html_escape.escape(chamada["tag"])}</span>'
+            f'{_html_escape.escape(chamada["texto"])}</td></tr>'
+        )
+
+    corpo = "".join(partes)
 
     return (
         '<!doctype html>'
         '<html lang="pt-BR">'
         '<head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1.0"></head>'
-        f'<body style="margin:0;padding:0;background-color:{_CINZA_FUNDO};">'
+        f'<body style="margin:0;padding:0;background-color:{_FUNDO};">'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
-        f'style="background-color:{_CINZA_FUNDO};">'
+        f'style="background-color:{_FUNDO};">'
         '<tr><td align="center" style="padding:24px 12px;">'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
-        f'style="max-width:640px;width:100%;background-color:{_BRANCO_QUENTE};">'
-        '<tr><td style="padding:0;">'
+        f'style="max-width:600px;width:100%;background-color:{_BRANCO};">'
+        f'<tr><td style="padding:20px 28px 0 28px;">'
+        f'<h1 style="display:inline;margin:0;padding:0;font-family:{_SERIF};font-size:26px;'
+        f'font-weight:bold;color:{_TINTA};">PREGÃO</h1>'
+        f'<span style="font-family:{_SANS};font-size:10px;color:{_CINZA};letter-spacing:2px;'
+        f'padding-left:8px;">MORNING CALL</span>'
+        f'</td></tr>'
+        f'<tr><td style="padding:6px 28px 0 28px;">'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
-        f'<tr><td style="background-color:{_AZUL_MARINHO};padding:22px 28px 20px 28px;">'
-        f'<span style="font-family:{_SERIF};font-size:18px;font-weight:bold;color:{_AMBAR};'
-        f'letter-spacing:1px;">PREGÃO</span>'
-        f'<span style="font-family:{_SANS};font-size:10px;color:{_BRANCO_QUENTE};'
-        f'letter-spacing:3px;padding-left:10px;">MORNING CALL</span>'
-        '</td></tr>'
-        '<tr><td style="padding:0 28px 22px 28px;">' + "".join(conteudo[:1]) + '</td></tr>'
-        f'<tr><td style="padding:0 0 3px 0;background-color:{_AMBAR};font-size:1px;line-height:1px;">&nbsp;</td></tr>'
-        '<tr><td style="padding:24px 28px 28px 28px;">' + "".join(conteudo[1:]) + '</td></tr>'
-        '</table>'
-        '</td></tr>'
-        '</table>'
-        '</td></tr>'
-        '</table>'
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
-        f'style="background-color:{_CINZA_FUNDO};">'
-        '<tr><td align="center" style="padding:0 12px 28px 12px;">'
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
-        f'style="max-width:640px;width:100%;">'
-        f'<tr><td align="center" style="font-family:{_SANS};font-size:10px;color:{_CINZA_EDITORIAL};'
-        'padding-top:4px;">PREGÃO · Terminal de Mercado · Conteúdo informativo, não constitui '
-        'recomendação de investimento.</td></tr>'
+        f'<tr><td style="background-color:{_TINTA};font-size:2px;line-height:2px;">&nbsp;</td></tr>'
+        f'</table></td></tr>'
+        f'<tr><td style="padding:6px 28px 0 28px;font-family:{_SANS};font-size:11px;'
+        f'color:{_CINZA};">{_html_escape.escape(titulo)} · {_html_escape.escape(byline)}</td></tr>'
+        + corpo +
+        f'<tr><td style="padding:24px 28px 20px 28px;font-family:{_SANS};font-size:9.5px;'
+        f'color:{_CINZA};border-top:1px solid {_FILETE};margin-top:20px;">'
+        'PREGÃO · Terminal de Mercado · Conteúdo informativo, não constitui recomendação de '
+        'investimento.</td></tr>'
         '</table>'
         '</td></tr>'
         '</table>'
@@ -480,15 +569,62 @@ def _montar_anexo_pdf(agora):
     anexo, nunca deixar a falha da apresentação em PDF impedir o e-mail
     (que é o canal garantido)."""
     try:
-        pdf_bytes = gerar_pdf(montar_edicao(agora))
+        edicao = montar_edicao(agora)
+        pdf_bytes = gerar_pdf(edicao)
     except Exception as exc:
         print(f"[morning_call] geração do PDF editorial falhou (enviando sem anexo): {exc!r}")
         return None
+    print(f"[morning_call] {_resumo_edicao(edicao, pdf_bytes)}")
+    radar = edicao.get("radar") if isinstance(edicao, dict) else None
     return {
         "nome": f"pregao-morning-call-{agora.strftime('%Y-%m-%d')}.pdf",
         "conteudo": pdf_bytes,
         "tipo_mime": "application/pdf",
+        # nomes dos setores do radar QUE ESTÃO no PDF anexo (chamada no e-mail);
+        # jobs/email_utils.py só lê nome/conteudo/tipo_mime
+        "radar_setores": [b.get("nome") for b in (radar or {}).get("setores") or [] if b.get("nome")],
     }
+
+
+def _resumo_edicao(edicao, pdf_bytes):
+    """Linha de log da edição montada - o que de fato foi pro anexo, pra
+    conferir a execução real no log do Actions (nunca inclui destinatário
+    nem segredo)."""
+    if not isinstance(edicao, dict):
+        return f"PDF gerado ({len(pdf_bytes or b'')} bytes)"
+    partes = []
+    for chave, campo in (("brasil", "noticias"), ("empresas", "cards"), ("exterior", "noticias")):
+        itens = (edicao.get(chave) or {}).get(campo) or []
+        com_texto = sum(1 for i in itens if i.get("corpo"))
+        partes.append(f"{chave}={len(itens)} ({com_texto} com texto)")
+    macro = [i for i in (edicao.get("brasil") or {}).get("indicadores") or [] if "indicador" in i]
+    indisponiveis = [i["indicador"] for i in macro if i.get("valor") is None]
+    partes.append("macro indisponível: " + (", ".join(indisponiveis) if indisponiveis else "nenhum"))
+    radar = edicao.get("radar") or {}
+    partes.append("radar: " + (", ".join(b.get("nome", "?") for b in radar.get("setores") or []) or "vazio"))
+    agenda = (edicao.get("empresas") or {}).get("agenda")
+    partes.append("agenda: " + ("indisponível" if agenda is None else f"{len(agenda)} evento(s)"))
+    try:
+        from pypdf import PdfReader
+        import io
+        partes.append(f"PDF {len(PdfReader(io.BytesIO(pdf_bytes)).pages)} página(s), {len(pdf_bytes)} bytes")
+    except Exception:
+        partes.append(f"PDF {len(pdf_bytes or b'')} bytes")
+    return "edição montada: " + "; ".join(partes)
+
+
+def _com_chamada_radar(texto, anexo_pdf):
+    """Chamada curta do radar setorial no e-mail, antes de LIMITAÇÕES -
+    só quando o PDF com o radar foi de fato anexado (nunca anuncia o que
+    não está no anexo)."""
+    setores = (anexo_pdf or {}).get("radar_setores") or []
+    if not setores:
+        return texto
+    chamada = ("- [RADAR SETORIAL] No PDF anexo: " + ", ".join(setores)
+               + " - o que aconteceu, por que importa e o que acompanhar em cada setor, com as fontes.")
+    if "\nLIMITAÇÕES" in texto:
+        return texto.replace("\nLIMITAÇÕES", "\n" + chamada + "\n\nLIMITAÇÕES", 1)
+    return texto + "\n\n" + chamada
 
 
 def gerar_preview(agora=None):
@@ -604,8 +740,8 @@ def enviar_teste(destinatario_teste: str, agora=None) -> dict:
     if not destinatario_teste:
         return {"ok": False, "erro": "destinatario_teste é obrigatório."}
     agora = agora or datetime.now(TZ_SP)
-    texto = montar_morning_call(agora)
     anexo_pdf = _montar_anexo_pdf(agora)
+    texto = _com_chamada_radar(montar_morning_call(agora), anexo_pdf)
     resultado = enviar_email(
         _assunto(agora, teste=True), texto, html=montar_morning_call_html(texto), destinatario=destinatario_teste,
         anexos=[anexo_pdf] if anexo_pdf else None,
@@ -696,10 +832,10 @@ def executar():
         )
         return 0
 
-    texto = montar_morning_call(agora)
+    anexo_pdf = _montar_anexo_pdf(agora)
+    texto = _com_chamada_radar(montar_morning_call(agora), anexo_pdf)
     html = montar_morning_call_html(texto)
     assunto = _assunto(agora)
-    anexo_pdf = _montar_anexo_pdf(agora)
 
     enviados = 0
     falhas = 0

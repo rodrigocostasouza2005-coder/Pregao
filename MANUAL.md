@@ -302,9 +302,28 @@ Job independente `python -m jobs.morning_call`; agenda de dias úteis às 07:00 
 
 Sem migration e secrets, os jobs não conseguem persistir nem enviar e-mails. O agendamento do GitHub Actions é best effort, não um SLA de execução pontual.
 
+## Resumos das matérias (Groq) no Morning Call
+
+O Morning Call **não chama o Groq**: ele só lê os resumos que o workflow **Coletores na nuvem** (`coletores-nuvem.yml` → `coletor_local.py` → `pregerar_resumos_news`) já gerou e guardou no cache (`resumos_ia_cache`). Sem resumo no cache, a matéria sai no PDF só com manchete, veículo e link — nunca com texto inventado.
+
+Esse workflow precisa do secret `GROQ_API_KEY`. Em 18/10/2026 ele chegava **vazio** ao job (log: `'GROQ_API_KEY não configurada em st.secrets'` em todos os grupos). Para configurar:
+
+1. GitHub → repositório **Pregao** → **Settings** → **Secrets and variables** → **Actions** → aba **Secrets** → **New repository secret**.
+2. *Name*: `GROQ_API_KEY` (exatamente assim). *Secret*: a mesma chave usada no app (Streamlit Cloud → *Manage app* → *Settings* → *Secrets*). Não crie como *Variable* nem como secret de *Environment*: o workflow lê `secrets.GROQ_API_KEY` do repositório.
+3. Confira na próxima execução de **Coletores na nuvem** (ou *Run workflow* manual): a linha `resumos de NEWS: ... gerado(s) agora` deve deixar de mostrar `GROQ_API_KEY não configurada`.
+
+Os resumos só entram no Morning Call se uma execução dos coletores rodar **antes** do envio (os coletores rodam a partir das 07h11, o Morning Call às 08h03, horário de Brasília).
+
 ## Disparo externo dos agendamentos (recomendado)
 
 O `schedule` do GitHub Actions é "best effort": sob carga, o GitHub atrasa ou **descarta** disparos. Medido em 2026-10-18: entre 14 e 17/10, de ~220 disparos esperados (Radar a cada 15 min + Coletores a cada 30 min + Morning Call), só 23 aconteceram — e nenhum na sexta 17/10 (o Morning Call das 08h não saiu). Os workflows já usam minutos quebrados e disparos de reserva para reduzir a perda, mas a única forma confiável é um agendador externo chamando o `workflow_dispatch`.
+
+Diagnóstico das execuções de 14 a 17/10/2026 (verificado no histórico do Actions):
+
+- **Atraso, não só descarte:** o Morning Call agendado para 10h UTC (07h de Brasília, horário da época) só foi entregue pelo GitHub às 14h39 UTC de 15/10 e às 14h31 UTC de 16/10 — cerca de 4h30 depois. O Radar (a cada 15 min) teve 3 a 4 execuções por dia, também atrasadas. Em 17/10 (sexta) nenhum disparo agendado de nenhum workflow aconteceu.
+- **As duas execuções que chegaram falharam por configuração de e-mail** (`EMAIL_FROM e EMAIL_TO precisam estar configurados`), já corrigida em 17/10 (envio por assinante opt-in + Brevo). Os envios de teste de 18/10, com os mesmos secrets, saíram com `ok=True`.
+- **Hoje:** o Morning Call está em `3 11 * * 1-5` (08h03 de Brasília) com reservas às 08h17, 08h38 e 09h07. Não há proteção de horário: um disparo atrasado envia na hora em que chegar (o primeiro que rodar envia; os seguintes só confirmam "já enviado").
+- **Sem e-mail duplicado:** as execuções do Morning Call rodam em série (`concurrency: pregao-morning-call`) e cada uma pula quem já tem registro `ENVIADO` no dia em `morning_call_execucoes`. Um disparo externo extra (abaixo) cai nessa mesma checagem. Exceção documentada no código: se a consulta a essa tabela falhar, o envio segue (prefere-se um duplicado raro a nenhum e-mail).
 
 Passo a passo (gratuito, ~10 min):
 

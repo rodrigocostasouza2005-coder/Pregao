@@ -17,6 +17,7 @@ from data.macro import (
     obter_focus_selic,
     obter_ipca,
     obter_selic_meta,
+    obter_selic_meta_copom,
 )
 from ui import graficos, workspace
 
@@ -432,3 +433,157 @@ def render_macro(prefs, persistir_fn=None):
     workspace.renderizar_workspace(
         "MACRO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn, alturas_padrao=_ALTURAS_PADRAO,
     )
+
+
+# ============================================================
+# Subabas do PREGAO 2.0 (ui/navegacao.py): MACRO > Indicadores e' o
+# workspace completo acima (render_macro, personalizacao preservada);
+# as demais subabas reaproveitam os MESMOS paineis, sem coleta nova.
+# ============================================================
+
+def setores_sensiveis_a_juros() -> list:
+    """Setores cujo texto editorial fixo (data/radar_setorial.CATALOGO,
+    o mesmo do Morning Call) cita juros/Selic como fator - a relacao vem
+    de um texto ja' revisado, nao e' inferida na hora."""
+    from data.radar_setorial import CATALOGO
+
+    termos = ("juros", "selic", "copom")
+    return [setor for setor, cfg in CATALOGO.items()
+            if any(t in (cfg.get("importa", "") + " " + cfg.get("acompanhar", "")).lower() for t in termos)]
+
+
+def render_macro_juros(prefs):
+    from ui.setores_tab import ir_para_setor
+
+    with st.container(border=True):
+        _painel_selic_cdi(prefs)
+    with st.container(border=True):
+        _painel_curva_pre(prefs)
+    with st.container(border=True):
+        _painel_expectativas(prefs)
+    sensiveis = setores_sensiveis_a_juros()
+    if sensiveis:
+        st.markdown(
+            "<div class='cinza' style='font-size:0.7rem; margin:0.2rem 0;'>Setores cujo texto editorial cita "
+            "juros/Selic como fator (interpretação do catálogo setorial, não correlação calculada):</div>",
+            unsafe_allow_html=True,
+        )
+        cols = st.columns(min(len(sensiveis), 5))
+        for i, setor in enumerate(sensiveis):
+            with cols[i % len(cols)]:
+                st.button(f"{setor} ↗", key=f"macro_juros_setor_{i}", on_click=ir_para_setor, args=(setor,),
+                          width="stretch", help="Abrir em SETORES › Visão por Setor")
+
+
+def render_macro_cambio_commodities(prefs):
+    """Dolar e moedas vem do letreiro/MERCADO; aqui o painel de
+    commodities/Treasuries/VIX (config.CENARIO_GLOBAL) + dolar do
+    proprio ticker tape (config.INDICES_TICKER_TAPE), mesma fonte."""
+    with st.container(border=True):
+        st.markdown('<div class="painel-titulo">CÂMBIO</div>', unsafe_allow_html=True)
+        cambio = {nome: simbolo for nome, simbolo in config.INDICES_TICKER_TAPE.items() if simbolo.endswith("=X")}
+        partes = []
+        for nome, simbolo in cambio.items():
+            cot = _cotacao_cambio(nome, simbolo)
+            if cot.get("erro"):
+                partes.append(f"<div style='min-width:9rem;'><span class='cinza' style='font-size:0.7rem;'>{nome}</span><br>"
+                              f"<span class='cinza'>indisponível</span></div>")
+                continue
+            cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
+            partes.append(
+                f"<div style='min-width:9rem;'><span class='cinza' style='font-size:0.7rem;'>{nome}</span><br>"
+                f"<span class='neutro' style='font-size:0.85rem;'>{_fmt(cot['preco'], 4, prefs)}</span> "
+                f"<span class='{cls}' style='font-size:0.78rem;'>{_fmt_pct(cot['variacao_pct'], prefs)}</span></div>"
+            )
+        if partes:
+            st.markdown("<div style='display:flex; flex-wrap:wrap; gap:1rem;'>" + "".join(partes) + "</div>",
+                        unsafe_allow_html=True)
+            st.caption("Fonte: Yahoo Finance — cotação com atraso típico de mercado.")
+    with st.container(border=True):
+        _painel_cenario_global(prefs)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _cotacao_cambio(nome, simbolo):
+    # data/prices.py:obter_cotacao_indice nao tem cache proprio (o
+    # letreiro chama em todo refresh) - aqui evita 1 chamada ao Yahoo por
+    # par de moeda a cada rerun desta subaba
+    from data.prices import obter_cotacao_indice
+
+    return obter_cotacao_indice(nome, simbolo)
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _copom_vigente():
+    # obter_selic_meta_copom nao tem cache proprio (e' plano B do job do
+    # Morning Call, roda 1x/dia la') - aqui a tela pode rerodar muito
+    return obter_selic_meta_copom()
+
+
+def _painel_expectativas(prefs):
+    """Focus (expectativa, NAO dado realizado) - separado do realizado de
+    proposito, com data de calculo e numero de respondentes."""
+    st.markdown('<div class="painel-titulo">EXPECTATIVAS DE MERCADO (FOCUS/BC)</div>', unsafe_allow_html=True)
+    linhas = []
+    data_calculo = None
+    for nome, df in (("IPCA", obter_focus_ipca()), ("Selic (fim de ano)", obter_focus_selic())):
+        if df is None or df.empty:
+            linhas.append(f"<tr><td style='text-align:left;' class='neutro'>{nome}</td>"
+                          f"<td colspan='3' class='cinza'>indisponível no momento</td></tr>")
+            continue
+        data_calculo = data_calculo or df["data_calculo"].iloc[0]
+        for _, r in df.iterrows():
+            linhas.append(
+                f"<tr><td style='text-align:left;' class='neutro'>{nome} {int(r['ano_referencia'])}</td>"
+                f"<td class='neutro'>{_fmt(r['mediana_pct'], 2, prefs)}%</td>"
+                f"<td class='cinza'>{_fmt(r['media_pct'], 2, prefs)}%</td>"
+                f"<td class='cinza'>{int(r['numero_respondentes'])}</td></tr>"
+            )
+    st.markdown(
+        "<div style='overflow-x:auto; overflow-y:hidden;'><table style='width:100%; border-collapse:collapse;'>"
+        "<thead><tr><th style='text-align:left; font-weight:400;' class='cinza'>PROJEÇÃO</th>"
+        "<th class='cinza'>MEDIANA</th><th class='cinza'>MÉDIA</th><th class='cinza'>RESPONDENTES</th></tr></thead>"
+        f"<tbody>{''.join(linhas)}</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "PROJEÇÃO, não dado realizado — Boletim Focus (Banco Central)"
+        + (f", calculado em {_fmt_data(data_calculo)}." if data_calculo is not None else ".")
+    )
+
+
+def render_macro_calendario(prefs):
+    """Calendario economico: o PREGAO ainda NAO tem fonte de agenda de
+    divulgacoes (IBGE/BC/Fed) - mostra o que existe de verdade (ultima
+    decisao do Copom, datas de referencia de cada serie, projecoes Focus)
+    e declara o resto como indisponivel, sem inventar datas."""
+    with st.container(border=True):
+        st.markdown('<div class="painel-titulo">ÚLTIMA DECISÃO DO COPOM (REALIZADO)</div>', unsafe_allow_html=True)
+        copom = _copom_vigente()
+        if copom is None:
+            # motivo tecnico (excecao crua) fica no log/SAUDE DOS DADOS, nao na tela
+            st.markdown(
+                "<div class='cinza' style='font-size:0.78rem;'>Indisponível no momento: o histórico de "
+                "decisões do Copom (bcb.gov.br) não respondeu. Nenhum valor anterior é exibido como atual.</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            reuniao = f"{copom['reuniao']}ª reunião · " if copom.get("reuniao") else ""
+            st.markdown(
+                f"<div style='font-size:1.05rem; font-weight:600; color:var(--destaque);'>"
+                f"Meta Selic {_fmt(copom['valor'], 2, prefs)}% a.a.</div>"
+                f"<div class='cinza' style='font-size:0.7rem;'>{reuniao}vigente desde "
+                f"{copom['vigente_desde'].strftime('%d/%m/%Y')} · fonte: histórico de taxas do Copom (bcb.gov.br)</div>",
+                unsafe_allow_html=True,
+            )
+    with st.container(border=True):
+        _painel_expectativas(prefs)
+    with st.container(border=True):
+        st.markdown('<div class="painel-titulo">PRÓXIMAS DIVULGAÇÕES</div>', unsafe_allow_html=True)
+        st.markdown(
+            "<div class='cinza' style='font-size:0.78rem;'>Agenda de divulgações (IPCA, PIB, payroll, "
+            "decisões futuras do Copom/Fed) <b>indisponível</b>: o PREGÃO ainda não tem uma fonte confiável "
+            "integrada para datas de divulgação — nenhuma data é estimada aqui. Resultados corporativos "
+            "ficam em MERCADO › Agenda.</div>",
+            unsafe_allow_html=True,
+        )

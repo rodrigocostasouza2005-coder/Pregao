@@ -303,7 +303,7 @@ def _secao_catalisadores(tickers: list):
     for e in futuros[:10]:
         _linha_catalisador(e)
     if len(futuros) > 10:
-        st.caption(f"+{len(futuros) - 10} catalisador(es) adicional(is) - veja a aba CALENDÁRIO pra lista completa.")
+        st.caption(f"+{len(futuros) - 10} catalisador(es) adicional(is) - veja MERCADO › Agenda pra lista completa.")
 
 
 # ============================================================
@@ -540,9 +540,7 @@ def _tabela_alertas_html(alertas, prefs) -> str:
     )
 
 
-def _secao_radar_quedas(prefs: dict):
-    from data import radar_quedas as rq
-
+def _bloco_regra_quedas():
     st.markdown('<div class="radar-pergunta">RADAR DE QUEDAS — CARTEIRAS RECOMENDADAS</div>', unsafe_allow_html=True)
     st.markdown(
         "<div class='rq-regra'>Alerta quando um ativo de carteira recomendada cai <b>mais de 4,00% no dia</b> "
@@ -550,6 +548,12 @@ def _secao_radar_quedas(prefs: dict):
         "mesmo que esteja em várias carteiras. Cotação Yahoo Finance, com atraso.</div>",
         unsafe_allow_html=True,
     )
+
+
+def _bloco_cobertura(prefs: dict) -> bool:
+    """Estado de cada casa monitorada; False = banco indisponivel (quem
+    chama para ai, os outros blocos tambem dependem do banco)."""
+    from data import radar_quedas as rq
 
     # --- 1. cobertura -----------------------------------------------------
     resumo_fontes = rq.resumo_fontes_vigentes()
@@ -559,7 +563,7 @@ def _secao_radar_quedas(prefs: dict):
             "(confira a conexão e a migration sql/radar_research.sql).</div>",
             unsafe_allow_html=True,
         )
-        return
+        return False
     casas = list(rq.CASAS_MONITORADAS) + sorted(c for c in resumo_fontes if c not in rq.CASAS_MONITORADAS)
     ativas = sum(1 for c in casas if c in resumo_fontes)
     st.markdown(
@@ -576,6 +580,12 @@ def _secao_radar_quedas(prefs: dict):
         "recomendada pública acessível.</div>",
         unsafe_allow_html=True,
     )
+
+    return True
+
+
+def _bloco_monitorados(prefs: dict):
+    from data import radar_quedas as rq
 
     # --- 2. ativos monitorados agora -------------------------------------
     monitorados = rq.painel_monitorados()
@@ -603,6 +613,10 @@ def _secao_radar_quedas(prefs: dict):
     elif monitorados == []:
         st.markdown("<div class='rq-vazio'>Nenhuma carteira vigente: nada sendo monitorado agora.</div>",
                     unsafe_allow_html=True)
+
+
+def _bloco_alertas(prefs: dict):
+    from data import radar_quedas as rq
 
     # --- 3. alertas registrados ------------------------------------------
     st.markdown("<div class='rq-bloco'><span>ALERTAS REGISTRADOS</span></div>", unsafe_allow_html=True)
@@ -639,6 +653,14 @@ def _secao_radar_quedas(prefs: dict):
             f"({periodo.lower()}). Ausência de alerta não é falha do monitor: veja o estado das fontes acima.</div>",
             unsafe_allow_html=True,
         )
+
+
+def _secao_radar_quedas(prefs: dict):
+    _bloco_regra_quedas()
+    if not _bloco_cobertura(prefs):
+        return
+    _bloco_monitorados(prefs)
+    _bloco_alertas(prefs)
 
 
 # ============================================================
@@ -687,3 +709,165 @@ def render_radar(prefs: dict):
         _secao_evidencias(tickers_escopo, watchlist)
     with st.expander("COPILOTO DE RESEARCH", expanded=False):
         _secao_copiloto(tickers_escopo)
+
+
+# ============================================================
+# Subabas do PREGAO 2.0 (ui/navegacao.py) - mesmas secoes de render_radar
+# acima, so' redistribuidas: RADAR > Alertas/Carteiras/Oportunidades/
+# Acompanhamento e ANALISES > Valuation/Teses. render_radar continua
+# existindo (composicao completa, usada pelos testes de UI).
+# ============================================================
+
+_AVISO_SINAL = (
+    "<div class='rq-nota'>Sinais para investigar, não recomendações: uma queda expressiva ou um múltiplo "
+    "descontado não constitui, por si só, motivo de compra. Confirme fundamentos, notícias e riscos "
+    "antes de qualquer decisão.</div>"
+)
+
+
+def _escopo_watchlist(prefs: dict, com_janela: bool = True):
+    """Pills de janela/escopo compartilhados pelas subabas que analisam a
+    watchlist - mesmas keys de render_radar, entao o filtro escolhido
+    numa subaba vale nas outras. None = watchlist vazia (aviso ja dado)."""
+    watchlist = prefs.get("watchlist") or []
+    if not watchlist:
+        st.info("Adicione tickers na watchlist (barra lateral ou busca global) para analisar os ativos.")
+        return None
+    janela = "7 DIAS"
+    if com_janela:
+        col_janela, col_escopo = st.columns(2)
+        with col_janela:
+            janela = st.pills(
+                "Janela", list(radar.JANELAS_DIAS.keys()), default="7 DIAS",
+                key="radar_janela", label_visibility="collapsed",
+            ) or "7 DIAS"
+    else:
+        col_escopo = st.container()
+    with col_escopo:
+        escopo = st.pills("Escopo", ["WATCHLIST"] + watchlist, default="WATCHLIST",
+                          key="radar_escopo", label_visibility="collapsed")
+    tickers = watchlist if escopo in (None, "WATCHLIST") else [escopo]
+    return tickers, janela, watchlist
+
+
+@st.fragment
+def render_radar_alertas(prefs: dict):
+    _injetar_css()
+    _bloco_regra_quedas()
+    if not _bloco_cobertura_compacta():
+        return
+    _bloco_alertas(prefs)
+    _bloco_monitorados(prefs)
+    st.markdown(_AVISO_SINAL, unsafe_allow_html=True)
+
+
+def _bloco_cobertura_compacta() -> bool:
+    """Alertas dependem do banco: sem ele, mesma mensagem da cobertura
+    completa (que vive em Carteiras Recomendadas)."""
+    from data import radar_quedas as rq
+
+    if rq.resumo_fontes_vigentes() is None:
+        st.markdown(
+            "<div class='rq-vazio'>Banco indisponível: não foi possível ler as carteiras vigentes "
+            "(confira a conexão e a migration sql/radar_research.sql).</div>",
+            unsafe_allow_html=True,
+        )
+        return False
+    return True
+
+
+@st.fragment
+def render_radar_carteiras(prefs: dict):
+    """Cobertura das carteiras recomendadas monitoradas. O feed de research
+    (casas, recomendacoes, relatorios) vem logo abaixo, em app.py, pelo
+    render_research ja existente - nao e' reimplementado aqui."""
+    _injetar_css()
+    st.markdown('<div class="radar-pergunta">CARTEIRAS RECOMENDADAS — FONTES MONITORADAS</div>',
+                unsafe_allow_html=True)
+    _bloco_cobertura(prefs)
+
+
+@st.fragment
+def render_radar_oportunidades(prefs: dict):
+    _injetar_css()
+    st.markdown('<div class="radar-pergunta">ONDE VALE INVESTIGAR</div>', unsafe_allow_html=True)
+    st.markdown(_AVISO_SINAL, unsafe_allow_html=True)
+    escopo = _escopo_watchlist(prefs)
+    if escopo is None:
+        return
+    tickers, janela, watchlist = escopo
+    _secao_mudancas_tese(tickers, janela, prefs)
+    with st.expander("Próximos catalisadores", expanded=True):
+        _secao_catalisadores(tickers)
+    with st.expander("Research com evidências", expanded=False):
+        _secao_evidencias(tickers, watchlist)
+
+
+@st.fragment
+def render_radar_acompanhamento(prefs: dict):
+    """Historico de alertas dos ativos DA WATCHLIST + risco da carteira.
+    Itens salvos/anotacoes pessoais nao existem no banco hoje (exigiria
+    tabela nova - migration fora do escopo desta reorganizacao)."""
+    from data import radar_quedas as rq
+
+    _injetar_css()
+    st.markdown('<div class="radar-pergunta">ACOMPANHAMENTO DA WATCHLIST</div>', unsafe_allow_html=True)
+    watchlist = prefs.get("watchlist") or []
+    alertas = rq.alertas_periodo(90)
+    st.markdown("<div class='rq-bloco'><span>ALERTAS ANTERIORES — ATIVOS DA WATCHLIST (90 DIAS)</span></div>",
+                unsafe_allow_html=True)
+    if alertas is None:
+        st.markdown("<div class='rq-vazio'>Histórico indisponível (banco fora do ar).</div>", unsafe_allow_html=True)
+    else:
+        da_watchlist = [a for a in alertas if str(a.get("ticker", "")).upper() in set(watchlist)]
+        if da_watchlist:
+            st.markdown(_tabela_alertas_html(da_watchlist, prefs), unsafe_allow_html=True)
+        else:
+            st.markdown(
+                "<div class='rq-vazio'>Nenhum alerta de queda registrado para ativos da sua watchlist nos "
+                "últimos 90 dias (o monitor só cobre ativos de carteiras recomendadas).</div>",
+                unsafe_allow_html=True,
+            )
+    with st.expander("O QUE PODE DAR ERRADO — Risco da carteira", expanded=True):
+        _secao_risco(prefs)
+    st.markdown(
+        "<div class='rq-nota'>Itens salvos e anotações pessoais ainda não existem: exigem uma tabela nova no "
+        "banco (desenvolvimento posterior, ver docs/arquitetura-pregao-2.md).</div>",
+        unsafe_allow_html=True,
+    )
+
+
+@st.fragment
+def render_valuation(prefs: dict):
+    _injetar_css()
+    st.markdown('<div class="painel-titulo">VALUATION</div>', unsafe_allow_html=True)
+    st.markdown(
+        "<div class='rq-nota'>Múltiplos reportados pela fonte (Yahoo Finance) comparados com pares do setor. "
+        "Não é preço-alvo nem modelo de fluxo de caixa descontado: cenários, premissas e sensibilidade "
+        "ainda não têm modelo próprio no PREGÃO (desenvolvimento posterior).</div>",
+        unsafe_allow_html=True,
+    )
+    escopo = _escopo_watchlist(prefs, com_janela=False)
+    if escopo is None:
+        return
+    _secao_valuation(escopo[0], prefs)
+
+
+@st.fragment
+def render_teses(prefs: dict):
+    _injetar_css()
+    st.markdown('<div class="painel-titulo">TESES</div>', unsafe_allow_html=True)
+    st.markdown(
+        "<div class='rq-nota'>Base de evidências e copiloto de research já existentes. O registro persistente "
+        "de teses próprias (premissas, riscos, histórico de alterações) ainda não existe — exige tabela nova "
+        "no banco (desenvolvimento posterior, ver docs/arquitetura-pregao-2.md).</div>",
+        unsafe_allow_html=True,
+    )
+    escopo = _escopo_watchlist(prefs, com_janela=False)
+    if escopo is None:
+        return
+    tickers, _janela, watchlist = escopo
+    with st.expander("RESEARCH COM EVIDÊNCIAS", expanded=True):
+        _secao_evidencias(tickers, watchlist)
+    with st.expander("COPILOTO DE RESEARCH", expanded=False):
+        _secao_copiloto(tickers)

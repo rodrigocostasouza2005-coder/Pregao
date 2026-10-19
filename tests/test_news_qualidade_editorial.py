@@ -29,6 +29,19 @@ import data.news as news_mod
 _FALHAS = []
 
 
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _pools_separados_sem_rede(monkeypatch):
+    """pregerar_resumos_news também coleta os pools Brasil e internacional
+    separados (os que o Morning Call publica). Os testes deste arquivo
+    controlam só o TOP MERCADO combinado - os outros dois ficam vazios
+    aqui, nunca indo à rede (no CI eles traziam notícias reais)."""
+    monkeypatch.setattr(news_mod, "obter_top_mercado", lambda *_a, **_k: [])
+    monkeypatch.setattr(news_mod, "obter_top_mercado_internacional", lambda *_a, **_k: [])
+
+
 def _checar(nome, condicao, detalhe=""):
     status = "OK" if condicao else "FALHOU"
     print(f"[{status}] {nome} {detalhe}")
@@ -157,6 +170,20 @@ def test_2e3_placeholder_generico_do_tradingview_e_rejeitado():
     qualquer notícia de wire sem foto própria, nunca a foto real."""
     _checar("2e3 illustrations/news-story.jpg do TradingView rejeitado",
             news_mod._imagem_parece_generica("https://s.tradingview.com/static/images/illustrations/news-story.jpg"))
+
+
+def test_2e4_logo_no_hostname_e_rejeitado_mesmo_sem_bater_no_caminho():
+    """achado real (auditoria 2026-10-18, validação visual pós-escrita
+    do backfill de produção pegou o erro): um ícone de símbolo de
+    criptomoeda (Bitcoin, SVG) hospedado em
+    "s3-symbol-logo.tradingview.com/crypto/XTVCBTC.svg" passou pelo
+    filtro antigo porque "logo" estava no HOSTNAME, não no caminho -
+    `_imagem_parece_generica` só checava `urlparse(url).path`. Agora
+    host e caminho entram na mesma checagem."""
+    _checar("2e4a logo no hostname é rejeitado",
+            news_mod._imagem_parece_generica("https://s3-symbol-logo.tradingview.com/crypto/XTVCBTC.svg"))
+    _checar("2e4b foto editorial com hostname normal continua NÃO rejeitada",
+            not news_mod._imagem_parece_generica("https://cdn.veiculo.com/materias/2026/foto-real.jpg"))
 
 
 def test_2f_extracao_rejeita_og_image_que_e_logo_pelo_nome():
@@ -326,6 +353,58 @@ def test_2k7_fallback_lazy_pula_avatar_pequeno_e_aceita_a_proxima_foto_valida():
         texto, imagem, _, _ = news_mod._extrair_texto_artigo("https://news.google.com/avatar1")
     _checar("2k7 avatar 40x40 é pulado e a foto real (1200x675) seguinte é aceita",
             imagem == "https://veiculo.com/uploads/foto-real-da-materia.jpg")
+
+
+def test_2k8_fallback_lazy_ignora_imagem_dentro_de_widget_cta():
+    """achado real (auditoria 2026-10-18, backfill de produção escreveu
+    por engano o banner "Planilha de Gastos" do InfoMoney): a página
+    embute um widget de newsletter/lead-magnet como <div class="im-cta">
+    ...<img>...</div> DENTRO do <article>, sem nenhum <article> aninhado
+    - a exclusão de <article> aninhado sozinha não bastava. Qualquer
+    ancestral com classe batendo um marcador de widget (cta/anuncio/
+    publicidade/newsletter/promo/banner/...) agora é excluído, igual já
+    acontecia pra <article> aninhado."""
+    html_cta = (
+        '<html><body><article>'
+        '<div class="im-cta">'
+        '<img src="https://veiculo.com/uploads/banner-promocional.png" alt="">'
+        '</div>'
+        '<p>Texto real da matéria, bem depois do widget promocional.</p>'
+        '<img width="1200" height="675" data-lazy-src="https://veiculo.com/uploads/foto-real-da-materia.jpg" alt="">'
+        '</article></body></html>'
+    )
+    with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/materia-com-cta"), \
+         patch.object(news_mod.requests, "get", return_value=_FakeResponseHtml(html_cta)), \
+         patch.object(news_mod.trafilatura, "extract", return_value='{"text": "Texto bem longo o suficiente pra passar do limite minimo de extracao exigido pelo projeto todo."}'):
+        texto, imagem, _, _ = news_mod._extrair_texto_artigo("https://news.google.com/cta1")
+    _checar("2k8 imagem dentro de widget CTA é ignorada, foto real seguinte é aceita",
+            imagem == "https://veiculo.com/uploads/foto-real-da-materia.jpg")
+
+
+def test_2k9_article_sem_foto_nunca_escala_pro_escopo_mais_amplo():
+    """achado real (auditoria 2026-10-18, mesmo backfill): quando a
+    página TEM um <article> de verdade mas nenhuma imagem válida está
+    dentro dele, o código antigo caía pro seletor "main" mesmo assim -
+    um escopo bem mais amplo (inclui cabeçalho/selo de categoria/
+    branding ANTES do <article>) que reintroduz o mesmo risco que a
+    exclusão de widget/aninhado existe pra evitar. Caso real: InfoMoney
+    tem <article> de verdade sem foto própria dentro dele, mas o
+    fallback pra "main" pegou o logo do produto "IM Trader" no
+    cabeçalho da página. Agora só tenta o próximo seletor quando o
+    ATUAL não bate em NENHUM bloco - nunca como escalada após uma busca
+    legítima e vazia dentro do <article>."""
+    html_sem_foto_mas_com_logo_fora = (
+        '<html><body><main>'
+        '<img width="28" height="28" src="https://veiculo.com/uploads/logo-produto-no-cabecalho.png" alt="Produto">'
+        '<article><p>Texto real da matéria, sem nenhuma foto própria dentro do artigo.</p></article>'
+        '</main></body></html>'
+    )
+    with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/materia-sem-foto-com-logo-fora"), \
+         patch.object(news_mod.requests, "get", return_value=_FakeResponseHtml(html_sem_foto_mas_com_logo_fora)), \
+         patch.object(news_mod.trafilatura, "extract", return_value='{"text": "Texto bem longo o suficiente pra passar do limite minimo de extracao exigido pelo projeto todo."}'):
+        texto, imagem, _, _ = news_mod._extrair_texto_artigo("https://news.google.com/semfotologofora")
+    _checar("2k9 <article> vazio de foto nunca escala pro <main> mais amplo (nunca pega o logo do cabeçalho)",
+            imagem is None)
 
 
 class _FakeResponseHtml:

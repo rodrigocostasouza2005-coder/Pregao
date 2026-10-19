@@ -43,7 +43,42 @@ conclusao do caso XP (ver xp.py): nao e' um subdominio isolado, e' a
 zona inteira - descarta "tentar outro subdominio da Genial" como
 alternativa legitima. Nenhuma tentativa de bypass foi feita contra o
 MESMO alvo - so' um teste de reachability contra um alvo diferente (a
-raiz do dominio), o que e' legitimo."""
+raiz do dominio), o que e' legitimo.
+
+Busca por via alternativa, 3a rodada (2026-10-18, pedido explicito do
+Rodrigo pra priorizar essa casa antes de desistir) - 4 caminhos testados
+de verdade, nenhum funcional:
+1. Pagina HTML especifica JA' INDEXADA (achada via busca, nao e' so' a
+   home) - mesmo timeout silencioso de sempre, confirmado via ferramenta
+   de fetch com rede PROPRIA (fora deste sandbox) - nao e' limitacao de
+   rede local, e' bloqueio real na borda, pro dominio inteiro.
+2. Canal oficial no Telegram (@GenialAnalise, >9900 inscritos, achado por
+   busca): a pre-visualizacao publica (t.me/s/GenialAnalise, sem login)
+   NAO expoe historico de mensagens pra esse canal especifico - devolve
+   so' a pagina de "capa" do canal (nome/descricao/foto) com um botao
+   "View in Telegram" (deep link pro app) - confirmado direto via HTTP
+   (nao e' erro de parsing: a classe CSS do corpo das mensagens,
+   tgme_widget_message, simplesmente nao existe no HTML devolvido).
+   Acessar o historico de verdade exigiria o app/API do Telegram com
+   conta - fora do que "publico sem login" permite, descartado.
+3. Bucket S3 achado por busca (genial-documents.s3.amazonaws.com,
+   dominio DIFERENTE, sem bloqueio - 200 OK testado de verdade): serve
+   documentos institucionais/juridicos/de fundos (formulario de
+   referencia CVM, termos, materiais de divulgacao de fundos) - NENHUM
+   relatorio de acoes/setor/macro (o conteudo real da Genial Analisa).
+   Dominio certo, conteudo errado - nao serve ao proposito.
+4. Materias de terceiros (Money Times) que CITAM a visao da Genial sobre
+   algum ticker: e' jornalismo de terceiro sobre a Genial, nao o
+   relatorio da propria Genial - usar isso e' registrar a ORIGEM errada
+   (a casa seria "Money Times", nao "Genial Analisa"), alem de ja' ser
+   o tipo de conteudo que o coletor de NEWS (nao o de RESEARCH) deveria
+   cobrir se o ticker estiver no universo. Descartado por integridade de
+   origem, nao por dificuldade tecnica.
+
+Conclusao desta rodada: nenhuma alternativa legitima encontrada - e' uma
+conclusao fundamentada (4 caminhos reais testados, nao suposicao), nao
+"nao tentamos". O parsing do __NEXT_DATA__ continua sendo a unica via
+conhecida; bloqueio de WAF permanece a causa real e inalterada."""
 
 import json
 import re

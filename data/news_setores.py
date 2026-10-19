@@ -9,6 +9,7 @@ citar ticker nenhum). Dicionario pensado pra ser facil de editar/estender
 - so adicionar palavra ou ticker na lista certa.
 """
 
+import re
 import unicodedata
 
 SETORES = {
@@ -39,7 +40,7 @@ SETORES = {
     },
     "VAREJO": {
         "palavras": [
-            "varejo", "varejista", "retail", "loja", "lojas", "e-commerce",
+            "varejo", "varejista", "retail", "retailer", "loja", "lojas", "e-commerce",
             "ecommerce", "consumo", "shopping",
         ],
         "tickers": ["MGLU3", "LREN3", "AMER3", "PCAR3", "AZZA3", "CEAB3", "ALPA4", "GUAR3", "VIVA3", "PETZ3"],
@@ -104,6 +105,15 @@ def _sem_acento(texto: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
 
 
+def _palavra_no_texto(palavra: str, texto: str) -> bool:
+    """Palavra-chave inteira (com plural simples "s"/"es"), não substring.
+    Antes, "gas" casava com "gastos", "aco" com "acordo" e "tech" com
+    qualquer palavra que contivesse essas letras - manchete fiscal caía em
+    PETRÓLEO & GÁS, acordo político em MINERAÇÃO & SIDERURGIA."""
+    p = re.escape(_sem_acento(palavra))
+    return re.search(rf"(?<![a-z0-9]){p}(?:s|es)?(?![a-z0-9])", texto) is not None
+
+
 def classificar_setores(titulo: str, tickers_citados: list) -> list:
     """Setores cujo criterio (palavra-chave OU ticker) bate com o titulo/
     tickers do grupo - pode retornar mais de um (ex: materia sobre juros
@@ -112,7 +122,7 @@ def classificar_setores(titulo: str, tickers_citados: list) -> list:
     tickers_set = set(tickers_citados or [])
     encontrados = []
     for nome, cfg in SETORES.items():
-        bate_palavra = any(_sem_acento(p) in texto for p in cfg["palavras"])
+        bate_palavra = any(_palavra_no_texto(p, texto) for p in cfg["palavras"])
         bate_ticker = bool(tickers_set & set(cfg["tickers"]))
         if bate_palavra or bate_ticker:
             encontrados.append(nome)

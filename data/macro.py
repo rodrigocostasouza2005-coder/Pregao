@@ -36,6 +36,53 @@ _SGS_CDI_DIARIO = 12
 _SGS_CDI_ANUALIZADO = 4389
 
 
+class RespostaSgsInvalida(ValueError):
+    """O SGS respondeu HTTP 200 sem os dados da serie. Visto em producao
+    (diagnostico de 18/10/2026, runner do GitHub Actions): para as series
+    432/12/4389/433 a API alternava entre uma pagina HTML "Requisição
+    inválida!" (content-type text/html) e o JSON
+    {"erro": {"statusCode": 500, "detail": "Internal error"}} - os dois com
+    status 200. Antes, o r.json() da pagina HTML lancava um ValueError
+    generico e a edicao mostrava so' "indisponível", sem o motivo."""
+
+
+def _json_sgs(r, codigo: int):
+    """Valida a resposta do SGS e devolve a lista de pontos, ou lanca
+    RespostaSgsInvalida com o motivo legivel. Nao tenta contornar a pagina
+    de bloqueio/erro (outro User-Agent etc.): so' identifica e reporta."""
+    tipo = r.headers.get("Content-Type") if hasattr(r, "headers") else None
+    tipo = tipo.lower() if isinstance(tipo, str) else ""
+    if "html" in tipo:
+        raise RespostaSgsInvalida(
+            f"SGS {codigo}: o Banco Central respondeu com página de erro HTML "
+            "('Requisição inválida') em vez dos dados")
+    try:
+        dados = r.json()
+    except ValueError:
+        raise RespostaSgsInvalida(f"SGS {codigo}: resposta sem JSON válido") from None
+    if isinstance(dados, dict):
+        erro = dados.get("erro") or dados.get("error")
+        if erro:
+            detalhe = erro.get("detail") if isinstance(erro, dict) else erro
+            status = erro.get("statusCode") if isinstance(erro, dict) else None
+            raise RespostaSgsInvalida(
+                f"SGS {codigo}: erro informado pelo Banco Central"
+                + (f" ({status} {detalhe})" if status else f" ({detalhe})"))
+        raise RespostaSgsInvalida(f"SGS {codigo}: formato de resposta inesperado")
+    return dados
+
+
+# Ultimo motivo de falha por indicador, nesta execucao - so' pra quem
+# monta a edicao poder dizer POR QUE um indicador saiu indisponivel (as
+# funcoes obter_* devolvem None e o erro ja' vai pro registro de saude).
+_MOTIVO_FALHA = {}
+
+
+def motivo_indisponivel(indicador: str) -> str | None:
+    """'selic' / 'cdi' -> texto do ultimo erro desta execucao, ou None."""
+    return _MOTIVO_FALHA.get(indicador)
+
+
 def _serie_sgs(codigo: int, dias_historico: int) -> pd.DataFrame:
     """Busca uma serie do SGS entre (hoje - dias_historico) e hoje, devolve
     DataFrame [data, valor] com data tz-aware (America/Sao_Paulo) e valor em
@@ -62,7 +109,7 @@ def _serie_sgs(codigo: int, dias_historico: int) -> pd.DataFrame:
             if r.status_code == 429 or r.status_code >= 500:
                 r.raise_for_status()
             r.raise_for_status()
-            dados = r.json()
+            dados = _json_sgs(r, codigo)
             break
         except requests.RequestException as e:
             ultima_excecao = e
@@ -80,7 +127,11 @@ def _serie_sgs(codigo: int, dias_historico: int) -> pd.DataFrame:
         raise ValueError(f"SGS {codigo} retornou lista vazia")
     df = pd.DataFrame(dados)
     df["data"] = pd.to_datetime(df["data"], format="%d/%m/%Y", dayfirst=True).dt.tz_localize(TZ)
-    df["valor"] = df["valor"].astype(float)
+    # valor não numérico (ex.: texto de erro dentro do JSON) nunca vira
+    # número: a série inteira é tratada como resposta inválida
+    df["valor"] = pd.to_numeric(df["valor"], errors="coerce")
+    if df["valor"].isna().any():
+        raise RespostaSgsInvalida(f"SGS {codigo}: resposta com valor não numérico")
     return df[["data", "valor"]]
 
 
@@ -127,10 +178,52 @@ def obter_selic_meta(dias_historico: int = 400) -> pd.DataFrame | None:
         df = _serie_sgs(_SGS_SELIC_META, dias_historico).rename(columns={"valor": "selic_meta_pct"})
         registrar_tentativa("MACRO (BCB - Selic)", "Banco Central (SGS)", execucao_ok=True,
                              registros_novos=len(df), categoria="Macro")
+        _MOTIVO_FALHA.pop("selic", None)
         return df
     except Exception as e:
+        _MOTIVO_FALHA["selic"] = str(e)[:200]
         registrar_tentativa("MACRO (BCB - Selic)", "Banco Central (SGS)", execucao_ok=False,
                              erro=str(e)[:300], categoria="Macro")
+        return None
+
+
+_COPOM_HISTORICO_URL = "https://www.bcb.gov.br/api/servico/sitebcb/historicotaxasjuros"
+
+
+def obter_selic_meta_copom() -> dict | None:
+    """Meta Selic VIGENTE pelo histórico oficial de reuniões do Copom no
+    site do Banco Central (www.bcb.gov.br) - plano B pra quando o SGS
+    (api.bcb.gov.br) não responde. Diagnóstico de 18/10/2026 no runner do
+    GitHub: o SGS falhava pra todas as séries (timeout, página "Requisição
+    inválida" ou {"erro": 500}), enquanto este endpoint respondia
+    normalmente. Mesma instituição e mesma informação (a meta definida
+    pelo Copom), sem estimativa nem fonte de terceiros.
+
+    Vigente = registro com DataFimVigencia nula e início já ocorrido.
+    {"valor", "vigente_desde" (date), "reuniao" (int)} ou None (o motivo
+    fica em motivo_indisponivel("selic_copom"))."""
+    try:
+        r = requests.get(_COPOM_HISTORICO_URL, headers=_HEADERS, timeout=(5, 20))
+        r.raise_for_status()
+        registros = (r.json() or {}).get("conteudo") or []
+        hoje = datetime.now(TZ)
+        vigentes = []
+        for reg in registros:
+            if reg.get("DataFimVigencia") is not None:
+                continue
+            inicio = pd.to_datetime(reg.get("DataInicioVigencia"), utc=True)
+            valor = float(reg.get("MetaSelic"))
+            if pd.isna(inicio) or inicio > hoje or not (0 < valor < 100):
+                continue
+            vigentes.append((inicio, valor, reg.get("NumeroReuniaoCopom")))
+        if len(vigentes) != 1:
+            raise ValueError(f"histórico do Copom com {len(vigentes)} meta(s) vigente(s) - esperado exatamente 1")
+        inicio, valor, reuniao = vigentes[0]
+        _MOTIVO_FALHA.pop("selic_copom", None)
+        return {"valor": valor, "vigente_desde": inicio.tz_convert(TZ).date(),
+                "reuniao": int(reuniao) if reuniao is not None else None}
+    except Exception as e:
+        _MOTIVO_FALHA["selic_copom"] = f"histórico do Copom (bcb.gov.br): {str(e)[:150]}"
         return None
 
 
@@ -146,8 +239,10 @@ def obter_cdi(dias_historico: int = 90) -> pd.DataFrame | None:
         df = pd.merge(diario, anualizado, on="data", how="outer").sort_values("data").reset_index(drop=True)
         registrar_tentativa("MACRO (BCB - CDI)", "Banco Central (SGS)", execucao_ok=True,
                              registros_novos=len(df), categoria="Macro")
+        _MOTIVO_FALHA.pop("cdi", None)
         return df
     except Exception as e:
+        _MOTIVO_FALHA["cdi"] = str(e)[:200]
         registrar_tentativa("MACRO (BCB - CDI)", "Banco Central (SGS)", execucao_ok=False,
                              erro=str(e)[:300], categoria="Macro")
         return None
