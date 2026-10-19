@@ -193,3 +193,28 @@ def test_appteste_vinculo_contextual():
     at.button(key="vinculo_teste").click().run()
     assert _rota(at) == "setores/setor"
     assert at.query_params["aba"] == ["setores"]
+
+
+def test_appteste_ticker_na_url_e_parametro_de_1_disparo():
+    """Link de ticker numa tabela densa HTML (ex: RADAR, ver
+    ui/radar_tab.py:.rq-ticker) usa ?ticker=X - aplicado e removido da
+    URL na mesma passada, nao pode "grudar" e reaparecer numa
+    navegacao futura (publicar_url preserva parametro desconhecido ao
+    escrever aba/sub)."""
+    at = _app({"aba": "analises", "sub": "empresas", "ticker": "PETR4"})
+    assert _rota(at) == "analises/empresas"
+    assert at.session_state[navegacao.KEY_TICKER_EXTERNO] == "PETR4"
+    assert "ticker" not in at.query_params
+
+
+def test_appteste_ticker_diferente_na_mesma_rota_ainda_e_aplicado():
+    """2 cliques em tickers diferentes que abrem na MESMA area/subaba
+    (ex: 2 alertas do Radar, ambos levam a ANALISES > Empresas) nao
+    podem ser ignorados so' porque a rota (area/sub) nao mudou - so'
+    rota/subaba inalteradas E sem ticker novo e' que nao faz nada."""
+    at = _app({"aba": "analises", "sub": "empresas", "ticker": "PETR4"})
+    assert at.session_state[navegacao.KEY_TICKER_EXTERNO] == "PETR4"
+    at.query_params["ticker"] = "VALE3"
+    at.run()
+    assert _rota(at) == "analises/empresas"
+    assert at.session_state[navegacao.KEY_TICKER_EXTERNO] == "VALE3"

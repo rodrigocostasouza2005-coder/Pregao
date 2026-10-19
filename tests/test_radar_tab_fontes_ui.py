@@ -115,3 +115,26 @@ def test_alertas_e_monitorados_renderizados_com_numero_brasileiro_e_estado_do_em
     assert "rq-estado-SEM_COTACAO" in html_render  # VALE3 sem cotação não vira "0,00%"
     assert "rq-estado-FALHOU" in html_render and "FALHA_ENVIO" not in html_render
     assert "16/10 12:31" in html_render  # horário de Brasília, não ISO UTC
+
+
+def test_ticker_monitorado_e_alertado_e_link_real_para_analises():
+    """Achado da auditoria 2026-10-18 (P1, documentado mas nao
+    corrigido la': ".rq-ticker sem destino", mesma cor/peso do padrao
+    "isto e' clicavel" do resto do app, sem nenhum jeito de ir ate
+    EQUITY/ANALISES). Corrigido nesta missao de redesign 2026-10-19
+    com link real (<a>), mantendo a tabela densa (sem converter pra
+    st.button por linha)."""
+    monitorados = [{
+        "ticker": "PETR4", "empresa": "Petrobras", "casas": ["Safra Corretora"],
+        "estado": "NORMAL", "preco": 36.10, "fechamento_anterior": 37.92,
+        "variacao_pct": -4.8, "distancia_gatilho_pp": 3.5,
+    }]
+    alertas = [{
+        "ticker": "VALE3", "empresa": "Vale", "pregao": "2026-10-16", "variacao_pct": -5.1,
+        "preco_atual": 60.0, "fechamento_anterior": 63.2, "casas": ["Safra Corretora"],
+        "carteiras": ["Top 10 Ações"], "fontes": [], "alertado_em": "2026-10-16T15:31:05+00:00",
+        "status": "ENVIADO",
+    }]
+    html_render = _capturar_render({}, alertas=alertas, monitorados=monitorados)
+    assert "<a class='rq-ticker' href='?aba=analises&sub=empresas&ticker=PETR4' target='_self'>PETR4</a>" in html_render
+    assert "<a class='rq-ticker' href='?aba=analises&sub=empresas&ticker=VALE3' target='_self'>VALE3</a>" in html_render

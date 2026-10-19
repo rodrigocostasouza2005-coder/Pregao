@@ -207,15 +207,29 @@ def aplicar_url_de_entrada(areas):
     que este app escreveu por ultimo, ela veio de fora e manda. Senao a
     autoridade e' o widget (clique do usuario no run anterior). Rota
     invalida (ou oculta pra este usuario, ex: subaba admin) cai na
-    padrao com um aviso - nunca uma pagina em branco."""
+    padrao com um aviso - nunca uma pagina em branco.
+
+    `?ticker=X` (ex: link de ticker numa tabela densa HTML, RADAR -
+    ver ui/radar_tab.py) e' parametro de 1 disparo: aplicado via
+    ir_para() e removido da URL na mesma passada - nao pode "grudar" e
+    reaparecer sozinho numa navegacao futura (publicar_url preserva
+    parametro desconhecido ao escrever aba/sub). Por isso o ticker
+    ignora o cache de "rota ja sincronizada": mesmo se aba/sub nao
+    mudou (2 tickers diferentes que abrem na MESMA area/subaba, ex.
+    ANALISES > Empresas), ele ainda precisa ser aplicado de novo."""
+    ticker = (st.query_params.get("ticker") or "").strip().upper() or None
     rota = rota_da_url(st.query_params)
-    if rota is None or rota == st.session_state.get(_KEY_URL_SINCRONIZADA):
+    if rota is None or (rota == st.session_state.get(_KEY_URL_SINCRONIZADA) and not ticker):
         return
     area_id, sub_id, valida = resolver(areas, *rota)
     if not valida:
         avisar(f"Endereço de seção inválido ou indisponível ({'/'.join(r for r in rota if r)}) — abrindo {rotulo_rota(area_id, sub_id)}.")
-    ir_para(area_id, sub_id)
+    ir_para(area_id, sub_id, ticker)
     st.session_state[_KEY_URL_SINCRONIZADA] = rota
+    if ticker:
+        restantes = st.query_params.to_dict()
+        restantes.pop("ticker", None)
+        st.query_params.from_dict(restantes)
 
 
 def _manter_selecao(chave: str):

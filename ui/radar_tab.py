@@ -100,7 +100,8 @@ div[data-testid="stElementContainer"]:has(.radar-stub) + div[data-testid="stElem
 .rq-tabela .rq-esq { text-align: left; }
 .rq-tabela .rq-sub { margin-left: 0.45rem; }
 .rq-tabela tr.rq-linha-alerta td { background: color-mix(in srgb, var(--baixa) 9%, transparent); }
-.rq-ticker { color: var(--destaque); font-weight: 700; }
+.rq-tabela a.rq-ticker { color: var(--destaque); font-weight: 700; text-decoration: none; }
+.rq-tabela a.rq-ticker:hover { text-decoration: underline; }
 .rq-sub { color: var(--cinza); font-size: 0.66rem; }
 .rq-baixa { color: var(--baixa); }
 .rq-alta { color: var(--alta); }
@@ -417,6 +418,18 @@ def _chip(classe: str, rotulo: str) -> str:
     return f"<span class='rq-estado rq-estado-{classe}'>{html.escape(rotulo)}</span>"
 
 
+def _ticker_link(ticker: str) -> str:
+    """Ticker clicavel dentro de uma tabela HTML densa (sem widget
+    Streamlit real por linha - quebraria a densidade, achado real da
+    auditoria 2026-10-18: mesma classe .rq-ticker ja' usada pelo
+    padrao "isto e' clicavel" do resto do app, mas sem destino aqui).
+    Link de verdade (?ticker=X, ui/navegacao.py:aplicar_url_de_entrada)
+    em vez de st.button - MESMA tecnica ja' usada nesta tabela pros
+    links de fonte (_tabela_alertas_html, "↗")."""
+    t = html.escape(ticker or "")
+    return f"<a class='rq-ticker' href='?aba=analises&sub=empresas&ticker={t}' target='_self'>{t}</a>"
+
+
 def _pct(valor, prefs, sinal=True) -> str:
     if valor is None:
         return "—"
@@ -489,7 +502,7 @@ def _tabela_monitorados_html(linhas, prefs) -> str:
         )
         origem = html.escape(" · ".join(l["casas"]))
         corpo.append(
-            f"<tr{classe_linha}><td class='rq-esq'><span class='rq-ticker'>{html.escape(l['ticker'])}</span>"
+            f"<tr{classe_linha}><td class='rq-esq'>{_ticker_link(l['ticker'])}"
             f"<span class='rq-sub rq-sec'>{html.escape(l['empresa'] or '')}</span></td>"
             f"<td class='rq-esq rq-sec rq-cinza'>{origem}</td>"
             f"<td class='rq-sec'>{_fmt_num(l['fechamento_anterior'], 2, prefs)}</td>"
@@ -520,7 +533,7 @@ def _tabela_alertas_html(alertas, prefs) -> str:
         ) or "—"
         corpo.append(
             f"<tr><td class='rq-esq'>{_data_br(a.get('pregao'))}</td>"
-            f"<td class='rq-esq'><span class='rq-ticker'>{html.escape(a.get('ticker', ''))}</span>"
+            f"<td class='rq-esq'>{_ticker_link(a.get('ticker', ''))}"
             f"<span class='rq-sub rq-sec'>{html.escape(a.get('empresa') or '')}</span></td>"
             f"<td class='rq-baixa'>{_pct(variacao, prefs)}</td>"
             f"<td class='rq-sec'>{_fmt_num(a.get('fechamento_anterior'), 2, prefs)}</td>"
