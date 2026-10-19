@@ -24,7 +24,7 @@ jobs:
           STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
           PYTHONUNBUFFERED: "1"
       - run: |
-          cd saida_diag && pdftoppm -r 80 -png seg0803.pdf pagina || true
+          cd saida_diag && pdftoppm -r 80 -png morning_call_real.pdf pagina || true
       - run: |
           git config user.name "diag-bot"; git config user.email "diag-bot@users.noreply.github.com"
           rm -rf saida_real && mv saida_diag saida_real && git add saida_real
