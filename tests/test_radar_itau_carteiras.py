@@ -13,8 +13,8 @@ def test_parser_itau_top5_aceita_tabela_com_cinco_tickers():
     <h1>Carteira Top 5 Outubro 2026</h1>
     <table>
       <tr><th>Empresas</th><th>Recomendação</th><th>Peso</th></tr>
-      <tr><td>Petrobras (PETR4)</td><td>OP</td><td>20%</td></tr>
-      <tr><td>Vale (VALE3)</td><td>OP</td><td>20%</td></tr>
+      <tr><td>Embraer (EMBJ3)</td><td>OP</td><td>20%</td></tr>
+      <tr><td>XP Inc. (XPBR31)</td><td>OP</td><td>20%</td></tr>
       <tr><td>Embraer (EMBJ3)</td><td>OP</td><td>20%</td></tr>
       <tr><td>Sabesp (SBSP3)</td><td>OP</td><td>20%</td></tr>
       <tr><td>Eneva (ENEV3)</td><td>OP</td><td>20%</td></tr>
@@ -22,7 +22,7 @@ def test_parser_itau_top5_aceita_tabela_com_cinco_tickers():
     """
     itens = parsear_artigo(html, "https://www.itau.com.br/investimentos/carteira-top-5-outubro-2026/", date(2026, 10, 19))
     assert itens is not None
-    assert {x["ticker"] for x in itens} == {"PETR4", "VALE3", "EMBJ3", "SBSP3", "ENEV3"}
+    assert {x["ticker"] for x in itens} == {"PETR4", "XPBR31", "EMBJ3", "SBSP3", "ENEV3"}
     assert all(x["casa"] == CASA and x["carteira"] == CARTEIRA for x in itens)
     assert all(x["fonte_url"].startswith("https://www.itau.com.br/") for x in itens)
 
