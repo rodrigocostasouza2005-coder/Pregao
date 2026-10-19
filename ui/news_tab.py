@@ -897,11 +897,23 @@ def _abrir_card(n: dict, watchlist: list):
         for p in paragrafos:
             st.markdown(f"<div class='news-corpo-p'>{html.escape(p)}</div>", unsafe_allow_html=True)
         if resultado.get("parcial"):
-            st.markdown(
-                "<div class='news-parcial-nota'>Síntese com base nas informações públicas disponíveis "
-                "(manchetes/trechos de várias fontes) — o texto completo da matéria não foi acessado.</div>",
-                unsafe_allow_html=True,
-            )
+            # qualidade_texto distingue 2 niveis de evidencia bem diferentes
+            # dentro do mesmo "parcial" (ver data/news.py:_gerar_resumo_grupo) -
+            # partial_text ainda leu texto REAL de outra(s) materia(s) sobre o
+            # mesmo fato; snippet_only nao baixou nenhum texto, so' sintetizou
+            # a partir de manchetes. Resultado sem a chave (fixture antiga/
+            # cache pre-ABA5) cai na mensagem generica de sempre.
+            qualidade = resultado.get("qualidade_texto")
+            if qualidade == "partial_text":
+                nota = ("Síntese com base em trechos reais extraídos de outra(s) matéria(s) sobre o "
+                        "mesmo fato — o texto completo desta matéria específica não foi acessado.")
+            elif qualidade == "snippet_only":
+                nota = ("Síntese gerada só a partir das manchetes — nenhum texto de matéria foi "
+                        "acessado; é o sinal mais fraco disponível, use com cautela.")
+            else:
+                nota = ("Síntese com base nas informações públicas disponíveis (manchetes/trechos de "
+                        "várias fontes) — o texto completo da matéria não foi acessado.")
+            st.markdown(f"<div class='news-parcial-nota'>{nota}</div>", unsafe_allow_html=True)
         if leitura_mercado:
             st.markdown(
                 "<div class='news-leitura-wrap'>"
