@@ -41,7 +41,7 @@ def test_parser_itau_aceita_linhas_textuais_da_pagina_oficial():
     <p>SABESP (SBSP3) | Utilities | OP | 20%</p>
     <p>PETROBRAS (PETR4) | Petróleo | OP | 20%</p>
     """
-    itens = parsear_artigo(html, "https://www.itau.com.br/investimentos/carteira-top-5-outubro-2026/", date(2026, 10, 19))
+    itens = parsear_artigo(html, "https://hub-conteudo.cloud.itau.com.br/investimentos/carteira-top-5-outubro-2026/", date(2026, 10, 19))
     assert itens is not None
     assert {x["ticker"] for x in itens} == {"EMBJ3", "XPBR31", "ENEV3", "SBSP3", "PETR4"}
 
