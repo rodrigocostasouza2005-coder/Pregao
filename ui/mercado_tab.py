@@ -335,16 +335,44 @@ def _painel_mais_negociados(prefs):
     if not negociados:
         st.markdown("<div class='cinza' style='font-size:0.78rem;'>—</div>", unsafe_allow_html=True)
         return
-    linhas = "".join(
-        f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>{p['ticker']}</td>"
-        f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>R$ {config.formatar_numero(p['volume_financeiro'] / 1_000_000, 1, prefs['formato_numerico'])} mi</td>"
-        f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='{'alta' if p['variacao_pct'] >= 0 else 'baixa'}'>{_fmt_pct(p['variacao_pct'], prefs)}</td></tr>"
-        for p in negociados
-    )
+    # ticker vira um st.button de verdade (on_click=_ir_para_equity, mesmo
+    # mecanismo ja' usado no ranking de altas/baixas acima) - achado real
+    # da auditoria 360 (docs/auditoria-redesign-360.md): antes era so'
+    # <td>{ticker}</td> cru dentro de uma tabela HTML, sem nenhum jeito de
+    # ir direto pro ticker em EQUITY a partir daqui.
+    #
+    # margin-bottom MAIOR que o row-gap global entre colunas empilhadas
+    # (0.7rem, style.css, breakpoint 640px) - mesmo bug real encontrado e
+    # corrigido no painel MINHA WATCHLIST (ui/visao_geral.py, auditoria
+    # 2026-10-18): sem isso, abaixo de 640px as 3 colunas quebram
+    # empilhadas e a linha de volume/variacao de UM ticker fica mais perto
+    # do botao do ticker SEGUINTE do que do seu proprio, ambiguo sobre a
+    # quem pertence.
     st.markdown(
-        f"<table style='width:100%; font-size:0.8rem; border-collapse:collapse;'>{linhas}</table>",
+        "<style>div[class*='st-key-mn_linha_']{margin-bottom:1.1rem;}</style>",
         unsafe_allow_html=True,
     )
+    for p in negociados:
+        with st.container(key=f"mn_linha_{p['ticker']}"):
+            col_ticker, col_volume, col_var = st.columns([1.1, 1.3, 1], vertical_alignment="center")
+            with col_ticker:
+                st.button(
+                    p["ticker"], key=f"mn_ticker_{p['ticker']}", width="stretch",
+                    on_click=_ir_para_equity, args=(p["ticker"], prefs),
+                    help=f"Abrir {p['ticker']} em ANÁLISES › Empresas",
+                )
+            with col_volume:
+                st.markdown(
+                    f"<div class='neutro' style='text-align:right; font-size:0.8rem;'>"
+                    f"R$ {config.formatar_numero(p['volume_financeiro'] / 1_000_000, 1, prefs['formato_numerico'])} mi</div>",
+                    unsafe_allow_html=True,
+                )
+            with col_var:
+                cls = "alta" if p["variacao_pct"] >= 0 else "baixa"
+                st.markdown(
+                    f"<div class='{cls}' style='text-align:right; font-size:0.8rem;'>{_fmt_pct(p['variacao_pct'], prefs)}</div>",
+                    unsafe_allow_html=True,
+                )
 
 
 def _painel_setorial(prefs):
