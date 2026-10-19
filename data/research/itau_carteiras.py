@@ -108,7 +108,7 @@ def parsear_artigo(html, url, hoje=None):
     # com o formato "Embraer (EMBJ3) | ...": só aceita ticker entre
     # parênteses, exatamente como a tabela oficial expõe a composição.
     if len({item["ticker"] for item in itens}) < MIN_TICKERS:
-        for linha_texto in soup.get_text("\\n", strip=True).splitlines():
+        for linha_texto in soup.get_text("\n", strip=True).splitlines():
             match = EMPRESA_TICKER_RE.match(linha_texto)
             if not match:
                 continue
