@@ -794,11 +794,15 @@ def _editoria(nome, chave, itens, erro, agora, estilos, registro, excluir=None, 
     fixo: a matéria mais importante com texto abre a editoria (manchete
     maior, linha-fina, texto em 2 colunas); as demais com texto seguem em
     2 colunas equilibradas; as sem texto viram 'Curtas'."""
+    na_capa = excluir is not None and any(i is excluir for i in (itens or []))
     itens = [i for i in (itens or []) if i is not excluir and i.get("titulo")]
     cabecalho = CabecalhoEditoria(nome, chave, registro)
     if not itens:
         if erro:
             aviso = f"Noticiário desta editoria indisponível nesta edição ({_t(erro)})."
+        elif na_capa:
+            # a única matéria da editoria abriu a capa: "nenhuma notícia" seria falso
+            aviso = f"A notícia desta editoria é a manchete da capa: {_t(excluir.get('titulo'))}."
         else:
             aviso = _texto_editoria_vazia(edicao_janela)
         return [CondPageBreak(80), KeepTogether([cabecalho, Paragraph(aviso, estilos["aviso"])]), Spacer(1, 16)]
