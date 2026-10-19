@@ -737,6 +737,37 @@ table tr:last-child td { border-bottom: none; }
         min-width: 0 !important;
     }
 
+    /* achado real da missao de redesign 2026-10-19 (Playwright, 390px,
+       docs/evidencias/header-mobile-20261019/): CTRL K + os 3 botoes de
+       acao (↗/▣/+, todos width="stretch") empilhavam em 4 FAIXAS
+       INTEIRAS da largura da tela. 2 causas, nao so' 1: (a) o
+       width="stretch" do proprio botao; (b) confirmado por inspecao
+       real do DOM (getComputedStyle) - nesta largura o Streamlit
+       comuta stHorizontalBlock pra flex-direction:column, e o
+       align-items:stretch PADRAO vira largura total pro eixo
+       cruzado (que em column-direction e' a LARGURA, nao a altura) -
+       corrigir so' o botao (min-width acima) nao bastava, a COLUNA ao
+       redor dele continuava esticando. Decisao: CTRL K e' so' dica de
+       atalho de teclado fisico - sem sentido em touch, escondida aqui
+       (o atalho em si continua funcionando via teclado bluetooth/
+       dobravel, so' a dica visual some). As 3 colunas de acao
+       (4a/5a/6a desta linha: eq/news/add) ganham align-self:flex-start
+       (nao esticam no eixo cruzado) + largura real do botao - cabem
+       lado a lado numa unica linha, trocando 4 faixas cheias por 1. */
+    .st-key-camada1_header .pregao-ctrlk { display: none; }
+    .st-key-camada1_header div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(4),
+    .st-key-camada1_header div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(5),
+    .st-key-camada1_header div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(6) {
+        align-self: flex-start !important;
+        width: fit-content !important;
+    }
+    .st-key-busca_global_eq button[data-testid^="stBaseButton"],
+    .st-key-busca_global_news button[data-testid^="stBaseButton"],
+    .st-key-busca_global_add button[data-testid^="stBaseButton"] {
+        width: min-content !important;
+        min-width: 2.4rem !important;
+    }
+
     /* RESEARCH - filtros Casa/Tipo/Ticker (bug real confirmado por
        screenshot, 2026-10-10): mesma causa-raiz do header acima (Streamlit
        so' ENCOLHE as 3 colunas proporcionalmente em vez de empilhar), mas
