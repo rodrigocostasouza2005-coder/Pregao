@@ -115,3 +115,28 @@ def test_alertas_e_monitorados_renderizados_com_numero_brasileiro_e_estado_do_em
     assert "rq-estado-SEM_COTACAO" in html_render  # VALE3 sem cotação não vira "0,00%"
     assert "rq-estado-FALHOU" in html_render and "FALHA_ENVIO" not in html_render
     assert "16/10 12:31" in html_render  # horário de Brasília, não ISO UTC
+
+
+def test_ticker_das_tabelas_densas_e_clicavel():
+    """Achado P1 da auditoria 360 (docs/auditoria-redesign-360.md secao 4):
+    .rq-ticker tinha a MESMA cor/peso visual de "isto e' clicavel" usada
+    no ranking de MERCADO, mas era so' <span> sem destino nenhum - tanto
+    em MONITORADOS AGORA quanto em ALERTAS REGISTRADOS. Agora precisa ser
+    um link real (?ticker=X, lido por app.py via
+    ui.navegacao.ticker_da_url) pros dois casos."""
+    import data.radar_quedas as rq
+    resumo = {"Safra Corretora": {"ativos": 1, "verificado_em": "2026-10-17T10:00:00+00:00", "desatualizada": False,
+                                  "carteiras": ["Top 10 Ações"], "data_publicacao": "2026-10-01"}}
+    monitorados = rq.linhas_monitorados(
+        [{"casa": "Safra Corretora", "carteira": "Top 10 Ações", "ticker": "PETR4", "empresa": "Petrobras"}],
+        {"PETR4": {"preco": 36.10, "fechamento_anterior": 37.92, "erro": None}},
+    )
+    alertas = [{"ticker": "VALE3", "empresa": "Vale", "pregao": "2026-10-16", "variacao_pct": -4.7996,
+                "preco_atual": 60.0, "fechamento_anterior": 63.0, "casas": ["Safra Corretora"],
+                "carteiras": ["Top 10 Ações"], "fontes": [], "alertado_em": "2026-10-16T15:31:05+00:00",
+                "status": "ENVIADO"}]
+    html_render = _capturar_render(resumo, alertas=alertas, monitorados=monitorados)
+    assert "<a class='rq-ticker' href='?ticker=PETR4'>PETR4</a>" in html_render
+    assert "<a class='rq-ticker' href='?ticker=VALE3'>VALE3</a>" in html_render
+    # nenhum ticker sobrevive como <span> sem destino (regressao do achado original)
+    assert "<span class='rq-ticker'>" not in html_render

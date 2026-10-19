@@ -178,6 +178,16 @@ def rota_da_url(query_params) -> tuple | None:
     return area, sub
 
 
+def ticker_da_url(query_params) -> str | None:
+    """Ticker vindo de um link direto (?ticker=X), usado por tabelas HTML
+    densas sem widget real por linha (ex: ui/radar_tab.py - embutir
+    st.button por linha reintroduziria o problema de largura que motivou
+    essas tabelas serem HTML, ver docs/auditoria-redesign-360.md secao 4).
+    Quem consome isto (app.py) sempre abre em ANALISES > Empresas,
+    independente da aba/sub que a mesma URL também carregar."""
+    return (query_params.get("ticker") or "").strip().upper() or None
+
+
 def ir_para(area_id: str, sub_id: str | None = None, ticker: str | None = None):
     """Troca a rota (e opcionalmente preseleciona um ticker em ANALISES).
     Escreve nas chaves dos widgets da nav, entao so' pode rodar ANTES

@@ -96,6 +96,14 @@ def test_rota_da_url():
     assert navegacao.rota_da_url({"aba": "macro"}) == ("macro", None)
 
 
+def test_ticker_da_url():
+    assert navegacao.ticker_da_url({}) is None
+    assert navegacao.ticker_da_url({"ticker": ""}) is None
+    assert navegacao.ticker_da_url({"ticker": "  "}) is None
+    assert navegacao.ticker_da_url({"ticker": "petr4"}) == "PETR4"
+    assert navegacao.ticker_da_url({"aba": "radar", "ticker": "VALE3"}) == "VALE3"
+
+
 def test_app_despacha_todas_as_rotas():
     """Nenhuma subaba aponta pra pagina vazia: cada rota tem bloco no app.py."""
     fonte = (RAIZ / "app.py").read_text(encoding="utf-8")
