@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from data.research.itau_carteiras import CASA, CARTEIRA, parsear_artigo
+from data.research.itau_carteiras import CASA, CARTEIRA, _url_artigo_mes, parsear_artigo
 
 
 def test_parser_itau_top5_aceita_tabela_com_cinco_tickers():
@@ -44,3 +44,20 @@ def test_parser_itau_aceita_linhas_textuais_da_pagina_oficial():
     itens = parsear_artigo(html, "https://www.itau.com.br/investimentos/carteira-top-5-outubro-2026/", date(2026, 10, 19))
     assert itens is not None
     assert {x["ticker"] for x in itens} == {"EMBJ3", "XPBR31", "ENEV3", "SBSP3", "PETR4"}
+
+
+def test_localiza_link_oficial_da_carteira_do_mes():
+    html = """
+    <a href="/investimentos/carteiras-recomendadas/carteira-top-5-setembro-2026/">Setembro</a>
+    <a href="/investimentos/carteiras-recomendadas/carteira-top-5-outubro-2026/">Outubro</a>
+    <a href="/investimentos/carteiras-recomendadas/carteira-top-5-outubro-2025/">Ano anterior</a>
+    """
+    assert _url_artigo_mes(html, date(2026, 10, 19)) == "https://www.itau.com.br/investimentos/carteiras-recomendadas/carteira-top-5-outubro-2026/"
+
+
+def test_parser_itau_rejeita_composicao_incompleta():
+    html = """
+    <h1>Carteira Top 5 Outubro 2026</h1>
+    <p>Embraer (EMBJ3)</p><p>XP Inc. (XPBR31)</p><p>ENEVA (ENEV3)</p>
+    """
+    assert parsear_artigo(html, "https://www.itau.com.br/investimentos/carteira-top-5-outubro-2026/", date(2026, 10, 19)) is None
