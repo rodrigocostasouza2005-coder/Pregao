@@ -17,7 +17,7 @@ import config
 from data.ibovespa import obter_composicao_oficial
 from data.macro import obter_cdi
 from data.mercado import obter_cotacoes_lote, obter_mercados_globais
-from data.news import obter_top_mercado_tudo
+from data.news import obter_resumos_prontos, obter_top_mercado_tudo
 from data.prices import obter_cotacao, obter_cotacao_indice, obter_historico, obter_historico_intraday
 from ui import graficos, workspace
 from ui.mercado_tab import _painel_altas_baixas, _painel_globais, _painel_mais_negociados, _painel_setorial
@@ -193,7 +193,12 @@ def _painel_noticias_resumo(prefs):
         return
     # A visão geral é um resumo executivo, não o feed completo: quatro manchetes
     # no máximo, sem texto longo nem contexto extra. O feed completo fica em NEWS.
-    _renderizar_lista(itens[:_QTD_NOTICIAS], mostrar_ticker=True, prefixo="vg", watchlist=prefs.get("watchlist") or [])
+    try:
+        prontos = obter_resumos_prontos(itens[:_QTD_NOTICIAS])
+    except Exception:
+        prontos = {}
+    _renderizar_lista(itens[:_QTD_NOTICIAS], mostrar_ticker=True, prefixo="vg", watchlist=prefs.get("watchlist") or [],
+                      resumos_prontos=prontos)
 
 
 def _painel_watchlist_compacta(prefs):

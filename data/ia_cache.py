@@ -35,6 +35,7 @@ from data.supabase_client import obter_cliente
 _TABELA = "resumos_ia_cache"
 _ESPERA_TENTATIVAS = 10
 _ESPERA_INTERVALO_S = 1.0
+_LOTE_IN = 100  # chaves por SELECT ... IN(...) em obter_varios
 _ABANDONO_SEGUNDOS = 120  # reserva 'gerando' mais velha que isso e' tratada como processo morto
 
 # Estados de tabela_disponivel() - mesmo padrao de data/coletores_status.py
@@ -281,21 +282,29 @@ def obter_varios(chaves: list) -> dict:
     cliente = obter_cliente()
     if cliente is None:
         return {}
-    try:
-        resp = (
-            cliente.table(_TABELA)
-            .select("chave_documento,resultado,status")
-            .in_("chave_documento", list(dict.fromkeys(chaves)))
-            .eq("status", "concluido")
-            .execute()
-        )
-    except Exception:
-        return {}
-    return {
-        linha["chave_documento"]: linha["resultado"]
-        for linha in (resp.data or [])
-        if linha.get("resultado")
-    }
+    unicas = list(dict.fromkeys(chaves))
+    encontrados = {}
+    # lotes de _LOTE_IN chaves (2026-10-19): o feed lê 2 chaves por card
+    # (resumo + imagem) e o VER MAIS chega a 150 cards - um IN(...) único
+    # com 300 hashes de 64 chars passa de ~20KB de URL no GET do PostgREST.
+    # Até _LOTE_IN chaves (o caso normal) continua sendo 1 query só.
+    for inicio in range(0, len(unicas), _LOTE_IN):
+        try:
+            resp = (
+                cliente.table(_TABELA)
+                .select("chave_documento,resultado,status")
+                .in_("chave_documento", unicas[inicio:inicio + _LOTE_IN])
+                .eq("status", "concluido")
+                .execute()
+            )
+        except Exception:
+            continue
+        encontrados.update({
+            linha["chave_documento"]: linha["resultado"]
+            for linha in (resp.data or [])
+            if linha.get("resultado")
+        })
+    return encontrados
 
 
 def obter_resumo_com_cache(chave: str, link_principal: str, origem: str, gerar_fn) -> dict:
@@ -348,3 +357,43 @@ def obter_resumo_com_cache(chave: str, link_principal: str, origem: str, gerar_f
     if resultado_concorrente is not None:
         return resultado_concorrente
     return gerar_fn()
+
+
+# --- Registro de IMAGEM do grupo de NEWS (2026-10-19) ---------------------
+# Causa raiz das fotos ausentes no feed: a imagem só chegava ao cache
+# DENTRO do resultado de um resumo bem-sucedido (obter_resumo_com_cache só
+# grava resumo real, de propósito - falha de IA nunca vira definitiva). Sem
+# GROQ_API_KEY no coletor (achado de 2026-10-18), com cota esgotada ou com
+# matéria sem texto extraível (paywall/JS), a og:image já encontrada na
+# página era descartada junto com o resumo e nunca aparecia no card.
+# A imagem passa a ter um registro PRÓPRIO na mesma tabela (sem schema
+# novo): chave derivada da chave do resumo, origem 'news_imagem', status
+# 'concluido' e resultado = {imagem, imagem_status, verificada_em...}.
+# Nunca toca na linha do resumo (que continua seguindo as regras de
+# sempre) e é lido na MESMA query em lote de obter_varios.
+ORIGEM_IMAGEM_NEWS = "news_imagem"
+
+
+def chave_imagem_news(chave_resumo: str) -> str:
+    """Chave do registro de imagem de um grupo - derivada da chave do
+    resumo (mesma identidade de grupo: título + conjunto de fontes)."""
+    return hashlib.sha256(f"news_imagem:{chave_resumo}".encode("utf-8")).hexdigest()
+
+
+def salvar_registro_imagem(chave_img: str, link_principal: str, registro: dict) -> bool:
+    """Upsert idempotente (mesma chave -> mesma linha, nunca duplica) do
+    registro de imagem de um grupo. Falha do Supabase -> False com log
+    (nunca lança - a notícia e a coleta seguem sem a foto)."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return False
+    try:
+        cliente.table(_TABELA).upsert({
+            "chave_documento": chave_img, "origem": ORIGEM_IMAGEM_NEWS, "link_principal": link_principal,
+            "status": "concluido", "resultado": registro, "modelo": "",
+            "atualizado_em": _agora_iso(),
+        }, on_conflict="chave_documento").execute()
+        return True
+    except Exception as e:
+        print(f"[ia_cache] salvar_registro_imagem({chave_img[:12]}...) falhou: {type(e).__name__}")
+        return False

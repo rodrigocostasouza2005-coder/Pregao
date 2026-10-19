@@ -6395,3 +6395,17 @@ Pedido explícito do Rodrigo (prioridade máxima pra Genial Analisa): investigar
 **Arquivos alterados**: `data/research/genial.py`, `data/research/xp.py` (só docstring/comentário, nenhuma mudança de comportamento). Suíte completa: 800 passed (sem mudança, confirma que nada de funcional foi alterado). `python -m compileall` OK.
 
 **Pendências**: nenhuma de código. Externas, sem mudança: XP (contato `bloqueio-cdn@xpi.com.br`), Genial Analisa (nenhum canal de contato conhecido). PR aberto, sem merge (aguardando revisão do Rodrigo).
+
+## 2026-10-19 — Fotos das notícias: causa raiz (imagem presa ao resumo de IA) corrigida, validação com estado, UI
+
+Pedido do Rodrigo: resolver de vez as fotos das notícias (sem nova rodada só de diagnóstico).
+
+**Causa raiz confirmada no código**: a foto só chegava ao cache dentro de um resumo de IA bem-sucedido. Sem `GROQ_API_KEY` no coletor (run 39088619143), `pregerar_resumos_news` não baixa nada; com cota/paywall/resumo reprovado, a og:image achada era descartada. O feed só ganhava foto pelo pré-aquecimento de 3 cards por rerun na própria sessão do usuário. Secundárias: timeout na validação apagava a foto pra sempre (sem TTL); fallback do trafilatura aceitava a URL da própria matéria como foto; cache antigo com foto de banco de imagens continuava sendo exibido; og:image reciclada entre matérias diferentes; capa do modal sem recorte (retrato em altura total) e espremida em 64px no celular; imagem quebrada antes do listener instalar ficava visível; TOP MERCADO/VISÃO GERAL sem miniatura.
+
+**O que mudou**: registro próprio de imagem por grupo na mesma tabela (`origem='news_imagem'`, upsert idempotente, sem schema novo); `pregerar_imagens_news` no coletor (sem IA); `_verificar_imagem_url` com 3 estados; política de reavaliação por status; descarte de foto repetida entre assuntos diferentes; filtros reaplicados na leitura; UI (capa recortada, segunda via com fallback, miniatura wire, correção do CSS mobile e da corrida do fallback). `src/lib/connectors/meta-ads.ts` citado no pedido **não existe** neste repositório (projeto Python/Streamlit) — o fluxo real é `data/news.py` → `data/ia_cache.py` → `ui/news_tab.py`.
+
+**Testes**: `tests/test_news_imagens_pipeline.py` (38 casos, mocks). Suíte: 946 passed (908 antes). 3 testes antigos ajustados porque o contrato mudou de forma intencional (validador tri-state e campo `imagem_status` a mais no retorno) — nenhum removido.
+
+**Validação visual**: harness local (`docs/evidencias/imagens-news-20261019/`) com o código real de leitura/UI e dados SINTÉTICOS (8 matérias): 4 fotos corretas exibidas no lugar certo, 2 fotos repetidas entre assuntos diferentes descartadas, 1 sem foto e 1 URL quebrada com fallback; desktop 1440px e celular 390px sem rolagem horizontal.
+
+**Pendências reais**: (1) sem acesso a sites de notícia nem ao Supabase neste ambiente — nenhuma imagem REAL foi avaliada; (2) depois do merge/deploy, conferir no log do coletor a linha "imagens de NEWS: ..." (contagem por status) e abrir o app em produção conferindo título × foto em uma amostra; (3) registros `news_imagem` só começam a existir depois da primeira execução do coletor com este código.
