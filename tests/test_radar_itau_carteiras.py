@@ -15,7 +15,7 @@ def test_parser_itau_top5_aceita_tabela_com_cinco_tickers():
       <tr><th>Empresas</th><th>Recomendação</th><th>Peso</th></tr>
       <tr><td>Embraer (EMBJ3)</td><td>OP</td><td>20%</td></tr>
       <tr><td>XP Inc. (XPBR31)</td><td>OP</td><td>20%</td></tr>
-      <tr><td>Embraer (EMBJ3)</td><td>OP</td><td>20%</td></tr>
+      <tr><td>PETROBRAS (PETR4)</td><td>OP</td><td>20%</td></tr>
       <tr><td>Sabesp (SBSP3)</td><td>OP</td><td>20%</td></tr>
       <tr><td>Eneva (ENEV3)</td><td>OP</td><td>20%</td></tr>
     </table>
