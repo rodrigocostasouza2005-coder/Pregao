@@ -84,24 +84,39 @@ _FATORES_POR_TICKER = {
     "PRIO3": [("Petróleo Brent", "BZ=F"), ("Petróleo WTI", "CL=F"), ("USD/BRL", "USDBRL=X")],
     "BRAV3": [("Petróleo Brent", "BZ=F"), ("Petróleo WTI", "CL=F"), ("USD/BRL", "USDBRL=X")],
     "RECV3": [("Petróleo Brent", "BZ=F"), ("Petróleo WTI", "CL=F"), ("USD/BRL", "USDBRL=X")],
-    "VALE3": [("Minério de ferro (proxy)", "TIO=F"), ("USD/BRL", "USDBRL=X")],
+    "VALE3": [("Minério de ferro: série específica não validada", ""), ("USD/BRL", "USDBRL=X")],
     "SUZB3": [("Celulose: série específica não integrada", ""), ("USD/BRL", "USDBRL=X")],
     "KLBN11": [("Celulose: série específica não integrada", ""), ("USD/BRL", "USDBRL=X")],
     "JBSS3": [("Milho", "ZC=F"), ("Soja", "ZS=F"), ("Boi gordo (proxy)", "LE=F"), ("USD/BRL", "USDBRL=X")],
     "BEEF3": [("Milho", "ZC=F"), ("Soja", "ZS=F"), ("Boi gordo (proxy)", "LE=F"), ("USD/BRL", "USDBRL=X")],
     "MRFG3": [("Milho", "ZC=F"), ("Soja", "ZS=F"), ("Boi gordo (proxy)", "LE=F"), ("USD/BRL", "USDBRL=X")],
-    "GGBR4": [("Minério de ferro (proxy)", "TIO=F"), ("Sucata/aço: sem série integrada", ""), ("USD/BRL", "USDBRL=X")],
-    "CSNA3": [("Minério de ferro (proxy)", "TIO=F"), ("USD/BRL", "USDBRL=X")],
+    "GGBR4": [("Minério de ferro: série específica não validada", ""), ("Sucata/aço: sem série integrada", ""), ("USD/BRL", "USDBRL=X")],
+    "CSNA3": [("Minério de ferro: série específica não validada", ""), ("USD/BRL", "USDBRL=X")],
     "WEGE3": [("Cobre", "HG=F"), ("USD/BRL", "USDBRL=X")],
 }
 
-def _fmt_reais(valor, fmt):
-    if valor is None:
-        return "—"
+def _numero_finito(valor):
+    """Converte valores externos em float finito; dados ruins viram indisponíveis."""
     try:
-        return "R$ " + config.formatar_numero(float(valor), 2, fmt)
-    except (TypeError, ValueError):
+        numero = float(valor)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return numero if numero == numero and abs(numero) != float("inf") else None
+
+
+def _fmt_reais(valor, fmt):
+    numero = _numero_finito(valor)
+    if numero is None:
         return "—"
+    return "R$ " + config.formatar_numero(numero, 2, fmt)
+
+
+def _potencial_pct(preco_alvo, preco_atual):
+    alvo = _numero_finito(preco_alvo)
+    atual = _numero_finito(preco_atual)
+    if alvo is None or atual is None or atual <= 0 or alvo <= 0:
+        return None
+    return (alvo / atual - 1) * 100
 
 
 def _render_research_e_fatores(ticker: str, fmt: str):
@@ -119,7 +134,7 @@ def _render_research_e_fatores(ticker: str, fmt: str):
             alvo = atual.get("preco_alvo")
             cot = obter_cotacao(ticker)
             preco = cot.get("preco") if not cot.get("erro") else None
-            potencial = ((float(alvo) / float(preco) - 1) * 100) if preco and alvo and float(preco) > 0 else None
+            potencial = _potencial_pct(alvo, preco)
             cols = st.columns(3)
             cols[0].metric("PREÇO-ALVO GENIAL", _fmt_reais(alvo, fmt))
             cols[1].metric("PREÇO ATUAL", _fmt_reais(preco, fmt))
@@ -153,12 +168,13 @@ def _render_research_e_fatores(ticker: str, fmt: str):
                 linhas_fatores.append({"Fator": nome, "Cotação": "—", "Variação": "—", "Fonte/status": "Indisponível no provedor"})
                 continue
             preco_fator = dado.get("preco")
-            variacao_pct = dado.get("variacao_pct")
+            variacao_pct = _numero_finito(dado.get("variacao_pct"))
+            numero_fator = _numero_finito(preco_fator)
             linhas_fatores.append({
                 "Fator": nome,
-                "Cotação": _fmt_reais(preco_fator, fmt) if simbolo == "USDBRL=X" else (config.formatar_numero(float(preco_fator), 2, fmt) if preco_fator is not None else "—"),
-                "Variação": f"{float(variacao_pct):+.2f}%" if variacao_pct is not None else "—",
-                "Fonte/status": "Yahoo Finance · pode haver atraso",
+                "Cotação": _fmt_reais(numero_fator, fmt) if simbolo == "USDBRL=X" else (config.formatar_numero(numero_fator, 2, fmt) if numero_fator is not None else "—"),
+                "Variação": f"{variacao_pct:+.2f}%" if variacao_pct is not None else "—",
+                "Fonte/status": "Yahoo Finance · pode haver atraso" if numero_fator is not None else "Cotação indisponível",
             })
         st.dataframe(linhas_fatores, hide_index=True, width="stretch")
         st.caption("Relações são um mapa inicial de exposição econômica, não prova de causalidade. Algumas séries são proxies e devem ser refinadas; cotações podem estar atrasadas ou indisponíveis.")
