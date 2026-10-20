@@ -1,7 +1,7 @@
 """Testes das funções puras do painel Research & Fatores."""
 from datetime import date
 
-from ui.analises_tab import _FATORES_POR_TICKER, _alvo_positivo, _dias_desde_captura, _numero_finito, _potencial_pct
+from ui.analises_tab import _FATORES_POR_TICKER, _UNIDADE_FATOR, _alvo_positivo, _dias_desde_captura, _numero_finito, _potencial_pct
 
 
 def test_potencial_percentual_com_valores_validos():
@@ -48,3 +48,10 @@ def test_idade_do_preco_alvo_e_calculada_no_fuso_local():
     assert _dias_desde_captura("2026-10-20", date(2026, 10, 20)) == 0
     assert _dias_desde_captura(None, date(2026, 10, 20)) is None
     assert _dias_desde_captura("data inválida", date(2026, 10, 20)) is None
+
+ 
+def test_unidades_de_futuros_sao_explicitas():
+    assert _UNIDADE_FATOR["BZ=F"] == "US$/barril"
+    assert _UNIDADE_FATOR["USDBRL=X"] == "R$/US$"
+    assert _UNIDADE_FATOR["ZC=F"] == "¢/bushel"
+    assert _UNIDADE_FATOR["HG=F"] == "¢/lb"
