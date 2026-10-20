@@ -241,12 +241,14 @@ def obter_cotacao_indice(nome: str, symbol: str) -> dict:
         hist = _sem_barras_de_fim_de_semana(ticker_obj.history(period="5d", timeout=_TIMEOUT_YF))
         if len(hist) < 2:
             raise ValueError("histórico insuficiente retornado pelo yfinance")
-        preco = float(hist["Close"].iloc[-1])
-        fechamento_anterior = float(hist["Close"].iloc[-2])
-        if fechamento_anterior == 0:
-            raise ValueError("fechamento anterior zerado")
+        preco = _numero_finito(hist["Close"].iloc[-1])
+        fechamento_anterior = _numero_finito(hist["Close"].iloc[-2])
+        if preco is None or preco <= 0 or fechamento_anterior is None or fechamento_anterior <= 0:
+            raise ValueError("cotação/fechamento anterior do índice ausente ou inválido")
         variacao = preco - fechamento_anterior
         variacao_pct = (variacao / fechamento_anterior) * 100
+        if not math.isfinite(variacao) or not math.isfinite(variacao_pct):
+            raise ValueError("variação do índice inválida")
         resultado = {
             "nome": nome,
             "preco": preco,
