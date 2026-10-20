@@ -126,7 +126,8 @@ def _potencial_pct(preco_alvo, preco_atual):
     atual = _numero_finito(preco_atual)
     if alvo is None or atual is None or atual <= 0 or alvo <= 0:
         return None
-    return (alvo / atual - 1) * 100
+    potencial = (alvo / atual - 1) * 100
+    return potencial if _numero_finito(potencial) is not None else None
 
 
 def _alvo_positivo(snapshot):
