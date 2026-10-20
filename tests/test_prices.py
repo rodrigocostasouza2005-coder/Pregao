@@ -542,3 +542,19 @@ def test_obter_cotacao_indice_rejeita_fechamento_anterior_nao_finito():
         resultado = obter_cotacao_indice("TESTE_FECHAMENTO_NAN", "TESTE=X")
     assert "preco" not in resultado
     assert resultado.get("erro")
+
+
+def test_obter_cotacao_preserva_preco_quando_campos_auxiliares_ausentes():
+    class _TickerSemCamposAuxiliares:
+        def __init__(self, *_a, **_k):
+            self.fast_info = {"lastPrice": 11.0, "previousClose": 10.0}
+
+    with patch.object(prices_mod.yf, "Ticker", _TickerSemCamposAuxiliares):
+        resultado = obter_cotacao("TESTE_SEM_AUXILIARES_20261020")
+    assert resultado["preco"] == 11.0
+    assert resultado["variacao_pct"] == 10.0
+    assert resultado["maxima_dia"] is None
+    assert resultado["minima_dia"] is None
+    assert resultado["volume"] is None
+    assert resultado["maxima_52s"] is None
+    assert resultado["minima_52s"] is None
