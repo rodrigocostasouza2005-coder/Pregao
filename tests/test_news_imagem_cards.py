@@ -312,6 +312,20 @@ def test_5a_css_de_corte_e_dimensao_do_thumb_e_da_capa_continua_presente():
     _checar("5b CSS da capa do modal ainda define object-fit:cover", ".news-capa img" in css and "object-fit: cover" in css)
 
 
+def test_5b2_capa_do_modal_tem_altura_fixa_nao_so_aspect_ratio():
+    """Achado real (screenshot do modal em 1280px, 2026-10-19): .news-capa
+    com só `aspect-ratio: 16/9` e sem teto de altura virava uma imagem de
+    700px+ na largura cheia do dialog "large", empurrando manchete/resumo
+    pra fora da tela - a queixa real foi "a imagem dá 2 ou 3 textos".
+    Precisa de altura FIXA (não só aspect-ratio, que escala com a
+    largura sem limite) pra nunca mais dominar o card."""
+    css = news_tab_mod._CSS_WIRE
+    bloco = css[css.index(".news-capa {"):css.index(".news-capa {") + 700]
+    _checar("5b2 .news-capa define height (não só aspect-ratio)", "height: 220px" in bloco, bloco[:200])
+    _checar("5b2 .news-capa não depende só de aspect-ratio pra altura",
+            "aspect-ratio: 16" not in bloco)
+
+
 def test_5c_listener_global_de_fallback_cobre_tanto_thumb_quanto_capa():
     """O script injetado por injetar_fallback_imagem() precisa continuar
     escutando falha de carregamento tanto no thumb do feed quanto na

@@ -342,7 +342,13 @@ div[class*="st-key-news-live-card-"] {
    divisores em excesso (era a critica real do Rodrigo sobre o modal
    antigo parecer "log de depuracao"). */
 .news-capa {
-    width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid var(--borda);
+    /* achado real 2026-10-19 (screenshot real do modal): 16:9 sem teto de
+       altura, na largura cheia do dialog "large", virava uma imagem de
+       700px+ de altura - empurrava manchete/resumo pra fora da tela,
+       exatamente a queixa "a imagem dá 2 ou 3 textos". Altura fixa (como
+       o celular já fazia, ver media query abaixo) em vez de aspect-ratio
+       - cobre proporcional ao conteúdo, nunca dominante. */
+    width: 100%; height: 220px; overflow: hidden; border: 1px solid var(--borda);
     background: var(--painel-bg); margin-bottom: 0.7rem; border-radius: 2px;
 }
 .news-capa img { width: 100%; height: 100%; object-fit: cover; display: block; }
