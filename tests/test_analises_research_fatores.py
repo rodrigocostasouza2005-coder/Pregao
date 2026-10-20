@@ -3,8 +3,8 @@ from ui.analises_tab import _FATORES_POR_TICKER, _alvo_positivo, _numero_finito,
 
 
 def test_potencial_percentual_com_valores_validos():
-    assert _potencial_pct(120, 100) == 20
-    assert _potencial_pct(80, 100) == -20
+    assert abs(_potencial_pct(120, 100) - 20) < 1e-9
+    assert abs(_potencial_pct(80, 100) + 20) < 1e-9
 
 
 def test_potencial_nao_calcula_com_preco_ausente_ou_invalido():
