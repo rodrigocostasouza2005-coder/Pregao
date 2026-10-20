@@ -133,9 +133,12 @@ def _linha_papel(df: pd.DataFrame, ticker: str, symbol: str) -> dict | None:
         fechamento_anterior = float(fechamentos.iloc[-2])
         if not math.isfinite(preco) or preco <= 0 or not math.isfinite(fechamento_anterior) or fechamento_anterior <= 0:
             return None
-        volume = pd.to_numeric(sub["Volume"], errors="coerce")
-        volume = volume.replace([float("inf"), float("-inf")], float("nan")).dropna()
-        volume_hoje = float(volume.iloc[-1]) if len(volume) else 0.0
+        # O volume deve corresponder ao candle do último preço válido.
+        # Não usar o último volume não nulo: se o volume de hoje vier inf/NaN,
+        # isso reaproveitaria silenciosamente o volume de um dia anterior.
+        volume_bruto = sub["Volume"].reindex([fechamentos.index[-1]]).iloc[0]
+        volume_numero = pd.to_numeric(pd.Series([volume_bruto]), errors="coerce").iloc[0]
+        volume_hoje = float(volume_numero) if pd.notna(volume_numero) else 0.0
         if not math.isfinite(volume_hoje) or volume_hoje < 0:
             volume_hoje = 0.0
         variacao_pct = (preco - fechamento_anterior) / fechamento_anterior * 100
