@@ -14,6 +14,7 @@ def test_potencial_nao_calcula_com_preco_ausente_ou_invalido():
     assert _potencial_pct("indisponível", 100) is None
     assert _potencial_pct(100, 0) is None
     assert _potencial_pct(-10, 100) is None
+    assert _potencial_pct(1e308, 1e-308) is None
 
 
 def test_numero_finito_rejeita_nan_e_infinito():
