@@ -9,7 +9,7 @@ obter_indicadores, Yahoo Finance, cache de 12h) - receita, lucro e fluxo
 de caixa em serie historica nao existem em nenhuma fonte integrada, e a
 tela diz isso em vez de estimar."""
 
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import streamlit as st
@@ -137,6 +137,25 @@ def _alvo_positivo(snapshot):
     return alvo if alvo is not None and alvo > 0 else None
 
 
+def _dias_desde_captura(valor, hoje=None):
+    """Idade em dias do registro persistido; None se a data não for legível."""
+    if not valor:
+        return None
+    try:
+        texto = str(valor).strip()
+        instante = datetime.fromisoformat(texto.replace("Z", "+00:00"))
+        if instante.tzinfo is None:
+            instante = instante.replace(tzinfo=TZ_SP)
+        data_registro = instante.astimezone(TZ_SP).date()
+    except (TypeError, ValueError, OverflowError):
+        try:
+            data_registro = date.fromisoformat(str(valor)[:10])
+        except (TypeError, ValueError, OverflowError):
+            return None
+    referencia = hoje or datetime.now(TZ_SP).date()
+    return (referencia - data_registro).days
+
+
 def _render_research_e_fatores(ticker: str, fmt: str):
     """Mostra apenas alvos realmente persistidos e cotações de fatores mapeados."""
     with st.container(border=True):
@@ -160,7 +179,11 @@ def _render_research_e_fatores(ticker: str, fmt: str):
             cols[0].metric("PREÇO-ALVO GENIAL", _fmt_reais(alvo_atual, fmt))
             cols[1].metric("PREÇO ATUAL", _fmt_reais(preco, fmt))
             cols[2].metric("POTENCIAL INDICATIVO", f"{potencial:+.1f}%" if potencial is not None else "—")
-            st.caption(f"Último registro persistido: {ultimo.get('capturado_em', 'data indisponível')}. O histórico registra mudanças, não necessariamente o relatório mais recente.")
+            captura = ultimo.get("capturado_em")
+            st.caption(f"Último registro persistido: {captura or 'data indisponível'}. O histórico registra mudanças, não necessariamente o relatório mais recente.")
+            idade_alvo = _dias_desde_captura(captura)
+            if idade_alvo is not None and idade_alvo > 90:
+                st.warning(f"Preço-alvo registrado há {idade_alvo} dias. Pode estar desatualizado; confirme a nota original da Genial antes de usar.")
         else:
             st.info("O registro mais recente não contém preço-alvo positivo válido. Um alvo histórico anterior não será apresentado como se fosse o atual.")
         st.caption("Fonte estruturada disponível nesta tela: Genial. Não há consenso multi-casa calculado enquanto os alvos comparáveis das demais casas não estiverem integrados.")
