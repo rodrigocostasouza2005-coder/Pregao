@@ -15,7 +15,8 @@ on:
     - cron: "4,19,34,49 13-19 * * 1-5"
     - cron: "4 20 * * 1-5"
     # Morning Call - 08:03 BRT (UTC-3, sem horario de verao desde 2019)
-    # + 3 disparos de reserva. O envio e' idempotente por dia e por
+    # + 7 disparos de reserva distribuídos até 09:47 BRT para reduzir o
+    # risco de atraso/perda do cron. O envio e' idempotente por dia e por
     # destinatario (jobs/morning_call.py:_ja_enviado_hoje): o primeiro que
     # o GitHub entregar envia, os seguintes so' confirmam "ja enviado".
     - cron: "3 11 * * 1-5"
