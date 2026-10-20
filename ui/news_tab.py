@@ -614,6 +614,105 @@ div[class*="st-key-news-live-card-"] {
     .news-headline { font-size: 1rem; }
     .news-corpo-p { font-size: 0.88rem; max-width: none; }
 }
+
+/* Redesign editorial do modal NOTÍCIA — visual mais próximo de um terminal
+   financeiro, sem alterar a lógica dos dados nem os links existentes. */
+div[data-testid="stDialog"] > div {
+    border: 1px solid #28313a !important;
+    border-radius: 14px !important;
+    background: linear-gradient(180deg, #090d11 0%, #050607 100%) !important;
+    box-shadow: 0 18px 60px rgba(0,0,0,.48) !important;
+}
+div[data-testid="stDialog"] [data-testid="stDialogHeader"] {
+    padding: 0.8rem 1.15rem 0.55rem !important;
+    border-bottom: 1px solid #202830 !important;
+}
+div[data-testid="stDialog"] .news-capa {
+    height: clamp(170px, 27vh, 280px) !important;
+    border-radius: 10px !important;
+    border: 1px solid #27313a !important;
+    margin-bottom: 0.85rem !important;
+    background: #0c1116 !important;
+}
+div[data-testid="stDialog"] .news-capa img {
+    object-fit: cover !important;
+    object-position: center 38% !important;
+}
+div[data-testid="stDialog"] .news-headline {
+    font-size: clamp(1.15rem, 2vw, 1.65rem) !important;
+    line-height: 1.22 !important;
+    letter-spacing: -0.025em !important;
+    font-weight: 750 !important;
+    margin: 0.15rem 0 0.55rem !important;
+    max-width: 34ch !important;
+}
+div[data-testid="stDialog"] .news-meta-line {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 0.2rem 0.65rem !important;
+    padding-bottom: 0.65rem !important;
+    margin-bottom: 0.7rem !important;
+    border-bottom: 1px solid #202830 !important;
+    font-size: 0.72rem !important;
+}
+div[data-testid="stDialog"] .news-resumo-rotulo {
+    color: #7f8b96 !important;
+    font-size: 0.66rem !important;
+    letter-spacing: .12em !important;
+    margin-bottom: 0.5rem !important;
+}
+div[data-testid="stDialog"] .news-corpo-p {
+    max-width: 78ch !important;
+    font-size: 0.96rem !important;
+    line-height: 1.72 !important;
+    color: #d9e0e7 !important;
+    margin-bottom: 0.9rem !important;
+}
+div[data-testid="stDialog"] .news-parcial-nota {
+    padding-left: 0.65rem !important;
+    border-left: 2px solid #f5a623 !important;
+    font-size: 0.72rem !important;
+    line-height: 1.5 !important;
+}
+div[data-testid="stDialog"] a[href][target="_blank"] {
+    transition: color .15s ease, border-color .15s ease !important;
+}
+div[data-testid="stDialog"] a.w-abrir-link,
+div[data-testid="stDialog"] a[href][target="_blank].news-open-link {
+    color: #ffad28 !important;
+}
+div[data-testid="stDialog"] [data-testid="stLinkButton"] a,
+div[data-testid="stDialog"] a:has(span) {
+    border-color: #f5a623 !important;
+}
+div[data-testid="stDialog"] .news-secundario {
+    border-top: 1px solid #26303a !important;
+    margin-top: 1rem !important;
+    padding-top: 0.75rem !important;
+    color: #87929d !important;
+}
+div[data-testid="stDialog"] .news-secundario a {
+    color: #ffad28 !important;
+}
+@media (max-width: 640px) {
+    div[data-testid="stDialog"] > div {
+        border-radius: 10px !important;
+    }
+    div[data-testid="stDialog"] .news-capa {
+        height: 150px !important;
+        margin-bottom: 0.6rem !important;
+    }
+    div[data-testid="stDialog"] .news-headline {
+        font-size: 1.08rem !important;
+        max-width: none !important;
+    }
+    div[data-testid="stDialog"] .news-corpo-p {
+        font-size: 0.86rem !important;
+        line-height: 1.55 !important;
+    }
+}
+
 """
 
 
