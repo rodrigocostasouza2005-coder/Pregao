@@ -929,7 +929,7 @@ _ESTILO_TABELA_BASE = [
     ("BOTTOMPADDING", (0, 0), (-1, -1), 4.0),
     ("LINEBELOW", (0, 0), (-1, 0), 0.8, TINTA),
     ("LINEBELOW", (0, 1), (-1, -1), 0.3, FILETE),
-    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F7F5F0")]),
+    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [HexColor("#FFFFFF"), HexColor("#F7F5F0")]),
 ]
 
 
