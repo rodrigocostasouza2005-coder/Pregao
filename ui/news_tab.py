@@ -1003,10 +1003,11 @@ def _abrir_card(n: dict, watchlist: list):
             st.markdown(f"<div class='news-corpo-p'>{html.escape(p)}</div>", unsafe_allow_html=True)
         qualidade_texto = resultado.get("qualidade_texto")
         if qualidade_texto == "full_text":
-            aviso_evidencia = (
-                "Resumo gerado a partir do texto extraído de uma matéria. "
-                "Confira a fonte original para contexto adicional."
-            )
+            # texto integral de verdade - nenhum aviso de "parcial" (bug real
+            # corrigido 2026-10-19: a versao anterior mostrava uma nota aqui
+            # tambem, na mesma div .news-parcial-nota das notas de ressalva,
+            # dando a falsa impressao de que o full_text tambem era parcial).
+            aviso_evidencia = None
         elif qualidade_texto == "partial_text":
             aviso_evidencia = (
                 "Leitura parcial: resumo baseado em fragmentos de texto extraídos "
