@@ -2953,7 +2953,17 @@ _TTL_REAVALIAR_IMAGEM = {
     STATUS_IMAGEM_REPETIDA: timedelta(hours=72),
 }
 _MAX_TENTATIVAS_IMAGEM = 4
-_MAX_FONTES_IMAGEM = 2
+# 2->3 (2026-10-19, auditoria de "muitas noticias sem imagem"): com 2,
+# um grupo cujas 2 fontes mais prioritarias (ver _fontes_para_imagem)
+# calham de ser as mesmas bloqueadas sempre (Reuters/FT, confirmado
+# nesta auditoria com rede real - 403/erro HTTP mesmo fora do sandbox)
+# nunca chega a tentar uma 3a fonte do MESMO fato que podia ter imagem
+# acessivel. ordenar_fontes_para_resumo ja prioriza fontes mais
+# confiaveis primeiro - a 3a fonte ainda e' plausivelmente boa, so'
+# mais uma chance antes de desistir. Custo: +1 fetch nos casos em que
+# as 2 primeiras ja falharam (nao nos que acertam de primeira) - dentro
+# do orcamento de _ORCAMENTO_PREGERAR_IMAGENS_S por execucao.
+_MAX_FONTES_IMAGEM = 3
 _ORCAMENTO_PREGERAR_IMAGENS_S = 3 * 60
 _MAX_IMAGENS_POR_EXECUCAO = 30
 
