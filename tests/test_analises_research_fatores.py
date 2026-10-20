@@ -62,3 +62,11 @@ def test_unidades_de_futuros_sao_explicitas():
 def test_rotulo_coleta_nao_quebra_com_timestamp_malformado():
     assert _rotulo_coleta({"roe": 0.12, "_coletado_em": 123}) == "—"
     assert _rotulo_coleta({"roe": 0.12, "_coletado_em": "data inválida"}) == "—"
+
+
+def test_rotulo_coleta_interpreta_timestamp_sem_fuso_como_horario_de_brasilia():
+    assert _rotulo_coleta({"roe": 0.12, "_coletado_em": "2026-10-20T09:15:00"}) == "20/10 09:15"
+
+
+def test_rotulo_coleta_converte_timestamp_com_fuso_para_brasilia():
+    assert _rotulo_coleta({"roe": 0.12, "_coletado_em": "2026-10-20T12:15:00+00:00"}) == "20/10 09:15"
