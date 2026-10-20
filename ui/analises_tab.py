@@ -179,6 +179,7 @@ def _render_research_e_fatores(ticker: str, fmt: str):
             cols[0].metric("PREÇO-ALVO GENIAL", _fmt_reais(alvo_atual, fmt))
             cols[1].metric("PREÇO ATUAL", _fmt_reais(preco, fmt))
             cols[2].metric("POTENCIAL INDICATIVO", f"{potencial:+.1f}%" if potencial is not None else "—")
+            st.caption("Preço do ativo consultado no Yahoo Finance; o atraso pode variar. O potencial é indicativo e usa o último preço retornado, não uma cotação executável.")
             captura = ultimo.get("capturado_em")
             st.caption(f"Último registro persistido: {captura or 'data indisponível'}. O histórico registra mudanças, não necessariamente o relatório mais recente.")
             idade_alvo = _dias_desde_captura(captura)
