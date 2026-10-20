@@ -119,6 +119,14 @@ def _potencial_pct(preco_alvo, preco_atual):
     return (alvo / atual - 1) * 100
 
 
+def _alvo_positivo(snapshot):
+    """Preço-alvo do snapshot informado, sem recorrer a registros antigos."""
+    if not isinstance(snapshot, dict):
+        return None
+    alvo = _numero_finito(snapshot.get("preco_alvo"))
+    return alvo if alvo is not None and alvo > 0 else None
+
+
 def _render_research_e_fatores(ticker: str, fmt: str):
     """Mostra apenas alvos realmente persistidos e cotações de fatores mapeados."""
     with st.container(border=True):
@@ -133,8 +141,8 @@ def _render_research_e_fatores(ticker: str, fmt: str):
             if (_numero_finito(s.get("preco_alvo")) or 0) > 0
         ]
         ultimo = snapshots[0] if snapshots else None
-        alvo_atual = _numero_finito(ultimo.get("preco_alvo")) if ultimo else None
-        if alvo_atual is not None and alvo_atual > 0:
+        alvo_atual = _alvo_positivo(ultimo)
+        if alvo_atual is not None:
             cot = obter_cotacao(ticker)
             preco = cot.get("preco") if not cot.get("erro") else None
             potencial = _potencial_pct(alvo_atual, preco)
