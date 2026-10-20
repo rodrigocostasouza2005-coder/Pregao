@@ -72,3 +72,33 @@ def obter_usuarios_admin(email_admin: str, cliente=None) -> list[dict] | None:
         print(f"[admin_usuarios] falha ao listar usuarios: {exc!r}")
         return None
     return usuarios
+
+
+def diagnosticar_usuarios_admin(email_admin: str, cliente=None) -> dict:
+    """Causa REAL de obter_usuarios_admin ter voltado None - achado real
+    (2026-10-19): a UI (ui/usuarios_tab.py) mostrava sempre a mesma
+    mensagem genérica "Supabase indisponível" pra qualquer motivo de
+    falha, inclusive os que NÃO são o Supabase estar fora do ar (ex:
+    `created_at`/`last_seen_at` são colunas adicionadas em
+    sql/schema.sql - "alter table ... add column if not exists" -
+    nunca aplicadas automaticamente; se ninguém rodou essa migração no
+    banco de produção, o SELECT falha com "column does not exist", um
+    erro real do Postgres/PostgREST que fica indistinguível de
+    "Supabase caiu" pra quem olha só a mensagem genérica). Não repete a
+    consulta inteira - um SELECT mínimo (1 linha) já expõe o mesmo erro
+    de schema/RLS que a consulta paginada completa encontraria.
+
+    Retorna {"ok": bool, "etapa": str, "detalhe": str}. etapa in
+    ("NAO_ADMIN", "SEM_CREDENCIAL", "CONSULTA"). Nunca lança exceção -
+    é só diagnóstico, não deve derrubar a página por conta própria."""
+    if not _admin_autorizado(email_admin):
+        return {"ok": False, "etapa": "NAO_ADMIN", "detalhe": "e-mail fora da lista de administradores"}
+    cliente = cliente if cliente is not None else obter_cliente()
+    if cliente is None:
+        return {"ok": False, "etapa": "SEM_CREDENCIAL",
+                "detalhe": "obter_cliente() retornou None - SUPABASE_URL/SUPABASE_SECRET_KEY ausentes ou chave pública"}
+    try:
+        cliente.table("user_prefs").select("sub,email,preferencias,created_at,last_seen_at").limit(1).execute()
+    except Exception as exc:
+        return {"ok": False, "etapa": "CONSULTA", "detalhe": repr(exc)}
+    return {"ok": True, "etapa": "", "detalhe": ""}
