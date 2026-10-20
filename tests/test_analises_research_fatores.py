@@ -1,5 +1,5 @@
 """Testes das funções puras do painel Research & Fatores."""
-from ui.analises_tab import _FATORES_POR_TICKER, _alvo_positivo, _numero_finito, _potencial_pct
+from ui.analises_tab import _FATORES_POR_TICKER, _UNIDADE_FATOR, _alvo_positivo, _numero_finito, _potencial_pct
 
 
 def test_potencial_percentual_com_valores_validos():
@@ -39,3 +39,10 @@ def test_alvo_atual_nao_reaproveita_snapshot_anterior():
     assert _alvo_positivo({"preco_alvo": 0}) is None
     assert _alvo_positivo({"preco_alvo": "NaN"}) is None
     assert _alvo_positivo(None) is None
+
+ 
+def test_unidades_de_futuros_sao_explicitas():
+    assert _UNIDADE_FATOR["BZ=F"] == "US$/barril"
+    assert _UNIDADE_FATOR["USDBRL=X"] == "R$/US$"
+    assert _UNIDADE_FATOR["ZC=F"] == "¢/bushel"
+    assert _UNIDADE_FATOR["HG=F"] == "¢/lb"
