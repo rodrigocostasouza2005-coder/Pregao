@@ -141,8 +141,8 @@ def obter_cotacao(ticker: str) -> dict:
             "maxima_dia": maxima_dia,
             "minima_dia": minima_dia,
             "volume": volume,
-            "maxima_52s": fi["yearHigh"],
-            "minima_52s": fi["yearLow"],
+            "maxima_52s": _numero_finito_positivo(fi["yearHigh"]),
+            "minima_52s": _numero_finito_positivo(fi["yearLow"]),
             "erro": None,
         }
     except Exception as e:
