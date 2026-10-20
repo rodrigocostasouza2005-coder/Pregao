@@ -128,19 +128,25 @@ def _render_research_e_fatores(ticker: str, fmt: str):
             snapshots = historico_ticker("genial", ticker, limite=5)
         except Exception:
             snapshots = []
-        validos = [s for s in snapshots if s.get("preco_alvo") is not None]
-        if validos:
-            atual = validos[0]
-            alvo = atual.get("preco_alvo")
+        validos = [
+            s for s in snapshots
+            if (_numero_finito(s.get("preco_alvo")) or 0) > 0
+        ]
+        ultimo = snapshots[0] if snapshots else None
+        alvo_atual = _numero_finito(ultimo.get("preco_alvo")) if ultimo else None
+        if alvo_atual is not None and alvo_atual > 0:
             cot = obter_cotacao(ticker)
             preco = cot.get("preco") if not cot.get("erro") else None
-            potencial = _potencial_pct(alvo, preco)
+            potencial = _potencial_pct(alvo_atual, preco)
             cols = st.columns(3)
-            cols[0].metric("PREÇO-ALVO GENIAL", _fmt_reais(alvo, fmt))
+            cols[0].metric("PREÇO-ALVO GENIAL", _fmt_reais(alvo_atual, fmt))
             cols[1].metric("PREÇO ATUAL", _fmt_reais(preco, fmt))
             cols[2].metric("POTENCIAL INDICATIVO", f"{potencial:+.1f}%" if potencial is not None else "—")
-            st.caption(f"Último registro persistido: {atual.get('capturado_em', 'data indisponível')}. O histórico registra mudanças, não necessariamente o relatório mais recente.")
-            st.caption("Fonte estruturada disponível nesta tela: Genial. Não há consenso multi-casa calculado enquanto os alvos comparáveis das demais casas não estiverem integrados.")
+            st.caption(f"Último registro persistido: {ultimo.get('capturado_em', 'data indisponível')}. O histórico registra mudanças, não necessariamente o relatório mais recente.")
+        else:
+            st.info("O registro mais recente não contém preço-alvo positivo válido. Um alvo histórico anterior não será apresentado como se fosse o atual.")
+        st.caption("Fonte estruturada disponível nesta tela: Genial. Não há consenso multi-casa calculado enquanto os alvos comparáveis das demais casas não estiverem integrados.")
+        if validos:
             st.markdown("**Histórico recente de preço-alvo e recomendação**")
             linhas = []
             for s in validos:
@@ -151,8 +157,8 @@ def _render_research_e_fatores(ticker: str, fmt: str):
                     "Preço-alvo": _fmt_reais(s.get("preco_alvo"), fmt),
                 })
             st.dataframe(linhas, hide_index=True, width="stretch")
-        else:
-            st.info("Ainda não há preço-alvo estruturado e persistido para este ticker. Não será estimado nem preenchido com dados de outra fonte.")
+        elif not snapshots:
+            st.info("Ainda não há preço-alvo estruturado e persistido para este ticker.")
         fatores = _FATORES_POR_TICKER.get(ticker, [])
         if not fatores:
             st.caption("Ainda não há mapeamento curado de commodities/fatores para este ticker.")
