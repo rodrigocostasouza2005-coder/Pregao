@@ -1,5 +1,5 @@
 """Testes das funções puras do painel Research & Fatores."""
-from ui.analises_tab import _FATORES_POR_TICKER, _numero_finito, _potencial_pct
+from ui.analises_tab import _FATORES_POR_TICKER, _alvo_positivo, _numero_finito, _potencial_pct
 
 
 def test_potencial_percentual_com_valores_validos():
@@ -31,3 +31,11 @@ def test_petroleiras_tem_brent_e_cambio():
     fatores = dict(_FATORES_POR_TICKER["PETR4"])
     assert fatores["Petróleo Brent"] == "BZ=F"
     assert fatores["USD/BRL"] == "USDBRL=X"
+
+
+def test_alvo_atual_nao_reaproveita_snapshot_anterior():
+    assert _alvo_positivo({"preco_alvo": 35.5}) == 35.5
+    assert _alvo_positivo({"preco_alvo": None}) is None
+    assert _alvo_positivo({"preco_alvo": 0}) is None
+    assert _alvo_positivo({"preco_alvo": "NaN"}) is None
+    assert _alvo_positivo(None) is None
