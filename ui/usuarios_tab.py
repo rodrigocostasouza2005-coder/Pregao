@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 import streamlit as st
 
 import config
-from data.admin_usuarios import obter_usuarios_admin
+from data.admin_usuarios import diagnosticar_usuarios_admin, obter_usuarios_admin
 
 _ROTULO_STATUS = {
     "inscrito": "Inscrito",
@@ -205,10 +205,20 @@ def render_usuarios(usuario: dict):
 
     usuarios = obter_usuarios_admin(usuario["email"])
     if usuarios is None:
+        # achado real (2026-10-19): a mensagem genérica de "Supabase
+        # indisponível" aparecia pra QUALQUER motivo de falha, inclusive
+        # os que não são o banco estar fora do ar (ex: coluna ausente por
+        # migração de sql/schema.sql nunca aplicada em produção - erro
+        # real do Postgres, não "Supabase caiu"). diagnosticar_usuarios_admin
+        # expõe a causa real pra quem é admin (só admin vê este painel
+        # mesmo); não troca a consulta real, só diagnostica o motivo.
+        diagnostico = diagnosticar_usuarios_admin(usuario["email"])
         st.warning(
-            "Não foi possível carregar os dados agora (Supabase indisponível). "
+            "Não foi possível carregar os dados agora. "
             "O resto do Pregão continua funcionando normalmente - tente de novo em instantes."
         )
+        if diagnostico["etapa"] == "CONSULTA":
+            st.caption(f"Detalhe técnico (visível só pra admin): {diagnostico['detalhe']}")
         return
     if not usuarios:
         st.info("Nenhum usuário identificado ainda.")

@@ -128,3 +128,54 @@ def test_paginacao_percorre_todas_as_paginas(monkeypatch):
 
     assert len(resultado) == tamanho_pagina + 1
     assert cliente.table.return_value.select.return_value.range.return_value.execute.call_count == 2
+
+
+# ---------------------------------------------------------------------
+# diagnosticar_usuarios_admin - causa REAL de obter_usuarios_admin==None
+# (achado real 2026-10-19: a UI mostrava "Supabase indisponível" pra
+# qualquer falha, inclusive erro de schema/coluna ausente - ver
+# docstring de diagnosticar_usuarios_admin).
+# ---------------------------------------------------------------------
+
+def test_diagnostico_nao_admin_nao_consulta_banco(monkeypatch):
+    monkeypatch.setattr(admin_usuarios.config, "obter_emails_admin", lambda: [_ADMIN])
+    cliente = MagicMock()
+
+    diagnostico = admin_usuarios.diagnosticar_usuarios_admin(_NAO_ADMIN, cliente=cliente)
+
+    assert diagnostico == {"ok": False, "etapa": "NAO_ADMIN", "detalhe": "e-mail fora da lista de administradores"}
+    cliente.table.assert_not_called()
+
+
+def test_diagnostico_sem_cliente_identifica_credencial_ausente(monkeypatch):
+    monkeypatch.setattr(admin_usuarios.config, "obter_emails_admin", lambda: [_ADMIN])
+    with patch.object(admin_usuarios, "obter_cliente", return_value=None):
+        diagnostico = admin_usuarios.diagnosticar_usuarios_admin(_ADMIN)
+    assert diagnostico["ok"] is False
+    assert diagnostico["etapa"] == "SEM_CREDENCIAL"
+
+
+def test_diagnostico_expoe_o_erro_real_do_postgres_nao_so_generico(monkeypatch):
+    """O caso real que motivou isto: coluna ausente por migração de
+    sql/schema.sql nunca aplicada em produção - erro real do Postgres,
+    não 'Supabase caiu'. O admin precisa ver ESSE texto, não um genérico."""
+    monkeypatch.setattr(admin_usuarios.config, "obter_emails_admin", lambda: [_ADMIN])
+    cliente = MagicMock()
+    erro_real = Exception('column user_prefs.last_seen_at does not exist')
+    cliente.table.return_value.select.return_value.limit.return_value.execute.side_effect = erro_real
+
+    diagnostico = admin_usuarios.diagnosticar_usuarios_admin(_ADMIN, cliente=cliente)
+
+    assert diagnostico["ok"] is False
+    assert diagnostico["etapa"] == "CONSULTA"
+    assert "last_seen_at" in diagnostico["detalhe"]
+
+
+def test_diagnostico_ok_quando_consulta_minima_funciona(monkeypatch):
+    monkeypatch.setattr(admin_usuarios.config, "obter_emails_admin", lambda: [_ADMIN])
+    cliente = MagicMock()
+    cliente.table.return_value.select.return_value.limit.return_value.execute.return_value = _resp([])
+
+    diagnostico = admin_usuarios.diagnosticar_usuarios_admin(_ADMIN, cliente=cliente)
+
+    assert diagnostico == {"ok": True, "etapa": "", "detalhe": ""}
