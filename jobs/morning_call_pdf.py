@@ -226,7 +226,7 @@ def _estilos():
     estilo("fonte", fontName=F["PregaoSans"], fontSize=6.9, leading=9, textColor=CINZA, spaceBefore=3)
     estilo("nota", fontName=F["PregaoSans"], fontSize=7.2, leading=9.8, textColor=CINZA)
     estilo("aviso", fontName=F["PregaoSerifItalico"], fontSize=9.4, leading=12.9, textColor=CINZA)
-    estilo("tabela", fontName=F["PregaoSans"], fontSize=8, leading=10.2)
+    estilo("tabela", fontName=F["PregaoSans"], fontSize=8.1, leading=10.6)
     estilo("tabela_num", fontName=F["PregaoMono"], fontSize=8, leading=10.2, alignment=TA_RIGHT)
     estilo("tabela_num_texto", fontName=F["PregaoSans"], fontSize=8, leading=10.2, alignment=TA_RIGHT,
            textColor=CINZA)
@@ -240,7 +240,7 @@ def _estilos():
     estilo("radar_rotulo", fontName=F["PregaoSansNegrito"], fontSize=6.4, leading=8, textColor=CINZA,
            spaceBefore=4, spaceAfter=1.5)
     estilo("subtitulo_secao", fontName=F["PregaoSansNegrito"], fontSize=7.2, leading=9.5, textColor=TINTA,
-           spaceBefore=4, spaceAfter=5)
+           spaceBefore=6, spaceAfter=6)
     return e
 
 
@@ -925,10 +925,11 @@ _ESTILO_TABELA_BASE = [
     ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
     ("LEFTPADDING", (0, 0), (-1, -1), 0),
     ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-    ("TOPPADDING", (0, 0), (-1, -1), 3.2),
-    ("BOTTOMPADDING", (0, 0), (-1, -1), 3.2),
-    ("LINEBELOW", (0, 0), (-1, 0), 0.6, TINTA),
+    ("TOPPADDING", (0, 0), (-1, -1), 4.0),
+    ("BOTTOMPADDING", (0, 0), (-1, -1), 4.0),
+    ("LINEBELOW", (0, 0), (-1, 0), 0.8, TINTA),
     ("LINEBELOW", (0, 1), (-1, -1), 0.3, FILETE),
+    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F7F5F0")]),
 ]
 
 
