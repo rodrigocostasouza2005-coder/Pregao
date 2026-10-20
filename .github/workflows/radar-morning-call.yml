@@ -20,8 +20,12 @@ on:
     # o GitHub entregar envia, os seguintes so' confirmam "ja enviado".
     - cron: "3 11 * * 1-5"
     - cron: "17 11 * * 1-5"
+    - cron: "27 11 * * 1-5"
     - cron: "38 11 * * 1-5"
+    - cron: "52 11 * * 1-5"
     - cron: "7 12 * * 1-5"
+    - cron: "27 12 * * 1-5"
+    - cron: "47 12 * * 1-5"
   workflow_dispatch:
     inputs:
       job:
