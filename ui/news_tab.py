@@ -233,13 +233,17 @@ div[class*="st-key-top-manchete-"] button p {
     div[data-testid="stColumn"]:has(.w-thumb) { display: none !important; }
 }
 .news-item-thumb-wrap {
-    position: relative; width: 60px; height: 60px; flex: 0 0 60px;
+    /* redesign 2026-10-19 (pedido explícito: capa pequena demais, "mesma
+       formatação de antes") - de 60x60 (quadrado, quase ícone) pra 4:3
+       de verdade, área visualmente relevante sem empilhar acima do texto
+       (mantém lado a lado, card continua compacto em altura). */
+    position: relative; width: 72px; height: 54px; flex: 0 0 72px;
     border: 1px solid var(--borda); background: var(--painel-bg); overflow: hidden;
 }
 .news-item-thumb-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .news-item-thumb-fallback {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    color: var(--cinza); font-size: 0.85rem; font-weight: 700; letter-spacing: 0.02em;
+    color: var(--cinza); font-size: 1.1rem; font-weight: 700; letter-spacing: 0.02em;
     font-family: 'IBM Plex Mono', monospace;
 }
 .news-item-meta {
@@ -247,9 +251,20 @@ div[class*="st-key-top-manchete-"] button p {
     margin-top: 0.18rem; line-height: 1.5;
 }
 .news-item-resumo {
-    font-size: 0.78rem; color: var(--neutro); opacity: 0.86; line-height: 1.45; margin-top: 0.3rem;
+    /* separação visual real do bloco de manchete/meta acima (pedido:
+       "resumo editorial visualmente separado da manchete") - antes era
+       só um margin-top com opacidade, sem nenhuma fronteira visual. */
+    font-size: 0.78rem; color: var(--neutro); opacity: 0.86; line-height: 1.45;
+    margin-top: 0.4rem; padding-top: 0.4rem; border-top: 1px solid var(--borda);
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
+.news-ia-chip {
+    display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem;
+    font-weight: 700; letter-spacing: 0.05em; color: var(--cinza); opacity: 0.8;
+    border: 1px solid var(--borda); padding: 0.02rem 0.3rem; margin-right: 0.4rem;
+    vertical-align: 1px; -webkit-box-orient: horizontal; /* nunca corta dentro do clamp acima */
+}
+.news-ia-chip-fraco { opacity: 0.55; }
 /* FIX (2026-10-08, causa raiz real - achado novo, nao e' repeticao das 2
    tentativas descartadas em sessoes anteriores, documentadas no
    BACKLOG.md): o bug de sobreposicao do card de noticia (meta/resumo
@@ -406,9 +421,9 @@ div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) {
     overflow: visible !important;
 }
 div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) > div[data-testid="stColumn"]:first-child {
-    flex: 0 0 60px !important;
-    width: 60px !important;
-    min-width: 60px !important;
+    flex: 0 0 72px !important;
+    width: 72px !important;
+    min-width: 72px !important;
 }
 div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) > div[data-testid="stColumn"]:last-child {
     flex: 1 1 0% !important;
@@ -416,8 +431,8 @@ div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) > div[data-testi
     min-width: 0 !important;
 }
 .news-item-thumb-wrap {
-    width: 60px;
-    height: 60px;
+    width: 72px;
+    height: 54px;
 }
 .news-item-meta {
     display: flex;
@@ -483,13 +498,13 @@ div[class*="st-key-news-live-card-"] {
         gap: 0.6rem !important;
     }
     div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) > div[data-testid="stColumn"]:first-child {
-        flex-basis: 54px !important;
-        width: 54px !important;
-        min-width: 54px !important;
+        flex-basis: 64px !important;
+        width: 64px !important;
+        min-width: 64px !important;
     }
     .news-item-thumb-wrap {
-        width: 54px;
-        height: 54px;
+        width: 64px;
+        height: 48px;
     }
     div[class*="st-key-news-card-titulo-"] button {
         font-size: 0.88rem !important;
@@ -516,13 +531,13 @@ div[class*="st-key-news-live-card-"] {
 }
 @media (max-width: 380px) {
     div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) > div[data-testid="stColumn"]:first-child {
-        flex-basis: 46px !important;
-        width: 46px !important;
-        min-width: 46px !important;
+        flex-basis: 56px !important;
+        width: 56px !important;
+        min-width: 56px !important;
     }
     .news-item-thumb-wrap {
-        width: 46px;
-        height: 46px;
+        width: 56px;
+        height: 42px;
     }
     .news-item-meta { font-size: 0.62rem; }
 }
@@ -1350,6 +1365,30 @@ def _meta_noticia_html(n: dict, mostrar_ticker: bool, watchlist: list) -> str:
     return f"<div class='news-item-meta'>{' · '.join(p for p in partes if p)}</div>"
 
 
+_TOOLTIP_QUALIDADE_IA = {
+    "full_text": "Gerado por IA a partir do texto completo da matéria",
+    "partial_text": "Gerado por IA — leitura parcial (fragmentos de texto)",
+    "snippet_only": "Gerado por IA — só manchetes, sem o corpo da matéria",
+    "extraction_failed": "Gerado por IA — sem texto suficiente da fonte",
+}
+
+
+def _rotulo_ia_chip_html(resultado: dict) -> str:
+    """Selo discreto 'IA' no teaser do card do feed (pedido explícito:
+    indicador de qualidade do resumo visível no CARD, não só dentro do
+    modal ao clicar) - tooltip reaproveita a mesma distinção de
+    qualidade_texto já usada no aviso do modal (_abrir_card), só que
+    condensada num title em vez de um parágrafo. Opacidade reduzida
+    (news-ia-chip-fraco) quando a evidência por trás é fraca (sem corpo
+    de matéria nenhum) - "discreto mas claro" não pode virar "escondido"
+    justo no caso em que mais importa avisar."""
+    qualidade = resultado.get("qualidade_texto")
+    fraco = qualidade in ("snippet_only", "extraction_failed")
+    tooltip = _TOOLTIP_QUALIDADE_IA.get(qualidade, "Gerado por IA")
+    classe = "news-ia-chip news-ia-chip-fraco" if fraco else "news-ia-chip"
+    return f"<span class='{classe}' title='{html.escape(tooltip)}'>IA</span>"
+
+
 def _cartao_noticia(n: dict, idx: int, mostrar_ticker: bool, prefixo: str, watchlist: list, resultado: dict | None):
     """Card editorial de UMA noticia/grupo - foto+resumo so' quando
     `resultado` ja vier preenchido (leitura em lote feita 1x pro feed
@@ -1369,10 +1408,9 @@ def _cartao_noticia(n: dict, idx: int, mostrar_ticker: bool, prefixo: str, watch
             _abrir_card(n, watchlist)
         st.markdown(_meta_noticia_html(n, mostrar_ticker, watchlist), unsafe_allow_html=True)
         if resultado and resultado.get("resumo"):
-            st.markdown(
-                f"<div class='news-item-resumo'>{html.escape(_resumo_teaser(resultado['resumo']))}</div>",
-                unsafe_allow_html=True,
-            )
+            chip = _rotulo_ia_chip_html(resultado)
+            teaser = html.escape(_resumo_teaser(resultado["resumo"]))
+            st.markdown(f"<div class='news-item-resumo'>{chip}{teaser}</div>", unsafe_allow_html=True)
     st.markdown("<div class='news-divider'></div>", unsafe_allow_html=True)
 
 
