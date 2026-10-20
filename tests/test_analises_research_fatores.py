@@ -1,5 +1,7 @@
 """Testes das funções puras do painel Research & Fatores."""
-from ui.analises_tab import _FATORES_POR_TICKER, _alvo_positivo, _numero_finito, _potencial_pct
+from datetime import date
+
+from ui.analises_tab import _FATORES_POR_TICKER, _alvo_positivo, _dias_desde_captura, _numero_finito, _potencial_pct
 
 
 def test_potencial_percentual_com_valores_validos():
@@ -39,3 +41,10 @@ def test_alvo_atual_nao_reaproveita_snapshot_anterior():
     assert _alvo_positivo({"preco_alvo": 0}) is None
     assert _alvo_positivo({"preco_alvo": "NaN"}) is None
     assert _alvo_positivo(None) is None
+
+ 
+def test_idade_do_preco_alvo_e_calculada_no_fuso_local():
+    assert _dias_desde_captura("2026-10-01T12:00:00-03:00", date(2026, 10, 20)) == 19
+    assert _dias_desde_captura("2026-10-20", date(2026, 10, 20)) == 0
+    assert _dias_desde_captura(None, date(2026, 10, 20)) is None
+    assert _dias_desde_captura("data inválida", date(2026, 10, 20)) is None
