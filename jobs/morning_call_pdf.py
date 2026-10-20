@@ -208,10 +208,10 @@ def _estilos():
         base.update(kw)
         e[nome] = ParagraphStyle(nome, **base)
 
-    estilo("manchete_capa", fontName=F["PregaoDisplay"], fontSize=31, leading=33.5, spaceAfter=7)
-    estilo("linha_fina_capa", fontName=F["PregaoDisplayItalico"], fontSize=13.2, leading=17.4,
+    estilo("manchete_capa", fontName=F["PregaoDisplay"], fontSize=29, leading=31.5, spaceAfter=6)
+    estilo("linha_fina_capa", fontName=F["PregaoDisplayItalico"], fontSize=12.5, leading=16.2,
            textColor=TINTA_SUAVE, spaceAfter=10)
-    estilo("manchete_abre", fontName=F["PregaoDisplaySemi"], fontSize=20, leading=23, spaceAfter=5)
+    estilo("manchete_abre", fontName=F["PregaoDisplaySemi"], fontSize=19, leading=22, spaceAfter=5)
     estilo("linha_fina", fontName=F["PregaoDisplayItalico"], fontSize=11.2, leading=14.6,
            textColor=TINTA_SUAVE, spaceAfter=7)
     estilo("manchete", fontName=F["PregaoDisplaySemi"], fontSize=14, leading=16.6, spaceAfter=4)
@@ -1115,16 +1115,16 @@ def _desenhar_masthead(c, agora):
     c.drawString(MARGEM_X, topo - 7, _espacar("MORNING CALL"))
     c.setFont(F["PregaoSans"], 7.2)
     c.setFillColor(CINZA)
-    c.drawRightString(PAGINA_LARGURA - MARGEM_X, topo - 7, "Edição das 8h · São Paulo")
+    c.drawRightString(PAGINA_LARGURA - MARGEM_X, topo - 7, "PRÉ-ABERTURA · SÃO PAULO")
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, topo - 12, PAGINA_LARGURA - MARGEM_X, topo - 12)
 
     c.setFillColor(TINTA)
-    c.setFont(F["PregaoDisplay"], 58)
-    c.drawCentredString(PAGINA_LARGURA / 2, topo - 66, _espacar("PREGÃO"))
+    c.setFont(F["PregaoDisplay"], 52)
+    c.drawCentredString(PAGINA_LARGURA / 2, topo - 62, _espacar("PREGÃO"))
 
-    y_regua = topo - 82
+    y_regua = topo - 78
     c.setStrokeColor(TINTA)
     c.setLineWidth(1.8)
     c.line(MARGEM_X, y_regua, PAGINA_LARGURA - MARGEM_X, y_regua)
@@ -1137,7 +1137,7 @@ def _desenhar_masthead(c, agora):
     c.setFont(F["PregaoSans"], 7.2)
     c.setFillColor(CINZA)
     c.drawRightString(PAGINA_LARGURA - MARGEM_X, y_regua - 12.5,
-                      f"Dados até {agora.strftime('%H:%M')}, horário de Brasília")
+                      f"Edição gerada às {agora.strftime('%H:%M')}, horário de Brasília")
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, y_regua - 19, PAGINA_LARGURA - MARGEM_X, y_regua - 19)
