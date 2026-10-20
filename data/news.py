@@ -1363,7 +1363,25 @@ def _resolver_link_real(link_google_news: str):
     veiculo, cujo link ja e' a URL real - gnewsdecoder so entende o
     formato de redirect do Google e devolve falha pra qualquer outra
     URL (bug real: media alta de "link nao resolvido" nessas fontes,
-    quando na verdade nunca precisava resolver nada)."""
+    quando na verdade nunca precisava resolver nada).
+
+    1 retry curto (backoff 1.5s, mesmo padrao ja' usado em
+    data/ibovespa.py pra falha transitoria da B3) - achado real
+    (investigacao de confiabilidade 2026-10-19, reproduzido ao vivo
+    contra a materia real "Reforma Fiscal: 4 em 10 empresas sem IBS/
+    CBS", rbtv.com.br): o decoder faz 2 chamadas HTTP de verdade ao
+    Google (GoogleDecoder.get_decoding_params + _batchexecute, biblioteca
+    googlenewsdecoder) SEM nenhum retry proprio - qualquer soluco
+    transitorio (timeout, erro de rede) em qualquer uma delas falha a
+    decodificacao inteira na hora, mesmo quando o MESMO link resolve
+    normalmente segundos depois (confirmado nesta investigacao: 1
+    falha em 10 tentativas identicas, sem nenhuma mudanca de condicao
+    aparente). Isso derruba o card inteiro pro fallback mais fraco
+    (sintese so' de manchete, "parcial"=True) por uma falha que nao
+    tem nada a ver com a fonte estar bloqueada ou indisponivel de
+    verdade - ver data/ia_cache.py:obter_resumo_com_cache pro outro
+    lado do mesmo problema (resultado parcial fica cacheado pra
+    sempre, nunca tenta de novo)."""
     if not link_google_news:
         return None
     try:
@@ -1374,13 +1392,16 @@ def _resolver_link_real(link_google_news: str):
         return link_google_news
     if gnewsdecoder is None:
         return None
-    try:
-        resultado = gnewsdecoder(link_google_news, interval=1)
-    except Exception:
-        return None
-    if not resultado or not resultado.get("success"):
-        return None
-    return resultado.get("decoded_url") or None
+    for tentativa in (1, 2):
+        try:
+            resultado = gnewsdecoder(link_google_news, interval=1)
+        except Exception:
+            resultado = None
+        if resultado and resultado.get("success") and resultado.get("decoded_url"):
+            return resultado["decoded_url"]
+        if tentativa == 1:
+            time.sleep(1.5)
+    return None
 
 
 # limiar bem mais baixo que o antigo (200 chars): materia curta de

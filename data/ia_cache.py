@@ -36,6 +36,7 @@ _TABELA = "resumos_ia_cache"
 _ESPERA_TENTATIVAS = 10
 _ESPERA_INTERVALO_S = 1.0
 _ABANDONO_SEGUNDOS = 120  # reserva 'gerando' mais velha que isso e' tratada como processo morto
+_PARCIAL_NOVA_TENTATIVA_SEGUNDOS = 6 * 3600  # 6h - ver _parcial_elegivel_para_nova_tentativa
 
 # Estados de tabela_disponivel() - mesmo padrao de data/coletores_status.py
 # (achado real 2026-10-13: tabela ausente e credencial/RLS invalida
@@ -193,6 +194,43 @@ def _linha_abandonada(linha: dict) -> bool:
     return (datetime.now(timezone.utc) - criado).total_seconds() > _ABANDONO_SEGUNDOS
 
 
+def _parcial_elegivel_para_nova_tentativa(linha: dict) -> bool:
+    """Resumo "parcial" (ver data/news.py:_gerar_resumo_grupo -
+    qualidade_texto "partial_text"/"snippet_only", nenhum texto
+    completo de materia foi lido) pode ter ficado assim por uma falha
+    TRANSITORIA na extracao (ex: 1 soluco pontual no decode do Google
+    News - ver data/news.py:_resolver_link_real), nao por a fonte estar
+    bloqueada/indisponivel de verdade pra sempre. Sem isso,
+    obter_resumo_com_cache trata "parcial" exatamente igual a um
+    resumo de texto completo: cacheado como status="concluido" PRA
+    SEMPRE, mesmo que a extracao completa volte a funcionar segundos/
+    minutos depois (achado real, investigacao de confiabilidade
+    2026-10-19 - reproduzido ao vivo: a materia real "Reforma Fiscal: 4
+    em 10 empresas sem IBS/CBS" extrai o texto completo (4547
+    caracteres) em 4 de 4 tentativas diretas, mas uma falha pontual no
+    decode, sem retry na epoca, teria bastado pra cacheiar a sintese
+    mais fraca pra sempre).
+
+    Reavalia no MAXIMO 1x a cada _PARCIAL_NOVA_TENTATIVA_SEGUNDOS (nao
+    a cada leitura/visita do card - cada reavaliacao custa 1 nova
+    tentativa de extracao real + 1 chamada real ao Groq, nao e' gratis;
+    ver docstring de obter_resumo_com_cache). Nunca apaga nem perde o
+    resultado parcial ja' cacheado: se a nova tentativa tambem nao
+    produzir resumo (fonte realmente bloqueada, Groq fora do ar etc),
+    quem chama continua servindo o parcial anterior - so' SUBSTITUI
+    quando a nova tentativa realmente devolve algo melhor."""
+    resultado = linha.get("resultado") or {}
+    if not resultado.get("parcial"):
+        return False
+    try:
+        atualizado = datetime.fromisoformat(str(linha["atualizado_em"]).replace("Z", "+00:00"))
+    except (KeyError, ValueError, TypeError):
+        return False
+    if atualizado.tzinfo is None:
+        atualizado = atualizado.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - atualizado).total_seconds() > _PARCIAL_NOVA_TENTATIVA_SEGUNDOS
+
+
 def _reservar_geracao(cliente, chave: str, link_principal: str, origem: str) -> bool:
     """INSERT puro (nunca upsert) - True so' se EU criei a linha agora
     (nenhuma linha existia ainda pra essa chave). O UNIQUE/PRIMARY KEY
@@ -298,6 +336,23 @@ def obter_varios(chaves: list) -> dict:
     }
 
 
+def _servir_ou_renovar_parcial(cliente, chave: str, linha: dict, gerar_fn) -> dict:
+    """Devolve o resultado ja' cacheado - a MENOS que seja "parcial" e
+    elegivel pra nova tentativa (ver _parcial_elegivel_para_nova_
+    tentativa), caso em que tenta gerar de novo primeiro. So'
+    SUBSTITUI o cache se a nova tentativa realmente devolver um resumo
+    (nunca troca algo cacheado por nada); se a nova tentativa falhar
+    ou continuar parcial, o resultado antigo e' servido normalmente -
+    nunca perde o que ja' tinha."""
+    resultado_cacheado = linha["resultado"]
+    if _parcial_elegivel_para_nova_tentativa(linha):
+        resultado_novo = gerar_fn()
+        if resultado_novo.get("resumo"):
+            _salvar_resultado(cliente, chave, resultado_novo, resultado_novo.get("modelo") or "")
+            return resultado_novo
+    return resultado_cacheado
+
+
 def obter_resumo_com_cache(chave: str, link_principal: str, origem: str, gerar_fn) -> dict:
     """Ponto de entrada unico (Research e News): verifica cache -> se
     nao houver, tenta reservar a geracao -> se perder a corrida, espera
@@ -307,7 +362,15 @@ def obter_resumo_com_cache(chave: str, link_principal: str, origem: str, gerar_f
     etapa cai direto pro fluxo atual (gerar_fn()), nunca quebra o
     resumo. So' persiste no cache quando gerar_fn() retornar resumo!=
     None (falha de IA/extracao nunca fica "cacheada" como se fosse
-    definitiva - pode funcionar numa proxima tentativa)."""
+    definitiva - pode funcionar numa proxima tentativa).
+
+    Resultado "parcial" (resultado["parcial"]=True - ver data/news.py:
+    qualidade_texto) tambem NAO fica cacheado como definitivo pra
+    sempre: ver _servir_ou_renovar_parcial/_parcial_elegivel_para_nova_
+    tentativa (achado real, investigacao de confiabilidade 2026-10-19 -
+    antes desta correcao, um resumo parcial causado por uma falha
+    transitoria na extracao ficava cacheado exatamente igual a um
+    resumo de texto completo, sem nunca tentar de novo)."""
     cliente = obter_cliente()
     if cliente is None:
         # achado real 2026-10-15 (continuacao): este bypass e' silencioso
@@ -326,7 +389,7 @@ def obter_resumo_com_cache(chave: str, link_principal: str, origem: str, gerar_f
         linha = None
 
     if linha is not None and linha.get("status") == "concluido" and linha.get("resultado"):
-        return linha["resultado"]
+        return _servir_ou_renovar_parcial(cliente, chave, linha, gerar_fn)
 
     if linha is None:
         if _reservar_geracao(cliente, chave, link_principal, origem):
@@ -342,7 +405,7 @@ def obter_resumo_com_cache(chave: str, link_principal: str, origem: str, gerar_f
             return gerar_fn()
 
     if linha.get("status") == "concluido" and linha.get("resultado"):
-        return linha["resultado"]
+        return _servir_ou_renovar_parcial(cliente, chave, linha, gerar_fn)
 
     resultado_concorrente = _esperar_geracao_concorrente(cliente, chave)
     if resultado_concorrente is not None:

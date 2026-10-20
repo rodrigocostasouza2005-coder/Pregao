@@ -153,6 +153,88 @@ def test_1_cache_hit_zero_chamada_ia():
 
 
 # ============================================================
+# 1-PARCIAL. "parcial" cacheado NAO fica definitivo pra sempre (achado
+# real, investigacao de confiabilidade 2026-10-19 - ver docstring de
+# _parcial_elegivel_para_nova_tentativa/_servir_ou_renovar_parcial)
+# ============================================================
+
+def test_1p_parcial_recente_serve_do_cache_sem_tentar_de_novo():
+    cliente = _ClienteFake()
+    cliente.linhas["chaveParcial1"] = {
+        "chave_documento": "chaveParcial1", "status": "concluido",
+        "resultado": {"resumo": "síntese fraca", "parcial": True, "qualidade_texto": "snippet_only"},
+        "criado_em": ia_cache_mod._agora_iso(), "atualizado_em": ia_cache_mod._agora_iso(),
+    }
+    chamadas = []
+    with patch.object(ia_cache_mod, "obter_cliente", return_value=cliente):
+        resultado = ia_cache_mod.obter_resumo_com_cache(
+            "chaveParcial1", "https://x.com", "news", lambda: chamadas.append(1) or {"resumo": "novo"},
+        )
+    _checar("1p-a parcial recente (< 6h) serve do cache sem gerar de novo",
+            resultado == {"resumo": "síntese fraca", "parcial": True, "qualidade_texto": "snippet_only"})
+    _checar("1p-b gerar_fn nao foi chamado (reavaliacao custa Groq real, nao e' de graca)", chamadas == [])
+
+
+def test_1q_parcial_antigo_elegivel_tenta_de_novo_e_substitui_se_melhorar():
+    cliente = _ClienteFake()
+    antigo = (datetime.now(timezone.utc) - timedelta(hours=7)).isoformat().replace("+00:00", "Z")
+    cliente.linhas["chaveParcial2"] = {
+        "chave_documento": "chaveParcial2", "status": "concluido",
+        "resultado": {"resumo": "síntese fraca", "parcial": True, "qualidade_texto": "snippet_only"},
+        "criado_em": antigo, "atualizado_em": antigo,
+    }
+    chamadas = []
+
+    def _gerar():
+        chamadas.append(1)
+        return {"resumo": "texto completo de verdade", "parcial": False, "qualidade_texto": "full_text"}
+
+    with patch.object(ia_cache_mod, "obter_cliente", return_value=cliente):
+        resultado = ia_cache_mod.obter_resumo_com_cache("chaveParcial2", "https://x.com", "news", _gerar)
+    _checar("1q-a parcial antigo (> 6h) elegivel tenta gerar de novo", chamadas == [1])
+    _checar("1q-b resultado novo (melhor) e' devolvido no lugar do parcial antigo",
+            resultado == {"resumo": "texto completo de verdade", "parcial": False, "qualidade_texto": "full_text"})
+    _checar("1q-c cache foi atualizado com o resultado novo",
+            cliente.linhas["chaveParcial2"]["resultado"]["parcial"] is False)
+
+
+def test_1r_parcial_antigo_nova_tentativa_falha_mantem_o_parcial_anterior():
+    """Nunca perde um resultado ja' cacheado so' porque a nova tentativa
+    nao produziu nada (fonte ainda bloqueada, Groq fora do ar etc)."""
+    cliente = _ClienteFake()
+    antigo = (datetime.now(timezone.utc) - timedelta(hours=7)).isoformat().replace("+00:00", "Z")
+    cliente.linhas["chaveParcial3"] = {
+        "chave_documento": "chaveParcial3", "status": "concluido",
+        "resultado": {"resumo": "síntese fraca", "parcial": True, "qualidade_texto": "snippet_only"},
+        "criado_em": antigo, "atualizado_em": antigo,
+    }
+    with patch.object(ia_cache_mod, "obter_cliente", return_value=cliente):
+        resultado = ia_cache_mod.obter_resumo_com_cache(
+            "chaveParcial3", "https://x.com", "news", lambda: {"resumo": None},
+        )
+    _checar("1r-a nova tentativa sem sucesso ainda devolve o parcial antigo (nunca 'sem resumo nenhum')",
+            resultado == {"resumo": "síntese fraca", "parcial": True, "qualidade_texto": "snippet_only"})
+    _checar("1r-b cache NAO foi sobrescrito com o resultado vazio da nova tentativa",
+            cliente.linhas["chaveParcial3"]["resultado"]["parcial"] is True)
+
+
+def test_1s_resultado_completo_nunca_dispara_nova_tentativa_mesmo_antigo():
+    cliente = _ClienteFake()
+    antigo = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat().replace("+00:00", "Z")
+    cliente.linhas["chaveCompleta"] = {
+        "chave_documento": "chaveCompleta", "status": "concluido",
+        "resultado": {"resumo": "texto completo", "parcial": False, "qualidade_texto": "full_text"},
+        "criado_em": antigo, "atualizado_em": antigo,
+    }
+    chamadas = []
+    with patch.object(ia_cache_mod, "obter_cliente", return_value=cliente):
+        ia_cache_mod.obter_resumo_com_cache(
+            "chaveCompleta", "https://x.com", "news", lambda: chamadas.append(1) or {"resumo": "x"},
+        )
+    _checar("1s resumo completo (parcial=False) nunca reavalia, mesmo com 48h de idade", chamadas == [])
+
+
+# ============================================================
 # 2. cache miss -> gera e persiste
 # ============================================================
 

@@ -113,6 +113,51 @@ def test_1e_falha_ao_baixar_pagina():
     _checar("1r motivo cita a falha ao acessar a materia", "acessar a matéria" in (motivo or ""), f"(motivo={motivo!r})")
 
 
+def test_1e2_http_403_cai_pro_fallback_trafilatura_sem_quebrar():
+    """Checklist explicito da investigacao de confiabilidade 2026-10-19:
+    HTTP 403/401 (bloqueio por robots/anti-bot) e' um RequestException
+    (response.raise_for_status() levanta HTTPError, subclasse de
+    RequestException - mesmo except generico de 1e acima ja cobre, este
+    teste so' nomeia o caso explicitamente pra ficar verificavel). Cai
+    pro 2o metodo de download (trafilatura.fetch_url) como qualquer
+    outra falha HTTP - se esse tambem falhar, None com motivo, nunca
+    tenta burlar o bloqueio."""
+    with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/bloqueado"), \
+         patch.object(news_mod.requests, "get",
+                       side_effect=news_mod.requests.exceptions.HTTPError("403 Client Error: Forbidden")), \
+         patch.object(news_mod.trafilatura, "fetch_url", return_value=None):
+        texto, imagem, link_real, motivo = news_mod._extrair_texto_artigo("https://news.google.com/403")
+    _checar("1e2-a HTTP 403 -> texto None (nunca tenta contornar o bloqueio)", texto is None)
+    _checar("1e2-b motivo explica a falha HTTP", "acessar a matéria" in (motivo or ""), f"(motivo={motivo!r})")
+
+
+def test_1e3_timeout_cai_pro_fallback_trafilatura_sem_quebrar():
+    with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/lento"), \
+         patch.object(news_mod.requests, "get", side_effect=news_mod.requests.exceptions.Timeout("mock timeout")), \
+         patch.object(news_mod.trafilatura, "fetch_url", return_value=None):
+        texto, imagem, link_real, motivo = news_mod._extrair_texto_artigo("https://news.google.com/timeout")
+    _checar("1e3-a timeout -> texto None (nao fica pendurado pra sempre)", texto is None)
+    _checar("1e3-b motivo explica a falha", motivo is not None)
+
+
+def test_1e4_pagina_intermediaria_sem_conteudo_editorial_suficiente():
+    """Pagina que carrega (200 OK) mas e' um interstitial/consentimento/
+    login (HTML real, mas sem materia nenhuma dentro) - trafilatura
+    extrai pouco ou nada, cai no mesmo tratamento de "conteudo curto
+    demais" que qualquer outra pagina sem texto aproveitavel."""
+    html_interstitial = "<html><body><div id='cookie-consent'>Aceite os cookies para continuar</div></body></html>"
+    with patch.object(news_mod, "_resolver_link_real", return_value="https://veiculo.com/consentimento"), \
+         patch.object(news_mod.requests, "get") as mock_get, \
+         patch.object(news_mod.trafilatura, "extract", return_value=None):
+        mock_resp = mock_get.return_value.__enter__.return_value
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.headers = {"Content-Type": "text/html"}
+        mock_resp.text = html_interstitial
+        mock_resp.url = "https://veiculo.com/consentimento"
+        texto, imagem, link_real, motivo = news_mod._extrair_texto_artigo("https://news.google.com/consent")
+    _checar("1e4 pagina intermediaria sem materia -> texto None, nunca inventa conteudo", texto is None)
+
+
 def test_1g_link_ja_direto_nao_passa_pelo_decoder_do_google():
     """Regressao 2026-10-15: o pool internacional (MarketWatch/CNBC/etc)
     le RSS proprio de cada veiculo, cujo link JA e' a URL real - nao um
@@ -137,6 +182,42 @@ def test_1h_link_do_google_news_ainda_usa_o_decoder():
     _checar("1w link do Google News continua sendo decodificado normalmente",
             resultado == "https://veiculo.com/real")
     _checar("1x decoder chamado exatamente 1x pro link do Google", mock_decoder.call_count == 1)
+
+
+def test_1h2_falha_transitoria_na_1a_tentativa_resolve_na_2a(monkeypatch):
+    """Achado real (investigacao de confiabilidade 2026-10-19,
+    reproduzido ao vivo contra a materia real "Reforma Fiscal: 4 em 10
+    empresas sem IBS/CBS", rbtv.com.br): gnewsdecoder as vezes falha
+    por soluco transitorio (sem exception especifica - so' nao retorna
+    sucesso) e o MESMO link resolve normalmente segundos depois. 1
+    retry (backoff 1.5s, mesmo padrao de data/ibovespa.py) evita que
+    uma falha pontual derrube o card pro fallback mais fraco a toa."""
+    link_google = "https://news.google.com/rss/articles/CBMi_exemplo?oc=5"
+    chamadas = []
+
+    def _decoder_flaky(*_a, **_k):
+        chamadas.append(1)
+        if len(chamadas) == 1:
+            return {"success": False, "message": "soluço transitório"}
+        return {"success": True, "decoded_url": "https://veiculo.com/real"}
+
+    sleeps = []
+    with patch.object(news_mod, "gnewsdecoder", side_effect=_decoder_flaky), \
+         patch.object(news_mod.time, "sleep", side_effect=lambda s: sleeps.append(s)):
+        resultado = news_mod._resolver_link_real(link_google)
+    _checar("1y falha transitoria na 1a tentativa ainda resolve o link na 2a",
+            resultado == "https://veiculo.com/real")
+    _checar("1z decoder chamado exatamente 2x (1a falhou, 2a resolveu)", len(chamadas) == 2)
+    _checar("1aa backoff de 1,5s entre as tentativas", sleeps == [1.5])
+
+
+def test_1h3_falha_nas_2_tentativas_devolve_none_sem_terceira():
+    link_google = "https://news.google.com/rss/articles/CBMi_exemplo?oc=5"
+    with patch.object(news_mod, "gnewsdecoder", return_value={"success": False}) as mock_decoder, \
+         patch.object(news_mod.time, "sleep"):
+        resultado = news_mod._resolver_link_real(link_google)
+    _checar("1ab 2 falhas seguidas devolvem None (nao fica tentando pra sempre)", resultado is None)
+    _checar("1ac decoder chamado exatamente 2x, nunca uma 3a", mock_decoder.call_count == 2)
 
 
 def test_1f_link_nao_resolvido():
