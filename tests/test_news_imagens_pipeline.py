@@ -310,6 +310,43 @@ def test_08c_foto_da_materia_da_manchete_tem_prioridade():
     assert ordem[0] == "https://news.google.com/manchete"
 
 
+def test_08c2_terceira_fonte_e_tentada_quando_as_2_primeiras_nao_tem_foto():
+    """Achado real (auditoria 2026-10-19, rede real): um grupo cujas 2
+    fontes mais prioritárias calham de ser as mesmas bloqueadas sempre
+    (ex: Reuters/FT) nunca chegava a tentar uma 3ª fonte do MESMO fato
+    que podia ter imagem acessível - _MAX_FONTES_IMAGEM subiu de 2 pra
+    3 por causa disso. Confirma que a 3ª fonte É tentada e seu resultado
+    é usado."""
+    g = _grupo("Fed sinaliza cautela com juros", "https://news.google.com/f1",
+               outras=("https://news.google.com/f2", "https://news.google.com/f3"))
+    respostas = {
+        "https://news.google.com/f1": ("texto", None, "https://reuters.com/x", None),
+        "https://news.google.com/f2": ("texto", None, "https://ft.com/x", None),
+        "https://news.google.com/f3": ("texto", "https://cdn.terceira.com/fed.jpg", "https://terceira.com/x", None),
+    }
+    with patch.object(news, "_extrair_texto_artigo", side_effect=lambda link: respostas[link]), \
+         patch.object(news.requests, "head", return_value=_img_ok("https://cdn.terceira.com/fed.jpg")):
+        reg = news.avaliar_imagem_grupo(g, _fontes(g))
+    assert reg["imagem"] == "https://cdn.terceira.com/fed.jpg"
+    assert reg["imagem_status"] == news.STATUS_IMAGEM_CONFIRMADA
+
+
+def test_08c3_quarta_fonte_nao_e_tentada_limite_continua_existindo():
+    """O aumento de 2 pra 3 não virou 'tenta todas' - ainda tem um teto
+    (orçamento de rede por grupo, ver _ORCAMENTO_PREGERAR_IMAGENS_S)."""
+    g = _grupo("Fed sinaliza cautela com juros", "https://news.google.com/g1",
+               outras=("https://news.google.com/g2", "https://news.google.com/g3", "https://news.google.com/g4"))
+
+    def _nunca_deveria_chegar_na_4a(link):
+        if link == "https://news.google.com/g4":
+            raise AssertionError("4ª fonte não deveria ser tentada - _MAX_FONTES_IMAGEM=3")
+        return ("texto", None, link, None)
+
+    with patch.object(news, "_extrair_texto_artigo", side_effect=_nunca_deveria_chegar_na_4a):
+        reg = news.avaliar_imagem_grupo(g, _fontes(g))
+    assert reg["imagem"] is None
+
+
 def test_08d_foto_de_relacionados_dentro_do_article_nao_e_roubada():
     html_txt = (
         f"<html><body><article>{_TEXTO}"
