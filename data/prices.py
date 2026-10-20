@@ -113,8 +113,8 @@ def obter_cotacao(ticker: str) -> dict:
         # ja limitada pelo timeout interno da lib (YfData.get, 30s), ver
         # comentario de _TIMEOUT_YF no topo do arquivo
         fi = yf.Ticker(symbol).fast_info
-        preco = _numero_finito(fi["lastPrice"])
-        fechamento_anterior = _numero_finito(fi["previousClose"])
+        preco = _numero_finito(fi.get("lastPrice"))
+        fechamento_anterior = _numero_finito(fi.get("previousClose"))
         if preco is None or preco <= 0 or fechamento_anterior is None or fechamento_anterior <= 0:
             raise ValueError("cotação atual/fechamento anterior ausente ou inválido")
 
@@ -126,9 +126,9 @@ def obter_cotacao(ticker: str) -> dict:
         # O provedor pode devolver zero, NaN ou infinito em campos auxiliares.
         # Esses valores não são métricas de mercado válidas: a UI deve mostrar
         # ausência de dado, não um número enganoso.
-        maxima_dia = _numero_finito_positivo(fi["dayHigh"])
-        minima_dia = _numero_finito_positivo(fi["dayLow"])
-        volume = _numero_finito_positivo(fi["lastVolume"])
+        maxima_dia = _numero_finito_positivo(fi.get("dayHigh"))
+        minima_dia = _numero_finito_positivo(fi.get("dayLow"))
+        volume = _numero_finito_positivo(fi.get("lastVolume"))
 
         return {
             "ticker": ticker,
@@ -141,8 +141,8 @@ def obter_cotacao(ticker: str) -> dict:
             "maxima_dia": maxima_dia,
             "minima_dia": minima_dia,
             "volume": volume,
-            "maxima_52s": _numero_finito_positivo(fi["yearHigh"]),
-            "minima_52s": _numero_finito_positivo(fi["yearLow"]),
+            "maxima_52s": _numero_finito_positivo(fi.get("yearHigh")),
+            "minima_52s": _numero_finito_positivo(fi.get("yearLow")),
             "erro": None,
         }
     except Exception as e:
@@ -241,12 +241,14 @@ def obter_cotacao_indice(nome: str, symbol: str) -> dict:
         hist = _sem_barras_de_fim_de_semana(ticker_obj.history(period="5d", timeout=_TIMEOUT_YF))
         if len(hist) < 2:
             raise ValueError("histórico insuficiente retornado pelo yfinance")
-        preco = float(hist["Close"].iloc[-1])
-        fechamento_anterior = float(hist["Close"].iloc[-2])
-        if fechamento_anterior == 0:
-            raise ValueError("fechamento anterior zerado")
+        preco = _numero_finito(hist["Close"].iloc[-1])
+        fechamento_anterior = _numero_finito(hist["Close"].iloc[-2])
+        if preco is None or preco <= 0 or fechamento_anterior is None or fechamento_anterior <= 0:
+            raise ValueError("cotação/fechamento anterior do índice ausente ou inválido")
         variacao = preco - fechamento_anterior
         variacao_pct = (variacao / fechamento_anterior) * 100
+        if not math.isfinite(variacao) or not math.isfinite(variacao_pct):
+            raise ValueError("variação do índice inválida")
         resultado = {
             "nome": nome,
             "preco": preco,

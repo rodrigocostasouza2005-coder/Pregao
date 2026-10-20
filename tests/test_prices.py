@@ -497,3 +497,64 @@ def test_obter_cotacao_normaliza_campos_auxiliares_invalidos():
     assert resultado["volume"] is None
     assert resultado["maxima_52s"] is None
     assert resultado["minima_52s"] is None
+
+
+def test_obter_cotacao_indice_rejeita_close_nan_e_infinito():
+    import pandas as pd
+
+    def _rodar(close):
+        hist = pd.DataFrame(
+            {"Close": [100.0, close]},
+            index=pd.DatetimeIndex(["2026-10-19", "2026-10-20"], tz="America/Sao_Paulo"),
+        )
+
+        class _Ticker:
+            history_metadata = {}
+            def __init__(self, *_a, **_k):
+                pass
+            def history(self, *_a, **_k):
+                return hist
+
+        with patch.object(prices_mod.yf, "Ticker", _Ticker):
+            return obter_cotacao_indice(f"TESTE_INDICE_INVALIDO_{close}", "TESTE=X")
+
+    for valor in (float("nan"), float("inf"), 0.0, -1.0):
+        resultado = _rodar(valor)
+        assert "preco" not in resultado
+        assert resultado.get("erro")
+
+
+def test_obter_cotacao_indice_rejeita_fechamento_anterior_nao_finito():
+    import pandas as pd
+    hist = pd.DataFrame(
+        {"Close": [float("nan"), 101.0]},
+        index=pd.DatetimeIndex(["2026-10-19", "2026-10-20"], tz="America/Sao_Paulo"),
+    )
+
+    class _Ticker:
+        history_metadata = {}
+        def __init__(self, *_a, **_k):
+            pass
+        def history(self, *_a, **_k):
+            return hist
+
+    with patch.object(prices_mod.yf, "Ticker", _Ticker):
+        resultado = obter_cotacao_indice("TESTE_FECHAMENTO_NAN", "TESTE=X")
+    assert "preco" not in resultado
+    assert resultado.get("erro")
+
+
+def test_obter_cotacao_preserva_preco_quando_campos_auxiliares_ausentes():
+    class _TickerSemCamposAuxiliares:
+        def __init__(self, *_a, **_k):
+            self.fast_info = {"lastPrice": 11.0, "previousClose": 10.0}
+
+    with patch.object(prices_mod.yf, "Ticker", _TickerSemCamposAuxiliares):
+        resultado = obter_cotacao("TESTE_SEM_AUXILIARES_20261020")
+    assert resultado["preco"] == 11.0
+    assert resultado["variacao_pct"] == 10.0
+    assert resultado["maxima_dia"] is None
+    assert resultado["minima_dia"] is None
+    assert resultado["volume"] is None
+    assert resultado["maxima_52s"] is None
+    assert resultado["minima_52s"] is None
