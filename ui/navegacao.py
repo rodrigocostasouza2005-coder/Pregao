@@ -65,7 +65,15 @@ AREAS = (
     )),
     Area("radar", "RADAR", ":material/radar:", (
         Subaba("alertas", "Alertas", ("RADAR",)),
-        Subaba("carteiras", "Carteiras Recomendadas", ("RADAR", "RESEARCH")),
+        Subaba("carteiras", "Carteiras Recomendadas", ("RADAR",)),
+        # subaba propria (2026-10-19): antes "RESEARCH" (recomendacoes/
+        # relatorios/lives das casas de analise) vinha empilhado DENTRO
+        # de Carteiras Recomendadas (mesma rota despachava os dois -
+        # ver app.py), sem nenhuma subaba visivel so' pra ele. "carteiras"
+        # perdeu "RESEARCH" do legado (o conteudo dela e' so' radar_tab,
+        # nunca foi research de verdade) - quem tinha SO' "RESEARCH"
+        # visivel antes ganha esta subaba nova, nao mais Carteiras.
+        Subaba("research", "Research", ("RESEARCH",)),
         Subaba("oportunidades", "Oportunidades", ("RADAR",)),
         Subaba("acompanhamento", "Acompanhamento", ("RADAR",)),
     )),
@@ -111,7 +119,7 @@ ROTA_LEGADO = {
     "NEWS": ("noticias", "empresas"),
     "CVM": ("noticias", "documentos"),
     "RADAR": ("radar", "alertas"),
-    "RESEARCH": ("radar", "carteiras"),
+    "RESEARCH": ("radar", "research"),
     "EQUITY": ("analises", "empresas"),
     "MACRO": ("macro", "indicadores"),
     "CONFIG": ("mais", "config"),

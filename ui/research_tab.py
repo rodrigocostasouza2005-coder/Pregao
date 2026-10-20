@@ -31,6 +31,13 @@ _AVISO_COTA = "Cota gratuita de resumo por IA esgotada por enquanto — os links
 # tecnico (nao cota) - mensagem curta de proposito, nunca expõe HTTP/
 # excecao/detalhe interno (isso fica so' no log, ver _log_erro_ia).
 _AVISO_IA_INDISPONIVEL = "Resumo por IA temporariamente indisponível — os links continuam disponíveis normalmente."
+# motivo="sem_credencial" (achado real, investigacao 2026-10-19):
+# GROQ_API_KEY ausente/vazia no ambiente (ex: nao configurada nos
+# secrets do GitHub Actions) - caso DIFERENTE de "indisponivel"
+# (aquele e' falha tecnica temporaria do Groq em si, este e' config
+# faltando; "temporariamente indisponível" seria impreciso aqui).
+# Nunca expõe nenhum valor de credencial, so' informa que ela falta.
+_AVISO_SEM_CREDENCIAL = "Resumo por IA não configurado neste ambiente — os links continuam disponíveis normalmente."
 
 # casa -> funcao (link)->(texto, motivo_falha) pra gerar resumo; None usa
 # o generico (baixa a pagina publica do relatorio) - ver CASAS em
@@ -223,6 +230,8 @@ def _abrir_resumo_live(rel: dict, extrator):
         st.warning(_AVISO_COTA)
     elif motivo == "indisponivel":
         st.warning(_AVISO_IA_INDISPONIVEL)
+    elif motivo == "sem_credencial":
+        st.warning(_AVISO_SEM_CREDENCIAL)
     else:
         st.caption(f"Resumo indisponível ({motivo}).")
 
@@ -288,6 +297,8 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool, mostrar_contexto_new
             st.warning(_AVISO_COTA)
         elif resultado["motivo_indisponivel"] == "indisponivel":
             st.warning(_AVISO_IA_INDISPONIVEL)
+        elif resultado["motivo_indisponivel"] == "sem_credencial":
+            st.warning(_AVISO_SEM_CREDENCIAL)
         # outros motivos (login/PDF ilegivel/conteudo curto): so titulo+link mesmo, sem aviso por item
         return False
 
@@ -304,6 +315,8 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool, mostrar_contexto_new
             st.warning(_AVISO_COTA)
         elif resultado["motivo_indisponivel"] == "indisponivel":
             st.warning(_AVISO_IA_INDISPONIVEL)
+        elif resultado["motivo_indisponivel"] == "sem_credencial":
+            st.warning(_AVISO_SEM_CREDENCIAL)
         else:
             st.caption(f"Resumo indisponível ({resultado['motivo_indisponivel']}).")
     return False
