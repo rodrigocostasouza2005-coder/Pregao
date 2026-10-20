@@ -78,6 +78,16 @@ def _celula(valor, formatador):
 
 # Mapeamento inicial explícito; fatores são indicadores relacionados, não
 # uma estimativa automática de causalidade ou recomendação de investimento.
+_UNIDADE_FATOR = {
+    "BZ=F": "US$/barril",
+    "CL=F": "US$/barril",
+    "USDBRL=X": "R$/US$",
+    "ZC=F": "¢/bushel",
+    "ZS=F": "¢/bushel",
+    "LE=F": "¢/lb",
+    "HG=F": "¢/lb",
+}
+
 _FATORES_POR_TICKER = {
     "PETR3": [("Petróleo Brent", "BZ=F"), ("Petróleo WTI", "CL=F"), ("USD/BRL", "USDBRL=X")],
     "PETR4": [("Petróleo Brent", "BZ=F"), ("Petróleo WTI", "CL=F"), ("USD/BRL", "USDBRL=X")],
@@ -175,18 +185,20 @@ def _render_research_e_fatores(ticker: str, fmt: str):
         linhas_fatores = []
         for nome, simbolo in fatores:
             if not simbolo:
-                linhas_fatores.append({"Fator": nome, "Cotação": "—", "Variação": "—", "Fonte/status": "Sem série integrada"})
+                linhas_fatores.append({"Fator": nome, "Contrato": "—", "Cotação": "—", "Unidade": "não integrada", "Variação": "—", "Fonte/status": "Sem série integrada"})
                 continue
             dado = obter_cotacao(simbolo)
             if dado.get("erro"):
-                linhas_fatores.append({"Fator": nome, "Cotação": "—", "Variação": "—", "Fonte/status": "Indisponível no provedor"})
+                linhas_fatores.append({"Fator": nome, "Contrato": simbolo, "Cotação": "—", "Unidade": _UNIDADE_FATOR.get(simbolo, "unidade não validada"), "Variação": "—", "Fonte/status": "Indisponível no provedor"})
                 continue
             preco_fator = dado.get("preco")
             variacao_pct = _numero_finito(dado.get("variacao_pct"))
             numero_fator = _numero_finito(preco_fator)
             linhas_fatores.append({
                 "Fator": nome,
+                "Contrato": simbolo,
                 "Cotação": _fmt_reais(numero_fator, fmt) if simbolo == "USDBRL=X" else (config.formatar_numero(numero_fator, 2, fmt) if numero_fator is not None else "—"),
+                "Unidade": _UNIDADE_FATOR.get(simbolo, "unidade não validada"),
                 "Variação": f"{variacao_pct:+.2f}%" if variacao_pct is not None else "—",
                 "Fonte/status": "Yahoo Finance · pode haver atraso" if numero_fator is not None else "Cotação indisponível",
             })
