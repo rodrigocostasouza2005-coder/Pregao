@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Cotações e histórico de preços via yfinance (tickers da B3, sufixo .SA)."""
 
+import math
 import re
 from datetime import datetime, timezone
 
@@ -57,6 +58,22 @@ _DIAS_EXIBICAO = {
 }
 
 
+
+def _numero_finito(valor):
+    """Converte um valor numérico em float finito; None para lixo/NaN/inf."""
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return numero if math.isfinite(numero) else None
+
+
+def _numero_finito_positivo(valor):
+    """Valor finito estritamente positivo, ou None para campo indisponível."""
+    numero = _numero_finito(valor)
+    return numero if numero is not None and numero > 0 else None
+
+
 def _para_symbol_yf(ticker: str) -> str:
     """Converte 'PETR4' -> 'PETR4.SA' (mantém se já tiver sufixo, ou se for
     indice/moeda do yfinance, ex: '^BVSP', 'USDBRL=X', que nao levam .SA).
@@ -96,21 +113,22 @@ def obter_cotacao(ticker: str) -> dict:
         # ja limitada pelo timeout interno da lib (YfData.get, 30s), ver
         # comentario de _TIMEOUT_YF no topo do arquivo
         fi = yf.Ticker(symbol).fast_info
-        preco = fi["lastPrice"]
-        fechamento_anterior = fi["previousClose"]
-        if preco is None or fechamento_anterior in (None, 0):
-            raise ValueError("dados incompletos retornados pelo yfinance")
+        preco = _numero_finito(fi["lastPrice"])
+        fechamento_anterior = _numero_finito(fi["previousClose"])
+        if preco is None or preco <= 0 or fechamento_anterior is None or fechamento_anterior <= 0:
+            raise ValueError("cotação atual/fechamento anterior ausente ou inválido")
 
         variacao = preco - fechamento_anterior
         variacao_pct = (variacao / fechamento_anterior) * 100
+        if not math.isfinite(variacao) or not math.isfinite(variacao_pct):
+            raise ValueError("variação inválida retornada pelo yfinance")
 
-        # o yfinance as vezes reporta o dia com dayHigh/dayLow/lastVolume
-        # zerados (visto no SMFT3: papel ainda sem negocio no dia, ou
-        # atraso na atualizacao) - 0 pareceria uma cotacao valida, entao
-        # vira None e a interface mostra "-" em vez de "0,00"
-        maxima_dia = fi["dayHigh"] or None
-        minima_dia = fi["dayLow"] or None
-        volume = fi["lastVolume"] or None
+        # O provedor pode devolver zero, NaN ou infinito em campos auxiliares.
+        # Esses valores não são métricas de mercado válidas: a UI deve mostrar
+        # ausência de dado, não um número enganoso.
+        maxima_dia = _numero_finito_positivo(fi["dayHigh"])
+        minima_dia = _numero_finito_positivo(fi["dayLow"])
+        volume = _numero_finito_positivo(fi["lastVolume"])
 
         return {
             "ticker": ticker,
@@ -123,8 +141,8 @@ def obter_cotacao(ticker: str) -> dict:
             "maxima_dia": maxima_dia,
             "minima_dia": minima_dia,
             "volume": volume,
-            "maxima_52s": fi["yearHigh"],
-            "minima_52s": fi["yearLow"],
+            "maxima_52s": _numero_finito_positivo(fi["yearHigh"]),
+            "minima_52s": _numero_finito_positivo(fi["yearLow"]),
             "erro": None,
         }
     except Exception as e:

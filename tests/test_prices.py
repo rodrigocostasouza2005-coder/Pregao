@@ -454,3 +454,46 @@ def test_cotacao_indice_horario_de_negocio_de_outro_dia_e_ignorado():
         r = obter_cotacao_indice("TESTE_NEGOCIO_OUTRO_DIA", "ES=F")
     assert r["_negocio_em"] is None
     assert r["variacao_pct"] == 1.0
+
+
+def test_obter_cotacao_rejeita_preco_nan_ou_infinito():
+    class _TickerCotacaoInvalida:
+        def __init__(self, *_a, **_k):
+            self.fast_info = {"lastPrice": float("nan"), "previousClose": 10.0}
+
+    with patch.object(prices_mod.yf, "Ticker", _TickerCotacaoInvalida):
+        resultado = obter_cotacao("TESTE_COTACAO_NAN_20261020")
+    assert "preco" not in resultado
+    assert resultado.get("erro")
+
+
+def test_obter_cotacao_rejeita_fechamento_anterior_nao_finito():
+    class _TickerFechamentoInvalido:
+        def __init__(self, *_a, **_k):
+            self.fast_info = {"lastPrice": 10.0, "previousClose": float("inf")}
+
+    with patch.object(prices_mod.yf, "Ticker", _TickerFechamentoInvalido):
+        resultado = obter_cotacao("TESTE_FECHAMENTO_INF_20261020")
+    assert "preco" not in resultado
+    assert resultado.get("erro")
+
+
+def test_obter_cotacao_normaliza_campos_auxiliares_invalidos():
+    class _TickerCamposAuxiliares:
+        def __init__(self, *_a, **_k):
+            self.fast_info = {
+                "lastPrice": 11.0, "previousClose": 10.0,
+                "dayHigh": float("nan"), "dayLow": 0,
+                "lastVolume": float("inf"), "yearHigh": float("nan"),
+                "yearLow": float("inf"),
+            }
+
+    with patch.object(prices_mod.yf, "Ticker", _TickerCamposAuxiliares):
+        resultado = obter_cotacao("TESTE_AUXILIARES_INVALIDOS_20261020")
+    assert resultado["preco"] == 11.0
+    assert resultado["variacao_pct"] == 10.0
+    assert resultado["maxima_dia"] is None
+    assert resultado["minima_dia"] is None
+    assert resultado["volume"] is None
+    assert resultado["maxima_52s"] is None
+    assert resultado["minima_52s"] is None
