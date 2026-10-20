@@ -39,7 +39,7 @@ e observando a aba Network do navegador contra uma notícia real)."""
 import html
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -320,6 +320,68 @@ def test_5c_listener_global_de_fallback_cobre_tanto_thumb_quanto_capa():
     script = news_tab_mod._SCRIPT_FALLBACK_IMAGEM
     _checar("5d listener cobre '.news-item-thumb-wrap'", ".news-item-thumb-wrap" in script)
     _checar("5e listener cobre '.news-capa'", ".news-capa" in script)
+
+
+# ============================================================
+# 6. Vinculo notícia <-> imagem no FEED real (2+ cards na mesma tela) -
+# achado da investigacao 2026-10-19: os testes acima (secao 4) chamam
+# _thumb_html diretamente com a imagem ja' escolhida a mao - nenhum
+# cobria o CAMINHO completo (resumos_prontos.get(n["link"]) dentro do
+# loop de _renderizar_feed_editorial) com 2+ noticias cacheadas ao MESMO
+# tempo, onde um bug de chave trocada so' apareceria com 2 itens
+# distintos (1 item so' sempre "acerta" por coincidencia).
+# ============================================================
+
+def test_6a_feed_com_2_noticias_cada_uma_mostra_so_a_PROPRIA_imagem():
+    n1 = {"link": "https://link-a.com", "titulo": "Fato A", "data": "2026-10-19T10:00:00+00:00",
+          "veiculos": ["InfoMoney"], "fontes_count": 1, "score": 50, "selo": "", "regras": [], "tickers": []}
+    n2 = {"link": "https://link-b.com", "titulo": "Fato B", "data": "2026-10-19T09:00:00+00:00",
+          "veiculos": ["Valor"], "fontes_count": 1, "score": 50, "selo": "", "regras": [], "tickers": []}
+    resumos_prontos = {
+        "https://link-a.com": {"resumo": "resumo A", "imagem": "https://img-a.jpg"},
+        "https://link-b.com": {"resumo": "resumo B", "imagem": "https://img-b.jpg"},
+    }
+    itens_feed = [{"tipo_feed": "NOTICIA", "chave_data": n1["data"], "dado": n1},
+                  {"tipo_feed": "NOTICIA", "chave_data": n2["data"], "dado": n2}]
+    blocos = []
+    with patch.object(news_tab_mod.st, "columns", return_value=[MagicMock(), MagicMock()]), \
+         patch.object(news_tab_mod.st, "markdown", side_effect=lambda t, **_k: blocos.append(t)), \
+         patch.object(news_tab_mod.st, "button", return_value=False):
+        news_tab_mod._renderizar_feed_editorial.__wrapped__(itens_feed, [], resumos_prontos, "teste")
+    html_completo = "\n".join(blocos)
+    _checar("6a-1 imagem A aparece no HTML renderizado", "img-a.jpg" in html_completo)
+    _checar("6a-2 imagem B aparece no HTML renderizado", "img-b.jpg" in html_completo)
+    # garante que nao e' so' "as duas aparecem em algum lugar" - cada
+    # thumb individual (<img src=...>) tem a URL CERTA, nunca trocada
+    thumbs = [b for b in blocos if "news-item-thumb-wrap" in b]
+    _checar("6a-3 exatamente 2 thumbs renderizados (1 por noticia)", len(thumbs) == 2)
+    _checar("6a-4 thumb de A tem SO' a imagem de A (nunca a de B)",
+            "img-a.jpg" in thumbs[0] and "img-b.jpg" not in thumbs[0], f"(thumb={thumbs[0]!r})")
+    _checar("6a-5 thumb de B tem SO' a imagem de B (nunca a de A)",
+            "img-b.jpg" in thumbs[1] and "img-a.jpg" not in thumbs[1], f"(thumb={thumbs[1]!r})")
+
+
+def test_6b_noticia_sem_resumo_cacheado_usa_fallback_nunca_imagem_de_outra():
+    """Confirma o caso real do pipeline: 30 grupos avaliados, nem todos
+    confirmados (2 'sem imagem' no ultimo run real) - uma noticia SEM
+    entrada em resumos_prontos nunca deve herdar a foto da vizinha."""
+    n1 = {"link": "https://link-a.com", "titulo": "Fato A", "data": "2026-10-19T10:00:00+00:00",
+          "veiculos": ["InfoMoney"], "fontes_count": 1, "score": 50, "selo": "", "regras": [], "tickers": []}
+    n2 = {"link": "https://link-sem-foto.com", "titulo": "Fato Sem Foto", "data": "2026-10-19T09:00:00+00:00",
+          "veiculos": ["Valor"], "fontes_count": 1, "score": 50, "selo": "", "regras": [], "tickers": []}
+    resumos_prontos = {"https://link-a.com": {"resumo": "resumo A", "imagem": "https://img-a.jpg"}}
+    itens_feed = [{"tipo_feed": "NOTICIA", "chave_data": n1["data"], "dado": n1},
+                  {"tipo_feed": "NOTICIA", "chave_data": n2["data"], "dado": n2}]
+    blocos = []
+    with patch.object(news_tab_mod.st, "columns", return_value=[MagicMock(), MagicMock()]), \
+         patch.object(news_tab_mod.st, "markdown", side_effect=lambda t, **_k: blocos.append(t)), \
+         patch.object(news_tab_mod.st, "button", return_value=False):
+        news_tab_mod._renderizar_feed_editorial.__wrapped__(itens_feed, [], resumos_prontos, "teste")
+    thumbs = [b for b in blocos if "news-item-thumb-wrap" in b]
+    _checar("6b-1 noticia sem resumo cacheado mostra fallback (iniciais), nunca <img>",
+            "<img" not in thumbs[1] and "news-item-thumb-fallback" in thumbs[1], f"(thumb={thumbs[1]!r})")
+    _checar("6b-2 a noticia SEM foto nunca herda a imagem da outra",
+            "img-a.jpg" not in thumbs[1])
 
 
 if __name__ == "__main__":

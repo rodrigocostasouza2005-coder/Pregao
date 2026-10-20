@@ -611,7 +611,10 @@ if rota == ("radar", "alertas"):
     radar_tab.render_radar_alertas(prefs)
 if rota == ("radar", "carteiras"):
     radar_tab.render_radar_carteiras(prefs)
-    # antiga aba RESEARCH: recomendacoes/relatorios das casas de analise
+if rota == ("radar", "research"):
+    # antiga aba RESEARCH: recomendacoes/relatorios/lives das casas de
+    # analise - subaba propria (2026-10-19), antes empilhada dentro de
+    # Carteiras Recomendadas na mesma rota (ver ui/navegacao.py).
     with st.container():
         render_research(prefs)
 if rota == ("radar", "oportunidades"):

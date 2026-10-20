@@ -43,8 +43,24 @@ st.dialog = lambda *a, **k: (lambda fn: fn)  # decorator identidade so' pra este
 
 import ui.research_tab as research_tab  # noqa: E402 (import depois do patch de proposito)
 importlib.reload(research_tab)  # garante _abrir_resumo_live redecorado mesmo se ja importado antes
+_abrir_resumo_live_testavel = research_tab._abrir_resumo_live  # guarda a versao identity-decorada ANTES de desfazer
 
 st.dialog = _dialog_original  # restaura pra nao afetar outro modulo que importe/recarregue depois
+# bug real de poluicao entre testes (achado na investigacao de
+# confiabilidade 2026-10-19): restaurar st.dialog aqui NAO bastava -
+# o modulo ui.research_tab (sys.modules) continuava com
+# _abrir_resumo_live identity-decorado (sem __wrapped__ nenhum) pelo
+# resto da sessao do pytest, ja' que nada recarregava o modulo de novo
+# com o st.dialog REAL. Qualquer teste depois deste, em QUALQUER outro
+# arquivo, que importasse ui.research_tab e tentasse
+# _abrir_resumo_live.__wrapped__(...) (mesmo padrao usado pelo resto
+# do projeto pra chamar funcao decorada com @st.dialog/@st.fragment em
+# bare mode) quebrava com AttributeError - sozinho (so' este arquivo)
+# nunca expunha o bug, so' sob a suite completa, com ordem de coleta
+# dependente. Recarrega de novo aqui, com o st.dialog real ja'
+# restaurado, pra devolver o modulo exatamente como qualquer outro
+# teste espera encontra-lo.
+importlib.reload(research_tab)
 
 _FALHAS = []
 
@@ -71,7 +87,7 @@ def test_1a_resumo_gerado_com_sucesso_sincroniza_rel_no_mesmo_clique():
     resultado_groq = {"resumo": "RESUMO\n\nMercado abriu em alta...", "motivo_indisponivel": None,
                        "preco_alvo": None, "recomendacao": None}
     with patch.object(research_tab, "obter_resumo", return_value=resultado_groq) as mock_obter:
-        research_tab._abrir_resumo_live(rel, extrator=None)
+        _abrir_resumo_live_testavel(rel, extrator=None)
     _checar("1a obter_resumo foi chamado (geracao real disparada, nao pulada)", mock_obter.called)
     _checar(
         "1b rel['resumo'] reflete o resumo recem-gerado/persistido, sem esperar o proximo rerun "
@@ -88,7 +104,7 @@ def test_1c_falha_na_geracao_nao_fabrica_resumo_nem_mascara_o_motivo():
     resultado_falha = {"resumo": None, "motivo_indisponivel": "indisponivel",
                         "preco_alvo": None, "recomendacao": None}
     with patch.object(research_tab, "obter_resumo", return_value=resultado_falha):
-        research_tab._abrir_resumo_live(rel, extrator=None)
+        _abrir_resumo_live_testavel(rel, extrator=None)
     _checar(
         "1c falha na geracao (ex: sem legenda/transcricao) NUNCA grava um resumo fabricado em rel - "
         "continua None, pronto pra tentar de novo no proximo clique (nunca 'trava' num erro permanente)",
@@ -103,7 +119,7 @@ def test_1d_resumo_ja_existente_no_formato_novo_nao_chama_obter_resumo_de_novo()
         "resumo": "RESUMO\n\nJa existente, formato novo.",
     }
     with patch.object(research_tab, "obter_resumo") as mock_obter:
-        research_tab._abrir_resumo_live(rel, extrator=None)
+        _abrir_resumo_live_testavel(rel, extrator=None)
     _checar("1d resumo ja persistido (formato novo) -> nunca gera de novo (economiza cota de IA)",
              not mock_obter.called)
 

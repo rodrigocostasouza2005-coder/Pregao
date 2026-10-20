@@ -22,7 +22,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import data.research.resumir as resumir_mod
 from data.research import genial, historico
-from data.research.resumir import _chamar_groq_com_fallback, _extrair_dados_estruturados, obter_resumo
+from data.research.resumir import (
+    _chamar_groq_com_fallback, _extrair_dados_estruturados, obter_resumo, resumir_com_groq,
+)
 
 _FALHAS = []
 
@@ -55,6 +57,52 @@ def _cliente_mock(ultimo_snapshot_data):
 
     cliente.table.return_value.insert.side_effect = _insert
     return cliente, log_inserts
+
+
+# ============================================================
+# motivo_falha de resumir_com_groq sem credencial (achado real,
+# investigacao de confiabilidade 2026-10-19): a propria docstring da
+# funcao promete que motivo_falha e' SEMPRE None/'cota'/'indisponivel'
+# (ou agora tambem 'sem_credencial') - NUNCA o texto cru de uma
+# excecao/mensagem tecnica, "isso so' vai pro log, nunca pra UI". O
+# branch de GROQ_API_KEY ausente quebrava essa promessa, devolvendo a
+# string tecnica direto - ui/research_tab.py so' reconhecia "cota"/
+# "indisponivel" como avisos st.warning claros, entao a mensagem
+# tecnica caia no ramo generico e aparecia literalmente pro usuario
+# final (nao expõe o VALOR da credencial, mas e' exatamente o tipo de
+# mensagem tecnica que a funcao promete nunca mostrar).
+# ============================================================
+
+def test_sem_credencial_groq_devolve_codigo_reconhecido_nao_texto_cru():
+    with patch.object(resumir_mod.config, "obter_credenciais_groq", return_value=("", "modelo-x")):
+        resumo, motivo, dados = resumir_com_groq("texto de exemplo com conteudo suficiente", "Título")
+    _checar("sc-a sem credencial -> resumo None", resumo is None)
+    _checar("sc-b motivo e' o codigo reconhecido 'sem_credencial', nunca a string tecnica crua",
+            motivo == "sem_credencial", f"(motivo={motivo!r})")
+    _checar("sc-c 'GROQ_API_KEY' nunca aparece no motivo devolvido (nao e' pra virar texto de UI)",
+            "GROQ_API_KEY" not in (motivo or ""))
+    _checar("sc-d dados_estruturados vazio (nunca None), mesmo contrato dos outros motivos", dados == {})
+
+
+def test_ui_research_mostra_aviso_claro_sem_credencial_nao_mensagem_tecnica():
+    """ui/research_tab.py reconhece "sem_credencial" com aviso proprio -
+    nao cai mais no st.caption generico que mostraria a mensagem tecnica."""
+    import ui.research_tab as research_tab_mod
+
+    rel = {"link": "https://x.com/v", "titulo": "Live X", "casa": "Genial (Lives)", "tipo": "LIVE",
+           "data": "2026-10-19", "autor": "Programa X", "tickers": []}
+    blocos_warning, blocos_caption = [], []
+    with patch.object(research_tab_mod, "obter_resumo",
+                       return_value={"resumo": None, "motivo_indisponivel": "sem_credencial"}), \
+         patch.object(research_tab_mod.st, "markdown"), \
+         patch.object(research_tab_mod.st, "caption", side_effect=lambda t: blocos_caption.append(t)), \
+         patch.object(research_tab_mod.st, "warning", side_effect=lambda t: blocos_warning.append(t)), \
+         patch.object(research_tab_mod.st, "spinner"):
+        research_tab_mod._abrir_resumo_live.__wrapped__(rel, None)
+    _checar("ui-a aviso claro de credencial ausente foi mostrado (st.warning, nao caption generico)",
+            any("não configurado" in b for b in blocos_warning), f"(blocos={blocos_warning})")
+    _checar("ui-b caption generico com motivo cru ('Resumo indisponível (sem_credencial)') NUNCA aparece",
+            not any("sem_credencial" in b for b in blocos_caption), f"(blocos={blocos_caption})")
 
 
 def test_historico_primeiro_snapshot_grava_mas_nao_reporta_mudanca():

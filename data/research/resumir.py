@@ -488,8 +488,11 @@ def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") ->
     (config.GROQ_MODELO_FALLBACK) - sem credencial nova. So' retorna
     resumo=None (e' quando a UI mostra "Resumo indisponível") se os DOIS
     modelos falharem. Retorna (resumo, motivo_falha, dados_estruturados).
-    motivo_falha e' sempre None, 'cota' ou 'indisponivel' - nunca o texto
-    cru de uma excecao (isso so' vai pro log tecnico, nunca pra UI).
+    motivo_falha e' sempre None, 'cota', 'indisponivel' ou
+    'sem_credencial' (GROQ_API_KEY ausente/vazia em st.secrets ou no
+    ambiente - caso DIFERENTE de 'indisponivel', que e' temporario) -
+    nunca o texto cru de uma excecao (isso so' vai pro log tecnico,
+    nunca pra UI).
     dados_estruturados = {"preco_alvo": float|None, "recomendacao": str|None}
     - sempre {} (nunca None) quando resumo != None, pra quem chama poder
     fazer dados_estruturados.get(...) sem checar None antes.
@@ -507,7 +510,21 @@ def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") ->
     chave, modelo = config.obter_credenciais_groq()
     modelo_fallback = config.obter_modelo_groq_fallback()
     if not chave:
-        return None, "GROQ_API_KEY não configurada em st.secrets", {}
+        # bug real (investigacao 2026-10-19, confirmado por leitura de
+        # codigo): esta funcao documenta (docstring acima) que
+        # motivo_falha e' SEMPRE None, "cota" ou "indisponivel" - nunca
+        # texto cru de excecao, "isso so' vai pro log tecnico, nunca pra
+        # UI". Este branch especifico quebrava essa promessa, devolvendo
+        # a string tecnica direto - ui/research_tab.py so' reconhece
+        # "cota"/"indisponivel" (os 2 avisos st.warning claros), entao
+        # "GROQ_API_KEY não configurada em st.secrets" caia no ramo
+        # generico (st.caption(f"Resumo indisponível ({motivo}).")) e
+        # aparecia literalmente pro usuario final - nao expõe o VALOR da
+        # chave (nunca havia segredo real vazando), mas e' justamente o
+        # tipo de mensagem tecnica que a funcao promete nunca mostrar.
+        # Credencial ausente e' um caso DIFERENTE de "indisponivel"
+        # (temporario) - tem aviso proprio (_AVISO_SEM_CREDENCIAL).
+        return None, "sem_credencial", {}
 
     pular_principal = False
     if len(texto) > _LIMITE_TEXTO_DIRETO:
