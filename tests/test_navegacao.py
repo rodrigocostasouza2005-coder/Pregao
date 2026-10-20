@@ -37,7 +37,7 @@ def test_subabas_exigidas_pela_arquitetura():
     subs = {a.id: [s.rotulo for s in a.subabas] for a in AREAS}
     assert subs["mercado"] == ["Visão Geral", "Painel", "Agenda", "Mercados Globais"]
     assert subs["noticias"][:4] == ["Destaques", "Brasil", "Internacional", "Empresas"]
-    assert subs["radar"] == ["Alertas", "Carteiras Recomendadas", "Oportunidades", "Acompanhamento"]
+    assert subs["radar"] == ["Alertas", "Carteiras Recomendadas", "Research", "Oportunidades", "Acompanhamento"]
     assert subs["analises"] == ["Empresas", "Fundamentos", "Valuation", "Teses"]
     assert subs["macro"] == ["Indicadores", "Juros", "Câmbio e Commodities", "Calendário Econômico"]
     assert subs["setores"] == ["Mapa Setorial", "Visão por Setor", "Catalisadores"]
