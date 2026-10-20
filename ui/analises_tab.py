@@ -66,7 +66,7 @@ def _rotulo_coleta(ind: dict) -> str | None:
         return "—"
     try:
         quando = datetime.fromisoformat(bruto).astimezone(TZ_SP)
-    except ValueError:
+    except (TypeError, ValueError, OverflowError):
         return "—"
     return quando.strftime("%d/%m %H:%M")
 
