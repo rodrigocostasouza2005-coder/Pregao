@@ -284,3 +284,22 @@ if __name__ == "__main__":
         print(f"FALHARAM {len(_FALHAS)}: {_FALHAS}")
         sys.exit(1)
     print("TODOS OS TESTES DE DATA/MERCADO.PY PASSARAM")
+
+
+
+def test_20_linha_papel_rejeita_fechamentos_nao_finitos_e_nao_positivos():
+    for closes in ([100.0, float("nan")], [100.0, float("inf")], [100.0, 0.0], [100.0, -1.0]):
+        df = _df_simples("TESTE3.SA", closes)
+        resultado = mercado_mod._linha_papel(df, "TESTE3", "TESTE3.SA")
+        _checar(f"20a rejeita fechamento inválido {closes[-1]}", resultado is None or (
+            resultado["preco"] > 0 and pd.notna(resultado["preco"]) and
+            abs(resultado["preco"]) != float("inf")
+        ), f"(resultado={resultado})")
+
+
+def test_21_linha_papel_nao_deixa_volume_infinito_vazar():
+    df = _df_simples("TESTE4.SA", [10.0, 11.0], volumes=[100.0, float("inf")])
+    resultado = mercado_mod._linha_papel(df, "TESTE4", "TESTE4.SA")
+    _checar("21a mantém preço válido", resultado is not None and resultado["preco"] == 11.0)
+    _checar("21b normaliza volume infinito", resultado is not None and resultado["volume"] == 0.0)
+    _checar("21c volume financeiro finito", resultado is not None and pd.notna(resultado["volume_financeiro"]) and abs(resultado["volume_financeiro"]) != float("inf"))
