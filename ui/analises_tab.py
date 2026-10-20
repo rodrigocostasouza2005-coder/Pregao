@@ -15,7 +15,8 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 import config
-from data.prices import obter_indicadores
+from data.prices import obter_cotacao, obter_indicadores
+from data.research.historico import historico_ticker
 from ui import navegacao
 from ui.setores_tab import ir_para_setor, setores_do_ticker
 
@@ -74,6 +75,94 @@ def _celula(valor, formatador):
     return formatador(valor) if valor is not None else "—"
 
 
+
+# Mapeamento inicial explícito; fatores são indicadores relacionados, não
+# uma estimativa automática de causalidade ou recomendação de investimento.
+_FATORES_POR_TICKER = {
+    "PETR3": [("Petróleo Brent", "BZ=F"), ("Petróleo WTI", "CL=F"), ("USD/BRL", "USDBRL=X")],
+    "PETR4": [("Petróleo Brent", "BZ=F"), ("Petróleo WTI", "CL=F"), ("USD/BRL", "USDBRL=X")],
+    "PRIO3": [("Petróleo Brent", "BZ=F"), ("Petróleo WTI", "CL=F"), ("USD/BRL", "USDBRL=X")],
+    "BRAV3": [("Petróleo Brent", "BZ=F"), ("Petróleo WTI", "CL=F"), ("USD/BRL", "USDBRL=X")],
+    "RECV3": [("Petróleo Brent", "BZ=F"), ("Petróleo WTI", "CL=F"), ("USD/BRL", "USDBRL=X")],
+    "VALE3": [("Minério de ferro (proxy)", "TIO=F"), ("USD/BRL", "USDBRL=X")],
+    "SUZB3": [("Celulose (proxy: papel e celulose)", "CL=F"), ("USD/BRL", "USDBRL=X")],
+    "KLBN11": [("Celulose (proxy: papel e celulose)", "CL=F"), ("USD/BRL", "USDBRL=X")],
+    "JBSS3": [("Milho", "ZC=F"), ("Soja", "ZS=F"), ("Boi gordo (proxy)", "LE=F"), ("USD/BRL", "USDBRL=X")],
+    "BEEF3": [("Milho", "ZC=F"), ("Soja", "ZS=F"), ("Boi gordo (proxy)", "LE=F"), ("USD/BRL", "USDBRL=X")],
+    "MRFG3": [("Milho", "ZC=F"), ("Soja", "ZS=F"), ("Boi gordo (proxy)", "LE=F"), ("USD/BRL", "USDBRL=X")],
+    "GGBR4": [("Minério de ferro (proxy)", "TIO=F"), ("Sucata/aço: sem série integrada", ""), ("USD/BRL", "USDBRL=X")],
+    "CSNA3": [("Minério de ferro (proxy)", "TIO=F"), ("USD/BRL", "USDBRL=X")],
+    "WEGE3": [("Cobre", "HG=F"), ("USD/BRL", "USDBRL=X")],
+}
+
+def _fmt_reais(valor, fmt):
+    if valor is None:
+        return "—"
+    try:
+        return "R$ " + config.formatar_numero(float(valor), 2, fmt)
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _render_research_e_fatores(ticker: str, fmt: str):
+    """Mostra apenas alvos realmente persistidos e cotações de fatores mapeados."""
+    with st.container(border=True):
+        st.markdown('<div class="painel-titulo">RESEARCH & FATORES DE MERCADO</div>', unsafe_allow_html=True)
+        st.markdown(f"**{ticker}** · cobertura estruturada disponível")
+        try:
+            snapshots = historico_ticker("genial", ticker, limite=5)
+        except Exception:
+            snapshots = []
+        validos = [s for s in snapshots if s.get("preco_alvo") is not None]
+        if validos:
+            atual = validos[0]
+            alvo = atual.get("preco_alvo")
+            cot = obter_cotacao(ticker)
+            preco = cot.get("preco") if not cot.get("erro") else None
+            potencial = ((float(alvo) / float(preco) - 1) * 100) if preco and alvo and float(preco) > 0 else None
+            cols = st.columns(3)
+            cols[0].metric("PREÇO-ALVO GENIAL", _fmt_reais(alvo, fmt))
+            cols[1].metric("PREÇO ATUAL", _fmt_reais(preco, fmt))
+            cols[2].metric("POTENCIAL INDICATIVO", f"{potencial:+.1f}%" if potencial is not None else "—")
+            st.caption(f"Último registro persistido: {atual.get('capturado_em', 'data indisponível')}. O histórico registra mudanças, não necessariamente o relatório mais recente.")
+            st.caption("Fonte estruturada disponível nesta tela: Genial. Não há consenso multi-casa calculado enquanto os alvos comparáveis das demais casas não estiverem integrados.")
+            st.markdown("**Histórico recente de preço-alvo e recomendação**")
+            linhas = []
+            for s in validos:
+                linhas.append({
+                    "Data de captura": str(s.get("capturado_em") or "—")[:10],
+                    "Casa": str(s.get("casa") or "genial").upper(),
+                    "Recomendação": s.get("recomendacao") or "—",
+                    "Preço-alvo": _fmt_reais(s.get("preco_alvo"), fmt),
+                })
+            st.dataframe(linhas, hide_index=True, width="stretch")
+        else:
+            st.info("Ainda não há preço-alvo estruturado e persistido para este ticker. Não será estimado nem preenchido com dados de outra fonte.")
+        fatores = _FATORES_POR_TICKER.get(ticker, [])
+        if not fatores:
+            st.caption("Ainda não há mapeamento curado de commodities/fatores para este ticker.")
+            return
+        st.markdown("**Commodities e fatores relacionados**")
+        linhas_fatores = []
+        for nome, simbolo in fatores:
+            if not simbolo:
+                linhas_fatores.append({"Fator": nome, "Cotação": "—", "Variação": "—", "Fonte/status": "Sem série integrada"})
+                continue
+            dado = obter_cotacao(simbolo)
+            if dado.get("erro"):
+                linhas_fatores.append({"Fator": nome, "Cotação": "—", "Variação": "—", "Fonte/status": "Indisponível no provedor"})
+                continue
+            preco_fator = dado.get("preco")
+            variacao_pct = dado.get("variacao_pct")
+            linhas_fatores.append({
+                "Fator": nome,
+                "Cotação": _fmt_reais(preco_fator, fmt) if simbolo == "USDBRL=X" else (config.formatar_numero(float(preco_fator), 2, fmt) if preco_fator is not None else "—"),
+                "Variação": f"{float(variacao_pct):+.2f}%" if variacao_pct is not None else "—",
+                "Fonte/status": "Yahoo Finance · pode haver atraso",
+            })
+        st.dataframe(linhas_fatores, hide_index=True, width="stretch")
+        st.caption("Relações são um mapa inicial de exposição econômica, não prova de causalidade. Algumas séries são proxies e devem ser refinadas; cotações podem estar atrasadas ou indisponíveis.")
+
 def render_fundamentos(prefs: dict):
     fmt = prefs["formato_numerico"]
     watchlist = prefs.get("watchlist") or []
@@ -126,6 +215,9 @@ def render_fundamentos(prefs: dict):
             "falhou agora, vale a última coleta bem-sucedida, com a data dela. Receita, lucro e fluxo de caixa em série histórica "
             "ainda não têm fonte integrada; documentos de resultado oficiais ficam em NOTÍCIAS › Documentos CVM."
         )
+    if watchlist:
+        ticker_foco = st.selectbox("AÇÃO PARA RESEARCH & FATORES", options=watchlist, key="fund_research_ticker")
+        _render_research_e_fatores(ticker_foco, fmt)
     cols = st.columns(2)
     with cols[0]:
         navegacao.link("Documentos de resultado (CVM) ↗", "noticias", "documentos", chave="fund_cvm", width="stretch")
