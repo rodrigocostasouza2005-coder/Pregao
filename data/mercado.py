@@ -19,6 +19,8 @@ Copom/resultados também NÃO está aqui: exigiria uma fonte de dados de
 calendário confiável que o projeto ainda não integra (não dá pra inventar
 datas) - ver MELHORIAS FUTURAS em PROGRESSO.md."""
 
+import math
+
 import pandas as pd
 import streamlit as st
 import yfinance as yf
@@ -120,16 +122,25 @@ def _linha_papel(df: pd.DataFrame, ticker: str, symbol: str) -> dict | None:
     menos de 30 dias)."""
     try:
         sub = df[symbol] if isinstance(df.columns, pd.MultiIndex) else df
-        fechamentos = sub["Close"].dropna()
+        # Yahoo pode retornar NaN/inf em candles: eles não podem entrar
+        # no preço atual nem nas bases de desempenho semanal/mensal.
+        fechamentos = pd.to_numeric(sub["Close"], errors="coerce")
+        fechamentos = fechamentos.replace([float("inf"), float("-inf")], float("nan")).dropna()
+        fechamentos = fechamentos[fechamentos > 0]
         if len(fechamentos) < 2:
             return None
         preco = float(fechamentos.iloc[-1])
         fechamento_anterior = float(fechamentos.iloc[-2])
-        if fechamento_anterior == 0:
+        if not math.isfinite(preco) or preco <= 0 or not math.isfinite(fechamento_anterior) or fechamento_anterior <= 0:
             return None
-        volume = sub["Volume"].dropna()
+        volume = pd.to_numeric(sub["Volume"], errors="coerce")
+        volume = volume.replace([float("inf"), float("-inf")], float("nan")).dropna()
         volume_hoje = float(volume.iloc[-1]) if len(volume) else 0.0
+        if not math.isfinite(volume_hoje) or volume_hoje < 0:
+            volume_hoje = 0.0
         variacao_pct = (preco - fechamento_anterior) / fechamento_anterior * 100
+        if not math.isfinite(variacao_pct):
+            return None
 
         data_atual = fechamentos.index[-1]
         resultado = {
