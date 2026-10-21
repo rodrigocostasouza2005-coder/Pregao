@@ -166,16 +166,21 @@ def render_edicao_atual(prefs: dict):
         if st.button("LIMPAR CACHE E ATUALIZAR PRÉVIA", key="mc_atualizar_previa"):
             _previa.clear()
             st.session_state.pop("mc_previa", None)
+            st.session_state.pop("mc_previa_em", None)
             st.toast("Cache da prévia limpo. Gere novamente para consultar os dados atuais.")
         if st.button("GERAR PRÉVIA", key="mc_gerar_previa"):
             with st.spinner("Montando o Morning Call..."):
                 try:
                     st.session_state["mc_previa"] = _previa(_hora_ref())
+                    st.session_state["mc_previa_em"] = datetime.now(TZ_SP)
                 except Exception as exc:
                     st.session_state["mc_previa"] = None
                     print(f"[morning_call_tab] previa falhou: {exc!r}")
                     st.error("Não foi possível montar a prévia agora (fontes indisponíveis). Tente novamente em alguns minutos.")
         if st.session_state.get("mc_previa"):
+            gerada_em = st.session_state.get("mc_previa_em")
+            if gerada_em:
+                st.caption(f"Prévia montada em {gerada_em.strftime('%d/%m/%Y às %H:%M:%S')} (Brasília).")
             _exibir_texto(st.session_state["mc_previa"])
 
 
@@ -191,16 +196,21 @@ def render_relatorio_completo(prefs: dict):
         if st.button("LIMPAR CACHE DO PDF", key="mc_atualizar_pdf"):
             _pdf.clear()
             st.session_state.pop("mc_pdf", None)
+            st.session_state.pop("mc_pdf_em", None)
             st.toast("Cache do PDF limpo. Gere novamente para consultar os dados atuais.")
         if st.button("GERAR PDF DE HOJE", key="mc_gerar_pdf"):
             with st.spinner("Montando o PDF (pode levar até 1 minuto)..."):
                 try:
                     st.session_state["mc_pdf"] = _pdf(_hora_ref())
+                    st.session_state["mc_pdf_em"] = datetime.now(TZ_SP)
                 except Exception as exc:
                     st.session_state["mc_pdf"] = None
                     print(f"[morning_call_tab] PDF falhou: {exc!r}")
                     st.error("Não foi possível gerar o PDF agora (fontes indisponíveis). Tente novamente em alguns minutos.")
         if st.session_state.get("mc_pdf"):
+            gerado_em = st.session_state.get("mc_pdf_em")
+            if gerado_em:
+                st.caption(f"PDF montado em {gerado_em.strftime('%d/%m/%Y às %H:%M:%S')} (Brasília).")
             st.download_button(
                 "BAIXAR PDF", st.session_state["mc_pdf"],
                 file_name=f"pregao-morning-call-{datetime.now(TZ_SP).strftime('%Y-%m-%d')}.pdf",
