@@ -1055,10 +1055,10 @@ def _agenda(edicao, estilos, registro):
     flows = [CabecalhoEditoria("Agenda do dia", "agenda", registro)]
     if agenda is None:
         flows.append(Paragraph("Agenda de resultados indisponível nesta edição.", estilos["aviso"]))
-        return flows + [Spacer(1, 14)]
+        return flows
     if not agenda:
         flows.append(Paragraph(_t(_texto_agenda_vazia(edicao.get("agora"))), estilos["aviso"]))
-        return flows + [Spacer(1, 14)]
+        return flows
     linhas = [[Paragraph("EMPRESA", estilos["tabela_cab"]), Paragraph("EVENTO", estilos["tabela_cab"]),
                Paragraph("HORÁRIO", estilos["tabela_cab"]), Paragraph("SITUAÇÃO DA DATA", estilos["tabela_cab"])]]
     notas = {}
@@ -1076,7 +1076,7 @@ def _agenda(edicao, estilos, registro):
     if notas:
         texto = " ".join(f"<i>{_t(k.capitalize())}</i>: {_t(v)}" for k, v in notas.items())
         bloco.append(Paragraph(texto, estilos["nota"]))
-    return [KeepTogether(bloco), Spacer(1, 16)]
+    return [KeepTogether(bloco)]
 
 
 def _colofao(edicao, estilos, registro, largura=None):
