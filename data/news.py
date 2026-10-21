@@ -2177,7 +2177,7 @@ def traduzir_manchetes_pdf(itens: list) -> dict:
         return {}
     por_numero = {}
     for linha in resposta.splitlines():
-        m = re.match(r"^\\s*(\\d+)\\s*[.)-]\\s*(.+?)\\s*$", linha)
+        m = re.match(r"^\s*(\d+)\s*[.)-]\s*(.+?)\s*$", linha)
         if m:
             idx = int(m.group(1))
             if 1 <= idx <= len(candidatos):
