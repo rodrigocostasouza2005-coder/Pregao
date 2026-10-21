@@ -2131,6 +2131,62 @@ def _chamar_groq(prompt_sistema: str, prompt_usuario: str) -> tuple:
         return None, str(e)
 
 
+
+def traduzir_manchetes_pdf(itens: list) -> dict:
+    """Traduz em lote manchetes internacionais para português brasileiro.
+
+    Só altera títulos claramente em inglês; conserva ticker, nomes próprios,
+    números e percentuais. A chamada é única por edição (não uma chamada por
+    matéria). Em indisponibilidade da IA, devolve dict vazio e o PDF mantém
+    a manchete original — nunca publica uma tradução parcial ou inventada.
+    Retorno: {link_original: titulo_em_portugues}.
+    """
+    candidatos = []
+    palavras_ingles = {
+        "the", "and", "for", "with", "after", "before", "shares", "stock",
+        "stocks", "market", "markets", "says", "said", "warns", "could",
+        "will", "surge", "fall", "rises", "drops", "earnings", "investors",
+        "fed", "rate", "cuts", "raises", "deal", "report", "economy",
+        "amid", "over", "from", "into", "its", "how", "why", "what",
+    }
+    for item in itens or []:
+        titulo = str(item.get("titulo") or "").strip()
+        link = str(item.get("link") or "").strip()
+        if not titulo or not link:
+            continue
+        tokens = set(re.findall(r"[a-z]+", titulo.lower()))
+        if len(tokens & palavras_ingles) >= 2 or (
+            len(tokens & palavras_ingles) >= 1
+            and not re.search(r"[ãõçáéíóúâêô]", titulo.lower())
+            and len(titulo.split()) >= 8
+        ):
+            candidatos.append((link, titulo))
+    if not candidatos:
+        return {}
+    entradas = "\\n".join(f"{i + 1}. {titulo}" for i, (_link, titulo) in enumerate(candidatos))
+    sistema = (
+        "Você é tradutor editorial de um jornal econômico brasileiro. Traduza "
+        "manchetes do inglês para português brasileiro natural, conciso e fiel. "
+        "Não acrescente fatos nem análise. Preserve nomes próprios, marcas, tickers, "
+        "siglas, números, moedas e percentuais. Traduza expressões financeiras pelo "
+        "uso corrente no Brasil. Responda apenas uma manchete por linha, no formato "
+        "N. tradução, mantendo exatamente os números de identificação."
+    )
+    resposta, erro = _chamar_groq(sistema, entradas)
+    if erro or not resposta:
+        return {}
+    por_numero = {}
+    for linha in resposta.splitlines():
+        m = re.match(r"^\\s*(\\d+)\\s*[.)-]\\s*(.+?)\\s*$", linha)
+        if m:
+            idx = int(m.group(1))
+            if 1 <= idx <= len(candidatos):
+                traducao = m.group(2).strip().strip('"“”')
+                original = candidatos[idx - 1][1]
+                if traducao and traducao.lower() != original.lower() and len(traducao) <= max(220, len(original) * 2):
+                    por_numero[idx] = traducao
+    return {candidatos[idx - 1][0]: titulo for idx, titulo in por_numero.items()}
+
 def _resumir_com_groq(texto: str, titulo: str) -> tuple:
     """Resume o TEXTO COMPLETO extraído de uma matéria (formato editorial
     RESUMO/LEITURA DE MERCADO, ver _PROMPT_SISTEMA_RESUMO)."""
