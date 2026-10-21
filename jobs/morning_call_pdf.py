@@ -951,7 +951,7 @@ def _tabela_ativos(indicadores, estilos):
             Paragraph(_t(_referencia_curta(ind.get("barra_fmt"))), estilos["tabela_num"]),
         ])
     tabela = Table(linhas, colWidths=[None, 34 * MM, 24 * MM, 28 * MM], hAlign="LEFT")
-    tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE))
+    tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE, ("TOPPADDING", (0, 0), (-1, -1), 1.8), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.8)))
     return tabela
 
 
@@ -993,7 +993,7 @@ def _tabela_macro(linhas_macro, estilos):
                        Paragraph(_t(referencia), estilos["tabela"]),
                        Paragraph(_t(_valor_macro(linha)), estilos[estilo_valor])])
     tabela = Table(linhas, colWidths=[None, 30 * MM, 22 * MM], hAlign="LEFT")
-    tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE))
+    tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE, ("TOPPADDING", (0, 0), (-1, -1), 1.8), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.8)))
     return tabela
 
 
