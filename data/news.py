@@ -2148,6 +2148,11 @@ def traduzir_manchetes_pdf(itens: list) -> dict:
         "will", "surge", "fall", "rises", "drops", "earnings", "investors",
         "fed", "rate", "cuts", "raises", "deal", "report", "economy",
         "amid", "over", "from", "into", "its", "how", "why", "what",
+        "of", "in", "on", "at", "to", "by", "is", "are", "was", "were",
+        "has", "have", "had", "their", "they", "them", "this", "that",
+        "these", "those", "than", "more", "less", "up", "down", "rose",
+        "inflation", "accelerates", "prices", "price", "economic", "consumer",
+        "unemployment", "jobs", "growth", "year", "month", "quarter",
     }
     for item in itens or []:
         titulo = str(item.get("titulo") or "").strip()
@@ -2203,6 +2208,11 @@ def traduzir_paragrafos_pdf(textos: list) -> dict:
         "amid", "over", "from", "into", "its", "how", "why", "what",
         "company", "according", "revenue", "growth", "quarter", "billion",
         "million", "announced", "expects", "shares", "higher", "lower",
+        "of", "in", "on", "at", "to", "by", "is", "are", "was", "were",
+        "has", "have", "had", "their", "they", "them", "this", "that",
+        "these", "those", "than", "more", "less", "up", "down", "rose",
+        "inflation", "accelerates", "prices", "price", "economic", "consumer",
+        "unemployment", "jobs", "year", "month",
     }
     candidatos = []
     for item in textos or []:
