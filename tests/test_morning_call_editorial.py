@@ -84,6 +84,31 @@ def test_falha_de_traducao_nao_apaga_manchete_original():
     assert traduzido == {}
 
 
+
+def test_paragrafo_de_resumo_em_ingles_e_traduzido_sem_perder_identificador():
+    from data import news as news_mod
+
+    texto = "The company reported revenue growth of 12% in the third quarter."
+    resposta = "1. A empresa reportou crescimento da receita de 12% no terceiro trimestre."
+    with patch.object(news_mod, "_chamar_groq", return_value=(resposta, None)):
+        traduzido = news_mod.traduzir_paragrafos_pdf([
+            {"link": "https://example.com/story", "indice": 0, "texto": texto}
+        ])
+    assert traduzido[("https://example.com/story", 0)].startswith("A empresa reportou")
+    assert "12%" in traduzido[("https://example.com/story", 0)]
+
+
+def test_paragrafos_ja_em_portugues_nao_disparam_traducao():
+    from data import news as news_mod
+
+    with patch.object(news_mod, "_chamar_groq") as chamada:
+        assert news_mod.traduzir_paragrafos_pdf([
+            {"link": "https://example.com/story", "indice": 0,
+             "texto": "A empresa reportou crescimento da receita de 12% no terceiro trimestre."}
+        ]) == {}
+    chamada.assert_not_called()
+
+
 def test_manchetes_em_portugues_nao_disparam_chamada_de_traducao():
     from data import news as news_mod
 
