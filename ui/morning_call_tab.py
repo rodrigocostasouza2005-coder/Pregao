@@ -188,6 +188,10 @@ def render_relatorio_completo(prefs: dict):
             "armazenado — aqui ele é montado com os dados de agora, sob demanda.</div>",
             unsafe_allow_html=True,
         )
+        if st.button("LIMPAR CACHE DO PDF", key="mc_atualizar_pdf"):
+            _pdf.clear()
+            st.session_state.pop("mc_pdf", None)
+            st.toast("Cache do PDF limpo. Gere novamente para consultar os dados atuais.")
         if st.button("GERAR PDF DE HOJE", key="mc_gerar_pdf"):
             with st.spinner("Montando o PDF (pode levar até 1 minuto)..."):
                 try:
