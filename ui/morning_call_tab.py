@@ -201,11 +201,19 @@ def render_relatorio_completo(prefs: dict):
             "armazenado — aqui ele é montado com os dados de agora, sob demanda.</div>",
             unsafe_allow_html=True,
         )
-        if st.button("LIMPAR CACHE DO PDF", key="mc_atualizar_pdf"):
+        if st.button("ATUALIZAR PDF AGORA", key="mc_atualizar_pdf"):
             _pdf.clear()
             st.session_state.pop("mc_pdf", None)
             st.session_state.pop("mc_pdf_em", None)
-            st.toast("Cache do PDF limpo. Gere novamente para consultar os dados atuais.")
+            with st.spinner("Atualizando o PDF com uma nova consulta às fontes..."):
+                try:
+                    st.session_state["mc_pdf"] = _pdf(_hora_ref())
+                    st.session_state["mc_pdf_em"] = datetime.now(TZ_SP)
+                    st.toast("PDF atualizado.")
+                except Exception as exc:
+                    st.session_state["mc_pdf"] = None
+                    print(f"[morning_call_tab] atualização do PDF falhou: {exc!r}")
+                    st.error("Não foi possível atualizar o PDF agora. Tente novamente em alguns minutos.")
         if st.button("GERAR PDF DE HOJE", key="mc_gerar_pdf"):
             with st.spinner("Montando o PDF (pode levar até 1 minuto)..."):
                 try:
