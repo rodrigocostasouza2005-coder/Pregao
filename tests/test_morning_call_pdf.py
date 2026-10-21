@@ -80,7 +80,9 @@ def test_fontes_editoriais_embutidas(tipica):
 
 
 def test_acentuacao_portuguesa_preservada(tipica):
-    texto = _texto(tipica[2])
+    # A extração do PDF pode inserir quebras de linha no meio de manchetes
+    # conforme a largura da coluna; normalize o whitespace antes de validar.
+    texto = " ".join(_texto(tipica[2]).split())
     for trecho in ("ações do petróleo", "Inflação", "EDIÇÃO MATINAL", "SITUAÇÃO", "não", "Câmbio".upper()):
         assert trecho in texto, trecho
 
