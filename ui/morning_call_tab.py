@@ -163,6 +163,10 @@ def render_edicao_atual(prefs: dict):
     with st.expander("Gerar prévia com os dados de agora (não envia e-mail)"):
         st.caption("Monta o briefing com as mesmas funções do envio agendado — leva alguns segundos e consulta "
                    "as fontes ao vivo. Nada é enviado nem registrado.")
+        if st.button("LIMPAR CACHE E ATUALIZAR PRÉVIA", key="mc_atualizar_previa"):
+            _previa.clear()
+            st.session_state.pop("mc_previa", None)
+            st.toast("Cache da prévia limpo. Gere novamente para consultar os dados atuais.")
         if st.button("GERAR PRÉVIA", key="mc_gerar_previa"):
             with st.spinner("Montando o Morning Call..."):
                 try:
@@ -184,6 +188,10 @@ def render_relatorio_completo(prefs: dict):
             "armazenado — aqui ele é montado com os dados de agora, sob demanda.</div>",
             unsafe_allow_html=True,
         )
+        if st.button("LIMPAR CACHE DO PDF", key="mc_atualizar_pdf"):
+            _pdf.clear()
+            st.session_state.pop("mc_pdf", None)
+            st.toast("Cache do PDF limpo. Gere novamente para consultar os dados atuais.")
         if st.button("GERAR PDF DE HOJE", key="mc_gerar_pdf"):
             with st.spinner("Montando o PDF (pode levar até 1 minuto)..."):
                 try:
