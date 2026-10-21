@@ -95,6 +95,42 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+      - name: Validar configuração antes de instalar dependências
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER || 'resend' }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          provider = (os.getenv("EMAIL_PROVIDER") or "resend").strip().lower()
+          missing = []
+          for name in ("SUPABASE_URL", "SUPABASE_SECRET_KEY", "EMAIL_FROM"):
+              if not (os.getenv(name) or "").strip():
+                  missing.append(name)
+          required_by_provider = {
+              "resend": ("RESEND_API_KEY",),
+              "brevo": ("BREVO_API_KEY",),
+              "smtp": ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"),
+          }
+          if provider not in required_by_provider:
+              print(f"::error::EMAIL_PROVIDER inválido: {provider!r}. Use resend, brevo ou smtp.")
+              sys.exit(1)
+          for name in required_by_provider[provider]:
+              if not (os.getenv(name) or "").strip():
+                  missing.append(name)
+          if missing:
+              print("::error::Morning Call não pode ser enviado; secrets ausentes: " + ", ".join(missing))
+              sys.exit(1)
+          print(f"Pré-validação OK: Supabase e provedor {provider} configurados; valores secretos não exibidos.")
+          PY
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
