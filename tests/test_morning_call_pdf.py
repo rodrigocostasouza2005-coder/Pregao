@@ -80,8 +80,10 @@ def test_fontes_editoriais_embutidas(tipica):
 
 
 def test_acentuacao_portuguesa_preservada(tipica):
-    texto = _texto(tipica[2])
-    for trecho in ("ações do petróleo", "Inflação", "Edição das 8h", "SITUAÇÃO", "não", "Câmbio".upper()):
+    # A extração do PDF pode inserir quebras de linha no meio de manchetes
+    # conforme a largura da coluna; normalize o whitespace antes de validar.
+    texto = " ".join(_texto(tipica[2]).split())
+    for trecho in ("ações do petróleo", "Inflação", "EDIÇÃO MATINAL", "SITUAÇÃO", "não", "Câmbio".upper()):
         assert trecho in texto, trecho
 
 
@@ -148,6 +150,17 @@ def test_editoria_nunca_fica_sozinha_no_pe_da_pagina(cheia, tipica):
             pagina_cab = registro["paginas"][chave]
             pagina_primeira = next(p for rot, p, _ in marcas if rot == ("manchete", titulos[0]))
             assert pagina_primeira == pagina_cab, f"{nome}: {chave} na pág. {pagina_cab}, 1ª matéria na {pagina_primeira}"
+
+
+def test_agenda_curta_compartilha_pagina_com_mercados(tipica):
+    # Evita uma página quase vazia só para duas linhas de agenda: o bloco de
+    # mercados deve ser compacto o suficiente para compartilhar a página.
+    registro = tipica[1]
+    assert registro["paginas"]["agenda"] == registro["paginas"]["mercados"]
+    assert len(tipica[2].pages) == 3
+    # A paginação é validada pelo registro de layout: o cabeçalho da agenda
+    # é desenhado como elemento gráfico e pode não aparecer na extração de texto.
+    assert registro["paginas"]["agenda"] == len(tipica[2].pages)
 
 
 def test_capa_cabe_numa_pagina_e_indice_bate_com_paginas_reais(tipica, cheia):

@@ -208,15 +208,15 @@ def _estilos():
         base.update(kw)
         e[nome] = ParagraphStyle(nome, **base)
 
-    estilo("manchete_capa", fontName=F["PregaoDisplay"], fontSize=31, leading=33.5, spaceAfter=7)
-    estilo("linha_fina_capa", fontName=F["PregaoDisplayItalico"], fontSize=13.2, leading=17.4,
+    estilo("manchete_capa", fontName=F["PregaoDisplay"], fontSize=27, leading=30.2, spaceAfter=8)
+    estilo("linha_fina_capa", fontName=F["PregaoDisplayItalico"], fontSize=12.2, leading=15.6,
            textColor=TINTA_SUAVE, spaceAfter=10)
-    estilo("manchete_abre", fontName=F["PregaoDisplaySemi"], fontSize=20, leading=23, spaceAfter=5)
+    estilo("manchete_abre", fontName=F["PregaoDisplaySemi"], fontSize=19, leading=22, spaceAfter=6)
     estilo("linha_fina", fontName=F["PregaoDisplayItalico"], fontSize=11.2, leading=14.6,
            textColor=TINTA_SUAVE, spaceAfter=7)
     estilo("manchete", fontName=F["PregaoDisplaySemi"], fontSize=14, leading=16.6, spaceAfter=4)
     estilo("manchete_coluna", fontName=F["PregaoDisplaySemi"], fontSize=17.5, leading=20.4, spaceAfter=5)
-    estilo("chamada", fontName=F["PregaoDisplaySemi"], fontSize=13, leading=15.4, spaceAfter=3)
+    estilo("chamada", fontName=F["PregaoDisplaySemi"], fontSize=12.2, leading=14.6, spaceAfter=4)
     estilo("corpo", alignment=TA_JUSTIFY)
     estilo("corpo_seguinte", alignment=TA_JUSTIFY, firstLineIndent=9)
     estilo("corpo_estreito", alignment=TA_LEFT)
@@ -951,7 +951,7 @@ def _tabela_ativos(indicadores, estilos):
             Paragraph(_t(_referencia_curta(ind.get("barra_fmt"))), estilos["tabela_num"]),
         ])
     tabela = Table(linhas, colWidths=[None, 34 * MM, 24 * MM, 28 * MM], hAlign="LEFT")
-    tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE))
+    tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE, ("TOPPADDING", (0, 0), (-1, -1), 1.8), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.8)))
     return tabela
 
 
@@ -993,7 +993,7 @@ def _tabela_macro(linhas_macro, estilos):
                        Paragraph(_t(referencia), estilos["tabela"]),
                        Paragraph(_t(_valor_macro(linha)), estilos[estilo_valor])])
     tabela = Table(linhas, colWidths=[None, 30 * MM, 22 * MM], hAlign="LEFT")
-    tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE))
+    tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE, ("TOPPADDING", (0, 0), (-1, -1), 1.8), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.8)))
     return tabela
 
 
@@ -1055,10 +1055,10 @@ def _agenda(edicao, estilos, registro):
     flows = [CabecalhoEditoria("Agenda do dia", "agenda", registro)]
     if agenda is None:
         flows.append(Paragraph("Agenda de resultados indisponível nesta edição.", estilos["aviso"]))
-        return flows + [Spacer(1, 14)]
+        return flows
     if not agenda:
         flows.append(Paragraph(_t(_texto_agenda_vazia(edicao.get("agora"))), estilos["aviso"]))
-        return flows + [Spacer(1, 14)]
+        return flows
     linhas = [[Paragraph("EMPRESA", estilos["tabela_cab"]), Paragraph("EVENTO", estilos["tabela_cab"]),
                Paragraph("HORÁRIO", estilos["tabela_cab"]), Paragraph("SITUAÇÃO DA DATA", estilos["tabela_cab"])]]
     notas = {}
@@ -1076,7 +1076,7 @@ def _agenda(edicao, estilos, registro):
     if notas:
         texto = " ".join(f"<i>{_t(k.capitalize())}</i>: {_t(v)}" for k, v in notas.items())
         bloco.append(Paragraph(texto, estilos["nota"]))
-    return [KeepTogether(bloco), Spacer(1, 16)]
+    return [KeepTogether(bloco)]
 
 
 def _colofao(edicao, estilos, registro, largura=None):
@@ -1115,7 +1115,7 @@ def _desenhar_masthead(c, agora):
     c.drawString(MARGEM_X, topo - 7, _espacar("MORNING CALL"))
     c.setFont(F["PregaoSans"], 7.2)
     c.setFillColor(CINZA)
-    c.drawRightString(PAGINA_LARGURA - MARGEM_X, topo - 7, "Edição das 8h · São Paulo")
+    c.drawRightString(PAGINA_LARGURA - MARGEM_X, topo - 7, "EDIÇÃO MATINAL · SÃO PAULO")
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, topo - 12, PAGINA_LARGURA - MARGEM_X, topo - 12)
@@ -1137,7 +1137,7 @@ def _desenhar_masthead(c, agora):
     c.setFont(F["PregaoSans"], 7.2)
     c.setFillColor(CINZA)
     c.drawRightString(PAGINA_LARGURA - MARGEM_X, y_regua - 12.5,
-                      f"Dados até {agora.strftime('%H:%M')}, horário de Brasília")
+                      f"PDF gerado às {agora.strftime('%H:%M')}, horário de Brasília")
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, y_regua - 19, PAGINA_LARGURA - MARGEM_X, y_regua - 19)

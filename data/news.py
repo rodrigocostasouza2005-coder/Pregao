@@ -2131,6 +2131,128 @@ def _chamar_groq(prompt_sistema: str, prompt_usuario: str) -> tuple:
         return None, str(e)
 
 
+
+def traduzir_manchetes_pdf(itens: list) -> dict:
+    """Traduz em lote manchetes internacionais para português brasileiro.
+
+    Só altera títulos claramente em inglês; conserva ticker, nomes próprios,
+    números e percentuais. A chamada é única por edição (não uma chamada por
+    matéria). Em indisponibilidade da IA, devolve dict vazio e o PDF mantém
+    a manchete original — nunca publica uma tradução parcial ou inventada.
+    Retorno: {link_original: titulo_em_portugues}.
+    """
+    candidatos = []
+    palavras_ingles = {
+        "the", "and", "for", "with", "after", "before", "shares", "stock",
+        "stocks", "market", "markets", "says", "said", "warns", "could",
+        "will", "surge", "fall", "rises", "drops", "earnings", "investors",
+        "fed", "rate", "cuts", "raises", "deal", "report", "economy",
+        "amid", "over", "from", "into", "its", "how", "why", "what",
+        "of", "in", "on", "at", "to", "by", "is", "are", "was", "were",
+        "has", "have", "had", "their", "they", "them", "this", "that",
+        "these", "those", "than", "more", "less", "up", "down", "rose",
+        "inflation", "accelerates", "prices", "price", "economic", "consumer",
+        "unemployment", "jobs", "growth", "year", "month", "quarter",
+    }
+    for item in itens or []:
+        titulo = str(item.get("titulo") or "").strip()
+        link = str(item.get("link") or "").strip()
+        if not titulo or not link:
+            continue
+        tokens = set(re.findall(r"[a-z]+", titulo.lower()))
+        if len(tokens & palavras_ingles) >= 2 or (
+            len(tokens & palavras_ingles) >= 1
+            and not re.search(r"[ãõçáéíóúâêô]", titulo.lower())
+            and len(titulo.split()) >= 8
+        ):
+            candidatos.append((link, titulo))
+    if not candidatos:
+        return {}
+    entradas = "\n".join(f"{i + 1}. {titulo}" for i, (_link, titulo) in enumerate(candidatos))
+    sistema = (
+        "Você é tradutor editorial de um jornal econômico brasileiro. Traduza "
+        "manchetes do inglês para português brasileiro natural, conciso e fiel. "
+        "Não acrescente fatos nem análise. Preserve nomes próprios, marcas, tickers, "
+        "siglas, números, moedas e percentuais. Traduza expressões financeiras pelo "
+        "uso corrente no Brasil. Responda apenas uma manchete por linha, no formato "
+        "N. tradução, mantendo exatamente os números de identificação."
+    )
+    resposta, erro = _chamar_groq(sistema, entradas)
+    if erro or not resposta:
+        return {}
+    por_numero = {}
+    for linha in resposta.splitlines():
+        m = re.match(r"^\s*(\d+)\s*[.)-]\s*(.+?)\s*$", linha)
+        if m:
+            idx = int(m.group(1))
+            if 1 <= idx <= len(candidatos):
+                traducao = m.group(2).strip().strip('"“”')
+                original = candidatos[idx - 1][1]
+                if traducao and traducao.lower() != original.lower() and len(traducao) <= max(220, len(original) * 2):
+                    por_numero[idx] = traducao
+    return {candidatos[idx - 1][0]: titulo for idx, titulo in por_numero.items()}
+
+
+def traduzir_paragrafos_pdf(textos: list) -> dict:
+    """Traduz parágrafos de resumos editoriais que ainda estejam em inglês.
+
+    Entrada: [{"link": ..., "indice": int, "texto": ...}, ...].
+    Saída: {(link, indice): texto_pt}. Só envia parágrafos identificados
+    como inglês, em lote, sem misturar conteúdo de matérias diferentes.
+    """
+    palavras_ingles = {
+        "the", "and", "for", "with", "after", "before", "shares", "stock",
+        "stocks", "market", "markets", "says", "said", "warns", "could",
+        "will", "surge", "fall", "rises", "drops", "earnings", "investors",
+        "fed", "rate", "cuts", "raises", "deal", "report", "economy",
+        "amid", "over", "from", "into", "its", "how", "why", "what",
+        "company", "according", "revenue", "growth", "quarter", "billion",
+        "million", "announced", "expects", "shares", "higher", "lower",
+        "of", "in", "on", "at", "to", "by", "is", "are", "was", "were",
+        "has", "have", "had", "their", "they", "them", "this", "that",
+        "these", "those", "than", "more", "less", "up", "down", "rose",
+        "inflation", "accelerates", "prices", "price", "economic", "consumer",
+        "unemployment", "jobs", "year", "month",
+    }
+    candidatos = []
+    for item in textos or []:
+        texto = str(item.get("texto") or "").strip()
+        link = str(item.get("link") or "").strip()
+        indice = item.get("indice")
+        if not texto or not link or not isinstance(indice, int):
+            continue
+        tokens = set(re.findall(r"[a-z]+", texto.lower()))
+        if len(tokens & palavras_ingles) >= 2 or (
+            len(tokens & palavras_ingles) >= 1
+            and not re.search(r"[ãõçáéíóúâêô]", texto.lower())
+            and len(texto.split()) >= 12
+        ):
+            candidatos.append((link, indice, texto))
+    if not candidatos:
+        return {}
+    entradas = "\n".join(f"{i + 1}. {texto}" for i, (_link, _idx, texto) in enumerate(candidatos))
+    sistema = (
+        "Traduza cada parágrafo de uma matéria econômica para português brasileiro natural e fiel. "
+        "Não resuma, não acrescente fatos, não altere números, tickers, nomes próprios, moedas ou "
+        "percentuais. Mantenha cada tradução em uma única linha e responda no formato N. tradução, "
+        "preservando exatamente a numeração."
+    )
+    resposta, erro = _chamar_groq(sistema, entradas)
+    if erro or not resposta:
+        return {}
+    traduzidos = {}
+    for linha in resposta.splitlines():
+        m = re.match(r"^\s*(\d+)\s*[.)-]\s*(.+?)\s*$", linha)
+        if not m:
+            continue
+        idx = int(m.group(1))
+        if 1 <= idx <= len(candidatos):
+            link, indice, original = candidatos[idx - 1]
+            traducao = m.group(2).strip().strip('"“”')
+            if traducao and traducao.lower() != original.lower() and len(traducao) <= max(1200, len(original) * 2):
+                traduzidos[(link, indice)] = traducao
+    return traduzidos
+
 def _resumir_com_groq(texto: str, titulo: str) -> tuple:
     """Resume o TEXTO COMPLETO extraído de uma matéria (formato editorial
     RESUMO/LEITURA DE MERCADO, ver _PROMPT_SISTEMA_RESUMO)."""

@@ -57,6 +57,117 @@ class _MultiPatch:
             p.stop()
 
 
+def test_manchetes_em_ingles_sao_traduzidas_no_pdf_sem_perder_link():
+    from data import news as news_mod
+
+    noticia = {
+        "titulo": "Fed signals interest rate cuts as inflation cools",
+        "link": "https://example.com/fed-story",
+    }
+    resposta = "1. Fed sinaliza cortes de juros com desaceleração da inflação"
+    with patch.object(news_mod, "_chamar_groq", return_value=(resposta, None)):
+        traduzido = news_mod.traduzir_manchetes_pdf([noticia])
+    assert traduzido["https://example.com/fed-story"] == (
+        "Fed sinaliza cortes de juros com desaceleração da inflação"
+    )
+
+
+def test_manchete_internacional_curta_sem_acentos_e_identificada():
+    from data import news as news_mod
+
+    noticia = {
+        "titulo": "US inflation accelerates in September",
+        "link": "https://example.com/inflation",
+    }
+    resposta = "1. A inflação dos EUA acelera em setembro"
+    with patch.object(news_mod, "_chamar_groq", return_value=(resposta, None)) as chamada:
+        traduzido = news_mod.traduzir_manchetes_pdf([noticia])
+    chamada.assert_called_once()
+    assert traduzido["https://example.com/inflation"] == "A inflação dos EUA acelera em setembro"
+
+
+def test_falha_de_traducao_nao_apaga_manchete_original():
+    from data import news as news_mod
+
+    noticia = {
+        "titulo": "Fed signals interest rate cuts as inflation cools",
+        "link": "https://example.com/fed-story",
+    }
+    with patch.object(news_mod, "_chamar_groq", return_value=(None, "cota")):
+        traduzido = news_mod.traduzir_manchetes_pdf([noticia])
+    assert traduzido == {}
+
+
+
+def test_paragrafo_de_resumo_em_ingles_e_traduzido_sem_perder_identificador():
+    from data import news as news_mod
+
+    texto = "The company reported revenue growth of 12% in the third quarter."
+    resposta = "1. A empresa reportou crescimento da receita de 12% no terceiro trimestre."
+    with patch.object(news_mod, "_chamar_groq", return_value=(resposta, None)):
+        traduzido = news_mod.traduzir_paragrafos_pdf([
+            {"link": "https://example.com/story", "indice": 0, "texto": texto}
+        ])
+    assert traduzido[("https://example.com/story", 0)].startswith("A empresa reportou")
+    assert "12%" in traduzido[("https://example.com/story", 0)]
+
+
+def test_paragrafos_ja_em_portugues_nao_disparam_traducao():
+    from data import news as news_mod
+
+    with patch.object(news_mod, "_chamar_groq") as chamada:
+        assert news_mod.traduzir_paragrafos_pdf([
+            {"link": "https://example.com/story", "indice": 0,
+             "texto": "A empresa reportou crescimento da receita de 12% no terceiro trimestre."}
+        ]) == {}
+    chamada.assert_not_called()
+
+
+def test_manchetes_em_portugues_nao_disparam_chamada_de_traducao():
+    from data import news as news_mod
+
+    noticia = {
+        "titulo": "Banco Central mantém a taxa Selic em decisão do Copom",
+        "link": "https://example.com/copom",
+    }
+    with patch.object(news_mod, "_chamar_groq") as chamada:
+        assert news_mod.traduzir_manchetes_pdf([noticia]) == {}
+    chamada.assert_not_called()
+
+
+
+def test_montar_edicao_aplica_traducao_a_manchete_e_resumo_em_ingles():
+    noticia = {
+        "titulo": "Fed signals interest rate cuts as inflation cools",
+        "link": "https://example.com/fed-story",
+        "regiao": "INT",
+        "veiculos": ["Reuters"],
+        "importancia": 10,
+    }
+    resumo = "RESUMO:\\nThe company reported revenue growth of 12% in the third quarter."
+    traducoes = {
+        "https://example.com/fed-story": "Fed sinaliza cortes de juros com inflação mais baixa"
+    }
+    paragrafos_pt = {
+        ("https://example.com/fed-story", 0):
+            "A empresa reportou crescimento da receita de 12% no terceiro trimestre."
+    }
+    overrides = {
+        **_pools([noticia]),
+        "obter_resumos_prontos": lambda _grupos: {
+            "https://example.com/fed-story": {"resumo": resumo}
+        },
+        "traduzir_manchetes_pdf": lambda _itens: traducoes,
+        "traduzir_paragrafos_pdf": lambda _textos: paragrafos_pt,
+    }
+    with _MultiPatch(**overrides):
+        edicao = ed.montar_edicao(datetime(2026, 10, 14, 8, 0, tzinfo=TZ_SP))
+    fato = edicao["exterior"]["noticias"][0]
+    assert fato["titulo"] == traducoes["https://example.com/fed-story"]
+    assert fato["link"] == "https://example.com/fed-story"
+    assert fato["corpo"] == [paragrafos_pt[("https://example.com/fed-story", 0)]]
+
+
 def test_brt_label_converte_fuso_de_origem_pra_horario_de_brasilia():
     # 14:30 em Nova York (UTC-4, horário de verão) -> 15:30 em Brasília (UTC-3).
     assert ed.brt_label("2026-10-14T14:30:00-04:00") == "14/10 15:30 (horário de Brasília)"
