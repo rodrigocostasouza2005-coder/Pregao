@@ -166,6 +166,7 @@ def render_edicao_atual(prefs: dict):
         if st.button("LIMPAR CACHE E ATUALIZAR PRÉVIA", key="mc_atualizar_previa"):
             _previa.clear()
             st.session_state.pop("mc_previa", None)
+            st.session_state.pop("mc_previa_em", None)
             st.toast("Cache da prévia limpo. Gere novamente para consultar os dados atuais.")
         if st.button("GERAR PRÉVIA", key="mc_gerar_previa"):
             with st.spinner("Montando o Morning Call..."):
@@ -195,6 +196,7 @@ def render_relatorio_completo(prefs: dict):
         if st.button("LIMPAR CACHE DO PDF", key="mc_atualizar_pdf"):
             _pdf.clear()
             st.session_state.pop("mc_pdf", None)
+            st.session_state.pop("mc_pdf_em", None)
             st.toast("Cache do PDF limpo. Gere novamente para consultar os dados atuais.")
         if st.button("GERAR PDF DE HOJE", key="mc_gerar_pdf"):
             with st.spinner("Montando o PDF (pode levar até 1 minuto)..."):
