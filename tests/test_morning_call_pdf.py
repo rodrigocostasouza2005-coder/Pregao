@@ -152,6 +152,13 @@ def test_editoria_nunca_fica_sozinha_no_pe_da_pagina(cheia, tipica):
             assert pagina_primeira == pagina_cab, f"{nome}: {chave} na pág. {pagina_cab}, 1ª matéria na {pagina_primeira}"
 
 
+def test_agenda_curta_compartilha_pagina_com_mercados(tipica):
+    # Evita uma página quase vazia só para duas linhas de agenda: o bloco de
+    # mercados deve ser compacto o suficiente para compartilhar a página.
+    registro = tipica[1]
+    assert registro["paginas"]["agenda"] == registro["paginas"]["mercados"]
+
+
 def test_capa_cabe_numa_pagina_e_indice_bate_com_paginas_reais(tipica, cheia):
     for _, registro, leitor in (tipica, cheia):
         primeira = leitor.pages[0].extract_text()
