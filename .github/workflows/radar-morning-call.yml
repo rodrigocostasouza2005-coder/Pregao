@@ -81,6 +81,7 @@ jobs:
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: python -m jobs.radar_quedas
@@ -112,12 +113,12 @@ jobs:
           import sys
           provider = (os.getenv("EMAIL_PROVIDER") or "resend").strip().lower()
           missing = []
-          for name in ("SUPABASE_URL", "SUPABASE_SECRET_KEY", "EMAIL_FROM"):
+          for name in ("SUPABASE_URL", "SUPABASE_SECRET_KEY"):
               if not (os.getenv(name) or "").strip():
                   missing.append(name)
           required_by_provider = {
-              "resend": ("RESEND_API_KEY",),
-              "brevo": ("BREVO_API_KEY",),
+              "resend": ("RESEND_API_KEY", "EMAIL_FROM"),
+              "brevo": ("BREVO_API_KEY", "EMAIL_FROM"),
               "smtp": ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"),
           }
           if provider not in required_by_provider:
@@ -126,9 +127,22 @@ jobs:
           for name in required_by_provider[provider]:
               if not (os.getenv(name) or "").strip():
                   missing.append(name)
+          # O remetente SMTP pode usar SMTP_USER como fallback, conforme
+          # jobs/email_utils.py. Resend/Brevo exigem EMAIL_FROM explícito.
+          if provider == "smtp" and not (os.getenv("EMAIL_FROM") or "").strip():
+              pass  # SMTP_USER já é obrigatório e será usado como remetente.
           if missing:
               print("::error::Morning Call não pode ser enviado; secrets ausentes: " + ", ".join(missing))
               sys.exit(1)
+          if provider == "smtp":
+              porta_texto = (os.getenv("SMTP_PORT") or "587").strip() or "587"
+              try:
+                  porta = int(porta_texto)
+                  if not 1 <= porta <= 65535:
+                      raise ValueError
+              except ValueError:
+                  print("::error::SMTP_PORT deve ser uma porta numérica entre 1 e 65535 (padrão 587).")
+                  sys.exit(1)
           print(f"Pré-validação OK: Supabase e provedor {provider} configurados; valores secretos não exibidos.")
           PY
       - uses: actions/setup-python@v5
