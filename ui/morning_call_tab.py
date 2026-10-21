@@ -210,8 +210,13 @@ def render_historico(prefs: dict):
         if not edicoes:
             st.info("Nenhuma edição registrada ainda.")
             return
-        st.caption("Uma linha por dia (horário de Brasília). ENVIADA = pelo menos um envio confirmado pelo "
-                   "provedor de e-mail; FALHA_ENVIO = o texto foi gerado, mas o envio falhou.")
+        total_enviadas = sum(1 for ed in edicoes if ed.get("status") == "ENVIADA")
+        total_falhas = sum(1 for ed in edicoes if ed.get("status") == "FALHA_ENVIO")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("EDIÇÕES", len(edicoes))
+        c2.metric("ENVIADAS", total_enviadas)
+        c3.metric("FALHAS", total_falhas)
+        st.caption("Horários de Brasília. ENVIADA = envio confirmado pelo provedor; FALHA_ENVIO = conteúdo gerado, mas sem confirmação.")
         for ed in edicoes[:60]:
             rotulo = f"{ed['data'].strftime('%d/%m/%Y')} · {ed['status']}"
             with st.expander(rotulo):
