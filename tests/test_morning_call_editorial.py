@@ -121,6 +121,39 @@ def test_manchetes_em_portugues_nao_disparam_chamada_de_traducao():
     chamada.assert_not_called()
 
 
+
+def test_montar_edicao_aplica_traducao_a_manchete_e_resumo_em_ingles():
+    noticia = {
+        "titulo": "Fed signals interest rate cuts as inflation cools",
+        "link": "https://example.com/fed-story",
+        "regiao": "INT",
+        "veiculos": ["Reuters"],
+        "importancia": 10,
+    }
+    resumo = "RESUMO:\\nThe company reported revenue growth of 12% in the third quarter."
+    traducoes = {
+        "https://example.com/fed-story": "Fed sinaliza cortes de juros com inflação mais baixa"
+    }
+    paragrafos_pt = {
+        ("https://example.com/fed-story", 0):
+            "A empresa reportou crescimento da receita de 12% no terceiro trimestre."
+    }
+    overrides = {
+        **_pools([noticia]),
+        "obter_resumos_prontos": lambda _grupos: {
+            "https://example.com/fed-story": {"resumo": resumo}
+        },
+        "traduzir_manchetes_pdf": lambda _itens: traducoes,
+        "traduzir_paragrafos_pdf": lambda _textos: paragrafos_pt,
+    }
+    with _MultiPatch(**overrides):
+        edicao = ed.montar_edicao(datetime(2026, 10, 14, 8, 0, tzinfo=TZ_SP))
+    fato = edicao["exterior"]["noticias"][0]
+    assert fato["titulo"] == traducoes["https://example.com/fed-story"]
+    assert fato["link"] == "https://example.com/fed-story"
+    assert fato["corpo"] == [paragrafos_pt[("https://example.com/fed-story", 0)]]
+
+
 def test_brt_label_converte_fuso_de_origem_pra_horario_de_brasilia():
     # 14:30 em Nova York (UTC-4, horário de verão) -> 15:30 em Brasília (UTC-3).
     assert ed.brt_label("2026-10-14T14:30:00-04:00") == "14/10 15:30 (horário de Brasília)"
