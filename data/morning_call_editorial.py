@@ -39,6 +39,7 @@ from data.macro import (
 from data.news import (
     obter_resumos_prontos, obter_top_mercado, obter_top_mercado_internacional, separar_secoes_resumo,
     traduzir_manchetes_pdf,
+    traduzir_paragrafos_pdf,
 )
 from data.news import eh_fonte_confiavel
 from data.prices import obter_cotacao_indice, obter_historico
@@ -647,6 +648,27 @@ def montar_edicao(agora=None):
     noticias_brasil = _fatos(brasil_sel)
     noticias_exterior_fatos = _fatos(exterior_sel)
     noticias_empresas = _fatos(empresas_sel)
+
+    # Tradução de segurança para resumos antigos que tenham ficado em inglês
+    # no cache. O texto original só é substituído quando há tradução válida.
+    por_link = {f.get("link"): f for f in noticias_brasil + noticias_exterior_fatos + noticias_empresas}
+    paragrafos = [
+        {"link": fato["link"], "indice": idx, "texto": paragrafo}
+        for fato in por_link.values() if fato.get("link")
+        for idx, paragrafo in enumerate(fato.get("corpo") or [])
+    ]
+    try:
+        paragrafos_pt = traduzir_paragrafos_pdf(paragrafos) or {}
+    except Exception:
+        paragrafos_pt = {}
+    for fato in por_link.values():
+        link = fato.get("link")
+        if not link:
+            continue
+        fato["corpo"] = [
+            paragrafos_pt.get((link, idx), paragrafo)
+            for idx, paragrafo in enumerate(fato.get("corpo") or [])
+        ]
     todos_fatos = noticias_brasil + noticias_empresas + noticias_exterior_fatos
     manchete, chamadas = selecionar_manchete(todos_fatos)
 
