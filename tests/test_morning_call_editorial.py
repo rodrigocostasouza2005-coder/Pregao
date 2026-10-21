@@ -72,6 +72,20 @@ def test_manchetes_em_ingles_sao_traduzidas_no_pdf_sem_perder_link():
     )
 
 
+def test_manchete_internacional_curta_sem_acentos_e_identificada():
+    from data import news as news_mod
+
+    noticia = {
+        "titulo": "US inflation accelerates in September",
+        "link": "https://example.com/inflation",
+    }
+    resposta = "1. A inflação dos EUA acelera em setembro"
+    with patch.object(news_mod, "_chamar_groq", return_value=(resposta, None)) as chamada:
+        traduzido = news_mod.traduzir_manchetes_pdf([noticia])
+    chamada.assert_called_once()
+    assert traduzido["https://example.com/inflation"] == "A inflação dos EUA acelera em setembro"
+
+
 def test_falha_de_traducao_nao_apaga_manchete_original():
     from data import news as news_mod
 
