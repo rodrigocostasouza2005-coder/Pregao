@@ -38,6 +38,7 @@ from data.macro import (
 )
 from data.news import (
     obter_resumos_prontos, obter_top_mercado, obter_top_mercado_internacional, separar_secoes_resumo,
+    traduzir_manchetes_pdf,
 )
 from data.news import eh_fonte_confiavel
 from data.prices import obter_cotacao_indice, obter_historico
@@ -620,10 +621,28 @@ def montar_edicao(agora=None):
     brasil_sel = _top(brasil_bruto, 8)
     exterior_sel = _top(exterior_bruto, 8)
     empresas_sel = _top(empresas_bruto, 6)
-    prontos = _resumos_cacheados(brasil_sel + exterior_sel + empresas_sel)
+    selecionadas = brasil_sel + exterior_sel + empresas_sel
+    prontos = _resumos_cacheados(selecionadas)
+    # As sínteses cacheadas já são geradas em português; traduzimos em uma
+    # única chamada as manchetes internacionais em inglês, inclusive quando
+    # a fonte está em paywall e só há título + link. Se a IA falhar, mantém
+    # o original e o link clicável — nunca inventa uma tradução.
+    try:
+        titulos_pt = traduzir_manchetes_pdf(selecionadas) or {}
+    except Exception:
+        titulos_pt = {}
 
     def _fatos(itens):
-        return [_item_fato(i, prontos.get(i.get("link"))) for i in itens]
+        fatos = []
+        for item in itens:
+            titulo_original = str(item.get("titulo") or "").strip()
+            traduzido = titulos_pt.get(item.get("link"))
+            item_pdf = {**item, "titulo": traduzido or titulo_original}
+            fato = _item_fato(item_pdf, prontos.get(item.get("link")))
+            if traduzido:
+                fato["titulo_original"] = titulo_original
+            fatos.append(fato)
+        return fatos
 
     noticias_brasil = _fatos(brasil_sel)
     noticias_exterior_fatos = _fatos(exterior_sel)
