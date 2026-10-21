@@ -81,7 +81,7 @@ def test_fontes_editoriais_embutidas(tipica):
 
 def test_acentuacao_portuguesa_preservada(tipica):
     texto = _texto(tipica[2])
-    for trecho in ("ações do petróleo", "Inflação", "Edição das 8h", "SITUAÇÃO", "não", "Câmbio".upper()):
+    for trecho in ("ações do petróleo", "Inflação", "EDIÇÃO MATINAL", "SITUAÇÃO", "não", "Câmbio".upper()):
         assert trecho in texto, trecho
 
 
