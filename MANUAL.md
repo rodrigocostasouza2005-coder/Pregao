@@ -292,15 +292,19 @@ A primeira fonte estruturada conectada é a seção pública de recomendações 
 
 ## MORNING CALL POR E-MAIL
 
-Job independente `python -m jobs.morning_call`; agenda de dias úteis às 07:00 BRT via `.github/workflows/radar-morning-call.yml`. Consolida cotações históricas disponíveis, indicadores macro e manchetes; se algum dado falhar, marca como indisponível. Os cenários são condicionais e não representam previsão garantida. O conteúdo não depende de carteiras recomendadas nem de alertas.
+Job independente `python -m jobs.morning_call`, no workflow `.github/workflows/radar-morning-call.yml`. O horário principal configurado é **08:03 BRT em dias úteis**, com tentativas de reserva às **08:17, 08:38 e 09:07 BRT**. Esses horários são gatilhos do GitHub Actions, não garantia de entrega pontual: o GitHub pode atrasar ou descartar eventos agendados. Para reduzir esse risco, configure o disparo externo descrito em **Disparo externo dos agendamentos** abaixo.
+
+O conteúdo consolida os dados disponíveis; indisponibilidades devem ser identificadas como tal. Os cenários são condicionais e não representam previsão garantida. O conteúdo não depende de carteiras recomendadas nem de alertas.
 
 ## Configuração necessária
 
-1. Executar `sql/radar_research.sql` no SQL Editor do Supabase para criar as tabelas de recomendações, alertas e log do Morning Call.
-2. Em GitHub > Settings > Secrets and variables > Actions, configurar `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` e `EMAIL_TO`. Nunca enviar credenciais no chat ou versioná-las.
-3. Rodar o workflow **Radar e Morning Call** manualmente, escolhendo `radar`, `morning_call` ou `ambos`.
+1. Executar `sql/radar_research.sql` no SQL Editor do Supabase para criar as tabelas usadas pelo Radar e pelo registro de execuções do Morning Call.
+2. Em GitHub → Settings → Secrets and variables → Actions, configurar `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `RESEND_API_KEY` e `EMAIL_FROM`. O workflow usa Resend por padrão; `EMAIL_PROVIDER` só precisa ser definido se quiser escolher outro provedor compatível. SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`) é necessário apenas se optar por SMTP. Nunca enviar credenciais no chat ou versioná-las.
+3. No Pregão, cada destinatário precisa ativar **RECEBER MORNING CALL POR E-MAIL** em CONFIG. O envio agendado usa essa lista de assinantes opt-in; `EMAIL_TO` não substitui a inscrição dos usuários.
+4. Para testar sem enviar à lista real, abra Actions → **Radar e Morning Call** → Run workflow, selecione `morning_call` e preencha `teste_destinatario` com um único endereço de teste. O assunto sai marcado como `[TESTE]`.
+5. Para um envio normal manual, deixe `teste_destinatario` vazio e escolha `morning_call`. A idempotência evita novo envio para quem já recebeu no mesmo dia, quando o Supabase está disponível.
 
-Sem migration e secrets, os jobs não conseguem persistir nem enviar e-mails. O agendamento do GitHub Actions é best effort, não um SLA de execução pontual.
+Nunca envie credenciais no chat ou versioná-las. Sem migration e secrets, os jobs não conseguem persistir nem enviar e-mails. O agendamento nativo do GitHub Actions é best effort, não um SLA de execução pontual; veja **Disparo externo dos agendamentos** para a alternativa recomendada.
 
 ## Resumos das matérias (Groq) no Morning Call
 
