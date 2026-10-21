@@ -208,15 +208,15 @@ def _estilos():
         base.update(kw)
         e[nome] = ParagraphStyle(nome, **base)
 
-    estilo("manchete_capa", fontName=F["PregaoDisplay"], fontSize=31, leading=33.5, spaceAfter=7)
-    estilo("linha_fina_capa", fontName=F["PregaoDisplayItalico"], fontSize=13.2, leading=17.4,
+    estilo("manchete_capa", fontName=F["PregaoDisplay"], fontSize=27, leading=30.2, spaceAfter=8)
+    estilo("linha_fina_capa", fontName=F["PregaoDisplayItalico"], fontSize=12.2, leading=15.6,
            textColor=TINTA_SUAVE, spaceAfter=10)
-    estilo("manchete_abre", fontName=F["PregaoDisplaySemi"], fontSize=20, leading=23, spaceAfter=5)
+    estilo("manchete_abre", fontName=F["PregaoDisplaySemi"], fontSize=19, leading=22, spaceAfter=6)
     estilo("linha_fina", fontName=F["PregaoDisplayItalico"], fontSize=11.2, leading=14.6,
            textColor=TINTA_SUAVE, spaceAfter=7)
     estilo("manchete", fontName=F["PregaoDisplaySemi"], fontSize=14, leading=16.6, spaceAfter=4)
     estilo("manchete_coluna", fontName=F["PregaoDisplaySemi"], fontSize=17.5, leading=20.4, spaceAfter=5)
-    estilo("chamada", fontName=F["PregaoDisplaySemi"], fontSize=13, leading=15.4, spaceAfter=3)
+    estilo("chamada", fontName=F["PregaoDisplaySemi"], fontSize=12.2, leading=14.6, spaceAfter=4)
     estilo("corpo", alignment=TA_JUSTIFY)
     estilo("corpo_seguinte", alignment=TA_JUSTIFY, firstLineIndent=9)
     estilo("corpo_estreito", alignment=TA_LEFT)
