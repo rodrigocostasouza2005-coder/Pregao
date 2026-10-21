@@ -83,6 +83,7 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python -m jobs.radar_quedas
   morning-call:
     if: >-
@@ -107,6 +108,7 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           python - <<'PY'
           import os
@@ -144,6 +146,8 @@ jobs:
                   print("::error::SMTP_PORT deve ser uma porta numérica entre 1 e 65535 (padrão 587).")
                   sys.exit(1)
           print(f"Pré-validação OK: Supabase e provedor {provider} configurados; valores secretos não exibidos.")
+          if not (os.getenv("GROQ_API_KEY") or "").strip():
+              print("::warning::GROQ_API_KEY ausente: manchetes/resumos em inglês podem permanecer sem tradução no PDF.")
           PY
       - uses: actions/setup-python@v5
         with:
