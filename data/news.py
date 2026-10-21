@@ -2220,7 +2220,7 @@ def traduzir_paragrafos_pdf(textos: list) -> dict:
             candidatos.append((link, indice, texto))
     if not candidatos:
         return {}
-    entradas = "\\n".join(f"{i + 1}. {texto}" for i, (_link, _idx, texto) in enumerate(candidatos))
+    entradas = "\n".join(f"{i + 1}. {texto}" for i, (_link, _idx, texto) in enumerate(candidatos))
     sistema = (
         "Traduza cada parágrafo de uma matéria econômica para português brasileiro natural e fiel. "
         "Não resuma, não acrescente fatos, não altere números, tickers, nomes próprios, moedas ou "
@@ -2232,7 +2232,7 @@ def traduzir_paragrafos_pdf(textos: list) -> dict:
         return {}
     traduzidos = {}
     for linha in resposta.splitlines():
-        m = re.match(r"^\\s*(\\d+)\\s*[.)-]\\s*(.+?)\\s*$", linha)
+        m = re.match(r"^\s*(\d+)\s*[.)-]\s*(.+?)\s*$", linha)
         if not m:
             continue
         idx = int(m.group(1))
