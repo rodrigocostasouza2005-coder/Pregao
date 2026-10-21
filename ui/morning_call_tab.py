@@ -210,9 +210,42 @@ def render_historico(prefs: dict):
         if not edicoes:
             st.info("Nenhuma edição registrada ainda.")
             return
-        st.caption("Uma linha por dia (horário de Brasília). ENVIADA = pelo menos um envio confirmado pelo "
-                   "provedor de e-mail; FALHA_ENVIO = o texto foi gerado, mas o envio falhou.")
-        for ed in edicoes[:60]:
+        total_enviadas = sum(1 for ed in edicoes if ed.get("status") == "ENVIADA")
+        total_falhas = sum(1 for ed in edicoes if ed.get("status") == "FALHA_ENVIO")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("EDIÇÕES", len(edicoes))
+        c2.metric("ENVIADAS", total_enviadas)
+        c3.metric("FALHAS", total_falhas)
+        st.caption("Horários de Brasília. ENVIADA = envio confirmado pelo provedor; FALHA_ENVIO = conteúdo gerado, mas sem confirmação.")
+        busca = st.text_input(
+            "Buscar no histórico",
+            placeholder="Data, manchete, empresa ou palavra-chave…",
+            key="mc_historico_busca",
+        ).strip().casefold()
+        filtro_status = st.selectbox(
+            "Filtrar status",
+            ["Todos os status", "ENVIADA", "FALHA_ENVIO"],
+            key="mc_historico_status",
+        )
+        limite = st.selectbox(
+            "Quantidade",
+            [10, 20, 60],
+            format_func=lambda n: f"Últimas {n} edições",
+            key="mc_historico_limite",
+        )
+        filtradas = []
+        for ed in edicoes:
+            if filtro_status != "Todos os status" and ed.get("status") != filtro_status:
+                continue
+            texto_busca = f"{ed['data'].strftime('%d/%m/%Y')} {ed.get('status', '')} {ed.get('conteudo') or ''}".casefold()
+            if busca and busca not in texto_busca:
+                continue
+            filtradas.append(ed)
+        st.caption(f"{len(filtradas)} edição(ões) encontrada(s).")
+        if not filtradas:
+            st.info("Nenhuma edição corresponde aos filtros.")
+            return
+        for ed in filtradas[:limite]:
             rotulo = f"{ed['data'].strftime('%d/%m/%Y')} · {ed['status']}"
             with st.expander(rotulo):
                 if ed["conteudo"]:
