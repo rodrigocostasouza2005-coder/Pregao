@@ -163,6 +163,10 @@ def render_edicao_atual(prefs: dict):
     with st.expander("Gerar prévia com os dados de agora (não envia e-mail)"):
         st.caption("Monta o briefing com as mesmas funções do envio agendado — leva alguns segundos e consulta "
                    "as fontes ao vivo. Nada é enviado nem registrado.")
+        if st.button("LIMPAR CACHE E ATUALIZAR PRÉVIA", key="mc_atualizar_previa"):
+            _previa.clear()
+            st.session_state.pop("mc_previa", None)
+            st.toast("Cache da prévia limpo. Gere novamente para consultar os dados atuais.")
         if st.button("GERAR PRÉVIA", key="mc_gerar_previa"):
             with st.spinner("Montando o Morning Call..."):
                 try:
