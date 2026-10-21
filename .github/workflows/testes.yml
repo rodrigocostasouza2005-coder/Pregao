@@ -29,3 +29,21 @@ jobs:
         env:
           STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
         run: python -m pytest -q
+      - name: Gerar PDF de prévia para inspeção visual
+        if: success() && github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, "tests")
+          import morning_call_amostras as amostras
+          from jobs.morning_call_pdf import gerar_pdf
+          Path("morning-call-preview.pdf").write_bytes(gerar_pdf(amostras.edicao_tipica(), {}))
+          PY
+      - name: Publicar PDF de prévia
+        if: success() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: morning-call-pdf-preview
+          path: morning-call-preview.pdf
+          retention-days: 7
