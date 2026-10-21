@@ -57,6 +57,34 @@ class _MultiPatch:
             p.stop()
 
 
+def test_manchetes_em_ingles_sao_traduzidas_no_pdf_sem_perder_link():
+    noticia = {
+        "titulo": "Fed signals interest rate cuts as inflation cools",
+        "link": "https://example.com/fed-story",
+        "regiao": "INT",
+        "veiculos": ["Reuters"],
+        "importancia": 10,
+    }
+    with _MultiPatch(**_pools([noticia]), traduzir_manchetes_pdf=lambda itens: {
+        "https://example.com/fed-story": "Fed sinaliza cortes de juros com desaceleração da inflação"
+    }):
+        traduzido = ed.traduzir_manchetes_pdf([noticia])
+    assert traduzido["https://example.com/fed-story"].startswith("Fed sinaliza cortes de juros")
+
+
+def test_falha_de_traducao_nao_apaga_manchete_original():
+    noticia = {
+        "titulo": "Fed signals interest rate cuts as inflation cools",
+        "link": "https://example.com/fed-story",
+        "regiao": "INT",
+        "veiculos": ["Reuters"],
+        "importancia": 10,
+    }
+    with _MultiPatch(**_pools([noticia]), traduzir_manchetes_pdf=lambda _itens: {}):
+        traduzido = ed.traduzir_manchetes_pdf([noticia])
+    assert traduzido == {}
+
+
 def test_brt_label_converte_fuso_de_origem_pra_horario_de_brasilia():
     # 14:30 em Nova York (UTC-4, horário de verão) -> 15:30 em Brasília (UTC-3).
     assert ed.brt_label("2026-10-14T14:30:00-04:00") == "14/10 15:30 (horário de Brasília)"
