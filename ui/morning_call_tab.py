@@ -59,7 +59,7 @@ def _bloco_editorial_html(texto: str) -> str:
                 fechar_paragrafo()
                 item = limpa[2:].strip()
                 tag = ""
-                m = re.match(r"^\\[(INTERPRETAÇÃO|INTERPRETACAO)\\]\\s*", item, re.I)
+                m = re.match(r"^\[(INTERPRETAÇÃO|INTERPRETACAO)\]\s*", item, re.I)
                 if m:
                     tag = (
                         "<span style='display:inline-block;border:1px solid #8B6A32;"
@@ -95,7 +95,7 @@ def _bloco_editorial_html(texto: str) -> str:
     for linha in (texto or "").splitlines():
         limpa = linha.strip()
         eh_titulo = bool(
-            re.match(r"^\\d+\\.\\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 &/—–():,-]{3,}$", limpa)
+            re.match(r"^\d+\.\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 &/—–():,-]{3,}$", limpa)
             or limpa in {"FONTES", "LIMITAÇÕES", "LIMITACOES"}
         )
         if eh_titulo:
