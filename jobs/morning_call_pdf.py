@@ -1115,7 +1115,7 @@ def _desenhar_masthead(c, agora):
     c.drawString(MARGEM_X, topo - 7, _espacar("MORNING CALL"))
     c.setFont(F["PregaoSans"], 7.2)
     c.setFillColor(CINZA)
-    c.drawRightString(PAGINA_LARGURA - MARGEM_X, topo - 7, "Edição das 8h · São Paulo")
+    c.drawRightString(PAGINA_LARGURA - MARGEM_X, topo - 7, "EDIÇÃO MATINAL · SÃO PAULO")
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, topo - 12, PAGINA_LARGURA - MARGEM_X, topo - 12)
@@ -1137,7 +1137,7 @@ def _desenhar_masthead(c, agora):
     c.setFont(F["PregaoSans"], 7.2)
     c.setFillColor(CINZA)
     c.drawRightString(PAGINA_LARGURA - MARGEM_X, y_regua - 12.5,
-                      f"Dados até {agora.strftime('%H:%M')}, horário de Brasília")
+                      f"PDF gerado às {agora.strftime('%H:%M')}, horário de Brasília")
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, y_regua - 19, PAGINA_LARGURA - MARGEM_X, y_regua - 19)
