@@ -157,6 +157,9 @@ def test_agenda_curta_compartilha_pagina_com_mercados(tipica):
     # mercados deve ser compacto o suficiente para compartilhar a página.
     registro = tipica[1]
     assert registro["paginas"]["agenda"] == registro["paginas"]["mercados"]
+    assert len(tipica[2].pages) == 3
+    ultima = " ".join((tipica[2].pages[-1].extract_text() or "").split())
+    assert "AGENDA DO DIA" in ultima
 
 
 def test_capa_cabe_numa_pagina_e_indice_bate_com_paginas_reais(tipica, cheia):
