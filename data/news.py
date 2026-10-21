@@ -2163,7 +2163,7 @@ def traduzir_manchetes_pdf(itens: list) -> dict:
             candidatos.append((link, titulo))
     if not candidatos:
         return {}
-    entradas = "\\n".join(f"{i + 1}. {titulo}" for i, (_link, titulo) in enumerate(candidatos))
+    entradas = "\n".join(f"{i + 1}. {titulo}" for i, (_link, titulo) in enumerate(candidatos))
     sistema = (
         "Você é tradutor editorial de um jornal econômico brasileiro. Traduza "
         "manchetes do inglês para português brasileiro natural, conciso e fiel. "
