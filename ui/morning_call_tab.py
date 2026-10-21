@@ -28,12 +28,90 @@ def texto_para_html(texto: str) -> str:
     return _URL.sub(lambda m: f"<a href='{m.group(0)}' target='_blank' rel='noopener'>{m.group(0)}</a>", escapado)
 
 
-def _exibir_texto(texto: str):
-    st.markdown(
-        "<div style='white-space:pre-wrap; font-size:0.8rem; line-height:1.45; overflow-wrap:anywhere;'>"
-        f"{texto_para_html(texto)}</div>",
-        unsafe_allow_html=True,
+def _bloco_editorial_html(texto: str) -> str:
+    """Formata o briefing de texto em secoes legiveis sem alterar seu conteudo."""
+    secoes = []
+    titulo_secao = "BRIEFING"
+    linhas_secao = []
+
+    def fechar_secao():
+        nonlocal titulo_secao, linhas_secao
+        if not linhas_secao and not secoes:
+            return
+        itens = []
+        paragrafo = []
+
+        def fechar_paragrafo():
+            if paragrafo:
+                conteudo = " ".join(paragrafo)
+                itens.append(
+                    "<p style='margin:0 0 0.65rem;line-height:1.65;color:#E6E6E6;'>"
+                    + texto_para_html(conteudo) + "</p>"
+                )
+                paragrafo.clear()
+
+        for linha in linhas_secao:
+            limpa = linha.strip()
+            if not limpa:
+                fechar_paragrafo()
+                continue
+            if limpa.startswith("- "):
+                fechar_paragrafo()
+                item = limpa[2:].strip()
+                tag = ""
+                m = re.match(r"^\[(INTERPRETAÇÃO|INTERPRETACAO)\]\s*", item, re.I)
+                if m:
+                    tag = (
+                        "<span style='display:inline-block;border:1px solid #8B6A32;"
+                        "border-radius:3px;padding:1px 5px;margin-right:6px;"
+                        "font-size:0.65rem;letter-spacing:.04em;color:#FFC266;'>"
+                        "INTERPRETAÇÃO</span>"
+                    )
+                    item = item[m.end():]
+                itens.append(
+                    "<div style='display:flex;gap:8px;align-items:flex-start;"
+                    "padding:7px 9px;margin:4px 0;background:#101010;"
+                    "border-left:2px solid #3A3A3A;border-radius:2px;'>"
+                    "<span style='color:#FFA028;font-weight:700;'>›</span>"
+                    "<div style='min-width:0;overflow-wrap:anywhere;line-height:1.55;'>"
+                    + tag + texto_para_html(item) + "</div></div>"
+                )
+            else:
+                paragrafo.append(limpa)
+        fechar_paragrafo()
+        if itens:
+            secoes.append(
+                "<section style='margin:0 0 12px;border:1px solid #292929;"
+                "border-radius:5px;overflow:hidden;'>"
+                "<div style='padding:9px 12px;background:#111;"
+                "border-bottom:1px solid #292929;color:#FFA028;"
+                "font-size:.75rem;font-weight:700;letter-spacing:.08em;'>"
+                + html.escape(titulo_secao)
+                + "</div><div style='padding:10px 12px;'>"
+                + "".join(itens) + "</div></section>"
+            )
+        linhas_secao = []
+
+    for linha in (texto or "").splitlines():
+        limpa = linha.strip()
+        eh_titulo = bool(
+            re.match(r"^\d+\.\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 &/—–():,-]{3,}$", limpa)
+            or limpa in {"FONTES", "LIMITAÇÕES", "LIMITACOES"}
+        )
+        if eh_titulo:
+            fechar_secao()
+            titulo_secao = limpa
+        else:
+            linhas_secao.append(linha)
+    fechar_secao()
+    return (
+        "<div style='max-width:100%;font-size:.84rem;overflow-wrap:anywhere;'>"
+        + "".join(secoes) + "</div>"
     )
+
+
+def _exibir_texto(texto: str):
+    st.markdown(_bloco_editorial_html(texto), unsafe_allow_html=True)
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -79,8 +157,7 @@ def render_edicao_atual(prefs: dict):
             st.info("Nenhuma edição publicada registrada ainda.")
         else:
             _cabecalho_edicao(publicada)
-            st.caption("Texto exatamente como foi enviado por e-mail. Fatos, [INTERPRETAÇÃO] e projeções vêm "
-                       "marcados no próprio texto; cada seção cita as fontes.")
+            st.caption("Edição publicada · conteúdo original do e-mail. Seções e itens foram organizados visualmente para facilitar a leitura; o texto factual não é reescrito.")
             _exibir_texto(publicada["conteudo"])
 
     with st.expander("Gerar prévia com os dados de agora (não envia e-mail)"):
