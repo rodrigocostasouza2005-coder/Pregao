@@ -163,11 +163,19 @@ def render_edicao_atual(prefs: dict):
     with st.expander("Gerar prévia com os dados de agora (não envia e-mail)"):
         st.caption("Monta o briefing com as mesmas funções do envio agendado — leva alguns segundos e consulta "
                    "as fontes ao vivo. Nada é enviado nem registrado.")
-        if st.button("LIMPAR CACHE E ATUALIZAR PRÉVIA", key="mc_atualizar_previa"):
+        if st.button("ATUALIZAR PRÉVIA AGORA", key="mc_atualizar_previa"):
             _previa.clear()
             st.session_state.pop("mc_previa", None)
             st.session_state.pop("mc_previa_em", None)
-            st.toast("Cache da prévia limpo. Gere novamente para consultar os dados atuais.")
+            with st.spinner("Atualizando o Morning Call com uma nova consulta..."):
+                try:
+                    st.session_state["mc_previa"] = _previa(_hora_ref())
+                    st.session_state["mc_previa_em"] = datetime.now(TZ_SP)
+                    st.toast("Prévia atualizada.")
+                except Exception as exc:
+                    st.session_state["mc_previa"] = None
+                    print(f"[morning_call_tab] atualização da prévia falhou: {exc!r}")
+                    st.error("Não foi possível atualizar a prévia agora. Tente novamente em alguns minutos.")
         if st.button("GERAR PRÉVIA", key="mc_gerar_previa"):
             with st.spinner("Montando o Morning Call..."):
                 try:
