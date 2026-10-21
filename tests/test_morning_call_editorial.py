@@ -58,31 +58,42 @@ class _MultiPatch:
 
 
 def test_manchetes_em_ingles_sao_traduzidas_no_pdf_sem_perder_link():
+    from data import news as news_mod
+
     noticia = {
         "titulo": "Fed signals interest rate cuts as inflation cools",
         "link": "https://example.com/fed-story",
-        "regiao": "INT",
-        "veiculos": ["Reuters"],
-        "importancia": 10,
     }
-    with _MultiPatch(**_pools([noticia]), traduzir_manchetes_pdf=lambda itens: {
-        "https://example.com/fed-story": "Fed sinaliza cortes de juros com desaceleração da inflação"
-    }):
-        traduzido = ed.traduzir_manchetes_pdf([noticia])
-    assert traduzido["https://example.com/fed-story"].startswith("Fed sinaliza cortes de juros")
+    resposta = "1. Fed sinaliza cortes de juros com desaceleração da inflação"
+    with patch.object(news_mod, "_chamar_groq", return_value=(resposta, None)):
+        traduzido = news_mod.traduzir_manchetes_pdf([noticia])
+    assert traduzido["https://example.com/fed-story"] == (
+        "Fed sinaliza cortes de juros com desaceleração da inflação"
+    )
 
 
 def test_falha_de_traducao_nao_apaga_manchete_original():
+    from data import news as news_mod
+
     noticia = {
         "titulo": "Fed signals interest rate cuts as inflation cools",
         "link": "https://example.com/fed-story",
-        "regiao": "INT",
-        "veiculos": ["Reuters"],
-        "importancia": 10,
     }
-    with _MultiPatch(**_pools([noticia]), traduzir_manchetes_pdf=lambda _itens: {}):
-        traduzido = ed.traduzir_manchetes_pdf([noticia])
+    with patch.object(news_mod, "_chamar_groq", return_value=(None, "cota")):
+        traduzido = news_mod.traduzir_manchetes_pdf([noticia])
     assert traduzido == {}
+
+
+def test_manchetes_em_portugues_nao_disparam_chamada_de_traducao():
+    from data import news as news_mod
+
+    noticia = {
+        "titulo": "Banco Central mantém a taxa Selic em decisão do Copom",
+        "link": "https://example.com/copom",
+    }
+    with patch.object(news_mod, "_chamar_groq") as chamada:
+        assert news_mod.traduzir_manchetes_pdf([noticia]) == {}
+    chamada.assert_not_called()
 
 
 def test_brt_label_converte_fuso_de_origem_pra_horario_de_brasilia():
