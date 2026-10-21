@@ -217,7 +217,35 @@ def render_historico(prefs: dict):
         c2.metric("ENVIADAS", total_enviadas)
         c3.metric("FALHAS", total_falhas)
         st.caption("Horários de Brasília. ENVIADA = envio confirmado pelo provedor; FALHA_ENVIO = conteúdo gerado, mas sem confirmação.")
-        for ed in edicoes[:60]:
+        busca = st.text_input(
+            "Buscar no histórico",
+            placeholder="Data, manchete, empresa ou palavra-chave…",
+            key="mc_historico_busca",
+        ).strip().casefold()
+        filtro_status = st.selectbox(
+            "Filtrar status",
+            ["Todos os status", "ENVIADA", "FALHA_ENVIO"],
+            key="mc_historico_status",
+        )
+        limite = st.selectbox(
+            "Quantidade",
+            [10, 20, 60],
+            format_func=lambda n: f"Últimas {n} edições",
+            key="mc_historico_limite",
+        )
+        filtradas = []
+        for ed in edicoes:
+            if filtro_status != "Todos os status" and ed.get("status") != filtro_status:
+                continue
+            texto_busca = f"{ed['data'].strftime('%d/%m/%Y')} {ed.get('status', '')} {ed.get('conteudo') or ''}".casefold()
+            if busca and busca not in texto_busca:
+                continue
+            filtradas.append(ed)
+        st.caption(f"{len(filtradas)} edição(ões) encontrada(s).")
+        if not filtradas:
+            st.info("Nenhuma edição corresponde aos filtros.")
+            return
+        for ed in filtradas[:limite]:
             rotulo = f"{ed['data'].strftime('%d/%m/%Y')} · {ed['status']}"
             with st.expander(rotulo):
                 if ed["conteudo"]:
