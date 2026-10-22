@@ -18,6 +18,16 @@ from data.eventos import STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_PRAZO_CVM
 
 _FALHAS = []
 
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _sem_cvm_real(request, monkeypatch):
+    """tentar_cvm (documentos da empresa na CVM) baixa o IPE real - nos
+    testes do pipeline ele fica desligado, salvo nos testes que o exercitam."""
+    if "tentar_cvm" not in request.node.name:
+        monkeypatch.setattr(coleta_mod, "tentar_cvm", lambda *a, **k: None)
+
 
 def _checar(nome, condicao, detalhe=""):
     status = "OK" if condicao else "FALHOU"
@@ -507,3 +517,99 @@ def test_10_falha_em_um_ticker_nao_aborta_o_universo():
     _checar("10a processa os dois tickers mesmo com excecao no primeiro", stats["processados"] == 2)
     _checar("10b contabiliza falha isolada", stats["falhas"] == 1)
     _checar("10c registra excecao para diagnostico", mock_logging.exception.called)
+
+
+# ============================================================
+# Correções de 22/10/2026 (coletores: 84 tickers, 0 confirmados)
+# ============================================================
+
+def test_data_de_referencia_do_trimestre_nao_vira_data_de_divulgacao():
+    texto = "ITR 3T26 - data de referência 30/09/2026. Divulgação em 06/11/2026."
+    data = coleta_mod.extrair_data_do_periodo(texto, 2026, 3)
+    _checar("30/09 (fim do 3T26) não é data de divulgação; 06/11 é", data == date(2026, 11, 6), f"(data={data})")
+    _checar("só a data de referência -> None",
+            coleta_mod.extrair_data_do_periodo("ITR do 3T26, referência 30/09/2026.", 2026, 3) is None)
+
+
+def test_ri_segue_link_de_calendario_publicado_na_propria_pagina():
+    home = ('<html><body><a href="/pt/calendario-de-eventos">Calendário de Eventos</a>'
+            '<a href="https://outro-site.com/calendario">externo</a>'
+            '<a href="https://ri.empresa.com.br/resultados/central-de-resultados">Central de Resultados</a>'
+            'Bem-vindo</body></html>')
+    calendario = "<html><body>Divulgação de resultados do 3T26: 05/11/2026, após o fechamento.</body></html>"
+    pedidos = []
+
+    def _get(url, **_k):
+        pedidos.append(url)
+        r = MagicMock(text=home if len(pedidos) == 1 else calendario)
+        r.raise_for_status.return_value = None
+        return r
+
+    with patch.object(coleta_mod, "obter_url_ri", return_value="https://www.empresa.com.br"), \
+         patch.object(coleta_mod.cffi_requests, "get", side_effect=_get):
+        evento = coleta_mod.tentar_ri("EMPR3", "Empresa", 2026, 3)
+    _checar("segue só links do mesmo domínio, publicados na página",
+            pedidos == ["https://www.empresa.com.br", "https://www.empresa.com.br/pt/calendario-de-eventos"], str(pedidos))
+    _checar("CONFIRMADO com a data da subpágina", evento and evento["data"] == date(2026, 11, 5))
+    _checar("origem_url é a subpágina oficial", evento["origem_url"] == "https://www.empresa.com.br/pt/calendario-de-eventos")
+
+
+def test_links_calendario_aceita_subdominio_de_ri_e_ignora_outros_dominios():
+    html = ('<a href="https://ri.empresa.com.br/agenda">Agenda</a>'
+            '<a href="https://empresa.net/calendario">x</a><a href="/sobre">Sobre</a>')
+    links = coleta_mod._links_calendario(html, "https://www.empresa.com.br")
+    _checar("subdomínio ri. do mesmo domínio entra; outro domínio e link sem palavra-chave não",
+            links == ["https://ri.empresa.com.br/agenda"], str(links))
+
+
+def _doc(categoria, assunto, data="2026-10-15", link="https://www.rad.cvm.gov.br/doc/1"):
+    return {"categoria_original": categoria, "assunto": assunto, "data": data, "link": link}
+
+
+def test_tentar_cvm_confirma_pela_data_no_assunto_do_comunicado():
+    docs = [_doc("Comunicado ao Mercado", "Divulgação de Resultados do 3T26 em 04/11/2026")]
+    with patch("data.cvm.obter_documentos_cvm", return_value=docs), \
+         patch("data.cvm._baixar_texto_documento", side_effect=AssertionError("não deveria baixar")):
+        evento = coleta_mod.tentar_cvm("EMPR3", "Empresa", 2026, 3)
+    _checar("assunto com período e data -> CONFIRMADO sem baixar documento",
+            evento and evento["status"] == STATUS_CONFIRMADO and evento["data"] == date(2026, 11, 4))
+    _checar("fonte e link oficiais da CVM", "CVM" in evento["fonte"] and evento["origem_url"].startswith("https://www.rad.cvm"))
+
+
+def test_tentar_cvm_le_o_documento_quando_o_assunto_nao_tem_data():
+    docs = [_doc("Fato Relevante", "Aquisição de participação"),  # sem termo de resultado: não baixa
+            _doc("Comunicado ao Mercado", "Data de divulgação dos resultados do 3T26", link="https://www.rad.cvm.gov.br/doc/2")]
+    baixados = []
+
+    def _baixar(link):
+        baixados.append(link)
+        return ("A Companhia divulgará os resultados do 3º trimestre de 2026 em 12 de novembro de 2026, "
+                "após o encerramento do pregão." + " x" * 120, None)
+
+    with patch("data.cvm.obter_documentos_cvm", return_value=docs), \
+         patch("data.cvm._baixar_texto_documento", side_effect=_baixar):
+        evento = coleta_mod.tentar_cvm("EMPR3", "Empresa", 2026, 3)
+    _checar("baixa só o comunicado de resultado", baixados == ["https://www.rad.cvm.gov.br/doc/2"], str(baixados))
+    _checar("data por extenso do documento", evento and evento["data"] == date(2026, 11, 12))
+
+
+def test_tentar_cvm_sem_documento_ou_fonte_fora_retorna_none():
+    with patch("data.cvm.obter_documentos_cvm", return_value=None):
+        _checar("fonte CVM fora -> None", coleta_mod.tentar_cvm("EMPR3", "Empresa", 2026, 3) is None)
+    antigo = [_doc("Comunicado ao Mercado", "Resultados do 3T25 em 05/11/2025", data="2025-10-20")]
+    with patch("data.cvm.obter_documentos_cvm", return_value=antigo):
+        _checar("documento de outro ano/período -> None", coleta_mod.tentar_cvm("EMPR3", "Empresa", 2026, 3) is None)
+
+
+def test_pipeline_tenta_cvm_depois_do_ri_e_antes_do_news():
+    ordem = []
+    evento_cvm = {"ticker": "EMPR3", "status": STATUS_CONFIRMADO, "periodo": "3T26", "data": date(2026, 11, 4)}
+    with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
+         patch.object(coleta_mod, "_buscar_evento_salvo", return_value=None), \
+         patch.object(coleta_mod, "obter_nome_yf", return_value="Empresa"), \
+         patch.object(coleta_mod, "tentar_ri", side_effect=lambda *a: ordem.append("ri")), \
+         patch.object(coleta_mod, "tentar_cvm", side_effect=lambda *a: ordem.append("cvm") or evento_cvm), \
+         patch.object(coleta_mod, "tentar_news", side_effect=lambda *a: ordem.append("news")):
+        evento = coleta_mod.coletar_evento("EMPR3")
+    _checar("ordem RI -> CVM (para no CVM)", ordem == ["ri", "cvm"], str(ordem))
+    _checar("evento do CVM", evento is evento_cvm)
