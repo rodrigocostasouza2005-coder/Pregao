@@ -281,6 +281,33 @@ def test_16_diagnostico_infraestrutura_repassa_tabela_disponivel():
     )
 
 
+def test_17_toda_casa_de_research_ativa_aparece_no_painel():
+    """Achado real (auditoria 2026-10-22): 'BTG Pactual Research' e 'Monte
+    Bravo' sao casas ativa_por_padrao=True em data/research/__init__.py:
+    CASAS (coletam de verdade, gravam research_itens com esse 'casa' - ver
+    btg.py/montebravo.py:_NOME_CASA) mas nao constavam em REGISTRO_COLETORES -
+    ficavam sem NENHUMA representacao neste painel (nem OK, nem falha). Este
+    teste trava a lista: toda casa ativa em CASAS tem que ter uma entrada
+    com o MESMO nome aqui, pra nao repetir o gap com a proxima casa nova."""
+    from data.research import CASAS
+
+    nomes_painel = {c["nome"] for c in saude_mod.REGISTRO_COLETORES}
+    nomes_casas_ativas = {c["nome"] for c in CASAS if c.get("ativa_por_padrao")}
+    faltando = nomes_casas_ativas - nomes_painel
+    _checar(
+        "17 nenhuma casa ativa de research falta no painel de saude",
+        not faltando,
+        f"faltando: {faltando}",
+    )
+
+
+def test_18_btg_e_montebravo_usam_leitor_hibrido_pela_mesma_casa():
+    por_nome = {c["nome"]: c for c in saude_mod.REGISTRO_COLETORES}
+    for nome in ("BTG Pactual Research", "Monte Bravo"):
+        _checar(f"18 {nome} esta registrado", nome in por_nome, nome)
+        _checar(f"18 {nome} tem leitor hibrido proprio", "leitor" in por_nome[nome], nome)
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

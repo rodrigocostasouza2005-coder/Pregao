@@ -337,6 +337,26 @@ REGISTRO_COLETORES = [
         "leitor": _leitor_hibrido("Genial (Lives)", _leitor_research("Genial (Lives)")),
     },
     {
+        # linha nova (auditoria 2026-10-22): "BTG Pactual Research" e' casa
+        # ativa_por_padrao=True em data/research/__init__.py:CASAS (coleta de
+        # verdade, registro em research_itens com casa="BTG Pactual Research" -
+        # ver data/research/btg.py:_NOME_CASA) mas nao constava neste painel -
+        # ficava sem nenhuma representacao (nem OK nem falha).
+        "nome": "BTG Pactual Research", "fonte": "content.btgpactual.com (API de research, filtrado por tier publico)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 48, "instrumentado": True,
+        "leitor": _leitor_hibrido("BTG Pactual Research", _leitor_research("BTG Pactual Research")),
+    },
+    {
+        # linha nova (auditoria 2026-10-22): mesmo gap do BTG acima - "Monte
+        # Bravo" tambem ativa_por_padrao=True (ver data/research/montebravo.py:
+        # _NOME_CASA) e tambem nao constava neste painel.
+        "nome": "Monte Bravo", "fonte": "montebravo.com.br (feed RSS do blog, seção de análise)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 48, "instrumentado": True,
+        "leitor": _leitor_hibrido("Monte Bravo", _leitor_research("Monte Bravo")),
+    },
+    {
         "nome": "CALENDARIO", "fonte": "RI das empresas + NEWS + prazo CVM",
         "categoria": "Calendario", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
         "idade_maxima_horas": 48, "instrumentado": True,
