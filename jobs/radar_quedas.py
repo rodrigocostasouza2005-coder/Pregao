@@ -41,9 +41,19 @@ def _alertas_pendentes(cliente, hoje=None):
         return None
 
 
+def _data_pregao(alerta):
+    """'dd/mm/aaaa' do pregão do alerta, ou None se ausente/inválida."""
+    pregao = alerta.get("pregao")
+    try:
+        return datetime.fromisoformat(str(pregao)).strftime("%d/%m/%Y") if pregao else None
+    except ValueError:
+        return None
+
+
 def _texto_alerta(alerta):
     return (
         f"RADAR DE QUEDAS — {alerta['ticker']}\n\n"
+        f"Pregão: {_data_pregao(alerta) or 'não informado'}\n"
         f"Variação diária: {float(alerta['variacao_pct']):.2f}%\n"
         f"Preço: {float(alerta['preco_atual']):.2f}\n"
         f"Fechamento anterior: {float(alerta['fechamento_anterior']):.2f}\n"
@@ -65,11 +75,8 @@ def _enviar_alerta(cliente, alerta):
 
     # data do pregão no assunto: um alerta reenviado depois (retry) nunca
     # parece ser uma queda de hoje
-    pregao = alerta.get("pregao")
-    try:
-        sufixo = f" (pregão {datetime.fromisoformat(str(pregao)).strftime('%d/%m')})" if pregao else ""
-    except ValueError:
-        sufixo = ""
+    data_pregao = _data_pregao(alerta)
+    sufixo = f" (pregão {data_pregao[:5]})" if data_pregao else ""
     envio = enviar_email(
         f"[PREGÃO] Queda >4% — {alerta['ticker']}{sufixo}",
         _texto_alerta(alerta),
