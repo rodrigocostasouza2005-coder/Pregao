@@ -194,7 +194,18 @@ def _abrir_card(d: dict):
     st.markdown(f"<span class='cvm-tipo {classe}'>{d['tipo_label']}</span>", unsafe_allow_html=True)
 
     st.markdown("<div class='w-card-divisor' style='border-top:1px solid var(--borda); margin:0.6rem 0;'></div>", unsafe_allow_html=True)
-    st.markdown("<div class='cinza' style='font-size:0.72rem; text-transform:uppercase; margin-bottom:0.2rem;'>Resumo</div>", unsafe_allow_html=True)
+    # rotulo explicita "gerado por IA" (achado da auditoria 360,
+    # docs/auditoria-redesign-360.md): obter_resumo_documento sempre
+    # sintetiza o texto "em palavras proprias" (ver data/cvm.py) - sem
+    # essa indicacao visivel, um "Resumo" logo acima do botao "ABRIR
+    # DOCUMENTO" (que leva ao documento OFICIAL de verdade) podia passar
+    # a impressao de ser um trecho/sintese oficial do proprio documento,
+    # nao um texto gerado por modelo de linguagem.
+    st.markdown(
+        "<div class='cinza' style='font-size:0.72rem; text-transform:uppercase; margin-bottom:0.2rem;'>"
+        "Resumo <span style='font-weight:400; text-transform:none;'>(gerado por IA)</span></div>",
+        unsafe_allow_html=True,
+    )
 
     with st.spinner("Gerando resumo..."):
         resultado = obter_resumo_documento(d["link"], d["assunto"])

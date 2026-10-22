@@ -116,9 +116,19 @@ def _tickers_disponiveis(relatorios):
 
 
 def _bloco_resumo(resumo: str):
+    # rotulo explicita "gerado por IA" (achado da auditoria 360,
+    # docs/auditoria-redesign-360.md - mesmo principio do achado ja
+    # corrigido no modal de documento da CVM, PR #77): obter_resumo
+    # (data/research/resumir.py) sempre sintetiza o texto via Groq -
+    # sem essa indicacao visivel, o bloco podia passar a impressao de
+    # ser um trecho oficial do proprio relatorio, nao um texto gerado
+    # por modelo de linguagem.
     st.markdown(
-        f"<div class='cinza' style='font-size:0.72rem; white-space:pre-line; padding:0.25rem 0 0.5rem 0.6rem; "
-        f"border-left:2px solid var(--borda); margin-top:0.15rem;'>{resumo}</div>",
+        f"<div style='border-left:2px solid var(--borda); padding:0.25rem 0 0.5rem 0.6rem; margin-top:0.15rem;'>"
+        f"<div class='cinza' style='font-size:0.62rem; text-transform:uppercase; margin-bottom:0.15rem;'>"
+        f"Resumo (gerado por IA)</div>"
+        f"<div class='cinza' style='font-size:0.72rem; white-space:pre-line;'>{resumo}</div>"
+        f"</div>",
         unsafe_allow_html=True,
     )
 
@@ -426,6 +436,13 @@ def _painel_watchlist(prefs: dict, relatorios: list, recomendacoes: list, swing:
                 recomendacao_ticker = {
                     "ticker": ticker, "recomendacao": snap.get("recomendacao"),
                     "preco_alvo": snap.get("preco_alvo"), "potencial_pct": snap.get("potencial_pct"),
+                    # achado real (auditoria 2026-10-18): capturado_em existe
+                    # no snapshot (ultimo_snapshot ORDENA por ele) mas nunca
+                    # era copiado pra ca - a linha "Genial: COMPRA..." nunca
+                    # mostrava NENHUMA data, e _expander_historico_recomendacao
+                    # so' aparece com 2+ snapshots (o caso mais comum, 1
+                    # snapshot so', ficava sem data visivel em lugar nenhum).
+                    "capturado_em": snap.get("capturado_em"),
                 }
         swing_ticker = [
             s for s in swing
@@ -451,10 +468,17 @@ def _painel_watchlist(prefs: dict, relatorios: list, recomendacoes: list, swing:
             preco_alvo = recomendacao_ticker.get("preco_alvo")
             potencial_txt = f"{config.formatar_numero(potencial, 1, fmt)}%" if potencial is not None else "—"
             preco_alvo_txt = f"R$ {config.formatar_numero(preco_alvo, 2, fmt)}" if preco_alvo is not None else "—"
+            # capturado_em so' existe no fallback de snapshot persistido (ver
+            # acima) - recomendacao AO VIVO da Genial nunca teve data nenhuma
+            # exposta pela fonte, entao aqui nao mostra nada (nunca inventa
+            # data que a propria fonte nao da').
+            capturado_em = recomendacao_ticker.get("capturado_em")
+            data_txt = f" · atualizado em {_fmt_capturado_em(capturado_em)}" if capturado_em else ""
             st.markdown(
                 f"<div style='font-size:0.78rem;'>Genial: <b>{html.escape(str(recomendacao_ticker['recomendacao']))}</b>"
                 f" · potencial <span class='{sinal}'>{potencial_txt}</span>"
-                f" · preço-alvo {preco_alvo_txt}</div>",
+                f" · preço-alvo {preco_alvo_txt}"
+                f"<span class='cinza'>{data_txt}</span></div>",
                 unsafe_allow_html=True,
             )
             _expander_historico_recomendacao(ticker, fmt)
