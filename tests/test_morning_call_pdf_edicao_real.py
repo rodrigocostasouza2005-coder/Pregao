@@ -66,3 +66,29 @@ def test_mundo_avisa_manchete_sem_traducao():
     edicao["exterior"]["noticias"][0]["sem_traducao"] = True
     texto = "\n".join(_texto_paginas(edicao))
     assert "idioma original: a tradução não estava disponível" in texto
+
+
+def test_agenda_proximos_dias_so_com_data_anunciada():
+    from datetime import date, datetime
+    from unittest.mock import patch
+    from zoneinfo import ZoneInfo
+
+    eventos = [
+        {"ticker": "WEGE3", "empresa": "WEG", "data": date(2026, 10, 23), "status": "CONFIRMADO",
+         "tipo_evento": "RESULTADO", "periodo": "3T26"},
+        {"ticker": "PETR4", "empresa": "Petrobras", "data": date(2026, 10, 27), "status": "ESTIMADO",
+         "tipo_evento": "RESULTADO", "periodo": "3T26"},
+        {"ticker": "VALE3", "empresa": "Vale", "data": date(2026, 10, 24), "status": "PRAZO_CVM",
+         "tipo_evento": "RESULTADO", "periodo": "3T26"},
+        {"ticker": "ITUB4", "empresa": "Itaú", "data": date(2026, 11, 20), "status": "CONFIRMADO",
+         "tipo_evento": "RESULTADO", "periodo": "3T26"},
+    ]
+    agora = datetime(2026, 10, 22, 8, 3, tzinfo=ZoneInfo("America/Sao_Paulo"))
+    with patch.object(ed, "calcular_calendario_cacheado", return_value=eventos):
+        proximos = ed._agenda_proximos(agora)
+    assert [e["ticker"] for e in proximos] == ["WEGE3", "PETR4"]  # sem prazo CVM e sem além de 7 dias
+
+    edicao = amostras.edicao_tipica()
+    edicao["empresas"]["agenda_proximos"] = proximos
+    texto = " ".join("\n".join(_texto_paginas(edicao)).split())
+    assert "PRÓXIMOS DIAS" in texto and "sex 23/10" in texto and "ter 27/10" in texto

@@ -22,7 +22,7 @@ não informação).
 """
 import re
 import unicodedata
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from time import monotonic
 from zoneinfo import ZoneInfo
 
@@ -838,12 +838,33 @@ def _linha_evento(evento):
         "empresa": empresa,
         "ticker": evento.get("ticker") or "?",
         "tipo_evento": evento.get("tipo_evento") or "EVENTO",
+        "data": evento.get("data"),
         "periodo": evento.get("periodo") or "",
         "horario": evento.get("horario") or "sem horário divulgado",
         "status_rotulo": rotulo_status,
         "status_nota": nota_status,
         "tag": TAG_ACOMPANHAR,
     }
+
+
+_DIAS_AGENDA_PROXIMOS = 7
+
+
+def _agenda_proximos(agora):
+    """Resultados dos próximos dias com data CONFIRMADA (RI/CVM) ou
+    ESTIMADA (notícia confiável) - nunca o prazo regulatório da CVM, que
+    não é data anunciada. None se o calendário falhar."""
+    try:
+        tickers = list(config.IBOVESPA_SETORES.keys())
+        eventos = calcular_calendario_cacheado(tickers, hoje=agora.date())
+    except Exception:
+        return None
+    hoje = agora.date()
+    limite = hoje + timedelta(days=_DIAS_AGENDA_PROXIMOS)
+    proximos = [e for e in eventos if isinstance(e.get("data"), date) and hoje < e["data"] <= limite
+                and e.get("status") in ("CONFIRMADO", "ESTIMADO")]
+    proximos.sort(key=lambda e: (e["data"], e.get("ticker") or ""))
+    return [_linha_evento(e) for e in proximos]
 
 
 def _agenda_hoje(agora):
@@ -1007,6 +1028,7 @@ def montar_edicao(agora=None):
         "empresas": {
             "cards": noticias_empresas,
             "agenda": _agenda_hoje(agora),
+            "agenda_proximos": _agenda_proximos(agora),
             "noticias_erro": erro_br,
         },
         "radar": _radar_setorial(agora),

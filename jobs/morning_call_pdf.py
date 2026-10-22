@@ -1057,16 +1057,41 @@ def _texto_agenda_vazia(agora):
     return base
 
 
+def _agenda_proximos(edicao, estilos):
+    """Tabela dos próximos dias (só datas confirmadas/estimadas)."""
+    proximos = (edicao.get("empresas") or {}).get("agenda_proximos") or []
+    if not proximos:
+        return []
+    linhas = [[Paragraph("DATA", estilos["tabela_cab"]), Paragraph("EMPRESA", estilos["tabela_cab"]),
+               Paragraph("EVENTO", estilos["tabela_cab"]), Paragraph("SITUAÇÃO DA DATA", estilos["tabela_cab"])]]
+    for e in proximos:
+        data = e.get("data")
+        data_txt = f"{_DIAS_CURTOS[data.weekday()]} {data.strftime('%d/%m')}" if data else "—"
+        empresa = f"{_t(e.get('empresa'))} <font name=\"{F['PregaoMono']}\" size=\"7\" color=\"#6F6A63\">{_t(e.get('ticker'))}</font>"
+        evento = " ".join(x for x in (str(e.get("tipo_evento") or "").capitalize(), e.get("periodo") or "") if x)
+        linhas.append([Paragraph(_t(data_txt), estilos["tabela"]), Paragraph(empresa, estilos["tabela"]),
+                       Paragraph(_t(evento), estilos["tabela"]),
+                       Paragraph(_t(str(e.get("status_rotulo") or "").lower()), estilos["tabela"])])
+    tabela = Table(linhas, colWidths=[24 * MM, None, 38 * MM, 30 * MM], hAlign="LEFT", repeatRows=1)
+    tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE))
+    return [KeepTogether([Paragraph("PRÓXIMOS DIAS", estilos["subtitulo_secao"]), tabela,
+                          Paragraph("Só datas anunciadas pela empresa (confirmadas) ou por veículo confiável "
+                                    "(estimadas); o prazo regulatório da CVM não entra.", estilos["nota"])])]
+
+
+_DIAS_CURTOS = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
+
+
 def _agenda(edicao, estilos, registro):
     empresas = edicao.get("empresas") or {}
     agenda = empresas.get("agenda")
     flows = [CabecalhoEditoria("Agenda do dia", "agenda", registro)]
     if agenda is None:
         flows.append(Paragraph("Agenda de resultados indisponível nesta edição.", estilos["aviso"]))
-        return flows
+        return flows + _agenda_proximos(edicao, estilos)
     if not agenda:
         flows.append(Paragraph(_t(_texto_agenda_vazia(edicao.get("agora"))), estilos["aviso"]))
-        return flows
+        return flows + _agenda_proximos(edicao, estilos)
     linhas = [[Paragraph("EMPRESA", estilos["tabela_cab"]), Paragraph("EVENTO", estilos["tabela_cab"]),
                Paragraph("HORÁRIO", estilos["tabela_cab"]), Paragraph("SITUAÇÃO DA DATA", estilos["tabela_cab"])]]
     notas = {}
@@ -1084,7 +1109,7 @@ def _agenda(edicao, estilos, registro):
     if notas:
         texto = " ".join(f"<i>{_t(k.capitalize())}</i>: {_t(v)}" for k, v in notas.items())
         bloco.append(Paragraph(texto, estilos["nota"]))
-    return [KeepTogether(bloco)]
+    return [KeepTogether(bloco)] + _agenda_proximos(edicao, estilos)
 
 
 def _colofao(edicao, estilos, registro, largura=None):
