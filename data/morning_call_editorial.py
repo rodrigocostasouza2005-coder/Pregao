@@ -662,6 +662,29 @@ def filtrar_noticias(itens, agora, exigir_relevancia=False):
     return escolhidos
 
 
+def _com_fonte_preferida(item):
+    """Mesma notícia, apresentada pelo veículo confiável do grupo: título,
+    veículo e link DESSE veículo (fontes[i] e titulos[i] andam juntos em
+    data/news.py:_agrupar). Causa real (edição de 22/10): "veiculos" é a
+    lista em ordem ALFABÉTICA, e o PDF mostrava o primeiro - "Acia
+    Araçatuba" abria a capa numa notícia que o grupo também tinha de
+    veículo confiável. Sem veículo confiável no grupo, nada muda."""
+    fontes = item.get("fontes") or []
+    titulos = item.get("titulos") or []
+    if not fontes or len(titulos) != len(fontes):
+        return item
+    if eh_fonte_confiavel(fontes[0].get("veiculo") or ""):
+        i = 0
+    else:
+        i = next((n for n, f in enumerate(fontes) if eh_fonte_confiavel(f.get("veiculo") or "")), None)
+        if i is None:
+            return item
+    veiculo = fontes[i].get("veiculo")
+    outros = [v for v in item.get("veiculos") or [] if v != veiculo]
+    return {**item, "titulo": titulos[i] or item.get("titulo"), "veiculos": [veiculo] + outros,
+            "link_exibicao": fontes[i].get("link") or item.get("link")}
+
+
 def _tem_fonte_confiavel(item):
     """O grupo da notícia tem ao menos um veículo da lista de fontes
     confiáveis do projeto (data/news.py, mesmo critério do selo)."""
@@ -696,7 +719,7 @@ def _item_fato(item, pronto=None):
             corpo = []
     return {
         "titulo": str(item.get("titulo") or "").strip(),
-        "link": str(item.get("link") or "").strip() or None,
+        "link": str(item.get("link_exibicao") or item.get("link") or "").strip() or None,
         "veiculo": veiculos[0] if veiculos else None,
         "fonte_confiavel": _tem_fonte_confiavel(item),
         "tag": TAG_FATO,
@@ -949,9 +972,9 @@ def montar_edicao(agora=None):
     def _top(itens, limite):
         return sorted(itens, key=_ordem_editorial, reverse=True)[:limite]
 
-    brasil_sel = _top(brasil_bruto, 8)
-    exterior_sel = _top(exterior_bruto, 8)
-    empresas_sel = _top(empresas_bruto, 6)
+    brasil_sel = [_com_fonte_preferida(i) for i in _top(brasil_bruto, 8)]
+    exterior_sel = [_com_fonte_preferida(i) for i in _top(exterior_bruto, 8)]
+    empresas_sel = [_com_fonte_preferida(i) for i in _top(empresas_bruto, 6)]
     selecionadas = brasil_sel + exterior_sel + empresas_sel
     prontos, texto_stats = _resumos_para_edicao(selecionadas, agora)
     # As sínteses cacheadas já são geradas em português; traduzimos em uma

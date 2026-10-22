@@ -92,3 +92,22 @@ def test_agenda_proximos_dias_so_com_data_anunciada():
     edicao["empresas"]["agenda_proximos"] = proximos
     texto = " ".join("\n".join(_texto_paginas(edicao)).split())
     assert "PRÓXIMOS DIAS" in texto and "sex 23/10" in texto and "ter 27/10" in texto
+
+
+def test_noticia_e_apresentada_pelo_veiculo_confiavel_do_grupo():
+    """Grupo real de 22/10: "veiculos" em ordem alfabética punha "Acia
+    Araçatuba" na capa; o grupo também tinha InfoMoney."""
+    item = {"titulo": "LJQQ3 sobe 5,9% enquanto Ibovespa cai 1,1% na B3 hoje", "link": "https://acia.invalid/1",
+            "veiculos": ["Acia Araçatuba", "InfoMoney"],
+            "fontes": [{"veiculo": "Acia Araçatuba", "link": "https://acia.invalid/1"},
+                       {"veiculo": "InfoMoney", "link": "https://www.infomoney.com.br/x"}],
+            "titulos": ["LJQQ3 sobe 5,9% enquanto Ibovespa cai 1,1% na B3 hoje",
+                        "Ibovespa cai 1,1% com eleições; Lojas Quero-Quero dispara"],
+            "importancia": 9}
+    preferido = ed._com_fonte_preferida(item)
+    fato = ed._item_fato(preferido)
+    assert fato["veiculo"] == "InfoMoney" and fato["link"] == "https://www.infomoney.com.br/x"
+    assert fato["titulo"] == "Ibovespa cai 1,1% com eleições; Lojas Quero-Quero dispara"
+    assert preferido["link"] == item["link"]  # chave do grupo (cache de resumo/tradução) intacta
+    sem_confiavel = {**item, "fontes": item["fontes"][:1], "titulos": item["titulos"][:1], "veiculos": ["Acia Araçatuba"]}
+    assert ed._com_fonte_preferida(sem_confiavel) is sem_confiavel
