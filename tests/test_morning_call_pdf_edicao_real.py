@@ -68,6 +68,17 @@ def test_mundo_avisa_manchete_sem_traducao():
     assert "idioma original: a tradução não estava disponível" in texto
 
 
+def test_mundo_so_com_manchetes_tambem_avisa_falta_de_traducao():
+    """Caso real da prévia de 22/10: nenhuma matéria com texto (sem IA) -
+    a editoria sai só com MANCHETES e o aviso não aparecia."""
+    edicao = amostras.edicao_tipica()
+    for item in edicao["exterior"]["noticias"]:
+        item["corpo"] = []
+        item["sem_traducao"] = True
+    texto = " ".join("\n".join(_texto_paginas(edicao)).split())
+    assert "manchete(s) no idioma original" in texto
+
+
 def test_agenda_proximos_dias_so_com_data_anunciada():
     from datetime import date, datetime
     from unittest.mock import patch

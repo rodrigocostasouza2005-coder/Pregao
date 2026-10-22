@@ -846,7 +846,8 @@ def _editoria(nome, chave, itens, erro, agora, estilos, registro, excluir=None, 
             if len(notas) > 4:
                 flows.append(Colunas(notas))
         else:
-            flows.append(KeepTogether([cabecalho, rotulo]))
+            # cabeçalho + aviso de idioma (se houver) + rótulo, juntos
+            flows.append(KeepTogether((primeiro_bloco or [cabecalho]) + [rotulo]))
             flows.append(Colunas(notas))
     flows.append(Spacer(1, 18))
     return flows
