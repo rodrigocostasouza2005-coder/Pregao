@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Worker independente: monitoramento de quedas e entrega resiliente de e-mails."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
@@ -10,15 +10,27 @@ from jobs.email_utils import enviar_email
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 STATUS_REPROCESSAVEIS = ("PENDENTE_ENVIO", "FALHA_ENVIO")
+# Só reenvia alerta de pregão recente: 3 dias corridos cobrem fim de semana
+# e feriado. Sem esse limite, um alerta que nunca saiu (ex.: EMAIL_TO vazio,
+# visto nos logs de 21/10/2026) ficava pendente pra sempre e, quando o envio
+# voltasse, chegaria dias depois como se a queda fosse de hoje; e, com mais
+# de 200 pendentes antigos (ordem do mais velho + limit), os NOVOS nunca
+# entravam no lote. Alerta mais velho continua no banco e na tela (RADAR >
+# Alertas, coluna E-MAIL), só não é mais reenviado.
+JANELA_REENVIO_DIAS = 3
 
 
-def _alertas_pendentes(cliente):
-    """Busca alertas persistidos ainda não entregues, inclusive de execuções anteriores."""
+def _alertas_pendentes(cliente, hoje=None):
+    """Busca alertas persistidos ainda não entregues, inclusive de execuções
+    anteriores, de pregões dentro de JANELA_REENVIO_DIAS."""
+    hoje = hoje or datetime.now(TZ_SP).date()
+    desde = (hoje - timedelta(days=JANELA_REENVIO_DIAS)).isoformat()
     try:
         resposta = (
             cliente.table("radar_alertas_queda")
             .select("*")
             .in_("status", list(STATUS_REPROCESSAVEIS))
+            .gte("pregao", desde)
             .order("alertado_em")
             .limit(200)
             .execute()
@@ -51,8 +63,15 @@ def _enviar_alerta(cliente, alerta):
         print(f"[radar_quedas] alerta sem id persistido; envio ignorado: {alerta.get('ticker')}")
         return False
 
+    # data do pregão no assunto: um alerta reenviado depois (retry) nunca
+    # parece ser uma queda de hoje
+    pregao = alerta.get("pregao")
+    try:
+        sufixo = f" (pregão {datetime.fromisoformat(str(pregao)).strftime('%d/%m')})" if pregao else ""
+    except ValueError:
+        sufixo = ""
     envio = enviar_email(
-        f"[PREGÃO] Queda >4% — {alerta['ticker']}",
+        f"[PREGÃO] Queda >4% — {alerta['ticker']}{sufixo}",
         _texto_alerta(alerta),
     )
     status = "ENVIADO" if envio["ok"] else "FALHA_ENVIO"

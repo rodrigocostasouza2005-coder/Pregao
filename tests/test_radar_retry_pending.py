@@ -19,6 +19,10 @@ class _Query:
         self.filters.append((coluna, valores))
         return self
 
+    def gte(self, coluna, valor):
+        self.filters.append((coluna, ">=", valor))
+        return self
+
     def order(self, *_args, **_kwargs):
         return self
 
@@ -165,3 +169,24 @@ def test_executar_chama_self_test_de_persistencia_antes_de_tudo(monkeypatch):
     radar_quedas.executar()
 
     assert len(chamadas_diagnostico) == 1
+
+
+def test_so_reenvia_pendentes_de_pregao_recente():
+    """Regressão: sem janela, alerta antigo nunca enviado (EMAIL_TO vazio em
+    21/10/2026) seria reenviado dias depois como se a queda fosse de hoje, e
+    200+ pendentes antigos impediam os novos de entrar no lote."""
+    from datetime import date
+
+    cliente = _Cliente([])
+    radar_quedas._alertas_pendentes(cliente, hoje=date(2026, 10, 22))
+    assert ("pregao", ">=", "2026-10-19") in cliente.query.filters
+
+
+def test_assunto_do_alerta_traz_a_data_do_pregao(monkeypatch):
+    enviados = []
+    monkeypatch.setattr(radar_quedas, "enviar_email",
+                        lambda assunto, texto: enviados.append(assunto) or {"ok": True, "erro": None})
+    alerta = {"id": 7, "ticker": "WEGE3", "pregao": "2026-10-21", "variacao_pct": -4.3, "preco_atual": 40.0,
+              "fechamento_anterior": 41.8}
+    radar_quedas._enviar_alerta(_Cliente(), alerta)
+    assert enviados == ["[PREGÃO] Queda >4% — WEGE3 (pregão 21/10)"]
