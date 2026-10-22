@@ -634,7 +634,7 @@ if rota == ("radar", "research"):
 if rota == ("radar", "oportunidades"):
     radar_tab.render_radar_oportunidades(prefs)
 if rota == ("radar", "acompanhamento"):
-    radar_tab.render_radar_acompanhamento(prefs)
+    radar_tab.render_radar_acompanhamento(prefs, usuario)
 
 # --- ANÁLISES › Fundamentos/Valuation/Teses -------------------------------------
 if rota == ("analises", "fundamentos"):

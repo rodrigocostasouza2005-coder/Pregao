@@ -51,7 +51,7 @@ def _capturar_render(resumo_fontes, alertas=None, monitorados=None):
         # render_radar(...) direto aqui silenciosamente nao faria nada e o
         # teste passaria "por acidente" sem checar coisa alguma.
         # .__wrapped__ e' a funcao original (sem o decorador).
-        radar_tab_mod.render_radar.__wrapped__(_PREFS_SEM_WATCHLIST)
+        radar_tab_mod.render_radar.__wrapped__(_PREFS_SEM_WATCHLIST, "sub-teste")
 
     return "\n".join(b for b in blocos if not b.lstrip().startswith("<style>"))
 
