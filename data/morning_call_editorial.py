@@ -242,6 +242,30 @@ def ultima_coleta_valida(chave):
         return None
 
 
+_DETALHE_TECNICO = re.compile(
+    r"https?://|host=|port=|\bport\b|Error\b|Exception|Traceback|timed? ?out|Caused by|Max retries|"
+    r"\burl\b|Connection|Errno|status_code|HTTP \d{3}", re.IGNORECASE)
+
+
+def _motivo_publico_macro(motivo):
+    """Versão do motivo de indisponibilidade que pode ir para o leitor:
+    cada trecho ('; ') com cara de exceção vira uma frase neutra, nomeando
+    só a fonte (edição real: "histórico do Copom (bcb.gov.br):
+    HTTPSConnectionPool(host='www.bcb.gov.br', port=443): Max retries..."
+    impresso no e-mail)."""
+    publicos = []
+    for trecho in str(motivo or "").split("; "):
+        if not trecho:
+            continue
+        if _DETALHE_TECNICO.search(trecho):
+            fonte = trecho.split(":", 1)[0] if ":" in trecho else ""
+            fonte = fonte if fonte and not _DETALHE_TECNICO.search(fonte) else "a fonte oficial"
+            trecho = f"{fonte} não respondeu nesta execução"
+        if trecho not in publicos:
+            publicos.append(trecho)
+    return "; ".join(publicos) or "fonte oficial sem dado nesta execução"
+
+
 def _macro_rows(agora=None, provedores=None):
     """Linhas da tabela macro do PDF, normalizadas.
 
@@ -302,6 +326,10 @@ def _macro_rows(agora=None, provedores=None):
         motivo = motivo or motivo_indisponivel(chave_motivo) or "Banco Central (SGS) sem dado nesta execução"
         if chave_motivo == "selic" and motivo_indisponivel("selic_copom"):
             motivo += f"; {motivo_indisponivel('selic_copom')}"
+        # o motivo vai impresso no PDF e no e-mail do assinante: detalhe
+        # técnico (exceção, host, porta) só no log do job
+        print(f"[morning_call] {nome} indisponível: {motivo}")
+        motivo = _motivo_publico_macro(motivo)
         ultima = ultima_coleta_valida(chave_motivo)
         if ultima:
             motivo += f"; última coleta válida registrada em {ultima} (horário de Brasília)"
