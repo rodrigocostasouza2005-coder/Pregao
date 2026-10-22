@@ -794,13 +794,21 @@ def _editoria(nome, chave, itens, erro, agora, estilos, registro, excluir=None, 
             aviso = _texto_editoria_vazia(edicao_janela)
         return [CondPageBreak(80), KeepTogether([cabecalho, Paragraph(aviso, estilos["aviso"])]), Spacer(1, 16)]
 
-    ordenados = sorted(itens, key=lambda i: i.get("importancia") or 0, reverse=True)
+    # fonte confiável antes, depois importância (mesma ordem da seleção em
+    # data/morning_call_editorial.py:_ordem_editorial)
+    ordenados = sorted(itens, key=lambda i: (bool(i.get("fonte_confiavel", True)), i.get("importancia") or 0),
+                       reverse=True)
     com_texto = [i for i in ordenados if i.get("corpo")]
     sem_texto = [i for i in ordenados if not i.get("corpo")]
     # nunca abre uma editoria no pé da página: sem espaço pra cabeçalho +
     # a primeira matéria, a editoria começa na página seguinte
     flows = [CondPageBreak(ESPACO_MIN_EDITORIA)]
     primeiro_bloco = [cabecalho]
+    sem_traducao = sum(1 for i in itens if i.get("sem_traducao"))
+    if sem_traducao:
+        primeiro_bloco.append(Paragraph(
+            f"{sem_traducao} manchete(s) no idioma original: a tradução não estava disponível nesta edição.",
+            estilos["nota"]))
 
     if com_texto:
         abre = com_texto[0]
@@ -1293,10 +1301,16 @@ def _capa(edicao, estilos, registro, paginas_indice, altura_colunas, paginas=Non
     # repete dentro). As demais são chamadas - título, primeira frase e a
     # remissão pra página onde a matéria completa está.
     secundarias = [c for c in chamadas if c.get("corpo")][:2]
+    if not secundarias:
+        # Edição sem texto (ex.: IA indisponível): a coluna da esquerda ficava
+        # só com o gráfico e ~45% da capa em branco (edição real de 22/10).
+        # As chamadas além das que cabem à direita sobem para cá, no mesmo
+        # formato curto - _caber só publica o que couber inteiro.
+        secundarias = chamadas[2:6]
     inicio_secundarias = len(blocos_esq)
     for item in secundarias:
         blocos_esq.append([Filete(antes=10, depois=8)]
-                          + _bloco_chamada(item, edicao, agora, estilos, paginas, destaque=True))
+                          + _bloco_chamada(item, edicao, agora, estilos, paginas, destaque=bool(item.get("corpo"))))
     serie = (edicao.get("brasil") or {}).get("historico_ibov") or []
     if len(serie) >= 2:
         blocos_esq.append([Filete(antes=10, depois=8),
