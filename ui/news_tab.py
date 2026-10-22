@@ -757,7 +757,17 @@ def _tooltip_regras(n: dict) -> str:
 
 
 def _truncar(texto: str, limite: int = _TRUNCA_MANCHETE) -> str:
-    return texto if len(texto) <= limite else texto[: limite - 1].rstrip() + "…"
+    """Corta em `limite` caracteres, mas nunca no meio de uma palavra
+    (PR #79): "...aprovacao unanime..." virava "...aprovacao u…". Recua
+    até o último espaço dentro do limite; corte duro só quando não há
+    espaço (token único, ex: URL longa)."""
+    if len(texto) <= limite:
+        return texto
+    cortado = texto[: limite - 1]
+    ultimo_espaco = cortado.rfind(" ")
+    if ultimo_espaco > 0:
+        cortado = cortado[:ultimo_espaco]
+    return cortado.rstrip() + "…"
 
 
 def _plural_fontes(qtd: int) -> str:
