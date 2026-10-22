@@ -385,7 +385,7 @@ if __name__ == "__main__":
 def test_17_status_cotacao_indice_sinaliza_idade_do_fallback():
     """A UI deve identificar valor reaproveitado e nunca renovar sua idade."""
     antigo = "2026-10-14T15:00:00+00:00"
-    with patch.object(visao_geral_mod, "datetime") as mock_datetime:
+    with patch.object(prices_mod, "datetime") as mock_datetime:  # critério vive em data/prices.py
         mock_datetime.now.return_value = datetime.fromisoformat("2026-10-14T17:30:00+00:00")
         mock_datetime.fromisoformat.side_effect = datetime.fromisoformat
         status = visao_geral_mod._status_cotacao_indice({
@@ -405,7 +405,7 @@ def test_18_status_cotacao_indice_nao_marca_coleta_atual_como_cache():
 def test_19_status_cotacao_indice_mantem_idade_sem_data_da_barra():
     """Fallbacks legados sem timestamp de candle devem continuar legiveis."""
     antigo = "2026-10-14T15:00:00+00:00"
-    with patch.object(visao_geral_mod, "datetime") as mock_datetime:
+    with patch.object(prices_mod, "datetime") as mock_datetime:  # critério vive em data/prices.py
         mock_datetime.now.return_value = datetime.fromisoformat("2026-10-14T17:30:00+00:00")
         mock_datetime.fromisoformat.side_effect = datetime.fromisoformat
         status = visao_geral_mod._status_cotacao_indice({

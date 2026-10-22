@@ -20,7 +20,7 @@ from data.morning_call_editorial import (
     _macro_rows, _referencia_cotacao, filtrar_noticias, montar_edicao, nota_sessao,
 )
 from data.news import obter_top_mercado, obter_top_mercado_internacional
-from data.prices import obter_cotacao_indice
+from data.prices import obter_cotacao_indice, rotulo_cotacao_em_cache
 from data.supabase_client import obter_cliente
 from data.user_prefs import listar_assinantes_morning_call
 from jobs.email_utils import enviar_email
@@ -73,7 +73,9 @@ def _obter_cotacao_fmt(titulo, ticker):
     cot = obter_cotacao_indice(titulo, ticker)
     if not isinstance(cot, dict) or cot.get("erro"):
         erro = cot.get("erro", "sem dado") if isinstance(cot, dict) else "sem dado"
-        return cot, f"- {titulo}: indisponível ({erro})"
+        # o texto vai pro e-mail do assinante: detalhe técnico só no log
+        print(f"[morning_call] cotação {titulo} indisponível: {erro}")
+        return cot, f"- {titulo}: indisponível nesta edição (a fonte não respondeu)"
     variacao = cot.get("variacao_pct")
     # mesma referência do PDF (data/morning_call_editorial.py): horário do
     # último negócio em Brasília ou "fech. dd/mm" - antes saía o índice cru
@@ -81,6 +83,9 @@ def _obter_cotacao_fmt(titulo, ticker):
     referencia, _sessao = _referencia_cotacao(cot)
     linha = (f"- {titulo}: {_fmt_num(cot.get('preco'))}; variação sobre o fechamento anterior: "
              f"{_fmt_num(variacao)}%; referência: {referencia or 'indisponível'}")
+    em_cache = rotulo_cotacao_em_cache(cot)
+    if em_cache:
+        linha += f" [último valor válido - {em_cache.lower()}]"
     return cot, linha
 
 

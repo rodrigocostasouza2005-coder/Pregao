@@ -23,6 +23,7 @@ from data.prices import (
     obter_historico_intraday,
     obter_indicadores,
     obter_nome_yf,
+    rotulo_cotacao_em_cache,
     validar_ticker,
 )
 from data.research import CASAS as CASAS_RESEARCH
@@ -188,8 +189,17 @@ def _ticker_tape():
 
     for nome_idx, symbol_idx in config.INDICES_TICKER_TAPE.items():
         cot = obter_cotacao_indice(nome_idx, symbol_idx)
+        em_cache = rotulo_cotacao_em_cache(cot) if not cot.get("erro") else None
         if cot.get("erro"):
             itens.append(f"<span class='cinza'>{nome_idx} --</span>")
+        elif em_cache:
+            # fonte falhou agora e veio o ultimo valor valido: cinza (sem
+            # cor de alta/baixa) e com a idade - nunca parece cotacao atual
+            sinal = "+" if cot["variacao_pct"] >= 0 else ""
+            itens.append(
+                f"<span class='cinza'>{nome_idx} {config.formatar_numero(cot['preco'], 2, fmt)} "
+                f"({sinal}{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%) [{em_cache}]</span>"
+            )
         else:
             cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
             sinal = "+" if cot["variacao_pct"] >= 0 else ""

@@ -273,6 +273,41 @@ def obter_cotacao_indice(nome: str, symbol: str) -> dict:
         return {"nome": nome, "erro": str(e)}
 
 
+def rotulo_cotacao_em_cache(cotacao: dict) -> str | None:
+    """Rótulo curto quando obter_cotacao_indice devolveu o ÚLTIMO valor
+    válido (fonte falhou agora) em vez de uma cotação desta tentativa -
+    None quando a cotação é desta tentativa. A idade conta a partir da
+    coleta válida (_coletado_em), nunca da tentativa que falhou. Fonte
+    única do critério: letreiro, VISÃO GERAL, MERCADO, MACRO e o e-mail do
+    Morning Call usam esta função (antes só a VISÃO GERAL sinalizava, e o
+    letreiro mostrava o valor antigo colorido como se fosse de agora)."""
+    if not cotacao.get("_fallback_cache"):
+        return None
+    coletado_em = cotacao.get("_coletado_em")
+    if not coletado_em:
+        return "VALOR EM CACHE"
+    try:
+        instante = datetime.fromisoformat(coletado_em)
+        if instante.tzinfo is None:
+            instante = instante.replace(tzinfo=timezone.utc)
+        minutos = max(0, int((datetime.now(timezone.utc) - instante.astimezone(timezone.utc)).total_seconds() // 60))
+        if minutos < 1:
+            return "EM CACHE • <1 MIN"
+        if minutos < 60:
+            return f"EM CACHE • {minutos} MIN"
+        horas, resto = divmod(minutos, 60)
+        idade = f"EM CACHE • {horas}H {resto:02d}MIN"
+        barra_em = cotacao.get("_barra_em")
+        if barra_em:
+            try:
+                idade += f" • BARRA {datetime.fromisoformat(barra_em).strftime('%d/%m')}"
+            except (TypeError, ValueError, OverflowError):
+                pass
+        return idade
+    except (TypeError, ValueError, OverflowError):
+        return "VALOR EM CACHE"
+
+
 def _dividend_yield_12m(ticker_obj, preco_atual: float):
     """DY = soma dos dividendos/JCP pagos nos ultimos 12 meses / preco atual.
     Calculado a partir do historico de dividendos (mais confiavel pra B3 do

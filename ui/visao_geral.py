@@ -8,8 +8,6 @@ consulta nova). Onde a função original já é "pesada demais" pra um
 resumo (a lista completa de notícias, por exemplo), usa a mesma função
 de dado com um limite de itens menor, não uma cópia da lógica."""
 
-from datetime import datetime, timezone
-
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -18,7 +16,9 @@ from data.ibovespa import obter_composicao_oficial
 from data.macro import obter_cdi
 from data.mercado import obter_cotacoes_lote, obter_mercados_globais
 from data.news import obter_top_mercado_tudo
-from data.prices import obter_cotacao, obter_cotacao_indice, obter_historico, obter_historico_intraday
+from data.prices import (
+    obter_cotacao, obter_cotacao_indice, obter_historico, obter_historico_intraday, rotulo_cotacao_em_cache,
+)
 from ui import graficos, workspace
 from ui.mercado_tab import _painel_altas_baixas, _painel_globais, _painel_mais_negociados, _painel_setorial
 from ui.news_tab import _injetar_css, _prontos_para_lista, _renderizar_lista
@@ -38,32 +38,7 @@ def _fmt_pct(valor, prefs):
 
 def _status_cotacao_indice(cotacao: dict) -> str | None:
     """Identifica fallback sem confundir hora da tentativa com hora da coleta valida."""
-    if not cotacao.get("_fallback_cache"):
-        return None
-    coletado_em = cotacao.get("_coletado_em")
-    if not coletado_em:
-        return "VALOR EM CACHE"
-    try:
-        instante = datetime.fromisoformat(coletado_em)
-        if instante.tzinfo is None:
-            instante = instante.replace(tzinfo=timezone.utc)
-        minutos = max(0, int((datetime.now(timezone.utc) - instante.astimezone(timezone.utc)).total_seconds() // 60))
-        if minutos < 1:
-            return "EM CACHE • <1 MIN"
-        if minutos < 60:
-            return f"EM CACHE • {minutos} MIN"
-        horas, resto = divmod(minutos, 60)
-        idade = f"EM CACHE • {horas}H {resto:02d}MIN"
-        barra_em = cotacao.get("_barra_em")
-        if barra_em:
-            try:
-                data_barra = datetime.fromisoformat(barra_em).strftime("%d/%m")
-                idade += f" • BARRA {data_barra}"
-            except (TypeError, ValueError, OverflowError):
-                pass
-        return idade
-    except (TypeError, ValueError, OverflowError):
-        return "VALOR EM CACHE"
+    return rotulo_cotacao_em_cache(cotacao)
 
 
 def _card_mercado(rotulo: str, preco, variacao_pct, prefs, casas_preco: int = 2, status: str | None = None):

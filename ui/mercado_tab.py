@@ -18,7 +18,7 @@ from data.mercado import (
     CAMPO_VARIACAO_POR_JANELA, obter_altas_baixas, obter_desempenho_setorial,
     obter_mais_negociados, obter_mercados_globais, obter_panorama_ibovespa, obter_termometro,
 )
-from data.prices import obter_cotacao_indice
+from data.prices import obter_cotacao_indice, rotulo_cotacao_em_cache
 from ui import graficos, navegacao, workspace
 
 _JANELAS_DESEMPENHO = ["DIA", "SEMANA", "MÊS"]
@@ -244,7 +244,9 @@ def _painel_altas_baixas(prefs):
             f"<span class='rank-header-indice-nome'>IBOVESPA</span>"
             f"<span class='rank-header-indice-valor'>{config.formatar_numero(ibov['preco'], 0, prefs['formato_numerico'])}</span>"
             f"<span class='{cls_ibov}' style='font-weight:600;'>{_fmt_pct(ibov['variacao_pct'], prefs)}</span>"
-            f"</div>",
+            + (f"<span class='cinza' style='font-size:0.62rem;'>{rotulo_cotacao_em_cache(ibov)}</span>"
+               if rotulo_cotacao_em_cache(ibov) else "")
+            + "</div>",
             unsafe_allow_html=True,
         )
 
