@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# Execução final de 22/10/2026: todas as correções do PDF desta sessão.
 """Prévia TEMPORÁRIA do Morning Call com dados PÚBLICOS (22/10/2026), rodada
 no runner do GitHub Actions sem nenhum secret (sem Supabase, sem IA, sem
 e-mail). NUNCA envia nada: monta edição/PDF/texto a partir de cotações,
