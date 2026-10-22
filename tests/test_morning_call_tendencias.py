@@ -72,3 +72,27 @@ def test_email_completo_nao_expoe_excecao_de_noticias_e_mantem_secoes():
     assert "Notícias indisponíveis nesta execução (a coleta do Google News falhou)." in texto
     assert all(secao in texto for secao in mc.SECOES_OBRIGATORIAS)
     assert "[INTERPRETAÇÃO] Dólar (USD/BRL) em alta de 1,50%" in texto
+
+
+# --- tradução das manchetes internacionais no e-mail -------------------------
+
+def test_email_traduz_manchete_e_preserva_o_original():
+    itens = [{"titulo": "UK inflation jumps to 3.5% as prices rise", "link": "https://cnbc/1"}]
+    linhas = mc._linhas_noticias(itens, 8, {"https://cnbc/1": "Inflação do Reino Unido sobe para 3,5%"})
+    assert linhas == ["- Inflação do Reino Unido sobe para 3,5% (original: UK inflation jumps to 3.5% as prices rise)"
+                      " — https://cnbc/1"]
+
+
+def test_email_sinaliza_ingles_sem_traducao_e_nao_mexe_no_portugues():
+    itens = [{"titulo": "Stocks are heading for a showdown as earnings collide with rates", "link": "https://mw/1"},
+             {"titulo": "Ibovespa sobe 0,54% com apoio do petróleo", "link": "https://valor/1"}]
+    linhas = mc._linhas_noticias(itens, 8, {})
+    assert "[em inglês - tradução indisponível nesta edição]" in linhas[0]
+    assert linhas[1] == "- Ibovespa sobe 0,54% com apoio do petróleo — https://valor/1"
+
+
+def test_heuristica_de_idioma_e_a_mesma_do_pdf():
+    from data.news import parece_ingles
+
+    assert parece_ingles("Fed signals interest rate cuts as inflation cools")
+    assert not parece_ingles("Copom mantém Selic em 15% e sinaliza cautela")

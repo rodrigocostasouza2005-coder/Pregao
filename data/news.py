@@ -2132,6 +2132,32 @@ def _chamar_groq(prompt_sistema: str, prompt_usuario: str) -> tuple:
 
 
 
+_PALAVRAS_INGLES = {
+    "the", "and", "for", "with", "after", "before", "shares", "stock",
+    "stocks", "market", "markets", "says", "said", "warns", "could",
+    "will", "surge", "fall", "rises", "drops", "earnings", "investors",
+    "fed", "rate", "cuts", "raises", "deal", "report", "economy",
+    "amid", "over", "from", "into", "its", "how", "why", "what",
+    "of", "in", "on", "at", "to", "by", "is", "are", "was", "were",
+    "has", "have", "had", "their", "they", "them", "this", "that",
+    "these", "those", "than", "more", "less", "up", "down", "rose",
+    "inflation", "accelerates", "prices", "price", "economic", "consumer",
+    "unemployment", "jobs", "growth", "year", "month", "quarter",
+}
+
+
+def parece_ingles(titulo: str) -> bool:
+    """Heurística de manchete em inglês (palavras funcionais/financeiras
+    comuns, sem acentuação portuguesa) - usada pela tradução do PDF e pelo
+    e-mail do Morning Call pra saber o que traduzir ou sinalizar."""
+    titulo = str(titulo or "").strip()
+    tokens = set(re.findall(r"[a-z]+", titulo.lower()))
+    comuns = tokens & _PALAVRAS_INGLES
+    return len(comuns) >= 2 or (
+        len(comuns) >= 1 and not re.search(r"[ãõçáéíóúâêô]", titulo.lower()) and len(titulo.split()) >= 8
+    )
+
+
 def traduzir_manchetes_pdf(itens: list) -> dict:
     """Traduz em lote manchetes internacionais para português brasileiro.
 
@@ -2142,29 +2168,10 @@ def traduzir_manchetes_pdf(itens: list) -> dict:
     Retorno: {link_original: titulo_em_portugues}.
     """
     candidatos = []
-    palavras_ingles = {
-        "the", "and", "for", "with", "after", "before", "shares", "stock",
-        "stocks", "market", "markets", "says", "said", "warns", "could",
-        "will", "surge", "fall", "rises", "drops", "earnings", "investors",
-        "fed", "rate", "cuts", "raises", "deal", "report", "economy",
-        "amid", "over", "from", "into", "its", "how", "why", "what",
-        "of", "in", "on", "at", "to", "by", "is", "are", "was", "were",
-        "has", "have", "had", "their", "they", "them", "this", "that",
-        "these", "those", "than", "more", "less", "up", "down", "rose",
-        "inflation", "accelerates", "prices", "price", "economic", "consumer",
-        "unemployment", "jobs", "growth", "year", "month", "quarter",
-    }
     for item in itens or []:
         titulo = str(item.get("titulo") or "").strip()
         link = str(item.get("link") or "").strip()
-        if not titulo or not link:
-            continue
-        tokens = set(re.findall(r"[a-z]+", titulo.lower()))
-        if len(tokens & palavras_ingles) >= 2 or (
-            len(tokens & palavras_ingles) >= 1
-            and not re.search(r"[ãõçáéíóúâêô]", titulo.lower())
-            and len(titulo.split()) >= 8
-        ):
+        if titulo and link and parece_ingles(titulo):
             candidatos.append((link, titulo))
     if not candidatos:
         return {}

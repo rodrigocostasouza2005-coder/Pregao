@@ -19,7 +19,7 @@ from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_sel
 from data.morning_call_editorial import (
     _macro_rows, _referencia_cotacao, filtrar_noticias, montar_edicao, nota_sessao,
 )
-from data.news import obter_top_mercado, obter_top_mercado_internacional
+from data.news import obter_top_mercado, obter_top_mercado_internacional, parece_ingles, traduzir_manchetes_pdf
 from data.prices import obter_cotacao_indice, rotulo_cotacao_em_cache
 from data.supabase_client import obter_cliente
 from data.user_prefs import listar_assinantes_morning_call
@@ -140,13 +140,23 @@ def _marca_erro(item, erros):
     return False
 
 
-def _linhas_noticias(itens, limite):
+def _linhas_noticias(itens, limite, traducoes=None):
+    """`traducoes` ({link: título em PT}, de traduzir_manchetes_pdf): a
+    manchete sai em português com o original entre parênteses (rastreável).
+    Manchete em inglês sem tradução disponível sai sinalizada - antes o
+    e-mail publicava o EXTERIOR em inglês sem nenhum aviso."""
     out = []
     for item in itens[:limite]:
         titulo = str(item.get("titulo") or "").strip()
         link = str(item.get("link") or "").strip()
-        if titulo:
-            out.append(f"- {titulo}" + (f" — {link}" if link else ""))
+        if not titulo:
+            continue
+        traduzido = (traducoes or {}).get(link)
+        if traduzido:
+            titulo = f"{traduzido} (original: {titulo})"
+        elif parece_ingles(titulo):
+            titulo = f"{titulo} [em inglês - tradução indisponível nesta edição]"
+        out.append(f"- {titulo}" + (f" — {link}" if link else ""))
     return out
 
 
@@ -360,7 +370,13 @@ def montar_morning_call(agora=None):
     elif erros_regiao.get("INT"):
         linhas.append("- Notícias internacionais indisponíveis nesta execução (a coleta do Google News falhou).")
     elif noticias_intl:
-        linhas += _linhas_noticias(noticias_intl, 8)
+        # uma chamada de IA por edição (a mesma do PDF); sem chave/erro -> {}
+        try:
+            traducoes = traduzir_manchetes_pdf(noticias_intl[:8]) or {}
+        except Exception as exc:
+            print(f"[morning_call] tradução das manchetes indisponível: {type(exc).__name__}")
+            traducoes = {}
+        linhas += _linhas_noticias(noticias_intl, 8, traducoes)
     else:
         linhas.append("- Nenhuma manchete internacional nesta coleta.")
 
