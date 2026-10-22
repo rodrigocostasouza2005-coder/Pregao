@@ -971,3 +971,47 @@ def test_log_da_edicao_resume_conteudo_sem_dados_sensiveis():
     assert "macro indisponível: Selic meta" in linha
     assert "radar: Bancos" in linha and "agenda: 0 evento(s)" in linha
     assert "@" not in linha
+
+
+# ---------------------------------------------------------------------
+# CONTAGEM POR SEÇÃO (auditoria 2026-10-22, data/saude_dados.py:
+# obter_painel_consumo) - gerar_preview já valida que o TÍTULO de cada
+# seção existe; contar_itens_por_secao conta o CONTEÚDO real dentro dela
+# (uma seção só com a frase de fallback tem 0 itens aqui).
+# ---------------------------------------------------------------------
+
+def test_contar_itens_por_secao_conta_manchetes_com_link_de_cada_secao():
+    texto = "\n".join([
+        "1. RESUMO EXECUTIVO",
+        "- Ibovespa: 148.320,50",
+        "",
+        "2. BRASIL",
+        "- Manchete A — https://a.com",
+        "- Manchete B — https://b.com",
+        "",
+        "3. EXTERIOR",
+        "- Nenhuma manchete internacional nesta coleta.",
+        "",
+        "5. EMPRESAS E SETORES",
+        "- Manchete C — https://c.com",
+    ])
+    contagem = mc.contar_itens_por_secao(texto)
+    assert contagem["2. BRASIL"] == 2
+    assert contagem["3. EXTERIOR"] == 0
+    assert contagem["5. EMPRESAS E SETORES"] == 1
+
+
+def test_contar_itens_por_secao_nao_confunde_linha_de_cotacao_com_manchete():
+    texto = "\n".join([
+        "2. BRASIL",
+        "- Ibovespa: 148.320,50; variação: +0,5%",
+        "- Dólar (USD/BRL): 5,10",
+    ])
+    contagem = mc.contar_itens_por_secao(texto)
+    assert contagem["2. BRASIL"] == 0
+
+
+def test_contar_itens_por_secao_secao_ausente_fica_zero_sem_erro():
+    contagem = mc.contar_itens_por_secao("texto sem nenhuma secao conhecida")
+    assert contagem["2. BRASIL"] == 0
+    assert contagem["3. EXTERIOR"] == 0

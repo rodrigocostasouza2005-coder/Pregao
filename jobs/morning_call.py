@@ -512,6 +512,32 @@ def _extrair_chamadas_tag(texto: str) -> list:
     return chamadas
 
 
+def contar_itens_por_secao(texto: str) -> dict:
+    """Quantas manchetes COM LINK (_RE_MANCHETE_COM_LINK) cada seção de
+    SECOES_OBRIGATORIAS tem no texto já gerado - usado pelo painel de
+    SAÚDE DOS DADOS (data/saude_dados.py) pra distinguir "coleta OK mas
+    o Morning Call saiu sem usar nada dela" de "coleta OK e apareceu no
+    Morning Call" (falha de CONSUMO, não de coleta/persistência - ver
+    docstring do módulo data/saude_dados.py). gerar_preview() já valida
+    que o TÍTULO de cada seção existe; isto conta o CONTEÚDO real dentro
+    dela, que gerar_preview não olha (uma seção com só a frase de
+    fallback, ex.: "Nenhuma manchete macro do Brasil nesta coleta.",
+    passa a validação de título mas tem 0 itens aqui)."""
+    linhas = texto.split("\n")
+    indices_secao = []
+    for i, linha in enumerate(linhas):
+        linha_strip = linha.strip()
+        if linha_strip in SECOES_OBRIGATORIAS:
+            indices_secao.append((linha_strip, i))
+    contagem = {secao: 0 for secao in SECOES_OBRIGATORIAS}
+    for idx, (secao, inicio) in enumerate(indices_secao):
+        fim = indices_secao[idx + 1][1] if idx + 1 < len(indices_secao) else len(linhas)
+        for linha in linhas[inicio + 1:fim]:
+            if _RE_MANCHETE_COM_LINK.match(linha.strip()):
+                contagem[secao] += 1
+    return contagem
+
+
 def _cor_bullet_resumo(bullet_texto: str) -> str:
     if "alta" in bullet_texto:
         return _ALTA

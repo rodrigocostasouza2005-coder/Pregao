@@ -431,6 +431,88 @@ _COLETORES_CRITICOS = {
 }
 
 
+# --- Consumo efetivo (presenca nos consumidores) ---------------------
+# Modulo 1 (auditoria 2026-10-22): obter_painel_saude() acima so' mede
+# COLETA e PERSISTENCIA - nunca se o dado persistido chegou a ser USADO
+# por um consumidor real. Uma secao do Morning Call pode "existir" (titulo
+# presente - jobs/morning_call.py:gerar_preview ja valida isso) e ainda
+# sair vazia (so' a frase de fallback, ex. "Nenhuma manchete macro do
+# Brasil nesta coleta.") mesmo com coleta OK e itens novos persistidos.
+# Esta secao NUNCA declara o coletor quebrado por isso - pode ser filtro
+# editorial legitimo (relevancia/dedup/limite, ver
+# data/morning_call_editorial.py:filtrar_noticias) - so' torna a
+# divergencia visivel pra quem olha o painel decidir.
+_SEM_VALOR = object()  # sentinela pra distinguir "edicao nao passada" (busca
+# a real) de "edicao=None passado explicitamente" (ex: teste simulando banco
+# indisponivel) em obter_painel_consumo() abaixo.
+
+ESTADOS_CONSUMO = {
+    "CONSUMO_COM_ITENS": "Usado na última edição",
+    "CONSUMO_SEM_ITENS": "Ausente na última edição (filtro editorial pode ser legítimo - ver seção)",
+    "CONSUMO_DESCONHECIDO": "Sem edição recente do Morning Call para conferir",
+}
+
+# Fonte (mesmo nome de REGISTRO_COLETORES) -> secoes de
+# jobs.morning_call.SECOES_OBRIGATORIAS onde ela deveria aparecer.
+SECOES_POR_FONTE_CONSUMO = {
+    "NEWS (Brasil)": ("2. BRASIL",),
+    "NEWS (Internacional)": ("3. EXTERIOR",),
+    "NEWS (watchlist)": ("5. EMPRESAS E SETORES",),
+}
+
+
+def _ultima_edicao_morning_call():
+    from data.morning_call_historico import listar_edicoes
+    try:
+        edicoes = listar_edicoes()
+    except Exception:
+        return None
+    if not edicoes:
+        return None
+    return next((e for e in edicoes if e.get("conteudo")), None)
+
+
+def obter_painel_consumo(edicao=_SEM_VALOR) -> list:
+    """Painel COMPLEMENTAR a obter_painel_saude(): pra cada fonte com
+    secao conhecida no Morning Call (SECOES_POR_FONTE_CONSUMO), conta
+    quantos itens com link apareceram na ULTIMA edicao publicada
+    (jobs/morning_call.py:contar_itens_por_secao). `edicao` e'
+    injetavel pra teste puro (dict com "conteudo"/"data" ou None); por
+    padrao busca a edicao real via _ultima_edicao_morning_call(). Nunca
+    lanca excecao - qualquer falha individual cai em CONSUMO_DESCONHECIDO,
+    nunca finge sucesso nem derruba o painel inteiro (mesmo espirito de
+    obter_painel_saude)."""
+    from jobs.morning_call import contar_itens_por_secao
+
+    if edicao is _SEM_VALOR:
+        edicao = _ultima_edicao_morning_call()
+
+    painel = []
+    for fonte, secoes in SECOES_POR_FONTE_CONSUMO.items():
+        if not edicao or not edicao.get("conteudo"):
+            painel.append({
+                "fonte": fonte, "secoes": secoes, "itens": None,
+                "data_edicao": None, "codigo_estado": "CONSUMO_DESCONHECIDO",
+                "rotulo_estado": ESTADOS_CONSUMO["CONSUMO_DESCONHECIDO"],
+            })
+            continue
+        try:
+            contagem = contar_itens_por_secao(edicao["conteudo"])
+        except Exception:
+            contagem = {}
+        total = sum(contagem.get(secao, 0) for secao in secoes)
+        codigo = "CONSUMO_COM_ITENS" if total else "CONSUMO_SEM_ITENS"
+        rotulo = ESTADOS_CONSUMO[codigo]
+        if total:
+            rotulo = f"{rotulo} ({total} iten(s))"
+        painel.append({
+            "fonte": fonte, "secoes": secoes, "itens": total,
+            "data_edicao": edicao.get("data"), "codigo_estado": codigo,
+            "rotulo_estado": rotulo,
+        })
+    return painel
+
+
 def auditar_registro_coletores(registro=None) -> list:
     """Retorna problemas estruturais no inventario, sem rede ou banco."""
     itens = REGISTRO_COLETORES if registro is None else registro

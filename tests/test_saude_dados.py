@@ -308,6 +308,46 @@ def test_18_btg_e_montebravo_usam_leitor_hibrido_pela_mesma_casa():
         _checar(f"18 {nome} tem leitor hibrido proprio", "leitor" in por_nome[nome], nome)
 
 
+def test_19_consumo_sem_edicao_fica_desconhecido_nao_falso_verde():
+    painel = saude_mod.obter_painel_consumo(edicao=None)
+    _checar(
+        "19 sem edicao (banco indisponivel ou nenhuma publicada) -> CONSUMO_DESCONHECIDO pra todas as fontes",
+        all(item["codigo_estado"] == "CONSUMO_DESCONHECIDO" for item in painel),
+    )
+
+
+def test_20_consumo_com_itens_na_secao():
+    edicao = {
+        "data": "2026-10-22",
+        "conteudo": "\n".join([
+            "2. BRASIL",
+            "- Manchete A — https://a.com",
+            "3. EXTERIOR",
+            "- Nenhuma manchete internacional nesta coleta.",
+        ]),
+    }
+    painel = saude_mod.obter_painel_consumo(edicao=edicao)
+    por_fonte = {item["fonte"]: item for item in painel}
+    _checar(
+        "20a NEWS (Brasil) com 1 item -> CONSUMO_COM_ITENS",
+        por_fonte["NEWS (Brasil)"]["codigo_estado"] == "CONSUMO_COM_ITENS",
+    )
+    _checar(
+        "20b NEWS (Internacional) sem item -> CONSUMO_SEM_ITENS (nao declara coletor quebrado)",
+        por_fonte["NEWS (Internacional)"]["codigo_estado"] == "CONSUMO_SEM_ITENS",
+    )
+
+
+def test_21_consumo_falha_na_contagem_nao_derruba_o_painel():
+    edicao = {"data": "2026-10-22", "conteudo": "qualquer texto"}
+    with patch("jobs.morning_call.contar_itens_por_secao", side_effect=RuntimeError("boom")):
+        painel = saude_mod.obter_painel_consumo(edicao=edicao)
+    _checar(
+        "21 excecao na contagem -> todas as fontes com itens=0, sem lancar",
+        all(item["itens"] == 0 for item in painel),
+    )
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
