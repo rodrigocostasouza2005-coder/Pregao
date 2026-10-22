@@ -149,7 +149,12 @@ def extrair_data_do_periodo(texto: str, ano: int, trimestre: int) -> date | None
     _, fim_trimestre = limites_trimestre(ano, trimestre)
     limite_maximo = prazo_cvm(ano, trimestre) + timedelta(days=_FOLGA_SANIDADE_DIAS)
     validos = [d for d in candidatos if fim_trimestre < d <= limite_maximo]
-    return validos[0] if validos else None
+    # Página de RI costuma trazer divulgação E teleconferência perto do
+    # período ("Divulgação 3T26: 21/10/2026 · Teleconferência: 22/10/2026");
+    # a divulgação nunca vem depois da teleconferência, então vale a MENOR
+    # data válida (caso real: WEGE3 ficou com 22/10, dia do call, e o
+    # resultado saiu em 21/10).
+    return min(validos) if validos else None
 
 
 def _extrair_texto_html(html: str) -> str:

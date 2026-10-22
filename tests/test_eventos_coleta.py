@@ -629,3 +629,11 @@ def test_tentar_cvm_le_calendario_anual_pela_data_base_do_itr():
     _checar("só baixa o calendário (comunicado anterior ao fim do trimestre fica fora)",
             baixados == ["https://www.rad.cvm.gov.br/cal"], str(baixados))
     _checar("data de envio do ITR de 30/09/2026", evento and evento["data"] == date(2026, 11, 5), str(evento))
+
+
+def test_divulgacao_e_teleconferencia_juntas_vale_a_data_de_divulgacao():
+    texto = ("Resultados 3T26 — Teleconferência: 22/10/2026, 10h. "
+             "Divulgação do resultado do 3T26: 21/10/2026, antes da abertura.")
+    data = coleta_mod.extrair_data_do_periodo(texto, 2026, 3)
+    _checar("teleconferência (22/10) aparece antes no texto, mas a divulgação é 21/10",
+            data == date(2026, 10, 21), f"(data={data})")
