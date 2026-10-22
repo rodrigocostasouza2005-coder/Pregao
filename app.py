@@ -642,7 +642,7 @@ if rota == ("analises", "fundamentos"):
 if rota == ("analises", "valuation"):
     radar_tab.render_valuation(prefs)
 if rota == ("analises", "teses"):
-    radar_tab.render_teses(prefs)
+    radar_tab.render_teses(prefs, usuario)
 
 # --- MACRO (Indicadores = workspace completo da antiga aba MACRO) -------------
 if rota == ("macro", "indicadores"):
