@@ -1,0 +1,197 @@
+CNPJ_CIA;DT_REFER;VERSAO;DENOM_CIA;CD_CVM;GRUPO_DFP;MOEDA;ESCALA_MOEDA;ORDEM_EXERC;DT_INI_EXERC;DT_FIM_EXERC;CD_CONTA;DS_CONTA;VL_CONTA;ST_CONTA_FIXA
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.01;Receita de Venda de Bens e/ou Serviços;47411000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.01;Receita de Venda de Bens e/ou Serviços;48680000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.02;Custo dos Bens e/ou Serviços Vendidos;-31811000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.02;Custo dos Bens e/ou Serviços Vendidos;-32423000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.03;Resultado Bruto;15600000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.03;Resultado Bruto;16257000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.04;Despesas/Receitas Operacionais;-4714000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.04;Despesas/Receitas Operacionais;-3589000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.04.01;Despesas com Vendas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.04.01;Despesas com Vendas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.04.02;Despesas Gerais e Administrativas;-845000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.04.02;Despesas Gerais e Administrativas;-800000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.04.03;Perdas pela Não Recuperabilidade de Ativos;-1456000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.04.03;Perdas pela Não Recuperabilidade de Ativos;-628000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.04.03.01;Resultado na mensuração ou venda de ativos não circulantes;-1456000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.04.03.01;Resultado na mensuração ou venda de ativos não circulantes;-628000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.04.03.02;Redução ao valor recuperável e outros resultados na participação em coligadas e joint ventures;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.04.03.02;Redução ao valor recuperável e outros resultados na participação em coligadas e joint ventures;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.04.04;Outras Receitas Operacionais;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.04.04;Outras Receitas Operacionais;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.04.05;Outras Despesas Operacionais;-2755000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.04.05;Outras Despesas Operacionais;-2348000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.04.05.01;Evento Brumadinho;-563000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.04.05.01;Evento Brumadinho;-339000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.04.05.02;Outras despesas operacionais;-2192000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.04.05.02;Outras despesas operacionais;-2009000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.04.06;Resultado de Equivalência Patrimonial;342000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.04.06;Resultado de Equivalência Patrimonial;187000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.05;Resultado Antes do Resultado Financeiro e dos Tributos;10886000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.05;Resultado Antes do Resultado Financeiro e dos Tributos;12668000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.06;Resultado Financeiro;1182000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.06;Resultado Financeiro;211000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.06.01;Receitas Financeiras;678000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.06.01;Receitas Financeiras;674000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.06.02;Despesas Financeiras;504000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.06.02;Despesas Financeiras;-463000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.07;Resultado Antes dos Tributos sobre o Lucro;12068000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.07;Resultado Antes dos Tributos sobre o Lucro;12879000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.08;Imposto de Renda e Contribuição Social sobre o Lucro;-3895000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.08;Imposto de Renda e Contribuição Social sobre o Lucro;-2680000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.08.01;Corrente;-1098000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.08.01;Corrente;-1274000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.08.02;Diferido;-2797000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.08.02;Diferido;-1406000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.09;Resultado Líquido das Operações Continuadas;8173000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.09;Resultado Líquido das Operações Continuadas;10199000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.10;Resultado Líquido de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.10;Resultado Líquido de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.10.01;Lucro/Prejuízo Líquido das Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.10.01;Lucro/Prejuízo Líquido das Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.10.02;Ganhos/Perdas Líquidas sobre Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.10.02;Ganhos/Perdas Líquidas sobre Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.11;Lucro/Prejuízo Consolidado do Período;8173000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.11;Lucro/Prejuízo Consolidado do Período;10199000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.11.01;Atribuído a Sócios da Empresa Controladora;8164000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.11.01;Atribuído a Sócios da Empresa Controladora;9953000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.11.02;Atribuído a Sócios Não Controladores;9000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.11.02;Atribuído a Sócios Não Controladores;246000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.99;Lucro por Ação - (Reais / Ação);0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.99;Lucro por Ação - (Reais / Ação);0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.99.01;Lucro Básico por Ação;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.99.01;Lucro Básico por Ação;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.99.01.01;PNA;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.99.01.01;PNA;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.99.01.02;ON;1.91;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.99.01.02;ON;2.33;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.99.02;Lucro Diluído por Ação;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.99.02;Lucro Diluído por Ação;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.01;Receita de Venda de Bens e/ou Serviços;97218000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.01;Receita de Venda de Bens e/ou Serviços;49807000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.01;Receita de Venda de Bens e/ou Serviços;101692000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.01;Receita de Venda de Bens e/ou Serviços;53012000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.02;Custo dos Bens e/ou Serviços Vendidos;-66232000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.02;Custo dos Bens e/ou Serviços Vendidos;-34421000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.02;Custo dos Bens e/ou Serviços Vendidos;-69256000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.02;Custo dos Bens e/ou Serviços Vendidos;-36833000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.03;Resultado Bruto;30986000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.03;Resultado Bruto;15386000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.03;Resultado Bruto;32436000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.03;Resultado Bruto;16179000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.04;Despesas/Receitas Operacionais;-9117000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.04;Despesas/Receitas Operacionais;-4403000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.04;Despesas/Receitas Operacionais;-8426000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.04;Despesas/Receitas Operacionais;-4837000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.04.01;Despesas com Vendas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.04.01;Despesas com Vendas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.04.01;Despesas com Vendas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.04.01;Despesas com Vendas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.04.02;Despesas Gerais e Administrativas;-1587000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.04.02;Despesas Gerais e Administrativas;-742000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.04.02;Despesas Gerais e Administrativas;-1688000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.04.02;Despesas Gerais e Administrativas;-888000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.04.03;Perdas pela Não Recuperabilidade de Ativos;-2199000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.04.03;Perdas pela Não Recuperabilidade de Ativos;-743000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.04.03;Perdas pela Não Recuperabilidade de Ativos;-542000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.04.03;Perdas pela Não Recuperabilidade de Ativos;86000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.04.04;Outras Receitas Operacionais;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.04.04;Outras Receitas Operacionais;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.04.04;Outras Receitas Operacionais;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.04.04;Outras Receitas Operacionais;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.04.05;Outras Despesas Operacionais;-5307000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.04.05;Outras Despesas Operacionais;-2552000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.04.05;Outras Despesas Operacionais;-6889000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.04.05;Outras Despesas Operacionais;-4541000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.04.05.01;Evento Brumadinho;-782000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.04.05.01;Evento Brumadinho;-219000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.04.05.01;Evento Brumadinho;-854000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.04.05.01;Evento Brumadinho;-515000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.04.05.02;Outras despesas operacionais;-4525000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.04.05.02;Outras despesas operacionais;-2333000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.04.05.02;Outras despesas operacionais;-6035000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.04.05.02;Outras despesas operacionais;-4026000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.04.06;Resultado de Equivalência Patrimonial;-24000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.04.06;Resultado de Equivalência Patrimonial;-366000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.04.06;Resultado de Equivalência Patrimonial;693000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.04.06;Resultado de Equivalência Patrimonial;506000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.05;Resultado Antes do Resultado Financeiro e dos Tributos;21869000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.05;Resultado Antes do Resultado Financeiro e dos Tributos;10983000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.05;Resultado Antes do Resultado Financeiro e dos Tributos;24010000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.05;Resultado Antes do Resultado Financeiro e dos Tributos;11342000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.06;Resultado Financeiro;2186000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.06;Resultado Financeiro;1004000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.06;Resultado Financeiro;-2237000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.06;Resultado Financeiro;-2448000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.06.01;Receitas Financeiras;1315000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.06.01;Receitas Financeiras;637000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.06.01;Receitas Financeiras;1288000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.06.01;Receitas Financeiras;614000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.06.02;Despesas Financeiras;871000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.06.02;Despesas Financeiras;367000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.06.02;Despesas Financeiras;-3525000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.06.02;Despesas Financeiras;-3062000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.07;Resultado Antes dos Tributos sobre o Lucro;24055000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.07;Resultado Antes dos Tributos sobre o Lucro;11987000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.07;Resultado Antes dos Tributos sobre o Lucro;21773000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.07;Resultado Antes dos Tributos sobre o Lucro;8894000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.08;Imposto de Renda e Contribuição Social sobre o Lucro;-3695000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.08;Imposto de Renda e Contribuição Social sobre o Lucro;200000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.08;Imposto de Renda e Contribuição Social sobre o Lucro;-4533000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.08;Imposto de Renda e Contribuição Social sobre o Lucro;-1853000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.08.01;Corrente;-2725000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.08.01;Corrente;-1627000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.08.01;Corrente;-3301000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.08.01;Corrente;-2027000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.08.02;Diferido;-970000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.08.02;Diferido;1827000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.08.02;Diferido;-1232000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.08.02;Diferido;174000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.09;Resultado Líquido das Operações Continuadas;20360000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.09;Resultado Líquido das Operações Continuadas;12187000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.09;Resultado Líquido das Operações Continuadas;17240000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.09;Resultado Líquido das Operações Continuadas;7041000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.10;Resultado Líquido de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.10;Resultado Líquido de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.10;Resultado Líquido de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.10;Resultado Líquido de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.10.01;Lucro/Prejuízo Líquido das Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.10.01;Lucro/Prejuízo Líquido das Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.10.01;Lucro/Prejuízo Líquido das Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.10.01;Lucro/Prejuízo Líquido das Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.10.02;Ganhos/Perdas Líquidas sobre Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.10.02;Ganhos/Perdas Líquidas sobre Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.10.02;Ganhos/Perdas Líquidas sobre Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.10.02;Ganhos/Perdas Líquidas sobre Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.11;Lucro/Prejuízo Consolidado do Período;20360000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.11;Lucro/Prejuízo Consolidado do Período;12187000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.11;Lucro/Prejuízo Consolidado do Período;17240000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.11;Lucro/Prejuízo Consolidado do Período;7041000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.11.01;Atribuído a Sócios da Empresa Controladora;20245000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.11.01;Atribuído a Sócios da Empresa Controladora;12081000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.11.01;Atribuído a Sócios da Empresa Controladora;16800000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.11.01;Atribuído a Sócios da Empresa Controladora;6847000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.11.02;Atribuído a Sócios Não Controladores;115000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.11.02;Atribuído a Sócios Não Controladores;106000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.11.02;Atribuído a Sócios Não Controladores;440000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.11.02;Atribuído a Sócios Não Controladores;194000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.99;Lucro por Ação - (Reais / Ação);0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.99;Lucro por Ação - (Reais / Ação);0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.99;Lucro por Ação - (Reais / Ação);0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.99;Lucro por Ação - (Reais / Ação);0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.99.01;Lucro Básico por Ação;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.99.01;Lucro Básico por Ação;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.99.01;Lucro Básico por Ação;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.99.01;Lucro Básico por Ação;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.99.01.01;ON;4.74;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.99.01.01;ON;2.83;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.99.01.01;ON;3.93996;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.99.01.01;ON;1.60748;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.99.02;Lucro Diluído por Ação;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.99.02;Lucro Diluído por Ação;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.99.02;Lucro Diluído por Ação;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.99.02;Lucro Diluído por Ação;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.99.02.01;ON;4.74;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.99.02.01;ON;2.83;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.99.02.01;ON;3.9339;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Demonstração do Resultado;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.99.02.01;ON;1.59501;N

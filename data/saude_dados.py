@@ -363,6 +363,21 @@ REGISTRO_COLETORES = [
         "leitor": _leitor_hibrido("CALENDARIO", _leitor_calendario()),
     },
     {
+        # linha nova (Modulo 2 - Earnings Reviewer, 2026-10-22):
+        # data/earnings/cvm_dre.py ja' chama registrar_tentativa - essa
+        # linha so' expõe isso no painel (mesmo padrao das demais fontes
+        # instrumentadas, nao hibridas: sem coletor_local envolvido, roda
+        # sob demanda quando alguem abre uma nota de resultado BR).
+        "nome": "CVM (DRE trimestral)", "fonte": "dados.cvm.gov.br (ITR - DRE consolidada)",
+        "categoria": "Earnings", "frequencia_esperada": "sob demanda (cache 6h)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
+    {
+        "nome": "SEC EDGAR (XBRL)", "fonte": "data.sec.gov (companyconcept, us-gaap)",
+        "categoria": "Earnings", "frequencia_esperada": "sob demanda (cache 6h)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
+    {
         # linha nova (auditoria 2026-10-15): jobs/radar_quedas.py (GitHub
         # Actions, a cada 15min em pregao) nunca chamava registrar_tentativa -
         # a tabela radar_alertas_queda so' registra ALERTAS de queda, nao a
