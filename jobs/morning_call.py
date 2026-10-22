@@ -17,7 +17,8 @@ from data.eventos import (
 )
 from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta, obter_selic_meta_copom
 from data.morning_call_editorial import (
-    _macro_rows, _referencia_cotacao, filtrar_noticias, montar_edicao, nota_sessao,
+    _macro_rows, _referencia_cotacao, e_noticia_de_empresa, editoria_por_assunto, filtrar_noticias,
+    montar_edicao, nota_sessao,
 )
 from data.news import obter_top_mercado, obter_top_mercado_internacional, parece_ingles, traduzir_manchetes_pdf
 from data.prices import obter_cotacao_indice, rotulo_cotacao_em_cache
@@ -346,8 +347,11 @@ def montar_morning_call(agora=None):
         candidatos = filtrar_noticias(
             [i for i in _noticias_por_regiao() if not _marca_erro(i, erros_regiao)], agora)
         for item in candidatos:
-            if item.get("regiao") == "BR":
-                (noticias_br_empresa if item.get("tickers") else noticias_br_macro).append(item)
+            # mesmas regras do PDF (data/morning_call_editorial.py): editoria
+            # pelo assunto do título e Empresas só com a empresa no título
+            if editoria_por_assunto(item.get("titulo"), item.get("regiao") or "BR") == "BR":
+                (noticias_br_empresa if e_noticia_de_empresa(item.get("titulo"))
+                 else noticias_br_macro).append(item)
             else:
                 noticias_intl.append(item)
     except Exception as exc:
