@@ -99,3 +99,21 @@ def test_edicao_sem_ia_fica_parcial_no_painel(monkeypatch):
     assert mc.executar(datetime(2026, 10, 22, 8, 3, tzinfo=TZ_SP)) == 0
     assert registros[-1]["parcial"] is True
     assert "GROQ_API_KEY" in registros[-1]["erro"]
+
+
+def test_pdf_marca_edicao_fora_do_horario_no_masthead():
+    import io
+    import sys
+    from pathlib import Path
+    from pypdf import PdfReader
+    sys.path.insert(0, str(Path(__file__).parent))
+    import morning_call_amostras as amostras
+    from jobs.morning_call_pdf import gerar_pdf
+
+    def _capa(hora, minuto):
+        edicao = amostras.edicao_tipica()
+        edicao["agora"] = edicao["agora"].replace(hour=hora, minute=minuto)
+        return PdfReader(io.BytesIO(gerar_pdf(edicao))).pages[0].extract_text()
+
+    assert "fora do horário previsto" not in _capa(8, 3)
+    assert "fora do horário previsto" in _capa(13, 5)

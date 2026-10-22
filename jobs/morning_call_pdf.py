@@ -22,7 +22,7 @@ páginas decorre do conteúdo (a camada de dados já limita a extensão).
 """
 import io
 import re
-from datetime import datetime
+from datetime import datetime, time
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -1136,8 +1136,14 @@ def _desenhar_masthead(c, agora):
     c.drawString(MARGEM_X, y_regua - 13, _data_extenso_pt_br(agora))
     c.setFont(F["PregaoSans"], 7.2)
     c.setFillColor(CINZA)
+    # edição fora do horário previsto (mesmo limite de jobs/morning_call.py):
+    # o leitor precisa saber que as cotações não são da pré-abertura
+    atrasada = agora.time() > time(9, 30)
+    if atrasada:
+        c.setFillColor(BAIXA)
     c.drawRightString(PAGINA_LARGURA - MARGEM_X, y_regua - 12.5,
-                      f"PDF gerado às {agora.strftime('%H:%M')}, horário de Brasília")
+                      f"PDF gerado às {agora.strftime('%H:%M')}, horário de Brasília"
+                      + (" · fora do horário previsto (08h)" if atrasada else ""))
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, y_regua - 19, PAGINA_LARGURA - MARGEM_X, y_regua - 19)
