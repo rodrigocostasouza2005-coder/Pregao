@@ -150,6 +150,22 @@ def aviso_atraso(executado_em: datetime) -> str | None:
             "não a abertura do dia")
 
 
+def aviso_edicao_de_hoje_ausente(ultima_data, agora: datetime) -> str | None:
+    """Frase quando a edição de HOJE ainda não existe depois do horário
+    previsto (dia útil) - em 22/10/2026 nenhum disparo agendado chegou e a
+    aba mostrava a edição da véspera só com um "NÃO é a edição de hoje"
+    discreto. None no fim de semana, antes das 09:30 ou se já há edição."""
+    agora = agora.astimezone(TZ_SP)
+    if agora.weekday() >= 5 or agora.time() <= _LIMITE_HORARIO_PREVISTO:
+        return None
+    if ultima_data is not None and ultima_data >= agora.date():
+        return None
+    complemento = (f" Abaixo, a última edição publicada ({ultima_data.strftime('%d/%m')})."
+                   if ultima_data is not None else "")
+    return (f"A edição de hoje ({agora.strftime('%d/%m')}) ainda não foi gerada: o disparo agendado não "
+            f"chegou até agora.{complemento} Use a prévia para ver os dados de agora.")
+
+
 def _cabecalho_edicao(ed: dict):
     hoje = datetime.now(TZ_SP).date()
     rotulo_dia = "hoje" if ed["data"] == hoje else "NÃO é a edição de hoje"
@@ -171,6 +187,10 @@ def render_edicao_atual(prefs: dict):
         st.markdown('<div class="painel-titulo">MORNING CALL — EDIÇÃO ATUAL</div>', unsafe_allow_html=True)
         edicoes = listar_edicoes()
         publicada = next((e for e in (edicoes or []) if e["conteudo"]), None)
+        if edicoes is not None:
+            ausente = aviso_edicao_de_hoje_ausente(publicada["data"] if publicada else None, datetime.now(TZ_SP))
+            if ausente:
+                st.warning(ausente)
         if edicoes is None:
             st.warning("Histórico indisponível (banco fora do ar) — use a prévia abaixo.")
         elif publicada is None:
