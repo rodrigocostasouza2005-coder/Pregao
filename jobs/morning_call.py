@@ -575,6 +575,12 @@ def _montar_anexo_pdf(agora):
         print(f"[morning_call] geração do PDF editorial falhou (enviando sem anexo): {exc!r}")
         return None
     print(f"[morning_call] {_resumo_edicao(edicao, pdf_bytes)}")
+    texto = edicao.get("texto_stats") if isinstance(edicao, dict) else None
+    if texto and texto.get("sem_ia") and texto.get("sem_texto"):
+        # anotação do GitHub Actions: aparece no resumo da execução, não só
+        # perdida no meio do log
+        print(f"::warning::Morning Call com {texto['sem_texto']} matéria(s) só com manchete: "
+              f"{texto['sem_ia']} - configure o secret GROQ_API_KEY (resumos e tradução).")
     radar = edicao.get("radar") if isinstance(edicao, dict) else None
     return {
         "nome": f"pregao-morning-call-{agora.strftime('%Y-%m-%d')}.pdf",
@@ -600,6 +606,14 @@ def _resumo_edicao(edicao, pdf_bytes):
     macro = [i for i in (edicao.get("brasil") or {}).get("indicadores") or [] if "indicador" in i]
     indisponiveis = [i["indicador"] for i in macro if i.get("valor") is None]
     partes.append("macro indisponível: " + (", ".join(indisponiveis) if indisponiveis else "nenhum"))
+    texto = edicao.get("texto_stats")
+    if texto:
+        partes.append(
+            f"texto: {texto['exata']} cache exato, {texto['por_url']} pela URL da fonte, "
+            f"{texto['gerados']} gerado(s) agora, {texto['sem_texto']} só manchete"
+            + (f" ({texto['sem_ia']})" if texto.get("sem_ia") else "")
+            + (" - orçamento de geração esgotado" if texto.get("orcamento_esgotado") else "")
+        )
     radar = edicao.get("radar") or {}
     partes.append("radar: " + (", ".join(b.get("nome", "?") for b in radar.get("setores") or []) or "vazio"))
     agenda = (edicao.get("empresas") or {}).get("agenda")

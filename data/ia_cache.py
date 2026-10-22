@@ -323,6 +323,51 @@ def obter_varios(chaves: list) -> dict:
     return encontrados
 
 
+def obter_resumos_news_por_link(links: list, desde_iso: str) -> dict:
+    """Leitura em LOTE (sem reservar nem gerar) dos resumos de NEWS ja'
+    concluidos cuja URL principal (link_principal = a materia de onde o
+    texto saiu) esta' em `links`, atualizados a partir de `desde_iso`.
+
+    Existe porque chave_news muda quando o CONJUNTO de fontes de um grupo
+    muda (de proposito, ver chave_news): o Morning Call coleta as noticias
+    de novo na hora do envio e o mesmo fato costuma ganhar ou perder uma
+    fonte desde que o resumo foi gerado - a chave exata falhava e a edicao
+    saia so' com manchetes. Casar pela URL da materia e' identidade do
+    documento-fonte, nao semelhanca de titulo. A janela (`desde_iso`)
+    evita reaproveitar texto antigo de uma URL republicada.
+
+    Retorna {link_principal: resultado} (o mais recente por link);
+    Supabase fora do ar -> {} (nunca lanca)."""
+    unicos = [l for l in dict.fromkeys(links) if l]
+    if not unicos:
+        return {}
+    cliente = obter_cliente()
+    if cliente is None:
+        return {}
+    encontrados = {}
+    for inicio in range(0, len(unicos), _LOTE_IN):
+        try:
+            resp = (
+                cliente.table(_TABELA)
+                .select("link_principal,resultado,atualizado_em")
+                .in_("link_principal", unicos[inicio:inicio + _LOTE_IN])
+                .eq("origem", "news")
+                .eq("status", "concluido")
+                .gte("atualizado_em", desde_iso)
+                .order("atualizado_em", desc=True)
+                .execute()
+            )
+        except Exception as e:
+            print(f"[ia_cache] obter_resumos_news_por_link: lote {inicio // _LOTE_IN + 1} falhou ({type(e).__name__})")
+            continue
+        for linha in resp.data or []:
+            resultado = linha.get("resultado") or {}
+            link = linha.get("link_principal")
+            if link and resultado.get("resumo") and link not in encontrados:
+                encontrados[link] = resultado
+    return encontrados
+
+
 def obter_resumo_com_cache(chave: str, link_principal: str, origem: str, gerar_fn) -> dict:
     """Ponto de entrada unico (Research e News): verifica cache -> se
     nao houver, tenta reservar a geracao -> se perder a corrida, espera

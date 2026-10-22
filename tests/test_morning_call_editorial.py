@@ -28,6 +28,10 @@ def _sem_rede(**overrides):
         obter_top_mercado_internacional=lambda *_a: [],
         calcular_calendario_cacheado=lambda *_a, **_k: [],
         obter_resumos_prontos=lambda *_a, **_k: {},
+        # camadas 2 e 3 de _resumos_para_edicao: sem Supabase e sem IA nos
+        # testes que não tratam disso
+        obter_resumos_news_por_link=lambda *_a, **_k: {},
+        obter_resumo_grupo=lambda *_a, **_k: {"resumo": None},
         _noticias_do_setor=lambda _setor: [],
     )
     base.update(overrides)
@@ -407,7 +411,7 @@ def test_montar_edicao_estrutura_completa_sem_rede():
         edicao = ed.montar_edicao(agora)
     assert edicao["agora"] == agora
     assert set(edicao.keys()) == {"agora", "capa", "brasil", "exterior", "empresas", "limitacoes", "fontes",
-                                  "mercados_nota", "janela_noticias", "radar"}
+                                  "mercados_nota", "janela_noticias", "radar", "texto_stats"}
     # sem notícia de setor nenhum, o radar sai vazio e registra cada exclusão
     assert edicao["radar"]["setores"] == []
     assert all("evidência insuficiente" in e["motivo"] for e in edicao["radar"]["excluidos"])

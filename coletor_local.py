@@ -283,6 +283,12 @@ def main() -> int:
         if stats_news.get("groq_configurado") is False:
             erro_news = "GROQ_API_KEY não configurada neste ambiente - nenhum resumo pode ser gerado"
             logger.warning(f"  resumos de NEWS: pre-processamento pulado - {erro_news}. Zero materia baixada.")
+            if os.getenv("GITHUB_ACTIONS") == "true":
+                # anotacao visivel no resumo da execucao (achado real 21/10/2026:
+                # a linha acima ficava escondida no meio de ~700 linhas de log e
+                # o Morning Call saia so' com manchetes sem ninguem notar)
+                print("::warning::GROQ_API_KEY ausente nos secrets do Actions: resumos de NEWS "
+                      "e do Morning Call não são gerados nem traduzidos.")
         else:
             logger.info(
                 f"  resumos de NEWS: {stats_news['grupos_considerados']} grupo(s) considerado(s), "
