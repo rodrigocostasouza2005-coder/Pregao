@@ -609,7 +609,9 @@ def test_selic_copom_invalido_mantem_indisponivel_com_os_dois_motivos():
                      ultima_coleta_valida=lambda _c: None):
         linha = next(l for l in ed._macro_rows() if l["indicador"] == "Selic meta")
     assert linha["valor"] is None
-    assert linha["erro"] == "SGS 432: timeout; histórico do Copom (bcb.gov.br): HTTP 500"
+    # as duas fontes continuam nomeadas; o detalhe técnico fica só no log
+    assert linha["erro"] == ("SGS 432 não respondeu nesta execução; "
+                             "histórico do Copom (bcb.gov.br) não respondeu nesta execução")
 
 
 def test_cdi_nao_tem_plano_b_e_continua_indisponivel():
