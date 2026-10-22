@@ -569,7 +569,7 @@ def _doc(categoria, assunto, data="2026-10-15", link="https://www.rad.cvm.gov.br
 def test_tentar_cvm_confirma_pela_data_no_assunto_do_comunicado():
     docs = [_doc("Comunicado ao Mercado", "Divulgação de Resultados do 3T26 em 04/11/2026")]
     with patch("data.cvm.obter_documentos_cvm", return_value=docs), \
-         patch("data.cvm._baixar_texto_documento", side_effect=AssertionError("não deveria baixar")):
+         patch.object(coleta_mod, "_texto_documento_cvm", side_effect=AssertionError("não deveria baixar")):
         evento = coleta_mod.tentar_cvm("EMPR3", "Empresa", 2026, 3)
     _checar("assunto com período e data -> CONFIRMADO sem baixar documento",
             evento and evento["status"] == STATUS_CONFIRMADO and evento["data"] == date(2026, 11, 4))
@@ -584,10 +584,10 @@ def test_tentar_cvm_le_o_documento_quando_o_assunto_nao_tem_data():
     def _baixar(link):
         baixados.append(link)
         return ("A Companhia divulgará os resultados do 3º trimestre de 2026 em 12 de novembro de 2026, "
-                "após o encerramento do pregão." + " x" * 120, None)
+                "após o encerramento do pregão." + " x" * 120)
 
     with patch("data.cvm.obter_documentos_cvm", return_value=docs), \
-         patch("data.cvm._baixar_texto_documento", side_effect=_baixar):
+         patch.object(coleta_mod, "_texto_documento_cvm", side_effect=_baixar):
         evento = coleta_mod.tentar_cvm("EMPR3", "Empresa", 2026, 3)
     _checar("baixa só o comunicado de resultado", baixados == ["https://www.rad.cvm.gov.br/doc/2"], str(baixados))
     _checar("data por extenso do documento", evento and evento["data"] == date(2026, 11, 12))
@@ -613,3 +613,19 @@ def test_pipeline_tenta_cvm_depois_do_ri_e_antes_do_news():
         evento = coleta_mod.coletar_evento("EMPR3")
     _checar("ordem RI -> CVM (para no CVM)", ordem == ["ri", "cvm"], str(ordem))
     _checar("evento do CVM", evento is evento_cvm)
+
+
+def test_tentar_cvm_le_calendario_anual_pela_data_base_do_itr():
+    docs = [_doc("Calendário de Eventos Corporativos", "Calendário de Eventos Corporativos 2026",
+                 data="2026-01-20", link="https://www.rad.cvm.gov.br/cal"),
+            _doc("Comunicado ao Mercado", "Resultado do 3T26", data="2026-09-15")]  # antes do fim do trimestre: ignorado
+    tabela = ("Informações Trimestrais - ITR  Data-base 31/03/2026  Envio 07/05/2026\n"
+              "Informações Trimestrais - ITR  Data-base 30/06/2026  Envio 06/08/2026\n"
+              "Informações Trimestrais - ITR  Data-base 30/09/2026  Envio 05/11/2026\n") + " x" * 120
+    baixados = []
+    with patch("data.cvm.obter_documentos_cvm", return_value=docs), \
+         patch.object(coleta_mod, "_texto_documento_cvm", side_effect=lambda l: baixados.append(l) or tabela):
+        evento = coleta_mod.tentar_cvm("EMPR3", "Empresa", 2026, 3)
+    _checar("só baixa o calendário (comunicado anterior ao fim do trimestre fica fora)",
+            baixados == ["https://www.rad.cvm.gov.br/cal"], str(baixados))
+    _checar("data de envio do ITR de 30/09/2026", evento and evento["data"] == date(2026, 11, 5), str(evento))

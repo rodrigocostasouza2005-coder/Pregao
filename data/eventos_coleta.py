@@ -174,6 +174,7 @@ def _montar_evento(ticker: str, empresa: str, ano: int, trimestre: int, status: 
 _PALAVRAS_LINK_CALENDARIO = ("calendario", "calendar", "agenda", "central de resultados",
                              "central-de-resultados", "resultados trimestrais", "earnings")
 _MAX_LINKS_CALENDARIO = 2
+_TIMEOUT_SUBPAGINA = 6
 
 
 def _dominio_base(host: str) -> str:
@@ -234,7 +235,7 @@ def tentar_ri(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | Non
         return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento, f"{empresa} RI", url)
     for link in _links_calendario(paginas[0][1], url):
         try:
-            sub = cffi_requests.get(link, headers=_HEADERS, impersonate="chrome", timeout=_TIMEOUT)
+            sub = cffi_requests.get(link, headers=_HEADERS, impersonate="chrome", timeout=_TIMEOUT_SUBPAGINA)
             sub.raise_for_status()
         except Exception:
             continue
@@ -251,12 +252,46 @@ def tentar_ri(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | Non
 _CATEGORIAS_IPE_DATA = ("Comunicado ao Mercado", "Aviso aos Acionistas", "Calendário de Eventos Corporativos",
                         "Fato Relevante")
 _TERMOS_IPE_RESULTADO = ("resultado", "divulga", "teleconfer", "webcast", "earnings", "calendario", "itr")
-_MAX_DOCUMENTOS_IPE = 3
+_MAX_DOCUMENTOS_IPE = 2
+# timeout próprio (o de data/cvm.py é 30 s, pensado para o resumo sob
+# demanda): na 1ª execução real com 30 s o calendário só cobriu 23 dos 84
+# tickers no orçamento de 5 min
+_TIMEOUT_DOCUMENTO_CVM = (4, 8)
+
+
+def _texto_documento_cvm(link: str) -> str | None:
+    import requests
+
+    from data.cvm import _extrair_texto_pdf
+
+    try:
+        r = requests.get(link, headers=_HEADERS, timeout=_TIMEOUT_DOCUMENTO_CVM)
+        r.raise_for_status()
+    except Exception:
+        return None
+    texto = _extrair_texto_pdf(r.content)
+    return texto if texto and len(texto) >= 200 else None
 
 
 def _sem_acento_simples(texto: str) -> str:
     import unicodedata
     return "".join(c for c in unicodedata.normalize("NFKD", texto or "") if not unicodedata.combining(c)).lower()
+
+
+def _data_perto_da_data_base(texto: str, ano: int, trimestre: int) -> date | None:
+    """Como extrair_data_do_periodo, mas usando a data-base do trimestre
+    (ex.: "30/09/2026") como marcador do período - formato das tabelas de
+    Calendário de Eventos Corporativos (ITR com data-base e data de envio).
+    Só olha os 80 caracteres seguintes à data-base (a linha da tabela)."""
+    _, fim = limites_trimestre(ano, trimestre)
+    limite_maximo = prazo_cvm(ano, trimestre) + timedelta(days=_FOLGA_SANIDADE_DIAS)
+    for marcador in (fim.strftime("%d/%m/%Y"), fim.strftime("%d.%m.%Y")):
+        for m in re.finditer(re.escape(marcador), texto):
+            trecho = texto[m.end():m.end() + 80]
+            for d in (_parse_data_numerica(x) for x in _PADRAO_DATA_NUMERICA.finditer(trecho)):
+                if d and fim < d <= limite_maximo:
+                    return d
+    return None
 
 
 def tentar_cvm(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | None:
@@ -268,7 +303,7 @@ def tentar_cvm(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | No
     _MAX_DOCUMENTOS_IPE por ticker). Mesmas regras de
     extrair_data_do_periodo: período explícito + data com ano + janela de
     sanidade. None se nada for encontrado ou a fonte falhar."""
-    from data.cvm import _baixar_texto_documento, obter_documentos_cvm
+    from data.cvm import obter_documentos_cvm
 
     try:
         documentos = obter_documentos_cvm(ticker)
@@ -295,16 +330,26 @@ def tentar_cvm(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | No
             return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento,
                                   f"{empresa} (CVM - {doc['categoria_original']})", doc.get("link"))
         assunto_norm = _sem_acento_simples(assunto)
-        if any(t in assunto_norm for t in _TERMOS_IPE_RESULTADO) and doc.get("link"):
+        eh_calendario = doc.get("categoria_original") == "Calendário de Eventos Corporativos"
+        # comunicado de data de divulgação sai depois do fim do trimestre;
+        # o calendário anual, no começo do ano
+        if not doc.get("link") or (not eh_calendario and entregue <= fim_trimestre):
+            continue
+        if eh_calendario or any(t in assunto_norm for t in _TERMOS_IPE_RESULTADO):
             candidatos.append(doc)
-    # mais recentes primeiro (obter_documentos_cvm já ordena), calendário
-    # anual por último (mais longo e menos específico)
-    candidatos.sort(key=lambda d: d.get("categoria_original") == "Calendário de Eventos Corporativos")
-    for doc in candidatos[:_MAX_DOCUMENTOS_IPE]:
-        texto, _motivo = _baixar_texto_documento(doc["link"])
+    # comunicados mais recentes primeiro (obter_documentos_cvm já ordena);
+    # só o calendário mais recente, por último
+    comunicados = [d for d in candidatos if d.get("categoria_original") != "Calendário de Eventos Corporativos"]
+    calendarios = [d for d in candidatos if d.get("categoria_original") == "Calendário de Eventos Corporativos"][:1]
+    for doc in (comunicados + calendarios)[:_MAX_DOCUMENTOS_IPE]:
+        texto = _texto_documento_cvm(doc["link"])
         if not texto:
             continue
         data_evento = extrair_data_do_periodo(texto, ano, trimestre)
+        if data_evento is None and doc.get("categoria_original") == "Calendário de Eventos Corporativos":
+            # calendário anual identifica o ITR pela data-base ("30/09/2026"),
+            # não por "3T26"; a data-base em si nunca passa na janela
+            data_evento = _data_perto_da_data_base(texto, ano, trimestre)
         if data_evento is not None:
             return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento,
                                   f"{empresa} (CVM - {doc['categoria_original']})", doc["link"])
@@ -555,8 +600,11 @@ def coletar_eventos_universo(tickers: list, hoje: date = None) -> dict:
         if time.monotonic() > limite:
             stats["tempo_esgotado"] = True
             break
+        inicio_ticker = time.monotonic()
         try:
             evento = coletar_evento(ticker, hoje=hoje)
+            print(f"[eventos] {ticker}: {(evento or {}).get('status', 'sem período')}"
+                  f" via {(evento or {}).get('via', '-')} em {time.monotonic() - inicio_ticker:.1f}s")
             if evento is not None:
                 if evento["status"] in (STATUS_CONFIRMADO, STATUS_ESTIMADO):
                     via = evento.get("via") or "salvo"
