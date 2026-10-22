@@ -6,6 +6,9 @@ Supabase; a aba Morning Call recebeu **uma edição de exemplo** (marcada
 `[EXEMPLO DE LAYOUT]` no próprio texto) só para avaliar o layout. Nada disso existe
 em produção.
 
+As capturas "antes" foram tiradas depois do aviso de horário (mesma sprint), mas antes das
+mudanças de cabeçalho e de posição do banner — o que elas comparam é o layout do menu.
+
 | Arquivo | O que mostra |
 |---|---|
 | `antes_mobile_morning_call.png` | 390 px antes: banner de inscrição acima do logo e cabeçalho com "CTRL K" + 3 botões em largura total ocupando a tela inteira |
