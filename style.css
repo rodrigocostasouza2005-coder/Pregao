@@ -656,10 +656,21 @@ table tr:last-child td { border-bottom: none; }
     .st-key-camada1_header div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
         flex: 0 1 auto !important;
         min-width: fit-content !important;
+        /* o Streamlit tambem poe width:100% nas colunas no mobile - com
+           flex-basis:auto essa largura vencia e cada botao ocupava a
+           linha inteira (medido no DOM a 390px, 2026-10-22: 7 colunas de
+           332px empilhadas, ~270px de cabecalho so' de botoes) */
+        width: auto !important;
+    }
+    /* "CTRL K" e' dica de teclado fisico - no celular so' ocupava uma
+       linha inteira do cabecalho */
+    .st-key-camada1_header div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(3) {
+        display: none !important;
     }
     .st-key-camada1_header div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) {
         flex-basis: 100% !important;
         min-width: 0 !important;
+        width: 100% !important;
     }
 
     /* RESEARCH - filtros Casa/Tipo/Ticker (bug real confirmado por
