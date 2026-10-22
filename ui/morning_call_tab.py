@@ -135,7 +135,7 @@ def _hora_ref() -> str:
 
 
 # horário previsto do envio (radar-morning-call.yml: 08:03 BRT + reservas
-# até 09:07). Depois disso a edição saiu atrasada - em 21/10/2026 o GitHub
+# até 09:47). Depois disso a edição saiu atrasada - em 21/10/2026 o GitHub
 # só entregou os disparos entre 12:55 e 14:06 BRT (ver MANUAL.md).
 _LIMITE_HORARIO_PREVISTO = time(9, 30)
 

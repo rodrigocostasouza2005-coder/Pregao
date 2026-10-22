@@ -114,3 +114,17 @@ def test_sucesso_depois_de_uma_falha_anterior_limpa_o_motivo():
         resultado = lives_mod.obter_relatorios()
     assert resultado is not None
     assert lives_mod.motivo_ultima_falha() is None
+
+
+def test_falha_de_parse_registra_status_tipo_e_redirecionamento():
+    """Achado real 22/10: SAXParseException nas 2 tentativas sem nenhuma
+    pista do que o YouTube devolveu - o motivo passa a trazer status HTTP,
+    tipo de conteúdo e o host final quando houve redirecionamento."""
+    feed = SimpleNamespace(bozo=True, entries=[], bozo_exception=Exception("not well-formed (invalid token)"),
+                           status=200, headers={"content-type": "text/html; charset=utf-8"},
+                           href="https://consent.youtube.com/m?continue=x")
+    with patch.object(lives_mod.feedparser, "parse", return_value=feed), \
+         patch.object(lives_mod.time, "sleep"):
+        assert lives_mod.obter_relatorios() is None
+    motivo = lives_mod.motivo_ultima_falha()
+    assert "HTTP 200" in motivo and "text/html" in motivo and "consent.youtube.com" in motivo

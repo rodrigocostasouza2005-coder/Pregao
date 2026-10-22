@@ -125,6 +125,29 @@ def _data_publicacao_brt(entry, publicado_utc: datetime | None) -> str:
     return publicado_bruto[:10] if publicado_bruto else ""
 
 
+def _detalhe_http(feed) -> str:
+    """Status HTTP, tipo de conteúdo e host final da resposta que o
+    feedparser recebeu - achado real (coletores 22/10 01:28 UTC): duas
+    tentativas com SAXParseException('not well-formed') e nenhuma pista
+    se o YouTube devolveu HTML (página de consentimento/bloqueio, 404 de
+    canal) ou um XML corrompido. Vazio quando não houve resposta."""
+    if feed is None:
+        return ""
+    status = getattr(feed, "status", None)
+    headers = getattr(feed, "headers", None) or {}
+    tipo = headers.get("content-type") if hasattr(headers, "get") else None
+    href = getattr(feed, "href", None) or ""
+    partes = []
+    if status is not None:
+        partes.append(f"HTTP {status}")
+    if tipo:
+        partes.append(str(tipo).split(";")[0])
+    host = re.sub(r"^https?://([^/]+).*$", r"\1", href) if href else ""
+    if host and host != "www.youtube.com":
+        partes.append(f"redirecionado para {host}")
+    return f" ({', '.join(partes)})" if partes else ""
+
+
 def obter_relatorios() -> list | None:
     """Metadados dos vídeos recentes do canal que batem com algum
     programa conhecido (ver _PADROES_PROGRAMA). None se o feed falhar
@@ -161,12 +184,12 @@ def obter_relatorios() -> list | None:
         # painel SAUDE DOS DADOS. Mesmo padrao que genial.py/xp.py JA
         # usam (print por tentativa, visivel nos Logs do GitHub Actions/
         # Streamlit Cloud) - antes so' faltava aqui.
-        print(f"[genial_lives] tentativa {tentativa + 1} falhou: {erro_bruto!r}")
+        print(f"[genial_lives] tentativa {tentativa + 1} falhou: {erro_bruto!r}{_detalhe_http(feed)}")
         if tentativa == 0:
             time.sleep(1.5)
     else:
         _ultimo_motivo_falha = (
-            f"feed RSS do YouTube falhou apos 2 tentativas: {erro_bruto}"
+            f"feed RSS do YouTube falhou apos 2 tentativas: {erro_bruto}{_detalhe_http(feed)}"
             if erro_bruto is not None
             else "feed RSS do YouTube respondeu sem entradas validas (bozo) apos 2 tentativas"
         )
