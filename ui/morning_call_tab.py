@@ -28,15 +28,57 @@ def texto_para_html(texto: str) -> str:
     return _URL.sub(lambda m: f"<a href='{m.group(0)}' target='_blank' rel='noopener'>{m.group(0)}</a>", escapado)
 
 
+_LINHA_NOTICIA = re.compile(r"^(?P<titulo>.+?) — (?P<link>https?://\S+)$")
+_MARCA_EN = " [em inglês - tradução indisponível nesta edição]"
+_ORIGINAL = re.compile(r"^(?P<pt>.+) \(original: (?P<en>.+)\)$")
+_CHIP = ("<span style='display:inline-block;border:1px solid var(--borda);border-radius:3px;"
+         "padding:0 5px;margin-right:6px;font-size:0.62rem;letter-spacing:.04em;color:var(--neutro);'>{}</span>")
+
+
+def _item_noticia_html(item: str) -> str | None:
+    """Linha de notícia do e-mail ("Manchete — https://...") como manchete
+    clicável + domínio do veículo, em vez da URL crua. Manchete traduzida
+    leva o original logo abaixo; manchete em inglês sem tradução leva a
+    marca EN. None se a linha não for de notícia (fica como texto)."""
+    from urllib.parse import urlparse
+
+    m = _LINHA_NOTICIA.match(item)
+    if not m:
+        return None
+    titulo, link = m.group("titulo"), m.group("link")
+    chip, original = "", ""
+    if titulo.endswith(_MARCA_EN):
+        titulo = titulo[: -len(_MARCA_EN)]
+        chip = _CHIP.format("EN · SEM TRADUÇÃO")
+    else:
+        mo = _ORIGINAL.match(titulo)
+        if mo:
+            titulo = mo.group("pt")
+            chip = _CHIP.format("TRADUZIDO")
+            original = (f"<div class='cinza' style='font-size:.72rem;margin-top:2px;'>original: "
+                        f"{html.escape(mo.group('en'))}</div>")
+    dominio = urlparse(link).netloc.replace("www.", "")
+    return (f"{chip}<a href='{html.escape(link, quote=True)}' target='_blank' rel='noopener' "
+            f"style='color:var(--texto, inherit);text-decoration:none;font-weight:600;'>{html.escape(titulo)}</a>"
+            f" <span class='cinza' style='font-size:.7rem;white-space:nowrap;'>{html.escape(dominio)} ↗</span>"
+            + original)
+
+
 def _bloco_editorial_html(texto: str) -> str:
-    """Formata o briefing de texto em secoes legiveis sem alterar seu conteudo."""
+    """Formata o briefing de texto em secoes legiveis sem alterar seu conteudo:
+    cabeçalho da edição em texto discreto (sem caixa repetindo o título),
+    seções em grade de 2 colunas no desktop (1 no celular) e notícias com
+    a manchete como link."""
     secoes = []
-    titulo_secao = "BRIEFING"
+    titulo_secao = None  # linhas antes da 1ª seção = cabeçalho da edição
     linhas_secao = []
+    cabecalho = []
 
     def fechar_secao():
         nonlocal titulo_secao, linhas_secao
-        if not linhas_secao and not secoes:
+        if titulo_secao is None:
+            cabecalho.extend(l.strip() for l in linhas_secao if l.strip())
+            linhas_secao = []
             return
         itens = []
         paragrafo = []
@@ -68,20 +110,21 @@ def _bloco_editorial_html(texto: str) -> str:
                         "INTERPRETAÇÃO</span>"
                     )
                     item = item[m.end():]
+                corpo = _item_noticia_html(item) or texto_para_html(item)
                 itens.append(
                     "<div style='display:flex;gap:8px;align-items:flex-start;"
-                    "padding:7px 9px;margin:4px 0;background:var(--painel-bg);"
+                    "padding:6px 9px;margin:3px 0;background:var(--painel-bg);"
                     "border-left:2px solid var(--borda);border-radius:2px;'>"
                     "<span style='color:var(--destaque);font-weight:700;'>›</span>"
-                    "<div style='min-width:0;overflow-wrap:anywhere;line-height:1.55;'>"
-                    + tag + texto_para_html(item) + "</div></div>"
+                    "<div style='min-width:0;overflow-wrap:anywhere;line-height:1.5;'>"
+                    + tag + corpo + "</div></div>"
                 )
             else:
                 paragrafo.append(limpa)
         fechar_paragrafo()
         if itens:
             secoes.append(
-                "<section style='margin:0 0 12px;border:1px solid var(--borda);"
+                "<section style='margin:0;border:1px solid var(--borda);min-width:0;"
                 "border-radius:5px;overflow:hidden;'>"
                 "<div style='padding:9px 12px;background:var(--painel-bg);"
                 "border-bottom:1px solid var(--borda);color:var(--destaque);"
@@ -104,9 +147,18 @@ def _bloco_editorial_html(texto: str) -> str:
         else:
             linhas_secao.append(linha)
     fechar_secao()
+    topo = ""
+    if cabecalho:
+        # 1ª linha é "MORNING CALL — dd/mm/aaaa", já dita no cabeçalho da aba
+        resto = cabecalho[1:] if cabecalho[0].upper().startswith("MORNING CALL") else cabecalho
+        topo = "".join(
+            f"<div class='cinza' style='font-size:.72rem;line-height:1.45;margin:0 0 4px;'>{texto_para_html(l)}</div>"
+            for l in resto)
     return (
-        "<div style='max-width:100%;font-size:.84rem;overflow-wrap:anywhere;'>"
-        + "".join(secoes) + "</div>"
+        "<div style='max-width:100%;font-size:.84rem;overflow-wrap:anywhere;'>" + topo
+        + "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr));"
+        "gap:10px;align-items:start;margin-top:6px;'>"
+        + "".join(secoes) + "</div></div>"
     )
 
 
