@@ -364,6 +364,24 @@ def _classe_variacao(valor) -> str:
     return "alta" if v > 0 else "baixa" if v < 0 else "cinza"
 
 
+def _url_http_segura(url) -> str | None:
+    """So' aceita URL absoluta http(s) pra virar href/src - mesmo critério
+    de data/news.py:_url_imagem_valida (reaproveitado em espírito, não em
+    código: aquele é só pra imagem e já roda na coleta). Defesa em
+    profundidade na CAMADA DE APRESENTAÇÃO: o `link`/`imagem` do dict
+    estruturado (data/morning_call_editorial.py:_item_fato) não passa por
+    nenhum gate de esquema até chegar aqui - diferente do caminho em texto
+    (_item_noticia_html), que só casa link por já exigir "https?://" no
+    próprio regex. Sem este filtro, um link não-http(s) (ex: "javascript:
+    ...") numa fonte comprometida viraria um href clicável de verdade -
+    html.escape() escapa aspas/caracteres especiais, mas não o ESQUEMA da
+    URL."""
+    if not url or not isinstance(url, str):
+        return None
+    url = url.strip()
+    return url if url.startswith("http://") or url.startswith("https://") else None
+
+
 def _card_indicador_estruturado(ind: dict) -> str:
     """Mesmo card de _indicador_da_linha, a partir do dict estruturado
     (data/morning_call_editorial.py: _indicador ou _linha_macro) - sem
@@ -409,10 +427,10 @@ def _card_noticia_estruturada(fato: dict) -> str:
     quando disponível (nunca uma imagem genérica no lugar) e até 2
     parágrafos do resumo já cacheado."""
     titulo = str(fato.get("titulo") or "(sem título)").strip()
-    link = fato.get("link")
+    link = _url_http_segura(fato.get("link"))
     veiculo = fato.get("veiculo")
     corpo = fato.get("corpo") or []
-    imagem = fato.get("imagem")
+    imagem = _url_http_segura(fato.get("imagem"))
     chip, original = "", ""
     if fato.get("titulo_original"):
         chip = "<span class='mc-chip'>TRADUZIDO</span>"
@@ -473,7 +491,7 @@ def render_edicao_estruturada_html(edicao: dict) -> str:
         if chamadas:
             partes.append(
                 "<div class='mc-chamadas'>" + "".join(
-                    f"<a class='mc-chamada' href='{html.escape(c.get('link') or '#', quote=True)}' "
+                    f"<a class='mc-chamada' href='{html.escape(_url_http_segura(c.get('link')) or '#', quote=True)}' "
                     f"target='_blank' rel='noopener'>{html.escape(str(c.get('titulo') or ''))}</a>"
                     for c in chamadas if c.get("titulo")
                 ) + "</div>"
@@ -518,16 +536,33 @@ def render_edicao_estruturada_html(edicao: dict) -> str:
         partes.append("<div class='mc-aviso'>Sem fatos relevantes confirmados nesta sessão.</div>")
     partes.append("</div>")
 
+    # agenda/agenda_proximos: None = calendário indisponível nesta execução,
+    # [] = calendário respondeu e não há evento (data/morning_call_editorial.
+    # py:_agenda_hoje/_agenda_proximos, docstring explícita sobre a
+    # diferença) - "or" tratava as duas coisas como a mesma ausência e
+    # OMITIA a seção inteira mesmo quando a agenda rodou normalmente e só
+    # não achou evento, sem dizer isso ao leitor (o caminho em texto, jobs/
+    # morning_call.py:_secao_agenda, sempre diz "Nenhum evento relevante
+    # identificado para hoje" nesse caso - o renderer estruturado omitia
+    # silenciosamente). Mostra a seção sempre que pelo menos uma das duas
+    # rodou (not None), com a mensagem certa pra lista vazia; só some de
+    # verdade quando as duas falharam.
     agenda_hoje = empresas.get("agenda")
     agenda_prox = empresas.get("agenda_proximos")
-    if agenda_hoje or agenda_prox:
+    if agenda_hoje is not None or agenda_prox is not None:
         partes.append("<div class='mc-secao'><div class='mc-secao-titulo'>AGENDA</div>")
-        if agenda_hoje:
+        if agenda_hoje is not None:
             partes.append("<div class='mc-agenda-grupo-titulo'>Hoje</div>")
-            partes.append("".join(_linha_agenda_estruturada(e) for e in agenda_hoje))
-        if agenda_prox:
+            if agenda_hoje:
+                partes.append("".join(_linha_agenda_estruturada(e) for e in agenda_hoje))
+            else:
+                partes.append("<div class='mc-aviso'>Nenhum evento relevante identificado para hoje.</div>")
+        if agenda_prox is not None:
             partes.append("<div class='mc-agenda-grupo-titulo'>Próximos dias</div>")
-            partes.append("".join(_linha_agenda_estruturada(e) for e in agenda_prox))
+            if agenda_prox:
+                partes.append("".join(_linha_agenda_estruturada(e) for e in agenda_prox))
+            else:
+                partes.append("<div class='mc-aviso'>Nenhum evento com data confirmada ou estimada nos próximos dias.</div>")
         partes.append("</div>")
 
     radar = edicao.get("radar")
@@ -672,7 +707,17 @@ def render_edicao_atual(prefs: dict):
         tem_previa = bool(st.session_state.get("mc_previa"))
         if st.button("ATUALIZAR PRÉVIA" if tem_previa else "GERAR PRÉVIA", key="mc_previa_btn"):
             if tem_previa:
+                # .clear() do st.cache_data limpa TODAS as chaves da função,
+                # não só a hora atual (confirmado: streamlit.runtime.caching).
+                # _pdf_bytes(hora_ref) chama _edicao_estruturada(hora_ref) por
+                # dentro, mas tem o PRÓPRIO cache - sem limpar os dois juntos,
+                # "ATUALIZAR" aqui invalidava o dict mas deixava o PDF e o
+                # "ver conteúdo na tela" de RELATÓRIO COMPLETO com os bytes
+                # antigos, pra mesma hora_ref - o PDF baixado passava a
+                # divergir do que a tela mostra, exatamente o que esta
+                # reconstrução prometeu resolver (consistência aba/PDF).
                 _edicao_estruturada.clear()
+                _pdf_bytes.clear()
             st.session_state.pop("mc_previa", None)
             with st.spinner("Montando o Morning Call com as fontes de agora..."):
                 try:

@@ -200,3 +200,73 @@ def test_render_edicao_estruturada_html_monta_secoes_principais():
     assert "Fato relevante da Vale" in out and "href='https://exemplo.com/vale'" in out
     assert "coleta do Google News falhou nesta execução" in out
     assert "LIMITAÇÕES" in out and "FONTES" in out
+    # agenda_hoje=[] (calendário rodou, sem evento) é diferente de None
+    # (calendário falhou) - a seção aparece com a mensagem certa, não some
+    assert "AGENDA" in out and "Nenhum evento relevante identificado para hoje" in out
+    assert "Próximos dias" not in out  # agenda_proximos=None: calendário não rodou pra essa parte
+
+
+# --- Revisão pré-merge do PR #135 (achados corrigidos nesta revisão) ------
+
+def test_url_http_segura_rejeita_esquema_perigoso():
+    assert mc._url_http_segura("https://exemplo.com/a") == "https://exemplo.com/a"
+    assert mc._url_http_segura("http://exemplo.com/a") == "http://exemplo.com/a"
+    assert mc._url_http_segura("javascript:alert(1)") is None
+    assert mc._url_http_segura("data:text/html,<script>alert(1)</script>") is None
+    assert mc._url_http_segura("/caminho/relativo") is None
+    assert mc._url_http_segura(None) is None
+    assert mc._url_http_segura("") is None
+
+
+def test_card_noticia_estruturada_nunca_vira_href_com_esquema_perigoso():
+    fato = {"titulo": "Manchete suspeita", "link": "javascript:alert(document.cookie)",
+            "veiculo": "Fonte", "corpo": [], "imagem": "javascript:alert(1)"}
+    card = mc._card_noticia_estruturada(fato)
+    assert "javascript:" not in card
+    # sem link seguro, o título vira texto simples (não <a href>) em vez de omitir a notícia
+    assert "<span class='mc-noticia-titulo'>Manchete suspeita</span>" in card
+    assert "mc-noticia-img" not in card  # imagem com esquema perigoso não vira <img src>
+
+
+def test_render_edicao_estruturada_html_agenda_distingue_falha_de_vazio():
+    base = {
+        "agora": datetime(2026, 10, 22, 9, 0, tzinfo=TZ),
+        "capa": {"indicadores": [], "destaques": [], "manchete": None, "chamadas": []},
+        "brasil": {"indicadores": [], "noticias": None, "noticias_erro": None},
+        "exterior": {"indicadores": [], "noticias": None, "noticias_erro": None},
+        "radar": None, "mercados_nota": None, "limitacoes": (), "fontes": (),
+    }
+    # as duas falharam (None): a seção inteira não aparece (nada a dizer)
+    sem_agenda = mc.render_edicao_estruturada_html(
+        {**base, "empresas": {"cards": [], "agenda": None, "agenda_proximos": None, "noticias_erro": None}})
+    assert "AGENDA" not in sem_agenda
+    # próximos dias rodou e achou eventos, hoje não rodou: só "Próximos dias" aparece
+    from datetime import date
+    so_proximos = mc.render_edicao_estruturada_html({**base, "empresas": {
+        "cards": [], "agenda": None,
+        "agenda_proximos": [{"empresa": "Vale", "ticker": "VALE3", "tipo_evento": "ITR", "periodo": "3T26",
+                             "data": date(2026, 10, 30), "horario": None,
+                             "status_rotulo": "ESTIMADO", "status_nota": ""}],
+        "noticias_erro": None}})
+    assert "AGENDA" in so_proximos and "Próximos dias" in so_proximos and "VALE3" in so_proximos
+    assert "<div class='mc-agenda-grupo-titulo'>Hoje</div>" not in so_proximos
+
+
+def test_atualizar_previa_limpa_cache_do_pdf_junto():
+    """Achado da revisão: .clear() do st.cache_data limpa TODA a função, não
+    só a hora atual (confirmado direto na API do streamlit.runtime.caching -
+    f.clear() refaz a chamada pra QUALQUER argumento já visto). _pdf_bytes
+    (hora_ref) tem cache PRÓPRIO e chama _edicao_estruturada(hora_ref) por
+    dentro - sem limpar os dois juntos, clicar ATUALIZAR PRÉVIA invalidava
+    o dict mas deixava o PDF e o "ver conteúdo na tela" de RELATÓRIO
+    COMPLETO com os bytes antigos pra mesma hora_ref: exatamente a
+    inconsistência aba/PDF que este PR promete resolver. Guarda estática
+    (não depende de simular sessão/cache real do Streamlit, que AppTest não
+    isola de forma confiável entre chamadas de .clear()): o branch do botão
+    ATUALIZAR PRÉVIA precisa limpar as DUAS funções."""
+    import inspect
+
+    fonte = inspect.getsource(mc.render_edicao_atual)
+    bloco_atualizar = fonte.split("if tem_previa:", 1)[1].split("st.session_state.pop(\"mc_previa\"", 1)[0]
+    assert "_edicao_estruturada.clear()" in bloco_atualizar
+    assert "_pdf_bytes.clear()" in bloco_atualizar
