@@ -604,7 +604,9 @@ def coletar_eventos_universo(tickers: list, hoje: date = None) -> dict:
         try:
             evento = coletar_evento(ticker, hoje=hoje)
             print(f"[eventos] {ticker}: {(evento or {}).get('status', 'sem período')}"
-                  f" via {(evento or {}).get('via', '-')} em {time.monotonic() - inicio_ticker:.1f}s")
+                  f" {(evento or {}).get('periodo', '')} {(evento or {}).get('data', '')}"
+                  f" via {(evento or {}).get('via', '-')} ({(evento or {}).get('fonte', '')})"
+                  f" em {time.monotonic() - inicio_ticker:.1f}s")
             if evento is not None:
                 if evento["status"] in (STATUS_CONFIRMADO, STATUS_ESTIMADO):
                     via = evento.get("via") or "salvo"
