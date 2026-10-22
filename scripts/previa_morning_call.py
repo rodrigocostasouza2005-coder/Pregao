@@ -19,6 +19,8 @@ capa = edicao.get("capa") or {}
 for rotulo, item in [("MANCHETE", capa.get("manchete"))] + [("CHAMADA", c) for c in capa.get("chamadas") or []]:
     if item:
         print(f"  {rotulo}: {item.get('veiculo')} | confiavel={item.get('fonte_confiavel')} | {item.get('titulo')}")
+for chave, campo in (("brasil", "noticias"), ("empresas", "cards"), ("exterior", "noticias")):
+    print(f"VEICULOS {chave}:", [i.get("veiculo") for i in (edicao.get(chave) or {}).get(campo) or []])
 print("AGENDA_PROXIMOS:", [(e.get("ticker"), str(e.get("data")), e.get("status_rotulo")) for e in (edicao.get("empresas") or {}).get("agenda_proximos") or []])
 print("TEXTO_INICIO")
 print(montar_morning_call(agora))
