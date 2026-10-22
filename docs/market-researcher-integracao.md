@@ -227,7 +227,7 @@ Suíte completa: **1233 passed** (`python -m pytest -q`, local — ver seção 1
   ver seção 5); nada nesta branch muda coleta.
 - [x] Morning Call não quebrado (não alterado — seção 7).
 - [x] Testes existentes continuam passando (1233/1233 local).
-- [ ] **CI ainda não executado** — pendente de push e abertura do PR (próximo passo).
+- [x] CI executado no PR #134 (`testes`, GitHub Actions) — **passou**, 1m25s.
 - [x] Entrega em PR com limitações explícitas (este documento + corpo do PR).
 
 ## 11. Pendências explícitas pro Rodrigo
