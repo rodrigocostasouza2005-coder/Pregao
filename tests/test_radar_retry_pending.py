@@ -190,3 +190,10 @@ def test_assunto_do_alerta_traz_a_data_do_pregao(monkeypatch):
               "fechamento_anterior": 41.8}
     radar_quedas._enviar_alerta(_Cliente(), alerta)
     assert enviados == ["[PREGÃO] Queda >4% — WEGE3 (pregão 21/10)"]
+
+
+def test_corpo_do_alerta_traz_a_data_do_pregao_e_aviso_nao_recomendacao():
+    texto = radar_quedas._texto_alerta({"ticker": "WEGE3", "pregao": "2026-10-21", "variacao_pct": -4.3,
+                                        "preco_atual": 40.0, "fechamento_anterior": 41.8})
+    assert "Pregão: 21/10/2026" in texto
+    assert "não constitui recomendação" in texto

@@ -49,3 +49,15 @@ with patch.object(mc, "listar_edicoes", return_value=[ed]):
     rotulos = [b.label for b in at.button]
     assert rotulos.count("GERAR PRÉVIA") == 1
     assert not any("ATUALIZAR" in r for r in rotulos)  # sem prévia ainda, só a ação de gerar
+
+
+def test_aviso_quando_a_edicao_de_hoje_nao_saiu():
+    from datetime import date
+    quinta_11h40 = datetime(2026, 10, 22, 11, 40, tzinfo=TZ)
+    aviso = mc.aviso_edicao_de_hoje_ausente(date(2026, 10, 21), quinta_11h40)
+    assert aviso and "22/10" in aviso and "21/10" in aviso
+    # ainda dentro do horário previsto, com edição de hoje, ou fim de semana: nada
+    assert mc.aviso_edicao_de_hoje_ausente(date(2026, 10, 21), datetime(2026, 10, 22, 9, 0, tzinfo=TZ)) is None
+    assert mc.aviso_edicao_de_hoje_ausente(date(2026, 10, 22), quinta_11h40) is None
+    assert mc.aviso_edicao_de_hoje_ausente(date(2026, 10, 23), datetime(2026, 10, 24, 11, 0, tzinfo=TZ)) is None
+    assert "ainda não foi gerada" in mc.aviso_edicao_de_hoje_ausente(None, quinta_11h40)

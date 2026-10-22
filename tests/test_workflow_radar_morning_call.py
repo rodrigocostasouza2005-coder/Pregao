@@ -36,7 +36,7 @@ def _crons_do_if(texto, job):
 def test_morning_call_dispara_as_08h_brasilia_com_reservas():
     """Missão explícita: envio às 08h de Brasília (UTC-3, sem horário de
     verão desde 2019) - primeiro disparo 08:03 (= 11:03 UTC) e reservas
-    até 09:07, porque o GitHub descarta schedule sob carga (medido:
+    até 09:47, porque o GitHub descarta schedule sob carga (medido:
     nenhum disparo em 17/10). Idempotência diária evita envio duplo."""
     texto = _conteudo()
     crons_mc = _crons_do_if(texto, "morning-call")

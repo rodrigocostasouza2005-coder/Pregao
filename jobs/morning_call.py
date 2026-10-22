@@ -17,7 +17,8 @@ from data.eventos import (
 )
 from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta, obter_selic_meta_copom
 from data.morning_call_editorial import (
-    _macro_rows, _referencia_cotacao, filtrar_noticias, montar_edicao, nota_sessao,
+    _macro_rows, _referencia_cotacao, e_noticia_de_empresa, editoria_por_assunto, filtrar_noticias,
+    montar_edicao, nota_sessao,
 )
 from data.news import obter_top_mercado, obter_top_mercado_internacional, parece_ingles, traduzir_manchetes_pdf
 from data.prices import obter_cotacao_indice, rotulo_cotacao_em_cache
@@ -346,8 +347,11 @@ def montar_morning_call(agora=None):
         candidatos = filtrar_noticias(
             [i for i in _noticias_por_regiao() if not _marca_erro(i, erros_regiao)], agora)
         for item in candidatos:
-            if item.get("regiao") == "BR":
-                (noticias_br_empresa if item.get("tickers") else noticias_br_macro).append(item)
+            # mesmas regras do PDF (data/morning_call_editorial.py): editoria
+            # pelo assunto do título e Empresas só com a empresa no título
+            if editoria_por_assunto(item.get("titulo"), item.get("regiao") or "BR") == "BR":
+                (noticias_br_empresa if e_noticia_de_empresa(item.get("titulo"))
+                 else noticias_br_macro).append(item)
             else:
                 noticias_intl.append(item)
     except Exception as exc:
@@ -535,6 +539,16 @@ def montar_morning_call_html(texto: str) -> str:
 
     partes = []
 
+    # -- aviso de edição atrasada (ver _com_aviso_atraso) ---------------
+    aviso = next((l[len("[AVISO] "):] for l in linhas if l.startswith("[AVISO] ")), None)
+    if aviso:
+        partes.append(
+            f'<tr><td style="padding:12px 28px 0 28px;font-family:{_SANS};font-size:12px;'
+            f'line-height:1.45;color:{_TINTA};"><span style="background-color:{_AMBAR};'
+            f'font-weight:bold;padding:1px 6px;margin-right:6px;">ATRASADA</span>'
+            f'{_html_escape.escape(aviso)}</td></tr>'
+        )
+
     # -- manchete principal + chamadas secundárias -------------------
     if manchetes:
         principal = manchetes[0]
@@ -637,9 +651,41 @@ def montar_morning_call_html(texto: str) -> str:
     )
 
 
+# Horário previsto da edição: 08h BRT, com tolerância até 09:30 (mesmo
+# limite de ui/morning_call_tab.py:_LIMITE_HORARIO_PREVISTO). Depois disso a
+# edição sai marcada como atrasada no assunto e no corpo - em 21/10 o
+# GitHub entregou o disparo das 08h às 12:55 e o e-mail saiu sem nenhum
+# aviso, com cotações já do meio do pregão.
+_LIMITE_HORARIO_PREVISTO = time(9, 30)
+# Disparo AGENDADO (cron) que chega depois do fechamento da B3 não envia:
+# um "Morning Call" às 21h não serve a ninguém e só confunde. Disparo
+# manual (workflow_dispatch) envia sempre - quem disparou decidiu.
+_CORTE_ENVIO_AGENDADO = time(17, 0)
+
+
+def _edicao_atrasada(agora) -> bool:
+    return agora.time() > _LIMITE_HORARIO_PREVISTO
+
+
 def _assunto(agora, teste=False):
     prefixo = "[TESTE] " if teste else ""
-    return f"{prefixo}[PREGÃO] Morning Call — {agora.strftime('%d/%m/%Y')}"
+    sufixo = f" (enviado às {agora.strftime('%H:%M')}, com atraso)" if _edicao_atrasada(agora) else ""
+    return f"{prefixo}[PREGÃO] Morning Call — {agora.strftime('%d/%m/%Y')}{sufixo}"
+
+
+def _com_aviso_atraso(texto, agora):
+    """Linha de aviso logo abaixo do cabeçalho quando a edição sai depois do
+    horário previsto - nunca altera o resto do texto."""
+    if not _edicao_atrasada(agora):
+        return texto
+    aviso = (f"[AVISO] Edição gerada às {agora.strftime('%H:%M')} (horário de Brasília), depois do "
+             "horário previsto (08h): cotações e notícias refletem esse momento, não a pré-abertura.")
+    linhas = texto.split("\n")
+    for i, linha in enumerate(linhas):
+        if linha.startswith("Gerado em "):
+            linhas.insert(i + 1, aviso)
+            return "\n".join(linhas)
+    return aviso + "\n\n" + texto
 
 
 def _montar_anexo_pdf(agora):
@@ -670,6 +716,9 @@ def _montar_anexo_pdf(agora):
         # nomes dos setores do radar QUE ESTÃO no PDF anexo (chamada no e-mail);
         # jobs/email_utils.py só lê nome/conteudo/tipo_mime
         "radar_setores": [b.get("nome") for b in (radar or {}).get("setores") or [] if b.get("nome")],
+        # matérias que saíram só com manchete por falta de IA (painel SAÚDE
+        # DOS DADOS marca a execução como parcial)
+        "sem_ia": (texto.get("sem_ia") if texto and texto.get("sem_texto") else None),
     }
 
 
@@ -845,7 +894,7 @@ def enviar_teste(destinatario_teste: str, agora=None) -> dict:
     return resultado
 
 
-def executar():
+def executar(agora=None):
     # Self-test de escrita+leitura ANTES do envio (mesmo motivo de
     # coletor_local.py/jobs/radar_quedas.py: diagnostico claro na raiz
     # em vez de uma falha de persistencia sem explicacao).
@@ -858,7 +907,22 @@ def executar():
             f"na etapa {diagnostico['etapa']} - {diagnostico['detalhe']}"
         )
 
-    agora = datetime.now(TZ_SP)
+    agora = agora or datetime.now(TZ_SP)
+    if os.getenv("GITHUB_EVENT_NAME") == "schedule" and agora.time() >= _CORTE_ENVIO_AGENDADO:
+        motivo = (f"Disparo agendado do Morning Call chegou às {agora.strftime('%H:%M')} "
+                  f"(depois das {_CORTE_ENVIO_AGENDADO.strftime('%H:%M')}) - edição do dia não enviada. "
+                  "O agendador do GitHub atrasou; ver MANUAL.md, 'Disparo externo dos agendamentos'.")
+        print(f"::error::{motivo}")
+        registrar_tentativa(
+            "MORNING CALL",
+            "Resumo executivo + Brasil/Exterior + Agenda (CVM) + Empresas e Setores "
+            "+ NEWS agregados, e-mail (Resend) por assinante",
+            execucao_ok=False,
+            persistencia_ok=True,
+            erro=motivo,
+            categoria="Morning Call",
+        )
+        return 1
     cliente = obter_cliente()
 
     # Destinatarios dinamicos: todo usuario autenticado com a preferencia
@@ -928,9 +992,12 @@ def executar():
         return 0
 
     anexo_pdf = _montar_anexo_pdf(agora)
-    texto = _com_chamada_radar(montar_morning_call(agora), anexo_pdf)
+    texto = _com_aviso_atraso(_com_chamada_radar(montar_morning_call(agora), anexo_pdf), agora)
     html = montar_morning_call_html(texto)
     assunto = _assunto(agora)
+    if _edicao_atrasada(agora):
+        print(f"::warning::Morning Call gerado às {agora.strftime('%H:%M')} BRT, depois do horário previsto "
+              "(08h) - disparo do agendador do GitHub atrasado; edição marcada como atrasada.")
 
     enviados = 0
     falhas = 0
@@ -980,15 +1047,19 @@ def executar():
     # falha parcial (alguns assinantes falharam, outros não) nunca é
     # reportada como sucesso total: execucao_ok só é True se NENHUM
     # assinante elegível falhou.
+    # Edição enviada sem resumos/tradução (IA ausente) não é sucesso pleno:
+    # aparece como parcial, com o motivo, no painel SAÚDE DOS DADOS.
+    sem_ia = (anexo_pdf or {}).get("sem_ia")
+    aviso_ia = f"Edição sem resumos/tradução por IA: {sem_ia}" if sem_ia else None
     registrar_tentativa(
         "MORNING CALL",
         "Resumo executivo + Brasil/Exterior + Agenda (CVM) + Empresas e Setores "
         "+ NEWS agregados, e-mail (Resend) por assinante",
         execucao_ok=(falhas == 0),
         persistencia_ok=persistencia_ok,
-        erro=algum_erro,
+        erro=algum_erro or aviso_ia,
         categoria="Morning Call",
-        parcial=bool(enviados and falhas),
+        parcial=bool(enviados and falhas) or bool(enviados and aviso_ia),
     )
     # Job do GitHub Actions só fica vermelho em perda TOTAL (zero
     # sucessos) - uma falha isolada (ex: 1 endereço com bounce
