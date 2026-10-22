@@ -19,8 +19,8 @@ from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_sel
 from data.morning_call_editorial import (
     _macro_rows, _referencia_cotacao, filtrar_noticias, montar_edicao, nota_sessao,
 )
-from data.news import obter_top_mercado, obter_top_mercado_internacional
-from data.prices import obter_cotacao_indice
+from data.news import obter_top_mercado, obter_top_mercado_internacional, parece_ingles, traduzir_manchetes_pdf
+from data.prices import obter_cotacao_indice, rotulo_cotacao_em_cache
 from data.supabase_client import obter_cliente
 from data.user_prefs import listar_assinantes_morning_call
 from jobs.email_utils import enviar_email
@@ -73,7 +73,9 @@ def _obter_cotacao_fmt(titulo, ticker):
     cot = obter_cotacao_indice(titulo, ticker)
     if not isinstance(cot, dict) or cot.get("erro"):
         erro = cot.get("erro", "sem dado") if isinstance(cot, dict) else "sem dado"
-        return cot, f"- {titulo}: indisponível ({erro})"
+        # o texto vai pro e-mail do assinante: detalhe técnico só no log
+        print(f"[morning_call] cotação {titulo} indisponível: {erro}")
+        return cot, f"- {titulo}: indisponível nesta edição (a fonte não respondeu)"
     variacao = cot.get("variacao_pct")
     # mesma referência do PDF (data/morning_call_editorial.py): horário do
     # último negócio em Brasília ou "fech. dd/mm" - antes saía o índice cru
@@ -81,6 +83,9 @@ def _obter_cotacao_fmt(titulo, ticker):
     referencia, _sessao = _referencia_cotacao(cot)
     linha = (f"- {titulo}: {_fmt_num(cot.get('preco'))}; variação sobre o fechamento anterior: "
              f"{_fmt_num(variacao)}%; referência: {referencia or 'indisponível'}")
+    em_cache = rotulo_cotacao_em_cache(cot)
+    if em_cache:
+        linha += f" [último valor válido - {em_cache.lower()}]"
     return cot, linha
 
 
@@ -130,17 +135,28 @@ def _noticias_por_regiao():
 def _marca_erro(item, erros):
     if "_erro_regiao" in item:
         erros[item["_erro_regiao"]] = item.get("erro")
+        print(f"[morning_call] notícias {item['_erro_regiao']} indisponíveis: {item.get('erro')}")
         return True
     return False
 
 
-def _linhas_noticias(itens, limite):
+def _linhas_noticias(itens, limite, traducoes=None):
+    """`traducoes` ({link: título em PT}, de traduzir_manchetes_pdf): a
+    manchete sai em português com o original entre parênteses (rastreável).
+    Manchete em inglês sem tradução disponível sai sinalizada - antes o
+    e-mail publicava o EXTERIOR em inglês sem nenhum aviso."""
     out = []
     for item in itens[:limite]:
         titulo = str(item.get("titulo") or "").strip()
         link = str(item.get("link") or "").strip()
-        if titulo:
-            out.append(f"- {titulo}" + (f" — {link}" if link else ""))
+        if not titulo:
+            continue
+        traduzido = (traducoes or {}).get(link)
+        if traduzido:
+            titulo = f"{traduzido} (original: {titulo})"
+        elif parece_ingles(titulo):
+            titulo = f"{titulo} [em inglês - tradução indisponível nesta edição]"
+        out.append(f"- {titulo}" + (f" — {link}" if link else ""))
     return out
 
 
@@ -159,7 +175,25 @@ def _linha_evento(evento):
     )
 
 
-def _secao_agenda(agora):
+_SEM_VALOR = object()
+
+
+def _eventos_hoje(agora):
+    """Eventos do calendário com data=hoje; None = agenda indisponível
+    (diferente de [] = nenhum evento). Calculado 1x por edição e usado
+    pela AGENDA e por TENDÊNCIAS E RISCOS."""
+    try:
+        tickers = list(config.IBOVESPA_SETORES.keys())
+        eventos = calcular_calendario_cacheado(tickers, hoje=agora.date())
+    except Exception as exc:
+        print(f"[morning_call] agenda indisponível: {type(exc).__name__}: {exc}")
+        return None
+    eventos_hoje = [e for e in eventos if e.get("data") == agora.date()]
+    eventos_hoje.sort(key=lambda e: (e.get("horario") or "99:99", e.get("ticker") or ""))
+    return eventos_hoje
+
+
+def _secao_agenda(agora, eventos_hoje=_SEM_VALOR):
     """Eventos do CALENDÁRIO (data/eventos.py) com data=hoje (fuso
     America/Sao_Paulo) - hoje só resultados corporativos (ITR/DFP), ver
     docstring do módulo pra por quê não há CONFIRMADO/ESTIMADO de fontes
@@ -181,18 +215,58 @@ def _secao_agenda(agora):
         "Eventos do calendário de resultados corporativos (CVM) com data de hoje; "
         "o status indica o quão confiável é a data (veja a nota em cada linha).",
     ]
-    try:
-        tickers = list(config.IBOVESPA_SETORES.keys())
-        eventos = calcular_calendario_cacheado(tickers, hoje=agora.date())
-        eventos_hoje = [e for e in eventos if e.get("data") == agora.date()]
-        if not eventos_hoje:
-            linhas.append("- Nenhum evento relevante identificado para hoje.")
-        else:
-            eventos_hoje.sort(key=lambda e: (e.get("horario") or "99:99", e.get("ticker") or ""))
-            for evento in eventos_hoje:
-                linhas.append(_linha_evento(evento))
-    except Exception:
+    if eventos_hoje is _SEM_VALOR:
+        eventos_hoje = _eventos_hoje(agora)
+    if eventos_hoje is None:
         linhas.append("- Agenda do dia indisponível nesta execução.")
+    elif not eventos_hoje:
+        linhas.append("- Nenhum evento relevante identificado para hoje.")
+    else:
+        for evento in eventos_hoje:
+            linhas.append(_linha_evento(evento))
+    return linhas
+
+
+# Seção 6: só indicador com movimento >= este limiar (%) na última sessão
+# vira item próprio - abaixo disso não há gatilho específico a apontar.
+_LIMIAR_MOVIMENTO_PCT = 1.0
+
+# Leitura de cenário por indicador (texto fixo, revisado - sempre publicado
+# com a tag [INTERPRETAÇÃO], nunca como fato).
+_LEITURA_INDICADOR = {
+    "Dólar (USD/BRL)": "afeta exportadoras (receita em dólar), empresas endividadas em moeda estrangeira e a inflação de importados",
+    "Petróleo Brent": "tende a se refletir nas ações de petróleo e gás (Petrobras, PRIO) e no preço dos combustíveis",
+    "Ouro": "costuma indicar maior ou menor busca por proteção diante de incerteza global",
+    "S&P 500 futuro": "sinaliza o humor de Wall Street antes da abertura, que costuma contaminar o apetite por risco no Brasil",
+    "Nasdaq futuro": "sinaliza o humor das empresas de tecnologia nos EUA antes da abertura",
+}
+
+
+def _secao_tendencias(cotacoes, eventos_hoje):
+    """6. TENDÊNCIAS E RISCOS a partir dos dados DESTA edição (antes eram
+    3 frases fixas, iguais todo dia). Indicador com movimento >= 1% na
+    última sessão (cotação desta tentativa - valor de cache não entra) e
+    resultados corporativos de hoje. Tudo marcado [INTERPRETAÇÃO]; sem
+    gatilho nos dados, diz isso em vez de preencher com texto genérico."""
+    linhas = ["", "6. TENDÊNCIAS E RISCOS A ACOMPANHAR"]
+    for nome, cot in cotacoes:
+        if not isinstance(cot, dict) or cot.get("erro") or rotulo_cotacao_em_cache(cot):
+            continue
+        variacao = cot.get("variacao_pct")
+        leitura = _LEITURA_INDICADOR.get(nome)
+        if variacao is None or leitura is None or abs(variacao) < _LIMIAR_MOVIMENTO_PCT:
+            continue
+        direcao = "alta" if variacao > 0 else "queda"
+        linhas.append(f"- [INTERPRETAÇÃO] {nome} em {direcao} de {_fmt_num(abs(variacao))}% na última sessão: {leitura}.")
+    if eventos_hoje:
+        tickers = list(dict.fromkeys(e.get("ticker") for e in eventos_hoje if e.get("ticker")))
+        lista = ", ".join(tickers[:6]) + (f" e mais {len(tickers) - 6}" if len(tickers) > 6 else "")
+        linhas.append(f"- [INTERPRETAÇÃO] Resultados na agenda de hoje ({lista}): a reação dos papéis costuma "
+                      "depender do número frente ao esperado pelo mercado - confira o comunicado oficial.")
+    if len(linhas) == 2:
+        linhas.append(f"- [INTERPRETAÇÃO] Nenhum indicador acompanhado moveu {_fmt_num(_LIMIAR_MOVIMENTO_PCT)}% ou mais "
+                      "na última sessão e não há resultado corporativo na agenda de hoje: sem gatilho específico "
+                      "nos dados desta edição.")
     return linhas
 
 
@@ -214,10 +288,10 @@ def montar_morning_call(agora=None):
 
     cot_ibov, linha_ibov = _obter_cotacao_fmt("Ibovespa", "^BVSP")
     cot_dolar, linha_dolar = _obter_cotacao_fmt("Dólar (USD/BRL)", "USDBRL=X")
-    _, linha_sp = _obter_cotacao_fmt("S&P 500 futuro", "ES=F")
-    _, linha_nasdaq = _obter_cotacao_fmt("Nasdaq futuro", "NQ=F")
-    _, linha_ouro = _obter_cotacao_fmt("Ouro", "GC=F")
-    _, linha_petroleo = _obter_cotacao_fmt("Petróleo Brent", "BZ=F")
+    cot_sp, linha_sp = _obter_cotacao_fmt("S&P 500 futuro", "ES=F")
+    cot_nasdaq, linha_nasdaq = _obter_cotacao_fmt("Nasdaq futuro", "NQ=F")
+    cot_ouro, linha_ouro = _obter_cotacao_fmt("Ouro", "GC=F")
+    cot_petroleo, linha_petroleo = _obter_cotacao_fmt("Petróleo Brent", "BZ=F")
 
     linhas = [
         f"MORNING CALL — {agora.strftime('%d/%m/%Y')}",
@@ -277,12 +351,14 @@ def montar_morning_call(agora=None):
             else:
                 noticias_intl.append(item)
     except Exception as exc:
-        noticias_erro = f"{type(exc).__name__}: {exc}"
+        # o texto vai pro e-mail do assinante: detalhe técnico só no log
+        print(f"[morning_call] notícias indisponíveis: {type(exc).__name__}: {exc}")
+        noticias_erro = "a coleta do Google News falhou"
 
     if noticias_erro:
         linhas.append(f"- Notícias indisponíveis nesta execução ({noticias_erro}).")
     elif erros_regiao.get("BR"):
-        linhas.append(f"- Notícias do Brasil indisponíveis nesta execução ({erros_regiao['BR']}).")
+        linhas.append("- Notícias do Brasil indisponíveis nesta execução (a coleta do Google News falhou).")
     elif noticias_br_macro:
         linhas += _linhas_noticias(noticias_br_macro, 8)
     else:
@@ -292,13 +368,20 @@ def montar_morning_call(agora=None):
     if noticias_erro:
         linhas.append(f"- Notícias indisponíveis nesta execução ({noticias_erro}).")
     elif erros_regiao.get("INT"):
-        linhas.append(f"- Notícias internacionais indisponíveis nesta execução ({erros_regiao['INT']}).")
+        linhas.append("- Notícias internacionais indisponíveis nesta execução (a coleta do Google News falhou).")
     elif noticias_intl:
-        linhas += _linhas_noticias(noticias_intl, 8)
+        # uma chamada de IA por edição (a mesma do PDF); sem chave/erro -> {}
+        try:
+            traducoes = traduzir_manchetes_pdf(noticias_intl[:8]) or {}
+        except Exception as exc:
+            print(f"[morning_call] tradução das manchetes indisponível: {type(exc).__name__}")
+            traducoes = {}
+        linhas += _linhas_noticias(noticias_intl, 8, traducoes)
     else:
         linhas.append("- Nenhuma manchete internacional nesta coleta.")
 
-    linhas += _secao_agenda(agora)
+    eventos_hoje = _eventos_hoje(agora)
+    linhas += _secao_agenda(agora, eventos_hoje)
 
     linhas += ["", "5. EMPRESAS E SETORES"]
     if noticias_erro:
@@ -312,14 +395,12 @@ def montar_morning_call(agora=None):
             "BRASIL/EXTERIOR para o noticiário macro coletado)."
         )
 
+    linhas += _secao_tendencias(
+        [("Dólar (USD/BRL)", cot_dolar), ("Petróleo Brent", cot_petroleo), ("Ouro", cot_ouro),
+         ("S&P 500 futuro", cot_sp), ("Nasdaq futuro", cot_nasdaq)],
+        eventos_hoje,
+    )
     linhas += [
-        "", "6. TENDÊNCIAS E RISCOS A ACOMPANHAR",
-        "- [INTERPRETAÇÃO] Risco global: acompanhe a direção dos futuros americanos, dólar e "
-        "commodities; confirme os movimentos nas fontes originais.",
-        "- [INTERPRETAÇÃO] Brasil: observe juros futuros, câmbio e notícias fiscais/políticas; "
-        "o efeito depende da surpresa frente às expectativas.",
-        "- [INTERPRETAÇÃO] Empresas: valide comunicados oficiais e resultados antes de "
-        "atribuir causalidade a movimentos de preço.",
         "", "LIMITAÇÕES",
         "- Fontes gratuitas podem ter atraso e indisponibilidade; este briefing não garante cotação em tempo real.",
         "- Não foram incluídos preços ou fatos que não puderam ser confirmados nesta execução.",
@@ -575,6 +656,12 @@ def _montar_anexo_pdf(agora):
         print(f"[morning_call] geração do PDF editorial falhou (enviando sem anexo): {exc!r}")
         return None
     print(f"[morning_call] {_resumo_edicao(edicao, pdf_bytes)}")
+    texto = edicao.get("texto_stats") if isinstance(edicao, dict) else None
+    if texto and texto.get("sem_ia") and texto.get("sem_texto"):
+        # anotação do GitHub Actions: aparece no resumo da execução, não só
+        # perdida no meio do log
+        print(f"::warning::Morning Call com {texto['sem_texto']} matéria(s) só com manchete: "
+              f"{texto['sem_ia']} - configure o secret GROQ_API_KEY (resumos e tradução).")
     radar = edicao.get("radar") if isinstance(edicao, dict) else None
     return {
         "nome": f"pregao-morning-call-{agora.strftime('%Y-%m-%d')}.pdf",
@@ -600,6 +687,14 @@ def _resumo_edicao(edicao, pdf_bytes):
     macro = [i for i in (edicao.get("brasil") or {}).get("indicadores") or [] if "indicador" in i]
     indisponiveis = [i["indicador"] for i in macro if i.get("valor") is None]
     partes.append("macro indisponível: " + (", ".join(indisponiveis) if indisponiveis else "nenhum"))
+    texto = edicao.get("texto_stats")
+    if texto:
+        partes.append(
+            f"texto: {texto['exata']} cache exato, {texto['por_url']} pela URL da fonte, "
+            f"{texto['gerados']} gerado(s) agora, {texto['sem_texto']} só manchete"
+            + (f" ({texto['sem_ia']})" if texto.get("sem_ia") else "")
+            + (" - orçamento de geração esgotado" if texto.get("orcamento_esgotado") else "")
+        )
     radar = edicao.get("radar") or {}
     partes.append("radar: " + (", ".join(b.get("nome", "?") for b in radar.get("setores") or []) or "vazio"))
     agenda = (edicao.get("empresas") or {}).get("agenda")

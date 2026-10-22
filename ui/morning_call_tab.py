@@ -10,7 +10,7 @@ job (montar_morning_call/montar_edicao/gerar_pdf), sem enviar_email."""
 
 import html
 import re
-from datetime import datetime
+from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
 import streamlit as st
@@ -45,7 +45,7 @@ def _bloco_editorial_html(texto: str) -> str:
             if paragrafo:
                 conteudo = " ".join(paragrafo)
                 itens.append(
-                    "<p style='margin:0 0 0.65rem;line-height:1.65;color:#E6E6E6;'>"
+                    "<p style='margin:0 0 0.65rem;line-height:1.65;color:var(--neutro);'>"
                     + texto_para_html(conteudo) + "</p>"
                 )
                 paragrafo.clear()
@@ -62,17 +62,17 @@ def _bloco_editorial_html(texto: str) -> str:
                 m = re.match(r"^\[(INTERPRETAÇÃO|INTERPRETACAO)\]\s*", item, re.I)
                 if m:
                     tag = (
-                        "<span style='display:inline-block;border:1px solid #8B6A32;"
+                        "<span style='display:inline-block;border:1px solid var(--destaque);"
                         "border-radius:3px;padding:1px 5px;margin-right:6px;"
-                        "font-size:0.65rem;letter-spacing:.04em;color:#FFC266;'>"
+                        "font-size:0.65rem;letter-spacing:.04em;color:var(--destaque);'>"
                         "INTERPRETAÇÃO</span>"
                     )
                     item = item[m.end():]
                 itens.append(
                     "<div style='display:flex;gap:8px;align-items:flex-start;"
-                    "padding:7px 9px;margin:4px 0;background:#101010;"
-                    "border-left:2px solid #3A3A3A;border-radius:2px;'>"
-                    "<span style='color:#FFA028;font-weight:700;'>›</span>"
+                    "padding:7px 9px;margin:4px 0;background:var(--painel-bg);"
+                    "border-left:2px solid var(--borda);border-radius:2px;'>"
+                    "<span style='color:var(--destaque);font-weight:700;'>›</span>"
                     "<div style='min-width:0;overflow-wrap:anywhere;line-height:1.55;'>"
                     + tag + texto_para_html(item) + "</div></div>"
                 )
@@ -81,10 +81,10 @@ def _bloco_editorial_html(texto: str) -> str:
         fechar_paragrafo()
         if itens:
             secoes.append(
-                "<section style='margin:0 0 12px;border:1px solid #292929;"
+                "<section style='margin:0 0 12px;border:1px solid var(--borda);"
                 "border-radius:5px;overflow:hidden;'>"
-                "<div style='padding:9px 12px;background:#111;"
-                "border-bottom:1px solid #292929;color:#FFA028;"
+                "<div style='padding:9px 12px;background:var(--painel-bg);"
+                "border-bottom:1px solid var(--borda);color:var(--destaque);"
                 "font-size:.75rem;font-weight:700;letter-spacing:.08em;'>"
                 + html.escape(titulo_secao)
                 + "</div><div style='padding:10px 12px;'>"
@@ -134,14 +134,34 @@ def _hora_ref() -> str:
     return datetime.now(TZ_SP).strftime("%Y-%m-%d %H")
 
 
+# horário previsto do envio (radar-morning-call.yml: 08:03 BRT + reservas
+# até 09:07). Depois disso a edição saiu atrasada - em 21/10/2026 o GitHub
+# só entregou os disparos entre 12:55 e 14:06 BRT (ver MANUAL.md).
+_LIMITE_HORARIO_PREVISTO = time(9, 30)
+
+
+def aviso_atraso(executado_em: datetime) -> str | None:
+    """Frase para o leitor quando a edição foi gerada depois do horário
+    previsto - as cotações e o noticiário refletem a hora da geração, não
+    a abertura do dia. None quando saiu no horário."""
+    if executado_em.astimezone(TZ_SP).time() <= _LIMITE_HORARIO_PREVISTO:
+        return None
+    return ("fora do horário previsto (08h): cotações e notícias refletem a hora em que foi gerada, "
+            "não a abertura do dia")
+
+
 def _cabecalho_edicao(ed: dict):
     hoje = datetime.now(TZ_SP).date()
     rotulo_dia = "hoje" if ed["data"] == hoje else "NÃO é a edição de hoje"
     cls = "alta" if ed["status"] == "ENVIADA" else "baixa"
+    atraso = aviso_atraso(ed["executado_em"])
     st.markdown(
         f"<div class='cinza' style='font-size:0.7rem; margin-bottom:0.4rem;'>Edição de "
         f"<b>{ed['data'].strftime('%d/%m/%Y')}</b> ({rotulo_dia}) · gerada às "
-        f"{ed['executado_em'].strftime('%H:%M')} (Brasília) · <span class='{cls}'>{ed['status']}</span></div>",
+        f"{ed['executado_em'].astimezone(TZ_SP).strftime('%H:%M')} (Brasília) · "
+        f"<span class='{cls}'>{ed['status']}</span>"
+        + (f"<br><span style='color:var(--destaque);'>⚠ {atraso}</span>" if atraso else "")
+        + "</div>",
         unsafe_allow_html=True,
     )
 
@@ -163,26 +183,18 @@ def render_edicao_atual(prefs: dict):
     with st.expander("Gerar prévia com os dados de agora (não envia e-mail)"):
         st.caption("Monta o briefing com as mesmas funções do envio agendado — leva alguns segundos e consulta "
                    "as fontes ao vivo. Nada é enviado nem registrado.")
-        if st.button("ATUALIZAR PRÉVIA AGORA", key="mc_atualizar_previa"):
-            _previa.clear()
+        # um botão só: "GERAR" sem prévia na sessão, "ATUALIZAR" com prévia
+        # (descarta o cache da hora e consulta as fontes de novo)
+        tem_previa = bool(st.session_state.get("mc_previa"))
+        if st.button("ATUALIZAR PRÉVIA" if tem_previa else "GERAR PRÉVIA", key="mc_previa_btn"):
+            if tem_previa:
+                _previa.clear()
             st.session_state.pop("mc_previa", None)
-            st.session_state.pop("mc_previa_em", None)
-            with st.spinner("Atualizando o Morning Call com uma nova consulta..."):
-                try:
-                    st.session_state["mc_previa"] = _previa(_hora_ref())
-                    st.session_state["mc_previa_em"] = datetime.now(TZ_SP)
-                    st.toast("Prévia atualizada.")
-                except Exception as exc:
-                    st.session_state["mc_previa"] = None
-                    print(f"[morning_call_tab] atualização da prévia falhou: {exc!r}")
-                    st.error("Não foi possível atualizar a prévia agora. Tente novamente em alguns minutos.")
-        if st.button("GERAR PRÉVIA", key="mc_gerar_previa"):
-            with st.spinner("Montando o Morning Call..."):
+            with st.spinner("Montando o Morning Call com as fontes de agora..."):
                 try:
                     st.session_state["mc_previa"] = _previa(_hora_ref())
                     st.session_state["mc_previa_em"] = datetime.now(TZ_SP)
                 except Exception as exc:
-                    st.session_state["mc_previa"] = None
                     print(f"[morning_call_tab] previa falhou: {exc!r}")
                     st.error("Não foi possível montar a prévia agora (fontes indisponíveis). Tente novamente em alguns minutos.")
         if st.session_state.get("mc_previa"):
@@ -201,26 +213,16 @@ def render_relatorio_completo(prefs: dict):
             "armazenado — aqui ele é montado com os dados de agora, sob demanda.</div>",
             unsafe_allow_html=True,
         )
-        if st.button("ATUALIZAR PDF AGORA", key="mc_atualizar_pdf"):
-            _pdf.clear()
+        tem_pdf = bool(st.session_state.get("mc_pdf"))
+        if st.button("ATUALIZAR PDF" if tem_pdf else "GERAR PDF DE HOJE", key="mc_pdf_btn"):
+            if tem_pdf:
+                _pdf.clear()
             st.session_state.pop("mc_pdf", None)
-            st.session_state.pop("mc_pdf_em", None)
-            with st.spinner("Atualizando o PDF com uma nova consulta às fontes..."):
-                try:
-                    st.session_state["mc_pdf"] = _pdf(_hora_ref())
-                    st.session_state["mc_pdf_em"] = datetime.now(TZ_SP)
-                    st.toast("PDF atualizado.")
-                except Exception as exc:
-                    st.session_state["mc_pdf"] = None
-                    print(f"[morning_call_tab] atualização do PDF falhou: {exc!r}")
-                    st.error("Não foi possível atualizar o PDF agora. Tente novamente em alguns minutos.")
-        if st.button("GERAR PDF DE HOJE", key="mc_gerar_pdf"):
             with st.spinner("Montando o PDF (pode levar até 1 minuto)..."):
                 try:
                     st.session_state["mc_pdf"] = _pdf(_hora_ref())
                     st.session_state["mc_pdf_em"] = datetime.now(TZ_SP)
                 except Exception as exc:
-                    st.session_state["mc_pdf"] = None
                     print(f"[morning_call_tab] PDF falhou: {exc!r}")
                     st.error("Não foi possível gerar o PDF agora (fontes indisponíveis). Tente novamente em alguns minutos.")
         if st.session_state.get("mc_pdf"):

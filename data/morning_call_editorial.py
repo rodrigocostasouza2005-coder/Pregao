@@ -22,7 +22,8 @@ não informação).
 """
 import re
 import unicodedata
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
+from time import monotonic
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -36,8 +37,10 @@ from data.macro import (
     motivo_indisponivel, obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta,
     obter_selic_meta_copom,
 )
+from data.ia_cache import obter_resumos_news_por_link
 from data.news import (
-    obter_resumos_prontos, obter_top_mercado, obter_top_mercado_internacional, separar_secoes_resumo,
+    obter_resumo_grupo, obter_resumos_prontos, obter_top_mercado, obter_top_mercado_internacional,
+    ordenar_fontes_para_resumo, separar_secoes_resumo,
     traduzir_manchetes_pdf,
     traduzir_paragrafos_pdf,
 )
@@ -354,7 +357,10 @@ def _coletar_noticias():
         try:
             itens = fn()
         except Exception as exc:
-            erros[regiao] = f"{type(exc).__name__}: {exc}"
+            # o texto de erros[] vai impresso no PDF pro leitor - detalhe
+            # técnico (exceção, host, URL) fica só no log do job
+            print(f"[morning_call] coleta de notícias {regiao} falhou: {type(exc).__name__}: {exc}")
+            erros[regiao] = "coleta do Google News falhou nesta execução"
             itens = None
         if itens is None and regiao not in erros:
             erros[regiao] = "coleta do Google News falhou nesta execução"
@@ -505,6 +511,96 @@ def _resumos_cacheados(itens):
         return {}
 
 
+# Geração própria do job (camada 3 de _resumos_para_edicao): limite de
+# tempo e de quantidade - o job inteiro tem timeout de 12 min no workflow
+# e a cota do Groq é compartilhada com o app e o research.
+_ORCAMENTO_GERAR_RESUMOS_S = 150
+_MAX_RESUMOS_GERADOS_EDICAO = 12
+
+
+def _com_texto(resultado):
+    return bool((resultado or {}).get("resumo"))
+
+
+def _mesclar(atual, novo):
+    """Resultado com texto, preservando a foto já validada do registro
+    atual quando o novo não traz uma."""
+    mesclado = dict(novo)
+    if not mesclado.get("imagem") and (atual or {}).get("imagem"):
+        mesclado["imagem"] = atual["imagem"]
+        mesclado["imagem_status"] = atual.get("imagem_status")
+    return mesclado
+
+
+def _resumos_para_edicao(itens, agora):
+    """Texto das matérias da edição em 3 camadas, sempre a partir do
+    texto-fonte (nunca inventa):
+
+    1. chave exata do grupo (_resumos_cacheados);
+    2. resumo concluído cuja URL principal é uma das fontes do grupo,
+       gerado dentro da janela da edição (ia_cache.obter_resumos_news_por_link) -
+       a chave exata muda quando o grupo ganha/perde uma fonte entre a
+       coleta e o envio;
+    3. com GROQ_API_KEY disponível, gera o que ainda faltar, por ordem de
+       importância, com orçamento de tempo/quantidade (mesma
+       obter_resumo_grupo e mesmo cache do app).
+
+    Achado real (21/10/2026, run 39630028404): "brasil=8 (0 com texto);
+    empresas=2 (0 com texto); exterior=8 (0 com texto)" - a edição saiu só
+    com manchetes. Retorna (prontos, stats) - stats vai pro log da edição."""
+    stats = {"exata": 0, "por_url": 0, "gerados": 0, "sem_texto": 0, "sem_ia": None,
+             "orcamento_esgotado": False}
+    prontos = dict(_resumos_cacheados(itens))
+    com_link = [i for i in itens if i.get("link")]
+    stats["exata"] = sum(1 for i in com_link if _com_texto(prontos.get(i["link"])))
+
+    faltando = [i for i in com_link if not _com_texto(prontos.get(i["link"]))]
+    fontes_por_item = {}
+    for item in faltando:
+        try:
+            fontes_por_item[item["link"]] = ordenar_fontes_para_resumo(item.get("fontes") or [])
+        except Exception:
+            fontes_por_item[item["link"]] = ()
+    if faltando:
+        desde = inicio_janela_noticias(agora).astimezone(timezone.utc).isoformat()
+        links = [link for fontes in fontes_por_item.values() for _, link in fontes]
+        try:
+            por_url = obter_resumos_news_por_link(links, desde) or {}
+        except Exception:
+            por_url = {}
+        for item in faltando:
+            achado = next((por_url[l] for _, l in fontes_por_item[item["link"]] if l in por_url), None)
+            if achado:
+                prontos[item["link"]] = _mesclar(prontos.get(item["link"]), achado)
+                stats["por_url"] += 1
+
+    faltando = [i for i in faltando if not _com_texto(prontos.get(i["link"]))]
+    if faltando:
+        api_key, _modelo = config.obter_credenciais_groq()
+        if not api_key:
+            stats["sem_ia"] = "GROQ_API_KEY ausente"
+        else:
+            limite = monotonic() + _ORCAMENTO_GERAR_RESUMOS_S
+            ordem = sorted(faltando, key=lambda i: i.get("importancia") or 0, reverse=True)
+            for item in ordem[:_MAX_RESUMOS_GERADOS_EDICAO]:
+                if monotonic() > limite:
+                    stats["orcamento_esgotado"] = True
+                    break
+                fontes = fontes_por_item.get(item["link"]) or ()
+                if not fontes:
+                    continue
+                try:
+                    titulos = tuple(item.get("titulos") or [item.get("titulo") or ""])
+                    resultado = obter_resumo_grupo(item.get("titulo") or "", fontes, titulos)
+                except Exception:
+                    continue
+                if _com_texto(resultado):
+                    prontos[item["link"]] = _mesclar(prontos.get(item["link"]), resultado)
+                    stats["gerados"] += 1
+    stats["sem_texto"] = sum(1 for i in com_link if not _com_texto(prontos.get(i["link"])))
+    return prontos, stats
+
+
 def selecionar_manchete(fatos, n_chamadas=5):
     """(manchete, chamadas) da capa - a manchete é a matéria de MAIOR
     importância editorial (data/news.py:_calcular_importancia: veículos,
@@ -623,7 +719,7 @@ def montar_edicao(agora=None):
     exterior_sel = _top(exterior_bruto, 8)
     empresas_sel = _top(empresas_bruto, 6)
     selecionadas = brasil_sel + exterior_sel + empresas_sel
-    prontos = _resumos_cacheados(selecionadas)
+    prontos, texto_stats = _resumos_para_edicao(selecionadas, agora)
     # As sínteses cacheadas já são geradas em português; traduzimos em uma
     # única chamada as manchetes internacionais em inglês, inclusive quando
     # a fonte está em paywall e só há título + link. Se a IA falhar, mantém
@@ -701,6 +797,7 @@ def montar_edicao(agora=None):
         "mercados_nota": nota_sessao([ibov, dolar, sp500, nasdaq, ouro, petroleo], agora),
         "janela_noticias": inicio_janela_noticias(agora),
         "limitacoes": LIMITACOES_PADRAO,
+        "texto_stats": texto_stats,
         "fontes": FONTES_PADRAO,
     }
     return edicao

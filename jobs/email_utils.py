@@ -121,6 +121,9 @@ def _enviar_resend(assunto, texto, html, remetente, destinatario, api_key, anexo
         return {"ok": False, "erro": f"Falha no envio via Resend: {type(exc).__name__}"}
 
 
+_TIMEOUT_SMTP_S = 60
+
+
 def enviar_email(assunto, texto, html=None, destinatario=None, anexos=None):
     """`anexos` (opcional): lista de {"nome": str, "conteudo": bytes,
     "tipo_mime": str} - ex. o PDF editorial do Morning Call
@@ -191,11 +194,23 @@ def enviar_email(assunto, texto, html=None, destinatario=None, anexos=None):
             conteudo, maintype=maintype or "application", subtype=subtype or "octet-stream",
             filename=anexo.get("nome") or "anexo",
         )
+    # etapa registrada no erro (achado real 21/10/2026, run 39630028404):
+    # o log so' dizia "SMTPServerDisconnected: ... The read operation
+    # timed out" - mensagem de timeout DENTRO do TLS ja' estabelecido, ou
+    # seja, falhou no login ou no envio (PDF de ~165 KB anexo), nao na
+    # conexao. Sem a etapa nao dava pra saber qual. Timeout 20s -> 60s:
+    # o servidor so' responde ao fim do DATA depois de processar o anexo.
+    # Sem reenvio automatico de proposito: timeout depois do DATA pode
+    # significar mensagem ja' aceita - reenviar duplicaria o e-mail.
+    etapa = "conexão"
     try:
-        with smtplib.SMTP(host, porta, timeout=20) as smtp:
+        with smtplib.SMTP(host, porta, timeout=_TIMEOUT_SMTP_S) as smtp:
+            etapa = "STARTTLS"
             smtp.starttls()
+            etapa = "login"
             smtp.login(usuario, senha)
+            etapa = "envio da mensagem"
             smtp.send_message(msg)
         return {"ok": True, "erro": None}
     except Exception as exc:
-        return {"ok": False, "erro": f"{type(exc).__name__}: {exc}"}
+        return {"ok": False, "erro": f"{type(exc).__name__} (etapa SMTP: {etapa}): {exc}"}

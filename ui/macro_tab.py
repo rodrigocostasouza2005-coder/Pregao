@@ -19,6 +19,7 @@ from data.macro import (
     obter_selic_meta,
     obter_selic_meta_copom,
 )
+from data.prices import rotulo_cotacao_em_cache
 from ui import graficos, workspace
 
 # Meta de inflacao vigente (Banco Central / CMN): centro 3,0% a.a.,
@@ -489,11 +490,14 @@ def render_macro_cambio_commodities(prefs):
                 partes.append(f"<div style='min-width:9rem;'><span class='cinza' style='font-size:0.7rem;'>{nome}</span><br>"
                               f"<span class='cinza'>indisponível</span></div>")
                 continue
-            cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
+            em_cache = rotulo_cotacao_em_cache(cot)
+            cls = "cinza" if em_cache else ("alta" if cot["variacao_pct"] >= 0 else "baixa")
             partes.append(
                 f"<div style='min-width:9rem;'><span class='cinza' style='font-size:0.7rem;'>{nome}</span><br>"
                 f"<span class='neutro' style='font-size:0.85rem;'>{_fmt(cot['preco'], 4, prefs)}</span> "
-                f"<span class='{cls}' style='font-size:0.78rem;'>{_fmt_pct(cot['variacao_pct'], prefs)}</span></div>"
+                f"<span class='{cls}' style='font-size:0.78rem;'>{_fmt_pct(cot['variacao_pct'], prefs)}</span>"
+                + (f"<br><span class='cinza' style='font-size:0.6rem;'>{em_cache}</span>" if em_cache else "")
+                + "</div>"
             )
         if partes:
             st.markdown("<div style='display:flex; flex-wrap:wrap; gap:1rem;'>" + "".join(partes) + "</div>",

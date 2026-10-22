@@ -23,6 +23,7 @@ from data.prices import (
     obter_historico_intraday,
     obter_indicadores,
     obter_nome_yf,
+    rotulo_cotacao_em_cache,
     validar_ticker,
 )
 from data.research import CASAS as CASAS_RESEARCH
@@ -188,8 +189,17 @@ def _ticker_tape():
 
     for nome_idx, symbol_idx in config.INDICES_TICKER_TAPE.items():
         cot = obter_cotacao_indice(nome_idx, symbol_idx)
+        em_cache = rotulo_cotacao_em_cache(cot) if not cot.get("erro") else None
         if cot.get("erro"):
             itens.append(f"<span class='cinza'>{nome_idx} --</span>")
+        elif em_cache:
+            # fonte falhou agora e veio o ultimo valor valido: cinza (sem
+            # cor de alta/baixa) e com a idade - nunca parece cotacao atual
+            sinal = "+" if cot["variacao_pct"] >= 0 else ""
+            itens.append(
+                f"<span class='cinza'>{nome_idx} {config.formatar_numero(cot['preco'], 2, fmt)} "
+                f"({sinal}{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%) [{em_cache}]</span>"
+            )
         else:
             cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
             sinal = "+" if cot["variacao_pct"] >= 0 else ""
@@ -281,62 +291,6 @@ def _ticker_tape():
 
 if not st.session_state.banco_ok:
     st.warning("Sem conexão com o Supabase — preferências e watchlist valem só para esta sessão.")
-
-# --- oferta de inscricao no Morning Call por e-mail: aparece 1x por
-# usuario, so' ate ele responder (aceitar OU recusar) - ver
-# data/user_prefs.py:deve_oferecer_morning_call. So' mostra com banco_ok
-# (sem conexao com o Supabase, qualquer resposta valeria so' nesta
-# sessao e a pergunta voltaria a aparecer na visita seguinte - melhor
-# nao perguntar do que perguntar e nao conseguir lembrar a resposta).
-# Nao bloqueia nada: e' um painel normal, igual qualquer outro, com 2
-# acoes explicitas - nunca marca inscricao so' por ter sido exibido.
-if st.session_state.banco_ok and deve_oferecer_morning_call(prefs):
-    with st.container(border=True):
-        st.markdown(
-            '<div class="painel-titulo">RECEBER O MORNING CALL POR E-MAIL?</div>',
-            unsafe_allow_html=True,
-        )
-        email_usuario_ok = email_valido(usuario["email"])
-        st.markdown(
-            "<div class='cinza' style='font-size:0.78rem; margin-bottom:0.5rem;'>"
-            "Todo dia útil, por volta das 08h (Brasília): um resumo com mercados, "
-            "macro, agenda do dia e notícias — só isso, nada além do que já existe "
-            f"aqui no terminal. Enviado para <b>{usuario['email'] or '(sem e-mail)'}</b>. "
-            "Pode desligar quando quiser, em MORNING CALL › Preferências."
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        email_destino = usuario["email"]
-        if not email_usuario_ok:
-            email_destino = st.text_input(
-                "Sua conta não tem um e-mail válido associado — informe um e-mail pra receber:",
-                key="onboarding_mc_email_manual",
-                placeholder="voce@exemplo.com",
-            )
-            email_usuario_ok = email_valido(email_destino)
-
-        colb1, colb2, _colb3 = st.columns([1, 1, 3])
-        with colb1:
-            aceitou = st.button(
-                "QUERO RECEBER", key="onboarding_mc_aceitar", type="primary", disabled=not email_usuario_ok,
-            )
-        with colb2:
-            recusou = st.button("AGORA NÃO", key="onboarding_mc_recusar")
-
-        if aceitou or recusou:
-            prefs["morning_call_email_perguntado"] = True
-            if aceitou:
-                prefs["morning_call_email_ativo"] = True
-            ok = salvar_prefs(usuario["sub"], email_destino or usuario["email"], prefs)
-            st.session_state.banco_ok = ok
-            if ok:
-                st.toast(
-                    "Você vai receber o Morning Call por e-mail."
-                    if aceitou else "Combinado — você pode ativar isso depois em MORNING CALL › Preferências.",
-                )
-            else:
-                st.warning("Não foi possível salvar agora (banco indisponível) — a pergunta pode voltar a aparecer.")
-            st.rerun()
 
 # --- navegacao PREGAO 2.0 (ver ui/navegacao.py e docs/arquitetura-pregao-2.md):
 # 7 areas + MAIS, cada uma com subabas. So a subaba ativa executa
@@ -494,6 +448,66 @@ rota = (area_atual, sub_atual)
 _aviso_nav = navegacao.consumir_aviso()
 if _aviso_nav:
     st.info(_aviso_nav)
+
+# --- oferta de inscricao no Morning Call por e-mail: aparece 1x por
+# (desenhada DEPOIS da navegacao - area + subabas - de proposito: antes ela
+# ficava entre os dois niveis do menu no desktop e acima do proprio logo
+# no celular, ocupando a tela inteira; screenshot Playwright 2026-10-22)
+# usuario, so' ate ele responder (aceitar OU recusar) - ver
+# data/user_prefs.py:deve_oferecer_morning_call. So' mostra com banco_ok
+# (sem conexao com o Supabase, qualquer resposta valeria so' nesta
+# sessao e a pergunta voltaria a aparecer na visita seguinte - melhor
+# nao perguntar do que perguntar e nao conseguir lembrar a resposta).
+# Nao bloqueia nada: e' um painel normal, igual qualquer outro, com 2
+# acoes explicitas - nunca marca inscricao so' por ter sido exibido.
+if st.session_state.banco_ok and deve_oferecer_morning_call(prefs):
+    with st.container(border=True):
+        st.markdown(
+            '<div class="painel-titulo">RECEBER O MORNING CALL POR E-MAIL?</div>',
+            unsafe_allow_html=True,
+        )
+        email_usuario_ok = email_valido(usuario["email"])
+        st.markdown(
+            "<div class='cinza' style='font-size:0.78rem; margin-bottom:0.5rem;'>"
+            "Todo dia útil, por volta das 08h (Brasília): um resumo com mercados, "
+            "macro, agenda do dia e notícias — só isso, nada além do que já existe "
+            f"aqui no terminal. Enviado para <b>{usuario['email'] or '(sem e-mail)'}</b>. "
+            "Pode desligar quando quiser, em MORNING CALL › Preferências."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        email_destino = usuario["email"]
+        if not email_usuario_ok:
+            email_destino = st.text_input(
+                "Sua conta não tem um e-mail válido associado — informe um e-mail pra receber:",
+                key="onboarding_mc_email_manual",
+                placeholder="voce@exemplo.com",
+            )
+            email_usuario_ok = email_valido(email_destino)
+
+        colb1, colb2, _colb3 = st.columns([1, 1, 3])
+        with colb1:
+            aceitou = st.button(
+                "QUERO RECEBER", key="onboarding_mc_aceitar", type="primary", disabled=not email_usuario_ok,
+            )
+        with colb2:
+            recusou = st.button("AGORA NÃO", key="onboarding_mc_recusar")
+
+        if aceitou or recusou:
+            prefs["morning_call_email_perguntado"] = True
+            if aceitou:
+                prefs["morning_call_email_ativo"] = True
+            ok = salvar_prefs(usuario["sub"], email_destino or usuario["email"], prefs)
+            st.session_state.banco_ok = ok
+            if ok:
+                st.toast(
+                    "Você vai receber o Morning Call por e-mail."
+                    if aceitou else "Combinado — você pode ativar isso depois em MORNING CALL › Preferências.",
+                )
+            else:
+                st.warning("Não foi possível salvar agora (banco indisponível) — a pergunta pode voltar a aparecer.")
+            st.rerun()
+
 
 
 # --- sidebar: gestao da watchlist ------------------------------------------
