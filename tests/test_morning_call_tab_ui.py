@@ -61,3 +61,23 @@ def test_aviso_quando_a_edicao_de_hoje_nao_saiu():
     assert mc.aviso_edicao_de_hoje_ausente(date(2026, 10, 22), quinta_11h40) is None
     assert mc.aviso_edicao_de_hoje_ausente(date(2026, 10, 23), datetime(2026, 10, 24, 11, 0, tzinfo=TZ)) is None
     assert "ainda não foi gerada" in mc.aviso_edicao_de_hoje_ausente(None, quinta_11h40)
+
+
+def test_noticia_vira_manchete_clicavel_e_marca_traducao():
+    html_pt = mc._bloco_editorial_html(
+        "MORNING CALL — 22/10/2026\nGerado em 22/10/2026 08:03\n\n3. EXTERIOR\n"
+        "- Inflação do Reino Unido sobe (original: UK inflation jumps) — https://www.cnbc.com/a\n"
+        "- IBM stock falls [em inglês - tradução indisponível nesta edição] — https://www.marketwatch.com/b\n")
+    assert "href='https://www.cnbc.com/a'" in html_pt and ">Inflação do Reino Unido sobe</a>" in html_pt
+    assert "TRADUZIDO" in html_pt and "original: UK inflation jumps" in html_pt
+    assert "EN · SEM TRADUÇÃO" in html_pt and "tradução indisponível nesta edição]" not in html_pt
+    assert "cnbc.com ↗" in html_pt
+    # cabeçalho sem a caixa "BRIEFING" repetindo o título; "Gerado em" fica como texto discreto
+    assert "BRIEFING" not in html_pt and "MORNING CALL — 22/10/2026" not in html_pt
+    assert "Gerado em 22/10/2026 08:03" in html_pt
+
+
+def test_linha_sem_link_continua_texto_e_html_e_escapado():
+    out = mc._bloco_editorial_html("1. RESUMO EXECUTIVO\n- Ibovespa <b>sobe</b> 1%\n")
+    assert "&lt;b&gt;sobe&lt;/b&gt;" in out
+    assert mc._item_noticia_html("Ibovespa sobe 1%") is None

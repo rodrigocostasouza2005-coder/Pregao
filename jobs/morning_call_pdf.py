@@ -794,13 +794,21 @@ def _editoria(nome, chave, itens, erro, agora, estilos, registro, excluir=None, 
             aviso = _texto_editoria_vazia(edicao_janela)
         return [CondPageBreak(80), KeepTogether([cabecalho, Paragraph(aviso, estilos["aviso"])]), Spacer(1, 16)]
 
-    ordenados = sorted(itens, key=lambda i: i.get("importancia") or 0, reverse=True)
+    # fonte confiável antes, depois importância (mesma ordem da seleção em
+    # data/morning_call_editorial.py:_ordem_editorial)
+    ordenados = sorted(itens, key=lambda i: (bool(i.get("fonte_confiavel", True)), i.get("importancia") or 0),
+                       reverse=True)
     com_texto = [i for i in ordenados if i.get("corpo")]
     sem_texto = [i for i in ordenados if not i.get("corpo")]
     # nunca abre uma editoria no pé da página: sem espaço pra cabeçalho +
     # a primeira matéria, a editoria começa na página seguinte
     flows = [CondPageBreak(ESPACO_MIN_EDITORIA)]
     primeiro_bloco = [cabecalho]
+    sem_traducao = sum(1 for i in itens if i.get("sem_traducao"))
+    if sem_traducao:
+        primeiro_bloco.append(Paragraph(
+            f"{sem_traducao} manchete(s) no idioma original: a tradução não estava disponível nesta edição.",
+            estilos["nota"]))
 
     if com_texto:
         abre = com_texto[0]
@@ -838,7 +846,8 @@ def _editoria(nome, chave, itens, erro, agora, estilos, registro, excluir=None, 
             if len(notas) > 4:
                 flows.append(Colunas(notas))
         else:
-            flows.append(KeepTogether([cabecalho, rotulo]))
+            # cabeçalho + aviso de idioma (se houver) + rótulo, juntos
+            flows.append(KeepTogether((primeiro_bloco or [cabecalho]) + [rotulo]))
             flows.append(Colunas(notas))
     flows.append(Spacer(1, 18))
     return flows
@@ -1049,16 +1058,41 @@ def _texto_agenda_vazia(agora):
     return base
 
 
+def _agenda_proximos(edicao, estilos):
+    """Tabela dos próximos dias (só datas confirmadas/estimadas)."""
+    proximos = (edicao.get("empresas") or {}).get("agenda_proximos") or []
+    if not proximos:
+        return []
+    linhas = [[Paragraph("DATA", estilos["tabela_cab"]), Paragraph("EMPRESA", estilos["tabela_cab"]),
+               Paragraph("EVENTO", estilos["tabela_cab"]), Paragraph("SITUAÇÃO DA DATA", estilos["tabela_cab"])]]
+    for e in proximos:
+        data = e.get("data")
+        data_txt = f"{_DIAS_CURTOS[data.weekday()]} {data.strftime('%d/%m')}" if data else "—"
+        empresa = f"{_t(e.get('empresa'))} <font name=\"{F['PregaoMono']}\" size=\"7\" color=\"#6F6A63\">{_t(e.get('ticker'))}</font>"
+        evento = " ".join(x for x in (str(e.get("tipo_evento") or "").capitalize(), e.get("periodo") or "") if x)
+        linhas.append([Paragraph(_t(data_txt), estilos["tabela"]), Paragraph(empresa, estilos["tabela"]),
+                       Paragraph(_t(evento), estilos["tabela"]),
+                       Paragraph(_t(str(e.get("status_rotulo") or "").lower()), estilos["tabela"])])
+    tabela = Table(linhas, colWidths=[24 * MM, None, 38 * MM, 30 * MM], hAlign="LEFT", repeatRows=1)
+    tabela.setStyle(_estilo_tabela(*_ESTILO_TABELA_BASE))
+    return [KeepTogether([Paragraph("PRÓXIMOS DIAS", estilos["subtitulo_secao"]), tabela,
+                          Paragraph("Só datas anunciadas pela empresa (confirmadas) ou por veículo confiável "
+                                    "(estimadas); o prazo regulatório da CVM não entra.", estilos["nota"])])]
+
+
+_DIAS_CURTOS = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
+
+
 def _agenda(edicao, estilos, registro):
     empresas = edicao.get("empresas") or {}
     agenda = empresas.get("agenda")
     flows = [CabecalhoEditoria("Agenda do dia", "agenda", registro)]
     if agenda is None:
         flows.append(Paragraph("Agenda de resultados indisponível nesta edição.", estilos["aviso"]))
-        return flows
+        return flows + _agenda_proximos(edicao, estilos)
     if not agenda:
         flows.append(Paragraph(_t(_texto_agenda_vazia(edicao.get("agora"))), estilos["aviso"]))
-        return flows
+        return flows + _agenda_proximos(edicao, estilos)
     linhas = [[Paragraph("EMPRESA", estilos["tabela_cab"]), Paragraph("EVENTO", estilos["tabela_cab"]),
                Paragraph("HORÁRIO", estilos["tabela_cab"]), Paragraph("SITUAÇÃO DA DATA", estilos["tabela_cab"])]]
     notas = {}
@@ -1076,7 +1110,7 @@ def _agenda(edicao, estilos, registro):
     if notas:
         texto = " ".join(f"<i>{_t(k.capitalize())}</i>: {_t(v)}" for k, v in notas.items())
         bloco.append(Paragraph(texto, estilos["nota"]))
-    return [KeepTogether(bloco)]
+    return [KeepTogether(bloco)] + _agenda_proximos(edicao, estilos)
 
 
 def _colofao(edicao, estilos, registro, largura=None):
@@ -1293,10 +1327,16 @@ def _capa(edicao, estilos, registro, paginas_indice, altura_colunas, paginas=Non
     # repete dentro). As demais são chamadas - título, primeira frase e a
     # remissão pra página onde a matéria completa está.
     secundarias = [c for c in chamadas if c.get("corpo")][:2]
+    if not secundarias:
+        # Edição sem texto (ex.: IA indisponível): a coluna da esquerda ficava
+        # só com o gráfico e ~45% da capa em branco (edição real de 22/10).
+        # As chamadas além das que cabem à direita sobem para cá, no mesmo
+        # formato curto - _caber só publica o que couber inteiro.
+        secundarias = chamadas[2:6]
     inicio_secundarias = len(blocos_esq)
     for item in secundarias:
         blocos_esq.append([Filete(antes=10, depois=8)]
-                          + _bloco_chamada(item, edicao, agora, estilos, paginas, destaque=True))
+                          + _bloco_chamada(item, edicao, agora, estilos, paginas, destaque=bool(item.get("corpo"))))
     serie = (edicao.get("brasil") or {}).get("historico_ibov") or []
     if len(serie) >= 2:
         blocos_esq.append([Filete(antes=10, depois=8),

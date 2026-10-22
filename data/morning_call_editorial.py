@@ -22,7 +22,7 @@ não informação).
 """
 import re
 import unicodedata
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from time import monotonic
 from zoneinfo import ZoneInfo
 
@@ -44,7 +44,7 @@ from data.news import (
     traduzir_manchetes_pdf,
     traduzir_paragrafos_pdf,
 )
-from data.news import eh_fonte_confiavel
+from data.news import eh_fonte_confiavel, parece_ingles
 from data.prices import obter_cotacao_indice, obter_historico
 from data.radar_setorial import montar_radar
 
@@ -662,6 +662,43 @@ def filtrar_noticias(itens, agora, exigir_relevancia=False):
     return escolhidos
 
 
+def _com_fonte_preferida(item):
+    """Mesma notícia, apresentada pelo veículo confiável do grupo: título,
+    veículo e link DESSE veículo (fontes[i] e titulos[i] andam juntos em
+    data/news.py:_agrupar). Causa real (edição de 22/10): "veiculos" é a
+    lista em ordem ALFABÉTICA, e o PDF mostrava o primeiro - "Acia
+    Araçatuba" abria a capa numa notícia que o grupo também tinha de
+    veículo confiável. Sem veículo confiável no grupo, nada muda."""
+    fontes = item.get("fontes") or []
+    titulos = item.get("titulos") or []
+    if not fontes or len(titulos) != len(fontes):
+        return item
+    if eh_fonte_confiavel(fontes[0].get("veiculo") or ""):
+        i = 0
+    else:
+        i = next((n for n, f in enumerate(fontes) if eh_fonte_confiavel(f.get("veiculo") or "")), None)
+        if i is None:
+            return item
+    veiculo = fontes[i].get("veiculo")
+    outros = [v for v in item.get("veiculos") or [] if v != veiculo]
+    return {**item, "titulo": titulos[i] or item.get("titulo"), "veiculos": [veiculo] + outros,
+            "link_exibicao": fontes[i].get("link") or item.get("link")}
+
+
+def _tem_fonte_confiavel(item):
+    """O grupo da notícia tem ao menos um veículo da lista de fontes
+    confiáveis do projeto (data/news.py, mesmo critério do selo)."""
+    veiculos = item.get("veiculos") or [item.get("veiculo")]
+    return any(eh_fonte_confiavel(v) for v in veiculos if v)
+
+
+def _ordem_editorial(item):
+    """Fonte confiável antes, depois importância. Edição real de 22/10: a
+    capa abria com uma nota da associação comercial de Araçatuba e o
+    Brasil trazia "Balada In" e blogs pessoais, por importância pura."""
+    return (bool(item.get("fonte_confiavel", _tem_fonte_confiavel(item))), item.get("importancia") or 0)
+
+
 def _item_fato(item, pronto=None):
     """Manchete -> {titulo, link, veiculo, tag=FATO, ...} - veículo
     atribuído explicitamente (nunca um fato sem fonte visível no PDF).
@@ -682,8 +719,9 @@ def _item_fato(item, pronto=None):
             corpo = []
     return {
         "titulo": str(item.get("titulo") or "").strip(),
-        "link": str(item.get("link") or "").strip() or None,
+        "link": str(item.get("link_exibicao") or item.get("link") or "").strip() or None,
         "veiculo": veiculos[0] if veiculos else None,
+        "fonte_confiavel": _tem_fonte_confiavel(item),
         "tag": TAG_FATO,
         "importancia": item.get("importancia") or 0,
         "data": item.get("data"),
@@ -805,7 +843,7 @@ def selecionar_manchete(fatos, n_chamadas=5):
     nunca a que tem mais texto ou foto. Sem nenhuma matéria com texto, a
     de maior importância vira manchete só com título. Sem nenhuma
     notícia -> (None, []): a capa não inventa manchete."""
-    ordenados = sorted(fatos, key=lambda f: f.get("importancia") or 0, reverse=True)
+    ordenados = sorted(fatos, key=_ordem_editorial, reverse=True)
     if not ordenados:
         return None, []
     com_texto = [f for f in ordenados if f.get("corpo")]
@@ -823,12 +861,33 @@ def _linha_evento(evento):
         "empresa": empresa,
         "ticker": evento.get("ticker") or "?",
         "tipo_evento": evento.get("tipo_evento") or "EVENTO",
+        "data": evento.get("data"),
         "periodo": evento.get("periodo") or "",
         "horario": evento.get("horario") or "sem horário divulgado",
         "status_rotulo": rotulo_status,
         "status_nota": nota_status,
         "tag": TAG_ACOMPANHAR,
     }
+
+
+_DIAS_AGENDA_PROXIMOS = 7
+
+
+def _agenda_proximos(agora):
+    """Resultados dos próximos dias com data CONFIRMADA (RI/CVM) ou
+    ESTIMADA (notícia confiável) - nunca o prazo regulatório da CVM, que
+    não é data anunciada. None se o calendário falhar."""
+    try:
+        tickers = list(config.IBOVESPA_SETORES.keys())
+        eventos = calcular_calendario_cacheado(tickers, hoje=agora.date())
+    except Exception:
+        return None
+    hoje = agora.date()
+    limite = hoje + timedelta(days=_DIAS_AGENDA_PROXIMOS)
+    proximos = [e for e in eventos if isinstance(e.get("data"), date) and hoje < e["data"] <= limite
+                and e.get("status") in ("CONFIRMADO", "ESTIMADO")]
+    proximos.sort(key=lambda e: (e["data"], e.get("ticker") or ""))
+    return [_linha_evento(e) for e in proximos]
 
 
 def _agenda_hoje(agora):
@@ -911,11 +970,11 @@ def montar_edicao(agora=None):
     # Limite de extensão da edição (o PDF cresce com o conteúdo, mas não
     # sem limite): as N mais importantes de cada editoria.
     def _top(itens, limite):
-        return sorted(itens, key=lambda i: i.get("importancia") or 0, reverse=True)[:limite]
+        return sorted(itens, key=_ordem_editorial, reverse=True)[:limite]
 
-    brasil_sel = _top(brasil_bruto, 8)
-    exterior_sel = _top(exterior_bruto, 8)
-    empresas_sel = _top(empresas_bruto, 6)
+    brasil_sel = [_com_fonte_preferida(i) for i in _top(brasil_bruto, 8)]
+    exterior_sel = [_com_fonte_preferida(i) for i in _top(exterior_bruto, 8)]
+    empresas_sel = [_com_fonte_preferida(i) for i in _top(empresas_bruto, 6)]
     selecionadas = brasil_sel + exterior_sel + empresas_sel
     prontos, texto_stats = _resumos_para_edicao(selecionadas, agora)
     # As sínteses cacheadas já são geradas em português; traduzimos em uma
@@ -936,6 +995,9 @@ def montar_edicao(agora=None):
             fato = _item_fato(item_pdf, prontos.get(item.get("link")))
             if traduzido:
                 fato["titulo_original"] = titulo_original
+            elif parece_ingles(titulo_original):
+                # o PDF avisa que a manchete ficou no idioma original
+                fato["sem_traducao"] = True
             fatos.append(fato)
         return fatos
 
@@ -970,7 +1032,7 @@ def montar_edicao(agora=None):
         "agora": agora,
         "capa": {
             "indicadores": [ibov, dolar],
-            "destaques": sorted(todos_fatos, key=lambda f: f["importancia"], reverse=True)[:3],
+            "destaques": sorted(todos_fatos, key=_ordem_editorial, reverse=True)[:3],
             "manchete": manchete,
             "chamadas": chamadas,
         },
@@ -989,6 +1051,7 @@ def montar_edicao(agora=None):
         "empresas": {
             "cards": noticias_empresas,
             "agenda": _agenda_hoje(agora),
+            "agenda_proximos": _agenda_proximos(agora),
             "noticias_erro": erro_br,
         },
         "radar": _radar_setorial(agora),

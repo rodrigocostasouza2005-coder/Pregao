@@ -17,8 +17,8 @@ from data.eventos import (
 )
 from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta, obter_selic_meta_copom
 from data.morning_call_editorial import (
-    _macro_rows, _referencia_cotacao, e_noticia_de_empresa, editoria_por_assunto, filtrar_noticias,
-    montar_edicao, nota_sessao,
+    _com_fonte_preferida, _macro_rows, _ordem_editorial, _referencia_cotacao, e_noticia_de_empresa,
+    editoria_por_assunto, filtrar_noticias, montar_edicao, nota_sessao,
 )
 from data.news import obter_top_mercado, obter_top_mercado_internacional, parece_ingles, traduzir_manchetes_pdf
 from data.prices import obter_cotacao_indice, rotulo_cotacao_em_cache
@@ -153,6 +153,7 @@ def _linhas_noticias(itens, limite, traducoes=None):
         if not titulo:
             continue
         traduzido = (traducoes or {}).get(link)
+        link = str(item.get("link_exibicao") or link).strip()
         if traduzido:
             titulo = f"{traduzido} (original: {titulo})"
         elif parece_ingles(titulo):
@@ -346,6 +347,9 @@ def montar_morning_call(agora=None):
     try:
         candidatos = filtrar_noticias(
             [i for i in _noticias_por_regiao() if not _marca_erro(i, erros_regiao)], agora)
+        # mesma apresentação do PDF: veículo confiável do grupo primeiro,
+        # com o título e o link dele (data/morning_call_editorial.py)
+        candidatos = [_com_fonte_preferida(i) for i in sorted(candidatos, key=_ordem_editorial, reverse=True)]
         for item in candidatos:
             # mesmas regras do PDF (data/morning_call_editorial.py): editoria
             # pelo assunto do título e Empresas só com a empresa no título
