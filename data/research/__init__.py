@@ -35,7 +35,7 @@ import streamlit as st
 
 from data.coletores_status import registrar_tentativa
 
-from . import btg, genial, genial_lives, store, xp
+from . import btg, genial, genial_lives, montebravo, store, xp
 from .base import TEMPO_MAX_COLETA_S
 
 # nao tenta recoletar a mesma casa antes desse tempo desde a ULTIMA
@@ -155,6 +155,21 @@ CASAS = [
         # virado AREA_LOGADA depois da coleta).
         "extrator_texto": btg.obter_texto_publico,
         "motivo_falha": btg.motivo_ultima_falha,
+    },
+    {
+        # Adicionada em 22/10/2026: feed RSS público do WordPress oficial
+        # (robots.txt permite tudo), sondado de verdade a partir do runner do
+        # GitHub Actions - análises de empresas e carta mensal; imprensa e
+        # eventos ficam fora (ver montebravo.py). Texto para resumo: página
+        # pública do próprio post (extrator genérico, respeita robots).
+        "id": "montebravo",
+        "nome": "Monte Bravo",
+        "fonte": "montebravo.com.br (feed RSS do blog, seção de análise)",
+        "ativa_por_padrao": True,
+        "disponivel": True,
+        "obter_relatorios": montebravo.obter_relatorios,
+        "extrator_texto": None,
+        "motivo_falha": montebravo.motivo_ultima_falha,
     },
 ]
 
