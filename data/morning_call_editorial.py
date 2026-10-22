@@ -357,7 +357,10 @@ def _coletar_noticias():
         try:
             itens = fn()
         except Exception as exc:
-            erros[regiao] = f"{type(exc).__name__}: {exc}"
+            # o texto de erros[] vai impresso no PDF pro leitor - detalhe
+            # técnico (exceção, host, URL) fica só no log do job
+            print(f"[morning_call] coleta de notícias {regiao} falhou: {type(exc).__name__}: {exc}")
+            erros[regiao] = "coleta do Google News falhou nesta execução"
             itens = None
         if itens is None and regiao not in erros:
             erros[regiao] = "coleta do Google News falhou nesta execução"

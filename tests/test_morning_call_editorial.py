@@ -311,7 +311,9 @@ def test_coletar_noticias_erro_de_um_pool_nao_esvazia_o_outro():
     fed = {"titulo": "Fed", "link": "https://x/3", "regiao": "INT", "tickers": []}
     with _MultiPatch(obter_top_mercado=falha, obter_top_mercado_internacional=lambda: [fed]):
         erros, brasil, empresas, exterior = ed._coletar_noticias()
-    assert "RuntimeError" in erros["BR"]
+    # o texto vai pro PDF: diz que falhou, sem expor exceção/host ao leitor
+    assert erros["BR"] == "coleta do Google News falhou nesta execução"
+    assert "RuntimeError" not in erros["BR"] and "fora do ar" not in erros["BR"]
     assert "INT" not in erros
     assert brasil == [] and empresas == []
     assert exterior == [fed]

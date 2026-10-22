@@ -308,15 +308,19 @@ Nunca envie credenciais no chat ou versioná-las. Sem migration e secrets, os jo
 
 ## Resumos das matérias (Groq) no Morning Call
 
-O Morning Call **não chama o Groq**: ele só lê os resumos que o workflow **Coletores na nuvem** (`coletores-nuvem.yml` → `coletor_local.py` → `pregerar_resumos_news`) já gerou e guardou no cache (`resumos_ia_cache`). Sem resumo no cache, a matéria sai no PDF só com manchete, veículo e link — nunca com texto inventado.
+O texto de cada matéria do Morning Call vem sempre de um resumo do texto-fonte, nunca é inventado. A edição procura esse texto em três camadas (`data/morning_call_editorial.py:_resumos_para_edicao`):
 
-Esse workflow precisa do secret `GROQ_API_KEY`. Em 18/10/2026 ele chegava **vazio** ao job (log: `'GROQ_API_KEY não configurada em st.secrets'` em todos os grupos). Para configurar:
+1. resumo já cacheado para o grupo de notícias (`resumos_ia_cache`, mesma chave usada pelo app);
+2. resumo cacheado para a **mesma matéria** (URL de uma das fontes do grupo), gerado dentro da janela da edição. Necessário porque a chave do grupo muda quando ele ganha ou perde uma fonte entre a coleta e o envio;
+3. com `GROQ_API_KEY` disponível, o próprio job gera o que faltar, por ordem de importância (no máximo 12 matérias e 150 s).
+
+Sem nenhuma dessas fontes, a matéria sai só com manchete, veículo e link. O log da execução mostra de onde veio cada texto (`texto: N cache exato, N pela URL da fonte, N gerado(s) agora, N só manchete`).
+
+Os resumos e as traduções dependem do secret `GROQ_API_KEY`. **Verificado em 21/10/2026:** ele não está configurado no GitHub Actions. A coleta das 15:12 UTC registrou `resumos de NEWS: pre-processamento pulado - GROQ_API_KEY não configurada` e a edição do dia saiu com `0 com texto` em todas as seções. Desde 22/10 essa ausência aparece como aviso (`::warning::`) no resumo de cada execução. Para configurar:
 
 1. GitHub → repositório **Pregao** → **Settings** → **Secrets and variables** → **Actions** → aba **Secrets** → **New repository secret**.
 2. *Name*: `GROQ_API_KEY` (exatamente assim). *Secret*: a mesma chave usada no app (Streamlit Cloud → *Manage app* → *Settings* → *Secrets*). Não crie como *Variable* nem como secret de *Environment*: o workflow lê `secrets.GROQ_API_KEY` do repositório.
-3. Confira na próxima execução de **Coletores na nuvem** (ou *Run workflow* manual): a linha `resumos de NEWS: ... gerado(s) agora` deve deixar de mostrar `GROQ_API_KEY não configurada`.
-
-Os resumos só entram no Morning Call se uma execução dos coletores rodar **antes** do envio (os coletores rodam a partir das 07h11, o Morning Call às 08h03, horário de Brasília).
+3. Confira na próxima execução de **Coletores na nuvem** (ou *Run workflow* manual): a linha `resumos de NEWS: ... gerado(s) agora` deve deixar de mostrar `GROQ_API_KEY não configurada`, e o aviso deixa de aparecer.
 
 ## Disparo externo dos agendamentos (recomendado)
 
@@ -326,6 +330,7 @@ Diagnóstico das execuções de 14 a 17/10/2026 (verificado no histórico do Act
 
 - **Atraso, não só descarte:** o Morning Call agendado para 10h UTC (07h de Brasília, horário da época) só foi entregue pelo GitHub às 14h39 UTC de 15/10 e às 14h31 UTC de 16/10 — cerca de 4h30 depois. O Radar (a cada 15 min) teve 3 a 4 execuções por dia, também atrasadas. Em 17/10 (sexta) nenhum disparo agendado de nenhum workflow aconteceu.
 - **As duas execuções que chegaram falharam por configuração de e-mail** (`EMAIL_FROM e EMAIL_TO precisam estar configurados`), já corrigida em 17/10 (envio por assinante opt-in + Brevo). Os envios de teste de 18/10, com os mesmos secrets, saíram com `ok=True`.
+- **21/10/2026 (verificado nos logs):** os quatro disparos do Morning Call (08:03–09:07 BRT) só foram entregues pelo GitHub entre 12:55 e 14:06 BRT. O primeiro falhou no SMTP (`The read operation timed out`, depois do STARTTLS) e o segundo enviou às ~12:58 BRT. Cada execução leva ~1 min: o atraso é do agendador, não do pipeline. Desde 22/10 o erro de SMTP informa a etapa (conexão/STARTTLS/login/envio) e o timeout é de 60 s.
 - **Hoje:** o Morning Call está em `3 11 * * 1-5` (08h03 de Brasília) com reservas às 08h17, 08h38 e 09h07. Não há proteção de horário: um disparo atrasado envia na hora em que chegar (o primeiro que rodar envia; os seguintes só confirmam "já enviado").
 - **Sem e-mail duplicado:** as execuções do Morning Call rodam em série (`concurrency: pregao-morning-call`) e cada uma pula quem já tem registro `ENVIADO` no dia em `morning_call_execucoes`. Um disparo externo extra (abaixo) cai nessa mesma checagem. Exceção documentada no código: se a consulta a essa tabela falhar, o envio segue (prefere-se um duplicado raro a nenhum e-mail).
 
