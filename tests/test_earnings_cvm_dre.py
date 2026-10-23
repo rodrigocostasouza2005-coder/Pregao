@@ -43,6 +43,20 @@ def test_vale_q2_2026_receita_e_lucro_reais(_df_fixture):
     assert nota["contas"]["lucro_liquido_controladora"]["ano_anterior"] == pytest.approx(12081000.0)
 
 
+def test_vale_q2_2026_custo_ebit_e_resultado_antes_tributos_reais(_df_fixture):
+    """Gap de cobertura encontrado em revisao tecnica independente
+    (2026-10-22): de 7 contas em CONTAS_DRE, so' 2 (receita/lucro)
+    tinham asserção direta - as outras 5 nunca eram conferidas contra o
+    valor REAL do CSV, mesmo o caminho de codigo sendo generico (mesmo
+    loop pra todas as contas)."""
+    with patch.object(cvm_dre, "obter_cnpj", return_value="33.592.510/0001-54"), \
+         patch.object(cvm_dre, "_baixar_csv_do_zip", return_value=_df_fixture):
+        nota = cvm_dre.obter_dre_trimestral("VALE3", 2026, 2)
+    assert nota["contas"]["custo_vendas"]["atual"] == pytest.approx(-36833000.0)
+    assert nota["contas"]["ebit"]["atual"] == pytest.approx(11342000.0)
+    assert nota["contas"]["resultado_antes_tributos"]["atual"] == pytest.approx(8894000.0)
+
+
 def test_vale_q1_2026_so_tem_1_linha_por_conta_e_bate_com_q2(_df_fixture):
     """1T nao tem acumulado x isolado (o acumulado JA' e' o trimestre) -
     e serve de comparador QoQ real pro 2T (receita 2T > 1T, lucro 2T < 1T,
