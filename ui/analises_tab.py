@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 import config
+from data.market_researcher import analise_ticker
 from data.prices import obter_cotacao, obter_indicadores
 from data.research.historico import historico_ticker
 from ui import navegacao
@@ -53,6 +54,116 @@ def barra_contexto_empresa(ticker: str, prefs: dict):
                           width="stretch")
     if not setores:
         st.caption("Setor: não classificado (ticker fora das listas curadas de data/news_setores.py).")
+
+
+@st.cache_data(ttl=90, show_spinner=False)
+def _analise_ticker_cacheada(ticker: str) -> dict:
+    """Cache na camada de UI (data/market_researcher.py não importa
+    Streamlit de propósito - usado também fora de sessão) - mesmo TTL
+    de data/radar.py:linha_valuation (90s, o bloco mais sensível ao
+    tempo dentro da análise agregada), evita recompor tudo a cada
+    rerun do Streamlit (troca de widget na mesma página, etc)."""
+    return analise_ticker(ticker)
+
+
+def render_equity_research_executivo(ticker: str, prefs: dict):
+    """ANÁLISES › Empresas: síntese executiva de equity research pro
+    ticker selecionado - agrega data/market_researcher.py:analise_ticker
+    (fundamentos + catalisadores + mudança de tese/CVM + risco de
+    indicador + cobertura de research entre casas), sem nenhuma consulta
+    nova (tudo já calculado por RADAR/Market Makers/Market Researcher).
+    Cada bloco mostra o que existe e diz explicitamente o que não existe
+    - nunca inventa recomendação, preço-alvo ou conclusão do Pregão;
+    preço-alvo/recomendação exibidos são sempre da casa de research que
+    publicou (ESTIMATIVA DE TERCEIRO), nunca um cálculo próprio."""
+    fmt = prefs["formato_numerico"]
+    try:
+        analise = _analise_ticker_cacheada(ticker)
+    except Exception:
+        st.warning(f"Análise executiva de {ticker} indisponível agora (fonte não respondeu).")
+        return
+
+    fundamentos = analise.get("fundamentos")
+    catalisadores = analise.get("catalisadores")
+    mudancas = analise.get("mudancas_tese")
+    riscos = analise.get("riscos_indicadores")
+    cobertura = analise.get("cobertura_research")
+    indisponiveis = analise.get("fontes_indisponiveis") or []
+
+    with st.container(border=True):
+        st.markdown('<div class="painel-titulo">EQUITY RESEARCH — SÍNTESE EXECUTIVA</div>', unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='cinza' style='font-size:0.78rem;'>{ticker}: "
+            f"{len(catalisadores) if catalisadores else 0} catalisador(es) nos próximos 60 dias · "
+            f"{len(mudancas) if mudancas else 0} mudança(s) de tese/CVM recente(s) · "
+            f"{len(riscos) if riscos else 0} alerta(s) de risco nos indicadores · "
+            f"{len((cobertura or {}).get('cobertura') or [])} casa(s) de research com cobertura recente.</div>",
+            unsafe_allow_html=True,
+        )
+        if indisponiveis:
+            st.caption(f"Indisponível nesta execução: {', '.join(indisponiveis)}.")
+
+        st.markdown("**Momento da empresa**")
+        if fundamentos is None:
+            st.caption("Fundamentos indisponíveis agora (fonte não respondeu).")
+        else:
+            cols = st.columns(4)
+            cols[0].metric("P/L", _celula(fundamentos.get("pl"), lambda v: config.formatar_multiplo(v, 2, fmt)))
+            cols[1].metric("P/VP", _celula(fundamentos.get("pvp"), lambda v: config.formatar_multiplo(v, 2, fmt)))
+            cols[2].metric("ROE", _celula(fundamentos.get("roe"), lambda v: config.formatar_numero(v, 2, fmt) + "%"))
+            cols[3].metric("DÍV/EBITDA", _celula(fundamentos.get("divida_liquida_ebitda"),
+                                                  lambda v: config.formatar_numero(v, 1, fmt) + "x"))
+            for alerta in fundamentos.get("alerta_qualidade") or []:
+                st.warning(alerta)
+
+        st.markdown("**Catalisadores**")
+        if catalisadores is None:
+            st.caption("Catalisadores indisponíveis agora.")
+        elif not catalisadores:
+            st.caption("Nenhum catalisador (resultado/proventos) identificado nos próximos 60 dias.")
+        else:
+            for c in catalisadores:
+                selo = "confirmado" if c.get("confirmado") else "estimado/prazo regulatório"
+                st.markdown(f"- {c['categoria']} em {c['data'].strftime('%d/%m/%Y')} ({selo})")
+
+        st.markdown("**Mudanças de tese e CVM**")
+        if mudancas is None:
+            st.caption("Mudanças de tese indisponíveis agora.")
+        elif not mudancas:
+            st.caption("Nenhuma mudança de tese/CVM verificada recentemente.")
+        else:
+            for m in mudancas:
+                if m.get("fonte_url"):
+                    fonte = f" — [{m.get('fonte_label') or 'fonte'}]({m['fonte_url']})"
+                elif m.get("fonte_label"):
+                    fonte = f" — {m['fonte_label']}"
+                else:
+                    fonte = ""
+                st.markdown(f"- {m['data_evento'].strftime('%d/%m/%Y')}: {m['descricao']}{fonte}")
+
+        st.markdown("**Research das casas**")
+        if cobertura is None:
+            st.caption("Cobertura de research indisponível agora.")
+        else:
+            itens_cobertura = cobertura.get("cobertura") or []
+            if not itens_cobertura:
+                st.caption("Nenhuma casa monitorada publicou research recente sobre este ativo.")
+            else:
+                for item in itens_cobertura:
+                    rec = f" · {item['recomendacao']}" if item.get("recomendacao") else ""
+                    st.markdown(f"- **{item['casa']}** ({str(item['data'])[:10]}){rec}: "
+                                f"[{item.get('titulo') or 'ver relatório'}]({item['link']})")
+            if cobertura.get("sem_cobertura"):
+                st.caption(f"Sem cobertura recente: {', '.join(cobertura['sem_cobertura'])}.")
+            if cobertura.get("divergencia"):
+                por_casa = ", ".join(f"{k}: {v}" for k, v in cobertura["divergencia"]["por_casa"].items())
+                st.warning(f"Recomendação diverge entre casas — {por_casa}.")
+
+        st.caption(
+            "Síntese objetiva a partir de dados já verificados (RADAR/Market Makers/Market Researcher) — "
+            "nunca uma recomendação ou preço-alvo do Pregão. Preço-alvo/recomendação de casas de research são "
+            "sempre ESTIMATIVA DE TERCEIRO, nunca um cálculo ou opinião própria do Pregão."
+        )
 
 
 def _rotulo_coleta(ind: dict) -> str | None:
