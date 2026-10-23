@@ -116,3 +116,28 @@ def test_smtp_usa_timeout_de_60s(monkeypatch):
     email_utils.enviar_email("Assunto", "Texto")
 
     assert smtp_cls.call_args.kwargs["timeout"] == 60
+
+
+def test_gmail_workspace_smtp_usa_starttls_login_e_remetente_da_conta(monkeypatch):
+    """Configuração Google Workspace: SMTP Gmail, STARTTLS, login e From coerente."""
+    monkeypatch.setenv("EMAIL_PROVIDER", "smtp")
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    monkeypatch.setenv("SMTP_PORT", "587")
+    monkeypatch.setenv("SMTP_USER", "pregao@example-workspace.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "senha-de-app-ficticia")
+    monkeypatch.delenv("EMAIL_FROM", raising=False)
+    monkeypatch.setenv("EMAIL_TO", "assinante@example.com")
+    smtp_instancia = _smtp_mock(monkeypatch)
+
+    resultado = email_utils.enviar_email("Morning Call", "Resumo do pregão")
+
+    assert resultado == {"ok": True, "erro": None}
+    smtp_cls = email_utils.smtplib.SMTP
+    assert smtp_cls.call_args.args == ("smtp.gmail.com", 587)
+    smtp_instancia.starttls.assert_called_once_with()
+    smtp_instancia.login.assert_called_once_with(
+        "pregao@example-workspace.com", "senha-de-app-ficticia"
+    )
+    msg_enviada = smtp_instancia.send_message.call_args.args[0]
+    assert msg_enviada["From"] == "pregao@example-workspace.com"
+    assert msg_enviada["To"] == "assinante@example.com"
