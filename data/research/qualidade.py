@@ -90,9 +90,22 @@ def _normalizar_numero(bruto: str) -> str:
     `bruto.rstrip(".,")` primeiro: sem isso, um numero no FIM de uma
     frase (ex: 'R$ 48,00.') engole o ponto final no match da regex (o
     ponto e' parte da classe [\\d.,]) e confunde a deteccao de separador
-    decimal - achado real ao escrever os testes deste gate."""
+    decimal - achado real ao escrever os testes deste gate.
+
+    Quando "." E "," aparecem JUNTOS no mesmo numero, a convencao BR e'
+    inequivoca (ponto = separador de milhar, virgula = decimal) - achado
+    real na auditoria de integracao 2026-10-23: 'R$ 1.234,56' no texto
+    original e 'R$ 1234,56' no resumo (mesmo valor, so' sem separador de
+    milhar - reformatacao plausivel de um LLM) normalizavam pra chaves
+    DIFERENTES ('1.234,56' vs '1234.56'), reprovando um resumo fiel.
+    Quando SO' "." aparece (sem virgula nenhuma no numero), continua
+    ambiguo de proposito (pode ser separador de milhar OU decimal sem
+    mais contexto) - nao resolvido aqui, mesmo principio conservador de
+    preferir marcar como SEM base a arriscar um falso negativo."""
     s = re.sub(r"[^\d.,]", "", bruto.rstrip(".,"))
-    if "," in s and "." not in s:
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s:
         s = s.replace(",", ".")
     return s.rstrip("0").rstrip(".") if "." in s else s
 

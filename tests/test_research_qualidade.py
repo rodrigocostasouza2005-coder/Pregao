@@ -104,3 +104,66 @@ def test_texto_original_vazio_reprova_qualquer_numero_do_resumo():
     resumo = "O preço-alvo foi fixado em R$ 48,00."
     motivo = qualidade.validar_fidelidade(resumo, "")
     assert motivo is not None
+
+
+# ============================================================
+# Separador de milhar (achado real, auditoria de integração
+# 2026-10-23): "." e "," juntos no mesmo número seguem a convenção BR
+# sem ambiguidade (ponto = milhar, vírgula = decimal) - antes deste
+# fix, um resumo fiel que só reformatava "R$ 1.234,56" pra "R$ 1234,56"
+# (mesmo valor, sem separador de milhar - reformatação plausível de um
+# LLM) era reprovado e descartado inteiro.
+# ============================================================
+
+_TEXTO_ORIGINAL_COM_MILHAR = (
+    "A empresa reportou receita de R$ 1.234,56 milhões no trimestre, dentro do esperado."
+)
+
+
+def test_numero_sem_separador_de_milhar_mas_mesmo_valor_nao_e_rejeitado():
+    resumo = "A receita somou R$ 1234,56 milhões no trimestre."
+    assert qualidade.numeros_sem_base(resumo, _TEXTO_ORIGINAL_COM_MILHAR) == []
+
+
+def test_numero_com_separador_de_milhar_identico_ao_original_nao_e_rejeitado():
+    resumo = "A receita somou R$ 1.234,56 milhões no trimestre."
+    assert qualidade.numeros_sem_base(resumo, _TEXTO_ORIGINAL_COM_MILHAR) == []
+
+
+def test_valor_realmente_diferente_com_separador_de_milhar_continua_rejeitado():
+    """O fix não deve abrir brecha pra número genuinamente inventado só
+    por ele também ter separador de milhar."""
+    resumo = "A receita somou R$ 9.999,99 milhões no trimestre."
+    nums = qualidade.numeros_sem_base(resumo, _TEXTO_ORIGINAL_COM_MILHAR)
+    assert any("9.999,99" in n for n in nums)
+
+
+def test_validar_fidelidade_completo_aceita_resumo_fiel_com_reformatacao_de_milhar():
+    resumo = "A empresa reportou receita de R$ 1234,56 milhões no trimestre, dentro do esperado."
+    assert qualidade.validar_fidelidade(resumo, _TEXTO_ORIGINAL_COM_MILHAR) is None
+
+
+# ============================================================
+# Limitação conhecida (achado real, auditoria de integração
+# 2026-10-23, NÃO corrigida nesta mudança - registrada deliberadamente
+# como teste de regressão do comportamento atual, não de requisito
+# desejado): o gate verifica só se o número aparece EM ALGUM LUGAR do
+# texto original, não se está associado à MESMA métrica/assunto. Um
+# número real do texto, citado pelo resumo mas atribuído a uma métrica
+# diferente da que ele realmente descreve, passa sem ser detectado.
+# Resolver isso exigiria comparar proximidade número↔sujeito no texto
+# original, mudança maior fora do escopo deste PR (só o bug do
+# separador de milhar acima foi corrigido de verdade).
+# ============================================================
+
+def test_numero_real_mas_atribuido_a_metrica_errada_nao_e_pego_limitacao_conhecida():
+    original = (
+        "A Petrobras reportou margem bruta de 42% e crescimento de receita de 8% "
+        "no trimestre. O lucro líquido cresceu 15% no ano."
+    )
+    # 8% e' um numero real do texto (crescimento de RECEITA), mas o
+    # resumo abaixo o atribui ao LUCRO (que na verdade cresceu 15%) -
+    # o gate hoje NAO pega isso, porque so' verifica presenca do numero
+    # em algum lugar do original, nao a metrica a que ele se refere.
+    resumo = "O lucro da Petrobras cresceu 8% no trimestre, superando as expectativas do mercado."
+    assert qualidade.validar_fidelidade(resumo, original) is None
