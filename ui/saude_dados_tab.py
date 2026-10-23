@@ -26,6 +26,12 @@ _COR_POR_ESTADO = {
     "NUNCA_EXECUTADO": "cinza",
 }
 
+_COR_POR_ESTADO_CONSUMO = {
+    "CONSUMO_COM_ITENS": "alta",
+    "CONSUMO_SEM_ITENS": "alerta",
+    "CONSUMO_DESCONHECIDO": "cinza",
+}
+
 
 def _idade_formatada(iso_ts: str | None) -> str:
     if not iso_ts:
@@ -184,3 +190,51 @@ def render_saude_dados():
                 f"<div class='cinza' style='font-size:0.65rem;'>{legendas_html}</div>",
                 unsafe_allow_html=True,
             )
+
+    # Consumo efetivo (Modulo 1, auditoria 2026-10-22): coleta/persistencia
+    # OK nao garante que o dado foi USADO - ver docstring de
+    # data/saude_dados.py:obter_painel_consumo. Secao separada de
+    # proposito (nunca mistura com o estado de coleta acima: aqui "sem
+    # itens" NUNCA pinta vermelho, pode ser filtro editorial legitimo).
+    painel_consumo = saude_dados.obter_painel_consumo()
+    with st.container(border=True):
+        st.markdown(
+            "<div class='alerta' style='font-weight:600; letter-spacing:0.05em; "
+            "font-size:0.72rem; margin-bottom:0.3rem;'>CONSUMO EFETIVO (MORNING CALL)</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<div class='cinza' style='font-size:0.65rem; margin-bottom:0.4rem;'>"
+            "Dado coletado e persistido chegou a aparecer na ÚLTIMA edição publicada? "
+            "'Ausente' não significa fonte quebrada — pode ser filtro editorial "
+            "legítimo (relevância/dedup/limite).</div>",
+            unsafe_allow_html=True,
+        )
+        linhas_consumo = ""
+        for item in painel_consumo:
+            cor = _COR_POR_ESTADO_CONSUMO.get(item["codigo_estado"], "neutro")
+            data_edicao = item.get("data_edicao") or "—"
+            linhas_consumo += (
+                "<tr>"
+                f"<td style='text-align:left;' class='neutro'>{item['fonte']}</td>"
+                f"<td style='text-align:left;' class='cinza'>{', '.join(item['secoes'])}</td>"
+                f"<td class='{cor}'>{item['rotulo_estado']}</td>"
+                f"<td class='cinza'>{data_edicao}</td>"
+                "</tr>"
+            )
+        st.markdown(
+            f"""
+            <div style="overflow-x:auto; overflow-y:hidden;">
+            <table style="width:100%; border-collapse:collapse;">
+            <thead><tr>
+                <th style="text-align:left; font-weight:400;" class="cinza">FONTE</th>
+                <th style="text-align:left; font-weight:400;" class="cinza">SEÇÃO NO MORNING CALL</th>
+                <th class="cinza">CONSUMO NA ÚLTIMA EDIÇÃO</th>
+                <th class="cinza">DATA DA EDIÇÃO</th>
+            </tr></thead>
+            <tbody>{linhas_consumo}</tbody>
+            </table>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
