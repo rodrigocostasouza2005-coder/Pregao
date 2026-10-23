@@ -34,6 +34,7 @@ from datetime import datetime, timezone
 from data import saude_dados
 from data.research import CASAS
 from data.research.store import listar_itens
+from data.supabase_client import obter_cliente
 
 # ordem de severidade pra priorizar achados (mais grave primeiro) -
 # mesmos codigos de data/saude_dados.py:ESTADOS, nenhum novo criado aqui.
@@ -152,3 +153,104 @@ def cobertura_cruzada_casas(ticker: str, dias: int = 30) -> dict:
         "ticker": ticker, "janela_dias": dias,
         "cobertura": cobertura, "sem_cobertura": sem_cobertura, "divergencia": divergencia,
     }
+
+
+# ============================================================
+# MEMÓRIA OPERACIONAL PERSISTENTE (sql/market_researcher_achados.sql)
+#
+# Upsert por `chave` (coletor|categoria|tipo) - um achado que continua
+# acontecendo ATUALIZA a mesma linha (ultima_ocorrencia_em, ocorrencias
+# +1), nunca acumula 1 linha por checagem. Achado aberto que deixa de
+# aparecer na lista atual é marcado RESOLVIDO automaticamente - fecha o
+# ciclo sem exigir ação manual por achado.
+#
+# Acionado SÓ pelo clique em "ATUALIZAR" (ui/saude_dados_tab.py) - nunca
+# a cada renderização de página (mesmo cuidado de
+# data/research/__init__.py:_COOLDOWN_FALHA_S, só que aqui é o próprio
+# usuário quem decide a frequência, clicando).
+# ============================================================
+_TABELA_ACHADOS = "market_researcher_achados"
+
+
+def _chave_achado(coletor: str, categoria: str, tipo: str) -> str:
+    return f"{coletor}|{categoria}|{tipo}"
+
+
+def registrar_achados_atuais() -> dict:
+    """Snapshot dos achados ATUAIS (achados_qualidade_coletores) na
+    memória operacional persistente. Nunca lança excecao - banco fora
+    do ar degrada pra {"ok": False, ...}."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return {"ok": False, "motivo": "Supabase indisponível"}
+    achados_atuais = achados_qualidade_coletores()
+    agora = datetime.now(timezone.utc).isoformat()
+    chaves_atuais = set()
+    try:
+        for a in achados_atuais:
+            chave = _chave_achado(a["coletor"], a["categoria"], a["codigo_estado"])
+            chaves_atuais.add(chave)
+            existente = (
+                cliente.table(_TABELA_ACHADOS).select("id,ocorrencias")
+                .eq("chave", chave).limit(1).execute()
+            )
+            if existente.data:
+                linha = existente.data[0]
+                cliente.table(_TABELA_ACHADOS).update({
+                    "ultima_ocorrencia_em": agora, "ocorrencias": linha["ocorrencias"] + 1,
+                    "status": "ABERTO", "descricao": a["rotulo_estado"],
+                }).eq("id", linha["id"]).execute()
+            else:
+                cliente.table(_TABELA_ACHADOS).insert({
+                    "chave": chave, "coletor": a["coletor"], "categoria": a["categoria"],
+                    "tipo": a["codigo_estado"], "descricao": a["rotulo_estado"],
+                    "severidade": "CRITICO" if a["critico"] else "ATENCAO", "status": "ABERTO",
+                    "primeira_ocorrencia_em": agora, "ultima_ocorrencia_em": agora, "ocorrencias": 1,
+                }).execute()
+
+        abertos = cliente.table(_TABELA_ACHADOS).select("id,chave").eq("status", "ABERTO").execute()
+        for linha in (abertos.data or []):
+            if linha["chave"] not in chaves_atuais:
+                cliente.table(_TABELA_ACHADOS).update(
+                    {"status": "RESOLVIDO", "resolvido_em": agora}
+                ).eq("id", linha["id"]).execute()
+        return {"ok": True, "achados_atuais": len(achados_atuais)}
+    except Exception as exc:
+        print(f"[market_researcher] registrar_achados_atuais falhou: {exc!r}")
+        return {"ok": False, "motivo": repr(exc)}
+
+
+def historico_achado(coletor: str, categoria: str, tipo: str) -> dict | None:
+    """Histórico persistido de UM achado específico (ocorrências, desde
+    quando) - usado pra enriquecer a linha correspondente em
+    "ACHADOS PRIORIZADOS" sem precisar listar a tabela inteira. None se
+    o banco estiver indisponível OU não houver registro ainda (os dois
+    casos tratados como "sem histórico disponível" por quem chama)."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        resp = (
+            cliente.table(_TABELA_ACHADOS).select("*")
+            .eq("chave", _chave_achado(coletor, categoria, tipo)).limit(1).execute()
+        )
+        return resp.data[0] if resp.data else None
+    except Exception as exc:
+        print(f"[market_researcher] historico_achado falhou: {exc!r}")
+        return None
+
+
+def listar_achados_historico(status: str = None) -> list | None:
+    """Histórico completo persistido - None se banco indisponível, []
+    se ainda não há nenhum registro."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        consulta = cliente.table(_TABELA_ACHADOS).select("*").order("ultima_ocorrencia_em", desc=True)
+        if status:
+            consulta = consulta.eq("status", status)
+        return consulta.execute().data or []
+    except Exception as exc:
+        print(f"[market_researcher] listar_achados_historico falhou: {exc!r}")
+        return None

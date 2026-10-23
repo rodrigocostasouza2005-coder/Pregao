@@ -1,5 +1,31 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-23 (3) — MARKET RESEARCHER: memória operacional persistente
+
+Continuação incremental do PR #148 (correção de escopo). Entrega o
+item "memória operacional persistente" pedido - registra achados,
+ocorrências e resolução automática, reaproveitando o padrão de upsert
+já usado em `data/coletores_status.py` (nunca um log append-only
+crescendo sem limite por checagem repetida):
+
+- `sql/market_researcher_achados.sql` (nova tabela, idempotente, RLS
+  sem policies - mesmo padrão de todas as outras): upsert por chave
+  determinística (coletor|categoria|tipo).
+- `data/market_researcher.py`: `registrar_achados_atuais()` (upsert +
+  fecha o ciclo automaticamente quando um achado deixa de aparecer -
+  marca RESOLVIDO), `historico_achado()`, `listar_achados_historico()`.
+- `ui/saude_dados_tab.py`: grava a memória operacional SÓ no clique
+  explícito em "ATUALIZAR" (nunca a cada renderização de página) e
+  mostra "Nx desde DD/MM" em cada achado que já tem histórico - sem
+  painel novo, mesma seção "ACHADOS PRIORIZADOS" já existente.
+- Testes: `tests/test_market_researcher.py` (+5 casos: upsert sem
+  duplicar, fechamento automático de ciclo, degradação sem banco),
+  `tests/test_saude_dados_tab_ui.py` (+4 casos).
+- **Pendência explícita pro Rodrigo**: rodar `sql/market_researcher_achados.sql`
+  no SQL Editor do Supabase de produção antes da memória operacional
+  persistir de verdade (mesmo passo manual que toda tabela nova deste
+  projeto já exige).
+
 ## 2026-10-23 (2) — MARKET RESEARCHER: correção de escopo, achados priorizados e cobertura cruzada
 
 Correção de escopo do "Market Researcher": a integração anterior
