@@ -221,6 +221,7 @@ def _ultimo_negocio_iso(ticker_obj, barra) -> str | None:
         return None
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def obter_cotacao_indice(nome: str, symbol: str) -> dict:
     """
     Cotacao de indice/moeda pra ticker tape (ex: Ibovespa, dolar). Usa
@@ -234,6 +235,18 @@ def obter_cotacao_indice(nome: str, symbol: str) -> dict:
     Se essa chamada falhar, cai pro ultimo valor que deu certo
     (_ultima_cotacao_indice_valida) em vez de mostrar erro/"--" - so
     retorna erro se NUNCA tiver conseguido buscar esse indice ainda.
+
+    @st.cache_data(ttl=30) (achado real, auditoria de performance
+    2026-10-23): faltava aqui, mesmo TTL do fast_info de obter_cotacao()
+    3 linhas acima. Essa funcao e' chamada pela fita do header (_ticker_
+    tape, TODA pagina, a cada run_every) E por VISAO GERAL/MACRO/MERCADO
+    pros mesmos indices (IBOVESPA/DOLAR/EURO) - sem cache, cada rerun
+    batia no Yahoo 1x por chamador pro MESMO indice, no MESMO segundo
+    (confirmado via profiling: 6 chamadas de rede reais pra so' 3 indices
+    distintos num unico rerun). ui/macro_tab.py:_cotacao_cambio ja
+    trabalhava esse problema com um cache local propio (ver comentario
+    la) - o bug real era so' faltar aqui, na fonte, pros outros 2
+    chamadores (app.py/ui/visao_geral.py/ui/mercado_tab.py).
     """
     cache = _ultima_cotacao_indice_valida()
     try:

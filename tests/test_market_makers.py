@@ -93,3 +93,33 @@ def test_riscos_so_lista_tickers_com_alerta_de_qualidade_real():
         riscos = market_makers._riscos(("WEGE3", "PETR4"))
 
     assert riscos == {"WEGE3": ["dívida/EBITDA acima do histórico"]}
+
+
+# ============================================================
+# REGRESSAO (auditoria de performance, 2026-10-23): _riscos rodava
+# linha_valuation (data/radar.py, cacheada por ticker) 1 ticker por vez
+# em sequencia - com cache frio/watchlist grande, N tickers = N vezes o
+# tempo de rede de 1. Passou a rodar em paralelo (ThreadPoolExecutor,
+# mesmo raciocinio de data/news.py:_coletar_em_paralelo). Este teste
+# garante que a falha de UM ticker (exception real, nao so' um dict
+# vazio) nunca contamina os outros, mesmo rodando em threads diferentes.
+# ============================================================
+
+def test_riscos_isola_falha_de_um_ticker_mesmo_rodando_em_paralelo():
+    def _linha(ticker):
+        if ticker == "FALHA3":
+            raise RuntimeError("fonte fora do ar")
+        return {"alerta_qualidade": [f"alerta {ticker}"]}
+
+    with patch.object(market_makers, "linha_valuation", side_effect=_linha):
+        riscos = market_makers._riscos(("PETR4", "FALHA3", "VALE3", "WEGE3"))
+
+    assert riscos == {
+        "PETR4": ["alerta PETR4"], "VALE3": ["alerta VALE3"], "WEGE3": ["alerta WEGE3"],
+    }
+    assert "FALHA3" not in riscos
+
+
+def test_riscos_com_tupla_vazia_nao_quebra():
+    with patch.object(market_makers, "linha_valuation", side_effect=AssertionError("nao deveria ser chamada")):
+        assert market_makers._riscos(()) == {}
