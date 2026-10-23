@@ -32,6 +32,8 @@ Principios (nunca violados):
 from datetime import datetime, timezone
 
 from data import saude_dados
+from data.market_makers import contexto_ticker
+from data.radar import linha_valuation
 from data.research import CASAS
 from data.research.store import listar_itens
 from data.supabase_client import obter_cliente
@@ -152,6 +154,62 @@ def cobertura_cruzada_casas(ticker: str, dias: int = 30) -> dict:
     return {
         "ticker": ticker, "janela_dias": dias,
         "cobertura": cobertura, "sem_cobertura": sem_cobertura, "divergencia": divergencia,
+    }
+
+
+# ============================================================
+# ANÁLISE POR TICKER - agregador PURO dos módulos acima + fundamentos
+# (data/radar.py:linha_valuation) - nenhuma consulta nova, nenhum
+# coletor novo, nenhuma chamada de IA. "Preparo da evolução" pedido:
+# uma função de leitura que já junta tudo que o comitê de investimentos
+# olharia pra 1 ativo, sem inventar uma conclusão em prosa por cima -
+# cada bloco é exatamente o que o módulo de origem já produz, com a
+# fonte/data dele preservada.
+# ============================================================
+
+def analise_ticker(ticker: str, janela: str = "7 DIAS") -> dict:
+    """Visão agregada de 1 ticker: fundamentos (linha_valuation),
+    catalisadores/mudança de tese/risco de indicador (contexto_ticker,
+    data/market_makers.py) e cobertura de research entre casas
+    (cobertura_cruzada_casas, acima). Cada bloco é None quando a fonte
+    dele falha - nunca interrompe os demais nem inventa valor. `fontes_
+    indisponiveis` lista, por nome, quais blocos falharam nesta chamada
+    (lista vazia = todos os blocos responderam, não necessariamente com
+    dado - um bloco pode responder com tudo None/[] legitimamente)."""
+    ticker = (ticker or "").strip().upper()
+    fontes_indisponiveis = []
+
+    try:
+        fundamentos = linha_valuation(ticker)
+    except Exception as exc:
+        print(f"[market_researcher] fundamentos indisponíveis pra {ticker}: {exc!r}")
+        fundamentos = None
+        fontes_indisponiveis.append("fundamentos")
+
+    try:
+        contexto = contexto_ticker(ticker, janela)
+    except Exception as exc:
+        print(f"[market_researcher] contexto de mercado indisponível pra {ticker}: {exc!r}")
+        contexto = None
+        fontes_indisponiveis.append("contexto_mercado")
+
+    try:
+        cobertura = cobertura_cruzada_casas(ticker)
+    except Exception as exc:
+        print(f"[market_researcher] cobertura de research indisponível pra {ticker}: {exc!r}")
+        cobertura = None
+        fontes_indisponiveis.append("cobertura_research")
+
+    return {
+        "ticker": ticker,
+        "gerado_em": datetime.now(timezone.utc),
+        "fundamentos": fundamentos,
+        "catalisadores": (contexto or {}).get("catalisadores"),
+        "mudancas_tese": (contexto or {}).get("mudancas"),
+        "riscos_indicadores": (contexto or {}).get("riscos"),
+        "interpretacao_movimento": (contexto or {}).get("interpretacao"),
+        "cobertura_research": cobertura,
+        "fontes_indisponiveis": fontes_indisponiveis,
     }
 
 
