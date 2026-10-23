@@ -51,6 +51,29 @@ def test_resumo_fiel_passa_normalmente_e_e_persistido():
     assert salvar_mock.call_count == 1
 
 
+def test_resumo_com_metrica_trocada_nao_e_persistido():
+    """Hook de integracao do PROBLEMA 2 (revisao tecnica, 2026-10-23):
+    numero existe no original, mas atribuido a' metrica ERRADA no
+    resumo - tem que reprovar pelo MESMO caminho (nunca persistido,
+    motivo generico) dos outros 2 problemas ja' cobertos acima."""
+    texto_multi_metrica = (
+        "A companhia reportou margem bruta de 42%, com crescimento do lucro líquido "
+        "de 15% frente ao trimestre anterior, enquanto a receita líquida cresceu 8% "
+        "no período."
+    )
+    chamadas_salvar = []
+    with patch.object(resumir_mod, "obter_texto_relatorio", return_value=(texto_multi_metrica, None)), \
+         patch.object(resumir_mod, "resumir_com_groq",
+                       return_value=("A companhia reportou que o lucro cresceu 8% no período.", None, {"modelo": "modelo-x"})), \
+         patch.object(resumir_mod.store, "salvar_resumo", side_effect=lambda *a, **k: chamadas_salvar.append(a)), \
+         patch.object(resumir_mod.ia_cache, "obter_cliente", return_value=None):
+        resultado = obter_resumo("https://exemplo.com/3", "Companhia X", casa="X", tipo="ACOES")
+
+    assert resultado["resumo"] is None
+    assert resultado["motivo_indisponivel"] == "indisponivel"
+    assert chamadas_salvar == []
+
+
 def test_motivo_detalhado_do_gate_nunca_vaza_pra_ui():
     """O motivo exposto no retorno (o que a UI eventualmente mostra)
     nunca pode conter o trecho citado internamente pelo gate - só o
