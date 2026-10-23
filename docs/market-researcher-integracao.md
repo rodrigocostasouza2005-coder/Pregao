@@ -240,3 +240,57 @@ Suíte completa: **1233 passed** (`python -m pytest -q`, local — ver seção 1
    gratuita conhecida — gaps pré-existentes, não resolvidos por esta sessão.
 4. Morning Call com mudanças de tese (seção 7) é uma sugestão de próximo incremento,
    não implementada.
+
+## 12. Correção de escopo (23/10/2026): Market Researcher como camada de qualidade/comitê
+
+O que as seções 0-11 descrevem (`data/research/tese.py`, thesis tracker) é uma
+funcionalidade real e válida — **registro de tese PRÓPRIA do usuário** — mas não é
+a camada de inteligência/"cadeira no comitê de investimentos" que o pedido original
+realmente queria dizer com "Market Researcher". Não foi removida (o trabalho é
+válido e continua em uso em RADAR › Minha Tese); esta seção documenta a peça que
+faltava, entregue à parte: `data/market_researcher.py`.
+
+**Decisão explícita: nenhuma aba nova.** A camada vive só em `data/` e se conecta a
+duas superfícies que já existiam:
+
+- **SAÚDE DOS DADOS** (`ui/saude_dados_tab.py`): nova seção "MARKET RESEARCHER —
+  ACHADOS PRIORIZADOS", que é o MESMO painel de `data/saude_dados.obter_painel_saude()`
+  (já existente, já distingue fonte indisponível / coleta com sucesso sem novidade /
+  nunca executado / não comprovado) **ordenado por impacto** (categoria crítica do
+  pipeline principal + estado mais grave primeiro) — a peça que faltava era priorização,
+  não classificação (essa já existia e já era madura).
+- **RESEARCH › Casas de Análise** (`ui/research_tab.py:render_casas_analise`): nova
+  seção "COBERTURA CRUZADA — WATCHLIST", que cruza `data/research/store.py:listar_itens`
+  por ticker e mostra, por fato (nunca por inferência): quais casas monitoradas
+  publicaram algo sobre o ativo na janela de 30 dias (com data/link/recomendação
+  quando existir) e quais não publicaram nada. Quando ≥2 casas têm o CAMPO
+  ESTRUTURADO `recomendacao` preenchido pro mesmo ticker e os valores diferem, aponta
+  a divergência citando as duas fontes — nunca compara título/sentimento de matéria
+  (seria inferência, proibida explicitamente pelo pedido).
+
+**Limitação real, documentada e não escondida**: hoje só `Genial Analisa` extrai o
+campo estruturado `recomendacao` de forma confiável (`data/research/genial.py`) — a
+checagem de divergência está correta e testada, mas raramente dispara na prática até
+mais casas terem esse campo. O valor prático imediato de `cobertura_cruzada_casas` é
+a visão de cobertura/lacuna (fato puro), não a contradição de recomendação.
+
+**Zero coletor novo, zero tabela nova, zero chamada de IA nova** — `data/market_researcher.py`
+só lê `data/saude_dados.py` + `data/research/store.py`/`data/research/__init__.py.CASAS`,
+já existentes. Testes: `tests/test_market_researcher.py` (8 casos: priorização,
+degradação por fonte indisponível, cobertura/lacuna, divergência só com campo real,
+nunca por título) + `tests/test_saude_dados_tab_ui.py` + cobertura nova em
+`tests/test_research_casas_analise_ui.py`.
+
+**Pendências explícitas (não implementadas nesta sessão)**:
+- Morning Call não consome `data/market_researcher.py` ainda (achados de qualidade
+  dos coletores/cobertura cruzada ficam só em SAÚDE DOS DADOS/RESEARCH por ora) —
+  próximo incremento natural seria um aviso no Morning Call quando um coletor crítico
+  usado na edição do dia estiver em estado de alerta.
+- Histórico/memória operacional de achados (quando um problema foi visto, corrigido,
+  reapareceu) ainda não é persistido — hoje a "memória" do projeto é o git log + os
+  testes de regressão com docstring explicando o achado real (padrão já usado em
+  todo o repositório, ver qualquer `tests/test_*` recente) - decisão deliberada de
+  não criar uma tabela nova sem um caso de uso concreto que a justifique ainda.
+- Comparação de recomendação entre casas só é real quando mais casas (além da
+  Genial) extraírem o campo `recomendacao` estruturado - gap de coleta pré-existente,
+  não resolvido aqui.

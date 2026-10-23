@@ -13,6 +13,7 @@ persistiu, quantos registros novos) - complementares, nao substitutos."""
 import streamlit as st
 
 from data import coletores_status, saude_dados
+from data import market_researcher as mr
 
 _COR_POR_ESTADO = {
     "SUCESSO_COM_NOVIDADE": "alta",
@@ -117,6 +118,39 @@ def render_saude_dados():
         )
 
     painel = saude_dados.obter_painel_saude()
+
+    # MARKET RESEARCHER (data/market_researcher.py): mesmo painel acima,
+    # priorizado por impacto (crítico + mais grave primeiro) - achados
+    # acionáveis, não um painel novo. [] quando não há nada que precise
+    # de atenção (nunca lista coletor saudável aqui).
+    achados = mr.achados_qualidade_coletores()
+    if achados:
+        with st.container(border=True):
+            st.markdown(
+                "<div class='baixa' style='font-weight:600; letter-spacing:0.05em; "
+                "font-size:0.72rem; margin-bottom:0.3rem;'>MARKET RESEARCHER — ACHADOS PRIORIZADOS"
+                f" ({len(achados)})</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                "<div class='cinza' style='font-size:0.65rem; margin-bottom:0.4rem;'>"
+                "Mesmos dados da tabela abaixo, ordenados por impacto — crítico (afeta Cotações/"
+                "Notícias/Macro/CVM/Radar/Morning Call) e mais grave primeiro.</div>",
+                unsafe_allow_html=True,
+            )
+            for achado in achados[:10]:
+                cor = _COR_POR_ESTADO.get(achado["codigo_estado"], "neutro")
+                marca_critico = " <span class='baixa'>[CRÍTICO]</span>" if achado["critico"] else ""
+                erro = (achado["evidencia"].get("ultimo_erro") or "").strip()
+                detalhe_erro = f" — {erro}" if erro else ""
+                st.markdown(
+                    f"<div style='padding:3px 0; font-size:0.72rem;'>"
+                    f"<span class='neutro'>{achado['coletor']}</span> ({achado['categoria']}){marca_critico}: "
+                    f"<span class='{cor}'>{achado['rotulo_estado']}</span>{detalhe_erro}</div>",
+                    unsafe_allow_html=True,
+                )
+            if len(achados) > 10:
+                st.caption(f"+{len(achados) - 10} achado(s) adicional(is) — veja o detalhamento por categoria abaixo.")
 
     categorias = {}
     for item in painel:
