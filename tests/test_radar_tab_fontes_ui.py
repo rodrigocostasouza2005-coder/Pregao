@@ -117,6 +117,63 @@ def test_alertas_e_monitorados_renderizados_com_numero_brasileiro_e_estado_do_em
     assert "16/10 12:31" in html_render  # horário de Brasília, não ISO UTC
 
 
+def test_alerta_com_evidencia_real_mostra_contexto_market_makers():
+    """Bug real (achado 23/10/2026, alerta WEGE3 'E-MAIL: FALHOU'): o
+    alerta de queda não contextualizava nada, mesmo quando havia
+    mudança de tese real na mesma janela. MARKET MAKERS (data/
+    market_makers.py) agora cruza o alerta com evidência real, quando
+    ela existe."""
+    import data.radar_quedas as rq
+
+    resumo = {"Safra Corretora": {"ativos": 1, "verificado_em": "2026-10-23T10:00:00+00:00", "desatualizada": False,
+                                  "carteiras": ["Top 10 Ações"], "data_publicacao": "2026-10-01"}}
+    alertas = [{"ticker": "WEGE3", "empresa": "WEG", "pregao": "2026-10-23", "variacao_pct": -4.5,
+                "preco_atual": 40.0, "fechamento_anterior": 41.9, "casas": ["Safra Corretora"],
+                "carteiras": ["Top 10 Ações"], "fontes": [], "alertado_em": "2026-10-23T15:31:05+00:00",
+                "status": "FALHA_ENVIO"}]
+    contexto = {
+        "ticker": "WEGE3", "gerado_em": None, "catalisadores": [], "mudancas": [], "riscos": [],
+        "interpretacao": {"texto": "Genial revisou WEGE3 de COMPRA para NEUTRO.",
+                          "tipo_evidencia": "FATO", "fonte_url": "https://genial.com.br",
+                          "fonte_label": "Genial Analisa"},
+    }
+    with patch.object(radar_quedas_mod, "resumo_fontes_vigentes", return_value=resumo), \
+         patch.object(radar_quedas_mod, "painel_monitorados", return_value=[]), \
+         patch.object(radar_quedas_mod, "alertas_periodo", return_value=alertas), \
+         patch("data.market_makers.contexto_ticker", return_value=contexto):
+        blocos = []
+        with patch.object(radar_tab_mod.st, "markdown", side_effect=lambda texto, **_k: blocos.append(texto)), \
+             patch.object(radar_tab_mod.st, "expander") as expander_mock:
+            expander_mock.return_value.__enter__ = lambda self: self
+            expander_mock.return_value.__exit__ = lambda *a: False
+            radar_tab_mod.render_radar.__wrapped__(_PREFS_SEM_WATCHLIST, "sub-teste")
+    html_render = "\n".join(b for b in blocos if not b.lstrip().startswith("<style>"))
+    assert "Genial revisou WEGE3 de COMPRA para NEUTRO" in html_render
+    assert "href='https://genial.com.br'" in html_render
+
+
+def test_alerta_sem_nenhuma_evidencia_nao_mostra_contexto_inventado():
+    import data.radar_quedas as rq
+
+    resumo = {"Safra Corretora": {"ativos": 1, "verificado_em": "2026-10-23T10:00:00+00:00", "desatualizada": False,
+                                  "carteiras": ["Top 10 Ações"], "data_publicacao": "2026-10-01"}}
+    alertas = [{"ticker": "WEGE3", "empresa": "WEG", "pregao": "2026-10-23", "variacao_pct": -4.5,
+                "preco_atual": 40.0, "fechamento_anterior": 41.9, "casas": ["Safra Corretora"],
+                "carteiras": ["Top 10 Ações"], "fontes": [], "alertado_em": "2026-10-23T15:31:05+00:00",
+                "status": "FALHA_ENVIO"}]
+    sem_evidencia = {"ticker": "WEGE3", "gerado_em": None, "catalisadores": [], "mudancas": [], "riscos": [],
+                     "interpretacao": None}
+    with patch.object(radar_quedas_mod, "resumo_fontes_vigentes", return_value=resumo), \
+         patch.object(radar_quedas_mod, "painel_monitorados", return_value=[]), \
+         patch.object(radar_quedas_mod, "alertas_periodo", return_value=alertas), \
+         patch("data.market_makers.contexto_ticker", return_value=sem_evidencia):
+        blocos = []
+        with patch.object(radar_tab_mod.st, "markdown", side_effect=lambda texto, **_k: blocos.append(texto)):
+            radar_tab_mod.render_radar.__wrapped__(_PREFS_SEM_WATCHLIST, "sub-teste")
+    html_render = "\n".join(b for b in blocos if not b.lstrip().startswith("<style>"))
+    assert "CONTEXTO DO MOVIMENTO" not in html_render
+
+
 def test_ticker_das_tabelas_densas_e_clicavel():
     """Achado P1 da auditoria 360 (docs/auditoria-redesign-360.md secao 4):
     .rq-ticker tinha a MESMA cor/peso visual de "isto e' clicavel" usada

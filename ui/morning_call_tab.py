@@ -580,6 +580,30 @@ def render_edicao_estruturada_html(edicao: dict) -> str:
             partes.append("</div>")
         partes.append("</div>")
 
+    mm = edicao.get("market_makers")
+    if mm and (mm.get("catalisadores") or mm.get("mudancas") or mm.get("riscos")):
+        partes.append(
+            "<div class='mc-secao'><div class='mc-secao-titulo'>MARKET MAKERS — CATALISADORES E RISCOS</div>"
+            "<p class='mc-aviso' style='margin-bottom:8px;'>Contexto dos ativos já citados nesta edição — "
+            "mudança de tese/CVM, catalisador de calendário e alerta de qualidade, sem chamada de IA nova.</p>"
+        )
+        for m in mm.get("mudancas") or []:
+            fonte = (f" · <a href='{html.escape(m['fonte_url'], quote=True)}' target='_blank' rel='noopener'>{html.escape(m.get('fonte_label') or 'fonte')}</a>"
+                     if m.get("fonte_url") else f" · {html.escape(m.get('fonte_label') or '')}" if m.get("fonte_label") else "")
+            partes.append(
+                f"<p class='mc-prosa'><b>{html.escape(m['ticker'])}</b> — {texto_para_html(m['descricao'])} "
+                f"({m['data_evento'].strftime('%d/%m/%Y')}){fonte}</p>"
+            )
+        for c in mm.get("catalisadores") or []:
+            selo = "CONFIRMADO" if c.get("confirmado") else c.get("status_label", "ESTIMADO")
+            partes.append(
+                f"<p class='mc-prosa'><b>{html.escape(c['ticker'])}</b> — {html.escape(c['categoria'])} em "
+                f"{c['data'].strftime('%d/%m/%Y')} <span class='mc-aviso' style='display:inline;'>({html.escape(selo)})</span></p>"
+            )
+        for ticker, alertas in (mm.get("riscos") or {}).items():
+            partes.append(f"<p class='mc-prosa'><b>{html.escape(ticker)}</b> — risco: {texto_para_html('; '.join(alertas))}</p>")
+        partes.append("</div>")
+
     limitacoes = edicao.get("limitacoes") or ()
     fontes = edicao.get("fontes") or ()
     if limitacoes or fontes:
