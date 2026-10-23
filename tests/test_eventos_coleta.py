@@ -663,6 +663,40 @@ def test_ri_nao_tenta_portal_quando_link_encontrado_e_mesmo_dominio():
     _checar("sem data em lugar nenhum -> None", evento is None)
 
 
+def test_ri_caso_real_rent3_link_curto_que_redireciona_pro_portal():
+    """Reproduz o caso real validado nesta auditoria contra a fonte de
+    verdade (RENT3/Localiza, fora da suíte de testes): a home
+    (www.localiza.com) publica um link CURTO (ex: llz.me/...) que o
+    navegador/cffi_requests resolve via redirecionamento HTTP pro portal
+    de RI de verdade. origem_url precisa continuar sendo o link
+    PUBLICADO pela empresa (rastreável até a fonte oficial) mesmo quando
+    a resposta final, depois do redirecionamento, vem de outro host -
+    nunca a URL resolvida internamente pela biblioteca de HTTP."""
+    home = '<a href="http://llz.me/b4nje5">Relação com Investidores</a>'
+    # resposta ao link curto: simula o que curl_cffi devolve depois de
+    # seguir o redirecionamento sozinho (comportamento padrão da lib) -
+    # .text já é o conteúdo da página final, .url (se existisse) seria
+    # diferente do link pedido; o coletor nunca lê esse atributo.
+    pagina_final = "<html><body>Resultados do 3T26 confirmados para 06/11/2026.</body></html>"
+    pedidos = []
+
+    def _get(url, **_k):
+        pedidos.append(url)
+        r = MagicMock(text=home if len(pedidos) == 1 else pagina_final, url="https://ri.localiza.com/resultados")
+        r.raise_for_status.return_value = None
+        return r
+
+    with patch.object(coleta_mod, "obter_url_ri", return_value="https://www.localiza.com"), \
+         patch.object(coleta_mod.cffi_requests, "get", side_effect=_get):
+        evento = coleta_mod.tentar_ri("RENT3", "Localiza", 2026, 3)
+    _checar("segue o link curto publicado na home (2 requisições: home + link curto)",
+            pedidos == ["https://www.localiza.com", "http://llz.me/b4nje5"], str(pedidos))
+    _checar("CONFIRMADO com a data da página final (pós-redirecionamento)",
+            evento and evento["data"] == date(2026, 11, 6))
+    _checar("origem_url é o link PUBLICADO pela empresa, não o destino interno do redirecionamento",
+            evento["origem_url"] == "http://llz.me/b4nje5", str(evento and evento.get("origem_url")))
+
+
 def _doc(categoria, assunto, data="2026-10-15", link="https://www.rad.cvm.gov.br/doc/1"):
     return {"categoria_original": categoria, "assunto": assunto, "data": data, "link": link}
 
