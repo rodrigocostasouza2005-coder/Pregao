@@ -715,6 +715,7 @@ if rota == ("analises", "empresas"):
                     _persistir_prefs()
                     st.rerun()
             analises_tab.barra_contexto_empresa(ticker_selecionado, prefs)
+            analises_tab.render_equity_research_executivo(ticker_selecionado, prefs)
 
             if len(prefs["watchlist"]) > 1:
                 @st.fragment(run_every=prefs["atualizacao_intervalo"])
