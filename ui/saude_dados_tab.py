@@ -62,6 +62,14 @@ def render_saude_dados():
 
     if st.button("ATUALIZAR", key="saude_dados_atualizar"):
         st.cache_data.clear()
+        # Memória operacional persistente (sql/market_researcher_achados.sql):
+        # só grava no clique explícito do usuário, nunca a cada rerun da
+        # página - evita escrita repetida no Supabase sem necessidade.
+        # Melhor esforço: falha de persistência aqui não pode impedir o
+        # resto do painel de atualizar.
+        resultado_registro = mr.registrar_achados_atuais()
+        if not resultado_registro["ok"] and resultado_registro.get("motivo") != "Supabase indisponível":
+            st.caption(f"Memória operacional não pôde ser atualizada: {resultado_registro.get('motivo')}")
 
     # Diagnostico de infraestrutura (achado real, missao coletores
     # 2026-10-13): antes desta checagem, uma tabela `coletores_status`
@@ -143,10 +151,20 @@ def render_saude_dados():
                 marca_critico = " <span class='baixa'>[CRÍTICO]</span>" if achado["critico"] else ""
                 erro = (achado["evidencia"].get("ultimo_erro") or "").strip()
                 detalhe_erro = f" — {erro}" if erro else ""
+                # Memória operacional (sql/market_researcher_achados.sql):
+                # desde quando esse achado específico vem ocorrendo, se já
+                # foi registrado pelo menos 1x (clique em ATUALIZAR) - None
+                # (banco indisponível ou nunca registrado) não aparece,
+                # nunca inventa "desde sempre".
+                historico = mr.historico_achado(achado["coletor"], achado["categoria"], achado["codigo_estado"])
+                memoria = ""
+                if historico and historico.get("ocorrencias", 1) > 1:
+                    desde = str(historico.get("primeira_ocorrencia_em") or "")[:10]
+                    memoria = f" <span class='cinza'>({historico['ocorrencias']}x desde {desde})</span>"
                 st.markdown(
                     f"<div style='padding:3px 0; font-size:0.72rem;'>"
                     f"<span class='neutro'>{achado['coletor']}</span> ({achado['categoria']}){marca_critico}: "
-                    f"<span class='{cor}'>{achado['rotulo_estado']}</span>{detalhe_erro}</div>",
+                    f"<span class='{cor}'>{achado['rotulo_estado']}</span>{detalhe_erro}{memoria}</div>",
                     unsafe_allow_html=True,
                 )
             if len(achados) > 10:

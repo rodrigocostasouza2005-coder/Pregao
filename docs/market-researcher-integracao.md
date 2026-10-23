@@ -286,11 +286,24 @@ nunca por título) + `tests/test_saude_dados_tab_ui.py` + cobertura nova em
   dos coletores/cobertura cruzada ficam só em SAÚDE DOS DADOS/RESEARCH por ora) —
   próximo incremento natural seria um aviso no Morning Call quando um coletor crítico
   usado na edição do dia estiver em estado de alerta.
-- Histórico/memória operacional de achados (quando um problema foi visto, corrigido,
-  reapareceu) ainda não é persistido — hoje a "memória" do projeto é o git log + os
-  testes de regressão com docstring explicando o achado real (padrão já usado em
-  todo o repositório, ver qualquer `tests/test_*` recente) - decisão deliberada de
-  não criar uma tabela nova sem um caso de uso concreto que a justifique ainda.
+- ~~Histórico/memória operacional de achados~~ **entregue em seguida** (mesmo dia,
+  continuação incremental): `sql/market_researcher_achados.sql` +
+  `data/market_researcher.py:registrar_achados_atuais/historico_achado/
+  listar_achados_historico` + `ui/saude_dados_tab.py` (grava só no clique em
+  "ATUALIZAR", nunca por renderização; achado reaparecido reabre automaticamente,
+  achado resolvido fecha automaticamente). Pendência real: rodar
+  `sql/market_researcher_achados.sql` em produção (passo manual do Rodrigo).
 - Comparação de recomendação entre casas só é real quando mais casas (além da
   Genial) extraírem o campo `recomendacao` estruturado - gap de coleta pré-existente,
-  não resolvido aqui.
+  não resolvido aqui. Próximo passo natural: investigar extração estruturada em
+  XP/BTG/Monte Bravo (item pedido, ainda não auditado contra o HTML/API real de
+  cada casa - alto risco de regressão se feito sem ler o parser de cada uma
+  primeiro, por isso não feito nesta sessão).
+- Morning Call não consome `data/market_researcher.py` ainda (mesma pendência de
+  antes, não revisitada nesta continuação).
+- Agregador de análise por ticker (fundamentos + momento + preço-alvo verificável +
+  riscos + catalisadores + conclusão citável, caso de teste WEGE3) ainda não
+  implementado - próximo incremento natural seria compor
+  `data/market_makers.py:contexto_ticker` + `data/market_researcher.py:cobertura_cruzada_casas`
+  + `data/radar.py:linha_valuation` numa única função de leitura (zero coletor
+  novo), sem painel novo.
