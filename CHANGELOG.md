@@ -1,5 +1,45 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-23 (4) — Fallback persistente de indicadores + validação real de equity research
+
+**Incidente investigado** (todos os 15 ativos da watchlist com "indisponível
+agora" em P/L/P-VP/DY/ROE/etc, cotação funcionando normalmente): sem acesso a
+logs de produção nesta sessão - diagnóstico feito por auditoria de código,
+não confirmado contra o log real do incidente. Causa mais provável
+identificada com certeza de código: `data/prices.py:_ultimo_indicadores_valido`
+(fallback de indicadores) é `@st.cache_resource` - vive só na MEMÓRIA do
+processo Streamlit, e Streamlit Community Cloud reinicia o container a cada
+push pra `main` (este projeto fez várias dessas hoje). Se o Yahoo Finance
+estiver bloqueando `tk.info` (`.info` - bloqueio já documentado, específico
+de IP de datacenter, diferente do endpoint de cotação que continua
+respondendo) bem depois de um restart, TODOS os tickers ficam sem nenhum
+valor-base pra cair de volta, mesmo tendo funcionado minutos antes do
+deploy - exatamente o sintoma relatado.
+
+- **Fix** (`sql/indicadores_fallback.sql` + `data/prices.py`): o último
+  indicadores válido de cada ticker agora também é persistido no Supabase
+  (`_salvar_fallback_persistido`, melhor esforço, só numa coleta
+  REALMENTE bem-sucedida) - quando a coleta de agora falha E o fallback em
+  memória também está vazio (cenário do incidente), `_ler_fallback_persistido`
+  é consultado antes de desistir. Zero mudança no caminho feliz (coleta
+  funcionando) nem quando o fallback em memória já resolve - o Supabase só
+  é consultado como último recurso. `_coletado_em` sempre vem da coleta
+  real original, nunca "agora".
+- **Pendência explícita pro Rodrigo**: rodar `sql/indicadores_fallback.sql`
+  no SQL Editor do Supabase de produção (mesmo passo manual de toda tabela
+  nova deste projeto).
+- **Validação real** (Fase 2, rede real disponível nesta sessão - YFinance
+  respondeu normalmente, não reproduz o bloqueio de IP de datacenter do
+  Streamlit Cloud): `analise_ticker`/`render_equity_research_executivo`
+  testados de ponta a ponta com WEGE3 e PETR4 reais. Achado um bug real
+  nessa validação: a seção "Research das casas" confundia
+  `cobertura_research["cobertura"] is None` (banco de research
+  indisponível) com `== []` (banco respondeu, nenhuma casa publicou) -
+  corrigido, com teste de regressão.
+- Testes: `tests/test_prices_indicadores_fallback_persistido.py` (7 casos),
+  +1 regressão e +1 teste de cache em `tests/test_analises_equity_research_ui.py`.
+  1447 testes passando no total.
+
 ## 2026-10-23 (3) — MARKET RESEARCHER: memória operacional persistente
 
 Continuação incremental do PR #148 (correção de escopo). Entrega o
