@@ -563,21 +563,62 @@ def test_12_thumbs_com_e_sem_foto():
     assert ".w-thumb" in news_tab._SCRIPT_FALLBACK_IMAGEM  # listener cobre a thumb wire
 
 
-def test_12b_capa_do_modal_recorta_dentro_do_container_e_reduz():
+def test_12b_capa_do_modal_reduz_e_devolve_a_proporcao_real():
+    """_capa_data_uri devolve (data_uri, largura/altura) - a proporção real
+    decide, em _renderizar_capa, o modo cobrir/conter (ver _RATIO_MIN/MAX_
+    COBRIR). Retrato (1800x2400, proporção 0,75) fica MUITO fora da faixa
+    de "cobrir" - recortar isso nas laterais é exatamente o bug real
+    auditado em 2026-10-22 ("imagem cortada, perdendo parte importante da
+    foto"); o modal agora preserva a foto inteira (contido) nesse caso."""
     news_tab._capa_data_uri.clear()
     with patch.object(news_tab, "_baixar_imagem_capa", return_value=_png_bytes(1800, 2400)):
-        uri = news_tab._capa_data_uri("https://x.com/retrato.jpg")
+        resultado = news_tab._capa_data_uri("https://x.com/retrato.jpg")
+    uri, proporcao = resultado
     assert uri.startswith("data:image/jpeg;base64,")
+    assert proporcao == pytest.approx(1800 / 2400)
     from PIL import Image
     with Image.open(BytesIO(base64.b64decode(uri.split(",", 1)[1]))) as img:
         assert img.width == news_tab._LARGURA_MAX_CAPA
 
     saidas = []
-    with patch.object(news_tab, "_capa_data_uri", return_value=uri), \
+    with patch.object(news_tab, "_capa_data_uri", return_value=(uri, proporcao)), \
          patch.object(news_tab.st, "markdown", side_effect=lambda h, **k: saidas.append(h)), \
          patch.object(news_tab.st, "image", side_effect=AssertionError("st.image solto não respeita o recorte")):
         news_tab._renderizar_capa("https://x.com/retrato.jpg", "Valor")
-    assert saidas[0].startswith("<div class='news-capa'>") and uri in saidas[0]
+    assert "news-capa--conter" in saidas[0] and uri in saidas[0]
+    assert "news-capa-fundo" in saidas[0]  # fundo desfocado, nunca barra vazia lisa
+    assert "object-fit" not in saidas[0]  # decidido só via classe CSS, não inline
+
+
+def test_12b2_capa_paisagem_tipica_continua_em_cobrir():
+    """Proporção típica de og:image editorial (1200x630 ≈ 1,9) fica dentro
+    da faixa de "cobrir" - continua preenchendo a caixa, sem letterbox
+    desnecessário (nem toda foto precisa de 'conter')."""
+    news_tab._capa_data_uri.clear()
+    with patch.object(news_tab, "_baixar_imagem_capa", return_value=_png_bytes(1200, 630)):
+        uri, proporcao = news_tab._capa_data_uri("https://x.com/paisagem.jpg")
+    assert proporcao == pytest.approx(1200 / 630)
+
+    saidas = []
+    with patch.object(news_tab, "_capa_data_uri", return_value=(uri, proporcao)), \
+         patch.object(news_tab.st, "markdown", side_effect=lambda h, **k: saidas.append(h)):
+        news_tab._renderizar_capa("https://x.com/paisagem.jpg", "Valor")
+    assert "news-capa--cobrir" in saidas[0] and "news-capa-fundo" not in saidas[0]
+
+
+def test_12b3_capa_panoramica_tambem_vira_conter():
+    """Panorâmica muito larga (1600x400 = 4,0) cortaria as laterais em
+    cobrir - mesmo tratamento do retrato, na outra direção."""
+    news_tab._capa_data_uri.clear()
+    with patch.object(news_tab, "_baixar_imagem_capa", return_value=_png_bytes(1600, 400)):
+        uri, proporcao = news_tab._capa_data_uri("https://x.com/panoramica.jpg")
+    assert proporcao == pytest.approx(4.0)
+
+    saidas = []
+    with patch.object(news_tab, "_capa_data_uri", return_value=(uri, proporcao)), \
+         patch.object(news_tab.st, "markdown", side_effect=lambda h, **k: saidas.append(h)):
+        news_tab._renderizar_capa("https://x.com/panoramica.jpg", "Valor")
+    assert "news-capa--conter" in saidas[0] and "news-capa-fundo" in saidas[0]
 
 
 def test_12c_capa_falha_no_servidor_vira_img_com_fallback_e_sem_foto_vira_marca():
