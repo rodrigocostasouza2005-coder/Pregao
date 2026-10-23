@@ -1,5 +1,52 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-23 — MARKET MAKERS integrado ao RADAR e ao Morning Call + causa raiz dos e-mails corrigida
+
+Causa raiz real encontrada e corrigida pros dois e-mails que apareciam
+como falha em produção (alerta WEGE3 "E-MAIL: FALHOU" no RADAR; edição
+de 22/10 "FALHA_ENVIO" no Morning Call) - **os dois compartilham o
+mesmo `jobs/email_utils.py` e o mesmo workflow**, então era a mesma
+causa pros dois:
+
+- `.github/workflows/radar-morning-call.yml` resolvia `EMAIL_PROVIDER`
+  pra `'resend'` sempre que o secret não estivesse configurado (nunca
+  esteve) - **mesmo com `SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD` já
+  configurados** (Google Workspace) e `EMAIL_FROM` apontando pra um
+  domínio `@gmail.com` que o Resend nunca verifica (não é domínio do
+  Pregão) - resultado: todo envio por e-mail do projeto falhava com
+  HTTP 403 "domain not verified". O fallback agora é `'smtp'`, igual ao
+  default do próprio código (`jobs/email_utils.py:enviar_email`) -
+  nenhum secret precisou mudar, só o workflow parou de ignorar o que já
+  estava configurado. Teste de regressão:
+  `tests/test_workflow_radar_morning_call.py`.
+- `jobs/email_utils.py`: STARTTLS do SMTP agora valida o certificado do
+  servidor (`ssl.create_default_context()`) - sem isso, `smtp.starttls()`
+  usava um contexto sem `CERT_REQUIRED`/checagem de hostname, TLS
+  criptografado mas vulnerável a MITM.
+
+**MARKET MAKERS** (`data/market_makers.py`): primeira página dedicada à
+inteligência de mercado que o RADAR já calculava espalhada em "Minha
+Tese"/copiloto (`data/radar.py:evidencias_recentes/mudancas_tese/
+catalisadores`) - nenhum coletor novo, nenhuma chamada de IA nova, só
+uma fachada reaproveitada pelos três:
+
+- RADAR › Alertas: cada alerta de queda agora mostra, quando há
+  evidência real (mudança de tese/CVM ou catalisador na mesma janela),
+  o contexto do movimento com fonte/data - nunca inventa um motivo
+  quando não há evidência rastreável.
+- Morning Call (`data/morning_call_editorial.py:montar_edicao`): nova
+  seção "MARKET MAKERS — CATALISADORES E RISCOS" com o contexto dos
+  ativos que a própria edição já está citando no dia (detecção por
+  ticker/nome de empresa no título, `tickers_mencionados`).
+- Área própria `ui/market_makers_tab.py` (navegação): visão agregada da
+  watchlist (mudanças de tese, catalisadores dos próximos 60 dias,
+  riscos de qualidade dos indicadores), pra RADAR e Morning Call nunca
+  precisarem repetir a consulta nem o usuário precisar ir atrás da
+  evidência em telas separadas.
+- Testes: `tests/test_market_makers.py`, `tests/test_market_makers_tab_ui.py`,
+  cobertura nova em `tests/test_radar_tab_fontes_ui.py` e
+  `tests/test_morning_call_editorial.py`.
+
 ## 2026-10-22 — Cadastro de posições reais (quantidade + preço médio) e Risco da Carteira de verdade
 
 RADAR › Acompanhamento mostrava, de propósito, um aviso honesto dizendo

@@ -830,6 +830,55 @@ def _bloco_monitorados(prefs: dict):
                     unsafe_allow_html=True)
 
 
+def _bloco_contexto_alertas(alertas: list):
+    """MARKET MAKERS (data/market_makers.py): contexto do movimento pra
+    cada alerta, quando há evidência real (mudança de tese/CVM ou
+    catalisador na mesma janela) - nunca inventa um motivo quando não
+    há evidência, só não mostra nada pra esse ticker (requisito
+    explícito: só explicar "quando houver evidência")."""
+    from data.market_makers import contexto_ticker
+
+    tickers = sorted({a.get("ticker") for a in alertas if a.get("ticker")})
+    contextos = []
+    for ticker in tickers:
+        try:
+            ctx = contexto_ticker(ticker)
+        except Exception as exc:
+            print(f"[radar_tab] contexto de mercado indisponível para {ticker}: {exc!r}")
+            continue
+        if ctx["interpretacao"] or ctx["riscos"]:
+            contextos.append(ctx)
+    if not contextos:
+        return
+    with st.expander(f"CONTEXTO DO MOVIMENTO — MARKET MAKERS ({len(contextos)} ativo(s) com evidência)"):
+        for ctx in contextos:
+            interpretacao = ctx["interpretacao"]
+            if interpretacao:
+                fonte_html = ""
+                if interpretacao.get("fonte_url"):
+                    fonte_html = f" · <a href='{html.escape(interpretacao['fonte_url'])}' target='_blank'>{html.escape(interpretacao.get('fonte_label') or 'fonte')}</a>"
+                elif interpretacao.get("fonte_label"):
+                    fonte_html = f" · {html.escape(interpretacao['fonte_label'])}"
+                st.markdown(
+                    f"<div class='radar-alerta'><div class='radar-alerta-topo'>"
+                    f"<span class='radar-ticker'>{html.escape(ctx['ticker'])}</span>"
+                    f"{_selo_evidencia(interpretacao['tipo_evidencia'])}</div>"
+                    f"<div class='radar-descricao'>{html.escape(interpretacao['texto'])}</div>"
+                    f"<div class='radar-meta'>{fonte_html}</div></div>",
+                    unsafe_allow_html=True,
+                )
+            for risco in ctx["riscos"]:
+                st.markdown(
+                    f"<div class='rq-nota'>⚠ {html.escape(ctx['ticker'])}: {html.escape(risco)}</div>",
+                    unsafe_allow_html=True,
+                )
+        st.caption(
+            "Contexto construído só a partir de evidência já verificada (mudança de tese/CVM real ou "
+            "catalisador de calendário) - sem chamada de IA nova. Ativo sem evidência nesta janela não "
+            "aparece aqui (não significa que não há nada acontecendo, só que não há evidência rastreável)."
+        )
+
+
 def _bloco_alertas(prefs: dict):
     from data import radar_quedas as rq
 
@@ -860,6 +909,7 @@ def _bloco_alertas(prefs: dict):
             "(não é o fechamento do dia). E-MAIL: ENVIADO, PENDENTE (será reenviado) ou FALHOU.</div>",
             unsafe_allow_html=True,
         )
+        _bloco_contexto_alertas(filtrados)
     elif alertas:
         st.markdown("<div class='rq-vazio'>Nenhum alerta corresponde aos filtros.</div>", unsafe_allow_html=True)
     else:

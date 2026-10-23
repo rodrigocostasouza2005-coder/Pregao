@@ -47,6 +47,7 @@ from data.news import (
 from data.news import eh_fonte_confiavel, parece_ingles
 from data.prices import obter_cotacao_indice, obter_historico
 from data.radar_setorial import montar_radar
+from data.market_makers import inteligencia_mercado
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 
@@ -467,6 +468,42 @@ def _nomes_de_empresas():
 
 
 _NOMES_EMPRESAS = _nomes_de_empresas()
+
+
+def _nome_para_tickers():
+    """Nome base (mesma normalização de _nomes_de_empresas) -> lista de
+    tickers que esse nome representa (uma empresa pode ter mais de uma
+    classe de ação, ex. PETR3/PETR4) - usado só pra achar QUAIS ativos
+    a edição já está citando, sem nenhuma consulta nova."""
+    mapa = {}
+    for ticker, nome in getattr(config, "NOMES_ATIVOS_BUSCA", {}).items():
+        base = re.sub(r"\s*\(.*?\)\s*", " ", str(nome)).strip()
+        if base and base not in _NOMES_GENERICOS_DEMAIS:
+            mapa.setdefault(base, []).append(ticker)
+    return mapa
+
+
+_NOME_PARA_TICKERS = _nome_para_tickers()
+
+
+def tickers_mencionados(itens) -> tuple:
+    """Tickers (sem duplicata, ordem de primeira aparição) já citados
+    explicitamente nos títulos de `itens` (ticker no título ou nome da
+    empresa) - base pro MARKET MAKERS saber quais ativos da edição de
+    hoje tem catalisador/risco/mudança de tese pra mostrar, sem
+    reconsultar nem adivinhar nada que a edição não tenha citado."""
+    vistos = []
+    for item in itens or []:
+        titulo = str(item.get("titulo") or "")
+        for match in _TICKER_NO_TITULO.findall(titulo):
+            if match not in vistos:
+                vistos.append(match)
+        for nome, tickers in _NOME_PARA_TICKERS.items():
+            if re.search(rf"(?<![\w-]){re.escape(nome)}(?![\w-])(?! a pena)(?! [a-zà-ú]+(?:ar|er|ir)\b)", titulo):
+                for ticker in tickers:
+                    if ticker not in vistos:
+                        vistos.append(ticker)
+    return tuple(vistos)
 
 
 def e_noticia_de_empresa(titulo):
@@ -1028,6 +1065,19 @@ def montar_edicao(agora=None):
     todos_fatos = noticias_brasil + noticias_empresas + noticias_exterior_fatos
     manchete, chamadas = selecionar_manchete(todos_fatos)
 
+    # MARKET MAKERS (data/market_makers.py): catalisador/mudança de
+    # tese/risco pros ativos que a PRÓPRIA edição já está citando hoje
+    # (brasil + empresas) - nenhuma consulta nova de notícia, só
+    # contextualiza o que o Morning Call já selecionou. Fonte
+    # indisponível -> seção degrada (ver data/market_makers.py), nunca
+    # derruba o resto da edição.
+    tickers_do_dia = tickers_mencionados(brasil_sel + empresas_sel)
+    try:
+        mm = inteligencia_mercado(tickers_do_dia) if tickers_do_dia else None
+    except Exception as exc:
+        print(f"[morning_call] inteligência de mercado (Market Makers) indisponível: {exc!r}")
+        mm = None
+
     edicao = {
         "agora": agora,
         "capa": {
@@ -1055,6 +1105,7 @@ def montar_edicao(agora=None):
             "noticias_erro": erro_br,
         },
         "radar": _radar_setorial(agora),
+        "market_makers": mm,
         "mercados_nota": nota_sessao([ibov, dolar, sp500, nasdaq, ouro, petroleo], agora),
         "janela_noticias": inicio_janela_noticias(agora),
         "limitacoes": LIMITACOES_PADRAO,

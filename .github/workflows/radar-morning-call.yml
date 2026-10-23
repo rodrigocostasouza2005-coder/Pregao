@@ -78,7 +78,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER || 'resend' }}
+          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER || 'smtp' }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -103,7 +103,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER || 'resend' }}
+          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER || 'smtp' }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -116,7 +116,7 @@ jobs:
           python - <<'PY'
           import os
           import sys
-          provider = (os.getenv("EMAIL_PROVIDER") or "resend").strip().lower()
+          provider = (os.getenv("EMAIL_PROVIDER") or "smtp").strip().lower()
           missing = []
           for name in ("SUPABASE_URL", "SUPABASE_SECRET_KEY"):
               if not (os.getenv(name) or "").strip():
@@ -179,7 +179,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER || 'resend' }}
+          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER || 'smtp' }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}

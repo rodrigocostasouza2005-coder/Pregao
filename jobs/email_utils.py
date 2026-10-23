@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import smtplib
+import ssl
 from email.message import EmailMessage
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -206,7 +207,12 @@ def enviar_email(assunto, texto, html=None, destinatario=None, anexos=None):
     try:
         with smtplib.SMTP(host, porta, timeout=_TIMEOUT_SMTP_S) as smtp:
             etapa = "STARTTLS"
-            smtp.starttls()
+            # smtp.starttls() sem `context` usa ssl._create_stdlib_context()
+            # (CERT_NONE, sem checagem de hostname) - TLS sem validar o
+            # certificado do servidor, vulneravel a MITM. Google Workspace
+            # exige TLS explicito COM validacao; ssl.create_default_context()
+            # valida cadeia e hostname contra as CAs do sistema.
+            smtp.starttls(context=ssl.create_default_context())
             etapa = "login"
             smtp.login(usuario, senha)
             etapa = "envio da mensagem"
