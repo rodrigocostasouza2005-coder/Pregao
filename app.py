@@ -628,7 +628,7 @@ if rota == ("radar", "carteiras"):
 if rota == ("radar", "oportunidades"):
     radar_tab.render_radar_oportunidades(prefs)
 if rota == ("radar", "acompanhamento"):
-    radar_tab.render_radar_acompanhamento(prefs)
+    radar_tab.render_radar_acompanhamento(prefs, usuario)
 
 # --- RESEARCH (ver ui/research_tab.py) - area propria 2026-10-23 -------------
 if rota == ("research", "feed"):

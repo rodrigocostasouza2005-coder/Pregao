@@ -24,8 +24,10 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 import config
+from data import posicoes as posicoes_mod
 from data import radar
 from data.eventos import STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_PRAZO_CVM
+from data.prices import validar_ticker
 from data.research import tese
 from data.research.historico import ultimo_snapshot
 from ui.cvm_tab import abrir_card_documento
@@ -325,20 +327,213 @@ def _secao_catalisadores(tickers: list):
 
 
 # ============================================================
-# D. RISCO DA CARTEIRA - stub honesto (sem cadastro de posições hoje)
+# D. RISCO DA CARTEIRA - cadastro de posições (quantidade + preço médio,
+# ver data/posicoes.py) + cálculo real de risco quando há posição (ver
+# data/radar.py:risco_carteira); aviso honesto, sem calcular nada, pra
+# quem não cadastrou nenhuma posição ainda - watchlist nunca é usada
+# como proxy de carteira.
 # ============================================================
 
-def _secao_risco(prefs: dict):
-    info = radar.risco_carteira(prefs)
-    st.markdown(
-        f"<div class='radar-stub'>{html.escape(info['motivo'])}<br><br>{html.escape(info['o_que_falta'])}</div>",
+def _formulario_posicao(sub: str):
+    """Cadastro/edição de 1 posição - cadastrar de novo o mesmo ticker
+    ATUALIZA quantidade/preço médio (upsert, ver
+    data/posicoes.py:salvar_posicao), nunca duplica linha. Widgets soltos
+    (sem st.form) de propósito - mesmo padrão do cadastro de watchlist em
+    app.py:_adicionar_ticker (contador na key força campos vazios após
+    salvar, ver st.session_state.contador_form_posicao abaixo)."""
+    sufixo = st.session_state.get("contador_form_posicao", 0)
+    col_ticker, col_qtd, col_preco, col_data = st.columns([2, 1, 1, 1.3])
+    ticker = col_ticker.text_input(
+        "Ticker", key=f"posicao_ticker_{sufixo}", placeholder="TICKER (EX: PETR4)", label_visibility="collapsed",
+    ).strip().upper()
+    quantidade = col_qtd.number_input(
+        "Quantidade", key=f"posicao_qtd_{sufixo}", min_value=0.0, step=1.0, format="%.0f", label_visibility="collapsed",
+    )
+    preco_medio = col_preco.number_input(
+        "Preço médio (R$)", key=f"posicao_preco_{sufixo}", min_value=0.0, step=0.01, format="%.2f", label_visibility="collapsed",
+    )
+    data_ref = col_data.date_input(
+        "Data de referência", key=f"posicao_data_{sufixo}", value=date.today(), label_visibility="collapsed",
+    )
+
+    if not st.button("CADASTRAR / ATUALIZAR POSIÇÃO", key=f"posicao_salvar_{sufixo}", width="stretch"):
+        return
+    if not ticker:
+        st.warning("Informe o ticker.")
+    elif not posicoes_mod.posicao_valida(quantidade, preco_medio):
+        st.warning("Quantidade e preço médio precisam ser maiores que zero.")
+    elif not validar_ticker(ticker):
+        st.error(f"Ticker '{ticker}' não encontrado no yfinance.")
+    elif posicoes_mod.salvar_posicao(sub, ticker, quantidade, preco_medio, data_ref):
+        st.success(f"Posição em {ticker} salva.")
+        st.session_state.contador_form_posicao = sufixo + 1  # forca campos vazios no rerun
+        st.rerun()
+    else:
+        st.error("Não foi possível salvar agora (banco indisponível) - tente de novo em alguns instantes.")
+
+
+def _linha_posicao_gerenciar(sub: str, posicao: dict, valores_atuais: dict, prefs: dict):
+    """1 linha de posição cadastrada com botão de remover - mesmo padrão
+    de app.py:_fragmento_watchlist (coluna de info + coluna de remover)."""
+    ticker = posicao["ticker"]
+    extra = valores_atuais.get(ticker) or {}
+    lucro = extra.get("lucro_pct")
+    if lucro is None:
+        lucro_txt = "variação atual indisponível"
+    else:
+        sinal = "+" if lucro >= 0 else ""
+        lucro_txt = f"{sinal}{config.formatar_numero(lucro, 2, prefs['formato_numerico'])}% desde o preço médio"
+
+    col_info, col_remover = st.columns([5, 1])
+    col_info.markdown(
+        f"<div class='rq-sub'><span class='rq-ticker'>{html.escape(ticker)}</span> — "
+        f"{config.formatar_numero(posicao['quantidade'], 0, prefs['formato_numerico'])} cotas × "
+        f"R$ {config.formatar_numero(float(posicao['preco_medio']), 2, prefs['formato_numerico'])} · {lucro_txt}</div>",
         unsafe_allow_html=True,
     )
-    st.caption(
-        f"Sua watchlist tem {info['watchlist_tamanho']} ativo(s) - isso é uma lista de acompanhamento, "
-        "não uma carteira (sem quantidade/preço médio cadastrado, não dá pra calcular concentração, "
-        "exposição ou cenário de estresse de verdade)."
+    if col_remover.button("x", key=f"remover_posicao_{ticker}"):
+        if posicoes_mod.remover_posicao(sub, ticker):
+            st.rerun()
+        else:
+            st.error("Não foi possível remover agora (banco indisponível) - tente de novo em alguns instantes.")
+
+
+def _tabela_concentracao_html(itens: list, limiar_pct: float, prefs: dict) -> str:
+    linhas = []
+    for item in itens:
+        flag = f"<span class='radar-flag'>⚠ acima de {limiar_pct:g}%</span>" if item["peso_pct"] > limiar_pct else ""
+        linhas.append(
+            f"<tr><td class='rq-esq'>{html.escape(item['nome'])}{flag}</td>"
+            f"<td>{config.formatar_numero(item['peso_pct'], 1, prefs['formato_numerico'])}%</td></tr>"
+        )
+    return (
+        "<div class='rq-scroll'><table class='rq-tabela'><thead><tr>"
+        "<th class='rq-esq'>ATIVO/SETOR</th><th>PESO NA CARTEIRA</th>"
+        "</tr></thead><tbody>" + "".join(linhas) + "</tbody></table></div>"
     )
+
+
+def _tabela_correlacao_html(correlacao: dict, prefs: dict) -> str:
+    tickers = list(correlacao.keys())
+    cabecalho = "".join(f"<th>{html.escape(t)}</th>" for t in tickers)
+    linhas = []
+    for t_linha in tickers:
+        celulas = "".join(
+            f"<td>{config.formatar_numero(correlacao[t_coluna][t_linha], 2, prefs['formato_numerico'])}</td>"
+            for t_coluna in tickers
+        )
+        linhas.append(f"<tr><td class='rq-esq'>{html.escape(t_linha)}</td>{celulas}</tr>")
+    return (
+        f"<div class='rq-scroll'><table class='rq-tabela'><thead><tr><th class='rq-esq'>&nbsp;</th>{cabecalho}</tr></thead>"
+        f"<tbody>{''.join(linhas)}</tbody></table></div>"
+    )
+
+
+def _secao_risco_calculado(info: dict, prefs: dict):
+    periodo = info["periodo_historico"]
+    st.markdown(
+        f"<div class='rq-bloco'><span>CONCENTRAÇÃO POR ATIVO</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(_tabela_concentracao_html(info["concentracao_ativo"], info["limiar_concentracao_pct"], prefs), unsafe_allow_html=True)
+
+    st.markdown("<div class='rq-bloco'><span>CONCENTRAÇÃO POR SETOR</span></div>", unsafe_allow_html=True)
+    st.markdown(_tabela_concentracao_html(info["concentracao_setor"], info["limiar_concentracao_pct"], prefs), unsafe_allow_html=True)
+
+    col_vol, col_dd, col_queda = st.columns(3)
+    col_vol.metric(f"Volatilidade anualizada ({periodo})",
+                   f"{config.formatar_numero(info['volatilidade_anual_pct'], 1, prefs['formato_numerico'])}%"
+                   if info["volatilidade_anual_pct"] is not None else "—")
+    col_dd.metric(f"Drawdown máximo ({periodo})",
+                  f"{config.formatar_numero(info['drawdown_pct'], 1, prefs['formato_numerico'])}%"
+                  if info["drawdown_pct"] is not None else "—")
+    col_queda.metric("Maior queda diária observada",
+                      f"{config.formatar_numero(info['maior_queda_diaria_pct'], 1, prefs['formato_numerico'])}%"
+                      if info["maior_queda_diaria_pct"] is not None else "—")
+
+    if info["correlacao"]:
+        st.markdown("<div class='rq-bloco'><span>CORRELAÇÃO ENTRE OS ATIVOS (RETORNOS DIÁRIOS)</span></div>", unsafe_allow_html=True)
+        st.markdown(_tabela_correlacao_html(info["correlacao"], prefs), unsafe_allow_html=True)
+    else:
+        st.markdown(
+            "<div class='rq-vazio'>Correlação indisponível: é preciso pelo menos 2 ativos com histórico de preço "
+            "suficiente na carteira.</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div class='rq-bloco'><span>CENÁRIO DE ESTRESSE — SE O IBOVESPA CAIR</span></div>", unsafe_allow_html=True)
+    cenario = info["cenario_beta"]
+    if cenario is None:
+        st.markdown(
+            "<div class='rq-vazio'>Cenário indisponível: nenhum ativo da carteira tem beta calculável agora.</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        linhas_cenario = "".join(
+            f"<tr><td class='rq-esq'>Ibovespa {choque:+g}%</td>"
+            f"<td class='rq-baixa'>{config.formatar_numero(impacto, 1, prefs['formato_numerico'])}%</td></tr>"
+            for choque, impacto in cenario["impacto_pct"].items()
+        )
+        st.markdown(
+            "<div class='rq-scroll'><table class='rq-tabela'><thead><tr>"
+            "<th class='rq-esq'>CENÁRIO</th><th>IMPACTO ESTIMADO NA CARTEIRA</th>"
+            f"</tr></thead><tbody>{linhas_cenario}</tbody></table></div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"<div class='rq-nota'>Estimativa (CÁLCULO INTERNO, não é previsão) a partir do beta histórico de cada "
+            f"ativo contra o Ibovespa (beta ponderado da carteira: "
+            f"{config.formatar_numero(cenario['beta_carteira'], 2, prefs['formato_numerico'])}). "
+            + (f"Sem beta calculável: {', '.join(cenario['tickers_sem_beta'])}." if cenario["tickers_sem_beta"] else "")
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+
+    avisos = []
+    if info["tickers_sem_preco"]:
+        avisos.append(f"sem cotação agora: {', '.join(info['tickers_sem_preco'])} (fora do cálculo)")
+    if info["tickers_sem_historico"]:
+        avisos.append(f"sem histórico de preço suficiente: {', '.join(info['tickers_sem_historico'])} (fora de correlação/volatilidade/drawdown)")
+    if avisos:
+        st.markdown(f"<div class='rq-nota'>{html.escape('; '.join(avisos))}.</div>", unsafe_allow_html=True)
+
+
+def _secao_risco(prefs: dict, sub: str):
+    st.markdown("<div class='rq-bloco'><span>MINHAS POSIÇÕES</span></div>", unsafe_allow_html=True)
+    _formulario_posicao(sub)
+
+    posicoes_brutas = posicoes_mod.obter_posicoes(sub)
+    if posicoes_brutas is None:
+        st.markdown("<div class='rq-vazio'>Banco indisponível: não foi possível ler suas posições agora.</div>", unsafe_allow_html=True)
+    elif posicoes_brutas:
+        info_valores = radar.risco_carteira(sub, prefs)
+        valores_atuais = {p["ticker"]: p for p in info_valores.get("posicoes", [])}
+        for posicao in posicoes_brutas:
+            _linha_posicao_gerenciar(sub, posicao, valores_atuais, prefs)
+    else:
+        st.markdown("<div class='rq-vazio'>Nenhuma posição cadastrada ainda.</div>", unsafe_allow_html=True)
+
+    info = radar.risco_carteira(sub, prefs)
+    st.markdown("<div class='radar-separador' style='margin-top:1rem;'>ANÁLISE DE RISCO</div>", unsafe_allow_html=True)
+
+    if info["carteira_cadastrada"] is not True:
+        st.markdown(
+            f"<div class='radar-stub'>{html.escape(info['motivo'])}"
+            + (f"<br><br>{html.escape(info['o_que_falta'])}" if info.get("o_que_falta") else "")
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+        if "watchlist_tamanho" in info:
+            st.caption(
+                f"Sua watchlist tem {info['watchlist_tamanho']} ativo(s) - isso é uma lista de acompanhamento, "
+                "não uma carteira (sem posição cadastrada, não dá pra calcular concentração, correlação, "
+                "volatilidade, drawdown ou cenário de estresse de verdade)."
+            )
+        return
+    if info.get("sem_cotacao"):
+        st.markdown(f"<div class='radar-stub'>{html.escape(info['motivo'])}</div>", unsafe_allow_html=True)
+        return
+    _secao_risco_calculado(info, prefs)
 
 
 # ============================================================
@@ -688,7 +883,7 @@ def _secao_radar_quedas(prefs: dict):
 # ============================================================
 
 @st.fragment
-def render_radar(prefs: dict):
+def render_radar(prefs: dict, sub: str):
     """Ponto de entrada da aba RADAR, chamado pelo app.py."""
     _injetar_css()
     st.markdown('<div class="painel-titulo">RADAR</div>', unsafe_allow_html=True)
@@ -724,7 +919,7 @@ def render_radar(prefs: dict):
     with st.expander("ONDE VALE INVESTIGAR — Próximos catalisadores", expanded=False):
         _secao_catalisadores(tickers_escopo)
     with st.expander("O QUE PODE DAR ERRADO — Risco da carteira", expanded=False):
-        _secao_risco(prefs)
+        _secao_risco(prefs, sub)
     with st.expander("RESEARCH COM EVIDÊNCIAS", expanded=False):
         _secao_evidencias(tickers_escopo, watchlist)
     with st.expander("COPILOTO DE RESEARCH", expanded=False):
@@ -1094,10 +1289,11 @@ def render_radar_oportunidades(prefs: dict):
 
 
 @st.fragment
-def render_radar_acompanhamento(prefs: dict):
-    """Historico de alertas dos ativos DA WATCHLIST + risco da carteira.
-    Itens salvos/anotacoes pessoais nao existem no banco hoje (exigiria
-    tabela nova - migration fora do escopo desta reorganizacao)."""
+def render_radar_acompanhamento(prefs: dict, usuario: dict):
+    """Historico de alertas dos ativos DA WATCHLIST + cadastro de posicoes
+    e risco real da carteira (ver data/posicoes.py, data/radar.py:
+    risco_carteira). Itens salvos/anotacoes pessoais nao existem no banco
+    hoje (exigiria tabela nova - fora do escopo desta feature)."""
     from data import radar_quedas as rq
 
     _injetar_css()
@@ -1119,7 +1315,7 @@ def render_radar_acompanhamento(prefs: dict):
                 unsafe_allow_html=True,
             )
     with st.expander("O QUE PODE DAR ERRADO — Risco da carteira", expanded=True):
-        _secao_risco(prefs)
+        _secao_risco(prefs, usuario["sub"])
     st.markdown(
         "<div class='rq-nota'>Itens salvos e anotações pessoais ainda não existem: exigem uma tabela nova no "
         "banco (desenvolvimento posterior, ver docs/arquitetura-pregao-2.md).</div>",

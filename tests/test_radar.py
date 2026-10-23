@@ -12,6 +12,9 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import pandas as pd
+
+import data.mercado as mercado_mod
 import data.radar as radar_mod
 from data.eventos import STATUS_ESTIMADO, STATUS_PRAZO_CVM
 
@@ -245,14 +248,100 @@ def test_13_catalisadores_combina_e_respeita_janela():
 
 
 # ============================================================
-# D. Risco da carteira - stub honesto
+# D. Risco da carteira - stub honesto (sem posicao) e calculo real
+# (com posicao cadastrada, tabela posicoes_carteira/data/posicoes.py)
 # ============================================================
 
-def test_14_risco_carteira_nunca_finge_ter_posicao():
-    info = radar_mod.risco_carteira({"watchlist": ["PETR4", "VALE3"]})
-    _checar("14a carteira_cadastrada False (nao existe cadastro real)", info["carteira_cadastrada"] is False)
+def test_14_risco_carteira_sem_posicao_nunca_finge_ter_carteira():
+    with patch.object(radar_mod, "obter_posicoes", return_value=[]):
+        info = radar_mod.risco_carteira("sub1", {"watchlist": ["PETR4", "VALE3"]})
+    _checar("14a carteira_cadastrada False (ninguem cadastrou posicao)", info["carteira_cadastrada"] is False)
     _checar("14b watchlist_tamanho reflete prefs, nao inventa", info["watchlist_tamanho"] == 2)
-    _checar("14c sem watchlist -> 0, sem excecao", radar_mod.risco_carteira({})["watchlist_tamanho"] == 0)
+    with patch.object(radar_mod, "obter_posicoes", return_value=[]):
+        _checar("14c sem watchlist -> 0, sem excecao", radar_mod.risco_carteira("sub1", {})["watchlist_tamanho"] == 0)
+
+
+def test_14d_risco_carteira_banco_indisponivel_distinto_de_vazio():
+    with patch.object(radar_mod, "obter_posicoes", return_value=None):
+        info = radar_mod.risco_carteira("sub1", {"watchlist": []})
+    _checar("14d.1 carteira_cadastrada None (banco fora do ar, nao 'ninguem cadastrou')", info["carteira_cadastrada"] is None)
+    _checar("14d.2 nunca finge que calculou algo", "concentracao_ativo" not in info)
+
+
+def test_14e_risco_carteira_sem_cotacao_nenhuma_posicao_tem_preco():
+    posicoes = [{"ticker": "PETR4", "quantidade": 100, "preco_medio": 30.0}]
+    with patch.object(radar_mod, "obter_posicoes", return_value=posicoes), \
+         patch.object(mercado_mod, "obter_cotacoes_lote", return_value={"PETR4": {"erro": "sem dado"}}):
+        info = radar_mod.risco_carteira("sub1", {})
+    _checar("14e.1 carteira_cadastrada True (existe posicao)", info["carteira_cadastrada"] is True)
+    _checar("14e.2 sem_cotacao True, nunca inventa valor", info.get("sem_cotacao") is True)
+    _checar("14e.3 ticker sem cotacao listado", info["tickers_sem_preco"] == ["PETR4"])
+
+
+def _historico_fake(precos: list, inicio: date = date(2026, 1, 1)) -> pd.DataFrame:
+    datas = [inicio + timedelta(days=i) for i in range(len(precos))]
+    return pd.DataFrame({"Data": pd.to_datetime(datas), "Close": precos})
+
+
+def test_14f_risco_carteira_calculo_real_concentracao_correlacao_vol_drawdown_cenario():
+    posicoes = [
+        {"ticker": "PETR4", "quantidade": 100, "preco_medio": 30.0},
+        {"ticker": "VALE3", "quantidade": 50, "preco_medio": 60.0},
+    ]
+    cotacoes = {"PETR4": {"preco": 36.0, "erro": None}, "VALE3": {"preco": 66.0, "erro": None}}
+    # PETR4: valor 3600 (peso ~52%), VALE3: valor 3300 (peso ~48%). Serie
+    # sobe quase todo dia (pra isolar o drawdown de verdade: 1 unico
+    # tombo expressivo no final, nos dois ativos ao mesmo tempo).
+    precos_petr4 = [30, 31, 32, 33, 34, 35, 34, 35.5, 36.5, 37, 33]
+    precos_vale3 = [60, 61, 62, 63, 64, 65, 64, 66, 67, 68, 60]
+    historicos = {"PETR4": _historico_fake(precos_petr4), "VALE3": _historico_fake(precos_vale3)}
+
+    with patch.object(radar_mod, "obter_posicoes", return_value=posicoes), \
+         patch.object(mercado_mod, "obter_cotacoes_lote", return_value=cotacoes), \
+         patch.object(radar_mod, "obter_historico", side_effect=lambda t, periodo: historicos[t]), \
+         patch.object(radar_mod, "_calcular_beta", side_effect=lambda t: {"PETR4": 1.2, "VALE3": 0.8}[t]):
+        info = radar_mod.risco_carteira("sub1", {"watchlist": []})
+
+    _checar("14f.1 carteira_cadastrada True", info["carteira_cadastrada"] is True)
+    _checar("14f.2 valor_total = soma dos valores atuais (sem inventar)", info["valor_total"] == 3600 + 3300)
+    pesos = {p["nome"]: p["peso_pct"] for p in info["concentracao_ativo"]}
+    _checar("14f.3 pesos por ativo somam 100%", abs(sum(pesos.values()) - 100) < 0.01)
+    _checar("14f.4 ordenado por peso desc", info["concentracao_ativo"][0]["peso_pct"] >= info["concentracao_ativo"][1]["peso_pct"])
+    setores = {s["nome"] for s in info["concentracao_setor"]}
+    _checar("14f.5 setor via config.IBOVESPA_SETORES (nunca inventa classificacao)",
+             setores == {"Petróleo e Gás", "Mineração e Siderurgia"})
+    _checar("14f.6 sem ticker sem preco/historico nesse caso", info["tickers_sem_preco"] == [] and info["tickers_sem_historico"] == [])
+    _checar("14f.7 correlacao calculada (2 ativos com historico)", info["correlacao"] is not None and "PETR4" in info["correlacao"])
+    _checar("14f.8 volatilidade anualizada calculada (numero finito > 0)", info["volatilidade_anual_pct"] is not None and info["volatilidade_anual_pct"] > 0)
+    _checar("14f.9 drawdown calculado e <= 0 (queda, nunca positivo)", info["drawdown_pct"] is not None and info["drawdown_pct"] <= 0)
+    _checar("14f.10 maior queda diaria <= 0", info["maior_queda_diaria_pct"] <= 0)
+    cenario = info["cenario_beta"]
+    beta_esperado = 1.2 * (3600 / 6900) + 0.8 * (3300 / 6900)
+    _checar("14f.11 beta da carteira ponderado pelo valor de cada posicao",
+             cenario is not None and abs(cenario["beta_carteira"] - beta_esperado) < 1e-6)
+    _checar("14f.12 impacto estimado (-10% Ibov) = beta_carteira * -10",
+             abs(cenario["impacto_pct"][-10] - beta_esperado * -10) < 1e-6)
+
+
+def test_14g_risco_carteira_ativo_sem_historico_nao_quebra_calculo_dos_outros():
+    posicoes = [
+        {"ticker": "PETR4", "quantidade": 100, "preco_medio": 30.0},
+        {"ticker": "NOVO3", "quantidade": 10, "preco_medio": 10.0},
+    ]
+    cotacoes = {"PETR4": {"preco": 36.0, "erro": None}, "NOVO3": {"preco": 11.0, "erro": None}}
+    precos_petr4 = [30, 31, 30.5, 32, 31.5, 33, 32.5, 34, 33.5, 35, 36]
+
+    with patch.object(radar_mod, "obter_posicoes", return_value=posicoes), \
+         patch.object(mercado_mod, "obter_cotacoes_lote", return_value=cotacoes), \
+         patch.object(radar_mod, "obter_historico",
+                      side_effect=lambda t, periodo: _historico_fake(precos_petr4) if t == "PETR4" else None), \
+         patch.object(radar_mod, "_calcular_beta", return_value=None):
+        info = radar_mod.risco_carteira("sub1", {})
+
+    _checar("14g.1 NOVO3 (sem historico) listado, nao quebra o calculo", info["tickers_sem_historico"] == ["NOVO3"])
+    _checar("14g.2 correlacao None com so' 1 ativo com historico", info["correlacao"] is None)
+    _checar("14g.3 volatilidade ainda calculada so' com PETR4", info["volatilidade_anual_pct"] is not None)
+    _checar("14g.4 sem beta disponivel -> cenario_beta None", info["cenario_beta"] is None)
 
 
 # ============================================================

@@ -1,5 +1,40 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-22 — Cadastro de posições reais (quantidade + preço médio) e Risco da Carteira de verdade
+
+RADAR › Acompanhamento mostrava, de propósito, um aviso honesto dizendo
+que sem posição real cadastrada não dava pra calcular concentração,
+correlação, volatilidade, drawdown ou cenário de estresse - só a
+watchlist (lista de tickers, sem quantidade/peso) existia. Essa feature
+implementa o cadastro que faltava e troca o aviso pelo cálculo real
+quando há posição, preservando o aviso (agora mais específico: banco
+indisponível vs. ninguém cadastrou ainda vs. nenhuma cotação disponível)
+pra quem não cadastrou nada.
+
+- **Tabela nova** `posicoes_carteira` (`sql/posicoes.sql`, idempotente,
+  nunca apaga dado - mesmo padrão de `sql/ia_cache.sql`): 1 linha por
+  (sub, ticker) com quantidade/preço médio/data de referência.
+- **Camada de dados** `data/posicoes.py`: `obter_posicoes`/`salvar_posicao`
+  (upsert - cadastrar de novo o mesmo ticker atualiza, nunca duplica)/
+  `remover_posicao`, com a mesma distinção de sempre entre `None` (banco
+  indisponível) e `[]` (ninguém cadastrou nada). Testado com Supabase
+  mockado (`tests/test_posicoes.py`).
+- **`data/radar.py:risco_carteira`** agora calcula, só com os ativos que
+  têm posição cadastrada: concentração por ativo e por setor
+  (`config.IBOVESPA_SETORES`), correlação entre os ativos (retornos
+  diários, janela de 6 meses), volatilidade anualizada e drawdown máximo
+  da carteira ponderada pelo valor atual de cada posição, e um cenário de
+  estresse (impacto estimado se o Ibovespa cair, ponderado pelo beta real
+  de cada ativo). Ativo sem cotação ou sem histórico suficiente nunca
+  entra no cálculo com valor inventado - só é listado como ausente.
+- **UI** (RADAR › Acompanhamento e RADAR composto): formulário de
+  cadastro/remoção de posições dentro do próprio expander "Risco da
+  carteira" (nenhuma área nova na navegação) + tabelas de
+  concentração/correlação/cenário de estresse.
+- Testes: `tests/test_radar.py` (casos honestos + cálculo real
+  mockando cotação/histórico/beta), `tests/test_posicoes.py`. Suite
+  completa (1210 testes) roda limpa.
+
 ## 2026-10-19 — Fotos das notícias: validação com rede REAL encontra causa raiz nova (`selectolax`) + bug de avatar no JSON-LD
 
 Retoma a PR #83 (imagem desacoplada do resumo de IA - ver entrada abaixo),
