@@ -1,5 +1,32 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-23 (2) — MARKET RESEARCHER: correção de escopo, achados priorizados e cobertura cruzada
+
+Correção de escopo do "Market Researcher": a integração anterior
+(`data/research/tese.py`, PR #134) é uma funcionalidade real e válida
+(tese própria do usuário) mas não é a camada de qualidade/"comitê de
+investimentos" que o conceito realmente pedia - não foi removida
+(trabalho válido, continua em uso), e a peça que faltava foi entregue à
+parte, **sem nenhuma aba nova**:
+
+- `data/market_researcher.py`: fachada sobre o que já existia -
+  `achados_qualidade_coletores()` prioriza por impacto o MESMO painel de
+  `data/saude_dados.py` (já distinguia fonte indisponível de coleta
+  com sucesso sem novidade, essa parte já era madura); `cobertura_cruzada_casas(ticker)`
+  cruza `data/research/store.py` por ticker e mostra fato puro - quem
+  cobriu, quem não cobriu, e divergência de recomendação só quando o
+  campo estruturado real existir em ≥2 casas (nunca por título/
+  sentimento de matéria).
+- Surfaced em **SAÚDE DOS DADOS** (seção "MARKET RESEARCHER — ACHADOS
+  PRIORIZADOS") e **RESEARCH › Casas de Análise** (seção "COBERTURA
+  CRUZADA — WATCHLIST") - páginas que já existiam.
+- Zero coletor novo, zero tabela nova, zero chamada de IA nova. Testes:
+  `tests/test_market_researcher.py`, `tests/test_saude_dados_tab_ui.py`,
+  cobertura nova em `tests/test_research_casas_analise_ui.py`.
+- Doc atualizado: `docs/market-researcher-integracao.md` (seção 12).
+- Confirmado que o app sobe sem `ImportError` na `main` atual (auditoria
+  explícita pedida - nenhum erro de import encontrado nela).
+
 ## 2026-10-23 — MARKET MAKERS integrado ao RADAR e ao Morning Call + causa raiz dos e-mails corrigida
 
 Causa raiz real encontrada e corrigida pros dois e-mails que apareciam
