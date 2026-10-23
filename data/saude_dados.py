@@ -388,6 +388,26 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 1, "instrumentado": True,
     },
     {
+        # linha nova (auditoria 2026-10-22): "RADAR DE QUEDAS" acima e'
+        # AGREGADO das 2 casas - uma falha isolada de 1 delas (ex: Genial
+        # carteiras fora do ar, Safra OK) ficava indistinguivel de "tudo
+        # OK" pra quem olha so' essa linha. jobs/radar_quedas.py:
+        # _registrar_tentativas_por_casa ja' grava status por casa
+        # separado (dado que processar_monitoramento() ja' calculava mas
+        # nao chegava ao painel). Nome com sufixo "(carteiras)" de
+        # proposito - NUNCA "Genial Analisa" sozinho, que e' outra fonte
+        # (research da Genial, nao carteira recomendada) e colidiria no
+        # upsert por nome.
+        "nome": "Genial Analisa (carteiras)", "fonte": "analisa.genialinvestimentos.com.br (carteiras recomendadas)",
+        "categoria": "Radar", "frequencia_esperada": ".github/workflows/radar-morning-call.yml, 15min (seg-sex, pregao)",
+        "idade_maxima_horas": 1, "instrumentado": True,
+    },
+    {
+        "nome": "Safra Corretora (carteiras)", "fonte": "safra.com.br (carteiras recomendadas, HTML + PDF mensal)",
+        "categoria": "Radar", "frequencia_esperada": ".github/workflows/radar-morning-call.yml, 15min (seg-sex, pregao)",
+        "idade_maxima_horas": 1, "instrumentado": True,
+    },
+    {
         # linha nova (auditoria 2026-10-15): mesmo gap do RADAR - jobs/
         # morning_call.py tinha sua propria tabela (morning_call_execucoes)
         # mas nunca aparecia no painel central.
