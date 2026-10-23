@@ -38,7 +38,7 @@ import re
 import unicodedata
 
 _PADRAO_NUMERO_COM_UNIDADE = re.compile(
-    r"(?:R\$|US\$)\s*[\d.,]+|\d+(?:[.,]\d+)?\s*%|\d+(?:[.,]\d+)?\s*p\.?p\.?",
+    r"-?(?:R\$|US\$)\s*-?[\d.,]+|-?\d+(?:[.,]\d+)?\s*%|-?\d+(?:[.,]\d+)?\s*p\.?p\.?",
     re.IGNORECASE,
 )
 
@@ -80,25 +80,175 @@ def _sem_acento(texto: str) -> str:
 
 
 def _normalizar_numero(bruto: str) -> str:
-    """Remove unidade/espacos/pontuacao de fim de frase e normaliza
-    separador decimal - '48,50' e '48.50' viram a mesma chave de
-    comparacao, mas '48,50' e '4.850' continuam DIFERENTES (ponto de
-    milhar vs decimal nao e' resolvido aqui de proposito - ambiguo sem
-    saber a convencao da fonte; nesse caso prefere marcar como SEM base
-    a arriscar um falso negativo).
+    """Remove unidade/espacos/sinal/pontuacao de fim de frase e normaliza
+    pra uma chave numerica comparavel. '48,50' e '48.50' viram a mesma
+    chave (so' 1 separador presente - decimal, nunca milhar, ver
+    paragrafo abaixo), e agora TAMBEM 'R$ 1.234,56' (formato BR completo:
+    ponto de milhar + virgula decimal) e 'R$ 1234,56' (mesmo valor sem o
+    separador de milhar) viram a MESMA chave - bug real corrigido em
+    revisao tecnica (2026-10-23): antes, com os DOIS separadores
+    presentes, a funcao nao mexia em nada e devolvia '1.234,56' literal,
+    nunca igual a '1234,56' calculado do resumo - um resumo fiel que so'
+    omitisse o separador de milhar (parafrase natural de LLM) era
+    rejeitado pelo gate como se o numero fosse outro.
+
+    Algoritmo (quando HA' 2 separadores, '.' e ',', no mesmo numero): o
+    ULTIMO que aparece (o mais a direita) e' sempre o decimal - convencao
+    universal (BR 1.234,56 e' igual ao valor de EUA/UK 1,234.56, so' com
+    os simbolos trocados; o separador de milhar SEMPRE vem antes do
+    decimal, nunca depois) - qualquer ocorrencia do OUTRO separador antes
+    dele e' removida (agrupamento de milhar, sem valor). Com SO' 1 tipo
+    de separador presente (caso ambiguo em isolamento - ex: '1.234'
+    poderia ser 1234 ou 1,234 - sem saber a convencao da fonte),
+    continua tratando como decimal, igual a antes - nao assume milhar
+    sem a segunda pista.
+
+    Sinal negativo (ex: 'R$ -50,00', '-15%'): preservado na chave (prefixo
+    '-') - numeros com sinais diferentes NUNCA contam como o mesmo valor,
+    mesmo com a mesma magnitude (bug relacionado corrigido junto: a regex
+    de extracao, ver _PADRAO_NUMERO_COM_UNIDADE, antes nem capturava o
+    sinal - '-15%' virava '15%' silenciosamente, deixando o gate incapaz
+    de notar um resumo que inverte alta/queda mantendo so' a magnitude).
 
     `bruto.rstrip(".,")` primeiro: sem isso, um numero no FIM de uma
     frase (ex: 'R$ 48,00.') engole o ponto final no match da regex (o
     ponto e' parte da classe [\\d.,]) e confunde a deteccao de separador
     decimal - achado real ao escrever os testes deste gate."""
-    s = re.sub(r"[^\d.,]", "", bruto.rstrip(".,"))
-    if "," in s and "." not in s:
-        s = s.replace(",", ".")
-    return s.rstrip("0").rstrip(".") if "." in s else s
+    bruto = bruto.rstrip(".,")
+    negativo = "-" in bruto
+    s = re.sub(r"[^\d.,]", "", bruto)
+    if not s:
+        return ""
+    pos_decimal = max(s.rfind("."), s.rfind(","))
+    if pos_decimal == -1:
+        chave = s
+    else:
+        parte_inteira = re.sub(r"[.,]", "", s[:pos_decimal])
+        parte_decimal = s[pos_decimal + 1:]
+        chave = f"{parte_inteira}.{parte_decimal}" if parte_decimal else (parte_inteira or "0")
+    if "." in chave:
+        chave = chave.rstrip("0").rstrip(".")
+    if not chave or chave == "0":
+        return chave
+    return f"-{chave}" if negativo else chave
 
 
 def _numeros_do_texto(texto: str) -> set:
     return {_normalizar_numero(n) for n in _PADRAO_NUMERO_COM_UNIDADE.findall(texto or "")}
+
+
+# Vocabulário de métricas financeiras conhecidas pra checagem de
+# ATRIBUIÇÃO (numeros_com_metrica_trocada abaixo) - termos compostos
+# (ex: "lucro liquido") E suas raízes (ex: "lucro") ficam ambos na lista
+# de propósito: um resumo que só disser "lucro" ainda reconhece a
+# métrica (mais genérica), mas "lucro liquido" por perto casa com a
+# frase mais específica primeiro (ver _metrica_mais_proxima, desempate
+# por comprimento). NÃO é exaustivo - métrica fora desta lista
+# simplesmente não participa da checagem de atribuição (nem bloqueia,
+# nem libera - ver docstring de numeros_com_metrica_trocada: ausência de
+# métrica reconhecida nunca reprova, só reduz o que dá pra conferir).
+_METRICAS_FINANCEIRAS = (
+    "receita liquida", "receita bruta", "receita",
+    "lucro liquido", "lucro bruto", "lucro operacional", "lucro",
+    "margem bruta", "margem ebitda", "margem liquida", "margem operacional", "margem",
+    "ebitda", "ebit",
+    "divida liquida", "divida bruta", "divida", "alavancagem",
+    "caixa liquido", "caixa", "fluxo de caixa",
+    "custo", "custos", "despesa", "despesas",
+    "producao", "vendas", "faturamento",
+)
+
+_FIM_DE_FRASE = (".", "!", "?", ";")
+
+
+def _metrica_mais_proxima(texto_norm: str, pos_fim_numero: int, janela: int = 80) -> str | None:
+    """Métrica financeira conhecida (ver _METRICAS_FINANCEIRAS) mais
+    próxima ANTES de um número (posição `pos_fim_numero`, o FIM do match
+    do número em `texto_norm` - já passado por _sem_acento), dentro de
+    uma janela de `janela` caracteres, sem atravessar fim de frase
+    anterior (sentença diferente = contexto diferente, nunca associado).
+    Em empate de posição (ex: "lucro" é substring de "lucro liquido"),
+    prefere o termo MAIS LONGO/específico. None se nenhuma métrica
+    conhecida estiver nesse raio - caso comum e esperado (nem todo número
+    tem uma métrica-palavra por perto, ex: datas, tickers, contagens).
+
+    Só olha pra TRÁS (métrica ANTES do número, ex: "lucro cresceu 8%",
+    "margem de 42%") - padrão dominante em texto financeiro em
+    português. NÃO cobre métrica DEPOIS do número (ex: "8% de
+    crescimento no lucro") - limitação documentada, não ambígua: textos
+    assim ficam sem métrica reconhecida (None) e simplesmente não entram
+    na checagem de atribuição, nunca geram falso positivo por isso."""
+    inicio_janela = max(0, pos_fim_numero - janela)
+    trecho = texto_norm[inicio_janela:pos_fim_numero]
+    corte_frase = max((trecho.rfind(c) for c in _FIM_DE_FRASE), default=-1)
+    if corte_frase != -1:
+        trecho = trecho[corte_frase + 1:]
+    melhor_metrica, melhor_pos = None, -1
+    for m in _METRICAS_FINANCEIRAS:
+        p = trecho.rfind(m)
+        if p == -1:
+            continue
+        if p > melhor_pos or (p == melhor_pos and len(m) > len(melhor_metrica or "")):
+            melhor_pos, melhor_metrica = p, m
+    return melhor_metrica
+
+
+def numeros_com_metrica_trocada(resumo: str, texto_original: str) -> list:
+    """Números do resumo cuja métrica financeira mais próxima (ver
+    _metrica_mais_proxima) diverge de TODAS as métricas mais próximas do
+    MESMO número (mesmo valor normalizado) no texto original - sintoma
+    de atribuição errada: o número existe no original, mas colado numa
+    métrica DIFERENTE (ex: original tem "margem bruta de 42%,
+    crescimento do lucro líquido de 15% e receita de 8%"; resumo diz
+    "o lucro cresceu 8%" - 8% existe no original, mas perto de
+    'receita', nunca de 'lucro').
+
+    Conservador DE PROPÓSITO (nunca inventa uma atribuição que não
+    consegue confirmar NEM desmentir): só reprova quando o resumo tem
+    uma métrica reconhecida por perto E o original também tem (pelo
+    menos 1) métrica reconhecida perto de alguma ocorrência do MESMO
+    número, mas são métricas DIFERENTES. Se qualquer um dos lados não
+    tiver métrica reconhecida nas redondezas (vocabulário limitado, ver
+    _METRICAS_FINANCEIRAS, ou métrica depois do número, ver
+    _metrica_mais_proxima), não reprova por isso - preferível deixar
+    passar um caso que não consegue confirmar a reprovar um resumo fiel
+    por um gap do vocabulário/heurística."""
+    resumo_norm = _sem_acento(resumo or "")
+    original_norm = _sem_acento(texto_original or "")
+    problemas = []
+    vistos = set()
+    for m in _PADRAO_NUMERO_COM_UNIDADE.finditer(resumo_norm):
+        bruto = m.group(0)
+        if bruto in vistos:
+            continue
+        vistos.add(bruto)
+        chave = _normalizar_numero(bruto)
+        if not chave:
+            continue
+        metrica_resumo = _metrica_mais_proxima(resumo_norm, m.end())
+        if metrica_resumo is None:
+            continue
+        metricas_originais = {
+            _metrica_mais_proxima(original_norm, m2.end())
+            for m2 in _PADRAO_NUMERO_COM_UNIDADE.finditer(original_norm)
+            if _normalizar_numero(m2.group(0)) == chave
+        } - {None}
+        if not metricas_originais:
+            continue
+        # compatibilidade por substring (nunca igualdade exata): "lucro"
+        # (resumo) tem que casar com "lucro liquido" (original) - mesma
+        # metrica-raiz, so' mais generica - mas "margem bruta" NUNCA
+        # casa com "margem ebitda" (nenhuma e' substring da outra) -
+        # bug real encontrado ao rodar os testes existentes deste gate:
+        # igualdade exata rejeitava um resumo FIEL so' por generalizar
+        # "lucro liquido" pra "lucro".
+        if any(metrica_resumo in m or m in metrica_resumo for m in metricas_originais):
+            continue
+        problemas.append(
+            f"\"{bruto}\" associado a '{metrica_resumo}' no resumo, mas no original "
+            f"aparece perto de {', '.join(sorted(metricas_originais))!r}"
+        )
+    return problemas
 
 
 def numeros_sem_base(resumo: str, texto_original: str) -> list:
@@ -171,13 +321,16 @@ def causalidade_sem_evidencia(resumo: str, texto_original: str) -> str | None:
 
 def validar_fidelidade(resumo: str, texto_original: str, titulo: str = "") -> str | None:
     """Motivo de reprovação (primeiro problema encontrado, nesta ordem:
-    números sem base -> tickers sem base -> causalidade sem evidência),
-    ou None se o resumo passou nas 3 checagens. Usada por
-    resumir.py:_gerar_resumo antes de cachear/persistir qualquer
-    resumo novo."""
+    números sem base -> número com métrica trocada -> tickers sem base
+    -> causalidade sem evidência), ou None se o resumo passou nas 4
+    checagens. Usada por resumir.py:_gerar_resumo antes de cachear/
+    persistir qualquer resumo novo."""
     nums = numeros_sem_base(resumo, texto_original)
     if nums:
         return f"número(s) sem base no texto original: {', '.join(nums)}"
+    trocados = numeros_com_metrica_trocada(resumo, texto_original)
+    if trocados:
+        return f"número(s) possivelmente associado(s) à métrica errada: {'; '.join(trocados)}"
     tickers = tickers_sem_base(resumo, texto_original, titulo)
     if tickers:
         return f"ticker(s) sem base no texto original: {', '.join(tickers)}"
