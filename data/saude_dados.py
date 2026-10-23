@@ -225,6 +225,20 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 2, "instrumentado": True,
     },
     {
+        # linha nova (auditoria 2026-10-22): data/prices.py:obter_cotacao
+        # (cotacao de 1 ticker por vez, via fast_info) tinha ZERO chamadas
+        # a registrar_tentativa, mesmo sendo o caminho usado pela pagina
+        # do ticker, Radar de Quedas (1x por ticker monitorado) e Morning
+        # Call - ja' documentado como ponto de falha silenciosa no proprio
+        # comentario de data/radar_quedas.py:processar_monitoramento
+        # ("provedor de cotacao bloqueado faz TODOS os tickers carem
+        # silenciosamente"). Nome diferente de "MERCADO" (lote, acima) -
+        # caminho de codigo diferente, pode falhar isolado.
+        "nome": "MERCADO (cotação individual)", "fonte": "yfinance (fast_info, por ticker)",
+        "categoria": "Cotacoes", "frequencia_esperada": "sob demanda (cache 30s)",
+        "idade_maxima_horas": 2, "instrumentado": True,
+    },
+    {
         # linha nova (achado real, auditoria missao coletores 2026-10-13,
         # continuacao): data/ibovespa.py:obter_composicao_oficial nunca
         # chamava registrar_tentativa - alimenta obter_panorama_ibovespa/

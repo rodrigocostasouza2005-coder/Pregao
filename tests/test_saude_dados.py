@@ -370,6 +370,16 @@ def test_22_carteiras_recomendadas_tem_nome_proprio_nunca_colide_com_research():
     )
 
 
+def test_23_mercado_cotacao_individual_presente_e_nome_diferente_do_lote():
+    """Achado real (auditoria 2026-10-22): data/prices.py:obter_cotacao
+    (1 ticker por vez) nunca tinha representacao no painel, so' "MERCADO"
+    (data/mercado.py, cotacao EM LOTE) - caminhos de codigo diferentes,
+    podem falhar isolado."""
+    nomes = {c["nome"] for c in saude_mod.REGISTRO_COLETORES}
+    _checar("23a MERCADO (cotação individual) presente", "MERCADO (cotação individual)" in nomes)
+    _checar("23b nome diferente de MERCADO (lote)", "MERCADO (cotação individual)" != "MERCADO")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
