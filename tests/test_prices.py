@@ -456,6 +456,44 @@ def test_cotacao_indice_horario_de_negocio_de_outro_dia_e_ignorado():
     assert r["variacao_pct"] == 1.0
 
 
+def test_obter_cotacao_sucesso_registra_tentativa_no_painel_saude():
+    """Achado real (auditoria 2026-10-22): data/prices.py:obter_cotacao
+    tinha ZERO chamadas a registrar_tentativa, mesmo sendo usado pela
+    pagina do ticker/Radar/Morning Call - ficava invisivel no painel
+    SAUDE DOS DADOS mesmo com falhas reais."""
+    class _TickerValido:
+        def __init__(self, *_a, **_k):
+            self.fast_info = {"lastPrice": 35.0, "previousClose": 34.0}
+
+    chamadas = []
+    with patch.object(prices_mod.yf, "Ticker", _TickerValido), \
+         patch.object(prices_mod, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k))):
+        obter_cotacao("TESTE_INSTRUMENTACAO_SUCESSO_20261022")
+
+    assert len(chamadas) == 1
+    args, kwargs = chamadas[0]
+    assert args[0] == "MERCADO (cotação individual)"
+    assert kwargs["execucao_ok"] is True
+
+
+def test_obter_cotacao_falha_registra_tentativa_com_erro():
+    class _TickerQuebrado:
+        def __init__(self, *_a, **_k):
+            raise RuntimeError("yfinance indisponível (timeout)")
+
+    chamadas = []
+    with patch.object(prices_mod.yf, "Ticker", _TickerQuebrado), \
+         patch.object(prices_mod, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k))):
+        resultado = obter_cotacao("TESTE_INSTRUMENTACAO_FALHA_20261022")
+
+    assert resultado.get("erro")
+    assert len(chamadas) == 1
+    args, kwargs = chamadas[0]
+    assert args[0] == "MERCADO (cotação individual)"
+    assert kwargs["execucao_ok"] is False
+    assert "timeout" in kwargs["erro"]
+
+
 def test_obter_cotacao_rejeita_preco_nan_ou_infinito():
     class _TickerCotacaoInvalida:
         def __init__(self, *_a, **_k):

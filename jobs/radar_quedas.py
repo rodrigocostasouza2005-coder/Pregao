@@ -9,6 +9,58 @@ from data.supabase_client import obter_cliente
 from jobs.email_utils import enviar_email
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
+
+# Nome no painel de SAUDE DOS DADOS por casa de carteira recomendada -
+# NUNCA o mesmo nome da casa de RESEARCH (ex: "Genial Analisa" já é usado
+# por data/research/genial.py via coletar_casa - mesmo motivo de "NEWS
+# (watchlist)" vs "NEWS (ticker único)" em data/saude_dados.py: registrar_
+# tentativa faz upsert por `nome`, nome igual faria uma fonte sobrescrever
+# o status da outra, mesmo sendo coletores DIFERENTES (endpoint, formato,
+# disponibilidade diferentes - ver data/research/genial_carteiras.py x
+# data/research/genial.py).
+_NOME_PAINEL_POR_CASA = {
+    "Genial Analisa": "Genial Analisa (carteiras)",
+    "Safra Corretora": "Safra Corretora (carteiras)",
+}
+_FONTE_POR_CASA = {
+    "Genial Analisa (carteiras)": "analisa.genialinvestimentos.com.br (carteiras recomendadas)",
+    "Safra Corretora (carteiras)": "safra.com.br (carteiras recomendadas, HTML + PDF mensal)",
+}
+
+
+def _registrar_tentativas_por_casa(status_fontes: dict) -> None:
+    """Granularidade por casa (achado real, auditoria 2026-10-22):
+    `resultado["fontes"]` de processar_monitoramento() já tem o status
+    de CADA casa separado, mas só o AGREGADO "RADAR DE QUEDAS" chegava
+    ao painel - uma falha isolada de 1 casa (ex: Genial carteiras fora
+    do ar, Safra OK) ficava indistinguível de "tudo OK" ou "tudo falhou"
+    pra quem olha o painel, mesmo com a avaliação de recomendações já
+    sendo resiliente por casa (ver processar_monitoramento). Nunca
+    lança excecao - status desconhecido (string nova/inesperada) vira
+    FALHA_EXECUCAO com o texto bruto, nunca falso sucesso."""
+    for casa, status in (status_fontes or {}).items():
+        nome_painel = _NOME_PAINEL_POR_CASA.get(casa)
+        if nome_painel is None:
+            continue
+        fonte = _FONTE_POR_CASA.get(nome_painel, nome_painel)
+        if status.startswith("ok ("):
+            try:
+                n = int(status.split("(")[1].split(" ")[0])
+            except (IndexError, ValueError):
+                n = None
+            registrar_tentativa(nome_painel, fonte, execucao_ok=True, persistencia_ok=True,
+                                 registros_novos=n, categoria="Radar")
+        elif status == "fonte indisponível":
+            registrar_tentativa(nome_painel, fonte, execucao_ok=False, erro=status, categoria="Radar")
+        elif status.startswith("snapshot vazio"):
+            registrar_tentativa(nome_painel, fonte, execucao_ok=True, persistencia_ok=True,
+                                 registros_novos=0, parcial=True, erro=status, categoria="Radar")
+        elif status.startswith("falha ao persistir"):
+            registrar_tentativa(nome_painel, fonte, execucao_ok=True, persistencia_ok=False,
+                                 erro=status, categoria="Radar")
+        else:
+            registrar_tentativa(nome_painel, fonte, execucao_ok=False,
+                                 erro=f"status inesperado: {status}", categoria="Radar")
 STATUS_REPROCESSAVEIS = ("PENDENTE_ENVIO", "FALHA_ENVIO")
 # Só reenvia alerta de pregão recente: 3 dias corridos cobrem fim de semana
 # e feriado. Sem esse limite, um alerta que nunca saiu (ex.: EMAIL_TO vazio,
@@ -166,6 +218,7 @@ def executar():
         # coleta_ok=True - ver processar_monitoramento: "Execução parcial: ...").
         parcial=bool(resultado.get("coleta_ok")) and bool(falhas or resultado.get("erro")),
     )
+    _registrar_tentativas_por_casa(resultado.get("fontes"))
     # Falha de fonte também deve ser visível como execução falha, mesmo que
     # uma pendência antiga tenha sido entregue nesta rodada.
     return 0 if resultado.get("coleta_ok") and falhas == 0 else 1
