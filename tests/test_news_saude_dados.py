@@ -139,6 +139,44 @@ def test_7_top_mercado_internacional_pool_falho_registra_falha_em_news():
             f"(call={mock_reg.call_args})")
 
 
+def test_8_top_mercado_tudo_roda_os_2_pools_e_combina_corretamente():
+    # Regressao (auditoria de performance, 2026-10-23): obter_top_mercado_tudo
+    # passou a rodar _coletar_pool_brasil/_coletar_pool_internacional em
+    # paralelo (ThreadPoolExecutor) em vez de sequencial - este teste prova
+    # que os 2 pools continuam sendo chamados com o setor certo E que o
+    # resultado final combinado/ordenado por importancia nao muda.
+    import threading
+    import time
+
+    chamados_de = {}
+
+    def _br(setor):
+        chamados_de["br"] = threading.get_ident()
+        time.sleep(0.05)
+        return ({"https://br": {}}, True)
+
+    def _intl(setor):
+        chamados_de["intl"] = threading.get_ident()
+        time.sleep(0.05)
+        return ({"https://intl": {}}, True)
+
+    def _processar(entries, setor, regiao):
+        if regiao == "BR":
+            return [{"importancia": 1, "titulo": "noticia BR"}]
+        return [{"importancia": 2, "titulo": "noticia INTL"}]
+
+    news_mod.obter_top_mercado_tudo.clear()
+    with patch.object(news_mod, "_coletar_pool_brasil", side_effect=_br), \
+         patch.object(news_mod, "_coletar_pool_internacional", side_effect=_intl), \
+         patch.object(news_mod, "_processar_pool", side_effect=_processar), \
+         patch.object(news_mod, "registrar_tentativa"):
+        resultado = news_mod.obter_top_mercado_tudo("TODOS")
+
+    _checar("8a os 2 pools foram chamados", set(chamados_de) == {"br", "intl"}, f"(chamados={chamados_de})")
+    _checar("8b resultado combinado e ordenado por importancia (INTL antes de BR)",
+            [r["titulo"] for r in resultado] == ["noticia INTL", "noticia BR"], f"(resultado={resultado})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

@@ -14,6 +14,7 @@ HIPOTESE/ESTIMATIVA sao sempre rotuladas como tal na apresentacao,
 nunca misturadas sem rotulo. Fonte indisponivel -> lista vazia (nunca
 exception), pra uma falha parcial nunca derrubar o resto da pagina/
 edicao que consome isto."""
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -29,16 +30,35 @@ from data.radar import (
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 
 
+def _linha_valuation_ou_none(ticker: str) -> dict | None:
+    try:
+        return linha_valuation(ticker)
+    except Exception as exc:
+        print(f"[market_makers] risco indisponível para {ticker}: {exc!r}")
+        return None
+
+
 def _riscos(tickers: tuple) -> dict:
     """{ticker: [alertas de qualidade]} só pra quem tem algum alerta -
     mesmos alertas já calculados pelo Valuation Radar (P/L, margem,
-    dívida/EBITDA), sem recalcular nada."""
+    dívida/EBITDA), sem recalcular nada.
+
+    Busca em paralelo (achado real, auditoria de performance 2026-10-23):
+    linha_valuation (data/radar.py) é cacheada por ticker (ttl=90s), mas
+    com cache FRIO (primeira visita à página, ou watchlist grande) esta
+    função rodava 1 chamada de rede/yfinance.info POR TICKER em
+    sequência - com N tickers na watchlist, N vezes o tempo de 1.
+    ThreadPoolExecutor leve (mesmo raciocínio de data/news.py:
+    _coletar_em_paralelo - cada ticker é independente, I/O-bound, falha
+    isolada já tratada) só economiza tempo de espera, nunca muda o
+    resultado."""
+    if not tickers:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(8, len(tickers))) as executor:
+        linhas = list(executor.map(_linha_valuation_ou_none, tickers))
     riscos = {}
-    for ticker in tickers:
-        try:
-            linha = linha_valuation(ticker)
-        except Exception as exc:
-            print(f"[market_makers] risco indisponível para {ticker}: {exc!r}")
+    for ticker, linha in zip(tickers, linhas):
+        if linha is None:
             continue
         alertas = linha.get("alerta_qualidade") or []
         if alertas:

@@ -558,3 +558,40 @@ def test_obter_cotacao_preserva_preco_quando_campos_auxiliares_ausentes():
     assert resultado["volume"] is None
     assert resultado["maxima_52s"] is None
     assert resultado["minima_52s"] is None
+
+
+# ============================================================
+# REGRESSAO (auditoria de performance, 2026-10-23): obter_cotacao_indice
+# nao tinha @st.cache_data proprio - a ticker tape (app.py, TODA pagina,
+# a cada run_every) e paineis de MERCADO/VISAO GERAL/MACRO chamavam essa
+# funcao pros MESMOS indices (IBOVESPA/DOLAR/EURO) sem compartilhar
+# cache nenhum, batendo no Yahoo repetidamente pro mesmo dado dentro da
+# mesma janela de 30s. Este teste prova que 2 chamadas com os mesmos
+# argumentos, dentro do TTL, resultam em SO' 1 chamada real a
+# yf.Ticker(...).history() - nao so' "o decorator existe no codigo".
+# ============================================================
+
+def test_obter_cotacao_indice_e_cacheada_entre_chamadas_com_mesmo_argumento():
+    chamadas = {"n": 0}
+    hist = pd.DataFrame(
+        {"Close": [100.0, 102.0]},
+        index=pd.DatetimeIndex(["2026-10-21", "2026-10-22"], tz="America/Sao_Paulo"),
+    )
+
+    class _TickerContador:
+        history_metadata = {}
+
+        def __init__(self, *_a, **_k):
+            pass
+
+        def history(self, *_a, **_k):
+            chamadas["n"] += 1
+            return hist
+
+    obter_cotacao_indice.clear()
+    with patch.object(prices_mod.yf, "Ticker", _TickerContador):
+        primeira = obter_cotacao_indice("TESTE_CACHE_INDICE_2X", "TESTE_CACHE=X")
+        segunda = obter_cotacao_indice("TESTE_CACHE_INDICE_2X", "TESTE_CACHE=X")
+    assert chamadas["n"] == 1, f"esperava 1 chamada real (cache compartilhado), teve {chamadas['n']}"
+    assert primeira == segunda
+    assert primeira.get("erro") is None
