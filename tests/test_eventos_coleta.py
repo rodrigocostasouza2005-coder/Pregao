@@ -562,6 +562,107 @@ def test_links_calendario_aceita_subdominio_de_ri_e_ignora_outros_dominios():
             links == ["https://ri.empresa.com.br/agenda"], str(links))
 
 
+# ============================================================
+# Correção desta auditoria (22/10/2026): RI registrado na CVM é a home
+# institucional, o portal de RI de verdade fica em OUTRO domínio - achado
+# real contra petrobras.com.br -> investidorpetrobras.com.br e
+# magazineluiza.com.br -> ri.magazineluiza.com.br (confirmado com request
+# real fora do sandbox, não inventado).
+# ============================================================
+
+def test_link_portal_ri_acha_link_de_outro_dominio_por_rotulo_ou_caminho():
+    html = ('<a href="https://investidorempresa.com.br/">Relação com Investidores</a>'
+            '<a href="/sobre">Sobre a empresa</a>')
+    link = coleta_mod._link_portal_ri(html, "https://www.empresa.com.br")
+    _checar("acha o link cross-domain pelo rótulo 'Relação com Investidores'",
+            link == "https://investidorempresa.com.br/", str(link))
+
+    html2 = '<a href="https://outra.com.br/investidores">Investidores</a>'
+    link2 = coleta_mod._link_portal_ri(html2, "https://www.empresa.com.br")
+    _checar("acha também pelo caminho /investidores quando o rótulo é genérico",
+            link2 == "https://outra.com.br/investidores", str(link2))
+
+    html3 = '<a href="/produtos">Produtos</a><a href="/contato">Contato</a>'
+    link3 = coleta_mod._link_portal_ri(html3, "https://www.empresa.com.br")
+    _checar("sem rótulo/caminho de RI -> None (nunca inventa)", link3 is None)
+
+
+def test_ri_segue_portal_em_outro_dominio_quando_home_nao_tem_calendario():
+    """Achado real desta auditoria: www.petrobras.com.br não tem link de
+    calendário no próprio domínio, mas publica 'Relações com Investidores'
+    apontando pra investidorpetrobras.com.br - domínio TOTALMENTE
+    diferente. Antes desta correção, tentar_ri nunca seguia esse link
+    (só olhava calendário DENTRO do domínio da home) e 84/84 tickers
+    caíam direto pro prazo da CVM quando a home não tinha calendário
+    próprio."""
+    home = ('<html><body>Bem-vindo à Empresa.'
+            '<a href="https://investidorempresa.com.br/">Relações com Investidores</a>'
+            '</body></html>')
+    portal = "<html><body>Divulgação de resultados do 3T26: 05/11/2026, após o fechamento.</body></html>"
+    pedidos = []
+
+    def _get(url, **_k):
+        pedidos.append(url)
+        r = MagicMock(text=home if len(pedidos) == 1 else portal)
+        r.raise_for_status.return_value = None
+        return r
+
+    with patch.object(coleta_mod, "obter_url_ri", return_value="https://www.empresa.com.br"), \
+         patch.object(coleta_mod.cffi_requests, "get", side_effect=_get):
+        evento = coleta_mod.tentar_ri("EMPR3", "Empresa", 2026, 3)
+    _checar("segue a home e depois o portal cross-domain, nesta ordem",
+            pedidos == ["https://www.empresa.com.br", "https://investidorempresa.com.br/"], str(pedidos))
+    _checar("CONFIRMADO com a data do portal", evento and evento["data"] == date(2026, 11, 5))
+    _checar("origem_url é o portal de RI, não a home", evento["origem_url"] == "https://investidorempresa.com.br/")
+
+
+def test_ri_portal_sem_data_direta_segue_calendario_proprio_do_portal():
+    """Portal cross-domain encontrado, mas sem data na página inicial dele
+    - segue o calendário QUE O PRÓPRIO PORTAL publica (mesmo domínio do
+    portal, nunca um 3º salto pra fora)."""
+    home = '<a href="https://ri.empresa.com/">Investor Relations</a>'
+    portal_home = '<a href="/calendario-de-eventos">Calendário de Eventos</a>'
+    calendario = "<html><body>Resultados do 3T26 confirmados para 10/11/2026.</body></html>"
+    pedidos = []
+
+    def _get(url, **_k):
+        pedidos.append(url)
+        textos = {1: home, 2: portal_home, 3: calendario}
+        r = MagicMock(text=textos[len(pedidos)])
+        r.raise_for_status.return_value = None
+        return r
+
+    with patch.object(coleta_mod, "obter_url_ri", return_value="https://www.empresa.com.br"), \
+         patch.object(coleta_mod.cffi_requests, "get", side_effect=_get):
+        evento = coleta_mod.tentar_ri("EMPR3", "Empresa", 2026, 3)
+    _checar("3 requisições: home, portal, calendário do portal", len(pedidos) == 3, str(pedidos))
+    _checar("CONFIRMADO com a data do calendário do portal", evento and evento["data"] == date(2026, 11, 10))
+    _checar("origem_url é o calendário do portal",
+            evento["origem_url"] == "https://ri.empresa.com/calendario-de-eventos")
+
+
+def test_ri_nao_tenta_portal_quando_link_encontrado_e_mesmo_dominio():
+    """_link_portal_ri pode achar um link que já é do MESMO domínio da
+    home (ex: rótulo 'Investidores' apontando pra uma seção da própria
+    home) - nesse caso não há 2ª requisição: _links_calendario já teria
+    coberto esse domínio no passo anterior."""
+    home = '<a href="https://www.empresa.com.br/investidores">Investidores</a>'
+    pedidos = []
+
+    def _get(url, **_k):
+        pedidos.append(url)
+        r = MagicMock(text=home)
+        r.raise_for_status.return_value = None
+        return r
+
+    with patch.object(coleta_mod, "obter_url_ri", return_value="https://www.empresa.com.br"), \
+         patch.object(coleta_mod.cffi_requests, "get", side_effect=_get):
+        evento = coleta_mod.tentar_ri("EMPR3", "Empresa", 2026, 3)
+    _checar("link de RI no mesmo domínio não gera 2ª requisição (já coberto por _links_calendario)",
+            pedidos == ["https://www.empresa.com.br"], str(pedidos))
+    _checar("sem data em lugar nenhum -> None", evento is None)
+
+
 def _doc(categoria, assunto, data="2026-10-15", link="https://www.rad.cvm.gov.br/doc/1"):
     return {"categoria_original": categoria, "assunto": assunto, "data": data, "link": link}
 

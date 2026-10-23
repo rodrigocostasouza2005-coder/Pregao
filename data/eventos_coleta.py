@@ -216,16 +216,86 @@ def _links_calendario(html: str, url_base: str) -> list:
     return achados
 
 
+# Texto/caminho de link que indica "aqui fica o portal de RI de verdade" -
+# diferente de _PALAVRAS_LINK_CALENDARIO (achar o calendário DENTRO de um
+# site já identificado como o certo), este serve só pra achar O PRÓPRIO
+# portal a partir da home institucional - por isso pode cruzar de domínio
+# (ver _link_portal_ri). Lista curta e de alto sinal (rótulo de menu
+# comum em site institucional BR), nunca um termo genérico que combine
+# com conteúdo não relacionado.
+_PALAVRAS_PORTAL_RI = (
+    "relacao com investidor", "relacoes com investidor", "relacionamento com investidor",
+    "investor relations", "investidores",
+)
+_CAMINHOS_PORTAL_RI = ("/ri", "/investidores", "/investor-relations", "/relacoes-com-investidores",
+                       "/relacionamento-com-investidores")
+
+
+def _link_portal_ri(html: str, url_base: str) -> str | None:
+    """1º link (qualquer domínio, diferente de _links_calendario) cujo
+    texto ou caminho indica 'aqui é o portal de RI' - achado real desta
+    auditoria (22/10/2026): www.petrobras.com.br linka
+    investidorpetrobras.com.br, um domínio TOTALMENTE diferente (mesmo
+    padrão em várias companhias BR: ri.empresa.com, investidorempresa.
+    com.br, empresa-ri.com etc); a versão anterior de tentar_ri só
+    seguia link de calendário DENTRO do mesmo domínio da home - pra essas
+    empresas nunca achava nada, mesmo quando a própria home publicava o
+    link certo. Segue esse link UMA única vez (nunca um 2º salto pra
+    fora do portal encontrado) - é a própria página oficial da empresa
+    que está indicando onde fica o RI, não um palpite nosso. None se
+    nenhum link bater."""
+    from urllib.parse import urljoin, urlparse
+
+    soup = BeautifulSoup(html, "html.parser")
+    for a in soup.find_all("a", href=True):
+        href = urljoin(url_base, a["href"].strip())
+        partes = urlparse(href)
+        if partes.scheme not in ("http", "https"):
+            continue
+        texto = _sem_acento_simples(a.get_text(" ", strip=True))
+        caminho = partes.path.lower().rstrip("/")
+        if any(p in texto for p in _PALAVRAS_PORTAL_RI) or any(caminho.endswith(c) for c in _CAMINHOS_PORTAL_RI):
+            return href.split("#", 1)[0]
+    return None
+
+
+def _extrair_data_da_pagina(url: str, ano: int, trimestre: int) -> tuple[date | None, str | None]:
+    """Busca `url` e tenta achar a data do período direto no texto -
+    (data, None) em caso de falha de rede/HTTP, nunca lança exceção (quem
+    chama decide o próximo passo da hierarquia). Fatorado de tentar_ri
+    pra reaproveitar o mesmo fetch+extração nos 3 lugares onde ele
+    acontece (página oficial, link de calendário dela, portal de RI
+    cross-domain e o calendário DELE)."""
+    try:
+        r = cffi_requests.get(url, headers=_HEADERS, impersonate="chrome", timeout=_TIMEOUT_SUBPAGINA)
+        r.raise_for_status()
+    except Exception:
+        return None, None
+    return extrair_data_do_periodo(_extrair_texto_html(r.text), ano, trimestre), r.text
+
+
 def tentar_ri(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | None:
     """Tenta achar uma data CONFIRMADA na URL oficial de RI (ver
-    data/ir_sources.py) e, se ela não trouxer a data, nos links de
-    calendário/central de resultados que a PRÓPRIA página publica (ver
-    _links_calendario - nunca um caminho adivinhado). Causa do calendário
-    parado (coletores de 22/10: 84 tickers, 0 confirmados): a URL
-    registrada na CVM costuma ser a home institucional, e a data fica na
-    subpágina de calendário. None se a empresa nao tiver URL registrada,
+    data/ir_sources.py), nos links de calendário/central de resultados
+    que a PRÓPRIA página publica (_links_calendario, só no mesmo
+    domínio) e, se nada disso achar nada, no portal de RI que a home
+    institucional costuma linkar em OUTRO domínio (_link_portal_ri,
+    achado desta auditoria de 22/10/2026) - nunca um caminho adivinhado
+    em nenhum dos três casos. None se a empresa nao tiver URL registrada,
     a fonte bloquear/falhar (timeout, erro HTTP, certificado) - quem
-    chama segue pra proxima fonte, nunca trava o pipeline."""
+    chama segue pra proxima fonte, nunca trava o pipeline.
+
+    LIMITAÇÃO QUE CONTINUA (documentada, não escondida): várias centrais
+    de resultados modernas são paginas client-side (o HTML cru só tem o
+    menu de navegação; a lista de eventos carrega via JS/API depois) -
+    confirmado nesta auditoria contra investidorpetrobras.com.br e
+    ri.weg.net, ambas alcançadas corretamente pelo salto novo, mas sem
+    texto extraível na resposta HTTP crua. Sem executar JavaScript (fora
+    do escopo aqui - orçamento de tempo do universo inteiro já é
+    apertado, e um navegador automatizado por ticker não é sustentável
+    num workflow de 20 min), essas continuam caindo pro PRAZO_CVM."""
+    from urllib.parse import urlparse
+
     url = obter_url_ri(ticker)
     if not url:
         return None
@@ -234,17 +304,25 @@ def tentar_ri(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | Non
         r.raise_for_status()
     except Exception:
         return None
-    paginas = [(url, r.text)]
     data_evento = extrair_data_do_periodo(_extrair_texto_html(r.text), ano, trimestre)
     if data_evento is not None:
         return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento, f"{empresa} RI", url)
-    for link in _links_calendario(paginas[0][1], url):
-        try:
-            sub = cffi_requests.get(link, headers=_HEADERS, impersonate="chrome", timeout=_TIMEOUT_SUBPAGINA)
-            sub.raise_for_status()
-        except Exception:
-            continue
-        data_evento = extrair_data_do_periodo(_extrair_texto_html(sub.text), ano, trimestre)
+    for link in _links_calendario(r.text, url):
+        data_evento, _ = _extrair_data_da_pagina(link, ano, trimestre)
+        if data_evento is not None:
+            return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento,
+                                  f"{empresa} RI", link)
+
+    portal = _link_portal_ri(r.text, url)
+    if not portal or _dominio_base(urlparse(portal).netloc) == _dominio_base(urlparse(url).netloc):
+        return None  # mesmo domínio: _links_calendario acima já cobriu
+    data_evento, texto_portal = _extrair_data_da_pagina(portal, ano, trimestre)
+    if data_evento is not None:
+        return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento, f"{empresa} RI", portal)
+    if texto_portal is None:
+        return None
+    for link in _links_calendario(texto_portal, portal):
+        data_evento, _ = _extrair_data_da_pagina(link, ano, trimestre)
         if data_evento is not None:
             return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento,
                                   f"{empresa} RI", link)
