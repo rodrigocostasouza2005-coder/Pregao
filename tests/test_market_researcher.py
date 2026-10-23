@@ -219,3 +219,89 @@ def test_historico_achado_sem_registro_e_none():
     cliente = _ClienteAchadosFake()
     with patch.object(mr, "obter_cliente", return_value=cliente):
         assert mr.historico_achado("NEWS (Brasil)", "Noticias", "FALHA_EXECUCAO") is None
+
+
+# ============================================================
+# analise_ticker() - agregador puro (fundamentos + market_makers +
+# cobertura cruzada) - caso de teste WEGE3.
+# ============================================================
+
+_FUNDAMENTOS_WEGE3 = {"ticker": "WEGE3", "preco": 40.0, "pl": 28.5, "pvp": 9.1, "dividend_yield": 1.2,
+                      "roe": 32.0, "margem_liquida": 14.0, "divida_liquida_ebitda": 0.3,
+                      "valor_mercado": 150_000_000_000, "alerta_qualidade": []}
+_CONTEXTO_WEGE3 = {"ticker": "WEGE3", "catalisadores": [{"categoria": "Resultado corporativo"}],
+                   "mudancas": [], "riscos": [], "interpretacao": None}
+_COBERTURA_WEGE3 = {"ticker": "WEGE3", "cobertura": [{"casa": "Genial Analisa"}], "sem_cobertura": [], "divergencia": None}
+
+
+def test_analise_ticker_compoe_os_3_blocos_sem_consulta_duplicada():
+    with patch.object(mr, "linha_valuation", return_value=_FUNDAMENTOS_WEGE3) as m_fund, \
+         patch.object(mr, "contexto_ticker", return_value=_CONTEXTO_WEGE3) as m_ctx, \
+         patch.object(mr, "cobertura_cruzada_casas", return_value=_COBERTURA_WEGE3) as m_cob:
+        resultado = mr.analise_ticker("WEGE3")
+
+    assert resultado["ticker"] == "WEGE3"
+    assert resultado["fundamentos"] == _FUNDAMENTOS_WEGE3
+    assert resultado["catalisadores"] == _CONTEXTO_WEGE3["catalisadores"]
+    assert resultado["cobertura_research"] == _COBERTURA_WEGE3
+    assert resultado["fontes_indisponiveis"] == []
+    # cada fonte chamada exatamente 1x pra 1 ticker - nenhuma consulta duplicada
+    m_fund.assert_called_once_with("WEGE3")
+    m_ctx.assert_called_once()
+    m_cob.assert_called_once_with("WEGE3")
+
+
+def test_analise_ticker_normaliza_ticker_minusculo_com_espaco():
+    with patch.object(mr, "linha_valuation", return_value=_FUNDAMENTOS_WEGE3), \
+         patch.object(mr, "contexto_ticker", return_value=_CONTEXTO_WEGE3), \
+         patch.object(mr, "cobertura_cruzada_casas", return_value=_COBERTURA_WEGE3):
+        resultado = mr.analise_ticker(" wege3 ")
+    assert resultado["ticker"] == "WEGE3"
+
+
+def test_analise_ticker_fonte_de_fundamentos_falha_outros_blocos_seguem():
+    with patch.object(mr, "linha_valuation", side_effect=RuntimeError("yfinance fora do ar")), \
+         patch.object(mr, "contexto_ticker", return_value=_CONTEXTO_WEGE3), \
+         patch.object(mr, "cobertura_cruzada_casas", return_value=_COBERTURA_WEGE3):
+        resultado = mr.analise_ticker("WEGE3")
+
+    assert resultado["fundamentos"] is None
+    assert resultado["fontes_indisponiveis"] == ["fundamentos"]
+    assert resultado["catalisadores"] == _CONTEXTO_WEGE3["catalisadores"]  # não contaminado
+
+
+def test_analise_ticker_todas_as_fontes_falham_nunca_lanca_excecao():
+    with patch.object(mr, "linha_valuation", side_effect=RuntimeError("x")), \
+         patch.object(mr, "contexto_ticker", side_effect=RuntimeError("y")), \
+         patch.object(mr, "cobertura_cruzada_casas", side_effect=RuntimeError("z")):
+        resultado = mr.analise_ticker("WEGE3")
+
+    assert resultado["fundamentos"] is None
+    assert resultado["catalisadores"] is None
+    assert resultado["cobertura_research"] is None
+    assert set(resultado["fontes_indisponiveis"]) == {"fundamentos", "contexto_mercado", "cobertura_research"}
+
+
+def test_analise_ticker_sem_dado_nenhum_nunca_inventa_informacao():
+    contexto_vazio = {"ticker": "WEGE3", "catalisadores": [], "mudancas": [], "riscos": [], "interpretacao": None}
+    cobertura_vazia = {"ticker": "WEGE3", "cobertura": [], "sem_cobertura": ["Genial Analisa"], "divergencia": None}
+    with patch.object(mr, "linha_valuation", return_value={"ticker": "WEGE3", "preco": None, "alerta_qualidade": []}), \
+         patch.object(mr, "contexto_ticker", return_value=contexto_vazio), \
+         patch.object(mr, "cobertura_cruzada_casas", return_value=cobertura_vazia):
+        resultado = mr.analise_ticker("WEGE3")
+
+    assert resultado["fontes_indisponiveis"] == []  # todas as fontes RESPONDERAM
+    assert resultado["catalisadores"] == []  # mas sem dado - lista vazia, nunca inventada
+    assert resultado["interpretacao_movimento"] is None
+
+
+def test_analise_ticker_nao_escreve_em_nenhuma_tabela(monkeypatch):
+    """Agregador é só leitura - nunca chama obter_cliente/persistência
+    nenhuma (ausência de efeito colateral)."""
+    chamou_cliente = []
+    monkeypatch.setattr(mr, "obter_cliente", lambda: chamou_cliente.append(True) or None)
+    with patch.object(mr, "linha_valuation", return_value=_FUNDAMENTOS_WEGE3), \
+         patch.object(mr, "contexto_ticker", return_value=_CONTEXTO_WEGE3), \
+         patch.object(mr, "cobertura_cruzada_casas", return_value=_COBERTURA_WEGE3):
+        mr.analise_ticker("WEGE3")
+    assert chamou_cliente == []
