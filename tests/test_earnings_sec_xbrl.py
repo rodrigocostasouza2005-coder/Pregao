@@ -57,6 +57,18 @@ def test_aapl_resultado_bruto_e_custo_reais():
     assert dados["metricas"]["custo_vendas"]["atual"] == pytest.approx(54647000000.0)
 
 
+def test_aapl_ebit_e_resultado_antes_tributos_reais():
+    """Gap de cobertura encontrado em revisao tecnica independente
+    (2026-10-22): estas 2 metricas (de 6 em TAGS_POR_METRICA) nunca
+    tinham fixture/teste - resolviam sempre None nos testes anteriores
+    sem ningum notar, mesmo a tag funcionando de verdade na API real.
+    Conferido contra data.sec.gov ao vivo em 2026-10-22."""
+    dados = sec_xbrl.obter_metricas_trimestre("AAPL", _INICIO, _FIM, _INICIO_ANT, _FIM_ANT)
+    assert dados["metricas"]["ebit"]["atual"] == pytest.approx(35695000000.0)
+    assert dados["metricas"]["ebit"]["tag_usada"] == "OperatingIncomeLoss"
+    assert dados["metricas"]["resultado_antes_tributos"]["atual"] == pytest.approx(36267000000.0)
+
+
 def test_ticker_sem_cik_devolve_none():
     with patch.object(sec_xbrl, "obter_cik", return_value=None):
         assert sec_xbrl.obter_metricas_trimestre("ZZZZ", _INICIO, _FIM, _INICIO_ANT, _FIM_ANT) is None
