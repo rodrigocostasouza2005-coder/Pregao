@@ -2,6 +2,8 @@
 """Cobertura do caminho SMTP de jobs/email_utils.py - provedor padrão
 (EMAIL_PROVIDER ausente/"smtp") sem nenhum teste dedicado até aqui.
 Mocka smtplib.SMTP inteiro (nunca abre conexão real)."""
+import socket
+import ssl
 from unittest.mock import MagicMock
 
 from jobs import email_utils
@@ -118,6 +120,101 @@ def test_smtp_usa_timeout_de_60s(monkeypatch):
     assert smtp_cls.call_args.kwargs["timeout"] == 60
 
 
+def test_smtp_starttls_valida_certificado_do_servidor(monkeypatch):
+    """Google Workspace exige TLS explícito COM validação de certificado
+    (requisito da auditoria SMTP) - smtp.starttls() sem `context` usa
+    ssl._create_stdlib_context() (CERT_NONE, sem checar hostname), então
+    o código precisa passar um ssl.SSLContext que valide a cadeia."""
+    _env_smtp(monkeypatch)
+    smtp_instancia = _smtp_mock(monkeypatch)
+
+    email_utils.enviar_email("Assunto", "Texto")
+
+    assert smtp_instancia.starttls.call_count == 1
+    contexto_usado = smtp_instancia.starttls.call_args.kwargs.get("context")
+    assert isinstance(contexto_usado, ssl.SSLContext)
+    assert contexto_usado.verify_mode == ssl.CERT_REQUIRED
+    assert contexto_usado.check_hostname is True
+
+
+def test_smtp_sem_host_retorna_erro_sem_tentar_conexao(monkeypatch):
+    monkeypatch.setenv("EMAIL_PROVIDER", "smtp")
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.setenv("SMTP_USER", "user@example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "segredo")
+    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
+    smtp_cls = MagicMock()
+    monkeypatch.setattr(email_utils.smtplib, "SMTP", smtp_cls)
+
+    resultado = email_utils.enviar_email("Assunto", "Texto")
+
+    assert resultado["ok"] is False
+    assert "SMTP_HOST, SMTP_USER e SMTP_PASSWORD" in resultado["erro"]
+    assert not smtp_cls.called
+
+
+def test_smtp_sem_senha_retorna_erro_sem_tentar_conexao(monkeypatch):
+    monkeypatch.setenv("EMAIL_PROVIDER", "smtp")
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    monkeypatch.setenv("SMTP_USER", "user@example.com")
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
+    smtp_cls = MagicMock()
+    monkeypatch.setattr(email_utils.smtplib, "SMTP", smtp_cls)
+
+    resultado = email_utils.enviar_email("Assunto", "Texto")
+
+    assert resultado["ok"] is False
+    assert "SMTP_HOST, SMTP_USER e SMTP_PASSWORD" in resultado["erro"]
+    assert not smtp_cls.called
+
+
+def test_smtp_porta_invalida_retorna_erro_sem_tentar_conexao(monkeypatch):
+    monkeypatch.setenv("EMAIL_PROVIDER", "smtp")
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    monkeypatch.setenv("SMTP_USER", "user@example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "segredo")
+    monkeypatch.setenv("SMTP_PORT", "nao-e-numero")
+    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
+    smtp_cls = MagicMock()
+    monkeypatch.setattr(email_utils.smtplib, "SMTP", smtp_cls)
+
+    resultado = email_utils.enviar_email("Assunto", "Texto")
+
+    assert resultado["ok"] is False
+    assert "SMTP_PORT deve ser uma porta numérica" in resultado["erro"]
+    assert not smtp_cls.called
+
+
+def test_smtp_falha_de_conexao_e_identificada_na_etapa_conexao(monkeypatch):
+    """Timeout/recusa de conexão (host/porta errados, firewall) acontece
+    ANTES do STARTTLS - etapa deve continuar "conexão", nunca mascarada
+    como sucesso."""
+    _env_smtp(monkeypatch)
+    smtp_cls = MagicMock(side_effect=socket.timeout("timed out"))
+    monkeypatch.setattr(email_utils.smtplib, "SMTP", smtp_cls)
+
+    resultado = email_utils.enviar_email("Assunto", "Texto")
+
+    assert resultado["ok"] is False
+    assert "etapa SMTP: conexão" in resultado["erro"]
+
+
+def test_smtp_corpo_com_caracteres_em_portugues_e_preservado(monkeypatch):
+    _env_smtp(monkeypatch)
+    smtp_instancia = _smtp_mock(monkeypatch)
+    texto = "Resumo do pregão: ação cai após balanço; inflação em alta."
+    html = "<p>Resumo do pregão: ação cai após balanço; inflação em alta.</p>"
+
+    resultado = email_utils.enviar_email("Édição de hoje", texto, html=html)
+
+    assert resultado == {"ok": True, "erro": None}
+    msg_enviada = smtp_instancia.send_message.call_args[0][0]
+    assert msg_enviada.get_body(preferencelist=("plain",)).get_content().strip() == texto
+    corpo_html = msg_enviada.get_body(preferencelist=("html",)).get_content()
+    assert texto.split(":")[0] in corpo_html
+
+
 def test_gmail_workspace_smtp_usa_starttls_login_e_remetente_da_conta(monkeypatch):
     """Configuração Google Workspace: SMTP Gmail, STARTTLS, login e From coerente."""
     monkeypatch.setenv("EMAIL_PROVIDER", "smtp")
@@ -134,7 +231,7 @@ def test_gmail_workspace_smtp_usa_starttls_login_e_remetente_da_conta(monkeypatc
     assert resultado == {"ok": True, "erro": None}
     smtp_cls = email_utils.smtplib.SMTP
     assert smtp_cls.call_args.args == ("smtp.gmail.com", 587)
-    smtp_instancia.starttls.assert_called_once_with()
+    assert smtp_instancia.starttls.call_count == 1
     smtp_instancia.login.assert_called_once_with(
         "pregao@example-workspace.com", "senha-de-app-ficticia"
     )
