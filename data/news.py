@@ -510,7 +510,39 @@ def _montar_item(entry, ticker: str, nome_empresa: str, aliases: tuple = ()):
 # resto (ver _mesmo_grupo) - termos genericos que aparecem em quase toda
 # manchete de mercado (Ibovespa, Selic, Brasil...) tem que ficar de fora,
 # senao viram falso-link entre materias sem relacao nenhuma
-_ENTIDADE_IGNORAR = _PALAVRAS_MERCADO_SCORE | {
+#
+# Termos GEOGRAFICOS genericos (achado real, auditoria 2026-10-22):
+# "california" sozinho (nome proprio capitalizado, 5+ letras) juntava 3
+# materias internacionais SEM NENHUMA RELACAO (plano fiscal de uma
+# empresa de tecnologia, apagao de servico de emergencia, acidente com
+# veiculo autonomo) so' porque as 3 mencionavam o mesmo estado - mesma
+# classe de problema que "brasil" ja' resolvia pro caso nacional, nunca
+# coberta pro internacional. Lista NAO exaustiva de proposito (paises +
+# estados americanos mais citados em noticia financeira em ingles,
+# ver LIMITACAO no commit) - qualquer lugar fora daqui continua
+# vulneravel ao mesmo padrao; resolver a classe toda exigiria NER de
+# verdade (lib nova, fora do escopo desta correcao pontual).
+_LOCAIS_GENERICOS = {
+    # paises/continentes mais comuns em manchete internacional (en/pt)
+    "china", "chinese", "india", "russia", "russian", "ukraine", "ukrainian",
+    "japan", "japanese", "germany", "german", "france", "french", "italy",
+    "italian", "spain", "spanish", "mexico", "canada", "canadian",
+    "europe", "european", "asia", "asian", "africa", "african",
+    "argentina", "chile", "colombia", "israel", "iran", "iraq", "taiwan",
+    "australia", "britain", "british", "america", "american", "americas",
+    # estados americanos (nome unico, sem "New"/"North"/etc - esses ja'
+    # formam entidade de 2+ palavras, fora do escopo deste bug)
+    "california", "texas", "florida", "georgia", "ohio", "michigan",
+    "arizona", "nevada", "colorado", "oregon", "washington", "virginia",
+    "illinois", "pennsylvania", "massachusetts", "maryland", "wisconsin",
+    "minnesota", "missouri", "tennessee", "alabama", "louisiana", "utah",
+    "indiana", "kentucky", "oklahoma", "connecticut", "nebraska", "kansas",
+    # capitais/cidades usadas como dateline sem ser o fato em si
+    "london", "beijing", "tokyo", "paris", "berlin", "moscow", "madrid",
+    "brasilia", "shanghai", "hongkong", "singapore", "dubai",
+}
+
+_ENTIDADE_IGNORAR = _PALAVRAS_MERCADO_SCORE | _LOCAIS_GENERICOS | {
     "brasil", "brasileiro", "brasileira", "governo", "ministerio", "justica",
     "policia", "federal", "segunda", "terca", "quarta", "quinta", "sexta",
     "sabado", "domingo", "janeiro", "fevereiro", "marco", "abril", "maio",
