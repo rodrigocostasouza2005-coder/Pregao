@@ -103,13 +103,11 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER || 'resend' }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          EMAIL_PROVIDER: smtp
+          SMTP_HOST: ${{ secrets.SMTP_HOST || 'smtp.gmail.com' }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
@@ -179,11 +177,9 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER || 'resend' }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          EMAIL_PROVIDER: smtp
+          SMTP_HOST: ${{ secrets.SMTP_HOST || 'smtp.gmail.com' }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
