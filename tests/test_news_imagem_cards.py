@@ -317,11 +317,17 @@ def test_5b2_capa_do_modal_tem_altura_fixa_nao_so_aspect_ratio():
     com só `aspect-ratio: 16/9` e sem teto de altura virava uma imagem de
     700px+ na largura cheia do dialog "large", empurrando manchete/resumo
     pra fora da tela - a queixa real foi "a imagem dá 2 ou 3 textos".
-    Precisa de altura FIXA (não só aspect-ratio, que escala com a
-    largura sem limite) pra nunca mais dominar o card."""
+    Precisa de altura com TETO (não só aspect-ratio, que escala com a
+    largura sem limite) pra nunca mais dominar o card. Auditoria de
+    22/10/2026: a altura virou clamp(min, viewport, MAX) em vez de um
+    único valor fixo (220px) - deixa de cortar retrato/panorâmica em
+    object-fit:cover (achado novo dessa auditoria), mas o teto continua
+    existindo (300px), então a garantia original - nunca dominar o card -
+    permanece."""
     css = news_tab_mod._CSS_WIRE
     bloco = css[css.index(".news-capa {"):css.index(".news-capa {") + 700]
-    _checar("5b2 .news-capa define height (não só aspect-ratio)", "height: 220px" in bloco, bloco[:200])
+    _checar("5b2 .news-capa define um teto de altura (clamp com máximo finito)",
+            "height: clamp(" in bloco and "px)" in bloco, bloco[:200])
     _checar("5b2 .news-capa não depende só de aspect-ratio pra altura",
             "aspect-ratio: 16" not in bloco)
 

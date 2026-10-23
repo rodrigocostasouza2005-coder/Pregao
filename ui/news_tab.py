@@ -341,17 +341,46 @@ div[class*="st-key-news-live-card-"] {
    fonte pequena/cinza no rodape - nada de lista de campos internos ou
    divisores em excesso (era a critica real do Rodrigo sobre o modal
    antigo parecer "log de depuracao"). */
+/* Causa raiz do corte de imagem (auditoria 2026-10-22): a capa sempre
+   forçava object-fit:cover numa caixa de altura fixa, qualquer que fosse
+   a proporção real da foto - uma foto vertical (retrato) ou muito
+   panorâmica perdia boa parte do enquadramento original (laterais ou
+   topo/base cortados). As 5 regras de altura que existiram aqui ao longo
+   do tempo (base + 2 breakpoints + 1 específica do fallback + 2 dentro de
+   "div[data-testid=stDialog] .news-capa") também tinham especificidade
+   CSS diferente entre si - a mais específica (escopada ao dialog) sempre
+   vencia, deixando pelo menos 3 delas como código morto (nunca realmente
+   aplicadas), incluindo a redução de altura no celular. Consolidado aqui:
+   uma única altura responsiva + a escolha cobrir/conter decidida no
+   PYTHON a partir da proporção REAL da imagem (_capa_data_uri já abre a
+   foto com PIL pra redimensionar - o aspect ratio sai de graça dali, ver
+   _renderizar_capa) - nunca um palpite de CSS. "conter" nunca deixa
+   espaço vazio liso: o fundo desfocado usa a MESMA foto. */
 .news-capa {
-    /* achado real 2026-10-19 (screenshot real do modal): 16:9 sem teto de
-       altura, na largura cheia do dialog "large", virava uma imagem de
-       700px+ de altura - empurrava manchete/resumo pra fora da tela,
-       exatamente a queixa "a imagem dá 2 ou 3 textos". Altura fixa (como
-       o celular já fazia, ver media query abaixo) em vez de aspect-ratio
-       - cobre proporcional ao conteúdo, nunca dominante. */
-    width: 100%; height: 220px; overflow: hidden; border: 1px solid var(--borda);
-    background: var(--painel-bg); margin-bottom: 0.7rem; border-radius: 2px;
+    position: relative; width: 100%; height: clamp(170px, 30vh, 300px);
+    overflow: hidden; border: 1px solid var(--borda); background: var(--painel-bg);
+    margin-bottom: 0.7rem; border-radius: 4px;
 }
-.news-capa img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.news-capa-fundo {
+    position: absolute; inset: -12px; background-size: cover; background-position: center;
+    filter: blur(22px) brightness(0.45) saturate(1.1); transform: scale(1.12); display: none;
+}
+.news-capa--conter .news-capa-fundo { display: block; }
+.news-capa img {
+    position: relative; width: 100%; height: 100%; display: block; z-index: 1;
+}
+.news-capa--cobrir img { object-fit: cover; object-position: center 38%; }
+.news-capa--conter img { object-fit: contain; }
+/* sem foto: caixa baixa (nunca reserva o mesmo espaço de uma foto real) */
+.news-capa:not(:has(img)) { height: 72px; }
+/* celular: altura menor que no desktop (tela mais estreita, a imagem não
+   pode empurrar manchete/resumo pra fora da área visível) - ÚNICA regra
+   de altura pra mobile agora (as 3 versões antigas conflitantes sumiram,
+   ver comentário acima). */
+@media (max-width: 640px) {
+    .news-capa { height: 140px; }
+    .news-capa:not(:has(img)) { height: 56px; }
+}
 .news-capa-fallback {
     display: flex; align-items: center; justify-content: center; height: 100%;
     flex-direction: column; gap: 0.3rem;
@@ -361,8 +390,9 @@ div[class*="st-key-news-live-card-"] {
     color: var(--cinza); opacity: 0.55; text-transform: uppercase;
 }
 .news-headline {
-    font-size: 1.1rem; font-weight: 700; line-height: 1.32; color: var(--neutro);
-    margin-bottom: 0.35rem;
+    font-family: Georgia,'Source Serif 4','Times New Roman',Times,serif;
+    font-size: 1.22rem; font-weight: 700; line-height: 1.3; color: var(--neutro);
+    margin-bottom: 0.35rem; letter-spacing: -0.01em;
 }
 .news-meta-line {
     font-size: 0.74rem; color: var(--cinza); font-family: 'IBM Plex Mono', monospace;
@@ -375,11 +405,20 @@ div[class*="st-key-news-live-card-"] {
     text-transform: uppercase; margin-bottom: 0.4rem; opacity: 0.85;
 }
 .news-resumo-rotulo span { font-weight: 400; text-transform: none; }
+/* Prosa editorial (resumo/interpretação/rodapé) na mesma tipografia humana
+   usada no Morning Call (mesmo espírito do PR #62/reconstrução da aba
+   Morning Call, 22/10/2026) - antes herdava a fonte monoespaçada global
+   do app inteiro (style.css: html/body/[class*=css] em IBM Plex Mono
+   !important), deixando o resumo com cara de log técnico em vez de texto
+   de leitura. Mono reservado a selo/hora/score/tickers (.news-meta-line,
+   .selo-tag, .w-ticker-tag), que continuam monoespaçados de propósito. */
 .news-corpo-p {
+    font-family: 'Libre Franklin','Segoe UI',Arial,Helvetica,sans-serif;
     font-size: 0.92rem; line-height: 1.68; color: var(--neutro); margin-bottom: 0.85rem;
     max-width: 68ch;
 }
 .news-parcial-nota {
+    font-family: 'Libre Franklin','Segoe UI',Arial,Helvetica,sans-serif;
     font-size: 0.7rem; color: var(--cinza); opacity: 0.8; margin: -0.3rem 0 0.9rem 0;
     font-style: italic;
 }
@@ -398,7 +437,10 @@ div[class*="st-key-news-live-card-"] {
     font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; color: var(--cinza);
     text-transform: uppercase; margin-bottom: 0.25rem;
 }
-.news-importa-corpo { font-size: 0.86rem; line-height: 1.6; color: var(--neutro); opacity: 0.92; }
+.news-importa-corpo {
+    font-family: 'Libre Franklin','Segoe UI',Arial,Helvetica,sans-serif;
+    font-size: 0.86rem; line-height: 1.6; color: var(--neutro); opacity: 0.92;
+}
 .news-leitura-wrap {
     border-left: 2px solid var(--destaque); padding: 0.1rem 0 0.1rem 0.7rem; margin: 0.3rem 0 1rem 0;
 }
@@ -406,11 +448,14 @@ div[class*="st-key-news-live-card-"] {
     font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; color: var(--destaque);
     text-transform: uppercase; margin-bottom: 0.25rem;
 }
-.news-leitura-corpo { font-size: 0.86rem; line-height: 1.6; color: var(--neutro); opacity: 0.92; }
+.news-leitura-corpo {
+    font-family: 'Libre Franklin','Segoe UI',Arial,Helvetica,sans-serif;
+    font-size: 0.86rem; line-height: 1.6; color: var(--neutro); opacity: 0.92;
+}
 .news-leitura-nota { font-size: 0.68rem; color: var(--cinza); opacity: 0.75; margin-top: 0.3rem; }
 .news-secundario {
     border-top: 1px solid var(--borda); margin-top: 0.8rem; padding-top: 0.6rem;
-    font-size: 0.74rem; color: var(--cinza); line-height: 1.7;
+    font-size: 0.74rem; color: var(--cinza); line-height: 1.7; overflow-wrap: anywhere;
 }
 .news-secundario b { color: var(--neutro); font-weight: 600; }
 
@@ -490,16 +535,6 @@ div[class*="st-key-news-live-card-"] {
 /* Capa em fallback: nao reservar um retangulo gigante sem imagem real. */
 .news-capa-fallback { min-height: 0; }
 @media (max-width: 640px) {
-    /* só a capa SEM foto (:not(:has(img))) - a capa com foto também
-       carrega o fallback oculto no DOM, e o seletor antigo
-       (:has(.news-capa-fallback)) espremia a foto real numa faixa de 64px */
-    .news-capa:not(:has(img)) {
-        height: 64px !important;
-        aspect-ratio: auto !important;
-    }
-    .news-capa:not(:has(img)) .news-capa-fallback span {
-        font-size: 0.72rem !important;
-    }
     div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) {
         gap: 0.6rem !important;
     }
@@ -550,17 +585,6 @@ div[class*="st-key-news-live-card-"] {
 /* Modal NOTÍCIA: reduzir altura e espaçamento em celular.
    O fallback de capa não deve ocupar meia tela quando a fonte não oferece foto. */
 @media (max-width: 640px) {
-    .news-capa {
-        aspect-ratio: auto !important;
-        height: 104px !important;
-        margin-bottom: 0.45rem !important;
-    }
-    .news-capa img { object-fit: cover; }
-    .news-capa-fallback { min-height: 0 !important; }
-    .news-capa-fallback span {
-        font-size: 0.78rem !important;
-        letter-spacing: 0.08em !important;
-    }
     .news-headline {
         font-size: 0.98rem !important;
         line-height: 1.28 !important;
@@ -606,37 +630,34 @@ div[class*="st-key-news-live-card-"] {
     }
 }
 @media (max-width: 380px) {
-    .news-capa { height: 82px !important; }
     .news-corpo-p { font-size: 0.81rem !important; line-height: 1.44 !important; }
 }
 @media (max-width: 480px) {
-    .news-capa { aspect-ratio: 4 / 3; }
     .news-headline { font-size: 1rem; }
     .news-corpo-p { font-size: 0.88rem; max-width: none; }
 }
 
 /* Redesign editorial do modal NOTÍCIA — visual mais próximo de um terminal
-   financeiro, sem alterar a lógica dos dados nem os links existentes. */
+   financeiro, sem alterar a lógica dos dados nem os links existentes.
+   CORRIGIDO (auditoria 2026-10-22): toda cor aqui era hex fixo (#28313a,
+   #090d11 etc - uma paleta azulada PRÓPRIA, nem o preto/cinza neutro de
+   --bg/--borda nem o âmbar real --destaque/#FFA028) - o modal ficava
+   com uma identidade visual DIFERENTE do resto do terminal no tema AMBAR
+   e simplesmente ignorava os outros 3 temas (FOSFORO/AZUL/CLARO trocam
+   essas variáveis em runtime, config.py:TEMAS - um hex fixo nunca
+   acompanha). Mesmas variáveis do resto do app agora. A altura/object-fit
+   da capa não é mais redefinida aqui - fica só na regra única (.news-capa
+   acima), pra nao reabrir a guerra de especificidade que deixava 3
+   versões antigas da mesma regra mortas (ver comentário lá). */
 div[data-testid="stDialog"] > div {
-    border: 1px solid #28313a !important;
+    border: 1px solid var(--borda) !important;
     border-radius: 14px !important;
-    background: linear-gradient(180deg, #090d11 0%, #050607 100%) !important;
+    background: linear-gradient(180deg, var(--bg) 0%, var(--painel-bg) 100%) !important;
     box-shadow: 0 18px 60px rgba(0,0,0,.48) !important;
 }
 div[data-testid="stDialog"] [data-testid="stDialogHeader"] {
     padding: 0.8rem 1.15rem 0.55rem !important;
-    border-bottom: 1px solid #202830 !important;
-}
-div[data-testid="stDialog"] .news-capa {
-    height: clamp(170px, 27vh, 280px) !important;
-    border-radius: 10px !important;
-    border: 1px solid #27313a !important;
-    margin-bottom: 0.85rem !important;
-    background: #0c1116 !important;
-}
-div[data-testid="stDialog"] .news-capa img {
-    object-fit: cover !important;
-    object-position: center 38% !important;
+    border-bottom: 1px solid var(--borda) !important;
 }
 div[data-testid="stDialog"] .news-headline {
     font-size: clamp(1.15rem, 2vw, 1.65rem) !important;
@@ -653,11 +674,11 @@ div[data-testid="stDialog"] .news-meta-line {
     gap: 0.2rem 0.65rem !important;
     padding-bottom: 0.65rem !important;
     margin-bottom: 0.7rem !important;
-    border-bottom: 1px solid #202830 !important;
+    border-bottom: 1px solid var(--borda) !important;
     font-size: 0.72rem !important;
 }
 div[data-testid="stDialog"] .news-resumo-rotulo {
-    color: #7f8b96 !important;
+    color: var(--cinza) !important;
     font-size: 0.66rem !important;
     letter-spacing: .12em !important;
     margin-bottom: 0.5rem !important;
@@ -666,12 +687,12 @@ div[data-testid="stDialog"] .news-corpo-p {
     max-width: 78ch !important;
     font-size: 0.96rem !important;
     line-height: 1.72 !important;
-    color: #d9e0e7 !important;
+    color: var(--neutro) !important;
     margin-bottom: 0.9rem !important;
 }
 div[data-testid="stDialog"] .news-parcial-nota {
     padding-left: 0.65rem !important;
-    border-left: 2px solid #f5a623 !important;
+    border-left: 2px solid var(--destaque) !important;
     font-size: 0.72rem !important;
     line-height: 1.5 !important;
 }
@@ -680,28 +701,24 @@ div[data-testid="stDialog"] a[href][target="_blank"] {
 }
 div[data-testid="stDialog"] a.w-abrir-link,
 div[data-testid="stDialog"] a[href][target="_blank].news-open-link {
-    color: #ffad28 !important;
+    color: var(--destaque) !important;
 }
 div[data-testid="stDialog"] [data-testid="stLinkButton"] a,
 div[data-testid="stDialog"] a:has(span) {
-    border-color: #f5a623 !important;
+    border-color: var(--destaque) !important;
 }
 div[data-testid="stDialog"] .news-secundario {
-    border-top: 1px solid #26303a !important;
+    border-top: 1px solid var(--borda) !important;
     margin-top: 1rem !important;
     padding-top: 0.75rem !important;
-    color: #87929d !important;
+    color: var(--cinza) !important;
 }
 div[data-testid="stDialog"] .news-secundario a {
-    color: #ffad28 !important;
+    color: var(--destaque) !important;
 }
 @media (max-width: 640px) {
     div[data-testid="stDialog"] > div {
         border-radius: 10px !important;
-    }
-    div[data-testid="stDialog"] .news-capa {
-        height: 150px !important;
-        margin-bottom: 0.6rem !important;
     }
     div[data-testid="stDialog"] .news-headline {
         font-size: 1.08rem !important;
@@ -928,14 +945,29 @@ def _baixar_imagem_capa(url: str) -> bytes | None:
 _LARGURA_MAX_CAPA = 960
 
 
+# Proporção (largura/altura) fora desta faixa não fica bem em cobrir
+# (object-fit:cover): abaixo de 1.15 é retrato/quadrada - cobrir cortaria
+# as laterais; acima de 2.3 é panorâmica - cobrir cortaria topo/base. Faixa
+# calibrada no formato típico de foto editorial (og:image 1200x630 = 1.9,
+# 16:9 = 1.78) ficando dentro, ou seja, continua em "cobrir" (visualmente
+# melhor pra foto quase do tamanho da caixa - sem letterbox desnecessário).
+_RATIO_MIN_COBRIR = 1.15
+_RATIO_MAX_COBRIR = 2.3
+
+
 @st.cache_data(ttl=3600, max_entries=80, show_spinner=False)
-def _capa_data_uri(url: str) -> str | None:
+def _capa_data_uri(url: str) -> tuple[str, float] | None:
     """Capa já baixada no servidor (_baixar_imagem_capa), reduzida pra no
     máximo _LARGURA_MAX_CAPA px e embutida como data URI - entra DENTRO do
-    .news-capa (recorte 16:9 uniforme via object-fit, sem distorcer), em
-    vez do st.image solto de antes, que exibia a foto na proporção
-    original (retrato de 1200px de altura ocupava a tela inteira do modal).
-    Qualquer falha -> None (quem chama cai pra segunda via/fallback)."""
+    .news-capa, em vez do st.image solto de antes, que exibia a foto na
+    proporção original (retrato de 1200px de altura ocupava a tela inteira
+    do modal). Devolve (data_uri, largura/altura) - a proporção REAL da
+    foto (o PIL já abriu a imagem aqui mesmo; nenhum custo extra) decide,
+    em _renderizar_capa, se a capa usa object-fit:cover (a maioria das
+    fotos editoriais, perto de 16:9) ou :contain (retrato/panorâmica, onde
+    cover cortaria parte relevante da imagem - causa raiz do "imagem
+    cortada" auditada em 2026-10-22). Qualquer falha -> None (quem chama
+    cai pra segunda via/fallback)."""
     dados = _baixar_imagem_capa(url)
     if not dados:
         return None
@@ -944,11 +976,13 @@ def _capa_data_uri(url: str) -> str | None:
         from PIL import Image
         with Image.open(BytesIO(dados)) as img:
             img = img.convert("RGB")
+            proporcao = img.width / img.height if img.height else 1.0
             if img.width > _LARGURA_MAX_CAPA:
                 img = img.resize((_LARGURA_MAX_CAPA, max(1, round(img.height * _LARGURA_MAX_CAPA / img.width))))
             saida = BytesIO()
             img.save(saida, format="JPEG", quality=82, optimize=True)
-        return "data:image/jpeg;base64," + base64.b64encode(saida.getvalue()).decode("ascii")
+        data_uri = "data:image/jpeg;base64," + base64.b64encode(saida.getvalue()).decode("ascii")
+        return data_uri, proporcao
     except Exception:
         return None
 
@@ -958,15 +992,28 @@ def _renderizar_capa(imagem: str | None, veiculo_principal: str) -> None:
     hotlink/CORS/Safari). Se o download no servidor falhar, a segunda via
     é o <img> direto com fallback automático (listener global de
     injetar_fallback_imagem) - nunca um st.image(url) solto, que mostrava
-    o ícone de imagem quebrada quando o navegador também não conseguia."""
+    o ícone de imagem quebrada quando o navegador também não conseguia.
+
+    Modo cobrir/conter (ver _capa_html) só pode ser decidido quando a
+    proporção real é conhecida - ou seja, quando o download no servidor
+    funcionou. Na segunda via (download falhou, navegador busca a URL
+    direto) a proporção não existe ainda nesse ponto; fica 'cobrir' por
+    padrão, igual ao comportamento anterior - degradação honesta, não um
+    retrocesso silencioso."""
     marca = veiculo_principal or "NOTÍCIA"
-    if imagem and isinstance(imagem, str) and imagem.startswith(("https://", "http://")):
-        st.markdown(_capa_html(_capa_data_uri(imagem) or imagem, marca), unsafe_allow_html=True)
-    else:
+    if not (imagem and isinstance(imagem, str) and imagem.startswith(("https://", "http://"))):
         st.markdown(_capa_html(None, marca), unsafe_allow_html=True)
+        return
+    resultado = _capa_data_uri(imagem)
+    if resultado:
+        data_uri, proporcao = resultado
+        modo = "cobrir" if _RATIO_MIN_COBRIR <= proporcao <= _RATIO_MAX_COBRIR else "conter"
+        st.markdown(_capa_html(data_uri, marca, modo), unsafe_allow_html=True)
+    else:
+        st.markdown(_capa_html(imagem, marca, "cobrir"), unsafe_allow_html=True)
 
 
-def _capa_html(imagem: str | None, veiculo_principal: str) -> str:
+def _capa_html(imagem: str | None, veiculo_principal: str, modo: str = "cobrir") -> str:
     """Capa do modal editorial - imagem real da materia (og:image, ja'
     extraida junto do texto - ver data/news.py:_extrair_texto_artigo,
     nunca uma busca de rede extra so' pra foto) OU um fallback visual
@@ -976,6 +1023,12 @@ def _capa_html(imagem: str | None, veiculo_principal: str) -> str:
     irmão-oculto de _thumb_html: a imagem some e o fallback (já no DOM,
     só oculto) aparece, se o link quebrar/expirar no navegador - quem
     faz a troca é o listener global de injetar_fallback_imagem().
+
+    `modo` ("cobrir"/"conter", ver _renderizar_capa): "conter" preserva a
+    foto INTEIRA (object-fit:contain, nunca corta o assunto principal de
+    um retrato/panorâmica) com um fundo desfocado da MESMA foto atrás -
+    nunca uma barra vazia lisa nem uma cor genérica no lugar do que
+    sobra da caixa.
 
     So' usado como SEGUNDA via (_renderizar_capa ja' baixa a imagem no
     servidor antes - ver _baixar_imagem_capa); aqui o navegador busca a
@@ -987,9 +1040,12 @@ def _capa_html(imagem: str | None, veiculo_principal: str) -> str:
     marca = html.escape(veiculo_principal or "NOTÍCIA")
     if not imagem:
         return f"<div class='news-capa'><div class='news-capa-fallback'><span>{marca}</span></div></div>"
+    classe = "news-capa--conter" if modo == "conter" else "news-capa--cobrir"
+    imagem_escapada = html.escape(imagem, quote=True)
+    fundo = f"<div class='news-capa-fundo' style=\"background-image:url('{imagem_escapada}')\"></div>" if modo == "conter" else ""
     return (
-        "<div class='news-capa'>"
-        f"<img src='{html.escape(imagem)}' loading='lazy' decoding='async' "
+        f"<div class='news-capa {classe}'>" + fundo
+        + f"<img src='{imagem_escapada}' loading='lazy' decoding='async' "
         "referrerpolicy='no-referrer' alt=''>"
         f"<div class='news-capa-fallback' style='display:none;'><span>{marca}</span></div>"
         "</div>"
