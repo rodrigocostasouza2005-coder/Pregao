@@ -66,22 +66,29 @@ AREAS = (
     Area("radar", "RADAR", ":material/radar:", (
         Subaba("alertas", "Alertas", ("RADAR",)),
         Subaba("carteiras", "Carteiras Recomendadas", ("RADAR",)),
-        # subaba propria (2026-10-19): antes "RESEARCH" (recomendacoes/
-        # relatorios/lives das casas de analise) vinha empilhado DENTRO
-        # de Carteiras Recomendadas (mesma rota despachava os dois -
-        # ver app.py), sem nenhuma subaba visivel so' pra ele. "carteiras"
-        # perdeu "RESEARCH" do legado (o conteudo dela e' so' radar_tab,
-        # nunca foi research de verdade) - quem tinha SO' "RESEARCH"
-        # visivel antes ganha esta subaba nova, nao mais Carteiras.
-        Subaba("research", "Research", ("RESEARCH",)),
         Subaba("oportunidades", "Oportunidades", ("RADAR",)),
         Subaba("acompanhamento", "Acompanhamento", ("RADAR",)),
+    )),
+    # Area propria (2026-10-23, missao "RESEARCH institucional"): antes
+    # "Research" (feed/recomendacoes das casas) vivia em RADAR e "Teses"
+    # vivia em ANALISES, sem nenhum lugar unico que organizasse research
+    # de verdade (publicacoes de casas, cobertura/saude das fontes,
+    # anotacao pessoal). Consolida os dois + 1 subaba nova (Casas de
+    # Analise, ver data/research/casas_status.py) - zero coletor novo,
+    # zero tabela nova, so reorganiza o que ja existia.
+    Area("research", "RESEARCH", ":material/menu_book:", (
+        Subaba("feed", "Feed", ("RESEARCH",)),
+        Subaba("casas", "Casas de Análise"),  # conteudo novo, sem aba antiga - sempre visivel
+        # mesmo legado duplo de antes ("Teses" dependia de RADAR OU
+        # RESEARCH ja' visivel) - o conteudo (evidencias/copiloto vem de
+        # data/radar.py, tese propria vem de data/research/tese.py) nao
+        # mudou, so' a area que a hospeda.
+        Subaba("teses", "Minha Tese", ("RADAR", "RESEARCH")),
     )),
     Area("analises", "ANÁLISES", ":material/query_stats:", (
         Subaba("empresas", "Empresas", ("EQUITY",)),
         Subaba("fundamentos", "Fundamentos", ("EQUITY",)),
         Subaba("valuation", "Valuation", ("RADAR",)),
-        Subaba("teses", "Teses", ("RADAR", "RESEARCH")),
     )),
     Area("macro", "MACRO", ":material/public:", (
         Subaba("indicadores", "Indicadores", ("MACRO",)),
@@ -119,7 +126,7 @@ ROTA_LEGADO = {
     "NEWS": ("noticias", "empresas"),
     "CVM": ("noticias", "documentos"),
     "RADAR": ("radar", "alertas"),
-    "RESEARCH": ("radar", "research"),
+    "RESEARCH": ("research", "feed"),
     "EQUITY": ("analises", "empresas"),
     "MACRO": ("macro", "indicadores"),
     "CONFIG": ("mais", "config"),

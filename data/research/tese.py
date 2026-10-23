@@ -21,7 +21,36 @@ from datetime import datetime, timezone
 from data.supabase_client import obter_cliente
 
 _CONVICCOES_VALIDAS = ("ALTA", "MEDIA", "BAIXA")
-_POSICOES_VALIDAS = ("LONG", "SHORT")
+_POSICOES_VALIDAS = ("LONG", "SHORT", "WATCHLIST")
+
+# janela de deduplicacao de envio repetido (duplo clique/reenvio de rede
+# do MESMO conteudo) - NAO e' "so' grava se mudou" (isso quebraria o
+# proposito do tracker: reafirmar uma tese sem nenhuma mudanca semanas
+# depois e' um fato que vale registrar, ver docstring do modulo). So'
+# um clique duplicado do MESMO conteudo dentro desta janela e' tratado
+# como duplicata - reafirmacao deliberada depois desse tempo sempre gera
+# uma versao nova, mesmo com texto identico.
+_JANELA_DUPLICATA_S = 10
+
+_CAMPOS_COMPARADOS_DUPLICATA = (
+    "tese", "posicao", "premissas", "riscos", "catalisadores", "conviccao", "preco_alvo_tese",
+)
+
+
+def _e_duplicata_recente(usuario_sub: str, ticker: str, linha_nova: dict) -> dict | None:
+    atual = tese_atual(usuario_sub, ticker)
+    if atual is None:
+        return None
+    if any(atual.get(c) != linha_nova.get(c) for c in _CAMPOS_COMPARADOS_DUPLICATA):
+        return None
+    try:
+        registrado = datetime.fromisoformat(atual["registrado_em"])
+    except Exception:
+        return None
+    agora = datetime.now(registrado.tzinfo or timezone.utc)
+    if (agora - registrado).total_seconds() > _JANELA_DUPLICATA_S:
+        return None
+    return atual
 
 
 def registrar_versao(
@@ -39,7 +68,10 @@ def registrar_versao(
     ValueError se `conviccao`/`posicao` vierem fora do vocabulario
     esperado (erro de programacao/UI, nao de dado externo - falha alto
     e cedo em vez de gravar um valor que a UI depois nao sabe exibir).
-    Retorna a linha gravada (dict), ou None se o banco estiver fora do
+    Retorna a linha gravada (dict) - pode ser a linha JA EXISTENTE sem
+    INSERT novo, se for uma duplicata recente do mesmo conteudo (ver
+    _e_duplicata_recente, protege contra duplo clique/reenvio de rede,
+    nao contra reafirmacao deliberada). None se o banco estiver fora do
     ar ou o INSERT falhar."""
     if not tese or not tese.strip():
         raise ValueError("tese nao pode ser vazia - toda versao precisa de uma frase central.")
@@ -62,6 +94,9 @@ def registrar_versao(
         "conviccao": conviccao,
         "preco_alvo_tese": preco_alvo_tese,
     }
+    duplicata = _e_duplicata_recente(usuario_sub, ticker, linha)
+    if duplicata is not None:
+        return duplicata
     try:
         resp = cliente.table("research_teses").insert(linha).execute()
         return resp.data[0] if resp.data else linha

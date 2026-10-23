@@ -18,7 +18,7 @@ from curl_cffi import requests as cffi_requests
 
 import config
 from data import ia_cache
-from . import store
+from . import qualidade, store
 from .base import HEADERS, TIMEOUT, permitido
 
 _PROMPT_SISTEMA = (
@@ -571,7 +571,16 @@ def _gerar_resumo(link: str, titulo: str, extrator_texto, casa: str, tipo: str) 
     """Fluxo de geracao de verdade (extrai texto -> Groq -> grava em
     research_itens) - EXATAMENTE o que obter_resumo fazia antes do cache
     global existir (ver obter_resumo). Chamado por
-    ia_cache.obter_resumo_com_cache so' em cache miss."""
+    ia_cache.obter_resumo_com_cache so' em cache miss.
+
+    Gate de fidelidade (Fase 4, 2026-10-23, ver data/research/qualidade.py):
+    roda AQUI, nunca depois - e' a UNICA janela em que `texto` (original)
+    ainda existe em memoria (store.py nunca persiste o texto completo).
+    Resumo reprovado (numero/ticker/causalidade sem base no original)
+    NUNCA e' cacheado nem persistido - motivo_indisponivel generico
+    ('indisponivel', mesmo bucket seguro que falha tecnica) pra UI; o
+    motivo DETALHADO (pode conter trecho citado do resumo) so' vai pro
+    log tecnico via _log_erro_ia, nunca pro usuario final."""
     extrator = extrator_texto or obter_texto_relatorio
     texto, motivo = extrator(link)
     if texto is None:
@@ -580,6 +589,11 @@ def _gerar_resumo(link: str, titulo: str, extrator_texto, casa: str, tipo: str) 
     resumo, motivo, dados_estruturados = resumir_com_groq(texto, titulo, casa=casa, tipo=tipo)
     if resumo is None:
         return {"resumo": None, "motivo_indisponivel": motivo, "preco_alvo": None, "recomendacao": None}
+
+    motivo_gate = qualidade.validar_fidelidade(resumo, texto, titulo)
+    if motivo_gate is not None:
+        _log_erro_ia(dados_estruturados.get("modelo"), "gate_qualidade", motivo_gate)
+        return {"resumo": None, "motivo_indisponivel": "indisponivel", "preco_alvo": None, "recomendacao": None}
 
     preco_alvo = dados_estruturados.get("preco_alvo")
     recomendacao = dados_estruturados.get("recomendacao")
