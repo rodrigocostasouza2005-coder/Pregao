@@ -43,9 +43,19 @@ LIMITACOES_PADRAO = (
 
 
 def _variacao_pct(atual, anterior):
+    """Variacao percentual de `anterior` pra `atual`. Usa abs(anterior)
+    no denominador (nunca `anterior` puro) - bug real encontrado em
+    revisao tecnica independente (2026-10-22): com base negativa (ex:
+    prejuizo), `atual/anterior - 1` INVERTE a direcao - prejuizo
+    encolhendo de -100 pra -50 (melhora real) dava -50% ("queda"), e
+    prejuizo piorando de -50 pra -100 dava +100% ("alta"). Com
+    abs(anterior), o sinal do resultado sempre bate com o sinal de
+    (atual - anterior) - pra base positiva o valor numerico e' IDENTICO
+    ao de antes (abs(anterior) == anterior), so' corrige o caso de base
+    negativa."""
     if atual is None or anterior in (None, 0):
         return None
-    return (atual / anterior - 1) * 100
+    return (atual - anterior) / abs(anterior) * 100
 
 
 def _margem_pct(numerador, receita):
@@ -234,15 +244,49 @@ def comparar_com_versao_anterior(nota_atual: dict, nota_anterior: dict | None) -
     return mudancas
 
 
+def _ultima_versao_mesmo_periodo(ticker: str, pais: str, periodo_label: str, cliente) -> dict | None:
+    """Conteudo da versao mais recente JA PERSISTIDA pro MESMO ticker+
+    pais+periodo_label (ex: reprocessar o 2T2026 da Vale 2x no mesmo
+    dia) - None se nao houver nenhuma ou a consulta falhar (tratado como
+    'sem versao anterior', nunca bloqueia o insert por isso)."""
+    try:
+        resp = (
+            cliente.table(_TABELA).select("conteudo")
+            .eq("ticker", ticker.upper()).eq("pais", pais).eq("periodo_label", periodo_label)
+            .order("gerado_em", desc=True).limit(1)
+            .execute()
+        )
+        linhas = resp.data or []
+        return linhas[0]["conteudo"] if linhas else None
+    except Exception:
+        return None
+
+
 def salvar_versao(nota: dict) -> bool:
     """Insere a nota como registro NOVO (nunca update) em
     `earnings_reviews` - False se Supabase indisponivel ou a nota nao
-    estiver disponivel (nunca persiste nota com disponivel=False)."""
+    estiver disponivel (nunca persiste nota com disponivel=False).
+
+    Deduplicacao (bug real encontrado em revisao tecnica independente,
+    2026-10-22): sem isso, reprocessar o MESMO ticker/periodo 2x (ex:
+    usuario reabre a pagina, ou um job futuro roda de novo sem checar)
+    inseria uma linha NOVA idêntica a cada vez - a tabela e' append-only
+    DE PROPOSITO (pra guardar re-apresentacoes reais da CVM/SEC), mas
+    2 chamadas com os MESMOS numeros nao sao uma re-apresentacao, sao
+    a MESMA versao reprocessada. Compara so' `metricas` (nunca o dict
+    inteiro - `gerado_em`/`fontes[].coletado_em` sempre mudam entre
+    chamadas, mesmo com numero identico) contra a ultima versao JA
+    persistida do MESMO ticker+pais+periodo_label; numeros iguais ->
+    nao insere de novo (devolve True - a versao JA esta' salva, do
+    ponto de vista de quem chama nao e' uma falha)."""
     if not nota.get("disponivel"):
         return False
     cliente = obter_cliente()
     if cliente is None:
         return False
+    ultima_mesmo_periodo = _ultima_versao_mesmo_periodo(nota["ticker"], nota["pais"], nota["periodo_label"], cliente)
+    if ultima_mesmo_periodo is not None and ultima_mesmo_periodo.get("metricas") == nota.get("metricas"):
+        return True
     try:
         cliente.table(_TABELA).insert({
             "ticker": nota["ticker"], "pais": nota["pais"],

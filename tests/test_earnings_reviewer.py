@@ -137,15 +137,81 @@ def test_salvar_versao_nunca_persiste_nota_indisponivel():
         mock_cliente.assert_not_called()
 
 
-def test_salvar_versao_insere_sem_update(_df_fixture=None):
+def _cliente_fake_sem_versao_anterior():
+    """MagicMock cuja consulta de deduplicacao (_ultima_versao_mesmo_periodo)
+    devolve resp.data == [] (nenhuma versao anterior) - caminho feliz
+    de insert pra quem nao quer testar a deduplicacao em si."""
     cliente_fake = MagicMock()
+    cliente_fake.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value \
+        .order.return_value.limit.return_value.execute.return_value.data = []
+    return cliente_fake
+
+
+def test_salvar_versao_insere_sem_update():
+    cliente_fake = _cliente_fake_sem_versao_anterior()
     with patch.object(reviewer, "obter_cliente", return_value=cliente_fake):
         ok = reviewer.salvar_versao({
             "disponivel": True, "ticker": "VALE3", "pais": "BR",
             "periodo_label": "2T2026", "gerado_em": "2026-10-22T00:00:00+00:00",
+            "metricas": {"receita_liquida": {"atual": 1.0}},
         })
     assert ok is True
-    cliente_fake.table.assert_called_once_with("earnings_reviews")
+    cliente_fake.table.return_value.insert.assert_called_once()
+    cliente_fake.table.return_value.update.assert_not_called()
+
+
+def test_salvar_versao_reprocessar_mesmo_periodo_com_numeros_iguais_nao_duplica():
+    """Bug real corrigido em revisao tecnica (2026-10-22): reprocessar o
+    MESMO ticker/periodo 2x com os MESMOS numeros nao pode inserir 2
+    linhas - so' e' uma versao NOVA de verdade quando os numeros mudam
+    (re-apresentacao real)."""
+    cliente_fake = MagicMock()
+    metricas = {"receita_liquida": {"atual": 53012000.0, "yoy_anterior": 49807000.0}}
+    cliente_fake.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value \
+        .order.return_value.limit.return_value.execute.return_value.data = [
+            {"conteudo": {"metricas": metricas, "gerado_em": "2026-10-21T00:00:00+00:00"}}
+        ]
+    with patch.object(reviewer, "obter_cliente", return_value=cliente_fake):
+        ok = reviewer.salvar_versao({
+            "disponivel": True, "ticker": "VALE3", "pais": "BR",
+            "periodo_label": "2T2026", "gerado_em": "2026-10-22T00:00:00+00:00",
+            "metricas": metricas,
+        })
+    assert ok is True
+    cliente_fake.table.return_value.insert.assert_not_called()
+
+
+def test_salvar_versao_reprocessar_com_numeros_diferentes_insere_nova_versao():
+    """Re-apresentacao real (numeros mudaram) - TEM que inserir, nunca
+    bloquear so' porque e' o mesmo ticker/periodo."""
+    cliente_fake = MagicMock()
+    cliente_fake.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value \
+        .order.return_value.limit.return_value.execute.return_value.data = [
+            {"conteudo": {"metricas": {"receita_liquida": {"atual": 48000000.0}}}}
+        ]
+    with patch.object(reviewer, "obter_cliente", return_value=cliente_fake):
+        ok = reviewer.salvar_versao({
+            "disponivel": True, "ticker": "VALE3", "pais": "BR",
+            "periodo_label": "2T2026", "gerado_em": "2026-10-22T00:00:00+00:00",
+            "metricas": {"receita_liquida": {"atual": 53012000.0}},  # numero diferente (re-apresentacao)
+        })
+    assert ok is True
+    cliente_fake.table.return_value.insert.assert_called_once()
+
+
+def test_salvar_versao_consulta_de_dedup_falhando_nao_bloqueia_o_insert():
+    """Se a CONSULTA de deduplicacao falhar (rede/banco), nunca deve
+    impedir o insert por isso - trata como 'sem versao anterior'."""
+    cliente_fake = MagicMock()
+    cliente_fake.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value \
+        .order.return_value.limit.return_value.execute.side_effect = RuntimeError("banco fora do ar")
+    with patch.object(reviewer, "obter_cliente", return_value=cliente_fake):
+        ok = reviewer.salvar_versao({
+            "disponivel": True, "ticker": "VALE3", "pais": "BR",
+            "periodo_label": "2T2026", "gerado_em": "2026-10-22T00:00:00+00:00",
+            "metricas": {"receita_liquida": {"atual": 1.0}},
+        })
+    assert ok is True
     cliente_fake.table.return_value.insert.assert_called_once()
     cliente_fake.table.return_value.update.assert_not_called()
 
@@ -154,3 +220,44 @@ def test_salvar_versao_supabase_indisponivel_devolve_false():
     with patch.object(reviewer, "obter_cliente", return_value=None):
         assert reviewer.salvar_versao({"disponivel": True, "ticker": "X", "pais": "BR",
                                         "periodo_label": "1T2026", "gerado_em": "x"}) is False
+
+
+# ---------------------------------------------------------------------
+# BUG REAL (revisao tecnica independente, 2026-10-22): variacao percentual
+# com base NEGATIVA (prejuizo) invertia a direcao - atual/anterior-1 com
+# anterior<0 faz o sinal do resultado nao bater com o sinal de
+# (atual - anterior). Corrigido em _variacao_pct (denominador abs(anterior)).
+# ---------------------------------------------------------------------
+
+def test_variacao_pct_prejuizo_encolhendo_e_melhora_nunca_queda():
+    """Prejuizo de -100 pra -50 (reduziu a METADE, resultado MELHOROU) -
+    tem que sair POSITIVO (ALTA), nunca negativo/QUEDA."""
+    pct = reviewer._variacao_pct(-50.0, -100.0)
+    assert pct == pytest.approx(50.0)
+    assert reviewer._direcao(pct) == "ALTA"
+
+
+def test_variacao_pct_prejuizo_piorando_e_queda_nunca_alta():
+    """Prejuizo de -50 pra -100 (DOBROU, resultado PIOROU) - tem que sair
+    NEGATIVO (QUEDA), nunca positivo/ALTA."""
+    pct = reviewer._variacao_pct(-100.0, -50.0)
+    assert pct == pytest.approx(-100.0)
+    assert reviewer._direcao(pct) == "QUEDA"
+
+
+def test_variacao_pct_lucro_para_prejuizo_e_sempre_queda():
+    pct = reviewer._variacao_pct(-50.0, 100.0)
+    assert pct == pytest.approx(-150.0)
+    assert reviewer._direcao(pct) == "QUEDA"
+
+
+def test_variacao_pct_prejuizo_para_lucro_e_sempre_alta():
+    pct = reviewer._variacao_pct(50.0, -100.0)
+    assert reviewer._direcao(pct) == "ALTA"
+
+
+def test_variacao_pct_base_positiva_fica_numericamente_identica_de_antes():
+    """Garante que a correcao NAO mudou o resultado pro caso comum (base
+    positiva) - mesma formula de antes nesse caso (abs(anterior)==anterior)."""
+    assert reviewer._variacao_pct(110.0, 100.0) == pytest.approx(10.0)
+    assert reviewer._variacao_pct(90.0, 100.0) == pytest.approx(-10.0)
