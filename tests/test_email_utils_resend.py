@@ -117,3 +117,70 @@ def test_resend_http_error_nao_expoe_chave(monkeypatch):
     assert resultado["ok"] is False
     assert "401" in resultado["erro"]
     assert "nao-deve-aparecer" not in resultado["erro"]
+
+
+def test_resend_http_error_403_extrai_mensagem_do_corpo_json(monkeypatch):
+    """Caminho real de produção (achado na auditoria dos coletores,
+    22/10/2026): Resend devolve 403 com corpo JSON
+    {"message": "...", "name": "..."} quando o domínio de EMAIL_FROM não
+    está verificado - jobs/email_utils.py:_enviar_resend lê exc.read() e
+    extrai corpo["message"] nesse caso (branch nunca exercitado pelos
+    testes anteriores, que só cobriam HTTPError sem corpo/fp=None - o
+    `except Exception: pass` ao redor do parse do JSON escondia
+    silenciosamente uma regressão nesse caminho). Mensagem real vista em
+    produção: "The gmail.com domain is not verified. Please, add and
+    verify your domain on https://resend.com/domains" - EMAIL_FROM
+    configurado pelo dono aponta pra um domínio que o Resend nunca vai
+    conseguir verificar (gmail.com não pertence ao projeto); reproduzida
+    aqui com um corpo genérico equivalente, não o segredo real."""
+    import io
+
+    corpo_json = json.dumps({
+        "message": "The example.com domain is not verified. Please, add and verify your domain on https://resend.com/domains",
+        "name": "validation_error",
+    }).encode("utf-8")
+    erro = HTTPError(
+        url="https://api.resend.com/emails",
+        code=403,
+        msg="Forbidden",
+        hdrs=None,
+        fp=io.BytesIO(corpo_json),
+    )
+    monkeypatch.setenv("EMAIL_PROVIDER", "resend")
+    monkeypatch.setenv("RESEND_API_KEY", "nao-deve-aparecer")
+    monkeypatch.setenv("EMAIL_FROM", "alerts@example.com")
+    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
+    monkeypatch.setattr(email_utils, "urlopen", lambda *_a, **_k: (_ for _ in ()).throw(erro))
+
+    resultado = email_utils.enviar_email("Assunto", "Texto")
+
+    assert resultado["ok"] is False
+    assert resultado["erro"] == (
+        "Resend HTTP 403: The example.com domain is not verified. Please, add and "
+        "verify your domain on https://resend.com/domains"
+    )
+    assert "nao-deve-aparecer" not in resultado["erro"]
+
+
+def test_resend_http_error_com_corpo_nao_json_nunca_quebra(monkeypatch):
+    """Corpo de erro que não é JSON válido (HTML de página de erro, texto
+    cru etc) não pode lançar exceção pro chamador - cai no
+    `except Exception: pass` e devolve só o código HTTP, sem detalhe."""
+    import io
+
+    erro = HTTPError(
+        url="https://api.resend.com/emails",
+        code=500,
+        msg="Internal Server Error",
+        hdrs=None,
+        fp=io.BytesIO(b"<html>not json</html>"),
+    )
+    monkeypatch.setenv("EMAIL_PROVIDER", "resend")
+    monkeypatch.setenv("RESEND_API_KEY", "chave")
+    monkeypatch.setenv("EMAIL_FROM", "alerts@example.com")
+    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
+    monkeypatch.setattr(email_utils, "urlopen", lambda *_a, **_k: (_ for _ in ()).throw(erro))
+
+    resultado = email_utils.enviar_email("Assunto", "Texto")
+
+    assert resultado == {"ok": False, "erro": "Resend HTTP 500"}
