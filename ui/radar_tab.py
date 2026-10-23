@@ -142,6 +142,25 @@ div[data-testid="stElementContainer"]:has(.radar-stub) + div[data-testid="stElem
     .rq-tabela .rq-sec { display: none; }
     .rq-tabela th, .rq-tabela td { padding: 0.3rem 0.35rem; }
 }
+
+/* ---- ACOMPANHAMENTO DA WATCHLIST (redesign visual 2026-10-23) --------
+   Escopado só às classes abaixo (nenhuma regra compartilhada do RADAR DE
+   QUEDAS/cobertura foi alterada) - MINHAS POSIÇÕES precisava do mesmo
+   alinhamento rígido ticker/quantidade/preço/variação que as tabelas já
+   usam, mas como lista (sem <table>, cada linha tem o botão "remover"
+   nativo do Streamlit ao lado - mesmo padrão de app.py:_fragmento_watchlist,
+   só que a´ ainda era frase corrida em vez de colunas alinhadas). */
+.acomp-posicao {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem;
+    padding: 0.3rem 0; border-bottom: 1px solid var(--borda);
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; flex-wrap: wrap;
+}
+.acomp-posicao-ativo { color: var(--destaque); font-weight: 700; margin-right: 0.6rem; }
+.acomp-posicao-detalhe { color: var(--cinza); font-size: 0.72rem; }
+.acomp-posicao-lucro { font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 640px) {
+    .acomp-posicao { font-size: 0.74rem; }
+}
 """
 
 
@@ -379,16 +398,22 @@ def _linha_posicao_gerenciar(sub: str, posicao: dict, valores_atuais: dict, pref
     extra = valores_atuais.get(ticker) or {}
     lucro = extra.get("lucro_pct")
     if lucro is None:
-        lucro_txt = "variação atual indisponível"
+        lucro_txt = "<span class='acomp-posicao-detalhe'>variação indisponível</span>"
     else:
         sinal = "+" if lucro >= 0 else ""
-        lucro_txt = f"{sinal}{config.formatar_numero(lucro, 2, prefs['formato_numerico'])}% desde o preço médio"
+        lucro_txt = (
+            f"<span class='acomp-posicao-lucro {_classe_var(lucro)}'>"
+            f"{sinal}{config.formatar_numero(lucro, 2, prefs['formato_numerico'])}%</span>"
+        )
 
     col_info, col_remover = st.columns([5, 1])
     col_info.markdown(
-        f"<div class='rq-sub'><span class='rq-ticker'>{html.escape(ticker)}</span> — "
+        f"<div class='acomp-posicao'>"
+        f"<span><span class='acomp-posicao-ativo'>{html.escape(ticker)}</span>"
+        f"<span class='acomp-posicao-detalhe'>"
         f"{config.formatar_numero(posicao['quantidade'], 0, prefs['formato_numerico'])} cotas × "
-        f"R$ {config.formatar_numero(float(posicao['preco_medio']), 2, prefs['formato_numerico'])} · {lucro_txt}</div>",
+        f"R$ {config.formatar_numero(float(posicao['preco_medio']), 2, prefs['formato_numerico'])}</span></span>"
+        f"{lucro_txt}</div>",
         unsafe_allow_html=True,
     )
     if col_remover.button("x", key=f"remover_posicao_{ticker}"):
@@ -440,14 +465,19 @@ def _secao_risco_calculado(info: dict, prefs: dict):
     st.markdown("<div class='rq-bloco'><span>CONCENTRAÇÃO POR SETOR</span></div>", unsafe_allow_html=True)
     st.markdown(_tabela_concentracao_html(info["concentracao_setor"], info["limiar_concentracao_pct"], prefs), unsafe_allow_html=True)
 
+    st.markdown(
+        f"<div class='rq-bloco'><span>VOLATILIDADE E DRAWDOWN</span>"
+        f"<span class='rq-bloco-meta'>janela de {html.escape(periodo)}</span></div>",
+        unsafe_allow_html=True,
+    )
     col_vol, col_dd, col_queda = st.columns(3)
-    col_vol.metric(f"Volatilidade anualizada ({periodo})",
+    col_vol.metric("VOLATILIDADE ANUALIZADA",
                    f"{config.formatar_numero(info['volatilidade_anual_pct'], 1, prefs['formato_numerico'])}%"
                    if info["volatilidade_anual_pct"] is not None else "—")
-    col_dd.metric(f"Drawdown máximo ({periodo})",
+    col_dd.metric("DRAWDOWN MÁXIMO",
                   f"{config.formatar_numero(info['drawdown_pct'], 1, prefs['formato_numerico'])}%"
                   if info["drawdown_pct"] is not None else "—")
-    col_queda.metric("Maior queda diária observada",
+    col_queda.metric("MAIOR QUEDA DIÁRIA",
                       f"{config.formatar_numero(info['maior_queda_diaria_pct'], 1, prefs['formato_numerico'])}%"
                       if info["maior_queda_diaria_pct"] is not None else "—")
 
@@ -514,7 +544,7 @@ def _secao_risco(prefs: dict, sub: str):
         st.markdown("<div class='rq-vazio'>Nenhuma posição cadastrada ainda.</div>", unsafe_allow_html=True)
 
     info = radar.risco_carteira(sub, prefs)
-    st.markdown("<div class='radar-separador' style='margin-top:1rem;'>ANÁLISE DE RISCO</div>", unsafe_allow_html=True)
+    st.markdown("<div class='rq-bloco' style='margin-top:1.3rem;'><span>ANÁLISE DE RISCO</span></div>", unsafe_allow_html=True)
 
     if info["carteira_cadastrada"] is not True:
         st.markdown(
