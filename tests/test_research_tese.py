@@ -187,3 +187,95 @@ def test_scorecard_none_quando_nunca_registrada():
     cliente, _ = _cliente_fake()
     with patch.object(tese_mod, "obter_cliente", return_value=cliente):
         assert tese_mod.scorecard("user-1", "TICKER_SEM_TESE") is None
+
+
+def test_posicao_watchlist_e_aceita():
+    cliente, _ = _cliente_fake()
+    linha = _registrar(cliente, usuario_sub="user-1", ticker="PETR4", tese="Observando", posicao="WATCHLIST")
+    assert linha["posicao"] == "WATCHLIST"
+
+
+def test_envio_duplicado_do_mesmo_conteudo_dentro_da_janela_nao_cria_versao_nova():
+    """Duplo clique/reenvio de rede do MESMO formulario, sem nenhuma
+    mudanca de conteudo, em seguida - nao deve virar uma 2a linha."""
+    cliente, tabela = _cliente_fake()
+    _registrar(
+        cliente, usuario_sub="user-1", ticker="PETR4", tese="Long PETR4",
+        premissas=["A"], riscos=["B"], catalisadores=["C"], conviccao="ALTA", posicao="LONG",
+    )
+    _registrar(
+        cliente, usuario_sub="user-1", ticker="PETR4", tese="Long PETR4",
+        premissas=["A"], riscos=["B"], catalisadores=["C"], conviccao="ALTA", posicao="LONG",
+    )
+    with patch.object(tese_mod, "obter_cliente", return_value=cliente):
+        historico = tese_mod.historico_tese("user-1", "PETR4")
+    assert len(historico) == 1
+
+
+def test_reafirmacao_do_mesmo_conteudo_apos_a_janela_cria_versao_nova():
+    """Mesmo conteudo, mas fora da janela de duplicata (ex: o usuario
+    reabriu a tese dias depois e confirmou que nada mudou) - isso E' uma
+    versao nova de verdade, nao uma duplicata de clique."""
+    cliente, tabela = _cliente_fake()
+    _registrar(
+        cliente, usuario_sub="user-1", ticker="PETR4", tese="Long PETR4",
+        premissas=["A"], riscos=["B"], catalisadores=["C"], conviccao="ALTA", posicao="LONG",
+    )
+    tabela.linhas[-1]["registrado_em"] = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
+    _registrar(
+        cliente, usuario_sub="user-1", ticker="PETR4", tese="Long PETR4",
+        premissas=["A"], riscos=["B"], catalisadores=["C"], conviccao="ALTA", posicao="LONG",
+    )
+    with patch.object(tese_mod, "obter_cliente", return_value=cliente):
+        historico = tese_mod.historico_tese("user-1", "PETR4")
+    assert len(historico) == 2
+
+
+def test_ticker_sem_cadastro_conhecido_funciona_normalmente():
+    """Tese e' dado pessoal do usuario, nao research editorial vinculado
+    a uma fonte - nao existe (nem deveria existir) validacao contra um
+    universo de tickers "reais" (mesmo principio que historico.py/
+    research_itens ja seguem: casa/ticker sao strings livres)."""
+    cliente, _ = _cliente_fake()
+    linha = _registrar(cliente, usuario_sub="user-1", ticker="XXXX99", tese="Observando um ticker fora do radar")
+    assert linha is not None
+    assert linha["ticker"] == "XXXX99"
+
+
+def test_todos_campos_opcionais_vazios_ou_none():
+    cliente, _ = _cliente_fake()
+    linha = _registrar(
+        cliente, usuario_sub="user-1", ticker="PETR4", tese="Só a tese, sem mais nada",
+        premissas=None, riscos=None, catalisadores=None, conviccao=None, posicao=None, preco_alvo_tese=None,
+    )
+    assert linha is not None
+    assert linha["premissas"] == []
+    assert linha["riscos"] == []
+    assert linha["catalisadores"] == []
+    assert linha["conviccao"] is None
+    assert linha["posicao"] is None
+    assert linha["preco_alvo_tese"] is None
+
+
+def test_registro_aparece_no_historico_imediatamente_apos_salvar():
+    """'Confirmar que o registro apareceu no histórico depois de salvo' -
+    leitura logo em seguida ao INSERT (mesma chamada sincrona que a UI
+    faz apos o rerun) precisa achar a versao nova."""
+    cliente, _ = _cliente_fake()
+    salvo = _registrar(cliente, usuario_sub="user-1", ticker="PETR4", tese="Tese registrada agora")
+    with patch.object(tese_mod, "obter_cliente", return_value=cliente):
+        atual = tese_mod.tese_atual("user-1", "PETR4")
+        historico = tese_mod.historico_tese("user-1", "PETR4")
+    assert atual is not None and atual["tese"] == "Tese registrada agora"
+    assert len(historico) == 1 and historico[0]["id"] == salvo["id"]
+
+
+def test_envio_duplicado_com_conteudo_diferente_nao_e_bloqueado():
+    """So' bloqueia duplicata de CONTEUDO IDENTICO - uma edicao real,
+    mesmo que enviada rapido em seguida, sempre gera versao nova."""
+    cliente, _ = _cliente_fake()
+    _registrar(cliente, usuario_sub="user-1", ticker="PETR4", tese="Long PETR4", conviccao="BAIXA")
+    _registrar(cliente, usuario_sub="user-1", ticker="PETR4", tese="Long PETR4 - revisado", conviccao="ALTA")
+    with patch.object(tese_mod, "obter_cliente", return_value=cliente):
+        historico = tese_mod.historico_tese("user-1", "PETR4")
+    assert len(historico) == 2
