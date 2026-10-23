@@ -337,10 +337,45 @@ REGISTRO_COLETORES = [
         "leitor": _leitor_hibrido("Genial (Lives)", _leitor_research("Genial (Lives)")),
     },
     {
+        # linha nova (auditoria 2026-10-22): "BTG Pactual Research" e' casa
+        # ativa_por_padrao=True em data/research/__init__.py:CASAS (coleta de
+        # verdade, registro em research_itens com casa="BTG Pactual Research" -
+        # ver data/research/btg.py:_NOME_CASA) mas nao constava neste painel -
+        # ficava sem nenhuma representacao (nem OK nem falha).
+        "nome": "BTG Pactual Research", "fonte": "content.btgpactual.com (API de research, filtrado por tier publico)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 48, "instrumentado": True,
+        "leitor": _leitor_hibrido("BTG Pactual Research", _leitor_research("BTG Pactual Research")),
+    },
+    {
+        # linha nova (auditoria 2026-10-22): mesmo gap do BTG acima - "Monte
+        # Bravo" tambem ativa_por_padrao=True (ver data/research/montebravo.py:
+        # _NOME_CASA) e tambem nao constava neste painel.
+        "nome": "Monte Bravo", "fonte": "montebravo.com.br (feed RSS do blog, seção de análise)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 48, "instrumentado": True,
+        "leitor": _leitor_hibrido("Monte Bravo", _leitor_research("Monte Bravo")),
+    },
+    {
         "nome": "CALENDARIO", "fonte": "RI das empresas + NEWS + prazo CVM",
         "categoria": "Calendario", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
         "idade_maxima_horas": 48, "instrumentado": True,
         "leitor": _leitor_hibrido("CALENDARIO", _leitor_calendario()),
+    },
+    {
+        # linha nova (Modulo 2 - Earnings Reviewer, 2026-10-22):
+        # data/earnings/cvm_dre.py ja' chama registrar_tentativa - essa
+        # linha so' expõe isso no painel (mesmo padrao das demais fontes
+        # instrumentadas, nao hibridas: sem coletor_local envolvido, roda
+        # sob demanda quando alguem abre uma nota de resultado BR).
+        "nome": "CVM (DRE trimestral)", "fonte": "dados.cvm.gov.br (ITR - DRE consolidada)",
+        "categoria": "Earnings", "frequencia_esperada": "sob demanda (cache 6h)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
+    {
+        "nome": "SEC EDGAR (XBRL)", "fonte": "data.sec.gov (companyconcept, us-gaap)",
+        "categoria": "Earnings", "frequencia_esperada": "sob demanda (cache 6h)",
+        "idade_maxima_horas": 30, "instrumentado": True,
     },
     {
         # linha nova (auditoria 2026-10-15): jobs/radar_quedas.py (GitHub
@@ -409,6 +444,88 @@ _COLETORES_CRITICOS = {
     "NEWS", "NEWS (Brasil)", "NEWS (Internacional)", "NEWS (watchlist)", "NEWS (ticker único)",
     "MERCADO", "MACRO (BCB)", "CVM", "CVM (FCA)", "CVM (watchlist)", "CALENDARIO",
 }
+
+
+# --- Consumo efetivo (presenca nos consumidores) ---------------------
+# Modulo 1 (auditoria 2026-10-22): obter_painel_saude() acima so' mede
+# COLETA e PERSISTENCIA - nunca se o dado persistido chegou a ser USADO
+# por um consumidor real. Uma secao do Morning Call pode "existir" (titulo
+# presente - jobs/morning_call.py:gerar_preview ja valida isso) e ainda
+# sair vazia (so' a frase de fallback, ex. "Nenhuma manchete macro do
+# Brasil nesta coleta.") mesmo com coleta OK e itens novos persistidos.
+# Esta secao NUNCA declara o coletor quebrado por isso - pode ser filtro
+# editorial legitimo (relevancia/dedup/limite, ver
+# data/morning_call_editorial.py:filtrar_noticias) - so' torna a
+# divergencia visivel pra quem olha o painel decidir.
+_SEM_VALOR = object()  # sentinela pra distinguir "edicao nao passada" (busca
+# a real) de "edicao=None passado explicitamente" (ex: teste simulando banco
+# indisponivel) em obter_painel_consumo() abaixo.
+
+ESTADOS_CONSUMO = {
+    "CONSUMO_COM_ITENS": "Usado na última edição",
+    "CONSUMO_SEM_ITENS": "Ausente na última edição (filtro editorial pode ser legítimo - ver seção)",
+    "CONSUMO_DESCONHECIDO": "Sem edição recente do Morning Call para conferir",
+}
+
+# Fonte (mesmo nome de REGISTRO_COLETORES) -> secoes de
+# jobs.morning_call.SECOES_OBRIGATORIAS onde ela deveria aparecer.
+SECOES_POR_FONTE_CONSUMO = {
+    "NEWS (Brasil)": ("2. BRASIL",),
+    "NEWS (Internacional)": ("3. EXTERIOR",),
+    "NEWS (watchlist)": ("5. EMPRESAS E SETORES",),
+}
+
+
+def _ultima_edicao_morning_call():
+    from data.morning_call_historico import listar_edicoes
+    try:
+        edicoes = listar_edicoes()
+    except Exception:
+        return None
+    if not edicoes:
+        return None
+    return next((e for e in edicoes if e.get("conteudo")), None)
+
+
+def obter_painel_consumo(edicao=_SEM_VALOR) -> list:
+    """Painel COMPLEMENTAR a obter_painel_saude(): pra cada fonte com
+    secao conhecida no Morning Call (SECOES_POR_FONTE_CONSUMO), conta
+    quantos itens com link apareceram na ULTIMA edicao publicada
+    (jobs/morning_call.py:contar_itens_por_secao). `edicao` e'
+    injetavel pra teste puro (dict com "conteudo"/"data" ou None); por
+    padrao busca a edicao real via _ultima_edicao_morning_call(). Nunca
+    lanca excecao - qualquer falha individual cai em CONSUMO_DESCONHECIDO,
+    nunca finge sucesso nem derruba o painel inteiro (mesmo espirito de
+    obter_painel_saude)."""
+    from jobs.morning_call import contar_itens_por_secao
+
+    if edicao is _SEM_VALOR:
+        edicao = _ultima_edicao_morning_call()
+
+    painel = []
+    for fonte, secoes in SECOES_POR_FONTE_CONSUMO.items():
+        if not edicao or not edicao.get("conteudo"):
+            painel.append({
+                "fonte": fonte, "secoes": secoes, "itens": None,
+                "data_edicao": None, "codigo_estado": "CONSUMO_DESCONHECIDO",
+                "rotulo_estado": ESTADOS_CONSUMO["CONSUMO_DESCONHECIDO"],
+            })
+            continue
+        try:
+            contagem = contar_itens_por_secao(edicao["conteudo"])
+        except Exception:
+            contagem = {}
+        total = sum(contagem.get(secao, 0) for secao in secoes)
+        codigo = "CONSUMO_COM_ITENS" if total else "CONSUMO_SEM_ITENS"
+        rotulo = ESTADOS_CONSUMO[codigo]
+        if total:
+            rotulo = f"{rotulo} ({total} iten(s))"
+        painel.append({
+            "fonte": fonte, "secoes": secoes, "itens": total,
+            "data_edicao": edicao.get("data"), "codigo_estado": codigo,
+            "rotulo_estado": rotulo,
+        })
+    return painel
 
 
 def auditar_registro_coletores(registro=None) -> list:

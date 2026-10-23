@@ -17,8 +17,8 @@ from data.eventos import (
 )
 from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta, obter_selic_meta_copom
 from data.morning_call_editorial import (
-    _macro_rows, _referencia_cotacao, e_noticia_de_empresa, editoria_por_assunto, filtrar_noticias,
-    montar_edicao, nota_sessao,
+    _com_fonte_preferida, _macro_rows, _ordem_editorial, _referencia_cotacao, e_noticia_de_empresa,
+    editoria_por_assunto, filtrar_noticias, montar_edicao, nota_sessao,
 )
 from data.news import obter_top_mercado, obter_top_mercado_internacional, parece_ingles, traduzir_manchetes_pdf
 from data.prices import obter_cotacao_indice, rotulo_cotacao_em_cache
@@ -153,6 +153,7 @@ def _linhas_noticias(itens, limite, traducoes=None):
         if not titulo:
             continue
         traduzido = (traducoes or {}).get(link)
+        link = str(item.get("link_exibicao") or link).strip()
         if traduzido:
             titulo = f"{traduzido} (original: {titulo})"
         elif parece_ingles(titulo):
@@ -346,6 +347,9 @@ def montar_morning_call(agora=None):
     try:
         candidatos = filtrar_noticias(
             [i for i in _noticias_por_regiao() if not _marca_erro(i, erros_regiao)], agora)
+        # mesma apresentação do PDF: veículo confiável do grupo primeiro,
+        # com o título e o link dele (data/morning_call_editorial.py)
+        candidatos = [_com_fonte_preferida(i) for i in sorted(candidatos, key=_ordem_editorial, reverse=True)]
         for item in candidatos:
             # mesmas regras do PDF (data/morning_call_editorial.py): editoria
             # pelo assunto do título e Empresas só com a empresa no título
@@ -506,6 +510,32 @@ def _extrair_chamadas_tag(texto: str) -> list:
         if m and m.group(1) not in _TAGS_FORA_DA_CAPA:
             chamadas.append({"tag": m.group(1), "texto": m.group(2)})
     return chamadas
+
+
+def contar_itens_por_secao(texto: str) -> dict:
+    """Quantas manchetes COM LINK (_RE_MANCHETE_COM_LINK) cada seção de
+    SECOES_OBRIGATORIAS tem no texto já gerado - usado pelo painel de
+    SAÚDE DOS DADOS (data/saude_dados.py) pra distinguir "coleta OK mas
+    o Morning Call saiu sem usar nada dela" de "coleta OK e apareceu no
+    Morning Call" (falha de CONSUMO, não de coleta/persistência - ver
+    docstring do módulo data/saude_dados.py). gerar_preview() já valida
+    que o TÍTULO de cada seção existe; isto conta o CONTEÚDO real dentro
+    dela, que gerar_preview não olha (uma seção com só a frase de
+    fallback, ex.: "Nenhuma manchete macro do Brasil nesta coleta.",
+    passa a validação de título mas tem 0 itens aqui)."""
+    linhas = texto.split("\n")
+    indices_secao = []
+    for i, linha in enumerate(linhas):
+        linha_strip = linha.strip()
+        if linha_strip in SECOES_OBRIGATORIAS:
+            indices_secao.append((linha_strip, i))
+    contagem = {secao: 0 for secao in SECOES_OBRIGATORIAS}
+    for idx, (secao, inicio) in enumerate(indices_secao):
+        fim = indices_secao[idx + 1][1] if idx + 1 < len(indices_secao) else len(linhas)
+        for linha in linhas[inicio + 1:fim]:
+            if _RE_MANCHETE_COM_LINK.match(linha.strip()):
+                contagem[secao] += 1
+    return contagem
 
 
 def _cor_bullet_resumo(bullet_texto: str) -> str:

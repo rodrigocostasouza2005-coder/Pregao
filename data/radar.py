@@ -20,7 +20,20 @@ explicitamente: "diferencie FATO, INTERPRETAÇÃO e DADO INSUFICIENTE"):
   explicitamente diferenciado do que a própria fonte publicou - nunca
   apresentado como "consenso de mercado" ou estimativa de terceiros.
 - DADO_INSUFICIENTE: quando não há evidência real suficiente pra algo -
-  o módulo declara a lacuna em vez de inventar um valor."""
+  o módulo declara a lacuna em vez de inventar um valor.
+
+Dois tipos adicionais (2026-10-22, integração Market Researcher/
+equity-research da Anthropic - ver docs/market-researcher-integracao.md):
+mesma convenção, usados pela aba TESES (ui/radar_tab.py:_secao_tese +
+data/research/tese.py) pra nunca confundir a HIPÓTESE do próprio usuário
+com um FATO ou com a ESTIMATIVA de uma casa de research:
+
+- ESTIMATIVA_TERCEIRO: projeção/preço-alvo de uma casa de research ou
+  fonte externa (ex: research_itens.preco_alvo) - sempre atribuída
+  explicitamente a quem a publicou, nunca apresentada como consenso.
+- HIPOTESE_ANALISTA: leitura/opinião de quem monta a própria tese
+  (premissa, risco, preço-alvo-tese em research_teses) - nunca
+  confundida com um FATO publicado ou uma ESTIMATIVA_TERCEIRO."""
 
 from datetime import date, datetime, timedelta, timezone
 from statistics import median
@@ -48,6 +61,8 @@ _TZ_SP = ZoneInfo("America/Sao_Paulo")
 TIPO_FATO = "FATO"
 TIPO_CALCULO = "CALCULO_INTERNO"
 TIPO_INSUFICIENTE = "DADO_INSUFICIENTE"
+TIPO_ESTIMATIVA_TERCEIRO = "ESTIMATIVA_TERCEIRO"
+TIPO_HIPOTESE = "HIPOTESE_ANALISTA"
 
 # só Genial tem histórico ESTRUTURADO de recomendação/preço-alvo hoje
 # (ver data/research/historico.py - "casa" genérico, mas só essa casa

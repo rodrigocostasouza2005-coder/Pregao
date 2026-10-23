@@ -281,6 +281,73 @@ def test_16_diagnostico_infraestrutura_repassa_tabela_disponivel():
     )
 
 
+def test_17_toda_casa_de_research_ativa_aparece_no_painel():
+    """Achado real (auditoria 2026-10-22): 'BTG Pactual Research' e 'Monte
+    Bravo' sao casas ativa_por_padrao=True em data/research/__init__.py:
+    CASAS (coletam de verdade, gravam research_itens com esse 'casa' - ver
+    btg.py/montebravo.py:_NOME_CASA) mas nao constavam em REGISTRO_COLETORES -
+    ficavam sem NENHUMA representacao neste painel (nem OK, nem falha). Este
+    teste trava a lista: toda casa ativa em CASAS tem que ter uma entrada
+    com o MESMO nome aqui, pra nao repetir o gap com a proxima casa nova."""
+    from data.research import CASAS
+
+    nomes_painel = {c["nome"] for c in saude_mod.REGISTRO_COLETORES}
+    nomes_casas_ativas = {c["nome"] for c in CASAS if c.get("ativa_por_padrao")}
+    faltando = nomes_casas_ativas - nomes_painel
+    _checar(
+        "17 nenhuma casa ativa de research falta no painel de saude",
+        not faltando,
+        f"faltando: {faltando}",
+    )
+
+
+def test_18_btg_e_montebravo_usam_leitor_hibrido_pela_mesma_casa():
+    por_nome = {c["nome"]: c for c in saude_mod.REGISTRO_COLETORES}
+    for nome in ("BTG Pactual Research", "Monte Bravo"):
+        _checar(f"18 {nome} esta registrado", nome in por_nome, nome)
+        _checar(f"18 {nome} tem leitor hibrido proprio", "leitor" in por_nome[nome], nome)
+
+
+def test_19_consumo_sem_edicao_fica_desconhecido_nao_falso_verde():
+    painel = saude_mod.obter_painel_consumo(edicao=None)
+    _checar(
+        "19 sem edicao (banco indisponivel ou nenhuma publicada) -> CONSUMO_DESCONHECIDO pra todas as fontes",
+        all(item["codigo_estado"] == "CONSUMO_DESCONHECIDO" for item in painel),
+    )
+
+
+def test_20_consumo_com_itens_na_secao():
+    edicao = {
+        "data": "2026-10-22",
+        "conteudo": "\n".join([
+            "2. BRASIL",
+            "- Manchete A — https://a.com",
+            "3. EXTERIOR",
+            "- Nenhuma manchete internacional nesta coleta.",
+        ]),
+    }
+    painel = saude_mod.obter_painel_consumo(edicao=edicao)
+    por_fonte = {item["fonte"]: item for item in painel}
+    _checar(
+        "20a NEWS (Brasil) com 1 item -> CONSUMO_COM_ITENS",
+        por_fonte["NEWS (Brasil)"]["codigo_estado"] == "CONSUMO_COM_ITENS",
+    )
+    _checar(
+        "20b NEWS (Internacional) sem item -> CONSUMO_SEM_ITENS (nao declara coletor quebrado)",
+        por_fonte["NEWS (Internacional)"]["codigo_estado"] == "CONSUMO_SEM_ITENS",
+    )
+
+
+def test_21_consumo_falha_na_contagem_nao_derruba_o_painel():
+    edicao = {"data": "2026-10-22", "conteudo": "qualquer texto"}
+    with patch("jobs.morning_call.contar_itens_por_secao", side_effect=RuntimeError("boom")):
+        painel = saude_mod.obter_painel_consumo(edicao=edicao)
+    _checar(
+        "21 excecao na contagem -> todas as fontes com itens=0, sem lancar",
+        all(item["itens"] == 0 for item in painel),
+    )
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

@@ -18,6 +18,16 @@ from data.eventos import STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_PRAZO_CVM
 
 _FALHAS = []
 
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _sem_cvm_real(request, monkeypatch):
+    """tentar_cvm (documentos da empresa na CVM) baixa o IPE real - nos
+    testes do pipeline ele fica desligado, salvo nos testes que o exercitam."""
+    if "tentar_cvm" not in request.node.name:
+        monkeypatch.setattr(coleta_mod, "tentar_cvm", lambda *a, **k: None)
+
 
 def _checar(nome, condicao, detalhe=""):
     status = "OK" if condicao else "FALHOU"
@@ -507,3 +517,258 @@ def test_10_falha_em_um_ticker_nao_aborta_o_universo():
     _checar("10a processa os dois tickers mesmo com excecao no primeiro", stats["processados"] == 2)
     _checar("10b contabiliza falha isolada", stats["falhas"] == 1)
     _checar("10c registra excecao para diagnostico", mock_logging.exception.called)
+
+
+# ============================================================
+# Correções de 22/10/2026 (coletores: 84 tickers, 0 confirmados)
+# ============================================================
+
+def test_data_de_referencia_do_trimestre_nao_vira_data_de_divulgacao():
+    texto = "ITR 3T26 - data de referência 30/09/2026. Divulgação em 06/11/2026."
+    data = coleta_mod.extrair_data_do_periodo(texto, 2026, 3)
+    _checar("30/09 (fim do 3T26) não é data de divulgação; 06/11 é", data == date(2026, 11, 6), f"(data={data})")
+    _checar("só a data de referência -> None",
+            coleta_mod.extrair_data_do_periodo("ITR do 3T26, referência 30/09/2026.", 2026, 3) is None)
+
+
+def test_ri_segue_link_de_calendario_publicado_na_propria_pagina():
+    home = ('<html><body><a href="/pt/calendario-de-eventos">Calendário de Eventos</a>'
+            '<a href="https://outro-site.com/calendario">externo</a>'
+            '<a href="https://ri.empresa.com.br/resultados/central-de-resultados">Central de Resultados</a>'
+            'Bem-vindo</body></html>')
+    calendario = "<html><body>Divulgação de resultados do 3T26: 05/11/2026, após o fechamento.</body></html>"
+    pedidos = []
+
+    def _get(url, **_k):
+        pedidos.append(url)
+        r = MagicMock(text=home if len(pedidos) == 1 else calendario)
+        r.raise_for_status.return_value = None
+        return r
+
+    with patch.object(coleta_mod, "obter_url_ri", return_value="https://www.empresa.com.br"), \
+         patch.object(coleta_mod.cffi_requests, "get", side_effect=_get):
+        evento = coleta_mod.tentar_ri("EMPR3", "Empresa", 2026, 3)
+    _checar("segue só links do mesmo domínio, publicados na página",
+            pedidos == ["https://www.empresa.com.br", "https://www.empresa.com.br/pt/calendario-de-eventos"], str(pedidos))
+    _checar("CONFIRMADO com a data da subpágina", evento and evento["data"] == date(2026, 11, 5))
+    _checar("origem_url é a subpágina oficial", evento["origem_url"] == "https://www.empresa.com.br/pt/calendario-de-eventos")
+
+
+def test_links_calendario_aceita_subdominio_de_ri_e_ignora_outros_dominios():
+    html = ('<a href="https://ri.empresa.com.br/agenda">Agenda</a>'
+            '<a href="https://empresa.net/calendario">x</a><a href="/sobre">Sobre</a>')
+    links = coleta_mod._links_calendario(html, "https://www.empresa.com.br")
+    _checar("subdomínio ri. do mesmo domínio entra; outro domínio e link sem palavra-chave não",
+            links == ["https://ri.empresa.com.br/agenda"], str(links))
+
+
+# ============================================================
+# Correção desta auditoria (22/10/2026): RI registrado na CVM é a home
+# institucional, o portal de RI de verdade fica em OUTRO domínio - achado
+# real contra petrobras.com.br -> investidorpetrobras.com.br e
+# magazineluiza.com.br -> ri.magazineluiza.com.br (confirmado com request
+# real fora do sandbox, não inventado).
+# ============================================================
+
+def test_link_portal_ri_acha_link_de_outro_dominio_por_rotulo_ou_caminho():
+    html = ('<a href="https://investidorempresa.com.br/">Relação com Investidores</a>'
+            '<a href="/sobre">Sobre a empresa</a>')
+    link = coleta_mod._link_portal_ri(html, "https://www.empresa.com.br")
+    _checar("acha o link cross-domain pelo rótulo 'Relação com Investidores'",
+            link == "https://investidorempresa.com.br/", str(link))
+
+    html2 = '<a href="https://outra.com.br/investidores">Investidores</a>'
+    link2 = coleta_mod._link_portal_ri(html2, "https://www.empresa.com.br")
+    _checar("acha também pelo caminho /investidores quando o rótulo é genérico",
+            link2 == "https://outra.com.br/investidores", str(link2))
+
+    html3 = '<a href="/produtos">Produtos</a><a href="/contato">Contato</a>'
+    link3 = coleta_mod._link_portal_ri(html3, "https://www.empresa.com.br")
+    _checar("sem rótulo/caminho de RI -> None (nunca inventa)", link3 is None)
+
+
+def test_ri_segue_portal_em_outro_dominio_quando_home_nao_tem_calendario():
+    """Achado real desta auditoria: www.petrobras.com.br não tem link de
+    calendário no próprio domínio, mas publica 'Relações com Investidores'
+    apontando pra investidorpetrobras.com.br - domínio TOTALMENTE
+    diferente. Antes desta correção, tentar_ri nunca seguia esse link
+    (só olhava calendário DENTRO do domínio da home) e 84/84 tickers
+    caíam direto pro prazo da CVM quando a home não tinha calendário
+    próprio."""
+    home = ('<html><body>Bem-vindo à Empresa.'
+            '<a href="https://investidorempresa.com.br/">Relações com Investidores</a>'
+            '</body></html>')
+    portal = "<html><body>Divulgação de resultados do 3T26: 05/11/2026, após o fechamento.</body></html>"
+    pedidos = []
+
+    def _get(url, **_k):
+        pedidos.append(url)
+        r = MagicMock(text=home if len(pedidos) == 1 else portal)
+        r.raise_for_status.return_value = None
+        return r
+
+    with patch.object(coleta_mod, "obter_url_ri", return_value="https://www.empresa.com.br"), \
+         patch.object(coleta_mod.cffi_requests, "get", side_effect=_get):
+        evento = coleta_mod.tentar_ri("EMPR3", "Empresa", 2026, 3)
+    _checar("segue a home e depois o portal cross-domain, nesta ordem",
+            pedidos == ["https://www.empresa.com.br", "https://investidorempresa.com.br/"], str(pedidos))
+    _checar("CONFIRMADO com a data do portal", evento and evento["data"] == date(2026, 11, 5))
+    _checar("origem_url é o portal de RI, não a home", evento["origem_url"] == "https://investidorempresa.com.br/")
+
+
+def test_ri_portal_sem_data_direta_segue_calendario_proprio_do_portal():
+    """Portal cross-domain encontrado, mas sem data na página inicial dele
+    - segue o calendário QUE O PRÓPRIO PORTAL publica (mesmo domínio do
+    portal, nunca um 3º salto pra fora)."""
+    home = '<a href="https://ri.empresa.com/">Investor Relations</a>'
+    portal_home = '<a href="/calendario-de-eventos">Calendário de Eventos</a>'
+    calendario = "<html><body>Resultados do 3T26 confirmados para 10/11/2026.</body></html>"
+    pedidos = []
+
+    def _get(url, **_k):
+        pedidos.append(url)
+        textos = {1: home, 2: portal_home, 3: calendario}
+        r = MagicMock(text=textos[len(pedidos)])
+        r.raise_for_status.return_value = None
+        return r
+
+    with patch.object(coleta_mod, "obter_url_ri", return_value="https://www.empresa.com.br"), \
+         patch.object(coleta_mod.cffi_requests, "get", side_effect=_get):
+        evento = coleta_mod.tentar_ri("EMPR3", "Empresa", 2026, 3)
+    _checar("3 requisições: home, portal, calendário do portal", len(pedidos) == 3, str(pedidos))
+    _checar("CONFIRMADO com a data do calendário do portal", evento and evento["data"] == date(2026, 11, 10))
+    _checar("origem_url é o calendário do portal",
+            evento["origem_url"] == "https://ri.empresa.com/calendario-de-eventos")
+
+
+def test_ri_nao_tenta_portal_quando_link_encontrado_e_mesmo_dominio():
+    """_link_portal_ri pode achar um link que já é do MESMO domínio da
+    home (ex: rótulo 'Investidores' apontando pra uma seção da própria
+    home) - nesse caso não há 2ª requisição: _links_calendario já teria
+    coberto esse domínio no passo anterior."""
+    home = '<a href="https://www.empresa.com.br/investidores">Investidores</a>'
+    pedidos = []
+
+    def _get(url, **_k):
+        pedidos.append(url)
+        r = MagicMock(text=home)
+        r.raise_for_status.return_value = None
+        return r
+
+    with patch.object(coleta_mod, "obter_url_ri", return_value="https://www.empresa.com.br"), \
+         patch.object(coleta_mod.cffi_requests, "get", side_effect=_get):
+        evento = coleta_mod.tentar_ri("EMPR3", "Empresa", 2026, 3)
+    _checar("link de RI no mesmo domínio não gera 2ª requisição (já coberto por _links_calendario)",
+            pedidos == ["https://www.empresa.com.br"], str(pedidos))
+    _checar("sem data em lugar nenhum -> None", evento is None)
+
+
+def test_ri_caso_real_rent3_link_curto_que_redireciona_pro_portal():
+    """Reproduz o caso real validado nesta auditoria contra a fonte de
+    verdade (RENT3/Localiza, fora da suíte de testes): a home
+    (www.localiza.com) publica um link CURTO (ex: llz.me/...) que o
+    navegador/cffi_requests resolve via redirecionamento HTTP pro portal
+    de RI de verdade. origem_url precisa continuar sendo o link
+    PUBLICADO pela empresa (rastreável até a fonte oficial) mesmo quando
+    a resposta final, depois do redirecionamento, vem de outro host -
+    nunca a URL resolvida internamente pela biblioteca de HTTP."""
+    home = '<a href="http://llz.me/b4nje5">Relação com Investidores</a>'
+    # resposta ao link curto: simula o que curl_cffi devolve depois de
+    # seguir o redirecionamento sozinho (comportamento padrão da lib) -
+    # .text já é o conteúdo da página final, .url (se existisse) seria
+    # diferente do link pedido; o coletor nunca lê esse atributo.
+    pagina_final = "<html><body>Resultados do 3T26 confirmados para 06/11/2026.</body></html>"
+    pedidos = []
+
+    def _get(url, **_k):
+        pedidos.append(url)
+        r = MagicMock(text=home if len(pedidos) == 1 else pagina_final, url="https://ri.localiza.com/resultados")
+        r.raise_for_status.return_value = None
+        return r
+
+    with patch.object(coleta_mod, "obter_url_ri", return_value="https://www.localiza.com"), \
+         patch.object(coleta_mod.cffi_requests, "get", side_effect=_get):
+        evento = coleta_mod.tentar_ri("RENT3", "Localiza", 2026, 3)
+    _checar("segue o link curto publicado na home (2 requisições: home + link curto)",
+            pedidos == ["https://www.localiza.com", "http://llz.me/b4nje5"], str(pedidos))
+    _checar("CONFIRMADO com a data da página final (pós-redirecionamento)",
+            evento and evento["data"] == date(2026, 11, 6))
+    _checar("origem_url é o link PUBLICADO pela empresa, não o destino interno do redirecionamento",
+            evento["origem_url"] == "http://llz.me/b4nje5", str(evento and evento.get("origem_url")))
+
+
+def _doc(categoria, assunto, data="2026-10-15", link="https://www.rad.cvm.gov.br/doc/1"):
+    return {"categoria_original": categoria, "assunto": assunto, "data": data, "link": link}
+
+
+def test_tentar_cvm_confirma_pela_data_no_assunto_do_comunicado():
+    docs = [_doc("Comunicado ao Mercado", "Divulgação de Resultados do 3T26 em 04/11/2026")]
+    with patch("data.cvm.obter_documentos_cvm", return_value=docs), \
+         patch.object(coleta_mod, "_texto_documento_cvm", side_effect=AssertionError("não deveria baixar")):
+        evento = coleta_mod.tentar_cvm("EMPR3", "Empresa", 2026, 3)
+    _checar("assunto com período e data -> CONFIRMADO sem baixar documento",
+            evento and evento["status"] == STATUS_CONFIRMADO and evento["data"] == date(2026, 11, 4))
+    _checar("fonte e link oficiais da CVM", "CVM" in evento["fonte"] and evento["origem_url"].startswith("https://www.rad.cvm"))
+
+
+def test_tentar_cvm_le_o_documento_quando_o_assunto_nao_tem_data():
+    docs = [_doc("Fato Relevante", "Aquisição de participação"),  # sem termo de resultado: não baixa
+            _doc("Comunicado ao Mercado", "Data de divulgação dos resultados do 3T26", link="https://www.rad.cvm.gov.br/doc/2")]
+    baixados = []
+
+    def _baixar(link):
+        baixados.append(link)
+        return ("A Companhia divulgará os resultados do 3º trimestre de 2026 em 12 de novembro de 2026, "
+                "após o encerramento do pregão." + " x" * 120)
+
+    with patch("data.cvm.obter_documentos_cvm", return_value=docs), \
+         patch.object(coleta_mod, "_texto_documento_cvm", side_effect=_baixar):
+        evento = coleta_mod.tentar_cvm("EMPR3", "Empresa", 2026, 3)
+    _checar("baixa só o comunicado de resultado", baixados == ["https://www.rad.cvm.gov.br/doc/2"], str(baixados))
+    _checar("data por extenso do documento", evento and evento["data"] == date(2026, 11, 12))
+
+
+def test_tentar_cvm_sem_documento_ou_fonte_fora_retorna_none():
+    with patch("data.cvm.obter_documentos_cvm", return_value=None):
+        _checar("fonte CVM fora -> None", coleta_mod.tentar_cvm("EMPR3", "Empresa", 2026, 3) is None)
+    antigo = [_doc("Comunicado ao Mercado", "Resultados do 3T25 em 05/11/2025", data="2025-10-20")]
+    with patch("data.cvm.obter_documentos_cvm", return_value=antigo):
+        _checar("documento de outro ano/período -> None", coleta_mod.tentar_cvm("EMPR3", "Empresa", 2026, 3) is None)
+
+
+def test_pipeline_tenta_cvm_depois_do_ri_e_antes_do_news():
+    ordem = []
+    evento_cvm = {"ticker": "EMPR3", "status": STATUS_CONFIRMADO, "periodo": "3T26", "data": date(2026, 11, 4)}
+    with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
+         patch.object(coleta_mod, "_buscar_evento_salvo", return_value=None), \
+         patch.object(coleta_mod, "obter_nome_yf", return_value="Empresa"), \
+         patch.object(coleta_mod, "tentar_ri", side_effect=lambda *a: ordem.append("ri")), \
+         patch.object(coleta_mod, "tentar_cvm", side_effect=lambda *a: ordem.append("cvm") or evento_cvm), \
+         patch.object(coleta_mod, "tentar_news", side_effect=lambda *a: ordem.append("news")):
+        evento = coleta_mod.coletar_evento("EMPR3")
+    _checar("ordem RI -> CVM (para no CVM)", ordem == ["ri", "cvm"], str(ordem))
+    _checar("evento do CVM", evento is evento_cvm)
+
+
+def test_tentar_cvm_le_calendario_anual_pela_data_base_do_itr():
+    docs = [_doc("Calendário de Eventos Corporativos", "Calendário de Eventos Corporativos 2026",
+                 data="2026-01-20", link="https://www.rad.cvm.gov.br/cal"),
+            _doc("Comunicado ao Mercado", "Resultado do 3T26", data="2026-09-15")]  # antes do fim do trimestre: ignorado
+    tabela = ("Informações Trimestrais - ITR  Data-base 31/03/2026  Envio 07/05/2026\n"
+              "Informações Trimestrais - ITR  Data-base 30/06/2026  Envio 06/08/2026\n"
+              "Informações Trimestrais - ITR  Data-base 30/09/2026  Envio 05/11/2026\n") + " x" * 120
+    baixados = []
+    with patch("data.cvm.obter_documentos_cvm", return_value=docs), \
+         patch.object(coleta_mod, "_texto_documento_cvm", side_effect=lambda l: baixados.append(l) or tabela):
+        evento = coleta_mod.tentar_cvm("EMPR3", "Empresa", 2026, 3)
+    _checar("só baixa o calendário (comunicado anterior ao fim do trimestre fica fora)",
+            baixados == ["https://www.rad.cvm.gov.br/cal"], str(baixados))
+    _checar("data de envio do ITR de 30/09/2026", evento and evento["data"] == date(2026, 11, 5), str(evento))
+
+
+def test_divulgacao_e_teleconferencia_juntas_vale_a_data_de_divulgacao():
+    texto = ("Resultados 3T26 — Teleconferência: 22/10/2026, 10h. "
+             "Divulgação do resultado do 3T26: 21/10/2026, antes da abertura.")
+    data = coleta_mod.extrair_data_do_periodo(texto, 2026, 3)
+    _checar("teleconferência (22/10) aparece antes no texto, mas a divulgação é 21/10",
+            data == date(2026, 10, 21), f"(data={data})")

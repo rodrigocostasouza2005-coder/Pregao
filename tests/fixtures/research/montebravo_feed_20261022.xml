@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:atom="http://www.w3.org/2005/Atom">
+<!-- Capturado de https://www.montebravo.com.br/feed/ pelo runner do GitHub
+     Actions em 22/10/2026 19:11 UTC (workflow temporário de sondagem). Item 1
+     com o trecho bruto do log; itens 2-6 com título, link, data e categorias
+     reais da mesma resposta (descrições omitidas). -->
+<channel>
+	<title>Monte Bravo</title>
+	<atom:link href="https://www.montebravo.com.br/feed/" rel="self" type="application/rss+xml" />
+	<link>https://www.montebravo.com.br/</link>
+	<description></description>
+	<lastBuildDate>Thu, 22 Oct 2026 12:43:47 +0000</lastBuildDate>
+	<language>pt-BR</language>
+	<item>
+		<title>Monte Bravo Analisa — Resultado WEG 3T26</title>
+		<link>https://www.montebravo.com.br/blog/analise/analise-de-empresas/resultado-weg-3t26/</link>
+		<dc:creator><![CDATA[Monte Bravo]]></dc:creator>
+		<pubDate>Thu, 22 Oct 2026 12:43:45 +0000</pubDate>
+		<category><![CDATA[Análise de Empresas]]></category>
+		<guid isPermaLink="false">https://www.montebravo.com.br/?p=34508</guid>
+		<description><![CDATA[<p>A WEG reportou na manhã desta quarta-feira (21) seus resultados referentes ao 3º trimestre de 2026. Os resultados da companhia vieram mistos: a receita voltou a crescer como esperávamos, mas as margens vieram um pouco abaixo do que o mercado esperava. A queda de quase 6% do papel no pregão de ontem não nos surpreende. ...</p>
+<p>O post <a href="https://www.montebravo.com.br/blog/analise/analise-de-empresas/resultado-weg-3t26/">Monte Bravo Analisa — Resultado WEG 3T26</a> apareceu primeiro em <a href="https://www.montebravo.com.br">Monte Bravo</a>.</p>
+]]></description>
+		<content:encoded><![CDATA[<p>Continuamos gostando do investimento em WEG (WEGE3), porém temos dúvidas se o 4T26 consegue entregar a aceleração que as estimativas para o ano parecem exigir.</p>]]></content:encoded>
+	</item>
+	<item>
+		<title>Monte Bravo Experience Goiânia: existe chance de virada em uma eleição no 2º turno? O que dizem experiências p</title>
+		<link>https://www.montebravo.com.br/blog/investimentos/monte-bravo-experience-goiania-2026/</link>
+		<pubDate>Mon, 19 Oct 2026 13:42:34 +0000</pubDate>
+		<category><![CDATA[Investimentos]]></category>
+		<category><![CDATA[eleições 2026]]></category>
+	</item>
+	<item>
+		<title>Carta Mensal — Outubro/2026</title>
+		<link>https://www.montebravo.com.br/blog/analise/carta-mensal/outubro-2026/</link>
+		<pubDate>Thu, 15 Oct 2026 13:39:54 +0000</pubDate>
+		<category><![CDATA[Carta Mensal]]></category>
+		<category><![CDATA[análise]]></category>
+	</item>
+	<item>
+		<title>Monte Bravo estrutura nova área para atender investidores institucionais</title>
+		<link>https://www.montebravo.com.br/blog/sala-de-imprensa/monte-bravo-estrutura-nova-area-para-atender-investidores-institucionais/</link>
+		<pubDate>Tue, 13 Oct 2026 21:14:40 +0000</pubDate>
+		<category><![CDATA[Sala de Imprensa]]></category>
+	</item>
+	<item>
+		<title>Eleições 2026: o que as pesquisas eleitorais deixaram de mostrar?</title>
+		<link>https://www.montebravo.com.br/blog/investimentos/eleicoes-2026-pesquisas-luciano-dias/</link>
+		<pubDate>Fri, 09 Oct 2026 21:53:05 +0000</pubDate>
+		<category><![CDATA[Investimentos]]></category>
+		<category><![CDATA[economia]]></category>
+	</item>
+	<item>
+		<title>Mapa de Oportunidades: onde investir em outubro/2026</title>
+		<link>https://www.montebravo.com.br/blog/institucional/mapa-de-oportunidades-onde-investir/</link>
+		<pubDate>Mon, 05 Oct 2026 11:22:00 +0000</pubDate>
+		<category><![CDATA[Monte Bravo]]></category>
+	</item>
+</channel>
+</rss>

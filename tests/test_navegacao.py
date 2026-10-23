@@ -19,7 +19,7 @@ from ui.navegacao import AREAS, ROTA_LEGADO
 
 RAIZ = Path(__file__).parent.parent
 
-ORDEM_ESPERADA = ["mercado", "noticias", "radar", "analises", "macro", "setores", "morning-call", "mais"]
+ORDEM_ESPERADA = ["mercado", "noticias", "radar", "research", "analises", "macro", "setores", "morning-call", "mais"]
 
 
 def _todas_rotas():
@@ -28,8 +28,8 @@ def _todas_rotas():
 
 def test_ordem_das_areas_principais():
     assert [a.id for a in AREAS] == ORDEM_ESPERADA
-    assert [a.rotulo for a in AREAS][:7] == [
-        "MERCADO", "NOTÍCIAS", "RADAR", "ANÁLISES", "MACRO", "SETORES", "MORNING CALL",
+    assert [a.rotulo for a in AREAS][:8] == [
+        "MERCADO", "NOTÍCIAS", "RADAR", "RESEARCH", "ANÁLISES", "MACRO", "SETORES", "MORNING CALL",
     ]
 
 
@@ -37,8 +37,9 @@ def test_subabas_exigidas_pela_arquitetura():
     subs = {a.id: [s.rotulo for s in a.subabas] for a in AREAS}
     assert subs["mercado"] == ["Visão Geral", "Painel", "Agenda", "Mercados Globais"]
     assert subs["noticias"][:4] == ["Destaques", "Brasil", "Internacional", "Empresas"]
-    assert subs["radar"] == ["Alertas", "Carteiras Recomendadas", "Research", "Oportunidades", "Acompanhamento"]
-    assert subs["analises"] == ["Empresas", "Fundamentos", "Valuation", "Teses"]
+    assert subs["radar"] == ["Alertas", "Carteiras Recomendadas", "Oportunidades", "Acompanhamento"]
+    assert subs["research"] == ["Feed", "Casas de Análise", "Minha Tese"]
+    assert subs["analises"] == ["Empresas", "Fundamentos", "Valuation"]
     assert subs["macro"] == ["Indicadores", "Juros", "Câmbio e Commodities", "Calendário Econômico"]
     assert subs["setores"] == ["Mapa Setorial", "Visão por Setor", "Catalisadores"]
     assert subs["morning-call"] == ["Edição Atual", "Relatório Completo", "Histórico", "Preferências"]
@@ -76,9 +77,13 @@ def test_preferencia_antiga_de_abas_esconde_subabas():
     areas = navegacao.disponiveis([a for a in config.ABAS_DISPONIVEIS if a != "CVM"], eh_admin=False)
     noticias = next(a for a in areas if a.id == "noticias")
     assert "documentos" not in [s.id for s in noticias.subabas]
-    # tudo escondido: so' sobra o que nao depende de aba antiga (CONFIG sempre acessivel)
+    # tudo escondido: so' sobra o que nao depende de aba antiga (CONFIG
+    # e Casas de Analise sempre acessiveis - "research" sobrevive so'
+    # com essa 1 subaba, mesmo sem nenhuma aba antiga visivel)
     minimas = navegacao.disponiveis([], eh_admin=False)
-    assert [a.id for a in minimas] == ["setores", "morning-call", "mais"]
+    assert [a.id for a in minimas] == ["research", "setores", "morning-call", "mais"]
+    pesquisa_minima = next(a for a in minimas if a.id == "research")
+    assert [s.id for s in pesquisa_minima.subabas] == ["casas"]
     assert "config" in [s.id for s in minimas[-1].subabas]
 
 

@@ -31,9 +31,12 @@ REGRAS DE SEGURANÇA (nunca violadas):
   data.eventos.limites_trimestre/prazo_cvm) - uma data fora dessa
   janela é descartada, mesmo que o regex tenha "batido" nalgum lugar da
   página;
-- NUNCA busca uma URL diferente da registrada oficialmente pela empresa
-  na CVM (sem inventar sub-caminhos tipo "/calendario") - só lê a
-  página exata que a própria empresa registrou;
+- NUNCA inventa URL: lê a página registrada pela empresa na CVM e, desde
+  22/10/2026, só os links de calendário/central de resultados que essa
+  MESMA página publica, no mesmo domínio (ver _links_calendario) - nunca
+  um sub-caminho adivinhado tipo "/calendario";
+- documentos entregues pela própria empresa à CVM (IPE) também valem como
+  CONFIRMADO (ver tentar_cvm), com as mesmas regras de período e data;
 - notícia só vira ESTIMADO se o veículo passar em
   data.news.eh_fonte_confiavel (mesmo critério já usado pelo selo das
   notícias).
@@ -138,10 +141,20 @@ def extrair_data_do_periodo(texto: str, ano: int, trimestre: int) -> date | None
     if not candidatos:
         return None
 
-    inicio_trimestre, _ = limites_trimestre(ano, trimestre)
+    # Resultado de um trimestre nunca é divulgado antes de ele terminar: a
+    # janela começa no dia seguinte ao fim do trimestre. Antes começava no
+    # início do trimestre e aceitava a DATA DE REFERÊNCIA ("ITR de
+    # 30/09/2026", presente em todo documento do 3T26) como se fosse a data
+    # de divulgação.
+    _, fim_trimestre = limites_trimestre(ano, trimestre)
     limite_maximo = prazo_cvm(ano, trimestre) + timedelta(days=_FOLGA_SANIDADE_DIAS)
-    validos = [d for d in candidatos if inicio_trimestre <= d <= limite_maximo]
-    return validos[0] if validos else None
+    validos = [d for d in candidatos if fim_trimestre < d <= limite_maximo]
+    # Página de RI costuma trazer divulgação E teleconferência perto do
+    # período ("Divulgação 3T26: 21/10/2026 · Teleconferência: 22/10/2026");
+    # a divulgação nunca vem depois da teleconferência, então vale a MENOR
+    # data válida (caso real: WEGE3 ficou com 22/10, dia do call, e o
+    # resultado saiu em 21/10).
+    return min(validos) if validos else None
 
 
 def _extrair_texto_html(html: str) -> str:
@@ -160,11 +173,129 @@ def _montar_evento(ticker: str, empresa: str, ano: int, trimestre: int, status: 
     }
 
 
+# Texto/endereço de link que a PRÓPRIA página oficial publica para o
+# calendário de eventos ou a central de resultados (nunca um caminho
+# adivinhado: só links que estão no HTML da página registrada na CVM).
+_PALAVRAS_LINK_CALENDARIO = ("calendario", "calendar", "agenda", "central de resultados",
+                             "central-de-resultados", "resultados trimestrais", "earnings")
+_MAX_LINKS_CALENDARIO = 2
+_TIMEOUT_SUBPAGINA = 6
+
+
+def _dominio_base(host: str) -> str:
+    partes = [p for p in (host or "").lower().split(".") if p and p != "www"]
+    # "ri.empresa.com.br" e "www.empresa.com.br" -> "empresa.com.br"
+    if len(partes) >= 3 and partes[-1] == "br" and partes[-2] in ("com", "net", "org"):
+        return ".".join(partes[-3:])
+    return ".".join(partes[-2:])
+
+
+def _links_calendario(html: str, url_base: str) -> list:
+    """Links do mesmo domínio da página oficial cujo texto ou endereço
+    indica calendário/agenda/central de resultados - no máximo
+    _MAX_LINKS_CALENDARIO, na ordem da página."""
+    from urllib.parse import urljoin, urlparse
+
+    dominio = _dominio_base(urlparse(url_base).netloc)
+    soup = BeautifulSoup(html, "html.parser")
+    achados = []
+    for a in soup.find_all("a", href=True):
+        href = urljoin(url_base, a["href"].strip())
+        partes = urlparse(href)
+        if partes.scheme not in ("http", "https") or _dominio_base(partes.netloc) != dominio:
+            continue
+        rotulo = f"{a.get_text(' ', strip=True)} {partes.path}".lower()
+        rotulo = rotulo.replace("á", "a").replace("ê", "e")
+        if not any(p in rotulo for p in _PALAVRAS_LINK_CALENDARIO):
+            continue
+        href = href.split("#", 1)[0]
+        if href != url_base and href not in achados:
+            achados.append(href)
+        if len(achados) >= _MAX_LINKS_CALENDARIO:
+            break
+    return achados
+
+
+# Texto/caminho de link que indica "aqui fica o portal de RI de verdade" -
+# diferente de _PALAVRAS_LINK_CALENDARIO (achar o calendário DENTRO de um
+# site já identificado como o certo), este serve só pra achar O PRÓPRIO
+# portal a partir da home institucional - por isso pode cruzar de domínio
+# (ver _link_portal_ri). Lista curta e de alto sinal (rótulo de menu
+# comum em site institucional BR), nunca um termo genérico que combine
+# com conteúdo não relacionado.
+_PALAVRAS_PORTAL_RI = (
+    "relacao com investidor", "relacoes com investidor", "relacionamento com investidor",
+    "investor relations", "investidores",
+)
+_CAMINHOS_PORTAL_RI = ("/ri", "/investidores", "/investor-relations", "/relacoes-com-investidores",
+                       "/relacionamento-com-investidores")
+
+
+def _link_portal_ri(html: str, url_base: str) -> str | None:
+    """1º link (qualquer domínio, diferente de _links_calendario) cujo
+    texto ou caminho indica 'aqui é o portal de RI' - achado real desta
+    auditoria (22/10/2026): www.petrobras.com.br linka
+    investidorpetrobras.com.br, um domínio TOTALMENTE diferente (mesmo
+    padrão em várias companhias BR: ri.empresa.com, investidorempresa.
+    com.br, empresa-ri.com etc); a versão anterior de tentar_ri só
+    seguia link de calendário DENTRO do mesmo domínio da home - pra essas
+    empresas nunca achava nada, mesmo quando a própria home publicava o
+    link certo. Segue esse link UMA única vez (nunca um 2º salto pra
+    fora do portal encontrado) - é a própria página oficial da empresa
+    que está indicando onde fica o RI, não um palpite nosso. None se
+    nenhum link bater."""
+    from urllib.parse import urljoin, urlparse
+
+    soup = BeautifulSoup(html, "html.parser")
+    for a in soup.find_all("a", href=True):
+        href = urljoin(url_base, a["href"].strip())
+        partes = urlparse(href)
+        if partes.scheme not in ("http", "https"):
+            continue
+        texto = _sem_acento_simples(a.get_text(" ", strip=True))
+        caminho = partes.path.lower().rstrip("/")
+        if any(p in texto for p in _PALAVRAS_PORTAL_RI) or any(caminho.endswith(c) for c in _CAMINHOS_PORTAL_RI):
+            return href.split("#", 1)[0]
+    return None
+
+
+def _extrair_data_da_pagina(url: str, ano: int, trimestre: int) -> tuple[date | None, str | None]:
+    """Busca `url` e tenta achar a data do período direto no texto -
+    (data, None) em caso de falha de rede/HTTP, nunca lança exceção (quem
+    chama decide o próximo passo da hierarquia). Fatorado de tentar_ri
+    pra reaproveitar o mesmo fetch+extração nos 3 lugares onde ele
+    acontece (página oficial, link de calendário dela, portal de RI
+    cross-domain e o calendário DELE)."""
+    try:
+        r = cffi_requests.get(url, headers=_HEADERS, impersonate="chrome", timeout=_TIMEOUT_SUBPAGINA)
+        r.raise_for_status()
+    except Exception:
+        return None, None
+    return extrair_data_do_periodo(_extrair_texto_html(r.text), ano, trimestre), r.text
+
+
 def tentar_ri(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | None:
     """Tenta achar uma data CONFIRMADA na URL oficial de RI (ver
-    data/ir_sources.py). None se a empresa nao tiver URL registrada, a
-    fonte bloquear/falhar (timeout, erro HTTP, certificado) - quem
-    chama segue pra proxima fonte (NEWS), nunca trava o pipeline."""
+    data/ir_sources.py), nos links de calendário/central de resultados
+    que a PRÓPRIA página publica (_links_calendario, só no mesmo
+    domínio) e, se nada disso achar nada, no portal de RI que a home
+    institucional costuma linkar em OUTRO domínio (_link_portal_ri,
+    achado desta auditoria de 22/10/2026) - nunca um caminho adivinhado
+    em nenhum dos três casos. None se a empresa nao tiver URL registrada,
+    a fonte bloquear/falhar (timeout, erro HTTP, certificado) - quem
+    chama segue pra proxima fonte, nunca trava o pipeline.
+
+    LIMITAÇÃO QUE CONTINUA (documentada, não escondida): várias centrais
+    de resultados modernas são paginas client-side (o HTML cru só tem o
+    menu de navegação; a lista de eventos carrega via JS/API depois) -
+    confirmado nesta auditoria contra investidorpetrobras.com.br e
+    ri.weg.net, ambas alcançadas corretamente pelo salto novo, mas sem
+    texto extraível na resposta HTTP crua. Sem executar JavaScript (fora
+    do escopo aqui - orçamento de tempo do universo inteiro já é
+    apertado, e um navegador automatizado por ticker não é sustentável
+    num workflow de 20 min), essas continuam caindo pro PRAZO_CVM."""
+    from urllib.parse import urlparse
+
     url = obter_url_ri(ticker)
     if not url:
         return None
@@ -173,11 +304,139 @@ def tentar_ri(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | Non
         r.raise_for_status()
     except Exception:
         return None
-    texto = _extrair_texto_html(r.text)
-    data_evento = extrair_data_do_periodo(texto, ano, trimestre)
-    if data_evento is None:
+    data_evento = extrair_data_do_periodo(_extrair_texto_html(r.text), ano, trimestre)
+    if data_evento is not None:
+        return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento, f"{empresa} RI", url)
+    for link in _links_calendario(r.text, url):
+        data_evento, _ = _extrair_data_da_pagina(link, ano, trimestre)
+        if data_evento is not None:
+            return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento,
+                                  f"{empresa} RI", link)
+
+    portal = _link_portal_ri(r.text, url)
+    if not portal or _dominio_base(urlparse(portal).netloc) == _dominio_base(urlparse(url).netloc):
+        return None  # mesmo domínio: _links_calendario acima já cobriu
+    data_evento, texto_portal = _extrair_data_da_pagina(portal, ano, trimestre)
+    if data_evento is not None:
+        return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento, f"{empresa} RI", portal)
+    if texto_portal is None:
         return None
-    return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento, f"{empresa} RI", url)
+    for link in _links_calendario(texto_portal, portal):
+        data_evento, _ = _extrair_data_da_pagina(link, ano, trimestre)
+        if data_evento is not None:
+            return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento,
+                                  f"{empresa} RI", link)
+    return None
+
+
+# Documentos que a própria companhia entrega à CVM (IPE) e que costumam
+# anunciar a data de divulgação: "Comunicado ao Mercado - Divulgação de
+# Resultados do 3T26", aviso de teleconferência, calendário de eventos.
+_CATEGORIAS_IPE_DATA = ("Comunicado ao Mercado", "Aviso aos Acionistas", "Calendário de Eventos Corporativos",
+                        "Fato Relevante")
+_TERMOS_IPE_RESULTADO = ("resultado", "divulga", "teleconfer", "webcast", "earnings", "calendario", "itr")
+_MAX_DOCUMENTOS_IPE = 2
+# timeout próprio (o de data/cvm.py é 30 s, pensado para o resumo sob
+# demanda): na 1ª execução real com 30 s o calendário só cobriu 23 dos 84
+# tickers no orçamento de 5 min
+_TIMEOUT_DOCUMENTO_CVM = (4, 8)
+
+
+def _texto_documento_cvm(link: str) -> str | None:
+    import requests
+
+    from data.cvm import _extrair_texto_pdf
+
+    try:
+        r = requests.get(link, headers=_HEADERS, timeout=_TIMEOUT_DOCUMENTO_CVM)
+        r.raise_for_status()
+    except Exception:
+        return None
+    texto = _extrair_texto_pdf(r.content)
+    return texto if texto and len(texto) >= 200 else None
+
+
+def _sem_acento_simples(texto: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", texto or "") if not unicodedata.combining(c)).lower()
+
+
+def _data_perto_da_data_base(texto: str, ano: int, trimestre: int) -> date | None:
+    """Como extrair_data_do_periodo, mas usando a data-base do trimestre
+    (ex.: "30/09/2026") como marcador do período - formato das tabelas de
+    Calendário de Eventos Corporativos (ITR com data-base e data de envio).
+    Só olha os 80 caracteres seguintes à data-base (a linha da tabela)."""
+    _, fim = limites_trimestre(ano, trimestre)
+    limite_maximo = prazo_cvm(ano, trimestre) + timedelta(days=_FOLGA_SANIDADE_DIAS)
+    for marcador in (fim.strftime("%d/%m/%Y"), fim.strftime("%d.%m.%Y")):
+        for m in re.finditer(re.escape(marcador), texto):
+            trecho = texto[m.end():m.end() + 80]
+            for d in (_parse_data_numerica(x) for x in _PADRAO_DATA_NUMERICA.finditer(trecho)):
+                if d and fim < d <= limite_maximo:
+                    return d
+    return None
+
+
+def tentar_cvm(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | None:
+    """Data CONFIRMADA a partir dos documentos que a própria empresa
+    entregou à CVM (IPE, dados.cvm.gov.br - fonte oficial e estruturada
+    que o projeto já baixa em data/cvm.py). Primeiro o ASSUNTO do
+    documento; se ele cita o período/resultado mas não traz a data, o
+    texto do próprio documento (link oficial da CVM, no máximo
+    _MAX_DOCUMENTOS_IPE por ticker). Mesmas regras de
+    extrair_data_do_periodo: período explícito + data com ano + janela de
+    sanidade. None se nada for encontrado ou a fonte falhar."""
+    from data.cvm import obter_documentos_cvm
+
+    try:
+        documentos = obter_documentos_cvm(ticker)
+    except Exception:
+        logging.exception("Falha ao ler documentos CVM do calendario para %s", ticker)
+        return None
+    if not documentos:
+        return None
+    _, fim_trimestre = limites_trimestre(ano, trimestre)
+    # calendário anual é entregue no começo do ano; comunicados de
+    # divulgação, depois do fim do trimestre
+    inicio_busca = date(ano, 1, 1)
+    candidatos = []
+    for doc in documentos:
+        try:
+            entregue = date.fromisoformat(str(doc.get("data"))[:10])
+        except ValueError:
+            continue
+        if entregue < inicio_busca or doc.get("categoria_original") not in _CATEGORIAS_IPE_DATA:
+            continue
+        assunto = str(doc.get("assunto") or "")
+        data_evento = extrair_data_do_periodo(assunto, ano, trimestre)
+        if data_evento is not None:
+            return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento,
+                                  f"{empresa} (CVM - {doc['categoria_original']})", doc.get("link"))
+        assunto_norm = _sem_acento_simples(assunto)
+        eh_calendario = doc.get("categoria_original") == "Calendário de Eventos Corporativos"
+        # comunicado de data de divulgação sai depois do fim do trimestre;
+        # o calendário anual, no começo do ano
+        if not doc.get("link") or (not eh_calendario and entregue <= fim_trimestre):
+            continue
+        if eh_calendario or any(t in assunto_norm for t in _TERMOS_IPE_RESULTADO):
+            candidatos.append(doc)
+    # comunicados mais recentes primeiro (obter_documentos_cvm já ordena);
+    # só o calendário mais recente, por último
+    comunicados = [d for d in candidatos if d.get("categoria_original") != "Calendário de Eventos Corporativos"]
+    calendarios = [d for d in candidatos if d.get("categoria_original") == "Calendário de Eventos Corporativos"][:1]
+    for doc in (comunicados + calendarios)[:_MAX_DOCUMENTOS_IPE]:
+        texto = _texto_documento_cvm(doc["link"])
+        if not texto:
+            continue
+        data_evento = extrair_data_do_periodo(texto, ano, trimestre)
+        if data_evento is None and doc.get("categoria_original") == "Calendário de Eventos Corporativos":
+            # calendário anual identifica o ITR pela data-base ("30/09/2026"),
+            # não por "3T26"; a data-base em si nunca passa na janela
+            data_evento = _data_perto_da_data_base(texto, ano, trimestre)
+        if data_evento is not None:
+            return _montar_evento(ticker, empresa, ano, trimestre, STATUS_CONFIRMADO, data_evento,
+                                  f"{empresa} (CVM - {doc['categoria_original']})", doc["link"])
+    return None
 
 
 def tentar_news(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | None:
@@ -306,13 +565,13 @@ def coletar_evento(ticker: str, hoje: date = None) -> dict | None:
 
     empresa = obter_nome_yf(ticker) or ticker
 
-    evento = tentar_ri(ticker, empresa, ano, trimestre)
-    if evento is not None:
-        return evento
-
-    evento = tentar_news(ticker, empresa, ano, trimestre)
-    if evento is not None:
-        return evento
+    # "via" só serve ao log do coletor (de onde veio cada data); não é persistido
+    for via, tentativa in (("RI", tentar_ri), ("CVM", tentar_cvm), ("NEWS", tentar_news)):
+        evento = tentativa(ticker, empresa, ano, trimestre)
+        if evento is not None:
+            if isinstance(evento, dict):
+                evento.setdefault("via", via)
+            return evento
 
     return _calcular_proximo_resultado(ticker, hoje=hoje)
 
@@ -417,20 +676,34 @@ def coletar_eventos_universo(tickers: list, hoje: date = None) -> dict:
     stats = {
         "processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
         "falhas": 0, "tempo_esgotado": False, "tabela_disponivel": tabela_eventos_disponivel(),
+        # já CONFIRMADO/ESTIMADO no banco com a mesma data (nada novo a gravar)
+        "ja_registrados": 0, "via": {},
     }
     for ticker in tickers:
         if time.monotonic() > limite:
             stats["tempo_esgotado"] = True
             break
+        inicio_ticker = time.monotonic()
         try:
             evento = coletar_evento(ticker, hoje=hoje)
+            print(f"[eventos] {ticker}: {(evento or {}).get('status', 'sem período')}"
+                  f" {(evento or {}).get('periodo', '')} {(evento or {}).get('data', '')}"
+                  f" via {(evento or {}).get('via', '-')} ({(evento or {}).get('fonte', '')})"
+                  f" em {time.monotonic() - inicio_ticker:.1f}s")
             if evento is not None:
+                if evento["status"] in (STATUS_CONFIRMADO, STATUS_ESTIMADO):
+                    via = evento.get("via") or "salvo"
+                    stats["via"][via] = stats["via"].get(via, 0) + 1
                 if evento["status"] == STATUS_CONFIRMADO:
                     if salvar_evento_se_mais_confiavel(evento):
                         stats["confirmados"] += 1
+                    else:
+                        stats["ja_registrados"] += 1
                 elif evento["status"] == STATUS_ESTIMADO:
                     if salvar_evento_se_mais_confiavel(evento):
                         stats["estimados"] += 1
+                    else:
+                        stats["ja_registrados"] += 1
                 else:
                     stats["mantidos_prazo_cvm"] += 1
         except Exception:

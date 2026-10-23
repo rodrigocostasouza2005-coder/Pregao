@@ -18,7 +18,8 @@ por IA sob demanda" que o projeto já usa em RESEARCH/NEWS/CVM."""
 
 import html
 import urllib.parse
-from datetime import date
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -27,6 +28,8 @@ from data import posicoes as posicoes_mod
 from data import radar
 from data.eventos import STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_PRAZO_CVM
 from data.prices import validar_ticker
+from data.research import tese
+from data.research.historico import ultimo_snapshot
 from ui.cvm_tab import abrir_card_documento
 from ui.news_tab import abrir_card_noticia
 
@@ -52,6 +55,8 @@ _CSS_RADAR = """
 .radar-selo-fato { color: var(--alta); border-color: var(--alta); }
 .radar-selo-calculo { color: var(--destaque); border-color: var(--destaque); }
 .radar-selo-insuficiente { color: var(--cinza); }
+.radar-selo-estimativa { color: var(--ciano); border-color: var(--ciano); }
+.radar-selo-hipotese { color: var(--destaque); border-color: var(--destaque); border-style: dashed; }
 .radar-vazio { color: var(--cinza); font-size: 0.78rem; padding: 0.6rem 0; }
 .radar-tabela { width: 100%; font-size: 0.76rem; border-collapse: collapse; }
 .radar-tabela th { text-align: right; color: var(--cinza); font-size: 0.64rem; letter-spacing: 0.03em; padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--borda); }
@@ -155,11 +160,15 @@ def _selo_evidencia(tipo: str) -> str:
         radar.TIPO_FATO: "radar-selo-fato",
         radar.TIPO_CALCULO: "radar-selo-calculo",
         radar.TIPO_INSUFICIENTE: "radar-selo-insuficiente",
+        radar.TIPO_ESTIMATIVA_TERCEIRO: "radar-selo-estimativa",
+        radar.TIPO_HIPOTESE: "radar-selo-hipotese",
     }.get(tipo, "radar-selo-insuficiente")
     rotulo = {
         radar.TIPO_FATO: "FATO",
         radar.TIPO_CALCULO: "CÁLCULO INTERNO",
         radar.TIPO_INSUFICIENTE: "DADO INSUFICIENTE",
+        radar.TIPO_ESTIMATIVA_TERCEIRO: "ESTIMATIVA DE TERCEIRO",
+        radar.TIPO_HIPOTESE: "HIPÓTESE DO ANALISTA",
     }.get(tipo, tipo)
     return f"<span class='radar-selo {classe}'>{rotulo}</span>"
 
@@ -918,6 +927,276 @@ def render_radar(prefs: dict, sub: str):
 
 
 # ============================================================
+# G. MINHA TESE (registro persistido, ver data/research/tese.py) -
+# integração Market Researcher/equity-research da Anthropic
+# (2026-10-22, ver docs/market-researcher-integracao.md): adaptação do
+# skill "thesis-tracker" oficial. Só na subaba nova (ANÁLISES › Teses) -
+# render_radar (composição legada) não ganha esta seção de propósito.
+# ============================================================
+
+_TZ_SP = ZoneInfo("America/Sao_Paulo")
+
+_CSS_TESE = """
+.tese-secao {
+    font-size: 0.68rem; color: var(--cinza); letter-spacing: 0.06em; font-weight: 600;
+    text-transform: uppercase; border-bottom: 1px solid var(--borda); padding-bottom: 0.25rem;
+    margin: 1.1rem 0 0.5rem 0;
+}
+.tese-secao:first-of-type { margin-top: 0.2rem; }
+.tese-cabecalho { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+.tese-empresa { color: var(--destaque); font-weight: 700; font-size: 0.95rem; }
+.tese-meta { color: var(--cinza); font-size: 0.68rem; letter-spacing: 0.03em; }
+.tese-corpo { font-size: 0.85rem; line-height: 1.6; margin: 0.5rem 0 0.9rem 0; }
+.tese-precos { margin-bottom: 0.6rem; }
+.tese-coluna-titulo {
+    font-size: 0.66rem; color: var(--cinza); letter-spacing: 0.05em; font-weight: 600;
+    margin: 0.5rem 0 0.3rem 0; border-top: 1px solid var(--borda); padding-top: 0.5rem;
+}
+.tese-diff { color: var(--destaque); font-size: 0.66rem; margin-left: 0.4rem; }
+/* mesmo bug ja documentado em .radar-stub (ver acima): wrapper do
+   Streamlit ao redor de um st.markdown com HTML custom mede a altura
+   do bloco errado quando o conteudo tem elementos empilhados sem
+   altura fixa - da' respiro no elemento SEGUINTE em vez de tentar
+   margin-bottom no proprio bloco. Confirmado de novo aqui (screenshot
+   Playwright real, 2026-10-22): um <div> vazio com padding-top sozinho
+   NAO reserva espaco visivel quando colado a um st.columns() - so' o
+   elemento IRMAO seguinte empurrando pra baixo funciona de verdade. */
+div[data-testid="stElementContainer"]:has(.tese-corpo) + * {
+    margin-top: 0.4rem;
+}
+div[data-testid="stElementContainer"]:has(.tese-rodape) {
+    margin-top: 0.6rem;
+}
+/* o proximo irmao pode ser stElementContainer OU stLayoutWrapper
+   (envolve expanders/outros widgets "de bloco") - seletor universal
+   de proposito, pra nao depender do testid exato do que vem depois. */
+div[data-testid="stElementContainer"]:has(.tese-rodape) + * {
+    margin-top: 1.4rem;
+}
+"""
+
+
+def _nome_empresa_tese(ticker: str) -> str:
+    """Mesmo padrao de app.py:nome_empresa - mapa local primeiro, senao
+    yfinance (cache de 24h, obter_nome_yf) - nunca inventa nome."""
+    from data.prices import obter_nome_yf
+    return config.TICKER_NOME.get(ticker) or obter_nome_yf(ticker) or ticker
+
+
+def _fmt_data_hora_brt(valor: str, so_data: bool = False) -> str:
+    """Converte timestamptz (UTC, como o Postgres grava) pro fuso do
+    projeto (America/Sao_Paulo) antes de formatar - sem isso a hora
+    exibida fica adiantada ~3h em relacao ao horario real de Brasilia
+    (mesmo padrao de fuso de data/radar.py:_TZ_SP)."""
+    try:
+        momento = datetime.fromisoformat(valor)
+        if momento.tzinfo is None:
+            momento = momento.replace(tzinfo=timezone.utc)
+        momento_sp = momento.astimezone(_TZ_SP)
+        return momento_sp.strftime("%d/%m/%Y") if so_data else momento_sp.strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        return str(valor)[:10] or "—"
+
+
+def _linha_lista_tese(itens: list) -> str:
+    if not itens:
+        return "<span class='cinza'>nenhuma registrada</span>"
+    return "".join(f"<div style='padding:0.05rem 0;'>• {html.escape(str(i))}</div>" for i in itens)
+
+
+def _cartao_tese_atual(sc: dict, prefs: dict):
+    conviccao = sc.get("conviccao") or "—"
+    posicao = sc.get("posicao") or "—"
+    registrado_fmt = _fmt_data_hora_brt(sc.get("registrado_em", ""))
+    empresa = _nome_empresa_tese(sc["ticker"])
+
+    st.markdown(
+        f"<div class='tese-cabecalho'>"
+        f"<span class='tese-empresa'>{html.escape(sc['ticker'])}</span>"
+        f"<span class='tese-meta'>{html.escape(empresa)} · {html.escape(posicao)} · convicção {html.escape(conviccao)} · "
+        f"atualizada em {registrado_fmt}</span></div>"
+        f"<div class='tese-corpo'>{html.escape(sc['tese_atual'] or '')}</div>",
+        unsafe_allow_html=True,
+    )
+
+    preco_tese = sc.get("preco_alvo_tese")
+    snapshot_casa = ultimo_snapshot("Genial Analisa", sc["ticker"])
+    tem_preco_casa = snapshot_casa and snapshot_casa.get("preco_alvo") is not None
+    if preco_tese is not None or tem_preco_casa:
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            if preco_tese is not None:
+                st.markdown(
+                    f"<div class='tese-precos'>Preço-alvo da tese: <b>R$ {_fmt_num(preco_tese, 2, prefs)}</b> "
+                    f"{_selo_evidencia(radar.TIPO_HIPOTESE)}</div>",
+                    unsafe_allow_html=True,
+                )
+        with col_p2:
+            if tem_preco_casa:
+                st.markdown(
+                    f"<div class='tese-precos'>Genial Analisa: <b>R$ {_fmt_num(snapshot_casa['preco_alvo'], 2, prefs)}</b> "
+                    f"{_selo_evidencia(radar.TIPO_ESTIMATIVA_TERCEIRO)}</div>",
+                    unsafe_allow_html=True,
+                )
+
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        st.markdown(f"<div class='tese-coluna-titulo'>PREMISSAS</div>{_linha_lista_tese(sc['premissas'])}", unsafe_allow_html=True)
+    with col_b:
+        st.markdown(f"<div class='tese-coluna-titulo'>RISCOS</div>{_linha_lista_tese(sc['riscos'])}", unsafe_allow_html=True)
+    with col_c:
+        st.markdown(f"<div class='tese-coluna-titulo'>CATALISADORES</div>{_linha_lista_tese(sc['catalisadores'])}", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='tese-rodape' style='color:var(--cinza); font-size:0.72rem;'>"
+        f"{sc['n_versoes']} versão(ões) registrada(s) · leitura pessoal, não compartilhada entre usuários.</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _diferencas_entre_versoes(atual: dict, anterior: dict | None) -> str:
+    """Compara so' campos objetivos (convicção/posição/preço-alvo) entre
+    duas versões reais JÁ PERSISTIDAS - nunca infere mudança de texto
+    livre (tese/premissas/riscos), que exigiria julgamento de conteúdo
+    e poderia "inventar" uma mudança que não houve. Vazio se não houver
+    versão anterior pra comparar (primeira versão conhecida) ou se nada
+    objetivo mudou - nunca um texto de mudança sem uma comparação real."""
+    if anterior is None:
+        return ""
+    partes = []
+    if atual.get("conviccao") != anterior.get("conviccao"):
+        partes.append(f"convicção {anterior.get('conviccao') or '—'} → {atual.get('conviccao') or '—'}")
+    if atual.get("posicao") != anterior.get("posicao"):
+        partes.append(f"posição {anterior.get('posicao') or '—'} → {atual.get('posicao') or '—'}")
+    if atual.get("preco_alvo_tese") != anterior.get("preco_alvo_tese"):
+        partes.append("preço-alvo atualizado")
+    if not partes:
+        return ""
+    return f"<span class='tese-diff'>[mudou: {html.escape(' · '.join(partes))}]</span>"
+
+
+def _linha_historico_tese(h: dict, anterior: dict | None, prefs: dict):
+    data_fmt = _fmt_data_hora_brt(h.get("registrado_em", ""))
+    preco = h.get("preco_alvo_tese")
+    preco_txt = f" · preço-alvo R$ {_fmt_num(preco, 2, prefs)}" if preco is not None else ""
+    diff_html = _diferencas_entre_versoes(h, anterior)
+    st.markdown(
+        f"<div style='font-size:0.74rem; padding:0.2rem 0; border-bottom:1px solid var(--borda);'>"
+        f"<span class='cinza'>[{data_fmt}]</span> convicção {html.escape(h.get('conviccao') or '—')}{preco_txt}{diff_html}"
+        f"<div style='margin-top:0.1rem; color:var(--cinza);'>{html.escape(h.get('tese') or '')}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _limpar_campos_formulario_tese(ticker: str):
+    """Chamado so' depois de um salvamento BEM-SUCEDIDO - em falha, as
+    chaves nao sao tocadas, e o Streamlit resubstitui os mesmos valores
+    digitados no proximo rerun (comportamento nativo de widget com
+    `key=`, sem precisar de nenhum cache manual pra preservar o que o
+    usuario escreveu)."""
+    for sufixo in ("texto", "premissas", "riscos", "catalisadores", "preco"):
+        st.session_state.pop(f"tese_{sufixo}_{ticker}", None)
+
+
+def _formulario_nova_tese(ticker: str, usuario_sub: str):
+    with st.form(key=f"tese_form_{ticker}", border=False):
+        st.markdown("<div class='tese-secao'>Identificação da tese</div>", unsafe_allow_html=True)
+        col_pos, col_conv = st.columns(2)
+        with col_pos:
+            posicao = st.selectbox("Posição", ["LONG", "SHORT", "WATCHLIST"], key=f"tese_posicao_{ticker}")
+        with col_conv:
+            conviccao = st.selectbox("Convicção", ["ALTA", "MEDIA", "BAIXA"], key=f"tese_conviccao_{ticker}")
+
+        st.markdown("<div class='tese-secao'>Tese de investimento</div>", unsafe_allow_html=True)
+        texto_tese = st.text_area(
+            "Tese (1 a 3 parágrafos)", key=f"tese_texto_{ticker}", height=130,
+            placeholder=(
+                "Por que esta empresa pode gerar retorno? Quais fatores sustentam essa visão "
+                "(ex: posição competitiva, resultado recente, ciclo do setor)? Qual o horizonte "
+                "considerado (ex: 12-18 meses)?"
+            ),
+        )
+
+        st.markdown("<div class='tese-secao'>Fundamentos e evidências</div>", unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            premissas_txt = st.text_area(
+                "Premissas principais (uma por linha)", key=f"tese_premissas_{ticker}", height=100,
+                placeholder="Ex: margem deve expandir com o novo contrato",
+            )
+            catalisadores_txt = st.text_area(
+                "Catalisadores (um por linha)", key=f"tese_catalisadores_{ticker}", height=90,
+                placeholder="Ex: resultado do 4T sai em fevereiro",
+            )
+        with col2:
+            riscos_txt = st.text_area(
+                "Riscos que invalidariam a tese (um por linha)", key=f"tese_riscos_{ticker}", height=100,
+                placeholder="Ex: alavancagem acima do covenant do BNDES",
+            )
+            preco_alvo_txt = st.text_input(
+                "Preço-alvo da tese (opcional, R$) — estimativa pessoal, não é cotação de mercado",
+                key=f"tese_preco_{ticker}",
+            )
+
+        st.caption("Cada registro cria uma versão nova; as versões anteriores continuam no histórico, nunca são apagadas.")
+        enviado = st.form_submit_button("REGISTRAR NOVA VERSÃO DA TESE", width="stretch", type="primary")
+
+    if not enviado:
+        return
+    preco_alvo_tese = None
+    if preco_alvo_txt.strip():
+        try:
+            preco_alvo_tese = float(preco_alvo_txt.strip().replace(",", "."))
+        except ValueError:
+            st.error("Preço-alvo inválido — use só números (ex: 42.50).")
+            return
+    try:
+        salvo = tese.registrar_versao(
+            usuario_sub=usuario_sub, ticker=ticker, tese=texto_tese,
+            premissas=[p.strip() for p in premissas_txt.splitlines() if p.strip()],
+            riscos=[r.strip() for r in riscos_txt.splitlines() if r.strip()],
+            catalisadores=[c.strip() for c in catalisadores_txt.splitlines() if c.strip()],
+            conviccao=conviccao, posicao=posicao, preco_alvo_tese=preco_alvo_tese,
+        )
+    except ValueError as e:
+        st.error(str(e))
+        return
+    if salvo is None:
+        st.error(
+            "Não foi possível gravar a tese agora (banco indisponível) — o que você escreveu "
+            "continua preenchido, tente novamente em alguns instantes."
+        )
+    else:
+        _limpar_campos_formulario_tese(ticker)
+        st.success("Tese registrada — veja a versão nova no histórico abaixo.")
+        st.rerun(scope="fragment")
+
+
+def _secao_tese(tickers: list, usuario_sub: str, prefs: dict):
+    st.markdown(f"<style>{_CSS_TESE}</style>", unsafe_allow_html=True)
+    if not tickers:
+        return
+    ticker = st.selectbox("Ativo", tickers, key="radar_tese_ticker", label_visibility="collapsed")
+    sc = tese.scorecard(usuario_sub, ticker)
+    if sc is not None:
+        _cartao_tese_atual(sc, prefs)
+        historico = tese.historico_tese(usuario_sub, ticker, limite=10)
+        if len(historico) > 1:
+            with st.expander(f"Histórico de versões ({len(historico)})"):
+                for i, h in enumerate(historico):
+                    anterior = historico[i + 1] if i + 1 < len(historico) else None
+                    _linha_historico_tese(h, anterior, prefs)
+    else:
+        empresa = _nome_empresa_tese(ticker)
+        st.markdown(
+            f"<div class='radar-vazio'>Nenhuma tese registrada ainda para {html.escape(ticker)} "
+            f"({html.escape(empresa)}).</div>",
+            unsafe_allow_html=True,
+        )
+    with st.expander("Registrar nova versão da tese", expanded=(sc is None)):
+        _formulario_nova_tese(ticker, usuario_sub)
+
+
+# ============================================================
 # Subabas do PREGAO 2.0 (ui/navegacao.py) - mesmas secoes de render_radar
 # acima, so' redistribuidas: RADAR > Alertas/Carteiras/Oportunidades/
 # Acompanhamento e ANALISES > Valuation/Teses. render_radar continua
@@ -1061,20 +1340,22 @@ def render_valuation(prefs: dict):
 
 
 @st.fragment
-def render_teses(prefs: dict):
+def render_teses(prefs: dict, usuario: dict):
     _injetar_css()
     st.markdown('<div class="painel-titulo">TESES</div>', unsafe_allow_html=True)
     st.markdown(
-        "<div class='rq-nota'>Base de evidências e copiloto de research já existentes. O registro persistente "
-        "de teses próprias (premissas, riscos, histórico de alterações) ainda não existe — exige tabela nova "
-        "no banco (desenvolvimento posterior, ver docs/arquitetura-pregao-2.md).</div>",
+        "<div class='rq-nota'>Base de evidências e copiloto de research já existentes. Registro persistente "
+        "de tese própria (premissas, riscos, catalisadores, convicção) com histórico de versões — pessoal, "
+        "não compartilhado entre usuários.</div>",
         unsafe_allow_html=True,
     )
     escopo = _escopo_watchlist(prefs, com_janela=False)
     if escopo is None:
         return
     tickers, _janela, watchlist = escopo
-    with st.expander("RESEARCH COM EVIDÊNCIAS", expanded=True):
+    with st.expander("MINHA TESE", expanded=True):
+        _secao_tese(tickers, usuario["sub"], prefs)
+    with st.expander("RESEARCH COM EVIDÊNCIAS", expanded=False):
         _secao_evidencias(tickers, watchlist)
     with st.expander("COPILOTO DE RESEARCH", expanded=False):
         _secao_copiloto(tickers)

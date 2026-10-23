@@ -344,6 +344,8 @@ def main() -> int:
     logger.info(
         f"  eventos de resultado: {stats_eventos['processados']} ticker(s) processado(s), "
         f"{stats_eventos['confirmados']} confirmado(s) novo(s), {stats_eventos['estimados']} estimado(s) novo(s), "
+        f"{stats_eventos.get('ja_registrados', 0)} ja' registrado(s) sem mudanca, "
+        f"origem das datas {stats_eventos.get('via') or {}}, "
         f"{stats_eventos['mantidos_prazo_cvm']} sem fonte melhor (prazo CVM), "
         f"{stats_eventos.get('falhas', 0)} falha(s) por ticker"
         + (" - TEMPO ESGOTADO: universo incompleto; proximo run continua" if stats_eventos["tempo_esgotado"] else "")

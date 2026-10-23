@@ -48,3 +48,21 @@ def test_filtro_do_pdf_aplica_o_piso_e_o_do_email_nao():
               "importancia": 5}]
     assert ed.filtrar_noticias(itens, agora, exigir_relevancia=True) == []
     assert len(ed.filtrar_noticias(itens, agora)) == 1
+
+
+def test_motivo_de_macro_indisponivel_nao_expoe_excecao_ao_leitor():
+    """Edição gerada em 22/10: o e-mail imprimia "histórico do Copom
+    (bcb.gov.br): HTTPSConnectionPool(host='www.bcb.gov.br', port=443): Max
+    retries exceeded..." na linha da Selic."""
+    import pandas as pd
+
+    def _falha():
+        raise ConnectionError("HTTPSConnectionPool(host='api.bcb.gov.br', port=443): Read timed out.")
+
+    linhas = ed._macro_rows(datetime(2026, 10, 22, 8, tzinfo=TZ_SP), provedores={
+        "selic": _falha, "cdi": _falha, "selic_copom": lambda: None,
+        "focus_ipca": lambda: pd.DataFrame(), "focus_selic": lambda: pd.DataFrame()})
+    texto = " ".join(str(l) for l in linhas)
+    for tecnico in ("HTTPSConnectionPool", "host=", "port=", "timed out"):
+        assert tecnico not in texto, tecnico
+    assert "não respondeu nesta execução" in texto
