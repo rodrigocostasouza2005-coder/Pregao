@@ -142,8 +142,14 @@ def render_equity_research_executivo(ticker: str, prefs: dict):
                 st.markdown(f"- {m['data_evento'].strftime('%d/%m/%Y')}: {m['descricao']}{fonte}")
 
         st.markdown("**Research das casas**")
-        if cobertura is None:
-            st.caption("Cobertura de research indisponível agora.")
+        # cobertura["cobertura"] é None quando o PRÓPRIO banco de research
+        # está indisponível (ver data/market_researcher.py:cobertura_cruzada_casas)
+        # - distinto de [] (banco respondeu, nenhuma casa publicou). Bug
+        # real encontrado validando com WEGE3/PETR4 (23/10/2026, Fase 2):
+        # a versão anterior tratava os dois como "nenhuma casa publicou",
+        # escondendo que a fonte nem respondeu.
+        if cobertura is None or cobertura.get("cobertura") is None:
+            st.caption("Cobertura de research indisponível agora (banco fora do ar).")
         else:
             itens_cobertura = cobertura.get("cobertura") or []
             if not itens_cobertura:

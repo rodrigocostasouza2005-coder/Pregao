@@ -65,6 +65,22 @@ def test_listas_vazias_sao_diferentes_de_indisponivel():
     assert "indisponível" not in html_render.lower().replace("recente", "")  # nao confunde "sem dado" com "fonte fora"
 
 
+def test_cobertura_com_banco_indisponivel_nunca_aparece_como_sem_pesquisa():
+    """Regressão (Fase 2, validação real com WEGE3/PETR4 - 23/10/2026):
+    cobertura_research["cobertura"] é None quando o PRÓPRIO banco de
+    research está fora do ar (ver data/market_researcher.py:
+    cobertura_cruzada_casas) - a 1ª versão confundia isso com "nenhuma
+    casa publicou", escondendo que a fonte nem respondeu. Reproduzido
+    de verdade: Supabase indisponível no ambiente de teste fazia
+    cobertura_research vir {"cobertura": None, ...} com os outros 3
+    blocos (fundamentos/catalisadores) normais."""
+    analise = _analise(fundamentos={"pl": 10.0, "alerta_qualidade": []}, catalisadores=[],
+                       cobertura={"cobertura": None, "sem_cobertura": [], "divergencia": None})
+    html_render, _ = _capturar_render(analise)
+    assert "Cobertura de research indisponível agora" in html_render
+    assert "Nenhuma casa monitorada publicou research recente" not in html_render
+
+
 def test_fundamentos_reais_preenchem_metric_e_mostram_alerta():
     fundamentos = {"pl": 28.5, "pvp": 9.1, "roe": 32.0, "divida_liquida_ebitda": 0.3,
                    "alerta_qualidade": ["P/L negativo"]}
@@ -110,3 +126,20 @@ def test_nunca_exibe_recomendacao_ou_preco_alvo_como_do_pregao():
     html_render, _ = _capturar_render(_analise())
     assert "ESTIMATIVA DE TERCEIRO" in html_render
     assert "nunca uma recomendação ou preço-alvo do Pregão" in html_render
+
+
+def test_analise_ticker_cacheada_nao_recalcula_dentro_do_ttl():
+    """Fase 2 (desempenho): abrir a mesma tela 2x pro mesmo ticker nunca
+    deve rodar analise_ticker() (e os 3 módulos que ele agrega) de
+    novo dentro do TTL - st.cache_data real (bare mode), não mockado."""
+    chamadas = []
+
+    def _fake(ticker, janela="7 DIAS"):
+        chamadas.append(ticker)
+        return _analise()
+
+    with patch.object(analises_mod, "analise_ticker", side_effect=_fake):
+        analises_mod._analise_ticker_cacheada.clear()
+        analises_mod._analise_ticker_cacheada("WEGE3_CACHE_TESTE")
+        analises_mod._analise_ticker_cacheada("WEGE3_CACHE_TESTE")
+    assert chamadas == ["WEGE3_CACHE_TESTE"]  # só 1 chamada real pros 2 acessos
