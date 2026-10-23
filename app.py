@@ -715,6 +715,7 @@ if rota == ("analises", "empresas"):
                     _persistir_prefs()
                     st.rerun()
             analises_tab.barra_contexto_empresa(ticker_selecionado, prefs)
+            analises_tab.render_sintese_executiva(ticker_selecionado, prefs)
 
             if len(prefs["watchlist"]) > 1:
                 @st.fragment(run_every=prefs["atualizacao_intervalo"])
@@ -1135,6 +1136,8 @@ if rota == ("analises", "empresas"):
 
             with st.container(border=True):
                 render_cvm_ticker(ticker_selecionado, prefs)
+
+            analises_tab.render_pesquisa_e_conclusao(ticker_selecionado, prefs, usuario)
 
 
 # --- MAIS › Sistema / Saúde dos Dados (so admin): _eh_admin reconfirmado

@@ -9,15 +9,21 @@ obter_indicadores, Yahoo Finance, cache de 12h) - receita, lucro e fluxo
 de caixa em serie historica nao existem em nenhuma fonte integrada, e a
 tela diz isso em vez de estimar."""
 
+import html
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 import config
+from data import market_researcher
 from data.prices import obter_cotacao, obter_indicadores
+from data.radar import TIPO_CALCULO, TIPO_ESTIMATIVA_TERCEIRO, TIPO_FATO, TIPO_HIPOTESE, TIPO_INSUFICIENTE
 from data.research.historico import historico_ticker
+from data.research.tese import scorecard
 from ui import navegacao
+from ui.market_makers_tab import _linha_catalisador, _linha_mudanca
+from ui.radar_tab import _dialog_comparaveis, _injetar_css, _selo_evidencia
 from ui.setores_tab import ir_para_setor, setores_do_ticker
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -294,3 +300,327 @@ def render_fundamentos(prefs: dict):
         navegacao.link("Documentos de resultado (CVM) ↗", "noticias", "documentos", chave="fund_cvm", width="stretch")
     with cols[1]:
         navegacao.link("Valuation por múltiplos ↗", "analises", "valuation", chave="fund_val", width="stretch")
+
+
+# ============================================================
+# SÍNTESE EXECUTIVA + RESEARCH DAS CASAS + CONCLUSÃO (2026-10-23)
+#
+# Agrega, pro ticker que o usuário REALMENTE abriu em ANÁLISES >
+# Empresas (não só os da watchlist, como Fundamentos/RESEARCH faziam),
+# a inteligência que já existia espalhada em telas paralelas (RADAR,
+# MARKET MAKERS, RESEARCH > Casas de Análise). data.market_researcher.
+# analise_ticker() já compõe linha_valuation + contexto_ticker +
+# cobertura_cruzada_casas numa única chamada (1 consulta por fonte,
+# testado em tests/test_market_researcher.py) - zero coletor novo, zero
+# consulta duplicada; aqui só falta a apresentação. _montar_conclusao é
+# função pura (sem Streamlit): nunca chama IA, nunca inventa frase -
+# cada resposta cita o dado estruturado já calculado acima ou declara
+# "dado insuficiente" explicitamente. Nunca gera recomendação de compra/
+# venda - esse conceito não existe no retorno da função.
+# ============================================================
+
+def _card_cobertura_casa(item: dict, fmt: str) -> str:
+    recomendacao = f" · {html.escape(item['recomendacao'])}" if item.get("recomendacao") else ""
+    alvo = ""
+    preco_alvo = item.get("preco_alvo")
+    if preco_alvo:
+        try:
+            alvo = f" · alvo R$ {config.formatar_numero(float(preco_alvo), 2, fmt)}"
+        except (TypeError, ValueError):
+            alvo = ""
+    data_txt = html.escape(str(item.get("data") or "—")[:10])
+    link = item.get("link")
+    titulo = html.escape(item.get("titulo") or "ver relatório")
+    corpo = (f"<a href='{html.escape(link, quote=True)}' target='_blank' rel='noopener'>{titulo}</a>"
+             if link else titulo)
+    return (
+        "<div class='radar-meta' style='margin-bottom:0.35rem; font-size:0.72rem;'>"
+        f"<span class='radar-ticker' style='font-size:0.78rem;'>{html.escape(item['casa'])}</span> "
+        f"({data_txt}){recomendacao}{alvo} — {corpo}</div>"
+    )
+
+
+def render_sintese_executiva(ticker: str, prefs: dict):
+    """Painel compacto logo abaixo da barra de contexto: responde rápido
+    "o que mudar agora" pra este ticker - interpretação (quando há
+    evidência FATO na janela), até 2 mudanças recentes e o próximo
+    catalisador. Reaproveita os mesmos cards HTML já usados em MARKET
+    MAKERS (.radar-alerta, _linha_mudanca/_linha_catalisador) - zero
+    estilo novo."""
+    _injetar_css()
+    try:
+        analise = market_researcher.analise_ticker(ticker)
+    except Exception as exc:
+        st.caption(f"Síntese executiva indisponível agora ({exc!r}).")
+        return
+
+    with st.container(border=True):
+        st.markdown('<div class="painel-titulo">SÍNTESE EXECUTIVA</div>', unsafe_allow_html=True)
+        interpretacao = analise.get("interpretacao_movimento")
+        if interpretacao:
+            st.markdown(
+                f"<div class='radar-alerta'><div class='radar-alerta-topo'>"
+                f"<span class='radar-ticker'>{html.escape(ticker)}</span>"
+                f"{_selo_evidencia(interpretacao.get('tipo_evidencia', TIPO_FATO))}</div>"
+                f"<div class='radar-descricao'>{html.escape(interpretacao['texto'])}</div></div>",
+                unsafe_allow_html=True,
+            )
+        mudancas = (analise.get("mudancas_tese") or [])[:2]
+        for m in mudancas:
+            st.markdown(_linha_mudanca(m), unsafe_allow_html=True)
+        proximos = sorted(
+            [c for c in (analise.get("catalisadores") or []) if c["data"] >= date.today()],
+            key=lambda c: c["data"],
+        )[:1]
+        for c in proximos:
+            st.markdown(_linha_catalisador(c), unsafe_allow_html=True)
+        if not interpretacao and not mudancas and not proximos:
+            if analise.get("fontes_indisponiveis"):
+                st.markdown(
+                    f"<div class='radar-vazio'>Síntese parcial: "
+                    f"{html.escape(', '.join(analise['fontes_indisponiveis']))} indisponível(is) nesta checagem.</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    "<div class='radar-vazio'>Nenhuma mudança de tese ou catalisador verificado na janela de "
+                    "7 dias para este ativo.</div>",
+                    unsafe_allow_html=True,
+                )
+
+
+def _montar_conclusao(analise: dict, tese: dict | None) -> list:
+    """Monta a conclusão de investimento (lista de {pergunta, resposta,
+    tipo_evidencia}) só a partir do que já está em `analise`
+    (data.market_researcher.analise_ticker) e, se existir, da Tese
+    própria do usuário (data.research.tese.scorecard). "Dado
+    insuficiente" é uma resposta honesta aqui, não um placeholder a
+    esconder - e nunca há recomendação de compra/venda nesse retorno."""
+    fundamentos = analise.get("fundamentos")
+    catalisadores = analise.get("catalisadores")
+    mudancas = analise.get("mudancas_tese")
+    riscos = analise.get("riscos_indicadores")
+    cobertura = analise.get("cobertura_research") or {}
+    cobertura_lista = cobertura.get("cobertura")
+    sem_cobertura = cobertura.get("sem_cobertura") or []
+    divergencia = cobertura.get("divergencia")
+    fontes_indisponiveis = analise.get("fontes_indisponiveis") or []
+    proximos_cat = sorted(
+        [c for c in (catalisadores or []) if c["data"] >= date.today()], key=lambda c: c["data"]
+    )
+
+    blocos = [{
+        "pergunta": "Qualidade do negócio",
+        "resposta": "Dado insuficiente: o PREGÃO ainda não integra receita, margem ou fluxo de caixa em série "
+                    "histórica (só os múltiplos pontuais do período mais recente, em Avaliação abaixo) - não dá "
+                    "pra avaliar a qualidade do negócio em si com o que está disponível hoje.",
+        "tipo_evidencia": TIPO_INSUFICIENTE,
+    }]
+
+    if mudancas:
+        m = mudancas[0]
+        blocos.append({
+            "pergunta": "Momento atual",
+            "resposta": f"{m['categoria']}: {m['descricao']} ({m['data_evento'].strftime('%d/%m/%Y')}).",
+            "tipo_evidencia": m.get("tipo_evidencia", TIPO_FATO),
+        })
+    elif mudancas is not None:
+        blocos.append({
+            "pergunta": "Momento atual",
+            "resposta": "Nenhuma mudança de tese ou fato relevante verificado nas fontes monitoradas na janela "
+                        "recente.",
+            "tipo_evidencia": TIPO_FATO,
+        })
+    else:
+        blocos.append({
+            "pergunta": "Momento atual",
+            "resposta": "Dado insuficiente: fonte de catalisadores/mudanças de tese indisponível nesta checagem.",
+            "tipo_evidencia": TIPO_INSUFICIENTE,
+        })
+
+    recomendacoes = [c for c in (cobertura_lista or []) if c.get("recomendacao")]
+    if recomendacoes or proximos_cat:
+        partes = [f"{r['casa']}: {r['recomendacao']} ({str(r['data'])[:10]})" for r in recomendacoes]
+        partes += [f"{c['categoria']} em {c['data'].strftime('%d/%m/%Y')} ({c['status_label']})"
+                   for c in proximos_cat[:2]]
+        blocos.append({
+            "pergunta": "O que sustenta uma leitura positiva",
+            "resposta": "; ".join(partes) + ".",
+            "tipo_evidencia": TIPO_FATO if recomendacoes else TIPO_ESTIMATIVA_TERCEIRO,
+        })
+    else:
+        blocos.append({
+            "pergunta": "O que sustenta uma leitura positiva",
+            "resposta": "Dado insuficiente: nenhuma recomendação estruturada nem catalisador futuro identificado "
+                        "nas fontes monitoradas.",
+            "tipo_evidencia": TIPO_INSUFICIENTE,
+        })
+
+    contrarios = list((fundamentos or {}).get("alerta_qualidade") or [])
+    if divergencia:
+        contrarios.append(divergencia["descricao"])
+    if sem_cobertura:
+        contrarios.append(f"sem cobertura recente de: {', '.join(sem_cobertura)}")
+    if contrarios:
+        blocos.append({
+            "pergunta": "Principais argumentos contrários / lacunas de cobertura",
+            "resposta": "; ".join(contrarios) + ".",
+            "tipo_evidencia": TIPO_CALCULO if fundamentos else TIPO_INSUFICIENTE,
+        })
+    else:
+        blocos.append({
+            "pergunta": "Principais argumentos contrários / lacunas de cobertura",
+            "resposta": "Nenhum alerta de qualidade nos indicadores monitorados (P/L, margem, dívida/EBITDA) nem "
+                        "divergência de recomendação entre casas.",
+            "tipo_evidencia": TIPO_CALCULO if fundamentos else TIPO_INSUFICIENTE,
+        })
+
+    if fundamentos and fundamentos.get("preco") is not None:
+        pl, pvp = fundamentos.get("pl"), fundamentos.get("pvp")
+        partes_val = []
+        if pl is not None:
+            partes_val.append(f"P/L {pl:.1f}x")
+        if pvp is not None:
+            partes_val.append(f"P/VP {pvp:.2f}x")
+        texto_val = ", ".join(partes_val) if partes_val else (
+            "sem P/L ou P/VP comparável (lucro ou patrimônio negativo, ou empresa fora do modelo tradicional)"
+        )
+        blocos.append({
+            "pergunta": "Avaliação (caro ou barato)",
+            "resposta": f"Múltiplos reportados agora: {texto_val}. Sem comparação com a mediana do setor nesta "
+                        "síntese (use \"Comparar com o setor ↗\" abaixo) e sem valor justo calculado pelo "
+                        "PREGÃO (modelo próprio ainda não existe).",
+            "tipo_evidencia": TIPO_FATO if partes_val else TIPO_INSUFICIENTE,
+        })
+    else:
+        blocos.append({
+            "pergunta": "Avaliação (caro ou barato)",
+            "resposta": "Dado insuficiente: sem cotação ou múltiplos disponíveis agora.",
+            "tipo_evidencia": TIPO_INSUFICIENTE,
+        })
+
+    monitorar = [f"{c['categoria']} em {c['data'].strftime('%d/%m/%Y')}" for c in proximos_cat[:3]]
+    if sem_cobertura:
+        monitorar.append(f"cobertura ainda ausente: {', '.join(sem_cobertura)}")
+    blocos.append({
+        "pergunta": "O que monitorar a seguir",
+        "resposta": ("; ".join(monitorar) + ".") if monitorar else
+                    "Nenhum catalisador identificado nos próximos 60 dias nas fontes monitoradas.",
+        "tipo_evidencia": TIPO_FATO if monitorar else TIPO_INSUFICIENTE,
+    })
+
+    riscos_tese_usuario = (tese or {}).get("riscos") or []
+    invalidadores = list(riscos or []) + list(riscos_tese_usuario)
+    if invalidadores:
+        origem = " (inclui riscos registrados na sua Tese própria)" if riscos_tese_usuario else ""
+        blocos.append({
+            "pergunta": "O que invalidaria a tese",
+            "resposta": "; ".join(invalidadores) + f".{origem}",
+            "tipo_evidencia": TIPO_CALCULO if riscos else TIPO_HIPOTESE,
+        })
+    else:
+        blocos.append({
+            "pergunta": "O que invalidaria a tese",
+            "resposta": "Dado insuficiente: nenhum risco estrutural identificado nos indicadores monitorados; "
+                        "registre riscos específicos em RESEARCH › Minha Tese.",
+            "tipo_evidencia": TIPO_INSUFICIENTE,
+        })
+
+    lacunas = list(fontes_indisponiveis) + ["receita/margem em série histórica (sem fonte integrada ainda)"]
+    blocos.append({
+        "pergunta": "Confiança e lacunas desta análise",
+        "resposta": f"Lacunas conhecidas: {', '.join(lacunas)}. Esta síntese organiza evidência real já "
+                    "coletada - não é e não substitui recomendação de compra ou venda.",
+        "tipo_evidencia": TIPO_INSUFICIENTE,
+    })
+
+    return blocos
+
+
+def render_pesquisa_e_conclusao(ticker: str, prefs: dict, usuario: dict):
+    """RESEARCH DAS CASAS (cobertura cruzada + histórico de preço-alvo já
+    existente em _render_research_e_fatores) + RISCOS/CATALISADORES +
+    CONCLUSÃO - chamado ao final do bloco de ANÁLISES > Empresas (depois
+    de NOTÍCIAS/CVM), pra fechar a análise com uma síntese, não só a
+    cotação."""
+    _injetar_css()
+    fmt = prefs["formato_numerico"]
+    try:
+        analise = market_researcher.analise_ticker(ticker)
+    except Exception as exc:
+        st.warning(f"Pesquisa e conclusão indisponíveis agora ({exc!r}).")
+        return
+
+    with st.container(border=True):
+        st.markdown('<div class="painel-titulo">RESEARCH DAS CASAS</div>', unsafe_allow_html=True)
+        cobertura = analise.get("cobertura_research") or {}
+        cobertura_lista = cobertura.get("cobertura")
+        if cobertura_lista is None:
+            st.markdown(
+                "<div class='radar-vazio'>Banco indisponível: não foi possível checar a cobertura das casas "
+                "agora.</div>", unsafe_allow_html=True,
+            )
+        elif cobertura_lista:
+            for item in cobertura_lista:
+                st.markdown(_card_cobertura_casa(item, fmt), unsafe_allow_html=True)
+        else:
+            st.markdown(
+                "<div class='radar-vazio'>Nenhuma casa monitorada publicou algo recente sobre este ativo.</div>",
+                unsafe_allow_html=True,
+            )
+        if cobertura.get("sem_cobertura"):
+            st.caption("Sem cobertura recente: " + ", ".join(cobertura["sem_cobertura"]) + ".")
+        if cobertura.get("divergencia"):
+            por_casa = ", ".join(f"{k}: {v}" for k, v in cobertura["divergencia"]["por_casa"].items())
+            st.markdown(
+                f"<div class='baixa' style='font-size:0.78rem; margin-top:0.3rem;'>⚠ Recomendação diverge entre "
+                f"casas — {html.escape(por_casa)}.</div>", unsafe_allow_html=True,
+            )
+
+    # fora do container acima DE PROPOSITO (nao aninhado): _render_research_e_fatores
+    # ja' abre o proprio st.container(border=True) - aninhar criaria "card
+    # dentro de card", exatamente o visual generico que o redesign do
+    # RADAR > ACOMPANHAMENTO evitou (ver PR #149).
+    _render_research_e_fatores(ticker, fmt)
+
+    with st.container(border=True):
+        st.markdown('<div class="painel-titulo">RISCOS E CATALISADORES</div>', unsafe_allow_html=True)
+        riscos = analise.get("riscos_indicadores")
+        if riscos:
+            st.markdown(
+                f"<div class='radar-alerta'><div class='radar-descricao'>{html.escape('; '.join(riscos))}</div></div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                "<div class='radar-vazio'>Nenhum alerta de qualidade nos indicadores monitorados.</div>",
+                unsafe_allow_html=True,
+            )
+        proximos = sorted(
+            [c for c in (analise.get("catalisadores") or []) if c["data"] >= date.today()], key=lambda c: c["data"]
+        )
+        for c in proximos[:5]:
+            st.markdown(_linha_catalisador(c), unsafe_allow_html=True)
+        fundamentos = analise.get("fundamentos")
+        if fundamentos and fundamentos.get("preco") is not None:
+            if st.button("Comparar com o setor ↗", key=f"empresa_comp_setor_{ticker}"):
+                _dialog_comparaveis(ticker, prefs)
+
+    tese = scorecard(usuario["sub"], ticker)
+    with st.container(border=True):
+        st.markdown('<div class="painel-titulo">CONCLUSÃO</div>', unsafe_allow_html=True)
+        for bloco in _montar_conclusao(analise, tese):
+            st.markdown(
+                f"<div class='radar-alerta'><div class='radar-alerta-topo'>"
+                f"<span class='radar-categoria'>{html.escape(bloco['pergunta'])}</span>"
+                f"{_selo_evidencia(bloco['tipo_evidencia'])}</div>"
+                f"<div class='radar-descricao'>{html.escape(bloco['resposta'])}</div></div>",
+                unsafe_allow_html=True,
+            )
+        if tese:
+            st.caption(
+                f"Você já registrou uma Tese própria para {ticker} em {str(tese['registrado_em'])[:10]} "
+                f"({tese['n_versoes']} versão(ões)) — ver RESEARCH › Minha Tese."
+            )
+        else:
+            st.caption("Você ainda não registrou uma Tese própria para este ativo — ver RESEARCH › Minha Tese.")
