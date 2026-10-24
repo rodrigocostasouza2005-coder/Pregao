@@ -31,7 +31,7 @@ import config
 from data.cvm import obter_documentos_cvm
 from data.eventos import (
     PRIORIDADE_STATUS, STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_LABEL, STATUS_PRAZO_CVM,
-    calcular_calendario_cacheado, obter_snapshot_calendario,
+    calcular_calendario_cacheado, obter_snapshot_calendario, universo_calendario,
 )
 from data.news import obter_noticias
 from data.research import CASAS
@@ -166,12 +166,25 @@ def _linha_resumo(e: dict):
     )
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def _universo_todos_cacheado() -> list:
+    """Universo dinamico (ver data/eventos.py:universo_calendario) com
+    cache proprio (10min, mesmo TTL do snapshot) - une CVM/FCA + BDRs +
+    TODAS as watchlists reais, 1 consulta paginada ao Supabase, nunca
+    por ticker; sem isso, abrir/trocar filtro na aba repetiria essa
+    consulta a cada rerun."""
+    return universo_calendario()
+
+
 def _universo_tickers(filtro: str, prefs: dict, setor: str = None) -> list:
     if filtro == "MINHA WATCHLIST":
         return list(prefs.get("watchlist") or [])
     if filtro == "SETOR" and setor:
         return [t for t, s in config.IBOVESPA_SETORES.items() if s == setor]
-    return list(config.IBOVESPA_SETORES.keys())
+    # TODOS (reforma do universo dinamico, 2026-10-24): universo
+    # completo real (CVM/FCA + BDRs + watchlists), nao mais so' os 84
+    # tickers fixos do Ibovespa - ver _universo_todos_cacheado.
+    return _universo_todos_cacheado()
 
 
 def _filtrar_janela(eventos: list, janela: str, hoje: date) -> list:
@@ -595,13 +608,32 @@ def _painel_agenda(prefs: dict):
     # deixa o escopo atual explicito e aponta o caminho pra ver tudo, sem
     # mudar o filtro/comportamento padrao nem inflar numero de empresas.
     if filtro == "MINHA WATCHLIST":
-        total_universo = len(config.IBOVESPA_SETORES)
+        # contagem REAL do universo dinamico (CVM/FCA + BDRs curados +
+        # todas as watchlists) - nao mais um texto fixo de "84"/"Ibovespa"
+        # (reforma do universo, 2026-10-24).
+        total_universo = len(_universo_todos_cacheado())
         st.markdown(
             f"<div class='cal-atualizado'>mostrando sua watchlist "
             f"({len(tickers)} ativo{'s' if len(tickers) != 1 else ''}) · "
-            f"toque em TODOS para ver as {total_universo} empresas do Ibovespa cobertas</div>",
+            f"toque em TODOS para ver as {total_universo} empresas cobertas (B3 + BDRs curados + "
+            f"watchlists de todos os usuários)</div>",
             unsafe_allow_html=True,
         )
+    elif filtro == "TODOS":
+        # transparencia sobre cobertura real (reforma do universo,
+        # 2026-10-24): o coletor processa o universo em rotacao por
+        # checkpoint (orcamento de tempo por execucao) - ticker fora do
+        # snapshot ainda aparece (calculo ao vivo, PRAZO_CVM na pior
+        # hipotese), mas sem nome bonito enquanto o coletor nao
+        # processar esse lote - nunca escondido, so' explicado.
+        snapshot = obter_snapshot_calendario()
+        no_snapshot = len((snapshot or {}).get("eventos") or [])
+        if no_snapshot and no_snapshot < len(tickers):
+            st.caption(
+                f"{len(tickers)} ativos no universo completo · {no_snapshot} já processados pelo coletor "
+                "nesta leva (os demais aparecem com prazo regulatório da CVM e nome ainda não "
+                "identificado, até a próxima execução do coletor)."
+            )
 
     with st.spinner("Calculando calendário..."):
         eventos = calcular_calendario_cacheado(tickers)

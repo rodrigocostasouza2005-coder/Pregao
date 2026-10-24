@@ -171,3 +171,50 @@ def listar_assinantes_morning_call(cliente=None) -> list[str] | None:
         print(f"[user_prefs] falha ao listar assinantes do Morning Call: {exc!r}")
         return None
     return sorted(assinantes.keys())
+
+
+def uniao_watchlists_todos_usuarios(cliente=None) -> set | None:
+    """Uniao deduplicada dos tickers de TODAS as watchlists reais
+    cadastradas em user_prefs - base de `universo_calendario()` (ver
+    plano de reforma do CALENDARIO), pra garantir 100% de cobertura da
+    watchlist de qualquer usuario, nao so' os 84 tickers fixos do
+    Ibovespa que `coletor_local.py` usava antes.
+
+    Mesmo padrao de paginacao de listar_assinantes_morning_call (acima) -
+    continua funcionando mesmo se user_prefs crescer bem alem de 1
+    pagina default do PostgREST. cliente=None -> obtem um sozinho.
+
+    None (nao set()) se Supabase estiver indisponivel ou a consulta
+    lancar excecao - quem chama (data/eventos.py:universo_calendario)
+    NUNCA deve tratar None como "nenhuma watchlist cadastrada": isso
+    faria o universo encolher silenciosamente pra so' o cadastro CVM,
+    perdendo cobertura real sem nenhum aviso. set() vazio e' o caso
+    legitimo "ninguem tem watchlist cadastrada ainda", distinto de
+    "nao deu pra saber" - mesma distincao de listar_assinantes_morning_call."""
+    cliente = cliente if cliente is not None else obter_cliente()
+    if cliente is None:
+        return None
+    tickers = set()
+    try:
+        inicio = 0
+        while True:
+            fim = inicio + _TAMANHO_PAGINA_ASSINANTES - 1
+            resp = (
+                cliente.table("user_prefs")
+                .select("preferencias")
+                .range(inicio, fim)
+                .execute()
+            )
+            linhas = resp.data or []
+            for linha in linhas:
+                preferencias_usuario = linha.get("preferencias") or {}
+                for ticker in preferencias_usuario.get("watchlist") or []:
+                    if isinstance(ticker, str) and ticker.strip():
+                        tickers.add(ticker.strip().upper())
+            if len(linhas) < _TAMANHO_PAGINA_ASSINANTES:
+                break
+            inicio += _TAMANHO_PAGINA_ASSINANTES
+    except Exception as exc:
+        print(f"[user_prefs] falha ao unir watchlists de todos os usuarios: {exc!r}")
+        return None
+    return tickers

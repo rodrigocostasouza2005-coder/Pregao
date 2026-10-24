@@ -211,6 +211,30 @@ def _mapa_ticker_cnpj() -> dict:
     return dict(cache)
 
 
+# codigo de negociacao real da B3: 4 letras + classe de acao/unit
+# (3/4/5/6/11/32/33/34) - mesmo formato ja usado em outros pontos do
+# projeto (ex: data/morning_call_editorial.py:_TICKER_NO_TITULO). Full
+# match (nao \b...\b): precisa rejeitar uma linha inteira malformada
+# (ex: "NÃO HÁ", achado real no FCA), nao so' achar um ticker dentro
+# de um texto maior.
+_FORMATO_TICKER_B3 = re.compile(r"^[A-Z]{4}(?:3|4|5|6|11|32|33|34)$")
+
+
+def tickers_com_cnpj_cvm() -> set:
+    """{tickers} com CNPJ cadastrado no FCA da CVM (acoes/units - nunca
+    BDR, que nao tem CNPJ brasileiro) - fachada fina sobre
+    _mapa_ticker_cnpj() (mesmo cache de 24h, zero requisicao nova),
+    filtrando linhas malformadas do dataset (achado real: pelo menos 1
+    linha com "NÃO HÁ" no lugar do codigo de negociacao) antes de tratar
+    qualquer coisa como ticker de verdade. Parte do universo_calendario()
+    (data/user_prefs.py), ver docs/plano de reforma do CALENDARIO."""
+    return {
+        ticker.strip().upper()
+        for ticker in _mapa_ticker_cnpj()
+        if _FORMATO_TICKER_B3.fullmatch(ticker.strip().upper())
+    }
+
+
 def testar_conexao() -> tuple:
     """So' testa se o IPE do ano corrente baixa e tem linhas - usado pelo
     painel DIAGNOSTICO DE FONTES. Retorna (ok, detalhe).

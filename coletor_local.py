@@ -70,7 +70,7 @@ from pathlib import Path
 
 import config
 from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
-from data.eventos import salvar_snapshot_calendario
+from data.eventos import salvar_snapshot_calendario, universo_calendario, universo_calendario_priorizado
 from data.eventos_coleta import coletar_eventos_universo
 from data.news import pregerar_imagens_news, pregerar_resumos_news
 from data.research import coletar_todas_disponiveis
@@ -332,7 +332,17 @@ def main() -> int:
     # datas reais de resultado (RI->NEWS->PRAZO_CVM, 2026-10-02) - ver
     # data/eventos_coleta.py. Orcamento proprio de tempo (5min), pode nao
     # cobrir o universo inteiro numa execucao so' (ver docstring do modulo).
-    stats_eventos = coletar_eventos_universo(_universo_rotativo(list(config.IBOVESPA_SETORES.keys())))
+    #
+    # Universo dinamico (Fase 1 da reforma estrutural do CALENDARIO,
+    # 2026-10-24): troca os 84 tickers fixos de config.IBOVESPA_SETORES
+    # pela uniao de CVM/FCA + BDRs curados + TODAS as watchlists reais
+    # (ver data/eventos.py:universo_calendario). A WATCHLIST entra
+    # SEMPRE primeiro, sem rotacao (garante "100% das watchlists" em
+    # toda execucao, nunca refem do orcamento de tempo) - so' o RESTO
+    # do universo (CVM+BDRs fora de toda watchlist) rotaciona pelo
+    # checkpoint persistido, igual ao universo fixo de antes.
+    watchlist_universo, resto_universo = universo_calendario_priorizado()
+    stats_eventos = coletar_eventos_universo(watchlist_universo + _universo_rotativo(resto_universo))
     if stats_eventos["tabela_disponivel"] is False:
         logger.warning(
             "  eventos de resultado: tabela 'eventos_resultados' nao encontrada/inacessivel no "

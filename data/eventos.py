@@ -81,10 +81,11 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 import config
-from data.cvm import obter_cnpj, obter_documentos_cvm
+from data.cvm import obter_cnpj, obter_documentos_cvm, tickers_com_cnpj_cvm
 from data.ibovespa import obter_composicao_oficial
 from data.prices import obter_nome_yf
 from data.supabase_client import obter_cliente
+from data.user_prefs import uniao_watchlists_todos_usuarios
 
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
 
@@ -287,26 +288,39 @@ def _buscar_eventos_persistidos_lote(pares: tuple) -> dict:
     }
 
 
-def _nome_empresa(ticker: str) -> str:
+def _nome_empresa(ticker: str, nome_via_rede: bool = True) -> str:
     """Nome de exibicao do ticker - cascata BARATA (sem rede) antes do
     fallback caro: config.TICKER_NOME/NOMES_ATIVOS_BUSCA (curadoria
     manual) -> nome oficial da composicao do Ibovespa (ja cacheada 24h,
-    mesma fonte que ui/busca.py usa) -> so' em ultimo caso
+    mesma fonte que ui/busca.py usa) -> so' em ultimo caso, se
+    `nome_via_rede` (padrao True, preserva o comportamento de sempre),
     obter_nome_yf (1 chamada de rede ao yfinance por ticker, lenta -
     confirmado no profiling: ~0,5-0,8s cada, 55% do tempo total do
     CALENDARIO pra 13 tickers antes desta correcao). Mesma cascata ja
     estabelecida em ui/busca.py:_universo_ativos - nao e' logica nova,
-    so' reaproveitada aqui."""
+    so' reaproveitada aqui.
+
+    `nome_via_rede=False` (universo dinamico, 2026-10-24): com o
+    universo do CALENDARIO saltando de 84 pra ~500+ tickers (CVM/FCA),
+    a maioria NAO esta' em nenhum mapa curado - pagar 1 chamada de rede
+    POR TICKER novo, em lote, derrubaria o orcamento de tempo (e,
+    pior, bloquearia a UI se acontecesse no caminho ao vivo de
+    calcular_calendario_cacheado). Ticker sem nome curado mostra o
+    proprio CODIGO como nome ate' ser curado - nunca inventa um nome,
+    so' nao paga rede pra descobrir um bonito."""
     nome = (
         config.TICKER_NOME.get(ticker)
         or config.NOMES_ATIVOS_BUSCA.get(ticker)
         or (obter_composicao_oficial() or {}).get(ticker, {}).get("nome")
     )
-    return nome or obter_nome_yf(ticker) or ticker
+    if nome:
+        return nome
+    return (obter_nome_yf(ticker) or ticker) if nome_via_rede else ticker
 
 
 def calcular_proximo_resultado(
     ticker: str, hoje: date = None, _periodo_prebuscado: tuple = None, _persistidos_prebuscados: dict = None,
+    nome_via_rede: bool = True,
 ) -> dict | None:
     """Proximo resultado esperado pro ticker - CONFIRMADO/ESTIMADO se o
     coletor (data/eventos_coleta.py) ja tiver achado e persistido uma
@@ -334,7 +348,7 @@ def calcular_proximo_resultado(
         return None
     ano, trimestre = periodo
     rotulo = _rotulo_periodo(ano, trimestre)
-    empresa = _nome_empresa(ticker)
+    empresa = _nome_empresa(ticker, nome_via_rede=nome_via_rede)
 
     if _persistidos_prebuscados is not None:
         persistido = _persistidos_prebuscados.get((ticker, rotulo))
@@ -381,7 +395,7 @@ def calcular_proximo_resultado(
     }
 
 
-def calcular_calendario(tickers: list, hoje: date = None) -> list:
+def calcular_calendario(tickers: list, hoje: date = None, nome_via_rede: bool = True) -> list:
     """Calendario de proximos resultados pra uma lista de tickers,
     ordenado por data - tickers cuja fonte CVM falhar simplesmente nao
     entram no resultado IMEDIATO, mas podem ser resgatados do cache de
@@ -401,7 +415,13 @@ def calcular_calendario(tickers: list, hoje: date = None) -> list:
     a vir de uma cascata barata (ver _nome_empresa) antes do fallback
     de rede ao yfinance. Nenhuma mudanca nos RESULTADOS (CONFIRMADO/
     ESTIMADO/PRAZO_CVM e suas datas/fontes continuam exatamente iguais)
-    - so' MENOS chamadas de rede pra chegar no mesmo resultado."""
+    - so' MENOS chamadas de rede pra chegar no mesmo resultado.
+
+    `nome_via_rede=False` (universo dinamico, 2026-10-24): propagado
+    pra TODOS os tickers deste lote (ver _nome_empresa) - usado pro
+    universo cheio (~500+ tickers), onde a maioria ainda nao tem nome
+    curado e pagar yfinance por ticker, em lote, violaria o orcamento
+    de tempo/rede. Ticker sem nome curado mostra o proprio codigo."""
     vistos = set()
     tickers_unicos = []
     periodos = {}
@@ -419,6 +439,7 @@ def calcular_calendario(tickers: list, hoje: date = None) -> list:
     for ticker in tickers_unicos:
         evento = calcular_proximo_resultado(
             ticker, hoje=hoje, _periodo_prebuscado=periodos[ticker], _persistidos_prebuscados=persistidos,
+            nome_via_rede=nome_via_rede,
         )
         if evento:
             eventos.append(evento)
@@ -443,6 +464,14 @@ def calcular_calendario(tickers: list, hoje: date = None) -> list:
 _TABELA_SNAPSHOT = "calendario_snapshot"
 _ID_SNAPSHOT = "latest"
 _TTL_SNAPSHOT = 10 * 60  # so' pra nao bater no Supabase a cada rerun - o dado em si e' atualizado pelo coletor, nao por este TTL
+
+# Acima deste tamanho, o fallback ao vivo de calcular_calendario_cacheado
+# desativa a busca de nome via rede (ver _nome_empresa) - protege a UI de
+# bloquear por minutos quando o universo pedido (ex: TODOS, ~500+
+# tickers) tem muita coisa ainda fora do snapshot. Watchlist/setor reais
+# (media 4-16 tickers, medido no diagnostico da reforma do CALENDARIO)
+# ficam bem abaixo disso - comportamento de sempre, nome bonito via rede.
+_LIMITE_NOME_VIA_REDE_UI = 20
 
 
 def _evento_para_json(evento: dict) -> dict:
@@ -499,8 +528,16 @@ def salvar_snapshot_calendario(tickers: list, hoje: date = None) -> bool:
     sobrescreve se o calculo produziu pelo menos 1 evento - uma falha
     pontual (CVM fora do ar, Supabase fora do ar) NUNCA apaga o ultimo
     snapshot bom, so' deixa de atualizar (preserva o ultimo valido, ver
-    ATUALIZACAO). Retorna True so' se gravou um snapshot NOVO."""
-    eventos = calcular_calendario(tickers, hoje=hoje)
+    ATUALIZACAO). Retorna True so' se gravou um snapshot NOVO.
+
+    nome_via_rede=False (universo dinamico, 2026-10-24): `tickers` aqui
+    e' o universo CHEIO (~500+ com universo_calendario(), nao mais os
+    84 fixos) - a maioria ainda sem nome curado; cada execucao do
+    coletor e' um PROCESSO NOVO (Agendador do Windows), o cache de 24h
+    de obter_nome_yf nunca sobrevive entre execucoes, entao pagar rede
+    por ticker novo aqui seria recorrente, nao 1x. Ticker sem nome
+    curado mostra o proprio codigo no snapshot ate' ser curado."""
+    eventos = calcular_calendario(tickers, hoje=hoje, nome_via_rede=False)
     if not eventos:
         return False
     cliente = obter_cliente()
@@ -531,10 +568,24 @@ def calcular_calendario_cacheado(tickers: list, hoje: date = None) -> list:
 
     Se NUNCA houve snapshot (projeto novo) ou o Supabase estiver fora
     do ar, cai pro calculo em tempo real pro lote inteiro (comportamento
-    de calcular_calendario de sempre) - a UI nunca fica sem dado."""
+    de calcular_calendario de sempre) - a UI nunca fica sem dado.
+
+    Limite de nome via rede no fallback ao vivo (universo dinamico,
+    2026-10-24): com o universo saltando pra ~500+ tickers (filtro
+    TODOS), o snapshot do coletor ainda nao cobre tudo nas primeiras
+    execucoes apos esta mudanca (rotaciona por checkpoint, ver
+    coletor_local.py) - `nao_cobertos` pode ficar grande. Pagar
+    yfinance por ticker AO VIVO, no thread da UI, pra um lote grande
+    bloquearia a pagina por minutos - MINHA WATCHLIST/SETOR continuam
+    intocados (lotes pequenos, ate' _LIMITE_NOME_VIA_REDE_UI, mantêm
+    nome bonito via rede, comportamento de sempre); so' um lote GRANDE
+    de nao_cobertos (so' possivel com TODOS) desativa a rede e mostra o
+    proprio codigo como nome, nunca inventado, at'e o coletor processar
+    e o snapshot ganhar um nome melhor."""
     snapshot = obter_snapshot_calendario()
     if snapshot is None or not snapshot.get("eventos"):
-        return calcular_calendario(tickers, hoje=hoje)
+        nome_via_rede = len(tickers) <= _LIMITE_NOME_VIA_REDE_UI
+        return calcular_calendario(tickers, hoje=hoje, nome_via_rede=nome_via_rede)
 
     eventos_snapshot = {}
     for linha in snapshot["eventos"]:
@@ -549,7 +600,8 @@ def calcular_calendario_cacheado(tickers: list, hoje: date = None) -> list:
 
     eventos = [eventos_snapshot[t] for t in cobertos]
     if nao_cobertos:
-        eventos += calcular_calendario(nao_cobertos, hoje=hoje)
+        nome_via_rede = len(nao_cobertos) <= _LIMITE_NOME_VIA_REDE_UI
+        eventos += calcular_calendario(nao_cobertos, hoje=hoje, nome_via_rede=nome_via_rede)
     return sorted(eventos, key=lambda e: e["data"])
 
 
@@ -619,3 +671,41 @@ def aplicar_cache_resiliente(eventos_novos: list) -> list:
         resultado.append(escolhido)
     resultado.sort(key=lambda e: e["data"])
     return resultado
+
+
+def universo_calendario_priorizado(cliente=None) -> tuple:
+    """(watchlist_tickers, resto_tickers), ambos ordenados e sem
+    sobreposicao - mesma uniao de universo_calendario() (ver docstring
+    abaixo), so' dividida pra quem precisa SEMPRE processar a watchlist
+    primeiro (coletor_local.py) sem rotacionar ela junto com o resto do
+    universo (ver _universo_rotativo - rotacionar a lista INTEIRA
+    deixaria a watchlist comecando em posicao variavel a cada execucao,
+    as vezes so' no fim do orcamento de tempo)."""
+    watchlists = uniao_watchlists_todos_usuarios(cliente) or set()
+    resto = (tickers_com_cnpj_cvm() | set(config.TICKER_ALIASES.keys())) - watchlists
+    return sorted(watchlists), sorted(resto)
+
+
+def universo_calendario(cliente=None) -> list:
+    """Universo dinamico do CALENDARIO (Fase 1 da reforma estrutural,
+    ver plano aprovado): uniao deduplicada de 3 fontes JA existentes,
+    nenhum coletor/requisicao nova -
+
+        tickers_com_cnpj_cvm()          - 509+ acoes/units reais da CVM/FCA
+      | config.TICKER_ALIASES.keys()    - BDRs curados (sem CNPJ na CVM)
+      | uniao_watchlists_todos_usuarios() - TODAS as watchlists reais
+
+    Ordem de retorno prioriza a UNIAO DAS WATCHLISTS primeiro, resto do
+    universo depois (ver universo_calendario_priorizado) - usado pelo
+    filtro TODOS de ui/calendario_tab.py, onde so' o CONJUNTO importa,
+    nao a ordem.
+
+    uniao_watchlists_todos_usuarios()=None (Supabase indisponivel) NUNCA
+    encolhe o universo silenciosamente - cai so' pros 2 conjuntos
+    estaticos (CVM+BDRs), que sozinhos ja cobrem bem mais que os 84
+    tickers fixos de antes. Mesmo criterio pra tickers_com_cnpj_cvm():
+    se vier vazio (CVM fora do ar sem nenhum fallback valido ainda),
+    sobra BDRs+watchlists - nunca um universo vazio por falha de 1
+    fonte so'."""
+    watchlists, resto = universo_calendario_priorizado(cliente)
+    return watchlists + resto

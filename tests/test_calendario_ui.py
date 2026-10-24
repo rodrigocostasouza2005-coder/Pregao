@@ -398,16 +398,22 @@ def test_22_legenda_de_escopo_aparece_no_filtro_padrao_watchlist():
     # mostrar so' 2-3 empresas porque o filtro padrao e' MINHA WATCHLIST e a
     # watchlist padrao (config.TICKERS_PADRAO) tem so' 3 tickers - nao e'
     # bug de coleta/parsing/dedup. Essa legenda deixa o escopo explicito.
+    # universo dinamico (reforma 2026-10-24): a contagem real vem de
+    # _universo_todos_cacheado (CVM/FCA + BDRs + watchlists), mockada
+    # aqui pra o teste nao depender de rede/Supabase reais - 84 so' pra
+    # bater com o tamanho historico deste teste, nao e' mais o universo
+    # de verdade (ver test_calendario_universo_dinamico.py pra isso).
+    total_universo_fake = 84
     with patch.object(calendario_tab_mod, "calcular_calendario_cacheado", return_value=[]), \
+         patch.object(calendario_tab_mod, "_universo_todos_cacheado", return_value=list(range(total_universo_fake))), \
          patch.object(calendario_tab_mod.st, "columns", return_value=(_FakeCol(), _FakeCol())), \
          patch.object(calendario_tab_mod.st, "pills", return_value=None), \
          patch.object(calendario_tab_mod.st, "spinner", return_value=_FakeCtx()):
         capturado = _capturar_markdown(calendario_tab_mod._painel_agenda, {"watchlist": ["PETR4", "VALE3"]})
     texto = " ".join(capturado)
-    total_universo = len(calendario_tab_mod.config.IBOVESPA_SETORES)
     _checar("22a legenda menciona o tamanho real da watchlist (2 ativos)", "2 ativos" in texto, f"(texto={texto!r})")
     _checar("22b legenda aponta pro TODOS com o total real do universo",
-             f"TODOS para ver as {total_universo} empresas" in texto)
+             f"TODOS para ver as {total_universo_fake} empresas" in texto)
 
 
 def test_23_legenda_de_escopo_nao_aparece_fora_do_filtro_watchlist():
