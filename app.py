@@ -1137,6 +1137,8 @@ if rota == ("analises", "empresas"):
             with st.container(border=True):
                 render_cvm_ticker(ticker_selecionado, prefs)
 
+            analises_tab.render_conclusao_investimento(ticker_selecionado, prefs, usuario)
+
 
 # --- MAIS › Sistema / Saúde dos Dados (so admin): _eh_admin reconfirmado
 # aqui (nao so' na nav) - mesmo que a rota chegasse a uma subaba admin por

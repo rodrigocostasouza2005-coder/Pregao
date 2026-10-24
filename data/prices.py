@@ -13,6 +13,7 @@ from curl_cffi import requests as cffi_requests
 import config
 from config import PERIODOS_BUFFER, PERIODOS_GRAFICO
 from data.coletores_status import registrar_tentativa
+from data.supabase_client import obter_cliente
 
 # timeout explicito pra toda chamada yfinance que aceita o parametro
 # (.history()/yf.download() - ambas ja tem default interno de 10s nesta
@@ -411,6 +412,57 @@ def _ultimo_indicadores_valido() -> dict:
     return {}
 
 
+_TABELA_INDICADORES_FALLBACK = "indicadores_fallback"
+
+
+def _ler_fallback_persistido(ticker: str) -> dict | None:
+    """Último indicadores válido persistido (sql/indicadores_fallback.sql)
+    - achado real (incidente 2026-10-23): o fallback em memória
+    (_ultimo_indicadores_valido, @st.cache_resource) zera a cada
+    restart do processo (Streamlit Community Cloud reinicia o
+    container a cada push pra main), então um bloqueio do Yahoo
+    (.info) bem depois de um deploy deixa TODOS os tickers sem nenhum
+    valor-base pra cair de volta, mesmo tendo funcionado minutos antes.
+    Esta leitura só acontece quando a coleta de agora E o fallback em
+    memória já falharam - nunca no caminho feliz. None (banco
+    indisponível ou nunca persistido) é tratado pelo chamador como
+    'sem fallback nenhum', nunca lança excecao."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        resp = (
+            cliente.table(_TABELA_INDICADORES_FALLBACK).select("dados,coletado_em")
+            .eq("ticker", ticker).limit(1).execute()
+        )
+        if not resp.data:
+            return None
+        linha = resp.data[0]
+        dados = dict(linha["dados"] or {})
+        dados["_coletado_em"] = linha["coletado_em"]
+        return dados
+    except Exception as exc:
+        print(f"[prices] fallback persistido de indicadores indisponível pra {ticker}: {exc!r}")
+        return None
+
+
+def _salvar_fallback_persistido(ticker: str, resultado: dict) -> None:
+    """Melhor esforço - nunca bloqueia nem quebra obter_indicadores por
+    falha de rede/banco (mesmo espírito de qualquer registrar_* deste
+    projeto). Só chamado numa coleta REALMENTE bem-sucedida (ver
+    obter_indicadores) - nunca persiste um resultado todo None."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return
+    try:
+        dados = {k: v for k, v in resultado.items() if k not in ("beta", "_coletado_em")}
+        cliente.table(_TABELA_INDICADORES_FALLBACK).upsert({
+            "ticker": ticker, "dados": dados, "coletado_em": resultado["_coletado_em"],
+        }).execute()
+    except Exception as exc:
+        print(f"[prices] falha ao persistir fallback de indicadores pra {ticker}: {exc!r}")
+
+
 # nome/fonte do coletor em SAUDE DOS DADOS (data/saude_dados.py:
 # REGISTRO_COLETORES) - EQUITY (Fundamentos) nunca tinha nenhuma linha
 # ali antes (achado real, incidente 2026-10-23: P/L/P/VP/DY em branco
@@ -560,9 +612,10 @@ def obter_indicadores(ticker: str) -> dict:
         # realmente de verdade - nunca mostrado como se fosse de agora
         resultado["_coletado_em"] = datetime.now(timezone.utc).isoformat()
         cache_fallback[ticker] = resultado
+        _salvar_fallback_persistido(ticker, resultado)
         return resultado
 
-    anterior = cache_fallback.get(ticker)
+    anterior = cache_fallback.get(ticker) or _ler_fallback_persistido(ticker)
     if anterior:
         # comeca do schema ATUAL (resultado, todos os campos de hoje
         # presentes, so' com valor None) e so' sobrescreve com o que
