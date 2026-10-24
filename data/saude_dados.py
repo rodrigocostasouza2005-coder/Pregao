@@ -357,6 +357,18 @@ REGISTRO_COLETORES = [
         "leitor": _leitor_hibrido("Monte Bravo", _leitor_research("Monte Bravo")),
     },
     {
+        # linha nova (24/10/2026): mesmo gap do BTG/Monte Bravo acima -
+        # "Nord Research" tambem ativa_por_padrao=True (ver data/research/
+        # nord.py:_NOME_CASA). idade_maxima_horas mais alta que as outras
+        # casas (120h = 5 dias): sem feed RSS, so' publica posts de
+        # resultado quando ha' temporada de balanco - semanas sem nenhum
+        # resultado novo sao normais, nao e' sinal de coletor quebrado.
+        "nome": "Nord Research", "fonte": "nordinvestimentos.com.br (sitemap do blog, posts de resultado por ticker)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 120, "instrumentado": True,
+        "leitor": _leitor_hibrido("Nord Research", _leitor_research("Nord Research")),
+    },
+    {
         "nome": "CALENDARIO", "fonte": "RI das empresas + NEWS + prazo CVM",
         "categoria": "Calendario", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
         "idade_maxima_horas": 48, "instrumentado": True,
