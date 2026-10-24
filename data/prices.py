@@ -12,6 +12,7 @@ from curl_cffi import requests as cffi_requests
 
 import config
 from config import PERIODOS_BUFFER, PERIODOS_GRAFICO
+from data.coletores_status import registrar_tentativa
 
 # timeout explicito pra toda chamada yfinance que aceita o parametro
 # (.history()/yf.download() - ambas ja tem default interno de 10s nesta
@@ -410,6 +411,19 @@ def _ultimo_indicadores_valido() -> dict:
     return {}
 
 
+# nome/fonte do coletor em SAUDE DOS DADOS (data/saude_dados.py:
+# REGISTRO_COLETORES) - EQUITY (Fundamentos) nunca tinha nenhuma linha
+# ali antes (achado real, incidente 2026-10-23: P/L/P/VP/DY em branco
+# simultaneamente pra toda a watchlist, sem NENHUM jeito de confirmar
+# em producao se foi excecao de rede, bloqueio do Yahoo retornando
+# vazio sem excecao, ou outra causa - zero instrumentacao existia pra
+# esse caminho). Constantes aqui (nao direto nas strings abaixo) pra
+# nao haver risco de o nome usado em registrar_tentativa divergir do
+# nome cadastrado no REGISTRO_COLETORES.
+_NOME_COLETOR_FUNDAMENTOS = "EQUITY (Fundamentos)"
+_FONTE_COLETOR_FUNDAMENTOS = "yfinance (tk.info - P/L, P/VP, DY, ROE, margens, dívida líquida)"
+
+
 def _tk_info_com_retry(symbol: str) -> dict:
     """tk.info com 2 tentativas: primeiro simulando um Chrome de verdade
     via curl_cffi (mesma tecnica ja usada pra contornar bloqueio na
@@ -417,16 +431,64 @@ def _tk_info_com_retry(symbol: str) -> dict:
     yfinance. Yahoo Finance bloqueia bem mais requisicoes vindas de IP de
     datacenter (Cloud) que fingem ser um script generico do que as que
     parecem um navegador comum. Retorna {} se as duas falharem - nunca
-    lanca excecao."""
+    lanca excecao (comportamento de retorno inalterado - so' ganhou
+    instrumentacao pro SAUDE DOS DADOS, ver constantes acima).
+
+    Instrumentacao (incidente 2026-10-23) distingue 2 causas BEM
+    diferentes de "sem dado", que antes ficavam indistinguiveis de fora
+    (so' um {} igual nos dois casos):
+    - EXCECAO real em ambas as tentativas (timeout/conexao/DNS/SSL/etc)
+      -> registra com o texto da ultima excecao, que o classificador de
+      data/saude_dados.py:_TERMOS_INDISPONIBILIDADE ja' sabe reconhecer
+      (vira FONTE_INDISPONIVEL quando o texto bate, FALHA_EXECUCAO
+      generico quando nao bate - decisao de classificacao fica la', nao
+      aqui).
+    - NENHUMA excecao, mas tk.info respondeu vazio (dict falsy) nas 2 -
+      sinal mais provavel de bloqueio/rate-limit silencioso do Yahoo pro
+      IP do servidor (ja documentado em _ultimo_indicadores_valido
+      abaixo) - mensagem PROPRIA, deliberadamente sem as palavras-chave
+      de _TERMOS_INDISPONIBILIDADE (nao e' uma excecao de rede local,
+      nao deve ser confundido com uma) - vira FALHA_EXECUCAO generico,
+      nunca "sucesso".
+    Se uma tentativa teve retorno vazio sem excecao e a OUTRA lancou
+    excecao, o vazio-sem-excecao conta (e' o sinal mais forte: prova que
+    o servidor respondeu, so' nao devolveu dado).
+
+    Nunca registra falha so' porque um CAMPO individual (ex: DY) esta'
+    ausente dentro de um info valido - isso e' decidido em
+    obter_indicadores() a partir do dict retornado aqui, nao aqui
+    (um info não-vazio sempre conta como sucesso, mesmo faltando campos)."""
+    ultima_excecao = None
+    teve_retorno_vazio_sem_excecao = False
     for sessao in (cffi_requests.Session(impersonate="chrome"), None):
         try:
             # .info e' propriedade (sem parametro de timeout exposto) -
             # mesma observacao de fast_info/dividends acima
             info = yf.Ticker(symbol, session=sessao).info
             if info:
+                registrar_tentativa(_NOME_COLETOR_FUNDAMENTOS, _FONTE_COLETOR_FUNDAMENTOS,
+                                     execucao_ok=True, categoria="Fundamentos")
                 return info
-        except Exception:
+            teve_retorno_vazio_sem_excecao = True
+        except Exception as e:
+            ultima_excecao = e
             continue
+    if teve_retorno_vazio_sem_excecao:
+        registrar_tentativa(
+            _NOME_COLETOR_FUNDAMENTOS, _FONTE_COLETOR_FUNDAMENTOS, execucao_ok=False, categoria="Fundamentos",
+            erro="tk.info respondeu sem excecao mas vazio (retorno sem indicadores) - possivel "
+                 "bloqueio/rate-limit do Yahoo pro IP do servidor, nao confirmado como erro de rede local",
+        )
+    elif ultima_excecao is not None:
+        # str(e)[:300] (nao repr, nao sem limite): mesmo padrao ja usado
+        # em data/macro.py pra registrar_tentativa - trunca qualquer
+        # texto de excecao verboso e evita log gigante; endpoint publico
+        # do Yahoo usado aqui nao leva token/cookie/credencial nenhuma,
+        # mas o truncamento fica por seguranca/consistencia mesmo assim.
+        registrar_tentativa(
+            _NOME_COLETOR_FUNDAMENTOS, _FONTE_COLETOR_FUNDAMENTOS, execucao_ok=False, categoria="Fundamentos",
+            erro=f"excecao ao consultar tk.info (2 tentativas): {str(ultima_excecao)[:300]}",
+        )
     return {}
 
 

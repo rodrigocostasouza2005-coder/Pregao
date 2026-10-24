@@ -595,3 +595,201 @@ def test_obter_cotacao_indice_e_cacheada_entre_chamadas_com_mesmo_argumento():
     assert chamadas["n"] == 1, f"esperava 1 chamada real (cache compartilhado), teve {chamadas['n']}"
     assert primeira == segunda
     assert primeira.get("erro") is None
+
+
+# ============================================================
+# INSTRUMENTACAO DE SAUDE DOS DADOS pra data/prices.py:_tk_info_com_retry
+# (incidente 2026-10-23: P/L, P/VP e DY em branco simultaneamente em
+# toda a watchlist, sem NENHUM jeito de confirmar em producao se foi
+# excecao de rede, Yahoo respondendo vazio sem excecao, ou outra causa -
+# esse caminho nunca registrava nada em data/saude_dados.py). Testes
+# aqui cobrem os 4 desfechos possiveis (sucesso, resposta vazia,
+# excecao/timeout, mistura) + a garantia de que um CAMPO individual
+# ausente (ex: DY) nunca conta como falha, so' a ausencia TOTAL de
+# `.info`. Mockam yf.Ticker e registrar_tentativa - nunca tocam rede ou
+# Supabase de verdade.
+# ============================================================
+
+def _fake_ticker_class(desfechos: list):
+    """Classe de yf.Ticker falsa cuja propriedade .info consome 1 item
+    de `desfechos` por instanciacao (1 instancia por tentativa de sessao
+    em _tk_info_com_retry) - item Exception -> .info lanca; item dict ->
+    .info retorna. Instanciacoes alem da lista configurada (ex: o
+    yf.Ticker(symbol) extra que obter_indicadores cria pra
+    _dividend_yield_12m) recebem {} e .dividends vazio - nunca usadas
+    pelos testes abaixo, so' pra nao quebrar por instanciacao a mais.
+    Fila fechada sobre a lista (nao e' estado de classe compartilhado
+    entre testes)."""
+    fila = list(desfechos)
+
+    class _FakeTicker:
+        def __init__(self, *_a, **_k):
+            self._desfecho = fila.pop(0) if fila else {}
+
+        @property
+        def info(self):
+            if isinstance(self._desfecho, BaseException):
+                raise self._desfecho
+            return self._desfecho
+
+        @property
+        def dividends(self):
+            return pd.Series(dtype=float)
+
+    return _FakeTicker
+
+
+def test_tk_info_sucesso_na_primeira_tentativa_registra_execucao_ok():
+    FakeTicker = _fake_ticker_class([{"trailingPE": 10.0, "priceToBook": 2.0}])
+    with patch.object(prices_mod.yf, "Ticker", FakeTicker), \
+         patch.object(prices_mod, "registrar_tentativa") as mock_reg:
+        info = prices_mod._tk_info_com_retry("PETR4.SA")
+    assert info == {"trailingPE": 10.0, "priceToBook": 2.0}
+    assert mock_reg.call_count == 1
+    assert mock_reg.call_args.args[0] == "EQUITY (Fundamentos)"
+    assert mock_reg.call_args.kwargs.get("execucao_ok") is True
+    assert mock_reg.call_args.kwargs.get("categoria") == "Fundamentos"
+
+
+def test_tk_info_resposta_vazia_sem_excecao_e_distinta_de_erro_de_conexao():
+    # as 2 tentativas respondem {} SEM lancar nenhuma excecao - cenario
+    # mais provavel do incidente real (bloqueio/rate-limit silencioso).
+    FakeTicker = _fake_ticker_class([{}, {}])
+    with patch.object(prices_mod.yf, "Ticker", FakeTicker), \
+         patch.object(prices_mod, "registrar_tentativa") as mock_reg:
+        info = prices_mod._tk_info_com_retry("PETR4.SA")
+    assert info == {}
+    assert mock_reg.call_count == 1
+    kwargs = mock_reg.call_args.kwargs
+    assert kwargs.get("execucao_ok") is False
+    erro = (kwargs.get("erro") or "").lower()
+    assert "vazio" in erro or "sem indicadores" in erro
+    # nao deve conter nenhuma palavra-chave de erro de CONEXAO (ver
+    # data/saude_dados.py:_TERMOS_INDISPONIBILIDADE) - senao o painel
+    # classificaria como FONTE_INDISPONIVEL/erro de rede, escondendo que
+    # na verdade foi uma resposta vazia sem excecao nenhuma.
+    from data.saude_dados import _TERMOS_INDISPONIBILIDADE
+    for termo in _TERMOS_INDISPONIBILIDADE:
+        assert termo not in erro, f"mensagem de resposta vazia nao deveria conter {termo!r}: {erro!r}"
+
+
+def test_tk_info_excecao_nas_2_tentativas_registra_falha_com_detalhe():
+    FakeTicker = _fake_ticker_class([TimeoutError("conexao estourou o tempo"), ConnectionError("conexao recusada")])
+    with patch.object(prices_mod.yf, "Ticker", FakeTicker), \
+         patch.object(prices_mod, "registrar_tentativa") as mock_reg:
+        info = prices_mod._tk_info_com_retry("PETR4.SA")
+    assert info == {}
+    assert mock_reg.call_count == 1
+    kwargs = mock_reg.call_args.kwargs
+    assert kwargs.get("execucao_ok") is False
+    erro = (kwargs.get("erro") or "")
+    assert "conexao recusada" in erro  # excecao da ULTIMA tentativa
+    assert "excecao" in erro.lower()
+
+
+def test_tk_info_erro_de_excecao_e_truncado_e_nunca_vaza_dado_bruto_enorme():
+    excecao_enorme = Exception("X" * 5000)
+    FakeTicker = _fake_ticker_class([excecao_enorme, excecao_enorme])
+    with patch.object(prices_mod.yf, "Ticker", FakeTicker), \
+         patch.object(prices_mod, "registrar_tentativa") as mock_reg:
+        prices_mod._tk_info_com_retry("PETR4.SA")
+    erro = mock_reg.call_args.kwargs.get("erro") or ""
+    assert len(erro) <= 350  # prefixo da mensagem + str(e)[:300], mesmo padrao de data/macro.py
+
+
+def test_tk_info_mistura_excecao_e_vazio_prioriza_resposta_vazia():
+    # 1a tentativa lanca excecao, 2a responde {} sem excecao - o vazio-
+    # sem-excecao e' o sinal mais forte (prova que o servidor respondeu),
+    # entao deve vencer a mensagem registrada, nao a excecao da 1a.
+    FakeTicker = _fake_ticker_class([TimeoutError("timeout na 1a tentativa"), {}])
+    with patch.object(prices_mod.yf, "Ticker", FakeTicker), \
+         patch.object(prices_mod, "registrar_tentativa") as mock_reg:
+        prices_mod._tk_info_com_retry("PETR4.SA")
+    erro = (mock_reg.call_args.kwargs.get("erro") or "").lower()
+    assert "vazio" in erro or "sem indicadores" in erro
+    assert "timeout na 1a tentativa" not in erro
+
+
+def test_tk_info_campo_individual_ausente_nunca_conta_como_falha():
+    # info NAO vazio (tem regularMarketPrice), mas SEM trailingPE/
+    # priceToBook/dividendYield nenhum - exatamente o caso que o pedido
+    # de instrumentacao avisou pra nao confundir com falha: um indicador
+    # individual ausente (DY, por exemplo) e' decidido em
+    # obter_indicadores() a partir do dict, nunca aqui.
+    FakeTicker = _fake_ticker_class([{"regularMarketPrice": 33.5}])
+    with patch.object(prices_mod.yf, "Ticker", FakeTicker), \
+         patch.object(prices_mod, "registrar_tentativa") as mock_reg:
+        info = prices_mod._tk_info_com_retry("ITSA4.SA")
+    assert info == {"regularMarketPrice": 33.5}
+    assert mock_reg.call_count == 1
+    assert mock_reg.call_args.kwargs.get("execucao_ok") is True
+
+
+def test_obter_indicadores_registra_1x_por_cache_miss_e_0x_em_cache_hit():
+    # garante que a instrumentacao nao fica mais "tagarela" do que o
+    # cache ja permite: 2 chamadas pro MESMO ticker dentro do TTL de 12h
+    # devem gerar so' 1 escrita em SAUDE DOS DADOS (a 2a e' cache hit do
+    # proprio obter_indicadores, nunca chega a chamar _tk_info_com_retry).
+    obter_indicadores.clear()
+    FakeTicker = _fake_ticker_class([{"trailingPE": 10.0}])
+    with patch.object(prices_mod.yf, "Ticker", FakeTicker), \
+         patch.object(prices_mod, "_calcular_beta", return_value=None), \
+         patch.object(prices_mod, "registrar_tentativa") as mock_reg:
+        primeira = obter_indicadores("TESTE_SAUDE_CACHE_HIT")
+        segunda = obter_indicadores("TESTE_SAUDE_CACHE_HIT")
+    assert primeira == segunda
+    assert mock_reg.call_count == 1, f"esperava 1 escrita (so' no cache miss), teve {mock_reg.call_count}"
+
+
+def test_obter_indicadores_resultado_identico_com_e_sem_instrumentacao_ativa():
+    # a instrumentacao nunca deve alterar os VALORES calculados - mesmo
+    # dict de entrada, mesma saida, com registrar_tentativa real
+    # (sem Supabase configurado neste teste, vira no-op) ou mockado.
+    obter_indicadores.clear()
+    FakeTicker = _fake_ticker_class([{}])
+    with patch.object(prices_mod.yf, "Ticker", FakeTicker), \
+         patch.object(prices_mod, "_calcular_beta", return_value=0.9), \
+         patch.object(prices_mod, "registrar_tentativa") as mock_reg:
+        com_mock = obter_indicadores("TESTE_SAUDE_RESULTADO_A")
+
+    obter_indicadores.clear()
+    FakeTicker2 = _fake_ticker_class([{}])
+    with patch.object(prices_mod.yf, "Ticker", FakeTicker2), \
+         patch.object(prices_mod, "_calcular_beta", return_value=0.9):
+        # registrar_tentativa real (sem mock) - sem secrets de Supabase
+        # neste ambiente de teste, obter_cliente() retorna None e a
+        # funcao degrada pra False sem nenhuma chamada de rede/banco.
+        sem_mock = obter_indicadores("TESTE_SAUDE_RESULTADO_B")
+
+    for campo in ("valor_mercado", "pl", "pvp", "dividend_yield", "beta", "roe",
+                  "margem_liquida", "margem_operacional", "margem_ebitda",
+                  "divida_liquida", "divida_liquida_ebitda"):
+        assert com_mock[campo] == sem_mock[campo], f"campo {campo} divergiu com instrumentacao mockada vs real"
+    assert mock_reg.called  # confirma que a instrumentacao de fato rodou no primeiro caso
+
+
+def test_obter_indicadores_fallback_para_ultimo_valor_valido_continua_intacto():
+    # regressao direta: a instrumentacao vive dentro de _tk_info_com_retry,
+    # ANTES do fallback de _ultimo_indicadores_valido em obter_indicadores -
+    # este teste confirma que o mecanismo de fallback (ja' testado em
+    # test_12 acima) continua funcionando sem alteracao depois da mudanca.
+    ticker = "TESTE_SAUDE_FALLBACK_INTACTO"
+    anterior = {
+        "valor_mercado": 500.0, "pl": 8.0, "pvp": 1.5, "dividend_yield": 4.0, "beta": 1.1,
+        "roe": 12.0, "margem_liquida": 10.0, "margem_operacional": 9.0, "margem_ebitda": 15.0,
+        "divida_liquida": 20.0, "divida_liquida_ebitda": 1.0,
+    }
+    prices_mod._ultimo_indicadores_valido()[ticker] = anterior
+    obter_indicadores.clear()
+    FakeTicker = _fake_ticker_class([{}, {}])
+    with patch.object(prices_mod.yf, "Ticker", FakeTicker), \
+         patch.object(prices_mod, "_calcular_beta", return_value=None), \
+         patch.object(prices_mod, "registrar_tentativa") as mock_reg:
+        resultado = obter_indicadores(ticker)
+    assert resultado["pl"] == 8.0 and resultado["roe"] == 12.0
+    # a falha (info vazio) FOI registrada em SAUDE DOS DADOS mesmo o
+    # usuario tendo recebido um valor util via fallback - a UI nunca
+    # mente, mas o painel de saude tambem nunca finge que a coleta DE
+    # AGORA funcionou so' porque havia um valor antigo bom.
+    assert mock_reg.call_count == 1
+    assert mock_reg.call_args.kwargs.get("execucao_ok") is False
