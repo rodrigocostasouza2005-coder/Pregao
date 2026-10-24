@@ -69,16 +69,6 @@ AREAS = (
         Subaba("oportunidades", "Oportunidades", ("RADAR",)),
         Subaba("acompanhamento", "Acompanhamento", ("RADAR",)),
     )),
-    # Area propria (2026-10-23, integracao MARKET MAKERS/MORNING CALL/
-    # RADAR): primeira pagina dedicada a' inteligencia de mercado que
-    # data/radar.py ja' calculava espalhada (evidencias_recentes/
-    # mudancas_tese/catalisadores, usadas por "Minha Tese" em RESEARCH e
-    # pelo copiloto do RADAR) - ver data/market_makers.py, fachada
-    # reutilizada tambem pelo Morning Call. Sem `legado`: conteudo novo,
-    # sempre visivel.
-    Area("market-makers", "MARKET MAKERS", ":material/insights:", (
-        Subaba("visao-geral", "Visão Geral"),
-    )),
     # Area propria (2026-10-23, missao "RESEARCH institucional"): antes
     # "Research" (feed/recomendacoes das casas) vivia em RADAR e "Teses"
     # vivia em ANALISES, sem nenhum lugar unico que organizasse research

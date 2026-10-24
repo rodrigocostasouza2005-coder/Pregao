@@ -1,5 +1,30 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-24 — Remoção da aba MARKET MAKERS + reformulação do Morning Call
+
+- **Remoção**: área própria "MARKET MAKERS" (`ui/navegacao.py`) e sua tela
+  (`ui/market_makers_tab.py`) saíram da navegação e do app - redundante com
+  o conteúdo já reorganizado dentro do Morning Call (ver abaixo) e do RADAR.
+  `data/market_makers.py` (fachada compartilhada com RADAR e Morning Call)
+  **não foi tocado** - continua em uso pelos dois. Testes: removido
+  `tests/test_market_makers_tab_ui.py` (UI exclusiva da aba);
+  `tests/test_market_makers.py` (camada de dados) permanece.
+- **Morning Call**: a seção que misturava mudança de tese/research,
+  catalisador de calendário e alerta de qualidade num único bloco rotulado
+  "MARKET MAKERS — CATALISADORES E RISCOS" (rótulo que ficaria órfão com a
+  aba removida) virou duas seções: **TESES E RECOMENDAÇÕES DE RESEARCH**
+  (casa, ativo, tese resumida, data e link da fonte - um card por mudança
+  de tese/CVM) e **CATALISADORES E ALERTAS — ATIVOS EM COBERTURA**
+  (eventos de calendário + alertas de qualidade dos indicadores). As duas
+  distinguem falha de coleta (`market_makers is None`) de ausência legítima
+  de conteúdo (listas vazias) - mensagens diferentes pro leitor. Cabeçalho
+  da edição ganhou um status em pílula (ENVIADA/FALHA_ENVIO), mesmas cores
+  `--alta`/`--baixa` do resto do app. Nenhuma mudança na geração/PDF/e-mail/
+  agendamento/preferências (tudo em `data/morning_call_editorial.py`,
+  `jobs/morning_call*.py`, `data/morning_call_historico.py` - reaproveitados
+  sem alteração). Testes: `tests/test_morning_call_tab_ui.py` (+3 casos);
+  `tests/test_navegacao.py` ajustado pra 1 área a menos.
+
 ## 2026-10-23 (4) — Fallback persistente de indicadores + validação real de equity research
 
 **Incidente investigado** (todos os 15 ativos da watchlist com "indisponível

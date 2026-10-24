@@ -79,6 +79,13 @@ def _estilo_mc() -> str:
         ".mc-cabecalho{font-family:" + _SANS + ";color:var(--cinza);font-size:.72rem;line-height:1.5;margin:0 0 6px;}"
         ".mc-aviso{color:var(--destaque);font-family:" + _SANS + ";font-size:.74rem;"
         "line-height:1.5;padding:4px 0;}"
+        # status da edição (cabeçalho): pílula, não mais uma palavra solta -
+        # cor vem das MESMAS classes alta/baixa do resto do app (nunca uma
+        # cor nova so' pra isto)
+        ".mc-status-pill{display:inline-block;padding:1px 7px;border-radius:3px;"
+        "font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.05em;}"
+        ".mc-status-pill.alta{background:color-mix(in srgb, var(--alta) 18%, transparent);}"
+        ".mc-status-pill.baixa{background:color-mix(in srgb, var(--baixa) 18%, transparent);}"
         ".mc-secao{margin:16px 0 0;min-width:0;}"
         ".mc-secao:first-child{margin-top:0;}"
         ".mc-secao-titulo{color:var(--destaque);font-family:'IBM Plex Mono',monospace;font-weight:700;"
@@ -147,6 +154,19 @@ def _estilo_mc() -> str:
         ".mc-agenda-empresa{color:var(--neutro);flex:1 1 160px;min-width:0;overflow-wrap:anywhere;}"
         ".mc-agenda-tipo{color:var(--cinza);flex:1 1 120px;min-width:0;overflow-wrap:anywhere;}"
         ".mc-agenda-horario{color:var(--cinza);flex:0 0 auto;}"
+        # teses de research (casa/ativo/tese/data/fonte - secao propria,
+        # separada de noticia geral e de catalisador/risco)
+        ".mc-tese{padding:8px 0;border-bottom:1px solid color-mix(in srgb, var(--borda) 40%, transparent);}"
+        ".mc-tese:last-child{border-bottom:none;}"
+        ".mc-tese-topo{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:3px;}"
+        ".mc-tese-ticker{font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--destaque);"
+        "font-size:.76rem;}"
+        ".mc-tese-data{color:var(--cinza);font-size:.66rem;margin-left:auto;white-space:nowrap;}"
+        ".mc-tese-categoria{color:var(--cinza);font-size:.66rem;letter-spacing:.02em;margin-bottom:3px;}"
+        ".mc-tese-corpo{font-family:" + _SANS + ";line-height:1.5;color:var(--neutro);font-size:.82rem;}"
+        ".mc-tese-fonte{font-size:.68rem;margin-top:3px;}"
+        ".mc-tese-fonte a{color:var(--cinza);text-decoration:none;}"
+        ".mc-tese-fonte a:hover{color:var(--destaque);}"
         # radar setorial
         ".mc-radar-bloco{padding:8px 0;border-bottom:1px solid color-mix(in srgb, var(--borda) 40%, transparent);}"
         ".mc-radar-bloco:last-child{border-bottom:none;}"
@@ -453,6 +473,35 @@ def _card_noticia_estruturada(fato: dict) -> str:
     )
 
 
+def _card_tese_research(m: dict) -> str:
+    """Tese/recomendação de research (data/market_makers.py:mudancas_tese,
+    fachada sobre data/radar.py:_mudancas_research/_mudancas_cvm) - casa,
+    ativo, tese resumida, data e fonte, sempre explícitos. Nunca fabrica
+    casa/preço-alvo/conclusão que a fonte não deu: sem fonte_label, o chip
+    diz isso em vez de inventar um nome."""
+    casa = m.get("fonte_label")
+    fonte_url = _url_http_segura(m.get("fonte_url"))
+    if fonte_url:
+        fonte_html = (f"<a href='{html.escape(fonte_url, quote=True)}' target='_blank' rel='noopener'>"
+                      f"{html.escape(casa or 'fonte')} ↗</a>")
+    elif casa:
+        fonte_html = html.escape(casa)
+    else:
+        fonte_html = "fonte não identificada nesta execução"
+    return (
+        "<div class='mc-tese'>"
+        "<div class='mc-tese-topo'>"
+        f"<span class='mc-chip mc-chip-interp'>{html.escape(casa) if casa else 'CASA NÃO IDENTIFICADA'}</span>"
+        f"<span class='mc-tese-ticker'>{html.escape(m['ticker'])}</span>"
+        f"<span class='mc-tese-data'>{m['data_evento'].strftime('%d/%m/%Y')}</span>"
+        "</div>"
+        f"<div class='mc-tese-categoria'>{html.escape(m.get('categoria') or '')}</div>"
+        f"<div class='mc-tese-corpo'>{texto_para_html(m['descricao'])}</div>"
+        f"<div class='mc-tese-fonte'>{fonte_html}</div>"
+        "</div>"
+    )
+
+
 def _linha_agenda_estruturada(evento: dict) -> str:
     """Linha de agenda a partir do dict (data/morning_call_editorial.py:
     _linha_evento) - data/status/horário já vêm prontos, sem inferir nada
@@ -580,29 +629,51 @@ def render_edicao_estruturada_html(edicao: dict) -> str:
             partes.append("</div>")
         partes.append("</div>")
 
+    # data/market_makers.py:inteligencia_mercado - fachada compartilhada
+    # (RADAR também consome). None = a própria consulta falhou (ver
+    # data/morning_call_editorial.py:montar_edicao) - FALHA DE COLETA, bem
+    # diferente de uma consulta que respondeu sem nenhuma mudança/catalisador/
+    # risco pros tickers do dia (dict com listas vazias) - nunca tratadas
+    # como a mesma coisa (ver docstring de aviso_edicao_de_hoje_ausente sobre
+    # o mesmo princípio aplicado à edição inteira).
     mm = edicao.get("market_makers")
-    if mm and (mm.get("catalisadores") or mm.get("mudancas") or mm.get("riscos")):
-        partes.append(
-            "<div class='mc-secao'><div class='mc-secao-titulo'>MARKET MAKERS — CATALISADORES E RISCOS</div>"
-            "<p class='mc-aviso' style='margin-bottom:8px;'>Contexto dos ativos já citados nesta edição — "
-            "mudança de tese/CVM, catalisador de calendário e alerta de qualidade, sem chamada de IA nova.</p>"
-        )
-        for m in mm.get("mudancas") or []:
-            fonte = (f" · <a href='{html.escape(m['fonte_url'], quote=True)}' target='_blank' rel='noopener'>{html.escape(m.get('fonte_label') or 'fonte')}</a>"
-                     if m.get("fonte_url") else f" · {html.escape(m.get('fonte_label') or '')}" if m.get("fonte_label") else "")
+    partes.append("<div class='mc-secao'><div class='mc-secao-titulo'>TESES E RECOMENDAÇÕES DE RESEARCH</div>")
+    if mm is None:
+        partes.append("<div class='mc-aviso'>Indisponível nesta execução (fonte de research/CVM não respondeu).</div>")
+    else:
+        teses = mm.get("mudancas") or []
+        if teses:
+            partes.extend(_card_tese_research(m) for m in teses)
+        else:
             partes.append(
-                f"<p class='mc-prosa'><b>{html.escape(m['ticker'])}</b> — {texto_para_html(m['descricao'])} "
-                f"({m['data_evento'].strftime('%d/%m/%Y')}){fonte}</p>"
+                "<div class='mc-aviso'>Nenhuma mudança de tese ou recomendação de research verificada na "
+                "janela recente para os ativos citados nesta edição.</div>"
             )
-        for c in mm.get("catalisadores") or []:
-            selo = "CONFIRMADO" if c.get("confirmado") else c.get("status_label", "ESTIMADO")
+    partes.append("</div>")
+
+    if mm is not None:
+        catalisadores = mm.get("catalisadores") or []
+        riscos = mm.get("riscos") or {}
+        if catalisadores or riscos:
             partes.append(
-                f"<p class='mc-prosa'><b>{html.escape(c['ticker'])}</b> — {html.escape(c['categoria'])} em "
-                f"{c['data'].strftime('%d/%m/%Y')} <span class='mc-aviso' style='display:inline;'>({html.escape(selo)})</span></p>"
+                "<div class='mc-secao'><div class='mc-secao-titulo'>CATALISADORES E ALERTAS — ATIVOS EM COBERTURA</div>"
+                "<p class='mc-aviso' style='margin-bottom:8px;'>Eventos de calendário e alertas de qualidade dos "
+                "indicadores dos ativos já citados nesta edição — sem chamada de IA nova.</p>"
             )
-        for ticker, alertas in (mm.get("riscos") or {}).items():
-            partes.append(f"<p class='mc-prosa'><b>{html.escape(ticker)}</b> — risco: {texto_para_html('; '.join(alertas))}</p>")
-        partes.append("</div>")
+            for c in catalisadores:
+                selo = "CONFIRMADO" if c.get("confirmado") else c.get("status_label", "ESTIMADO")
+                partes.append(
+                    "<div class='mc-linha'><span class='mc-marca'>›</span>"
+                    f"<span class='mc-prosa-inline'><b>{html.escape(c['ticker'])}</b> — {html.escape(c['categoria'])} em "
+                    f"{c['data'].strftime('%d/%m/%Y')} <span class='cinza'>({html.escape(selo)})</span></span></div>"
+                )
+            for ticker, alertas in riscos.items():
+                partes.append(
+                    "<div class='mc-linha'><span class='mc-marca'>›</span>"
+                    f"<span class='mc-prosa-inline'><b>{html.escape(ticker)}</b> — risco: "
+                    f"{texto_para_html('; '.join(alertas))}</span></div>"
+                )
+            partes.append("</div>")
 
     limitacoes = edicao.get("limitacoes") or ()
     fontes = edicao.get("fontes") or ()
@@ -699,7 +770,7 @@ def _cabecalho_edicao(ed: dict):
         f"<div class='cinza' style='font-size:0.7rem; margin-bottom:0.4rem;'>Edição de "
         f"<b>{ed['data'].strftime('%d/%m/%Y')}</b> ({rotulo_dia}) · gerada às "
         f"{ed['executado_em'].astimezone(TZ_SP).strftime('%H:%M')} (Brasília) · "
-        f"<span class='{cls}'>{ed['status']}</span>" + nota_status
+        f"<span class='mc-status-pill {cls}'>{ed['status']}</span>" + nota_status
         + (f"<br><span style='color:var(--destaque);'>⚠ {atraso}</span>" if atraso else "")
         + "</div>",
         unsafe_allow_html=True,
