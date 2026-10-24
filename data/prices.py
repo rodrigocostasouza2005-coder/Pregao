@@ -108,7 +108,21 @@ def validar_ticker(ticker: str) -> bool:
 
 @st.cache_data(ttl=30, show_spinner=False)
 def obter_cotacao(ticker: str) -> dict:
-    """Preço atual, variação do dia, mín/máx dia, volume e mín/máx 52 semanas."""
+    """Preço atual, variação do dia, mín/máx dia, volume e mín/máx 52 semanas.
+
+    Instrumentado pro painel SAUDE DOS DADOS como "MERCADO (cotação
+    individual)" (auditoria 2026-10-22) - achado real: este modulo tinha
+    ZERO chamadas a registrar_tentativa, mesmo sendo usado por quase toda
+    a UI (pagina do ticker, Radar de Quedas, Morning Call, Copiloto) e já
+    documentado como ponto de falha silenciosa em jobs/radar_quedas.py
+    ("provedor de cotação bloqueado... TODOS os tickers caem... fica
+    indistinguível de 'nenhuma queda'"). Nome DIFERENTE de "MERCADO"
+    (data/mercado.py:_baixar_lote, cotação EM LOTE) - caminho de código
+    diferente, pode falhar isolado (mesmo motivo de "NEWS (watchlist)"
+    vs "NEWS (ticker único)"). So' registra em CACHE MISS (dentro do
+    corpo da função, nunca a cada chamada) - mesmo padrão de data/
+    mercado.py/data/earnings/cvm_dre.py. Sem persistencia propria (so'
+    cache em memoria) - persistencia_ok fica no default (True)."""
     symbol = _para_symbol_yf(ticker)
     try:
         # fast_info e' propriedade (sem parametro de timeout exposto) -
@@ -132,6 +146,8 @@ def obter_cotacao(ticker: str) -> dict:
         minima_dia = _numero_finito_positivo(fi.get("dayLow"))
         volume = _numero_finito_positivo(fi.get("lastVolume"))
 
+        registrar_tentativa("MERCADO (cotação individual)", "yfinance (fast_info, por ticker)",
+                             execucao_ok=True, categoria="Cotacoes")
         return {
             "ticker": ticker,
             "preco": preco,
@@ -148,6 +164,8 @@ def obter_cotacao(ticker: str) -> dict:
             "erro": None,
         }
     except Exception as e:
+        registrar_tentativa("MERCADO (cotação individual)", "yfinance (fast_info, por ticker)",
+                             execucao_ok=False, erro=str(e)[:300], categoria="Cotacoes")
         return {"ticker": ticker, "erro": str(e)}
 
 

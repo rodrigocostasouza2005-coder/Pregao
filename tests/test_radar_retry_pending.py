@@ -197,3 +197,94 @@ def test_corpo_do_alerta_traz_a_data_do_pregao_e_aviso_nao_recomendacao():
                                         "preco_atual": 40.0, "fechamento_anterior": 41.8})
     assert "Pregão: 21/10/2026" in texto
     assert "não constitui recomendação" in texto
+
+
+# ---------------------------------------------------------------------
+# GRANULARIDADE POR CASA (auditoria 2026-10-22): resultado["fontes"] de
+# processar_monitoramento() já tinha o status de CADA casa separado, mas
+# só o agregado "RADAR DE QUEDAS" chegava ao painel SAUDE DOS DADOS - uma
+# falha isolada de 1 casa ficava indistinguível de "tudo OK".
+# ---------------------------------------------------------------------
+
+def test_executar_registra_tentativa_por_casa_quando_uma_falha_e_outra_ok(monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(
+        radar_quedas, "processar_monitoramento",
+        lambda: {
+            "coleta_ok": True, "alertas_novos": [], "erro": "Execução parcial: x",
+            "fontes": {"Genial Analisa": "fonte indisponível", "Safra Corretora": "ok (12 recomendações)"},
+        },
+    )
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+
+    radar_quedas.executar()
+
+    por_nome = {args[0]: kwargs for args, kwargs in chamadas}
+    assert "RADAR DE QUEDAS" in por_nome  # agregado continua existindo
+    assert por_nome["Genial Analisa (carteiras)"]["execucao_ok"] is False
+    assert por_nome["Genial Analisa (carteiras)"]["erro"] == "fonte indisponível"
+    assert por_nome["Safra Corretora (carteiras)"]["execucao_ok"] is True
+    assert por_nome["Safra Corretora (carteiras)"]["registros_novos"] == 12
+    # nunca usa o nome da casa de RESEARCH (colidiria no upsert por nome)
+    assert "Genial Analisa" not in por_nome
+    assert "Safra Corretora" not in por_nome
+
+
+def test_executar_registra_snapshot_vazio_como_parcial_nao_falha_nem_sucesso_pleno(monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(
+        radar_quedas, "processar_monitoramento",
+        lambda: {
+            "coleta_ok": True, "alertas_novos": [], "erro": None,
+            "fontes": {"Genial Analisa": "snapshot vazio, rejeitado (carteira anterior preservada)",
+                       "Safra Corretora": "ok (10 recomendações)"},
+        },
+    )
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+
+    radar_quedas.executar()
+
+    por_nome = {args[0]: kwargs for args, kwargs in chamadas}
+    genial = por_nome["Genial Analisa (carteiras)"]
+    assert genial["execucao_ok"] is True  # a fonte respondeu, só o conteúdo foi rejeitado
+    assert genial["parcial"] is True
+    assert genial["registros_novos"] == 0
+
+
+def test_executar_registra_falha_de_persistencia_por_casa(monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(
+        radar_quedas, "processar_monitoramento",
+        lambda: {
+            "coleta_ok": True, "alertas_novos": [], "erro": None,
+            "fontes": {"Safra Corretora": "falha ao persistir (carteira anterior preservada)"},
+        },
+    )
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+
+    radar_quedas.executar()
+
+    por_nome = {args[0]: kwargs for args, kwargs in chamadas}
+    safra = por_nome["Safra Corretora (carteiras)"]
+    assert safra["execucao_ok"] is True
+    assert safra["persistencia_ok"] is False
+
+
+def test_executar_sem_fontes_no_resultado_nunca_quebra_e_nao_gera_chamada_extra(monkeypatch):
+    """Compat com o retorno antigo (sem "fontes") - não pode lançar
+    excecao nem criar chamadas extras além do agregado."""
+    chamadas = []
+    monkeypatch.setattr(
+        radar_quedas, "processar_monitoramento",
+        lambda: {"coleta_ok": True, "alertas_novos": [], "erro": ""},
+    )
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+
+    radar_quedas.executar()
+
+    assert len(chamadas) == 1
+    assert chamadas[0][0][0] == "RADAR DE QUEDAS"

@@ -225,6 +225,20 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 2, "instrumentado": True,
     },
     {
+        # linha nova (auditoria 2026-10-22): data/prices.py:obter_cotacao
+        # (cotacao de 1 ticker por vez, via fast_info) tinha ZERO chamadas
+        # a registrar_tentativa, mesmo sendo o caminho usado pela pagina
+        # do ticker, Radar de Quedas (1x por ticker monitorado) e Morning
+        # Call - ja' documentado como ponto de falha silenciosa no proprio
+        # comentario de data/radar_quedas.py:processar_monitoramento
+        # ("provedor de cotacao bloqueado faz TODOS os tickers carem
+        # silenciosamente"). Nome diferente de "MERCADO" (lote, acima) -
+        # caminho de codigo diferente, pode falhar isolado.
+        "nome": "MERCADO (cotação individual)", "fonte": "yfinance (fast_info, por ticker)",
+        "categoria": "Cotacoes", "frequencia_esperada": "sob demanda (cache 30s)",
+        "idade_maxima_horas": 2, "instrumentado": True,
+    },
+    {
         # linha nova (achado real, auditoria missao coletores 2026-10-13,
         # continuacao): data/ibovespa.py:obter_composicao_oficial nunca
         # chamava registrar_tentativa - alimenta obter_panorama_ibovespa/
@@ -396,6 +410,26 @@ REGISTRO_COLETORES = [
         # tentativa de execucao - uma rodada sem queda >4% (sucesso legitimo)
         # nao deixava rastro nenhum neste painel.
         "nome": "RADAR DE QUEDAS", "fonte": "Carteiras recomendadas (Genial + Safra) + cotacoes",
+        "categoria": "Radar", "frequencia_esperada": ".github/workflows/radar-morning-call.yml, 15min (seg-sex, pregao)",
+        "idade_maxima_horas": 1, "instrumentado": True,
+    },
+    {
+        # linha nova (auditoria 2026-10-22): "RADAR DE QUEDAS" acima e'
+        # AGREGADO das 2 casas - uma falha isolada de 1 delas (ex: Genial
+        # carteiras fora do ar, Safra OK) ficava indistinguivel de "tudo
+        # OK" pra quem olha so' essa linha. jobs/radar_quedas.py:
+        # _registrar_tentativas_por_casa ja' grava status por casa
+        # separado (dado que processar_monitoramento() ja' calculava mas
+        # nao chegava ao painel). Nome com sufixo "(carteiras)" de
+        # proposito - NUNCA "Genial Analisa" sozinho, que e' outra fonte
+        # (research da Genial, nao carteira recomendada) e colidiria no
+        # upsert por nome.
+        "nome": "Genial Analisa (carteiras)", "fonte": "analisa.genialinvestimentos.com.br (carteiras recomendadas)",
+        "categoria": "Radar", "frequencia_esperada": ".github/workflows/radar-morning-call.yml, 15min (seg-sex, pregao)",
+        "idade_maxima_horas": 1, "instrumentado": True,
+    },
+    {
+        "nome": "Safra Corretora (carteiras)", "fonte": "safra.com.br (carteiras recomendadas, HTML + PDF mensal)",
         "categoria": "Radar", "frequencia_esperada": ".github/workflows/radar-morning-call.yml, 15min (seg-sex, pregao)",
         "idade_maxima_horas": 1, "instrumentado": True,
     },

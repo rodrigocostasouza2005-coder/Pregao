@@ -376,6 +376,38 @@ def test_21_consumo_falha_na_contagem_nao_derruba_o_painel():
     )
 
 
+def test_22_carteiras_recomendadas_tem_nome_proprio_nunca_colide_com_research():
+    """Achado real (auditoria 2026-10-22): registrar_tentativa faz upsert
+    por `nome` - "Genial Analisa (carteiras)"/"Safra Corretora
+    (carteiras)" (jobs/radar_quedas.py) tem que ser nomes DIFERENTES de
+    "Genial Analisa" (data/research/genial.py, research de verdade) e
+    de "Safra Corretora" (se existir alguma outra entrada) - senao' o
+    upsert de uma fonte sobrescreveria o status da outra."""
+    nomes = {c["nome"] for c in saude_mod.REGISTRO_COLETORES}
+    _checar(
+        "22a Genial Analisa (carteiras) presente",
+        "Genial Analisa (carteiras)" in nomes,
+    )
+    _checar(
+        "22b Safra Corretora (carteiras) presente",
+        "Safra Corretora (carteiras)" in nomes,
+    )
+    _checar(
+        "22c nunca existe uma entrada 'Safra Corretora' sem o sufixo (nome ambiguo)",
+        "Safra Corretora" not in nomes,
+    )
+
+
+def test_23_mercado_cotacao_individual_presente_e_nome_diferente_do_lote():
+    """Achado real (auditoria 2026-10-22): data/prices.py:obter_cotacao
+    (1 ticker por vez) nunca tinha representacao no painel, so' "MERCADO"
+    (data/mercado.py, cotacao EM LOTE) - caminhos de codigo diferentes,
+    podem falhar isolado."""
+    nomes = {c["nome"] for c in saude_mod.REGISTRO_COLETORES}
+    _checar("23a MERCADO (cotação individual) presente", "MERCADO (cotação individual)" in nomes)
+    _checar("23b nome diferente de MERCADO (lote)", "MERCADO (cotação individual)" != "MERCADO")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
