@@ -128,3 +128,48 @@ def test_falha_de_parse_registra_status_tipo_e_redirecionamento():
         assert lives_mod.obter_relatorios() is None
     motivo = lives_mod.motivo_ultima_falha()
     assert "HTTP 200" in motivo and "text/html" in motivo and "consent.youtube.com" in motivo
+
+
+def test_categoria_falha_sem_nenhuma_chamada_e_erro():
+    assert lives_mod.categoria_ultima_falha() == "erro"
+
+
+def test_categoria_falha_reconhece_bloqueio_404_do_endpoint_do_youtube():
+    """Achado real 24/10: feed.get('/feeds/videos.xml') passou a devolver
+    HTTP 404 (text/html, pagina de erro do Google) pro canal da Genial E
+    pra 2 canais de controle sem nenhuma relacao com a Genial (Google
+    Developers e o canal oficial do YouTube) - confirma bloqueio do
+    endpoint inteiro pro IP de saida, nao o canal que mudou/sumiu."""
+    feed = SimpleNamespace(bozo=True, entries=[], bozo_exception=Exception("not well-formed (invalid token)"),
+                           status=404, headers={"content-type": "text/html; charset=UTF-8"}, href="")
+    with patch.object(lives_mod.feedparser, "parse", return_value=feed), \
+         patch.object(lives_mod.time, "sleep"):
+        assert lives_mod.obter_relatorios() is None
+    assert lives_mod.categoria_ultima_falha() == "bloqueio_externo_conhecido"
+
+
+def test_categoria_falha_nao_reconhece_erro_diferente_ex_403():
+    """Um sintoma DIFERENTE (ex: 403 em vez de 404, ou canal removido de
+    outra forma) nao pode herdar a classificacao de bloqueio conhecido -
+    só o sintoma exato ja confirmado conta, pra nunca mascarar uma falha
+    realmente nova."""
+    feed = SimpleNamespace(bozo=True, entries=[], bozo_exception=Exception("not well-formed (invalid token)"),
+                           status=403, headers={"content-type": "text/html; charset=UTF-8"}, href="")
+    with patch.object(lives_mod.feedparser, "parse", return_value=feed), \
+         patch.object(lives_mod.time, "sleep"):
+        assert lives_mod.obter_relatorios() is None
+    assert lives_mod.categoria_ultima_falha() == "erro"
+
+
+def test_categoria_falha_volta_a_erro_depois_de_sucesso():
+    feed_bloqueio = SimpleNamespace(bozo=True, entries=[], bozo_exception=Exception("not well-formed (invalid token)"),
+                                    status=404, headers={"content-type": "text/html; charset=UTF-8"}, href="")
+    with patch.object(lives_mod.feedparser, "parse", return_value=feed_bloqueio), \
+         patch.object(lives_mod.time, "sleep"):
+        lives_mod.obter_relatorios()
+    assert lives_mod.categoria_ultima_falha() == "bloqueio_externo_conhecido"
+
+    with patch.object(lives_mod.feedparser, "parse", return_value=_feed(entries=[_entry()])), \
+         patch.object(lives_mod.time, "sleep"):
+        assert lives_mod.obter_relatorios() is not None
+    assert lives_mod.categoria_ultima_falha() == "erro"
