@@ -435,11 +435,22 @@ def obter_painel_saude() -> list:
     busca o status (instrumentado -> tabela coletores_status; somente-
     leitura -> leitor dedicado) e classifica. Nunca lanca excecao -
     qualquer falha de leitura individual vira NAO_COMPROVADO pra aquele
-    coletor, sem derrubar o painel inteiro."""
+    coletor, sem derrubar o painel inteiro.
+
+    N+1 real corrigido (auditoria de performance 2026-10-24): antes,
+    cada um dos coletores SEM leitor dedicado (24 de 30 em
+    REGISTRO_COLETORES) chamava coletores_status.obter_status(nome)
+    individualmente - 24 round-trips sequenciais ao Supabase por
+    carregamento desta aba, mesma classe de problema já corrigida em
+    outros pontos do app (obter_cotacoes_lote, paralelização de
+    data/market_makers.py:_riscos). obter_todos_status() já existia
+    como alternativa em lote (1 única consulta, mesmo schema de linha
+    por nome) e não era usada aqui - agora é chamada 1x antes do loop."""
+    todos_status = coletores_status.obter_todos_status()
     painel = []
     for c in REGISTRO_COLETORES:
         try:
-            status = c["leitor"]() if "leitor" in c else coletores_status.obter_status(c["nome"])
+            status = c["leitor"]() if "leitor" in c else todos_status.get(c["nome"])
         except Exception:
             status = None
         codigo, rotulo = classificar_estado(status, c.get("idade_maxima_horas"))
