@@ -206,6 +206,78 @@ def test_render_edicao_estruturada_html_monta_secoes_principais():
     assert "Próximos dias" not in out  # agenda_proximos=None: calendário não rodou pra essa parte
 
 
+# --- Reformulação Morning Call (24/10/2026): teses de research numa seção
+# própria, separada de catalisador/risco - antes tudo misturado numa única
+# seção rotulada "MARKET MAKERS" (rótulo que ficou órfão depois da remoção
+# da aba MARKET MAKERS; data/market_makers.py continua existindo, é a
+# fachada compartilhada com o RADAR, só a apresentação no Morning Call
+# mudou). None (fonte falhou) nunca é tratado como "sem conteúdo" (lista
+# vazia, fonte respondeu) - mensagens diferentes pro leitor nos dois casos.
+
+from datetime import date as _date  # noqa: E402 (import local ao bloco, mesmo padrão já usado acima)
+
+_MM_BASE_EDICAO = {
+    "agora": datetime(2026, 10, 24, 9, 0, tzinfo=TZ),
+    "capa": {"indicadores": [], "destaques": [], "manchete": None, "chamadas": []},
+    "brasil": {"indicadores": [], "noticias": None, "noticias_erro": None},
+    "exterior": {"indicadores": [], "noticias": None, "noticias_erro": None},
+    "empresas": {"cards": [], "agenda": None, "agenda_proximos": None, "noticias_erro": None},
+    "radar": None, "mercados_nota": None, "limitacoes": (), "fontes": (),
+}
+
+
+def test_card_tese_research_com_fonte_e_sem_fonte():
+    mudanca = {"ticker": "PETR4", "categoria": "Research — recomendação/preço-alvo",
+               "descricao": "Genial revisou PETR4 de NEUTRO para COMPRA",
+               "data_evento": _date(2026, 10, 20), "fonte_label": "Genial", "fonte_url": "https://genial.com/x"}
+    card = mc._card_tese_research(mudanca)
+    assert "PETR4" in card and "20/10/2026" in card
+    assert "Genial revisou PETR4 de NEUTRO para COMPRA" in card
+    assert "href='https://genial.com/x'" in card and ">Genial ↗</a>" in card
+    # sem fonte_label/fonte_url: nunca inventa casa nem link quebrado
+    sem_fonte = {**mudanca, "fonte_label": None, "fonte_url": None}
+    card2 = mc._card_tese_research(sem_fonte)
+    assert "CASA NÃO IDENTIFICADA" in card2 and "fonte não identificada nesta execução" in card2
+    assert "<a href=" not in card2.split("mc-tese-fonte")[1]
+
+
+def test_teses_research_falha_de_coleta_distinta_de_ausencia_legitima():
+    # None: a própria consulta de inteligência de mercado falhou (RuntimeError
+    # em data/market_makers.py:inteligencia_mercado) - FALHA, não "sem dado"
+    falhou = mc.render_edicao_estruturada_html({**_MM_BASE_EDICAO, "market_makers": None})
+    assert "TESES E RECOMENDAÇÕES DE RESEARCH" in falhou
+    assert "Indisponível nesta execução" in falhou
+    assert "CATALISADORES E ALERTAS" not in falhou  # sem dado nenhum pra mostrar, bloco nem aparece
+
+    # dict vazio: a consulta respondeu, só não achou nada pros tickers do dia
+    # - estado vazio informativo, nunca a mesma frase de falha
+    vazio = mc.render_edicao_estruturada_html(
+        {**_MM_BASE_EDICAO, "market_makers": {"mudancas": [], "catalisadores": [], "riscos": {}}})
+    assert "Nenhuma mudança de tese ou recomendação de research verificada" in vazio
+    assert "Indisponível nesta execução" not in vazio
+    assert "CATALISADORES E ALERTAS" not in vazio  # catalisadores e riscos também vazios
+
+
+def test_teses_research_com_dado_real_separadas_de_catalisador_e_risco():
+    mm = {
+        "mudancas": [{"ticker": "VALE3", "categoria": "Research — recomendação/preço-alvo",
+                       "descricao": "XP elevou VALE3 para COMPRA", "data_evento": _date(2026, 10, 22),
+                       "fonte_label": "XP Investimentos", "fonte_url": "https://xpi.com.br/y"}],
+        "catalisadores": [{"ticker": "VALE3", "categoria": "Resultado corporativo",
+                            "data": _date(2026, 11, 10), "status_label": "PRAZO CVM", "confirmado": False}],
+        "riscos": {"VALE3": ["dívida líquida/EBITDA elevada (4.2x)"]},
+    }
+    out = mc.render_edicao_estruturada_html({**_MM_BASE_EDICAO, "market_makers": mm})
+    teses_bloco = out.split("TESES E RECOMENDAÇÕES DE RESEARCH", 1)[1].split("CATALISADORES E ALERTAS", 1)[0]
+    assert "XP Investimentos" in teses_bloco and "VALE3" in teses_bloco and "XP elevou VALE3 para COMPRA" in teses_bloco
+    catalisador_bloco = out.split("CATALISADORES E ALERTAS", 1)[1]
+    assert "Resultado corporativo" in catalisador_bloco and "10/11/2026" in catalisador_bloco
+    assert "PRAZO CVM" in catalisador_bloco  # confirmado=False cai no status_label, não vira "CONFIRMADO"
+    assert "dívida líquida/EBITDA elevada" in catalisador_bloco
+    # a tese (XP/VALE3) não aparece de novo dentro do bloco de catalisador/risco
+    assert "XP elevou VALE3" not in catalisador_bloco
+
+
 # --- Revisão pré-merge do PR #135 (achados corrigidos nesta revisão) ------
 
 def test_url_http_segura_rejeita_esquema_perigoso():

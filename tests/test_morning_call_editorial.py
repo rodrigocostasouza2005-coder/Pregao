@@ -413,12 +413,14 @@ def test_montar_edicao_estrutura_completa_sem_rede():
         edicao = ed.montar_edicao(agora)
     assert edicao["agora"] == agora
     assert set(edicao.keys()) == {"agora", "capa", "brasil", "exterior", "empresas", "limitacoes", "fontes",
-                                  "mercados_nota", "janela_noticias", "radar", "texto_stats"}
+                                  "mercados_nota", "janela_noticias", "radar", "texto_stats", "market_makers"}
     # sem notícia de setor nenhum, o radar sai vazio e registra cada exclusão
     assert edicao["radar"]["setores"] == []
     assert all("evidência insuficiente" in e["motivo"] for e in edicao["radar"]["excluidos"])
     assert edicao["brasil"]["noticias"] is None
     assert edicao["empresas"]["agenda"] == []
+    # sem notícia nenhuma citando ticker/empresa, não há ativo pra contextualizar
+    assert edicao["market_makers"] is None
     # sem notícia nenhuma, a capa não inventa manchete
     assert edicao["capa"]["manchete"] is None and edicao["capa"]["chamadas"] == []
     # as 3 "interpretações" genéricas fixas (iguais todo dia) saíram da edição
@@ -642,3 +644,56 @@ def test_sem_resumo_cacheado_mundo_sai_so_com_manchete_e_fonte():
         edicao = ed.montar_edicao(datetime(2026, 10, 19, 7, tzinfo=TZ_SP))
     item = edicao["exterior"]["noticias"][0]
     assert item["corpo"] == [] and item["veiculo"] == "Reuters" and item["link"] == "https://int/1"
+
+
+# ============================================================
+# MARKET MAKERS (data/market_makers.py) integrado na edição
+# ============================================================
+
+def test_tickers_mencionados_pega_ticker_explicito_e_nome_da_empresa():
+    itens = [
+        {"titulo": "PETR4 sobe 3% após anúncio de dividendos"},
+        {"titulo": "Vale anuncia novo plano de investimentos em minério"},
+        {"titulo": "Mercado fecha em alta com Ibovespa acima de 130 mil pontos"},
+    ]
+    tickers = ed.tickers_mencionados(itens)
+    assert "PETR4" in tickers
+    assert "VALE3" in tickers
+    assert len(tickers) == 2  # sem duplicata, sem falso positivo do Ibovespa
+
+
+def test_tickers_mencionados_sem_nenhuma_citacao_e_vazio():
+    assert ed.tickers_mencionados([{"titulo": "Mercado opera estável nesta sessão"}]) == ()
+
+
+def test_montar_edicao_chama_market_makers_so_com_os_tickers_do_dia():
+    brasil = {"titulo": "PETR4 anuncia novo investimento em exploração",
+              "link": "https://g1/1", "veiculo": "G1", "importancia": 9, "veiculos": ["G1"],
+              "fontes": [], "regiao": "BR", "data": "2026-10-14T06:30:00-03:00"}
+    resultado_mm = {"gerado_em": None, "tickers": ("PETR4",), "catalisadores": [], "mudancas": [], "riscos": {}}
+    chamada = {}
+
+    def _fake_inteligencia(tickers, janela="7 DIAS"):
+        chamada["tickers"] = tickers
+        return resultado_mm
+
+    with _MultiPatch(**_pools([brasil]), inteligencia_mercado=_fake_inteligencia):
+        edicao = ed.montar_edicao(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
+
+    assert chamada["tickers"] == ("PETR4",)
+    assert edicao["market_makers"] == resultado_mm
+
+
+def test_montar_edicao_market_makers_indisponivel_nao_derruba_a_edicao():
+    brasil = {"titulo": "PETR4 anuncia novo investimento em exploração",
+              "link": "https://g1/1", "veiculo": "G1", "importancia": 9, "veiculos": ["G1"],
+              "fontes": [], "regiao": "BR", "data": "2026-10-14T06:30:00-03:00"}
+
+    def _quebra(tickers, janela="7 DIAS"):
+        raise RuntimeError("fonte fora do ar")
+
+    with _MultiPatch(**_pools([brasil]), inteligencia_mercado=_quebra):
+        edicao = ed.montar_edicao(datetime(2026, 10, 14, 7, tzinfo=TZ_SP))
+
+    assert edicao["market_makers"] is None
+    assert edicao["fontes"] == ed.FONTES_PADRAO  # o resto da edição segue montada normalmente

@@ -67,6 +67,39 @@ def motivo_ultima_falha() -> str | None:
     chamada foi feita ainda nesta sessao do processo."""
     return _ultimo_motivo_falha
 
+
+# Marcador textual (achado real, 2026-10-24: o feed do canal da Genial
+# passou a falhar com "HTTP 404, text/html" entre as execucoes de
+# 23/10 22:08 UTC (sucesso, 6 videos) e 24/10 00:38 UTC (falha) do
+# workflow coletores-nuvem. Testado de verdade NESTE exato endpoint
+# (`/feeds/videos.xml?channel_id=...`) contra 2 canais de controle sem
+# nenhuma relacao com a Genial - UC_x5XG1OV2P6uZZ5FSM9Ttw (Google
+# Developers) e UCBR8-60-B28hp2BmDPdntcQ (canal oficial do proprio
+# YouTube) - os DOIS devolveram o MESMO "HTTP 404, text/html" na mesma
+# janela, inclusive sem diferenca de User-Agent (testado com UA de
+# navegador real e sem UA nenhum). Confirma que NAO e' o canal da
+# Genial que mudou/sumiu - e' o endpoint /feeds/videos.xml inteiro
+# bloqueado (HTTP 404 em vez de 403, mas e' o padrao de bloqueio do
+# YouTube pra trafego identificado como bot/datacenter) pra esse IP de
+# saida (GitHub Actions/sandbox), mesma categoria do WAF Akamai que ja
+# bloqueia genial.py/xp.py - fora do controle do projeto, nao e' uma
+# regressao de codigo.
+_MARCADOR_BLOQUEIO_YOUTUBE = "HTTP 404, text/html"
+
+
+def categoria_ultima_falha() -> str:
+    """Classifica a ultima falha pra decidir se ela sozinha pode deixar
+    de derrubar o exit code de coletor_local.py (ver data/research/
+    __init__.py:_classificar_falha e coletor_local.py:_falha_critica).
+    So' devolve 'bloqueio_externo_conhecido' quando o motivo da ultima
+    falha tem o marcador EXATO ja confirmado (ver
+    _MARCADOR_BLOQUEIO_YOUTUBE) - qualquer coisa diferente (sucesso,
+    motivo None, erro novo/desconhecido, ex: HTTP 403, timeout, canal
+    genuinamente removido com outro codigo) devolve 'erro' de proposito,
+    pra nunca mascarar uma falha realmente nova."""
+    motivo = _ultimo_motivo_falha or ""
+    return "bloqueio_externo_conhecido" if _MARCADOR_BLOQUEIO_YOUTUBE in motivo else "erro"
+
 # ordem importa: checagens mais especificas primeiro. Heuristica sobre o
 # TITULO do video (unico dado estruturado disponivel no feed publico) -
 # pode classificar errado o "sub-tipo" do programa em casos ambiguos

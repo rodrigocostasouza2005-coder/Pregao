@@ -13,6 +13,7 @@ from curl_cffi import requests as cffi_requests
 import config
 from config import PERIODOS_BUFFER, PERIODOS_GRAFICO
 from data.coletores_status import registrar_tentativa
+from data.supabase_client import obter_cliente
 
 # timeout explicito pra toda chamada yfinance que aceita o parametro
 # (.history()/yf.download() - ambas ja tem default interno de 10s nesta
@@ -240,6 +241,7 @@ def _ultimo_negocio_iso(ticker_obj, barra) -> str | None:
         return None
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def obter_cotacao_indice(nome: str, symbol: str) -> dict:
     """
     Cotacao de indice/moeda pra ticker tape (ex: Ibovespa, dolar). Usa
@@ -253,6 +255,18 @@ def obter_cotacao_indice(nome: str, symbol: str) -> dict:
     Se essa chamada falhar, cai pro ultimo valor que deu certo
     (_ultima_cotacao_indice_valida) em vez de mostrar erro/"--" - so
     retorna erro se NUNCA tiver conseguido buscar esse indice ainda.
+
+    @st.cache_data(ttl=30) (achado real, auditoria de performance
+    2026-10-23): faltava aqui, mesmo TTL do fast_info de obter_cotacao()
+    3 linhas acima. Essa funcao e' chamada pela fita do header (_ticker_
+    tape, TODA pagina, a cada run_every) E por VISAO GERAL/MACRO/MERCADO
+    pros mesmos indices (IBOVESPA/DOLAR/EURO) - sem cache, cada rerun
+    batia no Yahoo 1x por chamador pro MESMO indice, no MESMO segundo
+    (confirmado via profiling: 6 chamadas de rede reais pra so' 3 indices
+    distintos num unico rerun). ui/macro_tab.py:_cotacao_cambio ja
+    trabalhava esse problema com um cache local propio (ver comentario
+    la) - o bug real era so' faltar aqui, na fonte, pros outros 2
+    chamadores (app.py/ui/visao_geral.py/ui/mercado_tab.py).
     """
     cache = _ultima_cotacao_indice_valida()
     try:
@@ -416,6 +430,70 @@ def _ultimo_indicadores_valido() -> dict:
     return {}
 
 
+_TABELA_INDICADORES_FALLBACK = "indicadores_fallback"
+
+
+def _ler_fallback_persistido(ticker: str) -> dict | None:
+    """Último indicadores válido persistido (sql/indicadores_fallback.sql)
+    - achado real (incidente 2026-10-23): o fallback em memória
+    (_ultimo_indicadores_valido, @st.cache_resource) zera a cada
+    restart do processo (Streamlit Community Cloud reinicia o
+    container a cada push pra main), então um bloqueio do Yahoo
+    (.info) bem depois de um deploy deixa TODOS os tickers sem nenhum
+    valor-base pra cair de volta, mesmo tendo funcionado minutos antes.
+    Esta leitura só acontece quando a coleta de agora E o fallback em
+    memória já falharam - nunca no caminho feliz. None (banco
+    indisponível ou nunca persistido) é tratado pelo chamador como
+    'sem fallback nenhum', nunca lança excecao."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        resp = (
+            cliente.table(_TABELA_INDICADORES_FALLBACK).select("dados,coletado_em")
+            .eq("ticker", ticker).limit(1).execute()
+        )
+        if not resp.data:
+            return None
+        linha = resp.data[0]
+        dados = dict(linha["dados"] or {})
+        dados["_coletado_em"] = linha["coletado_em"]
+        return dados
+    except Exception as exc:
+        print(f"[prices] fallback persistido de indicadores indisponível pra {ticker}: {exc!r}")
+        return None
+
+
+def _salvar_fallback_persistido(ticker: str, resultado: dict) -> None:
+    """Melhor esforço - nunca bloqueia nem quebra obter_indicadores por
+    falha de rede/banco (mesmo espírito de qualquer registrar_* deste
+    projeto). Só chamado numa coleta REALMENTE bem-sucedida (ver
+    obter_indicadores) - nunca persiste um resultado todo None."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return
+    try:
+        dados = {k: v for k, v in resultado.items() if k not in ("beta", "_coletado_em")}
+        cliente.table(_TABELA_INDICADORES_FALLBACK).upsert({
+            "ticker": ticker, "dados": dados, "coletado_em": resultado["_coletado_em"],
+        }).execute()
+    except Exception as exc:
+        print(f"[prices] falha ao persistir fallback de indicadores pra {ticker}: {exc!r}")
+
+
+# nome/fonte do coletor em SAUDE DOS DADOS (data/saude_dados.py:
+# REGISTRO_COLETORES) - EQUITY (Fundamentos) nunca tinha nenhuma linha
+# ali antes (achado real, incidente 2026-10-23: P/L/P/VP/DY em branco
+# simultaneamente pra toda a watchlist, sem NENHUM jeito de confirmar
+# em producao se foi excecao de rede, bloqueio do Yahoo retornando
+# vazio sem excecao, ou outra causa - zero instrumentacao existia pra
+# esse caminho). Constantes aqui (nao direto nas strings abaixo) pra
+# nao haver risco de o nome usado em registrar_tentativa divergir do
+# nome cadastrado no REGISTRO_COLETORES.
+_NOME_COLETOR_FUNDAMENTOS = "EQUITY (Fundamentos)"
+_FONTE_COLETOR_FUNDAMENTOS = "yfinance (tk.info - P/L, P/VP, DY, ROE, margens, dívida líquida)"
+
+
 def _tk_info_com_retry(symbol: str) -> dict:
     """tk.info com 2 tentativas: primeiro simulando um Chrome de verdade
     via curl_cffi (mesma tecnica ja usada pra contornar bloqueio na
@@ -423,16 +501,64 @@ def _tk_info_com_retry(symbol: str) -> dict:
     yfinance. Yahoo Finance bloqueia bem mais requisicoes vindas de IP de
     datacenter (Cloud) que fingem ser um script generico do que as que
     parecem um navegador comum. Retorna {} se as duas falharem - nunca
-    lanca excecao."""
+    lanca excecao (comportamento de retorno inalterado - so' ganhou
+    instrumentacao pro SAUDE DOS DADOS, ver constantes acima).
+
+    Instrumentacao (incidente 2026-10-23) distingue 2 causas BEM
+    diferentes de "sem dado", que antes ficavam indistinguiveis de fora
+    (so' um {} igual nos dois casos):
+    - EXCECAO real em ambas as tentativas (timeout/conexao/DNS/SSL/etc)
+      -> registra com o texto da ultima excecao, que o classificador de
+      data/saude_dados.py:_TERMOS_INDISPONIBILIDADE ja' sabe reconhecer
+      (vira FONTE_INDISPONIVEL quando o texto bate, FALHA_EXECUCAO
+      generico quando nao bate - decisao de classificacao fica la', nao
+      aqui).
+    - NENHUMA excecao, mas tk.info respondeu vazio (dict falsy) nas 2 -
+      sinal mais provavel de bloqueio/rate-limit silencioso do Yahoo pro
+      IP do servidor (ja documentado em _ultimo_indicadores_valido
+      abaixo) - mensagem PROPRIA, deliberadamente sem as palavras-chave
+      de _TERMOS_INDISPONIBILIDADE (nao e' uma excecao de rede local,
+      nao deve ser confundido com uma) - vira FALHA_EXECUCAO generico,
+      nunca "sucesso".
+    Se uma tentativa teve retorno vazio sem excecao e a OUTRA lancou
+    excecao, o vazio-sem-excecao conta (e' o sinal mais forte: prova que
+    o servidor respondeu, so' nao devolveu dado).
+
+    Nunca registra falha so' porque um CAMPO individual (ex: DY) esta'
+    ausente dentro de um info valido - isso e' decidido em
+    obter_indicadores() a partir do dict retornado aqui, nao aqui
+    (um info não-vazio sempre conta como sucesso, mesmo faltando campos)."""
+    ultima_excecao = None
+    teve_retorno_vazio_sem_excecao = False
     for sessao in (cffi_requests.Session(impersonate="chrome"), None):
         try:
             # .info e' propriedade (sem parametro de timeout exposto) -
             # mesma observacao de fast_info/dividends acima
             info = yf.Ticker(symbol, session=sessao).info
             if info:
+                registrar_tentativa(_NOME_COLETOR_FUNDAMENTOS, _FONTE_COLETOR_FUNDAMENTOS,
+                                     execucao_ok=True, categoria="Fundamentos")
                 return info
-        except Exception:
+            teve_retorno_vazio_sem_excecao = True
+        except Exception as e:
+            ultima_excecao = e
             continue
+    if teve_retorno_vazio_sem_excecao:
+        registrar_tentativa(
+            _NOME_COLETOR_FUNDAMENTOS, _FONTE_COLETOR_FUNDAMENTOS, execucao_ok=False, categoria="Fundamentos",
+            erro="tk.info respondeu sem excecao mas vazio (retorno sem indicadores) - possivel "
+                 "bloqueio/rate-limit do Yahoo pro IP do servidor, nao confirmado como erro de rede local",
+        )
+    elif ultima_excecao is not None:
+        # str(e)[:300] (nao repr, nao sem limite): mesmo padrao ja usado
+        # em data/macro.py pra registrar_tentativa - trunca qualquer
+        # texto de excecao verboso e evita log gigante; endpoint publico
+        # do Yahoo usado aqui nao leva token/cookie/credencial nenhuma,
+        # mas o truncamento fica por seguranca/consistencia mesmo assim.
+        registrar_tentativa(
+            _NOME_COLETOR_FUNDAMENTOS, _FONTE_COLETOR_FUNDAMENTOS, execucao_ok=False, categoria="Fundamentos",
+            erro=f"excecao ao consultar tk.info (2 tentativas): {str(ultima_excecao)[:300]}",
+        )
     return {}
 
 
@@ -504,9 +630,10 @@ def obter_indicadores(ticker: str) -> dict:
         # realmente de verdade - nunca mostrado como se fosse de agora
         resultado["_coletado_em"] = datetime.now(timezone.utc).isoformat()
         cache_fallback[ticker] = resultado
+        _salvar_fallback_persistido(ticker, resultado)
         return resultado
 
-    anterior = cache_fallback.get(ticker)
+    anterior = cache_fallback.get(ticker) or _ler_fallback_persistido(ticker)
     if anterior:
         # comeca do schema ATUAL (resultado, todos os campos de hoje
         # presentes, so' com valor None) e so' sobrescreve com o que

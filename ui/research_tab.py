@@ -12,9 +12,12 @@ import config
 from data.news import obter_noticias
 from data.research import CASAS, coletar_pendentes, preparar_leitura, ultimas_coletas_formatadas
 from data.research.base import TTL_COLETA
+from data.research.casas_status import obter_status_casas
 from data.research.genial import obter_recomendacoes, obter_swing_trade
 from data.research.historico import historico_ticker, mudancas_hoje, processar_recomendacoes, ultimo_snapshot
 from data.research.resumir import obter_resumo
+from data.market_researcher import cobertura_cruzada_casas
+from ui.saude_dados_tab import _COR_POR_ESTADO, _idade_formatada
 
 _TIPO_LABEL = {
     "ACOES": "AÇÕES",
@@ -683,3 +686,103 @@ def render_research(prefs: dict):
             st.rerun()
         elif falhas_coleta:
             st.warning("Nem tudo pôde ser atualizado agora: " + "; ".join(falhas_coleta) + ".")
+
+
+# ============================================================
+# CASAS DE ANÁLISE (Fase 3 da missão RESEARCH institucional, 2026-10-23)
+# - leitura pura de data/research/casas_status.py (CASAS + saude_dados,
+#   categoria Research). Nunca coleta nada nem dispara rede nova.
+# ============================================================
+
+_CSS_CASAS = """
+.casas-nota { color: var(--cinza); font-size: 0.7rem; margin: 0.1rem 0 0.8rem 0; line-height: 1.5; }
+.casas-tabela { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.casas-tabela th {
+    text-align: left; color: var(--cinza); font-size: 0.64rem; letter-spacing: 0.03em;
+    padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--borda);
+}
+.casas-tabela td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--borda); vertical-align: top; }
+.casas-nome { color: var(--destaque); font-weight: 600; }
+.casas-acesso { color: var(--cinza); font-size: 0.68rem; }
+"""
+
+
+@st.fragment
+def render_casas_analise(prefs: dict):
+    """Cobertura real das casas de research (Fase 3): método de acesso,
+    se a coleta roda no Cloud ou só via coletor_local.py, e o estado
+    real mais recente (nunca inflado - 'Não comprovado' quando não há
+    evidência). Casas candidatas investigadas e ainda não implementadas
+    (Itaú BBA, Safra, Rico, Ágora etc.) não aparecem aqui de propósito -
+    essa investigação já está documentada com evidência real em
+    docs/research-fontes-20261022.md, não duplicada nesta tela."""
+    st.markdown(f"<style>{_CSS_CASAS}</style>", unsafe_allow_html=True)
+    st.markdown('<div class="painel-titulo">CASAS DE ANÁLISE</div>', unsafe_allow_html=True)
+    st.markdown(
+        "<div class='casas-nota'>Estado real de cada casa coletada hoje pelo PREGÃO — nunca mostra "
+        "uma fonte como funcionando sem evidência de coleta bem-sucedida. Candidatas investigadas e "
+        "bloqueadas (Itaú BBA, Safra, Rico, Ágora, BB Investalk e outras) estão documentadas em "
+        "<code>docs/research-fontes-20261022.md</code>, fora desta lista.</div>",
+        unsafe_allow_html=True,
+    )
+
+    linhas_html = ""
+    for item in obter_status_casas():
+        cor = _COR_POR_ESTADO.get(item["codigo_estado"], "neutro")
+        acesso = (
+            "coleta automática (Cloud + local)" if item["coleta_automatica_cloud"]
+            else "só via coletor_local.py (bloqueada no Streamlit Cloud)"
+        )
+        ultimo_sucesso = _idade_formatada(item["ultimo_sucesso_em"])
+        registros = item["registros_novos_ultima_coleta"]
+        registros_fmt = "—" if registros is None else str(registros)
+        linhas_html += (
+            "<tr>"
+            f"<td class='casas-nome'>{html.escape(item['nome'])}</td>"
+            f"<td class='cinza'>{html.escape(item['fonte'])}</td>"
+            f"<td class='casas-acesso'>{acesso}</td>"
+            f"<td class='{cor}'>{html.escape(item['rotulo_estado'])}</td>"
+            f"<td class='cinza'>{ultimo_sucesso}</td>"
+            f"<td class='cinza'>{registros_fmt}</td>"
+            "</tr>"
+        )
+    st.markdown(
+        "<div style='overflow-x:auto;'><table class='casas-tabela'>"
+        "<thead><tr><th>CASA</th><th>FONTE</th><th>ACESSO</th><th>ESTADO</th>"
+        "<th>ÚLTIMO SUCESSO</th><th>ITENS NA ÚLTIMA COLETA</th></tr></thead>"
+        f"<tbody>{linhas_html}</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
+
+    # MARKET RESEARCHER (data/market_researcher.py): cobertura cruzada
+    # por ticker da watchlist - quem cobriu, quem não cobriu (fato), e
+    # recomendação estruturada divergente entre casas quando o dado
+    # permite (nunca inferida de título). Zero coletor/tabela nova.
+    watchlist = prefs.get("watchlist") or []
+    if watchlist:
+        st.markdown('<div class="painel-titulo" style="margin-top:1rem;">COBERTURA CRUZADA — WATCHLIST</div>', unsafe_allow_html=True)
+        for ticker in watchlist:
+            resultado = cobertura_cruzada_casas(ticker)
+            if resultado["cobertura"] is None:
+                st.markdown(f"<div class='casas-acesso'>{html.escape(ticker)}: banco indisponível, sem checagem.</div>", unsafe_allow_html=True)
+                continue
+            if not resultado["cobertura"] and not resultado["divergencia"]:
+                continue  # nenhuma casa cobriu - sem achado, não polui a tela
+            with st.container(border=True):
+                st.markdown(f"<span class='casas-nome'>{html.escape(ticker)}</span>", unsafe_allow_html=True)
+                for c in resultado["cobertura"]:
+                    rec = f" · {html.escape(c['recomendacao'])}" if c.get("recomendacao") else ""
+                    st.markdown(
+                        f"<div class='cinza' style='font-size:0.7rem;'>{html.escape(c['casa'])} "
+                        f"({html.escape(str(c['data'])[:10])}){rec} — "
+                        f"<a href='{html.escape(c['link'], quote=True)}' target='_blank' rel='noopener'>{html.escape(c['titulo'] or 'ver relatório')}</a></div>",
+                        unsafe_allow_html=True,
+                    )
+                if resultado["sem_cobertura"]:
+                    st.markdown(
+                        f"<div class='casas-acesso'>Sem cobertura recente: {html.escape(', '.join(resultado['sem_cobertura']))}.</div>",
+                        unsafe_allow_html=True,
+                    )
+                if resultado["divergencia"]:
+                    por_casa = ", ".join(f"{k}: {v}" for k, v in resultado["divergencia"]["por_casa"].items())
+                    st.markdown(f"<div class='baixa' style='font-size:0.72rem;'>⚠ {html.escape(por_casa)}</div>", unsafe_allow_html=True)

@@ -509,9 +509,10 @@ def render_macro_cambio_commodities(prefs):
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _cotacao_cambio(nome, simbolo):
-    # data/prices.py:obter_cotacao_indice nao tem cache proprio (o
-    # letreiro chama em todo refresh) - aqui evita 1 chamada ao Yahoo por
-    # par de moeda a cada rerun desta subaba
+    # data/prices.py:obter_cotacao_indice ja tem cache proprio (ttl=30,
+    # achado/corrigido na auditoria de performance 2026-10-23) - este
+    # wrapper com ttl=60 continua aqui so' pra nao mudar o ritmo de
+    # atualizacao desta subaba especifica, nao por falta de cache na fonte.
     from data.prices import obter_cotacao_indice
 
     return obter_cotacao_indice(nome, simbolo)

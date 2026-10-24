@@ -35,7 +35,7 @@ import streamlit as st
 
 from data.coletores_status import registrar_tentativa
 
-from . import btg, genial, genial_lives, montebravo, store, xp
+from . import btg, genial, genial_lives, montebravo, nord, store, xp
 from .base import TEMPO_MAX_COLETA_S
 
 # nao tenta recoletar a mesma casa antes desse tempo desde a ULTIMA
@@ -109,6 +109,15 @@ CASAS = [
         # motivo_ultima_falha novo em genial_lives.py (mesmo padrao de
         # genial.py/xp.py) pra essa falha aparecer em SAUDE DOS DADOS.
         "motivo_falha": genial_lives.motivo_ultima_falha,
+        # achado real (2026-10-24): o feed do canal passou a devolver
+        # "HTTP 404, text/html" pro endpoint /feeds/videos.xml inteiro
+        # (confirmado contra 2 canais de controle sem nenhuma relacao
+        # com a Genial, ver _MARCADOR_BLOQUEIO_YOUTUBE em
+        # genial_lives.py) - sem isso, essa falha (bloqueio de IP,
+        # fora do controle do projeto) derrubava o exit code de
+        # coletor_local.py igual a uma regressao nova, mesmo padrao
+        # ja corrigido pra Genial Analisa/XP em 2026-10-18.
+        "categoria_falha": genial_lives.categoria_ultima_falha,
     },
     {
         # Investigado de novo em 2026-10-17 (reinvestigacao da mesma
@@ -170,6 +179,28 @@ CASAS = [
         "obter_relatorios": montebravo.obter_relatorios,
         "extrator_texto": None,
         "motivo_falha": montebravo.motivo_ultima_falha,
+    },
+    {
+        # Adicionada em 24/10/2026 (pedido explicito do Rodrigo, lista de
+        # 10 casas prioritarias): sem feed RSS (/feed/ e /blog/feed/ dao
+        # HTTP 404) - descoberta via /blog/sitemap.xml, publico e listado
+        # no proprio robots.txt ("Allow: /"). So entram posts com ticker
+        # B3 + "resultado(s)" no slug (ver nord.py) - a categoria mais
+        # claramente "research de acoes" confirmada com texto real
+        # (recomendacao explicita no post da Petrobras 1T26, assinado por
+        # analista nomeado). Sem isso, o sitemap tem ~7700 URLs, a maioria
+        # conteudo educacional/opiniao ("X vale a pena investir"), que nao
+        # e' research. Ainda NAO testada a partir do Streamlit Cloud/
+        # GitHub Actions (so' deste ambiente de dev) - se bloquear la',
+        # vira candidata a tentar_coleta_automatica=False como Genial/XP.
+        "id": "nord",
+        "nome": "Nord Research",
+        "fonte": "nordinvestimentos.com.br (sitemap do blog, posts de resultado por ticker)",
+        "ativa_por_padrao": True,
+        "disponivel": True,
+        "obter_relatorios": nord.obter_relatorios,
+        "extrator_texto": None,
+        "motivo_falha": nord.motivo_ultima_falha,
     },
 ]
 

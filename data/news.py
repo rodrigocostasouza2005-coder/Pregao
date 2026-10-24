@@ -1127,9 +1127,22 @@ def obter_top_mercado_tudo(setor: str = "TODOS"):
     separadamente (nao junto): titulo em portugues e em ingles sobre o
     mesmo fato nunca teriam palavras em comum pro agrupador reconhecer
     mesmo assim, entao nao ha' vantagem em juntar antes - so' risco de
-    comparar mais itens a toa. None so se os dois pools falharem."""
-    br_entries, br_ok = _coletar_pool_brasil(setor)
-    intl_entries, intl_ok = _coletar_pool_internacional(setor)
+    comparar mais itens a toa. None so se os dois pools falharem.
+
+    Os 2 pools rodam em paralelo (achado real, auditoria de performance
+    2026-10-23): cada um ja busca suas proprias fontes em paralelo
+    internamente (_coletar_em_paralelo), mas os 2 pools entre si rodavam
+    em SEQUENCIA - o tempo total era brasil + internacional, nao o maior
+    dos dois. Profiling real (VISAO GERAL, cache frio): esta funcao
+    sozinha respondia por ~29s de um load de ~54s. Mesma tecnica
+    (ThreadPoolExecutor leve, I/O-bound, cada pool e' independente e ja
+    trata falha isolada) - so' economiza tempo de espera, nunca muda o
+    resultado."""
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futuro_br = executor.submit(_coletar_pool_brasil, setor)
+        futuro_intl = executor.submit(_coletar_pool_internacional, setor)
+        br_entries, br_ok = futuro_br.result()
+        intl_entries, intl_ok = futuro_intl.result()
     # Registra cada fonte separadamente mesmo na coleta agregada. Sem isso,
     # uma falha isolada do Brasil ou do pool internacional ficava escondida
     # dentro do status unico NEWS (BR+INTL), dificultando diagnostico.

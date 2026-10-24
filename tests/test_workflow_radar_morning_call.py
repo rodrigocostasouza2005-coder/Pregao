@@ -75,6 +75,29 @@ def test_agendamentos_evitam_minutos_redondos():
                 assert minuto.isdigit() and int(minuto) % 15 != 0, f"{nome}: cron {cron!r} usa minuto redondo"
 
 
+def test_email_provider_fallback_bate_com_os_secrets_ja_configurados():
+    """Bug real (achado 22-23/10/2026): com o secret EMAIL_PROVIDER nunca
+    configurado, `${{ secrets.EMAIL_PROVIDER || 'resend' }}` sempre
+    resolvia pra 'resend' - mesmo com SMTP_HOST/SMTP_USER/SMTP_PASSWORD já
+    configurados e EMAIL_FROM apontando pra um domínio @gmail.com que o
+    Resend nunca verifica (não é domínio do Pregão). Resultado: todo envio
+    (Radar E Morning Call, mesmo jobs/email_utils.py) falhava com HTTP 403
+    'domain not verified'. O fallback do workflow precisa bater com o
+    default do próprio código (jobs/email_utils.py:enviar_email, 'smtp')."""
+    texto = _conteudo()
+    from jobs.email_utils import enviar_email  # noqa: F401 - default real do código
+    import inspect
+    fonte = inspect.getsource(enviar_email)
+    assert 'os.getenv("EMAIL_PROVIDER") or "smtp"' in fonte, (
+        "default do código mudou - revise o fallback do workflow junto"
+    )
+    ocorrencias = re.findall(r"EMAIL_PROVIDER: \$\{\{ secrets\.EMAIL_PROVIDER \|\| '([^']+)' \}\}", texto)
+    assert len(ocorrencias) == 3, "esperado 1 fallback por step que envia e-mail (radar + validação + envio MC)"
+    assert set(ocorrencias) == {"smtp"}, (
+        f"fallback do workflow é {ocorrencias!r}, deveria ser 'smtp' (bate com SMTP_* já configurados nos secrets)"
+    )
+
+
 def test_concurrency_por_job_nao_por_workflow():
     """Com um grupo único no workflow, o GitHub mantém só 1 pendente e
     cancela o anterior - um Radar enfileirado podia derrubar o Morning

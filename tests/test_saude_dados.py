@@ -245,6 +245,34 @@ def test_14_painel_completo_cobre_todos_os_coletores_registrados():
     )
 
 
+# ============================================================
+# N+1 real (auditoria de performance 2026-10-24): coletores SEM leitor
+# dedicado (24 de 30 em REGISTRO_COLETORES) chamavam
+# coletores_status.obter_status(nome) individualmente - 24 round-trips
+# sequenciais ao Supabase por carregamento de SAUDE DOS DADOS.
+# obter_todos_status() (1 unica consulta, mesmo schema de linha) ja
+# existia e nao era usada aqui.
+# ============================================================
+
+def test_14b_painel_usa_consulta_em_lote_nunca_uma_por_coletor():
+    linhas = {c["nome"]: {"nome": c["nome"], "execucao_ok": True, "persistencia_ok": True,
+                          "parcial": False, "registros_novos": 1, "ultimo_erro": None,
+                          "ultimo_sucesso_em": _ha(1)}
+              for c in saude_mod.REGISTRO_COLETORES if "leitor" not in c}
+
+    with patch.object(saude_mod.coletores_status, "obter_todos_status", return_value=linhas) as m_lote, \
+         patch.object(saude_mod.coletores_status, "obter_status",
+                      side_effect=AssertionError("N+1: obter_status chamado por coletor, deveria usar obter_todos_status")):
+        painel = saude_mod.obter_painel_saude()
+
+    _checar("14b1 obter_todos_status chamado exatamente 1 vez (nao 1 por coletor)", m_lote.call_count == 1)
+    sem_leitor = [c["nome"] for c in saude_mod.REGISTRO_COLETORES if "leitor" not in c]
+    _checar(
+        "14b2 coletores sem leitor dedicado recebem o status_bruto exato do lote (comportamento preservado)",
+        all(next(p for p in painel if p["nome"] == nome)["status_bruto"] == linhas[nome] for nome in sem_leitor),
+    )
+
+
 def test_15_painel_excecao_num_leitor_nao_derruba_o_painel():
     def _leitor_que_falha():
         raise RuntimeError("Supabase fora do ar")

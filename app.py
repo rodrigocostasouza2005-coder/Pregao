@@ -31,8 +31,8 @@ from data.user_prefs import (
     deve_oferecer_morning_call, email_valido, obter_prefs, registrar_acesso, salvar_prefs,
 )
 from ui import (
-    analises_tab, busca, graficos, macro_tab, morning_call_tab, navegacao, paineis, radar_tab, secoes,
-    setores_tab,
+    analises_tab, busca, graficos, macro_tab, morning_call_tab, navegacao, paineis,
+    radar_tab, secoes, setores_tab,
 )
 from ui.cvm_tab import render_cvm, render_cvm_ticker
 from ui.macro_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MACRO
@@ -40,7 +40,7 @@ from ui.macro_tab import render_macro
 from ui.mercado_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MERCADO
 from ui.mercado_tab import render_mercado
 from ui.news_tab import injetar_fallback_imagem, render_news, render_news_ticker
-from ui.research_tab import render_research
+from ui.research_tab import render_casas_analise, render_research
 from ui.saude_dados_tab import render_saude_dados
 from ui.sistema_tab import render_sistema
 from ui.top_mercado_tab import render_top_mercado
@@ -625,24 +625,31 @@ if rota == ("radar", "alertas"):
     radar_tab.render_radar_alertas(prefs)
 if rota == ("radar", "carteiras"):
     radar_tab.render_radar_carteiras(prefs)
-if rota == ("radar", "research"):
-    # antiga aba RESEARCH: recomendacoes/relatorios/lives das casas de
-    # analise - subaba propria (2026-10-19), antes empilhada dentro de
-    # Carteiras Recomendadas na mesma rota (ver ui/navegacao.py).
-    with st.container():
-        render_research(prefs)
 if rota == ("radar", "oportunidades"):
     radar_tab.render_radar_oportunidades(prefs)
 if rota == ("radar", "acompanhamento"):
-    radar_tab.render_radar_acompanhamento(prefs)
+    radar_tab.render_radar_acompanhamento(prefs, usuario)
 
-# --- ANÁLISES › Fundamentos/Valuation/Teses -------------------------------------
+
+# --- RESEARCH (ver ui/research_tab.py) - area propria 2026-10-23 -------------
+if rota == ("research", "feed"):
+    # antiga aba RESEARCH: recomendacoes/relatorios/lives das casas de
+    # analise - antes em RADAR > Research (2026-10-19), movida pra area
+    # RESEARCH propria (ver ui/navegacao.py).
+    with st.container():
+        render_research(prefs)
+if rota == ("research", "casas"):
+    with st.container():
+        render_casas_analise(prefs)
+if rota == ("research", "teses"):
+    # antes ANALISES > Teses - movida pra junto do resto de RESEARCH.
+    radar_tab.render_teses(prefs, usuario)
+
+# --- ANÁLISES › Fundamentos/Valuation ------------------------------------------
 if rota == ("analises", "fundamentos"):
     analises_tab.render_fundamentos(prefs)
 if rota == ("analises", "valuation"):
     radar_tab.render_valuation(prefs)
-if rota == ("analises", "teses"):
-    radar_tab.render_teses(prefs, usuario)
 
 # --- MACRO (Indicadores = workspace completo da antiga aba MACRO) -------------
 if rota == ("macro", "indicadores"):
@@ -705,6 +712,7 @@ if rota == ("analises", "empresas"):
                     _persistir_prefs()
                     st.rerun()
             analises_tab.barra_contexto_empresa(ticker_selecionado, prefs)
+            analises_tab.render_equity_research_executivo(ticker_selecionado, prefs)
 
             if len(prefs["watchlist"]) > 1:
                 @st.fragment(run_every=prefs["atualizacao_intervalo"])
@@ -1125,6 +1133,8 @@ if rota == ("analises", "empresas"):
 
             with st.container(border=True):
                 render_cvm_ticker(ticker_selecionado, prefs)
+
+            analises_tab.render_conclusao_investimento(ticker_selecionado, prefs, usuario)
 
 
 # --- MAIS › Sistema / Saúde dos Dados (so admin): _eh_admin reconfirmado

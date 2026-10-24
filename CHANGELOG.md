@@ -1,5 +1,205 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-24 — Remoção da aba MARKET MAKERS + reformulação do Morning Call
+
+- **Remoção**: área própria "MARKET MAKERS" (`ui/navegacao.py`) e sua tela
+  (`ui/market_makers_tab.py`) saíram da navegação e do app - redundante com
+  o conteúdo já reorganizado dentro do Morning Call (ver abaixo) e do RADAR.
+  `data/market_makers.py` (fachada compartilhada com RADAR e Morning Call)
+  **não foi tocado** - continua em uso pelos dois. Testes: removido
+  `tests/test_market_makers_tab_ui.py` (UI exclusiva da aba);
+  `tests/test_market_makers.py` (camada de dados) permanece.
+- **Morning Call**: a seção que misturava mudança de tese/research,
+  catalisador de calendário e alerta de qualidade num único bloco rotulado
+  "MARKET MAKERS — CATALISADORES E RISCOS" (rótulo que ficaria órfão com a
+  aba removida) virou duas seções: **TESES E RECOMENDAÇÕES DE RESEARCH**
+  (casa, ativo, tese resumida, data e link da fonte - um card por mudança
+  de tese/CVM) e **CATALISADORES E ALERTAS — ATIVOS EM COBERTURA**
+  (eventos de calendário + alertas de qualidade dos indicadores). As duas
+  distinguem falha de coleta (`market_makers is None`) de ausência legítima
+  de conteúdo (listas vazias) - mensagens diferentes pro leitor. Cabeçalho
+  da edição ganhou um status em pílula (ENVIADA/FALHA_ENVIO), mesmas cores
+  `--alta`/`--baixa` do resto do app. Nenhuma mudança na geração/PDF/e-mail/
+  agendamento/preferências (tudo em `data/morning_call_editorial.py`,
+  `jobs/morning_call*.py`, `data/morning_call_historico.py` - reaproveitados
+  sem alteração). Testes: `tests/test_morning_call_tab_ui.py` (+3 casos);
+  `tests/test_navegacao.py` ajustado pra 1 área a menos.
+
+## 2026-10-23 (4) — Fallback persistente de indicadores + validação real de equity research
+
+**Incidente investigado** (todos os 15 ativos da watchlist com "indisponível
+agora" em P/L/P-VP/DY/ROE/etc, cotação funcionando normalmente): sem acesso a
+logs de produção nesta sessão - diagnóstico feito por auditoria de código,
+não confirmado contra o log real do incidente. Causa mais provável
+identificada com certeza de código: `data/prices.py:_ultimo_indicadores_valido`
+(fallback de indicadores) é `@st.cache_resource` - vive só na MEMÓRIA do
+processo Streamlit, e Streamlit Community Cloud reinicia o container a cada
+push pra `main` (este projeto fez várias dessas hoje). Se o Yahoo Finance
+estiver bloqueando `tk.info` (`.info` - bloqueio já documentado, específico
+de IP de datacenter, diferente do endpoint de cotação que continua
+respondendo) bem depois de um restart, TODOS os tickers ficam sem nenhum
+valor-base pra cair de volta, mesmo tendo funcionado minutos antes do
+deploy - exatamente o sintoma relatado.
+
+- **Fix** (`sql/indicadores_fallback.sql` + `data/prices.py`): o último
+  indicadores válido de cada ticker agora também é persistido no Supabase
+  (`_salvar_fallback_persistido`, melhor esforço, só numa coleta
+  REALMENTE bem-sucedida) - quando a coleta de agora falha E o fallback em
+  memória também está vazio (cenário do incidente), `_ler_fallback_persistido`
+  é consultado antes de desistir. Zero mudança no caminho feliz (coleta
+  funcionando) nem quando o fallback em memória já resolve - o Supabase só
+  é consultado como último recurso. `_coletado_em` sempre vem da coleta
+  real original, nunca "agora".
+- **Pendência explícita pro Rodrigo**: rodar `sql/indicadores_fallback.sql`
+  no SQL Editor do Supabase de produção (mesmo passo manual de toda tabela
+  nova deste projeto).
+- **Validação real** (Fase 2, rede real disponível nesta sessão - YFinance
+  respondeu normalmente, não reproduz o bloqueio de IP de datacenter do
+  Streamlit Cloud): `analise_ticker`/`render_equity_research_executivo`
+  testados de ponta a ponta com WEGE3 e PETR4 reais. Achado um bug real
+  nessa validação: a seção "Research das casas" confundia
+  `cobertura_research["cobertura"] is None` (banco de research
+  indisponível) com `== []` (banco respondeu, nenhuma casa publicou) -
+  corrigido, com teste de regressão.
+- Testes: `tests/test_prices_indicadores_fallback_persistido.py` (7 casos),
+  +1 regressão e +1 teste de cache em `tests/test_analises_equity_research_ui.py`.
+  1447 testes passando no total.
+
+## 2026-10-23 (3) — MARKET RESEARCHER: memória operacional persistente
+
+Continuação incremental do PR #148 (correção de escopo). Entrega o
+item "memória operacional persistente" pedido - registra achados,
+ocorrências e resolução automática, reaproveitando o padrão de upsert
+já usado em `data/coletores_status.py` (nunca um log append-only
+crescendo sem limite por checagem repetida):
+
+- `sql/market_researcher_achados.sql` (nova tabela, idempotente, RLS
+  sem policies - mesmo padrão de todas as outras): upsert por chave
+  determinística (coletor|categoria|tipo).
+- `data/market_researcher.py`: `registrar_achados_atuais()` (upsert +
+  fecha o ciclo automaticamente quando um achado deixa de aparecer -
+  marca RESOLVIDO), `historico_achado()`, `listar_achados_historico()`.
+- `ui/saude_dados_tab.py`: grava a memória operacional SÓ no clique
+  explícito em "ATUALIZAR" (nunca a cada renderização de página) e
+  mostra "Nx desde DD/MM" em cada achado que já tem histórico - sem
+  painel novo, mesma seção "ACHADOS PRIORIZADOS" já existente.
+- Testes: `tests/test_market_researcher.py` (+5 casos: upsert sem
+  duplicar, fechamento automático de ciclo, degradação sem banco),
+  `tests/test_saude_dados_tab_ui.py` (+4 casos).
+- **Pendência explícita pro Rodrigo**: rodar `sql/market_researcher_achados.sql`
+  no SQL Editor do Supabase de produção antes da memória operacional
+  persistir de verdade (mesmo passo manual que toda tabela nova deste
+  projeto já exige).
+
+## 2026-10-23 (2) — MARKET RESEARCHER: correção de escopo, achados priorizados e cobertura cruzada
+
+Correção de escopo do "Market Researcher": a integração anterior
+(`data/research/tese.py`, PR #134) é uma funcionalidade real e válida
+(tese própria do usuário) mas não é a camada de qualidade/"comitê de
+investimentos" que o conceito realmente pedia - não foi removida
+(trabalho válido, continua em uso), e a peça que faltava foi entregue à
+parte, **sem nenhuma aba nova**:
+
+- `data/market_researcher.py`: fachada sobre o que já existia -
+  `achados_qualidade_coletores()` prioriza por impacto o MESMO painel de
+  `data/saude_dados.py` (já distinguia fonte indisponível de coleta
+  com sucesso sem novidade, essa parte já era madura); `cobertura_cruzada_casas(ticker)`
+  cruza `data/research/store.py` por ticker e mostra fato puro - quem
+  cobriu, quem não cobriu, e divergência de recomendação só quando o
+  campo estruturado real existir em ≥2 casas (nunca por título/
+  sentimento de matéria).
+- Surfaced em **SAÚDE DOS DADOS** (seção "MARKET RESEARCHER — ACHADOS
+  PRIORIZADOS") e **RESEARCH › Casas de Análise** (seção "COBERTURA
+  CRUZADA — WATCHLIST") - páginas que já existiam.
+- Zero coletor novo, zero tabela nova, zero chamada de IA nova. Testes:
+  `tests/test_market_researcher.py`, `tests/test_saude_dados_tab_ui.py`,
+  cobertura nova em `tests/test_research_casas_analise_ui.py`.
+- Doc atualizado: `docs/market-researcher-integracao.md` (seção 12).
+- Confirmado que o app sobe sem `ImportError` na `main` atual (auditoria
+  explícita pedida - nenhum erro de import encontrado nela).
+
+## 2026-10-23 — MARKET MAKERS integrado ao RADAR e ao Morning Call + causa raiz dos e-mails corrigida
+
+Causa raiz real encontrada e corrigida pros dois e-mails que apareciam
+como falha em produção (alerta WEGE3 "E-MAIL: FALHOU" no RADAR; edição
+de 22/10 "FALHA_ENVIO" no Morning Call) - **os dois compartilham o
+mesmo `jobs/email_utils.py` e o mesmo workflow**, então era a mesma
+causa pros dois:
+
+- `.github/workflows/radar-morning-call.yml` resolvia `EMAIL_PROVIDER`
+  pra `'resend'` sempre que o secret não estivesse configurado (nunca
+  esteve) - **mesmo com `SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD` já
+  configurados** (Google Workspace) e `EMAIL_FROM` apontando pra um
+  domínio `@gmail.com` que o Resend nunca verifica (não é domínio do
+  Pregão) - resultado: todo envio por e-mail do projeto falhava com
+  HTTP 403 "domain not verified". O fallback agora é `'smtp'`, igual ao
+  default do próprio código (`jobs/email_utils.py:enviar_email`) -
+  nenhum secret precisou mudar, só o workflow parou de ignorar o que já
+  estava configurado. Teste de regressão:
+  `tests/test_workflow_radar_morning_call.py`.
+- `jobs/email_utils.py`: STARTTLS do SMTP agora valida o certificado do
+  servidor (`ssl.create_default_context()`) - sem isso, `smtp.starttls()`
+  usava um contexto sem `CERT_REQUIRED`/checagem de hostname, TLS
+  criptografado mas vulnerável a MITM.
+
+**MARKET MAKERS** (`data/market_makers.py`): primeira página dedicada à
+inteligência de mercado que o RADAR já calculava espalhada em "Minha
+Tese"/copiloto (`data/radar.py:evidencias_recentes/mudancas_tese/
+catalisadores`) - nenhum coletor novo, nenhuma chamada de IA nova, só
+uma fachada reaproveitada pelos três:
+
+- RADAR › Alertas: cada alerta de queda agora mostra, quando há
+  evidência real (mudança de tese/CVM ou catalisador na mesma janela),
+  o contexto do movimento com fonte/data - nunca inventa um motivo
+  quando não há evidência rastreável.
+- Morning Call (`data/morning_call_editorial.py:montar_edicao`): nova
+  seção "MARKET MAKERS — CATALISADORES E RISCOS" com o contexto dos
+  ativos que a própria edição já está citando no dia (detecção por
+  ticker/nome de empresa no título, `tickers_mencionados`).
+- Área própria `ui/market_makers_tab.py` (navegação): visão agregada da
+  watchlist (mudanças de tese, catalisadores dos próximos 60 dias,
+  riscos de qualidade dos indicadores), pra RADAR e Morning Call nunca
+  precisarem repetir a consulta nem o usuário precisar ir atrás da
+  evidência em telas separadas.
+- Testes: `tests/test_market_makers.py`, `tests/test_market_makers_tab_ui.py`,
+  cobertura nova em `tests/test_radar_tab_fontes_ui.py` e
+  `tests/test_morning_call_editorial.py`.
+
+## 2026-10-22 — Cadastro de posições reais (quantidade + preço médio) e Risco da Carteira de verdade
+
+RADAR › Acompanhamento mostrava, de propósito, um aviso honesto dizendo
+que sem posição real cadastrada não dava pra calcular concentração,
+correlação, volatilidade, drawdown ou cenário de estresse - só a
+watchlist (lista de tickers, sem quantidade/peso) existia. Essa feature
+implementa o cadastro que faltava e troca o aviso pelo cálculo real
+quando há posição, preservando o aviso (agora mais específico: banco
+indisponível vs. ninguém cadastrou ainda vs. nenhuma cotação disponível)
+pra quem não cadastrou nada.
+
+- **Tabela nova** `posicoes_carteira` (`sql/posicoes.sql`, idempotente,
+  nunca apaga dado - mesmo padrão de `sql/ia_cache.sql`): 1 linha por
+  (sub, ticker) com quantidade/preço médio/data de referência.
+- **Camada de dados** `data/posicoes.py`: `obter_posicoes`/`salvar_posicao`
+  (upsert - cadastrar de novo o mesmo ticker atualiza, nunca duplica)/
+  `remover_posicao`, com a mesma distinção de sempre entre `None` (banco
+  indisponível) e `[]` (ninguém cadastrou nada). Testado com Supabase
+  mockado (`tests/test_posicoes.py`).
+- **`data/radar.py:risco_carteira`** agora calcula, só com os ativos que
+  têm posição cadastrada: concentração por ativo e por setor
+  (`config.IBOVESPA_SETORES`), correlação entre os ativos (retornos
+  diários, janela de 6 meses), volatilidade anualizada e drawdown máximo
+  da carteira ponderada pelo valor atual de cada posição, e um cenário de
+  estresse (impacto estimado se o Ibovespa cair, ponderado pelo beta real
+  de cada ativo). Ativo sem cotação ou sem histórico suficiente nunca
+  entra no cálculo com valor inventado - só é listado como ausente.
+- **UI** (RADAR › Acompanhamento e RADAR composto): formulário de
+  cadastro/remoção de posições dentro do próprio expander "Risco da
+  carteira" (nenhuma área nova na navegação) + tabelas de
+  concentração/correlação/cenário de estresse.
+- Testes: `tests/test_radar.py` (casos honestos + cálculo real
+  mockando cotação/histórico/beta), `tests/test_posicoes.py`. Suite
+  completa (1210 testes) roda limpa.
+
 ## 2026-10-19 — Fotos das notícias: validação com rede REAL encontra causa raiz nova (`selectolax`) + bug de avatar no JSON-LD
 
 Retoma a PR #83 (imagem desacoplada do resumo de IA - ver entrada abaixo),

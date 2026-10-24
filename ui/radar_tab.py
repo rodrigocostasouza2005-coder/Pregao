@@ -18,13 +18,16 @@ por IA sob demanda" que o projeto já usa em RESEARCH/NEWS/CVM."""
 
 import html
 import urllib.parse
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 import config
+from data import posicoes as posicoes_mod
 from data import radar
 from data.eventos import STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_PRAZO_CVM
+from data.prices import validar_ticker
 from data.research import tese
 from data.research.historico import ultimo_snapshot
 from ui.cvm_tab import abrir_card_documento
@@ -138,6 +141,25 @@ div[data-testid="stElementContainer"]:has(.radar-stub) + div[data-testid="stElem
 @media (max-width: 640px) {
     .rq-tabela .rq-sec { display: none; }
     .rq-tabela th, .rq-tabela td { padding: 0.3rem 0.35rem; }
+}
+
+/* ---- ACOMPANHAMENTO DA WATCHLIST (redesign visual 2026-10-23) --------
+   Escopado só às classes abaixo (nenhuma regra compartilhada do RADAR DE
+   QUEDAS/cobertura foi alterada) - MINHAS POSIÇÕES precisava do mesmo
+   alinhamento rígido ticker/quantidade/preço/variação que as tabelas já
+   usam, mas como lista (sem <table>, cada linha tem o botão "remover"
+   nativo do Streamlit ao lado - mesmo padrão de app.py:_fragmento_watchlist,
+   só que a´ ainda era frase corrida em vez de colunas alinhadas). */
+.acomp-posicao {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem;
+    padding: 0.3rem 0; border-bottom: 1px solid var(--borda);
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; flex-wrap: wrap;
+}
+.acomp-posicao-ativo { color: var(--destaque); font-weight: 700; margin-right: 0.6rem; }
+.acomp-posicao-detalhe { color: var(--cinza); font-size: 0.72rem; }
+.acomp-posicao-lucro { font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 640px) {
+    .acomp-posicao { font-size: 0.74rem; }
 }
 """
 
@@ -324,20 +346,224 @@ def _secao_catalisadores(tickers: list):
 
 
 # ============================================================
-# D. RISCO DA CARTEIRA - stub honesto (sem cadastro de posições hoje)
+# D. RISCO DA CARTEIRA - cadastro de posições (quantidade + preço médio,
+# ver data/posicoes.py) + cálculo real de risco quando há posição (ver
+# data/radar.py:risco_carteira); aviso honesto, sem calcular nada, pra
+# quem não cadastrou nenhuma posição ainda - watchlist nunca é usada
+# como proxy de carteira.
 # ============================================================
 
-def _secao_risco(prefs: dict):
-    info = radar.risco_carteira(prefs)
-    st.markdown(
-        f"<div class='radar-stub'>{html.escape(info['motivo'])}<br><br>{html.escape(info['o_que_falta'])}</div>",
+def _formulario_posicao(sub: str):
+    """Cadastro/edição de 1 posição - cadastrar de novo o mesmo ticker
+    ATUALIZA quantidade/preço médio (upsert, ver
+    data/posicoes.py:salvar_posicao), nunca duplica linha. Widgets soltos
+    (sem st.form) de propósito - mesmo padrão do cadastro de watchlist em
+    app.py:_adicionar_ticker (contador na key força campos vazios após
+    salvar, ver st.session_state.contador_form_posicao abaixo)."""
+    sufixo = st.session_state.get("contador_form_posicao", 0)
+    col_ticker, col_qtd, col_preco, col_data = st.columns([2, 1, 1, 1.3])
+    ticker = col_ticker.text_input(
+        "Ticker", key=f"posicao_ticker_{sufixo}", placeholder="TICKER (EX: PETR4)", label_visibility="collapsed",
+    ).strip().upper()
+    quantidade = col_qtd.number_input(
+        "Quantidade", key=f"posicao_qtd_{sufixo}", min_value=0.0, step=1.0, format="%.0f", label_visibility="collapsed",
+    )
+    preco_medio = col_preco.number_input(
+        "Preço médio (R$)", key=f"posicao_preco_{sufixo}", min_value=0.0, step=0.01, format="%.2f", label_visibility="collapsed",
+    )
+    data_ref = col_data.date_input(
+        "Data de referência", key=f"posicao_data_{sufixo}", value=date.today(), label_visibility="collapsed",
+    )
+
+    if not st.button("CADASTRAR / ATUALIZAR POSIÇÃO", key=f"posicao_salvar_{sufixo}", width="stretch"):
+        return
+    if not ticker:
+        st.warning("Informe o ticker.")
+    elif not posicoes_mod.posicao_valida(quantidade, preco_medio):
+        st.warning("Quantidade e preço médio precisam ser maiores que zero.")
+    elif not validar_ticker(ticker):
+        st.error(f"Ticker '{ticker}' não encontrado no yfinance.")
+    elif posicoes_mod.salvar_posicao(sub, ticker, quantidade, preco_medio, data_ref):
+        st.success(f"Posição em {ticker} salva.")
+        st.session_state.contador_form_posicao = sufixo + 1  # forca campos vazios no rerun
+        st.rerun()
+    else:
+        st.error("Não foi possível salvar agora (banco indisponível) - tente de novo em alguns instantes.")
+
+
+def _linha_posicao_gerenciar(sub: str, posicao: dict, valores_atuais: dict, prefs: dict):
+    """1 linha de posição cadastrada com botão de remover - mesmo padrão
+    de app.py:_fragmento_watchlist (coluna de info + coluna de remover)."""
+    ticker = posicao["ticker"]
+    extra = valores_atuais.get(ticker) or {}
+    lucro = extra.get("lucro_pct")
+    if lucro is None:
+        lucro_txt = "<span class='acomp-posicao-detalhe'>variação indisponível</span>"
+    else:
+        sinal = "+" if lucro >= 0 else ""
+        lucro_txt = (
+            f"<span class='acomp-posicao-lucro {_classe_var(lucro)}'>"
+            f"{sinal}{config.formatar_numero(lucro, 2, prefs['formato_numerico'])}%</span>"
+        )
+
+    col_info, col_remover = st.columns([5, 1])
+    col_info.markdown(
+        f"<div class='acomp-posicao'>"
+        f"<span><span class='acomp-posicao-ativo'>{html.escape(ticker)}</span>"
+        f"<span class='acomp-posicao-detalhe'>"
+        f"{config.formatar_numero(posicao['quantidade'], 0, prefs['formato_numerico'])} cotas × "
+        f"R$ {config.formatar_numero(float(posicao['preco_medio']), 2, prefs['formato_numerico'])}</span></span>"
+        f"{lucro_txt}</div>",
         unsafe_allow_html=True,
     )
-    st.caption(
-        f"Sua watchlist tem {info['watchlist_tamanho']} ativo(s) - isso é uma lista de acompanhamento, "
-        "não uma carteira (sem quantidade/preço médio cadastrado, não dá pra calcular concentração, "
-        "exposição ou cenário de estresse de verdade)."
+    if col_remover.button("x", key=f"remover_posicao_{ticker}"):
+        if posicoes_mod.remover_posicao(sub, ticker):
+            st.rerun()
+        else:
+            st.error("Não foi possível remover agora (banco indisponível) - tente de novo em alguns instantes.")
+
+
+def _tabela_concentracao_html(itens: list, limiar_pct: float, prefs: dict) -> str:
+    linhas = []
+    for item in itens:
+        flag = f"<span class='radar-flag'>⚠ acima de {limiar_pct:g}%</span>" if item["peso_pct"] > limiar_pct else ""
+        linhas.append(
+            f"<tr><td class='rq-esq'>{html.escape(item['nome'])}{flag}</td>"
+            f"<td>{config.formatar_numero(item['peso_pct'], 1, prefs['formato_numerico'])}%</td></tr>"
+        )
+    return (
+        "<div class='rq-scroll'><table class='rq-tabela'><thead><tr>"
+        "<th class='rq-esq'>ATIVO/SETOR</th><th>PESO NA CARTEIRA</th>"
+        "</tr></thead><tbody>" + "".join(linhas) + "</tbody></table></div>"
     )
+
+
+def _tabela_correlacao_html(correlacao: dict, prefs: dict) -> str:
+    tickers = list(correlacao.keys())
+    cabecalho = "".join(f"<th>{html.escape(t)}</th>" for t in tickers)
+    linhas = []
+    for t_linha in tickers:
+        celulas = "".join(
+            f"<td>{config.formatar_numero(correlacao[t_coluna][t_linha], 2, prefs['formato_numerico'])}</td>"
+            for t_coluna in tickers
+        )
+        linhas.append(f"<tr><td class='rq-esq'>{html.escape(t_linha)}</td>{celulas}</tr>")
+    return (
+        f"<div class='rq-scroll'><table class='rq-tabela'><thead><tr><th class='rq-esq'>&nbsp;</th>{cabecalho}</tr></thead>"
+        f"<tbody>{''.join(linhas)}</tbody></table></div>"
+    )
+
+
+def _secao_risco_calculado(info: dict, prefs: dict):
+    periodo = info["periodo_historico"]
+    st.markdown(
+        f"<div class='rq-bloco'><span>CONCENTRAÇÃO POR ATIVO</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(_tabela_concentracao_html(info["concentracao_ativo"], info["limiar_concentracao_pct"], prefs), unsafe_allow_html=True)
+
+    st.markdown("<div class='rq-bloco'><span>CONCENTRAÇÃO POR SETOR</span></div>", unsafe_allow_html=True)
+    st.markdown(_tabela_concentracao_html(info["concentracao_setor"], info["limiar_concentracao_pct"], prefs), unsafe_allow_html=True)
+
+    st.markdown(
+        f"<div class='rq-bloco'><span>VOLATILIDADE E DRAWDOWN</span>"
+        f"<span class='rq-bloco-meta'>janela de {html.escape(periodo)}</span></div>",
+        unsafe_allow_html=True,
+    )
+    col_vol, col_dd, col_queda = st.columns(3)
+    col_vol.metric("VOLATILIDADE ANUALIZADA",
+                   f"{config.formatar_numero(info['volatilidade_anual_pct'], 1, prefs['formato_numerico'])}%"
+                   if info["volatilidade_anual_pct"] is not None else "—")
+    col_dd.metric("DRAWDOWN MÁXIMO",
+                  f"{config.formatar_numero(info['drawdown_pct'], 1, prefs['formato_numerico'])}%"
+                  if info["drawdown_pct"] is not None else "—")
+    col_queda.metric("MAIOR QUEDA DIÁRIA",
+                      f"{config.formatar_numero(info['maior_queda_diaria_pct'], 1, prefs['formato_numerico'])}%"
+                      if info["maior_queda_diaria_pct"] is not None else "—")
+
+    if info["correlacao"]:
+        st.markdown("<div class='rq-bloco'><span>CORRELAÇÃO ENTRE OS ATIVOS (RETORNOS DIÁRIOS)</span></div>", unsafe_allow_html=True)
+        st.markdown(_tabela_correlacao_html(info["correlacao"], prefs), unsafe_allow_html=True)
+    else:
+        st.markdown(
+            "<div class='rq-vazio'>Correlação indisponível: é preciso pelo menos 2 ativos com histórico de preço "
+            "suficiente na carteira.</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div class='rq-bloco'><span>CENÁRIO DE ESTRESSE — SE O IBOVESPA CAIR</span></div>", unsafe_allow_html=True)
+    cenario = info["cenario_beta"]
+    if cenario is None:
+        st.markdown(
+            "<div class='rq-vazio'>Cenário indisponível: nenhum ativo da carteira tem beta calculável agora.</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        linhas_cenario = "".join(
+            f"<tr><td class='rq-esq'>Ibovespa {choque:+g}%</td>"
+            f"<td class='rq-baixa'>{config.formatar_numero(impacto, 1, prefs['formato_numerico'])}%</td></tr>"
+            for choque, impacto in cenario["impacto_pct"].items()
+        )
+        st.markdown(
+            "<div class='rq-scroll'><table class='rq-tabela'><thead><tr>"
+            "<th class='rq-esq'>CENÁRIO</th><th>IMPACTO ESTIMADO NA CARTEIRA</th>"
+            f"</tr></thead><tbody>{linhas_cenario}</tbody></table></div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"<div class='rq-nota'>Estimativa (CÁLCULO INTERNO, não é previsão) a partir do beta histórico de cada "
+            f"ativo contra o Ibovespa (beta ponderado da carteira: "
+            f"{config.formatar_numero(cenario['beta_carteira'], 2, prefs['formato_numerico'])}). "
+            + (f"Sem beta calculável: {', '.join(cenario['tickers_sem_beta'])}." if cenario["tickers_sem_beta"] else "")
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+
+    avisos = []
+    if info["tickers_sem_preco"]:
+        avisos.append(f"sem cotação agora: {', '.join(info['tickers_sem_preco'])} (fora do cálculo)")
+    if info["tickers_sem_historico"]:
+        avisos.append(f"sem histórico de preço suficiente: {', '.join(info['tickers_sem_historico'])} (fora de correlação/volatilidade/drawdown)")
+    if avisos:
+        st.markdown(f"<div class='rq-nota'>{html.escape('; '.join(avisos))}.</div>", unsafe_allow_html=True)
+
+
+def _secao_risco(prefs: dict, sub: str):
+    st.markdown("<div class='rq-bloco'><span>MINHAS POSIÇÕES</span></div>", unsafe_allow_html=True)
+    _formulario_posicao(sub)
+
+    posicoes_brutas = posicoes_mod.obter_posicoes(sub)
+    if posicoes_brutas is None:
+        st.markdown("<div class='rq-vazio'>Banco indisponível: não foi possível ler suas posições agora.</div>", unsafe_allow_html=True)
+    elif posicoes_brutas:
+        info_valores = radar.risco_carteira(sub, prefs)
+        valores_atuais = {p["ticker"]: p for p in info_valores.get("posicoes", [])}
+        for posicao in posicoes_brutas:
+            _linha_posicao_gerenciar(sub, posicao, valores_atuais, prefs)
+    else:
+        st.markdown("<div class='rq-vazio'>Nenhuma posição cadastrada ainda.</div>", unsafe_allow_html=True)
+
+    info = radar.risco_carteira(sub, prefs)
+    st.markdown("<div class='rq-bloco' style='margin-top:1.3rem;'><span>ANÁLISE DE RISCO</span></div>", unsafe_allow_html=True)
+
+    if info["carteira_cadastrada"] is not True:
+        st.markdown(
+            f"<div class='radar-stub'>{html.escape(info['motivo'])}"
+            + (f"<br><br>{html.escape(info['o_que_falta'])}" if info.get("o_que_falta") else "")
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+        if "watchlist_tamanho" in info:
+            st.caption(
+                f"Sua watchlist tem {info['watchlist_tamanho']} ativo(s) - isso é uma lista de acompanhamento, "
+                "não uma carteira (sem posição cadastrada, não dá pra calcular concentração, correlação, "
+                "volatilidade, drawdown ou cenário de estresse de verdade)."
+            )
+        return
+    if info.get("sem_cotacao"):
+        st.markdown(f"<div class='radar-stub'>{html.escape(info['motivo'])}</div>", unsafe_allow_html=True)
+        return
+    _secao_risco_calculado(info, prefs)
 
 
 # ============================================================
@@ -634,6 +860,55 @@ def _bloco_monitorados(prefs: dict):
                     unsafe_allow_html=True)
 
 
+def _bloco_contexto_alertas(alertas: list):
+    """MARKET MAKERS (data/market_makers.py): contexto do movimento pra
+    cada alerta, quando há evidência real (mudança de tese/CVM ou
+    catalisador na mesma janela) - nunca inventa um motivo quando não
+    há evidência, só não mostra nada pra esse ticker (requisito
+    explícito: só explicar "quando houver evidência")."""
+    from data.market_makers import contexto_ticker
+
+    tickers = sorted({a.get("ticker") for a in alertas if a.get("ticker")})
+    contextos = []
+    for ticker in tickers:
+        try:
+            ctx = contexto_ticker(ticker)
+        except Exception as exc:
+            print(f"[radar_tab] contexto de mercado indisponível para {ticker}: {exc!r}")
+            continue
+        if ctx["interpretacao"] or ctx["riscos"]:
+            contextos.append(ctx)
+    if not contextos:
+        return
+    with st.expander(f"CONTEXTO DO MOVIMENTO — MARKET MAKERS ({len(contextos)} ativo(s) com evidência)"):
+        for ctx in contextos:
+            interpretacao = ctx["interpretacao"]
+            if interpretacao:
+                fonte_html = ""
+                if interpretacao.get("fonte_url"):
+                    fonte_html = f" · <a href='{html.escape(interpretacao['fonte_url'])}' target='_blank'>{html.escape(interpretacao.get('fonte_label') or 'fonte')}</a>"
+                elif interpretacao.get("fonte_label"):
+                    fonte_html = f" · {html.escape(interpretacao['fonte_label'])}"
+                st.markdown(
+                    f"<div class='radar-alerta'><div class='radar-alerta-topo'>"
+                    f"<span class='radar-ticker'>{html.escape(ctx['ticker'])}</span>"
+                    f"{_selo_evidencia(interpretacao['tipo_evidencia'])}</div>"
+                    f"<div class='radar-descricao'>{html.escape(interpretacao['texto'])}</div>"
+                    f"<div class='radar-meta'>{fonte_html}</div></div>",
+                    unsafe_allow_html=True,
+                )
+            for risco in ctx["riscos"]:
+                st.markdown(
+                    f"<div class='rq-nota'>⚠ {html.escape(ctx['ticker'])}: {html.escape(risco)}</div>",
+                    unsafe_allow_html=True,
+                )
+        st.caption(
+            "Contexto construído só a partir de evidência já verificada (mudança de tese/CVM real ou "
+            "catalisador de calendário) - sem chamada de IA nova. Ativo sem evidência nesta janela não "
+            "aparece aqui (não significa que não há nada acontecendo, só que não há evidência rastreável)."
+        )
+
+
 def _bloco_alertas(prefs: dict):
     from data import radar_quedas as rq
 
@@ -664,6 +939,7 @@ def _bloco_alertas(prefs: dict):
             "(não é o fechamento do dia). E-MAIL: ENVIADO, PENDENTE (será reenviado) ou FALHOU.</div>",
             unsafe_allow_html=True,
         )
+        _bloco_contexto_alertas(filtrados)
     elif alertas:
         st.markdown("<div class='rq-vazio'>Nenhum alerta corresponde aos filtros.</div>", unsafe_allow_html=True)
     else:
@@ -687,7 +963,7 @@ def _secao_radar_quedas(prefs: dict):
 # ============================================================
 
 @st.fragment
-def render_radar(prefs: dict):
+def render_radar(prefs: dict, sub: str):
     """Ponto de entrada da aba RADAR, chamado pelo app.py."""
     _injetar_css()
     st.markdown('<div class="painel-titulo">RADAR</div>', unsafe_allow_html=True)
@@ -723,7 +999,7 @@ def render_radar(prefs: dict):
     with st.expander("ONDE VALE INVESTIGAR — Próximos catalisadores", expanded=False):
         _secao_catalisadores(tickers_escopo)
     with st.expander("O QUE PODE DAR ERRADO — Risco da carteira", expanded=False):
-        _secao_risco(prefs)
+        _secao_risco(prefs, sub)
     with st.expander("RESEARCH COM EVIDÊNCIAS", expanded=False):
         _secao_evidencias(tickers_escopo, watchlist)
     with st.expander("COPILOTO DE RESEARCH", expanded=False):
@@ -738,6 +1014,70 @@ def render_radar(prefs: dict):
 # render_radar (composição legada) não ganha esta seção de propósito.
 # ============================================================
 
+_TZ_SP = ZoneInfo("America/Sao_Paulo")
+
+_CSS_TESE = """
+.tese-secao {
+    font-size: 0.68rem; color: var(--cinza); letter-spacing: 0.06em; font-weight: 600;
+    text-transform: uppercase; border-bottom: 1px solid var(--borda); padding-bottom: 0.25rem;
+    margin: 1.1rem 0 0.5rem 0;
+}
+.tese-secao:first-of-type { margin-top: 0.2rem; }
+.tese-cabecalho { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+.tese-empresa { color: var(--destaque); font-weight: 700; font-size: 0.95rem; }
+.tese-meta { color: var(--cinza); font-size: 0.68rem; letter-spacing: 0.03em; }
+.tese-corpo { font-size: 0.85rem; line-height: 1.6; margin: 0.5rem 0 0.9rem 0; }
+.tese-precos { margin-bottom: 0.6rem; }
+.tese-coluna-titulo {
+    font-size: 0.66rem; color: var(--cinza); letter-spacing: 0.05em; font-weight: 600;
+    margin: 0.5rem 0 0.3rem 0; border-top: 1px solid var(--borda); padding-top: 0.5rem;
+}
+.tese-diff { color: var(--destaque); font-size: 0.66rem; margin-left: 0.4rem; }
+/* mesmo bug ja documentado em .radar-stub (ver acima): wrapper do
+   Streamlit ao redor de um st.markdown com HTML custom mede a altura
+   do bloco errado quando o conteudo tem elementos empilhados sem
+   altura fixa - da' respiro no elemento SEGUINTE em vez de tentar
+   margin-bottom no proprio bloco. Confirmado de novo aqui (screenshot
+   Playwright real, 2026-10-22): um <div> vazio com padding-top sozinho
+   NAO reserva espaco visivel quando colado a um st.columns() - so' o
+   elemento IRMAO seguinte empurrando pra baixo funciona de verdade. */
+div[data-testid="stElementContainer"]:has(.tese-corpo) + * {
+    margin-top: 0.4rem;
+}
+div[data-testid="stElementContainer"]:has(.tese-rodape) {
+    margin-top: 0.6rem;
+}
+/* o proximo irmao pode ser stElementContainer OU stLayoutWrapper
+   (envolve expanders/outros widgets "de bloco") - seletor universal
+   de proposito, pra nao depender do testid exato do que vem depois. */
+div[data-testid="stElementContainer"]:has(.tese-rodape) + * {
+    margin-top: 1.4rem;
+}
+"""
+
+
+def _nome_empresa_tese(ticker: str) -> str:
+    """Mesmo padrao de app.py:nome_empresa - mapa local primeiro, senao
+    yfinance (cache de 24h, obter_nome_yf) - nunca inventa nome."""
+    from data.prices import obter_nome_yf
+    return config.TICKER_NOME.get(ticker) or obter_nome_yf(ticker) or ticker
+
+
+def _fmt_data_hora_brt(valor: str, so_data: bool = False) -> str:
+    """Converte timestamptz (UTC, como o Postgres grava) pro fuso do
+    projeto (America/Sao_Paulo) antes de formatar - sem isso a hora
+    exibida fica adiantada ~3h em relacao ao horario real de Brasilia
+    (mesmo padrao de fuso de data/radar.py:_TZ_SP)."""
+    try:
+        momento = datetime.fromisoformat(valor)
+        if momento.tzinfo is None:
+            momento = momento.replace(tzinfo=timezone.utc)
+        momento_sp = momento.astimezone(_TZ_SP)
+        return momento_sp.strftime("%d/%m/%Y") if so_data else momento_sp.strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        return str(valor)[:10] or "—"
+
+
 def _linha_lista_tese(itens: list) -> str:
     if not itens:
         return "<span class='cinza'>nenhuma registrada</span>"
@@ -747,99 +1087,172 @@ def _linha_lista_tese(itens: list) -> str:
 def _cartao_tese_atual(sc: dict, prefs: dict):
     conviccao = sc.get("conviccao") or "—"
     posicao = sc.get("posicao") or "—"
-    registrado = sc.get("registrado_em", "")
-    try:
-        registrado_fmt = datetime.fromisoformat(registrado).strftime("%d/%m/%Y")
-    except Exception:
-        registrado_fmt = str(registrado)[:10] or "—"
+    registrado_fmt = _fmt_data_hora_brt(sc.get("registrado_em", ""))
+    empresa = _nome_empresa_tese(sc["ticker"])
 
     st.markdown(
-        f"<div class='radar-alerta'><div class='radar-alerta-topo'>"
-        f"<span class='radar-categoria'>{html.escape(sc['ticker'])} · {html.escape(posicao)} · convicção {html.escape(conviccao)}</span>"
-        f"</div><div class='radar-descricao'>{html.escape(sc['tese_atual'] or '')}</div></div>",
+        f"<div class='tese-cabecalho'>"
+        f"<span class='tese-empresa'>{html.escape(sc['ticker'])}</span>"
+        f"<span class='tese-meta'>{html.escape(empresa)} · {html.escape(posicao)} · convicção {html.escape(conviccao)} · "
+        f"atualizada em {registrado_fmt}</span></div>"
+        f"<div class='tese-corpo'>{html.escape(sc['tese_atual'] or '')}</div>",
         unsafe_allow_html=True,
     )
 
     preco_tese = sc.get("preco_alvo_tese")
-    if preco_tese is not None:
-        st.markdown(
-            f"<div style='font-size:0.78rem; margin:0.3rem 0;'>Preço-alvo da tese: "
-            f"<b>R$ {_fmt_num(preco_tese, 2, prefs)}</b> {_selo_evidencia(radar.TIPO_HIPOTESE)}</div>",
-            unsafe_allow_html=True,
-        )
     snapshot_casa = ultimo_snapshot("Genial Analisa", sc["ticker"])
-    if snapshot_casa and snapshot_casa.get("preco_alvo") is not None:
-        st.markdown(
-            f"<div style='font-size:0.78rem; margin:0.3rem 0;'>Genial Analisa: preço-alvo "
-            f"<b>R$ {_fmt_num(snapshot_casa['preco_alvo'], 2, prefs)}</b> {_selo_evidencia(radar.TIPO_ESTIMATIVA_TERCEIRO)}</div>",
-            unsafe_allow_html=True,
-        )
+    tem_preco_casa = snapshot_casa and snapshot_casa.get("preco_alvo") is not None
+    if preco_tese is not None or tem_preco_casa:
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            if preco_tese is not None:
+                st.markdown(
+                    f"<div class='tese-precos'>Preço-alvo da tese: <b>R$ {_fmt_num(preco_tese, 2, prefs)}</b> "
+                    f"{_selo_evidencia(radar.TIPO_HIPOTESE)}</div>",
+                    unsafe_allow_html=True,
+                )
+        with col_p2:
+            if tem_preco_casa:
+                st.markdown(
+                    f"<div class='tese-precos'>Genial Analisa: <b>R$ {_fmt_num(snapshot_casa['preco_alvo'], 2, prefs)}</b> "
+                    f"{_selo_evidencia(radar.TIPO_ESTIMATIVA_TERCEIRO)}</div>",
+                    unsafe_allow_html=True,
+                )
 
     col_a, col_b, col_c = st.columns(3)
     with col_a:
-        st.markdown(f"<div style='font-size:0.72rem;'><b>Premissas</b>{_linha_lista_tese(sc['premissas'])}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='tese-coluna-titulo'>PREMISSAS</div>{_linha_lista_tese(sc['premissas'])}", unsafe_allow_html=True)
     with col_b:
-        st.markdown(f"<div style='font-size:0.72rem;'><b>Riscos</b>{_linha_lista_tese(sc['riscos'])}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='tese-coluna-titulo'>RISCOS</div>{_linha_lista_tese(sc['riscos'])}", unsafe_allow_html=True)
     with col_c:
-        st.markdown(f"<div style='font-size:0.72rem;'><b>Catalisadores</b>{_linha_lista_tese(sc['catalisadores'])}</div>", unsafe_allow_html=True)
-    st.caption(f"Versão de {registrado_fmt} · {sc['n_versoes']} versão(ões) registrada(s) · leitura pessoal, não compartilhada entre usuários.")
-
-
-def _linha_historico_tese(h: dict, prefs: dict):
-    try:
-        data_fmt = datetime.fromisoformat(h.get("registrado_em", "")).strftime("%d/%m/%Y %H:%M")
-    except Exception:
-        data_fmt = str(h.get("registrado_em", ""))[:10]
-    preco = h.get("preco_alvo_tese")
-    preco_txt = f" · preço-alvo R$ {_fmt_num(preco, 2, prefs)}" if preco is not None else ""
+        st.markdown(f"<div class='tese-coluna-titulo'>CATALISADORES</div>{_linha_lista_tese(sc['catalisadores'])}", unsafe_allow_html=True)
     st.markdown(
-        f"<div style='font-size:0.74rem; padding:0.15rem 0; border-bottom:1px solid var(--borda);'>"
-        f"<span class='cinza'>[{data_fmt}]</span> convicção {html.escape(h.get('conviccao') or '—')}{preco_txt}"
-        f" — {html.escape(h.get('tese') or '')}</div>",
+        f"<div class='tese-rodape' style='color:var(--cinza); font-size:0.72rem;'>"
+        f"{sc['n_versoes']} versão(ões) registrada(s) · leitura pessoal, não compartilhada entre usuários.</div>",
         unsafe_allow_html=True,
     )
 
 
+def _diferencas_entre_versoes(atual: dict, anterior: dict | None) -> str:
+    """Compara so' campos objetivos (convicção/posição/preço-alvo) entre
+    duas versões reais JÁ PERSISTIDAS - nunca infere mudança de texto
+    livre (tese/premissas/riscos), que exigiria julgamento de conteúdo
+    e poderia "inventar" uma mudança que não houve. Vazio se não houver
+    versão anterior pra comparar (primeira versão conhecida) ou se nada
+    objetivo mudou - nunca um texto de mudança sem uma comparação real."""
+    if anterior is None:
+        return ""
+    partes = []
+    if atual.get("conviccao") != anterior.get("conviccao"):
+        partes.append(f"convicção {anterior.get('conviccao') or '—'} → {atual.get('conviccao') or '—'}")
+    if atual.get("posicao") != anterior.get("posicao"):
+        partes.append(f"posição {anterior.get('posicao') or '—'} → {atual.get('posicao') or '—'}")
+    if atual.get("preco_alvo_tese") != anterior.get("preco_alvo_tese"):
+        partes.append("preço-alvo atualizado")
+    if not partes:
+        return ""
+    return f"<span class='tese-diff'>[mudou: {html.escape(' · '.join(partes))}]</span>"
+
+
+def _linha_historico_tese(h: dict, anterior: dict | None, prefs: dict):
+    data_fmt = _fmt_data_hora_brt(h.get("registrado_em", ""))
+    preco = h.get("preco_alvo_tese")
+    preco_txt = f" · preço-alvo R$ {_fmt_num(preco, 2, prefs)}" if preco is not None else ""
+    diff_html = _diferencas_entre_versoes(h, anterior)
+    st.markdown(
+        f"<div style='font-size:0.74rem; padding:0.2rem 0; border-bottom:1px solid var(--borda);'>"
+        f"<span class='cinza'>[{data_fmt}]</span> convicção {html.escape(h.get('conviccao') or '—')}{preco_txt}{diff_html}"
+        f"<div style='margin-top:0.1rem; color:var(--cinza);'>{html.escape(h.get('tese') or '')}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _limpar_campos_formulario_tese(ticker: str):
+    """Chamado so' depois de um salvamento BEM-SUCEDIDO - em falha, as
+    chaves nao sao tocadas, e o Streamlit resubstitui os mesmos valores
+    digitados no proximo rerun (comportamento nativo de widget com
+    `key=`, sem precisar de nenhum cache manual pra preservar o que o
+    usuario escreveu)."""
+    for sufixo in ("texto", "premissas", "riscos", "catalisadores", "preco"):
+        st.session_state.pop(f"tese_{sufixo}_{ticker}", None)
+
+
 def _formulario_nova_tese(ticker: str, usuario_sub: str):
-    with st.form(key=f"form_tese_{ticker}", border=False):
-        texto_tese = st.text_area("Tese (1-2 frases)", key=f"tese_texto_{ticker}")
+    with st.form(key=f"tese_form_{ticker}", border=False):
+        st.markdown("<div class='tese-secao'>Identificação da tese</div>", unsafe_allow_html=True)
+        col_pos, col_conv = st.columns(2)
+        with col_pos:
+            posicao = st.selectbox("Posição", ["LONG", "SHORT", "WATCHLIST"], key=f"tese_posicao_{ticker}")
+        with col_conv:
+            conviccao = st.selectbox("Convicção", ["ALTA", "MEDIA", "BAIXA"], key=f"tese_conviccao_{ticker}")
+
+        st.markdown("<div class='tese-secao'>Tese de investimento</div>", unsafe_allow_html=True)
+        texto_tese = st.text_area(
+            "Tese (1 a 3 parágrafos)", key=f"tese_texto_{ticker}", height=130,
+            placeholder=(
+                "Por que esta empresa pode gerar retorno? Quais fatores sustentam essa visão "
+                "(ex: posição competitiva, resultado recente, ciclo do setor)? Qual o horizonte "
+                "considerado (ex: 12-18 meses)?"
+            ),
+        )
+
+        st.markdown("<div class='tese-secao'>Fundamentos e evidências</div>", unsafe_allow_html=True)
         col1, col2 = st.columns(2)
         with col1:
-            premissas_txt = st.text_area("Premissas (uma por linha)", key=f"tese_premissas_{ticker}", height=100)
-            conviccao = st.selectbox("Convicção", ["ALTA", "MEDIA", "BAIXA"], key=f"tese_conviccao_{ticker}")
+            premissas_txt = st.text_area(
+                "Premissas principais (uma por linha)", key=f"tese_premissas_{ticker}", height=100,
+                placeholder="Ex: margem deve expandir com o novo contrato",
+            )
+            catalisadores_txt = st.text_area(
+                "Catalisadores (um por linha)", key=f"tese_catalisadores_{ticker}", height=90,
+                placeholder="Ex: resultado do 4T sai em fevereiro",
+            )
         with col2:
-            riscos_txt = st.text_area("Riscos (um por linha)", key=f"tese_riscos_{ticker}", height=100)
-            posicao = st.selectbox("Posição", ["LONG", "SHORT"], key=f"tese_posicao_{ticker}")
-        catalisadores_txt = st.text_area("Catalisadores (um por linha)", key=f"tese_catalisadores_{ticker}", height=68)
-        preco_alvo_txt = st.text_input("Preço-alvo da tese (opcional, R$)", key=f"tese_preco_{ticker}")
+            riscos_txt = st.text_area(
+                "Riscos que invalidariam a tese (um por linha)", key=f"tese_riscos_{ticker}", height=100,
+                placeholder="Ex: alavancagem acima do covenant do BNDES",
+            )
+            preco_alvo_txt = st.text_input(
+                "Preço-alvo da tese (opcional, R$) — estimativa pessoal, não é cotação de mercado",
+                key=f"tese_preco_{ticker}",
+            )
 
-        if st.form_submit_button("Registrar nova versão"):
-            preco_alvo_tese = None
-            if preco_alvo_txt.strip():
-                try:
-                    preco_alvo_tese = float(preco_alvo_txt.replace(",", "."))
-                except ValueError:
-                    st.error("Preço-alvo inválido - use só números (ex: 42.50).")
-                    return
-            try:
-                salvo = tese.registrar_versao(
-                    usuario_sub=usuario_sub, ticker=ticker, tese=texto_tese,
-                    premissas=[p.strip() for p in premissas_txt.splitlines() if p.strip()],
-                    riscos=[r.strip() for r in riscos_txt.splitlines() if r.strip()],
-                    catalisadores=[c.strip() for c in catalisadores_txt.splitlines() if c.strip()],
-                    conviccao=conviccao, posicao=posicao, preco_alvo_tese=preco_alvo_tese,
-                )
-            except ValueError as e:
-                st.error(str(e))
-                return
-            if salvo is None:
-                st.error("Não foi possível gravar a tese agora (banco indisponível) - tente de novo em alguns instantes.")
-            else:
-                st.success("Tese registrada.")
-                st.rerun(scope="fragment")
+        st.caption("Cada registro cria uma versão nova; as versões anteriores continuam no histórico, nunca são apagadas.")
+        enviado = st.form_submit_button("REGISTRAR NOVA VERSÃO DA TESE", width="stretch", type="primary")
+
+    if not enviado:
+        return
+    preco_alvo_tese = None
+    if preco_alvo_txt.strip():
+        try:
+            preco_alvo_tese = float(preco_alvo_txt.strip().replace(",", "."))
+        except ValueError:
+            st.error("Preço-alvo inválido — use só números (ex: 42.50).")
+            return
+    try:
+        salvo = tese.registrar_versao(
+            usuario_sub=usuario_sub, ticker=ticker, tese=texto_tese,
+            premissas=[p.strip() for p in premissas_txt.splitlines() if p.strip()],
+            riscos=[r.strip() for r in riscos_txt.splitlines() if r.strip()],
+            catalisadores=[c.strip() for c in catalisadores_txt.splitlines() if c.strip()],
+            conviccao=conviccao, posicao=posicao, preco_alvo_tese=preco_alvo_tese,
+        )
+    except ValueError as e:
+        st.error(str(e))
+        return
+    if salvo is None:
+        st.error(
+            "Não foi possível gravar a tese agora (banco indisponível) — o que você escreveu "
+            "continua preenchido, tente novamente em alguns instantes."
+        )
+    else:
+        _limpar_campos_formulario_tese(ticker)
+        st.success("Tese registrada — veja a versão nova no histórico abaixo.")
+        st.rerun(scope="fragment")
 
 
 def _secao_tese(tickers: list, usuario_sub: str, prefs: dict):
+    st.markdown(f"<style>{_CSS_TESE}</style>", unsafe_allow_html=True)
     if not tickers:
         return
     ticker = st.selectbox("Ativo", tickers, key="radar_tese_ticker", label_visibility="collapsed")
@@ -849,14 +1262,17 @@ def _secao_tese(tickers: list, usuario_sub: str, prefs: dict):
         historico = tese.historico_tese(usuario_sub, ticker, limite=10)
         if len(historico) > 1:
             with st.expander(f"Histórico de versões ({len(historico)})"):
-                for h in historico:
-                    _linha_historico_tese(h, prefs)
+                for i, h in enumerate(historico):
+                    anterior = historico[i + 1] if i + 1 < len(historico) else None
+                    _linha_historico_tese(h, anterior, prefs)
     else:
+        empresa = _nome_empresa_tese(ticker)
         st.markdown(
-            "<div class='radar-vazio'>Nenhuma tese registrada ainda para este ativo.</div>",
+            f"<div class='radar-vazio'>Nenhuma tese registrada ainda para {html.escape(ticker)} "
+            f"({html.escape(empresa)}).</div>",
             unsafe_allow_html=True,
         )
-    with st.expander("Registrar nova versão da tese"):
+    with st.expander("Registrar nova versão da tese", expanded=(sc is None)):
         _formulario_nova_tese(ticker, usuario_sub)
 
 
@@ -953,10 +1369,11 @@ def render_radar_oportunidades(prefs: dict):
 
 
 @st.fragment
-def render_radar_acompanhamento(prefs: dict):
-    """Historico de alertas dos ativos DA WATCHLIST + risco da carteira.
-    Itens salvos/anotacoes pessoais nao existem no banco hoje (exigiria
-    tabela nova - migration fora do escopo desta reorganizacao)."""
+def render_radar_acompanhamento(prefs: dict, usuario: dict):
+    """Historico de alertas dos ativos DA WATCHLIST + cadastro de posicoes
+    e risco real da carteira (ver data/posicoes.py, data/radar.py:
+    risco_carteira). Itens salvos/anotacoes pessoais nao existem no banco
+    hoje (exigiria tabela nova - fora do escopo desta feature)."""
     from data import radar_quedas as rq
 
     _injetar_css()
@@ -978,7 +1395,7 @@ def render_radar_acompanhamento(prefs: dict):
                 unsafe_allow_html=True,
             )
     with st.expander("O QUE PODE DAR ERRADO — Risco da carteira", expanded=True):
-        _secao_risco(prefs)
+        _secao_risco(prefs, usuario["sub"])
     st.markdown(
         "<div class='rq-nota'>Itens salvos e anotações pessoais ainda não existem: exigem uma tabela nova no "
         "banco (desenvolvimento posterior, ver docs/arquitetura-pregao-2.md).</div>",

@@ -371,6 +371,18 @@ REGISTRO_COLETORES = [
         "leitor": _leitor_hibrido("Monte Bravo", _leitor_research("Monte Bravo")),
     },
     {
+        # linha nova (24/10/2026): mesmo gap do BTG/Monte Bravo acima -
+        # "Nord Research" tambem ativa_por_padrao=True (ver data/research/
+        # nord.py:_NOME_CASA). idade_maxima_horas mais alta que as outras
+        # casas (120h = 5 dias): sem feed RSS, so' publica posts de
+        # resultado quando ha' temporada de balanco - semanas sem nenhum
+        # resultado novo sao normais, nao e' sinal de coletor quebrado.
+        "nome": "Nord Research", "fonte": "nordinvestimentos.com.br (sitemap do blog, posts de resultado por ticker)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 120, "instrumentado": True,
+        "leitor": _leitor_hibrido("Nord Research", _leitor_research("Nord Research")),
+    },
+    {
         "nome": "CALENDARIO", "fonte": "RI das empresas + NEWS + prazo CVM",
         "categoria": "Calendario", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
         "idade_maxima_horas": 48, "instrumentado": True,
@@ -429,6 +441,24 @@ REGISTRO_COLETORES = [
         "categoria": "Morning Call", "frequencia_esperada": ".github/workflows/radar-morning-call.yml, diario 07h BRT (seg-sex)",
         "idade_maxima_horas": 30, "instrumentado": True,
     },
+    {
+        # linha nova (incidente 2026-10-23): P/L, P/VP e DY apareceram em
+        # branco simultaneamente em TODA a watchlist (ANALISES > Empresas
+        # > Fundamentos e o comparativo da watchlist, que chamam a MESMA
+        # data/prices.py:obter_indicadores) - investigacao confirmou que
+        # esse caminho nunca tinha nenhuma linha aqui, nem instrumentacao
+        # nenhuma (nem coletor_local.py, nem registrar_tentativa) - zero
+        # jeito de confirmar em producao se foi excecao de rede, Yahoo
+        # respondendo vazio sem excecao (bloqueio/rate-limit), ou outra
+        # causa. Instrumentado agora em data/prices.py:_tk_info_com_retry
+        # (func auxiliar de obter_indicadores) - ver docstring la' pra
+        # como as 2 causas ficam diferenciadas no erro registrado.
+        # idade_maxima_horas=30 (mesma folga x2.5 do TTL de 12h ja usada
+        # pros outros coletores "sob demanda" acima, ex: CVM DRE/SEC XBRL).
+        "nome": "EQUITY (Fundamentos)", "fonte": "yfinance (tk.info - P/L, P/VP, DY, ROE, margens, dívida líquida)",
+        "categoria": "Fundamentos", "frequencia_esperada": "sob demanda (cache 12h)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
 ]
 
 
@@ -451,11 +481,22 @@ def obter_painel_saude() -> list:
     busca o status (instrumentado -> tabela coletores_status; somente-
     leitura -> leitor dedicado) e classifica. Nunca lanca excecao -
     qualquer falha de leitura individual vira NAO_COMPROVADO pra aquele
-    coletor, sem derrubar o painel inteiro."""
+    coletor, sem derrubar o painel inteiro.
+
+    N+1 real corrigido (auditoria de performance 2026-10-24): antes,
+    cada um dos coletores SEM leitor dedicado (24 de 30 em
+    REGISTRO_COLETORES) chamava coletores_status.obter_status(nome)
+    individualmente - 24 round-trips sequenciais ao Supabase por
+    carregamento desta aba, mesma classe de problema já corrigida em
+    outros pontos do app (obter_cotacoes_lote, paralelização de
+    data/market_makers.py:_riscos). obter_todos_status() já existia
+    como alternativa em lote (1 única consulta, mesmo schema de linha
+    por nome) e não era usada aqui - agora é chamada 1x antes do loop."""
+    todos_status = coletores_status.obter_todos_status()
     painel = []
     for c in REGISTRO_COLETORES:
         try:
-            status = c["leitor"]() if "leitor" in c else coletores_status.obter_status(c["nome"])
+            status = c["leitor"]() if "leitor" in c else todos_status.get(c["nome"])
         except Exception:
             status = None
         codigo, rotulo = classificar_estado(status, c.get("idade_maxima_horas"))

@@ -39,6 +39,7 @@ from datetime import date, datetime, timedelta, timezone
 from statistics import median
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import streamlit as st
 
 import config
@@ -50,7 +51,8 @@ from data.eventos import (
     calcular_calendario_cacheado,
 )
 from data.news import obter_noticias_watchlist
-from data.prices import obter_cotacao, obter_indicadores
+from data.posicoes import obter_posicoes
+from data.prices import _calcular_beta, obter_cotacao, obter_historico, obter_indicadores
 from data.research import genial
 from data.research.historico import historico_ticker
 
@@ -404,30 +406,213 @@ def catalisadores(tickers: tuple, dias_passado: int = 7, dias_futuro: int = 60) 
 
 
 # ============================================================
-# D. RISCO DA CARTEIRA - honesto: o projeto NÃO tem cadastro de posições
-# (quantidade/preço médio) hoje, só watchlist (lista de tickers, sem
-# peso/quantidade) - confirmado por auditoria de código nesta sessão
-# (zero campo "quantidade"/"preco_medio"/"posicao" em todo o projeto).
-# Watchlist != carteira (regra explícita do pedido) - esta função NUNCA
-# finge o contrário, nunca deriva concentração/risco da watchlist.
+# D. RISCO DA CARTEIRA - cálculo real quando o usuário tem posição
+# cadastrada (quantidade + preço médio por ativo, tabela posicoes_carteira
+# - ver data/posicoes.py); aviso honesto, SEM calcular nada, quando não há
+# nenhuma posição cadastrada. Watchlist (lista de tickers, sem peso/
+# quantidade) NUNCA é usada como proxy de carteira (regra explícita do
+# projeto) - mesmo com posição cadastrada, concentração/correlação/
+# volatilidade/drawdown/cenários só consideram os ativos com posição real.
 # ============================================================
 
-def risco_carteira(prefs: dict) -> dict:
-    """Estado honesto do módulo de Risco da Carteira - sem cadastro real
-    de posições, não há concentração/exposição/correlação pra calcular.
-    Retorna só o que é verdade hoje, nunca uma aproximação usando a
-    watchlist como se fosse a carteira."""
+_PERIODO_RISCO = "6M"  # janela de historico (retornos diarios) pra correlacao/volatilidade/drawdown/cenario historico
+_LIMIAR_CONCENTRACAO_PCT = 25  # so' sinaliza o numero (concentracao_ativo/setor acima disso) - nunca e' recomendacao
+_CHOQUES_CENARIO_IBOV_PCT = (-10, -20)  # magnitudes do cenario de estresse por beta (ver _cenario_beta)
+
+
+def _posicoes_com_cotacao(posicoes: list) -> tuple:
+    """Cada posição + preço/valor atual (1 única requisição em lote via
+    data/mercado.py:obter_cotacoes_lote, mesmo mecanismo da watchlist em
+    app.py - evita N chamadas individuais ao Yahoo). Retorna
+    (com_preco, tickers_sem_preco) - ticker cuja cotação falhou nunca
+    entra no cálculo com um valor inventado, só é listado como ausente."""
+    from data.mercado import obter_cotacoes_lote
+
+    cotacoes = obter_cotacoes_lote(tuple(p["ticker"] for p in posicoes))
+    com_preco, sem_preco = [], []
+    for p in posicoes:
+        cot = cotacoes.get(p["ticker"], {"erro": "sem dado"})
+        preco_atual = cot.get("preco") if not cot.get("erro") else None
+        if not preco_atual:
+            sem_preco.append(p["ticker"])
+            continue
+        quantidade, preco_medio = float(p["quantidade"]), float(p["preco_medio"])
+        com_preco.append({
+            "ticker": p["ticker"],
+            "quantidade": quantidade,
+            "preco_medio": preco_medio,
+            "preco_atual": preco_atual,
+            "valor_atual": quantidade * preco_atual,
+            "valor_investido": quantidade * preco_medio,
+            "lucro_pct": ((preco_atual - preco_medio) / preco_medio) * 100 if preco_medio else None,
+        })
+    return com_preco, sem_preco
+
+
+def _concentracao(com_preco: list, valor_total: float) -> tuple:
+    """(por_ativo, por_setor): cada um [{'nome','valor','peso_pct'}],
+    ordenado por peso desc. Setor via config.IBOVESPA_SETORES (mesmo mapa
+    da aba MERCADO/SETORES) - ticker sem entrada cai em 'Outros', nunca
+    inventa classificação."""
+    por_ativo = sorted(
+        (
+            {"nome": p["ticker"], "valor": p["valor_atual"], "peso_pct": p["valor_atual"] / valor_total * 100}
+            for p in com_preco
+        ),
+        key=lambda x: -x["peso_pct"],
+    )
+    valores_setor = {}
+    for p in com_preco:
+        setor = config.IBOVESPA_SETORES.get(p["ticker"], "Outros")
+        valores_setor[setor] = valores_setor.get(setor, 0) + p["valor_atual"]
+    por_setor = sorted(
+        ({"nome": s, "valor": v, "peso_pct": v / valor_total * 100} for s, v in valores_setor.items()),
+        key=lambda x: -x["peso_pct"],
+    )
+    return por_ativo, por_setor
+
+
+def _retornos_diarios_alinhados(tickers: list):
+    """DataFrame (coluna por ticker) de retorno diário nos últimos
+    _PERIODO_RISCO, só com as DATAS EM COMUM entre todos os ativos que
+    tiverem histórico (dropna) - garante que correlação/volatilidade/
+    drawdown da carteira comparam o mesmo dia pra todo ativo. None se
+    nenhum ativo tiver histórico suficiente (>=10 pregões) ou sobrar menos
+    de 5 datas em comum. Usa data/prices.py:obter_historico (mesmo
+    histórico do gráfico de preços, já cacheado - nenhuma requisição
+    nova)."""
+    series = {}
+    for t in tickers:
+        df = obter_historico(t, _PERIODO_RISCO)
+        if df is None or len(df) < 10:
+            continue
+        serie = df.set_index("Data")["Close"].pct_change().dropna()
+        if not serie.empty:
+            series[t] = serie
+    if not series:
+        return None
+    df_ret = pd.DataFrame(series).dropna()
+    return df_ret if not df_ret.empty and len(df_ret) >= 5 else None
+
+
+def _serie_carteira(com_preco: list, df_ret) -> "pd.Series | None":
+    """Retorno diário PONDERADO da carteira, só dos ativos presentes em
+    `df_ret` (peso renormalizado entre eles - ex: 1 ativo sem histórico
+    numa carteira de 3 não quebra o cálculo dos outros 2, só fica de fora,
+    listado em tickers_sem_historico pra quem chama)."""
+    if df_ret is None:
+        return None
+    valor_considerado = sum(p["valor_atual"] for p in com_preco if p["ticker"] in df_ret.columns)
+    if not valor_considerado:
+        return None
+    pesos = pd.Series({
+        p["ticker"]: p["valor_atual"] / valor_considerado
+        for p in com_preco if p["ticker"] in df_ret.columns
+    })
+    return (df_ret[pesos.index] * pesos).sum(axis=1)
+
+
+def _drawdown_maximo_pct(serie_retornos) -> float | None:
+    """Maior queda (pico ao vale, %) da carteira ponderada dentro da
+    janela _PERIODO_RISCO - histórico real, não projeção."""
+    if serie_retornos is None or serie_retornos.empty:
+        return None
+    patrimonio = (1 + serie_retornos).cumprod()
+    drawdown = (patrimonio / patrimonio.cummax() - 1) * 100
+    return float(drawdown.min())
+
+
+def _cenario_beta(com_preco: list) -> dict | None:
+    """Estimativa (CALCULO_INTERNO, nunca FATO) do impacto na carteira se
+    o Ibovespa sofrer cada choque de _CHOQUES_CENARIO_IBOV_PCT, ponderando
+    o beta real de cada ativo (data/prices.py:_calcular_beta - calculado
+    localmente contra o índice de referência, cache de 1h; usado direto em
+    vez de obter_indicadores() porque este faz várias outras chamadas ao
+    Yahoo só pra devolver o mesmo beta). Só considera ativos com beta
+    disponível (peso renormalizado entre eles) - None se nenhum tiver."""
+    betas, sem_beta = {}, []
+    for p in com_preco:
+        beta = _calcular_beta(p["ticker"])
+        if beta is None:
+            sem_beta.append(p["ticker"])
+        else:
+            betas[p["ticker"]] = beta
+    if not betas:
+        return None
+    valor_considerado = sum(p["valor_atual"] for p in com_preco if p["ticker"] in betas)
+    beta_carteira = sum(betas[t] * (v["valor_atual"] / valor_considerado) for v in com_preco if (t := v["ticker"]) in betas)
     return {
-        "carteira_cadastrada": False,
-        "motivo": (
-            "O PREGÃO ainda não tem cadastro de posições (quantidade e preço médio por ativo) - "
-            "só a watchlist, que é uma lista de acompanhamento, não uma carteira real."
-        ),
-        "o_que_falta": (
-            "Pra calcular concentração por ativo/setor, exposição a fatores, correlação, "
-            "volatilidade, drawdown e cenários de estresse de verdade, é preciso cadastrar "
-            "(ou importar) quantidade e preço médio de cada posição primeiro."
-        ),
+        "beta_carteira": beta_carteira,
+        "tickers_sem_beta": sem_beta,
+        "impacto_pct": {choque: beta_carteira * choque for choque in _CHOQUES_CENARIO_IBOV_PCT},
+    }
+
+
+def risco_carteira(sub: str, prefs: dict) -> dict:
+    """Risco real da carteira (concentração por ativo/setor, correlação,
+    volatilidade e drawdown históricos de _PERIODO_RISCO, cenários de
+    estresse) quando `sub` tem posição cadastrada (ver data/posicoes.py) -
+    aviso honesto, SEM NENHUM cálculo, nos casos em que falta dado real:
+    banco indisponível (carteira_cadastrada=None), ninguém cadastrou nada
+    ainda (False) ou nenhuma posição conseguiu cotação agora."""
+    posicoes = obter_posicoes(sub)
+    if posicoes is None:
+        return {
+            "carteira_cadastrada": None,
+            "motivo": "Não foi possível consultar suas posições agora (banco indisponível) - tente de novo em alguns instantes.",
+            "watchlist_tamanho": len(prefs.get("watchlist") or []),
+        }
+    if not posicoes:
+        return {
+            "carteira_cadastrada": False,
+            "motivo": (
+                "Você ainda não cadastrou nenhuma posição (quantidade e preço médio por ativo) - "
+                "a watchlist é uma lista de acompanhamento, não uma carteira real."
+            ),
+            "o_que_falta": (
+                "Pra calcular concentração por ativo/setor, correlação, volatilidade, drawdown e "
+                "cenários de estresse de verdade, cadastre quantidade e preço médio de cada posição "
+                "abaixo."
+            ),
+            "watchlist_tamanho": len(prefs.get("watchlist") or []),
+        }
+
+    com_preco, tickers_sem_preco = _posicoes_com_cotacao(posicoes)
+    if not com_preco:
+        return {
+            "carteira_cadastrada": True,
+            "sem_cotacao": True,
+            "tickers_sem_preco": tickers_sem_preco,
+            "motivo": "Nenhuma das posições cadastradas conseguiu cotação agora (fonte de preço indisponível) - tente de novo em alguns instantes.",
+        }
+
+    valor_total = sum(p["valor_atual"] for p in com_preco)
+    por_ativo, por_setor = _concentracao(com_preco, valor_total)
+
+    df_ret = _retornos_diarios_alinhados([p["ticker"] for p in com_preco])
+    tickers_sem_historico = [p["ticker"] for p in com_preco if df_ret is None or p["ticker"] not in df_ret.columns]
+    correlacao = df_ret.corr().round(4).to_dict() if df_ret is not None and len(df_ret.columns) >= 2 else None
+
+    serie_carteira = _serie_carteira(com_preco, df_ret)
+    volatilidade_anual_pct = float(serie_carteira.std() * (252 ** 0.5) * 100) if serie_carteira is not None else None
+    drawdown_pct = _drawdown_maximo_pct(serie_carteira)
+    maior_queda_diaria_pct = float(serie_carteira.min() * 100) if serie_carteira is not None else None
+
+    return {
+        "carteira_cadastrada": True,
+        "valor_total": valor_total,
+        "posicoes": com_preco,
+        "tickers_sem_preco": tickers_sem_preco,
+        "tickers_sem_historico": tickers_sem_historico,
+        "concentracao_ativo": por_ativo,
+        "concentracao_setor": por_setor,
+        "limiar_concentracao_pct": _LIMIAR_CONCENTRACAO_PCT,
+        "correlacao": correlacao,
+        "periodo_historico": _PERIODO_RISCO,
+        "volatilidade_anual_pct": volatilidade_anual_pct,
+        "drawdown_pct": drawdown_pct,
+        "maior_queda_diaria_pct": maior_queda_diaria_pct,
+        "cenario_beta": _cenario_beta(com_preco),
         "watchlist_tamanho": len(prefs.get("watchlist") or []),
     }
 

@@ -86,7 +86,7 @@ def test_setor_do_ticker_so_por_lista_curada():
 
 # --- subabas do RADAR: mesma garantia de nunca coletar so' pra desenhar ------------
 
-def _render_sem_coleta(fn, prefs):
+def _render_sem_coleta(fn, prefs, *args):
     blocos = []
 
     def _proibido(*_a, **_k):
@@ -98,7 +98,7 @@ def _render_sem_coleta(fn, prefs):
          patch.object(radar_quedas_mod, "coletar_carteiras_genial", side_effect=_proibido), \
          patch.object(radar_quedas_mod, "coletar_carteiras_safra", side_effect=_proibido), \
          patch.object(radar_tab_mod.st, "markdown", side_effect=lambda t, **_k: blocos.append(t)):
-        fn.__wrapped__(prefs)
+        fn.__wrapped__(prefs, *args)
     return "\n".join(blocos)
 
 
@@ -108,7 +108,9 @@ def test_subabas_do_radar_renderizam_sem_coletar():
     assert "RADAR DE QUEDAS" in alertas and "não constitui" in alertas
     carteiras = _render_sem_coleta(radar_tab_mod.render_radar_carteiras, prefs)
     assert "COBERTURA" in carteiras
-    acompanhamento = _render_sem_coleta(radar_tab_mod.render_radar_acompanhamento, prefs)
+    acompanhamento = _render_sem_coleta(
+        radar_tab_mod.render_radar_acompanhamento, prefs, {"sub": "sub-teste", "email": "teste@exemplo.com"},
+    )
     assert "Nenhum alerta de queda registrado" in acompanhamento
 
 
