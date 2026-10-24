@@ -395,6 +395,24 @@ REGISTRO_COLETORES = [
         "categoria": "Morning Call", "frequencia_esperada": ".github/workflows/radar-morning-call.yml, diario 07h BRT (seg-sex)",
         "idade_maxima_horas": 30, "instrumentado": True,
     },
+    {
+        # linha nova (incidente 2026-10-23): P/L, P/VP e DY apareceram em
+        # branco simultaneamente em TODA a watchlist (ANALISES > Empresas
+        # > Fundamentos e o comparativo da watchlist, que chamam a MESMA
+        # data/prices.py:obter_indicadores) - investigacao confirmou que
+        # esse caminho nunca tinha nenhuma linha aqui, nem instrumentacao
+        # nenhuma (nem coletor_local.py, nem registrar_tentativa) - zero
+        # jeito de confirmar em producao se foi excecao de rede, Yahoo
+        # respondendo vazio sem excecao (bloqueio/rate-limit), ou outra
+        # causa. Instrumentado agora em data/prices.py:_tk_info_com_retry
+        # (func auxiliar de obter_indicadores) - ver docstring la' pra
+        # como as 2 causas ficam diferenciadas no erro registrado.
+        # idade_maxima_horas=30 (mesma folga x2.5 do TTL de 12h ja usada
+        # pros outros coletores "sob demanda" acima, ex: CVM DRE/SEC XBRL).
+        "nome": "EQUITY (Fundamentos)", "fonte": "yfinance (tk.info - P/L, P/VP, DY, ROE, margens, dívida líquida)",
+        "categoria": "Fundamentos", "frequencia_esperada": "sob demanda (cache 12h)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
 ]
 
 
