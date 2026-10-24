@@ -171,3 +171,49 @@ def listar_assinantes_morning_call(cliente=None) -> list[str] | None:
         print(f"[user_prefs] falha ao listar assinantes do Morning Call: {exc!r}")
         return None
     return sorted(assinantes.keys())
+
+
+def uniao_watchlists_todos_usuarios(cliente=None) -> set | None:
+    """UNIAO de todas as watchlists de todos os usuarios (tickers em
+    maiusculo, deduplicados) - usado pro universo do coletor de
+    calendario (data/eventos.py:universo_calendario) saber quais
+    tickers fora do Ibovespa/cadastro da CVM precisam de cobertura (ex:
+    BDR que so' alguem tem na watchlist, nao esta em
+    config.TICKER_ALIASES ainda). Mesma paginacao de
+    listar_assinantes_morning_call (blocos de _TAMANHO_PAGINA_ASSINANTES,
+    nunca depende do tamanho da tabela).
+
+    None (nao set()) se Supabase indisponivel ou a consulta lancar
+    excecao - quem chama NUNCA deve tratar None como "nenhuma watchlist
+    cadastrada" (geraria um universo de calendario incompleto sem
+    avisar); e' "nao deu pra saber agora". set() vazio e' o caso real e
+    legitimo "ninguem tem watchlist cadastrada ainda" - mesma distincao
+    de listar_assinantes_morning_call."""
+    cliente = cliente if cliente is not None else obter_cliente()
+    if cliente is None:
+        return None
+    uniao = set()
+    try:
+        inicio = 0
+        while True:
+            fim = inicio + _TAMANHO_PAGINA_ASSINANTES - 1
+            resp = (
+                cliente.table("user_prefs")
+                .select("preferencias")
+                .range(inicio, fim)
+                .execute()
+            )
+            linhas = resp.data or []
+            for linha in linhas:
+                preferencias_usuario = linha.get("preferencias") or {}
+                for ticker in preferencias_usuario.get("watchlist") or []:
+                    ticker = str(ticker).strip().upper()
+                    if ticker:
+                        uniao.add(ticker)
+            if len(linhas) < _TAMANHO_PAGINA_ASSINANTES:
+                break
+            inicio += _TAMANHO_PAGINA_ASSINANTES
+    except Exception as exc:
+        print(f"[user_prefs] falha ao unir watchlists de todos os usuarios: {exc!r}")
+        return None
+    return uniao

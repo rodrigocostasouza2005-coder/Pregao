@@ -16,25 +16,37 @@ funciona rodando daqui. Nao depende do app rodando - so precisa do
 
 Tambem roda o coletor de datas REAIS de resultado (RI->NEWS->PRAZO_CVM,
 data.eventos_coleta.coletar_eventos_universo, 2026-10-02) pro universo
-de tickers de config.IBOVESPA_SETORES (mesmo universo que MERCADO/TOP
-MERCADO ja usam) - decisao deliberada: este script roda fora de
-qualquer sessao logada, entao nao tem acesso a watchlist de nenhum
-usuario especifico (watchlist e' por usuario, em user_prefs); rodar pro
-universo inteiro da cobertura igual pra qualquer um depois. Tem
-orcamento proprio de tempo (5min, ver
+completo do calendario (data.eventos.universo_calendario, ver REFORMA
+ESTRUTURAL abaixo). Tem orcamento proprio de tempo (5min, ver
 data.eventos_coleta._ORCAMENTO_TOTAL_S) - como fontes de RI/NEWS sao
 mais lentas que a coleta de research, pode nao terminar o universo
 inteiro numa execucao so'; o proximo run (agendado a cada 30min)
 continua cobrindo gradualmente (tickers ja' CONFIRMADOS nao regridem,
 ver data.eventos_coleta.salvar_evento_se_mais_confiavel).
 
+REFORMA ESTRUTURAL (fase 1, 2026-10-24): o universo ERA fixo em
+config.IBOVESPA_SETORES.keys() (84 tickers) por uma decisao antiga - "este
+script roda fora de qualquer sessao logada, entao nao tem acesso a
+watchlist de nenhum usuario". Essa premissa estava errada: a RLS de
+user_prefs (sql/schema.sql) so' bloqueia a chave anon, nunca a
+service-role key que este script ja usa - so' nunca tinha sido lida.
+Agora data.eventos.universo_calendario() le a UNIAO de todas as
+watchlists reais (data.user_prefs.uniao_watchlists_todos_usuarios) +
+todo ticker com CNPJ no cadastro FCA da CVM (acoes/units, ~509 hoje -
+data.cvm.tickers_com_cnpj_cvm, zero requisicao nova) + BDRs curados
+(config.TICKER_ALIASES) - nenhum ticker de watchlist real fica fora da
+coleta, mesmo fora do Ibovespa/CVM.
+
 FASE 8 (2026-10-09): o universo passado pra coletar_eventos_universo e'
 ROTACIONADO a cada execucao (ver _universo_rotativo) - bug real
 encontrado na auditoria: ticker que nunca vira CONFIRMADO (ESTIMADO/
 PRAZO_CVM nao tem atalho pra pular RI/NEWS) refaz a parte cara de rede
 em TODA execucao; sem rotacionar o ponto de partida, so' os primeiros
-~15-20 tickers da ordem fixa de config.IBOVESPA_SETORES.keys() jamais
-recebiam esse orcamento, os do fim da lista nunca eram alcancados.
+~15-20 tickers da ordem fixa do universo jamais recebiam esse orcamento,
+os do fim da lista nunca eram alcancados. _universo_rotativo usa um
+checkpoint persistido (nao aritmetica modular com o tamanho N da lista),
+entao continua funcionando sem ajuste com o universo maior da reforma
+estrutural acima.
 
 Uso: python coletor_local.py (rodar com o python do .venv do projeto) ou
 pythonw coletor_local.py (mesma coisa, sem abrir janela de console - e' o
@@ -70,7 +82,7 @@ from pathlib import Path
 
 import config
 from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
-from data.eventos import salvar_snapshot_calendario
+from data.eventos import salvar_snapshot_calendario, universo_calendario
 from data.eventos_coleta import coletar_eventos_universo
 from data.news import pregerar_imagens_news, pregerar_resumos_news
 from data.research import coletar_todas_disponiveis
@@ -329,10 +341,20 @@ def main() -> int:
         categoria="Noticias",
     )
 
+    # universo do calendario (reforma estrutural, ver docstring do
+    # modulo) - calculado 1x e reaproveitado nos 2 passos abaixo (coleta
+    # de eventos + snapshot), pro log/painel de saude refletirem o MESMO
+    # universo que foi de fato usado nesta execucao.
+    universo = universo_calendario()
+    logger.info(
+        f"  universo do calendario: {len(universo)} ticker(s) "
+        "(CVM/FCA + BDRs curados + watchlists reais de todos os usuarios)"
+    )
+
     # datas reais de resultado (RI->NEWS->PRAZO_CVM, 2026-10-02) - ver
     # data/eventos_coleta.py. Orcamento proprio de tempo (5min), pode nao
     # cobrir o universo inteiro numa execucao so' (ver docstring do modulo).
-    stats_eventos = coletar_eventos_universo(_universo_rotativo(list(config.IBOVESPA_SETORES.keys())))
+    stats_eventos = coletar_eventos_universo(_universo_rotativo(universo))
     if stats_eventos["tabela_disponivel"] is False:
         logger.warning(
             "  eventos de resultado: tabela 'eventos_resultados' nao encontrada/inacessivel no "
@@ -358,7 +380,7 @@ def main() -> int:
     # (08h/18h) pedidos, sem precisar de uma tarefa agendada nova.
     # Rodado DEPOIS do coletor de eventos acima, pra o snapshot refletir
     # qualquer CONFIRMADO/ESTIMADO achado agora mesmo nesta execucao.
-    snapshot_ok = salvar_snapshot_calendario(list(config.IBOVESPA_SETORES.keys()))
+    snapshot_ok = salvar_snapshot_calendario(universo)
     if snapshot_ok:
         logger.info("  snapshot do calendario: atualizado")
     else:

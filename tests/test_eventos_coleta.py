@@ -117,6 +117,85 @@ def test_6_ri_sem_url_oficial_ou_fonte_bloqueada_retorna_none():
     _checar("6b fonte RI bloqueada/indisponivel -> None (segue pra proxima fonte, nunca quebra)", evento2 is None)
 
 
+# ============================================================
+# _retry_curto (Fase 2 da reforma estrutural, 2026-10-24): 1 retry curto
+# pra falha transitoria de rede/HTTP 429/5xx - nunca mais de 1 tentativa
+# extra por fetch (pra nao multiplicar custo de rede com o universo
+# maior).
+# ============================================================
+
+def test_6c_retry_curto_recupera_de_erro_de_conexao_transitorio():
+    resp_ok = MagicMock(status_code=200)
+    chamadas = {"n": 0}
+
+    def _get(*_a, **_k):
+        chamadas["n"] += 1
+        if chamadas["n"] == 1:
+            raise ConnectionError("reset pelo servidor")
+        return resp_ok
+
+    with patch.object(coleta_mod.time, "sleep", return_value=None):
+        resultado = coleta_mod._retry_curto(_get)
+    _checar("6c.1 2a tentativa recupera com sucesso", resultado is resp_ok)
+    _checar("6c.2 exatamente 2 chamadas (1 original + 1 retry, nunca mais)", chamadas["n"] == 2, f"(n={chamadas['n']})")
+
+
+def test_6d_retry_curto_recupera_de_http_503_transitorio():
+    resp_503 = MagicMock(status_code=503)
+    resp_ok = MagicMock(status_code=200)
+    with patch.object(coleta_mod.time, "sleep", return_value=None):
+        resultado = coleta_mod._retry_curto(MagicMock(side_effect=[resp_503, resp_ok]))
+    _checar("6d HTTP 503 na 1a tentativa -> 2a tentativa (200) e' usada", resultado is resp_ok)
+
+
+def test_6e_retry_curto_nunca_tenta_uma_3a_vez():
+    """2 falhas seguidas (ex: fonte realmente fora do ar) -> a excecao da
+    2a tentativa PROPAGA pra quem chama (nao e' engolida aqui) - o
+    chamador (tentar_ri/_extrair_data_da_pagina/_texto_documento_cvm) ja'
+    tem seu proprio try/except Exception que decide o proximo passo da
+    hierarquia; _retry_curto nunca mascara uma falha real como sucesso."""
+    chamadas = {"n": 0}
+
+    def _get(*_a, **_k):
+        chamadas["n"] += 1
+        raise ConnectionError("fora do ar")
+
+    with patch.object(coleta_mod.time, "sleep", return_value=None):
+        with pytest.raises(ConnectionError):
+            coleta_mod._retry_curto(_get)
+    _checar("6e exatamente 2 tentativas, nunca uma 3a", chamadas["n"] == 2, f"(n={chamadas['n']})")
+
+
+def test_6f_retry_curto_erro_http_404_nao_e_retentado_mas_tambem_nao_quebra_tentar_ri():
+    """404 nao esta na lista de codigos transitorios (429/5xx) - sem
+    retry, raise_for_status() propaga normalmente pro except Exception
+    ja existente de tentar_ri, que devolve None (comportamento
+    preservado, igual antes desta reforma)."""
+    resp_404 = MagicMock(status_code=404)
+    resp_404.raise_for_status.side_effect = Exception("404 Not Found")
+    with patch.object(coleta_mod, "obter_url_ri", return_value="https://ri.example.com"), \
+         patch.object(coleta_mod.cffi_requests, "get", return_value=resp_404):
+        evento = coleta_mod.tentar_ri("PETR4", "Petrobras", 2026, 3)
+    _checar("6f 404 -> None, sem retry (codigo nao transitorio)", evento is None)
+
+
+def test_6g_tentar_ri_recupera_quando_1a_tentativa_da_http_500_transitorio():
+    """Integracao: tentar_ri agora se beneficia do retry curto - um 500
+    pontual (instabilidade transitoria do servidor de RI) na 1a tentativa
+    nao precisa mais esperar a proxima execucao do coletor (30min) pra
+    achar a mesma data que ja estava disponivel minutos depois."""
+    html = "<html><body>Resultados do 3T26 confirmados para 20/10/2026.</body></html>"
+    resp_500 = MagicMock(status_code=500)
+    resp_ok = MagicMock(status_code=200, text=html)
+    resp_ok.raise_for_status.return_value = None
+    with patch.object(coleta_mod, "obter_url_ri", return_value="https://ri.example.com"), \
+         patch.object(coleta_mod.cffi_requests, "get", side_effect=[resp_500, resp_ok]), \
+         patch.object(coleta_mod.time, "sleep", return_value=None):
+        evento = coleta_mod.tentar_ri("PETR4", "Petrobras", 2026, 3)
+    _checar("6g RI recupera de 500 transitorio e confirma a data na 2a tentativa",
+            evento is not None and evento["status"] == STATUS_CONFIRMADO, f"(evento={evento})")
+
+
 def test_2_news_estimado_quando_noticia_confiavel_tem_data_clara():
     entry = {
         "title": "Empresa X anuncia resultado do 3T26 - Reuters",

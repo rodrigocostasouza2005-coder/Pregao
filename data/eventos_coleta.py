@@ -85,6 +85,26 @@ _PADRAO_DATA_EXTENSO = re.compile(
 )
 
 
+def _retry_curto(fn, *args, **kwargs):
+    """1 retry curto (backoff 1.5s, mesmo padrao de data/ibovespa.py:
+    obter_composicao_oficial) pra falha transitoria de rede (timeout/
+    conexao) OU HTTP 429/5xx explicito - nunca mais de 1 tentativa extra
+    por fetch, pra nao multiplicar o custo de rede por ticker (orcamento
+    de 5min pro universo inteiro, reforma estrutural 2026-10-24 aumentou
+    o universo de 84 pra 500+ tickers). `fn` e' a funcao de request
+    (cffi_requests.get ou requests.get) - devolve a resposta HTTP, ou
+    deixa a excecao da 2a tentativa propagar pra quem chama decidir
+    (mesmo comportamento de antes, so' com 1 chance extra)."""
+    try:
+        r = fn(*args, **kwargs)
+        if r.status_code in (429, 500, 502, 503, 504):
+            raise RuntimeError(f"HTTP {r.status_code}")
+        return r
+    except (ConnectionError, TimeoutError, OSError, RuntimeError):
+        time.sleep(1.5)
+        return fn(*args, **kwargs)
+
+
 def _tokens_periodo(ano: int, trimestre: int) -> list:
     """Variações textuais que uma empresa/notícia pode usar pra se
     referir ao mesmo período (ex: "3T26", "3º trimestre de 2026") -
@@ -267,7 +287,7 @@ def _extrair_data_da_pagina(url: str, ano: int, trimestre: int) -> tuple[date | 
     acontece (página oficial, link de calendário dela, portal de RI
     cross-domain e o calendário DELE)."""
     try:
-        r = cffi_requests.get(url, headers=_HEADERS, impersonate="chrome", timeout=_TIMEOUT_SUBPAGINA)
+        r = _retry_curto(cffi_requests.get, url, headers=_HEADERS, impersonate="chrome", timeout=_TIMEOUT_SUBPAGINA)
         r.raise_for_status()
     except Exception:
         return None, None
@@ -300,7 +320,7 @@ def tentar_ri(ticker: str, empresa: str, ano: int, trimestre: int) -> dict | Non
     if not url:
         return None
     try:
-        r = cffi_requests.get(url, headers=_HEADERS, impersonate="chrome", timeout=_TIMEOUT)
+        r = _retry_curto(cffi_requests.get, url, headers=_HEADERS, impersonate="chrome", timeout=_TIMEOUT)
         r.raise_for_status()
     except Exception:
         return None
@@ -348,7 +368,7 @@ def _texto_documento_cvm(link: str) -> str | None:
     from data.cvm import _extrair_texto_pdf
 
     try:
-        r = requests.get(link, headers=_HEADERS, timeout=_TIMEOUT_DOCUMENTO_CVM)
+        r = _retry_curto(requests.get, link, headers=_HEADERS, timeout=_TIMEOUT_DOCUMENTO_CVM)
         r.raise_for_status()
     except Exception:
         return None

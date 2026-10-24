@@ -31,7 +31,7 @@ import config
 from data.cvm import obter_documentos_cvm
 from data.eventos import (
     PRIORIDADE_STATUS, STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_LABEL, STATUS_PRAZO_CVM,
-    calcular_calendario_cacheado, obter_snapshot_calendario,
+    calcular_calendario_cacheado, obter_snapshot_calendario, universo_calendario,
 )
 from data.news import obter_noticias
 from data.research import CASAS
@@ -170,8 +170,16 @@ def _universo_tickers(filtro: str, prefs: dict, setor: str = None) -> list:
     if filtro == "MINHA WATCHLIST":
         return list(prefs.get("watchlist") or [])
     if filtro == "SETOR" and setor:
+        # classificacao setorial so' existe pros tickers curados em
+        # config.IBOVESPA_SETORES (84 hoje) - nao foi pedido classificar
+        # setor pro universo completo (500+), intocado de proposito.
         return [t for t, s in config.IBOVESPA_SETORES.items() if s == setor]
-    return list(config.IBOVESPA_SETORES.keys())
+    # TODOS (ou SETOR sem setor escolhido ainda): universo completo do
+    # calendario (reforma estrutural 2026-10-24, ver data/eventos.py:
+    # universo_calendario) - CVM/FCA (acoes/units, ~509) + BDRs curados +
+    # watchlists reais de todos os usuarios. Antes era so'
+    # config.IBOVESPA_SETORES.keys() (84 fixos).
+    return universo_calendario()
 
 
 def _filtrar_janela(eventos: list, janela: str, hoje: date) -> list:
@@ -588,18 +596,22 @@ def _painel_agenda(prefs: dict):
         return
 
     # achado da auditoria de cobertura (2026-10-08): o calendario "parecia"
-    # mostrar so' 2-3 empresas - nao e' bug de coleta/parsing/dedup (a fonte
-    # CVM cobre as ~84 empresas de config.IBOVESPA_SETORES normalmente),
-    # e' o filtro padrao (MINHA WATCHLIST) + a watchlist padrao de quem
-    # nunca editou (config.TICKERS_PADRAO) ter so' 3 tickers. Essa legenda
-    # deixa o escopo atual explicito e aponta o caminho pra ver tudo, sem
-    # mudar o filtro/comportamento padrao nem inflar numero de empresas.
+    # mostrar so' 2-3 empresas - nao e' bug de coleta/parsing/dedup, e' o
+    # filtro padrao (MINHA WATCHLIST) + a watchlist padrao de quem nunca
+    # editou (config.TICKERS_PADRAO) ter so' 3 tickers. Essa legenda deixa
+    # o escopo atual explicito e aponta o caminho pra ver tudo, sem mudar
+    # o filtro/comportamento padrao nem inflar numero de empresas.
+    #
+    # total_universo calculado em tempo real (reforma estrutural
+    # 2026-10-24, universo_calendario) - nunca mais um numero fixo de
+    # "84"/"Ibovespa": reflete CVM/FCA + BDRs curados + watchlists reais,
+    # o mesmo universo que TODOS de fato usa agora.
     if filtro == "MINHA WATCHLIST":
-        total_universo = len(config.IBOVESPA_SETORES)
+        total_universo = len(universo_calendario())
         st.markdown(
             f"<div class='cal-atualizado'>mostrando sua watchlist "
             f"({len(tickers)} ativo{'s' if len(tickers) != 1 else ''}) · "
-            f"toque em TODOS para ver as {total_universo} empresas do Ibovespa cobertas</div>",
+            f"toque em TODOS para ver as {total_universo} empresas cobertas</div>",
             unsafe_allow_html=True,
         )
 

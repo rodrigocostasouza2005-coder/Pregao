@@ -81,10 +81,11 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 import config
-from data.cvm import obter_cnpj, obter_documentos_cvm
+from data.cvm import obter_cnpj, obter_documentos_cvm, tickers_com_cnpj_cvm
 from data.ibovespa import obter_composicao_oficial
 from data.prices import obter_nome_yf
 from data.supabase_client import obter_cliente
+from data.user_prefs import uniao_watchlists_todos_usuarios
 
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
 
@@ -619,3 +620,38 @@ def aplicar_cache_resiliente(eventos_novos: list) -> list:
         resultado.append(escolhido)
     resultado.sort(key=lambda e: e["data"])
     return resultado
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def universo_calendario() -> list:
+    """Universo completo do calendario de resultados (fase 1 da reforma
+    estrutural, 2026-10-24): UNIAO de (1) todo ticker com CNPJ mapeado
+    no cadastro FCA da CVM - acoes/units registrados, nao so' o
+    Ibovespa (ver data.cvm.tickers_com_cnpj_cvm, zero requisicao nova),
+    (2) BDRs curados (config.TICKER_ALIASES) e (3) a UNIAO de todas as
+    watchlists reais de todos os usuarios (ver
+    data.user_prefs.uniao_watchlists_todos_usuarios) - garante que
+    nenhum ticker que algum usuario monitora fica fora da coleta, mesmo
+    que nao esteja no Ibovespa nem no cadastro da CVM (ex: BDR que
+    ainda nao esta em TICKER_ALIASES).
+
+    Uma fonte indisponivel NUNCA reduz o universo a vazio nem bloqueia
+    as demais: tickers_com_cnpj_cvm() ja' e' resiliente (nunca {} depois
+    do 1o sucesso, ver _ultimo_mapa_ticker_valido em data/cvm.py); se
+    uniao_watchlists_todos_usuarios() retornar None (Supabase fora do
+    ar), essa fonte so' fica de fora DESTA chamada (log explicito -
+    nunca interpretada como "ninguem tem watchlist"). Cacheado 5min
+    (@st.cache_data) porque coletor_local.py chama isto 2x por execucao
+    (coleta de eventos + snapshot) - sem cache seriam 2 leituras
+    completas de user_prefs/CVM por rodada."""
+    universo = set(tickers_com_cnpj_cvm())
+    universo.update(str(t).strip().upper() for t in config.TICKER_ALIASES.keys())
+    watchlists = uniao_watchlists_todos_usuarios()
+    if watchlists is None:
+        print(
+            "[eventos] uniao_watchlists_todos_usuarios indisponivel (Supabase fora do ar) - "
+            "universo do calendario desta chamada nao inclui watchlists reais, so' CVM/FCA + BDRs curados."
+        )
+    else:
+        universo.update(watchlists)
+    return sorted(universo)
