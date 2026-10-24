@@ -207,7 +207,7 @@ def executar():
     # sucesso legítimo e não deixaria rastro nenhum sem isto).
     registrar_tentativa(
         "RADAR DE QUEDAS",
-        "Carteiras recomendadas (Genial + Safra) + cotações (variação diária)",
+        "Carteiras recomendadas (Itaú Investimentos + Genial + Safra) + cotações (variação diária)",
         execucao_ok=bool(resultado.get("coleta_ok")),
         persistencia_ok=(falhas == 0),
         registros_novos=len(resultado.get("alertas_novos", [])),

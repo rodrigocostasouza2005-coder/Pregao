@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """Radar persistente de quedas em carteiras recomendadas.
 
-Fontes estruturadas habilitadas: recomendações públicas da Genial Analisa
-e a carteira mensal pública "Top 10 Ações" da Safra Corretora (2026-10-16
-- ver data/research/safra_carteiras.py pra evidência real de que essa
-fonte é acessível, diferente de Genial/XP/BTG, bloqueadas na borda
-Akamai mesmo fora do sandbox). Cada casa é tratada de forma INDEPENDENTE
+Fontes estruturadas habilitadas: carteira Top 5 pública do Itaú Investimentos,
+carteiras mensais públicas da Genial Analisa e da Safra Corretora. A fonte
+Itaú Investimentos NÃO é rotulada como Itaú BBA Research: são produtos
+editoriais distintos. Cada casa é tratada de forma INDEPENDENTE
 em processar_monitoramento(): uma fonte bloqueada nunca invalida nem
 desativa as recomendações vigentes de outra fonte que respondeu
 normalmente. Outras casas só entram quando houver coletor de carteiras
@@ -18,12 +17,13 @@ import streamlit as st
 
 from data.prices import obter_cotacao, obter_data_ultimo_pregao
 from data.research.genial_carteiras import coletar_carteiras as _coletar_genial
+from data.research.itau_carteiras import coletar_carteiras as _coletar_itau
 from data.research.safra_carteiras import coletar_carteiras as _coletar_safra
 from data.supabase_client import obter_cliente
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 LIMIAR_VARIACAO = -4.0
-# Carteiras aqui sao produtos MENSAIS (Genial/Safra) - uma linha "vigente"
+# Carteiras aqui sao produtos MENSAIS (Itaú/Genial/Safra) - uma linha "vigente"
 # cuja ultima confirmacao real (verificado_em) passou desse limite quer
 # dizer que a fonte ficou fora do ar por tempo demais pra continuar
 # confiando nela como "carteira atual" (ver listar_carteiras). Folga de
@@ -42,10 +42,11 @@ IDADE_MAXIMA_CARTEIRA_DIAS = 40
 IDADE_FRESCA_HORAS = 72
 CASA_GENIAL = "Genial Analisa"
 CASA_SAFRA = "Safra Corretora"
+CASA_ITAU = "Itaú Investimentos"
 # Casas com coletor de carteira configurado (ordem de exibicao na UI). Uma
 # casa daqui sem carteira vigente aparece como INDISPONIVEL - nunca some
 # da tela, pra cobertura parcial nao parecer cobertura completa.
-CASAS_MONITORADAS = (CASA_SAFRA, CASA_GENIAL)
+CASAS_MONITORADAS = (CASA_ITAU, CASA_SAFRA, CASA_GENIAL)
 # So' pra UI destacar "chegando perto do gatilho" - nao gera alerta nem
 # e-mail (a regra de alerta continua LIMIAR_VARIACAO, estrita).
 LIMIAR_ATENCAO = -2.5
@@ -84,6 +85,11 @@ def coletar_carteiras_genial():
 def coletar_carteiras_safra():
     """Coleta a carteira mensal pública "Top 10 Ações" da Safra Corretora."""
     return _coletar_safra()
+
+
+def coletar_carteiras_itau():
+    """Coleta a carteira mensal pública Top 5 do Itaú Investimentos."""
+    return _coletar_itau()
 
 
 def salvar_carteiras(casa, itens):
@@ -252,7 +258,7 @@ def processar_monitoramento():
     configuradas falharem/forem rejeitadas nesta execução."""
     status_fontes = {}
     pelo_menos_uma_ok = False
-    for casa, coletor in ((CASA_GENIAL, coletar_carteiras_genial), (CASA_SAFRA, coletar_carteiras_safra)):
+    for casa, coletor in ((CASA_GENIAL, coletar_carteiras_genial), (CASA_SAFRA, coletar_carteiras_safra), (CASA_ITAU, coletar_carteiras_itau)):
         snapshot = coletor()
         if snapshot is None:
             status_fontes[casa] = "fonte indisponível"
