@@ -235,6 +235,30 @@ def obter_cnpj(ticker: str):
     return _mapa_ticker_cnpj().get(ticker.upper())
 
 
+_TICKER_B3_VALIDO = re.compile(r"^(?=.*[A-Z])[A-Z0-9]{4}\d{1,2}$")
+
+
+def tickers_com_cnpj_cvm() -> set:
+    """Todo ticker (acao/unit) com CNPJ mapeado no cadastro FCA da CVM
+    (_mapa_ticker_cnpj acima, mesmo cache de 24h e mesma resiliencia -
+    zero requisicao nova) - e' o universo REAL de valores mobiliarios
+    registrados na CVM, nao so' o Ibovespa (achado real, auditoria
+    2026-10-23: 509 linhas brutas no FCA hoje, contra 84 de
+    config.IBOVESPA_SETORES).
+
+    Filtra formato de ticker B3 (4 caracteres alfanumericos + 1-2 digitos
+    no final, com pelo menos 1 letra) porque o dump do FCA tem linhas
+    malformadas confirmadas ("NAO HA" no lugar do codigo de negociacao,
+    codigos puramente numericos como "0"/"00000") - sem o filtro, isso
+    entraria no universo de coleta como ticker fantasma. O codigo-base
+    PRECISA aceitar digito (nao so' letra): achado real ao validar esta
+    reforma - "B3SA3" (ticker real da propria B3) tem um digito dentro
+    do codigo-base ("B3SA"), um regex exigindo 4 LETRAS puras excluiria
+    um ticker real do Ibovespa; a checagem "pelo menos 1 letra" continua
+    descartando codigo puramente numerico (nunca um ticker de verdade)."""
+    return {t for t in (str(k).strip().upper() for k in _mapa_ticker_cnpj()) if _TICKER_B3_VALIDO.match(t)}
+
+
 @st.cache_resource(show_spinner=False)
 def _ultimo_ipe_valido_por_ano() -> dict:
     """{ano: DataFrame} - ultimo IPE que baixou com sucesso, por ano (ver

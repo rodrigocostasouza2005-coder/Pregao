@@ -27,6 +27,20 @@ def mock_pregerar_imagens():
     with patch.object(coletor_local, "pregerar_imagens_news", return_value=dict(_STATS_IMAGENS_VAZIO)) as m:
         yield m
 
+
+@pytest.fixture(autouse=True)
+def mock_universo_calendario():
+    """Reforma estrutural do CALENDARIO (2026-10-24): main() agora chama
+    data.eventos.universo_calendario() (CVM/FCA + BDRs + watchlists
+    reais) ANTES de coletar_eventos_universo/salvar_snapshot_calendario.
+    Nenhum teste deste arquivo pode disparar a chamada REAL (rede pra
+    CVM + leitura paginada do Supabase) - fixa um universo pequeno e
+    deterministico, consistente com os testes que ja existiam antes
+    desta reforma (eles nao testam o CONTEUDO do universo, so' a
+    orquestracao de main())."""
+    with patch.object(coletor_local, "universo_calendario", return_value=["PETR4", "VALE3"]) as m:
+        yield m
+
 _FALHAS = []
 
 
@@ -180,6 +194,19 @@ def test_4a_calendario_tudo_ok_persistencia_ok_true():
     _checar("2a registros_novos=3 (2 confirmados + 1 estimado)", kwargs.get("registros_novos") == 3, f"({kwargs})")
     _checar("2a sem erro", kwargs.get("erro") is None, f"({kwargs})")
     _checar("2a parcial=False (orcamento nao esgotou)", kwargs.get("parcial") is False, f"({kwargs})")
+
+
+def test_4a2_calendario_universo_calculado_1x_e_reaproveitado_no_snapshot(mock_universo_calendario):
+    """Reforma estrutural (2026-10-24): universo_calendario() precisa ser
+    calculado 1 vez por execucao de main() e reaproveitado tanto na
+    coleta de eventos quanto no snapshot - 2 leituras completas de
+    user_prefs/CVM por rodada seria desperdicio (ambas @st.cache_data,
+    mas o ponto e' a orquestracao em si nunca pedir 2x por acidente)."""
+    stats = {"processados": 2, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 2,
+              "tempo_esgotado": False, "tabela_disponivel": True}
+    _rodar_main_mockado(stats, snapshot_ok=True)
+    _checar("4a2 universo_calendario chamado exatamente 1x por execucao",
+            mock_universo_calendario.call_count == 1, f"(call_count={mock_universo_calendario.call_count})")
 
 
 def test_4b_calendario_tabela_ausente_marca_persistencia_falsa_com_erro():

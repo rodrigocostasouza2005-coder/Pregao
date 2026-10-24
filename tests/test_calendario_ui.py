@@ -103,6 +103,7 @@ def test_4_mix_confirmado_e_prazo_cvm_fica_em_secoes_diferentes():
 def test_5_mensagem_de_periodo_vazio_na_agenda():
     prefs = {"watchlist": ["PETR4"]}
     with patch.object(calendario_tab_mod, "calcular_calendario_cacheado", return_value=[]), \
+         patch.object(calendario_tab_mod, "universo_calendario", return_value=["PETR4"]), \
          patch.object(calendario_tab_mod.st, "columns", return_value=(_FakeCol(), _FakeCol())), \
          patch.object(calendario_tab_mod.st, "pills", return_value=None), \
          patch.object(calendario_tab_mod.st, "spinner", return_value=_FakeCtx()):
@@ -384,6 +385,7 @@ def test_20_rotulo_atualizacao_sem_snapshot_retorna_none():
 def test_21_painel_agenda_usa_classe_css_de_alerta_quando_desatualizado():
     with patch.object(calendario_tab_mod, "_rotulo_atualizacao", return_value=("atualizado há 3d", True)), \
          patch.object(calendario_tab_mod, "calcular_calendario_cacheado", return_value=[]), \
+         patch.object(calendario_tab_mod, "universo_calendario", return_value=["PETR4"]), \
          patch.object(calendario_tab_mod.st, "columns", return_value=(_FakeCol(), _FakeCol())), \
          patch.object(calendario_tab_mod.st, "pills", return_value=None), \
          patch.object(calendario_tab_mod.st, "spinner", return_value=_FakeCtx()):
@@ -398,20 +400,26 @@ def test_22_legenda_de_escopo_aparece_no_filtro_padrao_watchlist():
     # mostrar so' 2-3 empresas porque o filtro padrao e' MINHA WATCHLIST e a
     # watchlist padrao (config.TICKERS_PADRAO) tem so' 3 tickers - nao e'
     # bug de coleta/parsing/dedup. Essa legenda deixa o escopo explicito.
+    #
+    # reforma estrutural (2026-10-24): total_universo agora vem de
+    # universo_calendario() (CVM/FCA + BDRs + watchlists reais), nao mais
+    # de config.IBOVESPA_SETORES - mockado aqui pra nao bater rede/Supabase
+    # de verdade num teste unitario.
     with patch.object(calendario_tab_mod, "calcular_calendario_cacheado", return_value=[]), \
+         patch.object(calendario_tab_mod, "universo_calendario", return_value=list(range(120))), \
          patch.object(calendario_tab_mod.st, "columns", return_value=(_FakeCol(), _FakeCol())), \
          patch.object(calendario_tab_mod.st, "pills", return_value=None), \
          patch.object(calendario_tab_mod.st, "spinner", return_value=_FakeCtx()):
         capturado = _capturar_markdown(calendario_tab_mod._painel_agenda, {"watchlist": ["PETR4", "VALE3"]})
     texto = " ".join(capturado)
-    total_universo = len(calendario_tab_mod.config.IBOVESPA_SETORES)
     _checar("22a legenda menciona o tamanho real da watchlist (2 ativos)", "2 ativos" in texto, f"(texto={texto!r})")
-    _checar("22b legenda aponta pro TODOS com o total real do universo",
-             f"TODOS para ver as {total_universo} empresas" in texto)
+    _checar("22b legenda aponta pro TODOS com o total real do universo (mockado=120, nao mais o Ibovespa fixo)",
+             "TODOS para ver as 120 empresas" in texto, f"(texto={texto!r})")
 
 
 def test_23_legenda_de_escopo_nao_aparece_fora_do_filtro_watchlist():
     with patch.object(calendario_tab_mod, "calcular_calendario_cacheado", return_value=[]), \
+         patch.object(calendario_tab_mod, "universo_calendario", return_value=["PETR4", "VALE3"]), \
          patch.object(calendario_tab_mod.st, "columns", return_value=(_FakeCol(), _FakeCol())), \
          patch.object(calendario_tab_mod.st, "pills", return_value="TODOS"), \
          patch.object(calendario_tab_mod.st, "spinner", return_value=_FakeCtx()):
@@ -419,6 +427,26 @@ def test_23_legenda_de_escopo_nao_aparece_fora_do_filtro_watchlist():
     texto = " ".join(capturado)
     _checar("23 sem a legenda de escopo quando o filtro ja' e' TODOS (nao watchlist)",
              "mostrando sua watchlist" not in texto)
+
+
+def test_24_filtro_todos_usa_universo_completo_nao_mais_so_ibovespa():
+    """Reforma estrutural (2026-10-24): TODOS precisa refletir o universo
+    completo (CVM/FCA + BDRs + watchlists reais), nao mais so' os 84 de
+    config.IBOVESPA_SETORES."""
+    with patch.object(calendario_tab_mod, "universo_calendario", return_value=["PETR4", "MELI34", "WEGE3"]):
+        tickers = calendario_tab_mod._universo_tickers("TODOS", {"watchlist": []})
+    _checar("24a TODOS devolve o universo completo mockado", sorted(tickers) == ["MELI34", "PETR4", "WEGE3"],
+            f"(tickers={tickers})")
+
+
+def test_25_filtro_setor_continua_restrito_ao_ibovespa_curado():
+    """SETOR continua intocado - classificacao setorial so' existe pros
+    tickers curados em config.IBOVESPA_SETORES, nao foi pedido classificar
+    setor pro universo completo nesta reforma."""
+    setor_exemplo = next(iter(calendario_tab_mod.config.IBOVESPA_SETORES.values()))
+    tickers = calendario_tab_mod._universo_tickers("SETOR", {"watchlist": []}, setor=setor_exemplo)
+    esperados = {t for t, s in calendario_tab_mod.config.IBOVESPA_SETORES.items() if s == setor_exemplo}
+    _checar("25a SETOR devolve so' os tickers daquele setor curado", set(tickers) == esperados, f"(tickers={tickers})")
 
 
 if __name__ == "__main__":

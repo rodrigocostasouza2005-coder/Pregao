@@ -218,6 +218,58 @@ def test_11_fca_falha_apos_sucesso_reaproveita_ultimo_mapa_valido():
             mock_reg.call_args.kwargs.get("execucao_ok") is False, f"(call={mock_reg.call_args})")
 
 
+def test_11b_tickers_com_cnpj_cvm_filtra_linha_malformada_do_fca():
+    """Reforma estrutural do CALENDARIO (2026-10-24): tickers_com_cnpj_cvm
+    e' o universo real de acoes/units pra coleta de datas de resultado -
+    achado real da auditoria (2026-10-23): o dump do FCA tem pelo menos 1
+    linha malformada ("NAO HA" no lugar do codigo de negociacao), que
+    nunca pode entrar no universo como ticker fantasma."""
+    _limpar_cache_fca_ipe()
+    import pandas as pd
+
+    df_fca = pd.DataFrame({
+        "Codigo_Negociacao": ["PETR4", "BPAC11", "B3SA3", "NÃO HÁ", "xyz", "wege3", "0", "00000"],
+        "CNPJ_Companhia": ["33.000.167/0001-01", "11.111.111/0001-11", "09.346.601/0001-25",
+                            "00.249.786/0001-85", "22.222.222/0001-22", "90.442.980/0001-37",
+                            "11.111.111/0001-99", "22.222.222/0001-88"],
+    })
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=df_fca), \
+         patch.object(cvm_mod, "registrar_tentativa"):
+        universo = cvm_mod.tickers_com_cnpj_cvm()
+    _checar("11b.1 tickers validos (4+2 digitos) presentes", {"PETR4", "BPAC11"} <= universo, f"(universo={universo})")
+    _checar("11b.2 ticker minusculo normalizado pra maiusculo", "WEGE3" in universo, f"(universo={universo})")
+    _checar("11b.3 linha malformada 'NAO HA' NUNCA entra como ticker", "NÃO HÁ" not in universo and "NAO HA" not in universo,
+            f"(universo={universo})")
+    _checar("11b.4 token sem formato de ticker B3 (sem digito) descartado", "XYZ" not in universo, f"(universo={universo})")
+    _checar("11b.5 B3SA3 (ticker REAL com digito dentro do codigo-base) nao e' excluido por engano",
+            "B3SA3" in universo, f"(universo={universo})")
+    _checar("11b.6 codigo puramente numerico ('0'/'00000', sem nenhuma letra) nunca e' um ticker",
+            "0" not in universo and "00000" not in universo, f"(universo={universo})")
+
+
+def test_11c_tickers_com_cnpj_cvm_reaproveita_fallback_do_mapa_ticker_quando_cvm_falha():
+    """tickers_com_cnpj_cvm nao tem fallback proprio - herda de
+    _mapa_ticker_cnpj (mesmo cache/resiliencia, zero logica duplicada):
+    uma falha do FCA depois de 1 sucesso reaproveita o universo anterior,
+    nunca vira set() vazio por 24h (mesma classe de bug do teste 11)."""
+    _limpar_cache_fca_ipe()
+    import pandas as pd
+
+    df_fca = pd.DataFrame({"Codigo_Negociacao": ["VALE3"], "CNPJ_Companhia": ["33.592.510/0001-54"]})
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=df_fca), \
+         patch.object(cvm_mod, "registrar_tentativa"):
+        primeiro = cvm_mod.tickers_com_cnpj_cvm()
+
+    cvm_mod._mapa_ticker_cnpj.clear()  # simula o TTL de 24h expirando
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=None), \
+         patch.object(cvm_mod, "registrar_tentativa"):
+        segundo = cvm_mod.tickers_com_cnpj_cvm()
+
+    _checar("11c.1 primeira chamada tem VALE3", "VALE3" in primeiro, f"(primeiro={primeiro})")
+    _checar("11c.2 falha transitoria NAO esvazia o universo - reaproveita o anterior",
+            segundo == primeiro and segundo != set(), f"(segundo={segundo})")
+
+
 def test_12_ipe_falha_apos_sucesso_reaproveita_ultimo_ipe_valido_do_mesmo_ano():
     """Mesmo bug/fix do teste 11, agora pro IPE (_ipe_ano) - o fallback e'
     POR ANO (nao um dict global), confirmando que o ano certo e'
