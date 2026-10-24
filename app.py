@@ -31,7 +31,7 @@ from data.user_prefs import (
     deve_oferecer_morning_call, email_valido, obter_prefs, registrar_acesso, salvar_prefs,
 )
 from ui import (
-    analises_tab, busca, graficos, macro_tab, market_makers_tab, morning_call_tab, navegacao, paineis,
+    analises_tab, busca, graficos, macro_tab, morning_call_tab, navegacao, paineis,
     radar_tab, secoes, setores_tab,
 )
 from ui.cvm_tab import render_cvm, render_cvm_ticker
@@ -630,9 +630,6 @@ if rota == ("radar", "oportunidades"):
 if rota == ("radar", "acompanhamento"):
     radar_tab.render_radar_acompanhamento(prefs, usuario)
 
-# --- MARKET MAKERS (ver ui/market_makers_tab.py) -----------------------------
-if rota == ("market-makers", "visao-geral"):
-    market_makers_tab.render_market_makers(prefs, "visao-geral")
 
 # --- RESEARCH (ver ui/research_tab.py) - area propria 2026-10-23 -------------
 if rota == ("research", "feed"):

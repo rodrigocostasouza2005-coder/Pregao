@@ -19,7 +19,7 @@ from ui.navegacao import AREAS, ROTA_LEGADO
 
 RAIZ = Path(__file__).parent.parent
 
-ORDEM_ESPERADA = ["mercado", "noticias", "radar", "market-makers", "research", "analises", "macro", "setores",
+ORDEM_ESPERADA = ["mercado", "noticias", "radar", "research", "analises", "macro", "setores",
                   "morning-call", "mais"]
 
 
@@ -29,8 +29,8 @@ def _todas_rotas():
 
 def test_ordem_das_areas_principais():
     assert [a.id for a in AREAS] == ORDEM_ESPERADA
-    assert [a.rotulo for a in AREAS][:9] == [
-        "MERCADO", "NOTÍCIAS", "RADAR", "MARKET MAKERS", "RESEARCH", "ANÁLISES", "MACRO", "SETORES",
+    assert [a.rotulo for a in AREAS][:8] == [
+        "MERCADO", "NOTÍCIAS", "RADAR", "RESEARCH", "ANÁLISES", "MACRO", "SETORES",
         "MORNING CALL",
     ]
 
@@ -79,11 +79,11 @@ def test_preferencia_antiga_de_abas_esconde_subabas():
     areas = navegacao.disponiveis([a for a in config.ABAS_DISPONIVEIS if a != "CVM"], eh_admin=False)
     noticias = next(a for a in areas if a.id == "noticias")
     assert "documentos" not in [s.id for s in noticias.subabas]
-    # tudo escondido: so' sobra o que nao depende de aba antiga (CONFIG,
-    # Casas de Analise e MARKET MAKERS sempre acessiveis - "research"
-    # sobrevive so' com essa 1 subaba, mesmo sem nenhuma aba antiga visivel)
+    # tudo escondido: so' sobra o que nao depende de aba antiga (CONFIG e
+    # Casas de Analise sempre acessiveis - "research" sobrevive so' com
+    # essa 1 subaba, mesmo sem nenhuma aba antiga visivel)
     minimas = navegacao.disponiveis([], eh_admin=False)
-    assert [a.id for a in minimas] == ["market-makers", "research", "setores", "morning-call", "mais"]
+    assert [a.id for a in minimas] == ["research", "setores", "morning-call", "mais"]
     pesquisa_minima = next(a for a in minimas if a.id == "research")
     assert [s.id for s in pesquisa_minima.subabas] == ["casas"]
     assert "config" in [s.id for s in minimas[-1].subabas]
