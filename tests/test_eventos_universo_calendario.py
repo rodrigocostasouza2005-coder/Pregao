@@ -106,3 +106,102 @@ def test_resultado_e_lista_cacheada_mesma_chamada_2x_nao_bate_fontes_de_novo():
         eventos_mod.universo_calendario()
         eventos_mod.universo_calendario()
     assert m_cvm.call_count == 1
+
+
+# ============================================================
+# universo_calendario_priorizado - priorizacao watchlist-primeiro
+# (2026-10-25): watchlist nunca rotaciona junto com o resto do
+# universo em coletor_local.py (ver _universo_rotativo la').
+# ============================================================
+
+def _limpar_cache_priorizado():
+    eventos_mod.universo_calendario_priorizado.clear()
+
+
+def test_priorizado_divide_watchlist_e_resto_sem_sobreposicao():
+    _limpar_cache_priorizado()
+    with patch.object(eventos_mod, "tickers_com_cnpj_cvm", return_value={"PETR4", "VALE3", "ITUB4"}), \
+         patch.object(eventos_mod, "uniao_watchlists_todos_usuarios", return_value={"VALE3", "ROXO34"}), \
+         patch.object(eventos_mod.config, "TICKER_ALIASES", {}):
+        watchlist, resto = eventos_mod.universo_calendario_priorizado()
+    assert set(watchlist) == {"VALE3", "ROXO34"}
+    assert set(resto) == {"PETR4", "ITUB4"}  # VALE3 so' na watchlist, nunca duplicado no resto
+    assert not (set(watchlist) & set(resto))
+
+
+def test_priorizado_e_universo_calendario_descrevem_o_mesmo_conjunto():
+    _limpar_cache_universo()
+    _limpar_cache_priorizado()
+    with patch.object(eventos_mod, "tickers_com_cnpj_cvm", return_value={"PETR4", "VALE3"}), \
+         patch.object(eventos_mod, "uniao_watchlists_todos_usuarios", return_value={"ROXO34"}), \
+         patch.object(eventos_mod.config, "TICKER_ALIASES", {"AAPL34": ["AAPL"]}):
+        watchlist, resto = eventos_mod.universo_calendario_priorizado()
+        universo = eventos_mod.universo_calendario()
+    assert set(watchlist) | set(resto) == set(universo)
+
+
+def test_priorizado_watchlists_indisponivel_degrada_pro_resto_sem_esvaziar():
+    _limpar_cache_priorizado()
+    with patch.object(eventos_mod, "tickers_com_cnpj_cvm", return_value={"PETR4", "VALE3"}), \
+         patch.object(eventos_mod, "uniao_watchlists_todos_usuarios", return_value=None), \
+         patch.object(eventos_mod.config, "TICKER_ALIASES", {}):
+        watchlist, resto = eventos_mod.universo_calendario_priorizado()
+    assert watchlist == []
+    assert set(resto) == {"PETR4", "VALE3"}  # nunca vazio por 1 fonte indisponivel
+
+
+def test_priorizado_dedupe_ticker_em_watchlist_e_cvm_fica_so_na_watchlist():
+    _limpar_cache_priorizado()
+    with patch.object(eventos_mod, "tickers_com_cnpj_cvm", return_value={"WEGE3", "wege3"}), \
+         patch.object(eventos_mod, "uniao_watchlists_todos_usuarios", return_value={"WEGE3"}), \
+         patch.object(eventos_mod.config, "TICKER_ALIASES", {}):
+        watchlist, resto = eventos_mod.universo_calendario_priorizado()
+    assert watchlist == ["WEGE3"]
+    assert "WEGE3" not in resto  # sem duplicata entre as 2 listas
+
+
+# ============================================================
+# nome_via_rede - protecao de desempenho do filtro TODOS
+# (achado real durante a revisao da reforma: calcular_calendario_
+# cacheado pagava yfinance por ticker nao-coberto pelo snapshot, sem
+# limite - com o universo de ~500 tickers, isso bloquearia a UI).
+# ============================================================
+
+def test_cacheado_lote_pequeno_nao_coberto_mantem_nome_via_rede():
+    """Watchlist/setor reais (ate' _LIMITE_NOME_VIA_REDE_UI) continuam
+    com o comportamento de sempre - nome bonito via rede quando
+    necessario."""
+    chamadas = []
+
+    def _fake(tickers, hoje=None, nome_via_rede=True):
+        chamadas.append(nome_via_rede)
+        return []
+
+    with patch.object(eventos_mod, "obter_snapshot_calendario", return_value={"eventos": []}), \
+         patch.object(eventos_mod, "calcular_calendario", side_effect=_fake):
+        eventos_mod.calcular_calendario_cacheado(["PETR4", "VALE3"])
+    assert chamadas == [True]
+
+
+def test_cacheado_lote_grande_nao_coberto_desativa_nome_via_rede():
+    """So' um lote GRANDE (filtro TODOS, maioria fora do snapshot
+    ainda) desativa a busca de nome via rede - protege a UI de
+    bloquear por minutos."""
+    limite = eventos_mod._LIMITE_NOME_VIA_REDE_UI
+    tickers_grande = [f"T{i}3" for i in range(limite + 1)]
+    chamadas = []
+
+    def _fake(tickers, hoje=None, nome_via_rede=True):
+        chamadas.append(nome_via_rede)
+        return []
+
+    with patch.object(eventos_mod, "obter_snapshot_calendario", return_value={"eventos": []}), \
+         patch.object(eventos_mod, "calcular_calendario", side_effect=_fake):
+        eventos_mod.calcular_calendario_cacheado(tickers_grande)
+    assert chamadas == [False]
+
+
+def test_nome_via_rede_false_nunca_chama_yfinance():
+    with patch.object(eventos_mod, "obter_nome_yf", side_effect=AssertionError("nao deveria chamar rede")):
+        nome = eventos_mod._nome_empresa("ZZZZ99", nome_via_rede=False)
+    assert nome == "ZZZZ99"  # proprio codigo, nunca inventado

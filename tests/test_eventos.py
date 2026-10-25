@@ -548,7 +548,7 @@ def test_snap_2_ticker_fora_do_snapshot_cai_pro_calculo_isolado_so_pra_ele():
     evento_xpto = _evento_sint(ticker="XPTO9", status=STATUS_PRAZO_CVM, data_evento=date(2026, 11, 14))
     chamadas_live = []
 
-    def _calc(tickers, hoje=None):
+    def _calc(tickers, hoje=None, nome_via_rede=True):
         chamadas_live.append(list(tickers))
         return [evento_xpto]
 
@@ -564,7 +564,7 @@ def test_snap_2_ticker_fora_do_snapshot_cai_pro_calculo_isolado_so_pra_ele():
 def test_snap_3_sem_snapshot_cai_pro_calculo_completo_de_sempre():
     chamadas_live = []
 
-    def _calc(tickers, hoje=None):
+    def _calc(tickers, hoje=None, nome_via_rede=True):
         chamadas_live.append(list(tickers))
         return []
 
@@ -629,7 +629,7 @@ def test_snap_8_cacheado_ignora_linha_malformada_no_snapshot_sem_quebrar():
     linha_malformada = {"ticker": "VALE3"}  # sem 'data' - KeyError se nao tratado
     chamadas_live = []
     with patch.object(eventos_mod, "obter_snapshot_calendario", return_value={"eventos": [linha_boa, linha_malformada]}), \
-         patch.object(eventos_mod, "calcular_calendario", side_effect=lambda tickers, hoje=None: (chamadas_live.append(list(tickers)), [])[1]):
+         patch.object(eventos_mod, "calcular_calendario", side_effect=lambda tickers, hoje=None, nome_via_rede=True: (chamadas_live.append(list(tickers)), [])[1]):
         eventos = calcular_calendario_cacheado(["PETR4", "VALE3"])
     _checar("snap8a linha malformada nao quebra a leitura", True)
     _checar("snap8b PETR4 (linha boa) retornado normalmente", any(e["ticker"] == "PETR4" for e in eventos))

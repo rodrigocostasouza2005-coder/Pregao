@@ -30,15 +30,17 @@ def mock_pregerar_imagens():
 
 @pytest.fixture(autouse=True)
 def mock_universo_calendario():
-    """Reforma estrutural do CALENDARIO (2026-10-24): main() agora chama
-    data.eventos.universo_calendario() (CVM/FCA + BDRs + watchlists
-    reais) ANTES de coletar_eventos_universo/salvar_snapshot_calendario.
-    Nenhum teste deste arquivo pode disparar a chamada REAL (rede pra
-    CVM + leitura paginada do Supabase) - fixa um universo pequeno e
-    deterministico, consistente com os testes que ja existiam antes
-    desta reforma (eles nao testam o CONTEUDO do universo, so' a
-    orquestracao de main())."""
-    with patch.object(coletor_local, "universo_calendario", return_value=["PETR4", "VALE3"]) as m:
+    """Reforma estrutural do CALENDARIO (2026-10-24/25): main() agora
+    chama data.eventos.universo_calendario_priorizado() (watchlist,
+    resto) ANTES de coletar_eventos_universo/salvar_snapshot_calendario
+    - watchlist nunca rotaciona junto com o resto (ver priorizacao,
+    2026-10-25). Nenhum teste deste arquivo pode disparar a chamada
+    REAL (rede pra CVM + leitura paginada do Supabase) - fixa um
+    universo pequeno e deterministico (universo final = watchlist +
+    resto = ["PETR4", "VALE3"], mesmo conteudo de antes da reforma de
+    prioridade), consistente com os testes que ja existiam (eles nao
+    testam o CONTEUDO do universo, so' a orquestracao de main())."""
+    with patch.object(coletor_local, "universo_calendario_priorizado", return_value=(["PETR4"], ["VALE3"])) as m:
         yield m
 
 _FALHAS = []
@@ -207,6 +209,49 @@ def test_4a2_calendario_universo_calculado_1x_e_reaproveitado_no_snapshot(mock_u
     _rodar_main_mockado(stats, snapshot_ok=True)
     _checar("4a2 universo_calendario chamado exatamente 1x por execucao",
             mock_universo_calendario.call_count == 1, f"(call_count={mock_universo_calendario.call_count})")
+
+
+def test_4a3_watchlist_nunca_rotaciona_so_o_resto_do_universo_rotaciona(mock_universo_calendario):
+    """Priorizacao watchlist-primeiro (2026-10-25): a watchlist entra
+    SEMPRE, sem passar por _universo_rotativo - so' o resto do universo
+    (CVM+BDRs fora de toda watchlist) rotaciona pelo checkpoint. Sem
+    isso, a watchlist podia comecar no meio/fim da rotacao numa
+    execucao qualquer e nao receber orcamento de rede nenhum."""
+    mock_universo_calendario.return_value = (["WATCH1", "WATCH2"], ["RESTO1", "RESTO2", "RESTO3"])
+    chamadas_rotativo = []
+
+    def _fake_rotativo(tickers, **kwargs):
+        chamadas_rotativo.append(list(tickers))
+        return list(reversed(tickers))  # qualquer reordenacao, so' pra provar que passou por aqui
+
+    stats = {"processados": 5, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 5,
+              "tempo_esgotado": False, "tabela_disponivel": True}
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "_universo_rotativo", side_effect=_fake_rotativo), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats) as mock_coletar, \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True) as mock_snapshot, \
+         patch.object(coletor_local, "registrar_tentativa"):
+        coletor_local.main()
+
+    # _universo_rotativo so' recebeu o RESTO (nunca a watchlist) - entre as
+    # 2 chamadas feitas dentro de main() (CALENDARIO + NEWS, ver test_5a),
+    # a do CALENDARIO precisa ter recebido exatamente ["RESTO1","RESTO2","RESTO3"].
+    assert ["RESTO1", "RESTO2", "RESTO3"] in chamadas_rotativo
+    assert not any("WATCH1" in c or "WATCH2" in c for c in chamadas_rotativo)
+
+    # coletar_eventos_universo recebeu a watchlist PRIMEIRO (sem rotacao),
+    # seguida do resto JA ROTACIONADO.
+    universo_recebido = mock_coletar.call_args[0][0]
+    assert universo_recebido[:2] == ["WATCH1", "WATCH2"]
+    assert set(universo_recebido[2:]) == {"RESTO1", "RESTO2", "RESTO3"}
+
+    # salvar_snapshot_calendario recebeu o universo completo (watchlist + resto)
+    universo_snapshot = mock_snapshot.call_args[0][0]
+    assert set(universo_snapshot) == {"WATCH1", "WATCH2", "RESTO1", "RESTO2", "RESTO3"}
 
 
 def test_4b_calendario_tabela_ausente_marca_persistencia_falsa_com_erro():
