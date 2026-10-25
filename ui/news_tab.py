@@ -352,14 +352,28 @@ div[class*="st-key-news-live-card-"] {
     background: var(--painel-bg); margin-bottom: 0.7rem; border-radius: 2px;
 }
 .news-capa img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* redesign do fallback (2026-10-24): sem foto, a capa NUNCA reserva a
+   mesma altura de uma imagem real - vira uma barra compacta e discreta
+   com a fonte identificada, alinhada a esquerda (nao mais um bloco
+   centralizado ocupando a altura inteira da .news-capa). .news-capa-vazia
+   (classe aplicada em _capa_html quando nao ha' candidata de imagem) e'
+   quem reduz a altura do CONTAINER - ver bloco do dialog abaixo, que
+   tambem cobre via :has() o caso de uma imagem que falha so' em runtime. */
 .news-capa-fallback {
-    display: flex; align-items: center; justify-content: center; height: 100%;
-    flex-direction: column; gap: 0.3rem;
+    display: flex; align-items: center; flex-direction: row; justify-content: flex-start;
+    gap: 0.5rem; padding: 0.55rem 0.8rem; height: 100%;
 }
-.news-capa-fallback span {
-    font-family: 'IBM Plex Mono', monospace; font-size: 1.1rem; letter-spacing: 0.1em;
-    color: var(--cinza); opacity: 0.55; text-transform: uppercase;
+.news-capa-fallback-rotulo {
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem; letter-spacing: 0.08em;
+    color: var(--cinza); opacity: 0.65; text-transform: uppercase; white-space: nowrap;
 }
+.news-capa-fallback-fonte {
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; letter-spacing: 0.03em;
+    color: var(--neutro); text-transform: uppercase; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.news-capa.news-capa-vazia { height: auto; }
+.news-capa.news-capa-vazia .news-capa-fallback { height: auto; }
 .news-headline {
     font-size: 1.1rem; font-weight: 700; line-height: 1.32; color: var(--neutro);
     margin-bottom: 0.35rem;
@@ -487,19 +501,7 @@ div[class*="st-key-news-live-card-"] {
     display: inline-block;
     margin-bottom: 0.2rem;
 }
-/* Capa em fallback: nao reservar um retangulo gigante sem imagem real. */
-.news-capa-fallback { min-height: 0; }
 @media (max-width: 640px) {
-    /* só a capa SEM foto (:not(:has(img))) - a capa com foto também
-       carrega o fallback oculto no DOM, e o seletor antigo
-       (:has(.news-capa-fallback)) espremia a foto real numa faixa de 64px */
-    .news-capa:not(:has(img)) {
-        height: 64px !important;
-        aspect-ratio: auto !important;
-    }
-    .news-capa:not(:has(img)) .news-capa-fallback span {
-        font-size: 0.72rem !important;
-    }
     div[data-testid="stHorizontalBlock"]:has(.news-item-thumb-wrap) {
         gap: 0.6rem !important;
     }
@@ -556,10 +558,15 @@ div[class*="st-key-news-live-card-"] {
         margin-bottom: 0.45rem !important;
     }
     .news-capa img { object-fit: cover; }
-    .news-capa-fallback { min-height: 0 !important; }
-    .news-capa-fallback span {
-        font-size: 0.78rem !important;
-        letter-spacing: 0.08em !important;
+    .news-capa.news-capa-vazia,
+    .news-capa:has(.news-capa-fallback:not([style*="display: none"])) {
+        height: auto !important;
+    }
+    .news-capa-fallback { min-height: 0 !important; padding: 0.45rem 0.65rem !important; }
+    .news-capa-fallback-rotulo { font-size: 0.56rem !important; }
+    .news-capa-fallback-fonte {
+        font-size: 0.74rem !important;
+        letter-spacing: 0.04em !important;
     }
     .news-headline {
         font-size: 0.98rem !important;
@@ -616,16 +623,45 @@ div[class*="st-key-news-live-card-"] {
 }
 
 /* Redesign editorial do modal NOTÍCIA — visual mais próximo de um terminal
-   financeiro, sem alterar a lógica dos dados nem os links existentes. */
+   financeiro, sem alterar a lógica dos dados nem os links existentes.
+
+   REDESIGN 2026-10-24 (correção cirúrgica, captura real do Rodrigo):
+   - capa vazia (sem imagem/falhou) vira barra compacta, nunca a mesma
+     altura reservada pra foto real (.news-capa-vazia / :has() abaixo -
+     ver _capa_html e o bloco .news-capa-fallback em _CSS_WIRE);
+   - manchete sem teto de largura artificial (max-width:34ch forçava
+     quebra em "large" mesmo com largura de sobra disponível);
+   - dialog ganha altura máxima + layout em coluna (header fixo, corpo
+     com rolagem própria) - cabeçalho e botão "ABRIR MATÉRIA" continuam
+     alcançáveis sem depender da altura do resumo;
+   - botão "ABRIR MATÉRIA" com destaque real (preenchido em âmbar, texto
+     escuro) em vez de só a borda - mesmo padrão de alto contraste já
+     usado no pill ativo de filtro (ver [data-testid="stButtonGroup"]
+     button[aria-checked="true"] em style.css). */
 div[data-testid="stDialog"] > div {
     border: 1px solid #28313a !important;
     border-radius: 14px !important;
     background: linear-gradient(180deg, #090d11 0%, #050607 100%) !important;
     box-shadow: 0 18px 60px rgba(0,0,0,.48) !important;
+    max-height: 88vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
 }
 div[data-testid="stDialog"] [data-testid="stDialogHeader"] {
     padding: 0.8rem 1.15rem 0.55rem !important;
     border-bottom: 1px solid #202830 !important;
+    flex: 0 0 auto !important;
+}
+/* corpo do modal (tudo que _abrir_card desenha) - só ESTE bloco rola;
+   cabeçalho nativo (título "NOTÍCIA" + X de fechar) fica sempre visível
+   porque está fora deste container, como irmão dentro de "> div" acima. */
+div[data-testid="stDialog"] [data-testid="stVerticalBlock"] {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 0.9rem 1.15rem 1.1rem !important;
 }
 div[data-testid="stDialog"] .news-capa {
     height: clamp(170px, 27vh, 280px) !important;
@@ -638,23 +674,31 @@ div[data-testid="stDialog"] .news-capa img {
     object-fit: cover !important;
     object-position: center 38% !important;
 }
+div[data-testid="stDialog"] .news-capa.news-capa-vazia,
+div[data-testid="stDialog"] .news-capa:has(.news-capa-fallback:not([style*="display: none"])) {
+    height: auto !important;
+    background: transparent !important;
+    border-color: #202830 !important;
+}
 div[data-testid="stDialog"] .news-headline {
     font-size: clamp(1.15rem, 2vw, 1.65rem) !important;
     line-height: 1.22 !important;
     letter-spacing: -0.025em !important;
     font-weight: 750 !important;
     margin: 0.15rem 0 0.55rem !important;
-    max-width: 34ch !important;
+    max-width: none !important;
+    overflow-wrap: break-word !important;
 }
 div[data-testid="stDialog"] .news-meta-line {
     display: flex !important;
     flex-wrap: wrap !important;
     align-items: center !important;
-    gap: 0.2rem 0.65rem !important;
+    gap: 0.25rem 0.75rem !important;
     padding-bottom: 0.65rem !important;
     margin-bottom: 0.7rem !important;
     border-bottom: 1px solid #202830 !important;
-    font-size: 0.72rem !important;
+    font-size: 0.78rem !important;
+    line-height: 1.5 !important;
 }
 div[data-testid="stDialog"] .news-resumo-rotulo {
     color: #7f8b96 !important;
@@ -682,9 +726,25 @@ div[data-testid="stDialog"] a.w-abrir-link,
 div[data-testid="stDialog"] a[href][target="_blank].news-open-link {
     color: #ffad28 !important;
 }
-div[data-testid="stDialog"] [data-testid="stLinkButton"] a,
-div[data-testid="stDialog"] a:has(span) {
-    border-color: #f5a623 !important;
+/* botão primário "ABRIR MATÉRIA" (st.link_button nativo - <a> dentro de
+   div[data-testid="stLinkButton"], não um <button>, por isso o estilo
+   global de botão em style.css nunca alcançava ele) - preenchido, não
+   só contornado, pra ter destaque real de CTA. */
+div[data-testid="stDialog"] div[data-testid="stLinkButton"] a {
+    background-color: var(--destaque) !important;
+    border: 1px solid var(--destaque) !important;
+    color: #0a0a0a !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.04em !important;
+    border-radius: 3px !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    box-shadow: none !important;
+    transition: background-color .15s ease, border-color .15s ease !important;
+}
+div[data-testid="stDialog"] div[data-testid="stLinkButton"] a:hover {
+    background-color: #ffc266 !important;
+    border-color: #ffc266 !important;
+    color: #0a0a0a !important;
 }
 div[data-testid="stDialog"] .news-secundario {
     border-top: 1px solid #26303a !important;
@@ -702,6 +762,13 @@ div[data-testid="stDialog"] .news-secundario a {
     div[data-testid="stDialog"] .news-capa {
         height: 150px !important;
         margin-bottom: 0.6rem !important;
+    }
+    div[data-testid="stDialog"] .news-capa.news-capa-vazia,
+    div[data-testid="stDialog"] .news-capa:has(.news-capa-fallback:not([style*="display: none"])) {
+        height: auto !important;
+    }
+    div[data-testid="stDialog"] [data-testid="stVerticalBlock"] {
+        padding: 0.65rem 0.85rem 0.9rem !important;
     }
     div[data-testid="stDialog"] .news-headline {
         font-size: 1.08rem !important;
@@ -754,6 +821,16 @@ def _tooltip_regras(n: dict) -> str:
     if not n["regras"]:
         return prefixo + "score base, nenhuma regra especial se aplicou"
     return prefixo + "; ".join(n["regras"])
+
+
+def _link_valido(link) -> bool:
+    """So' aceita URL absoluta http(s) - mesmo criterio de
+    data/news.py:_url_imagem_valida, aplicado aqui ao link original da
+    materia (botao ABRIR MATÉRIA). Upstream (_montar_item) ja' descarta
+    item sem link antes de formar o grupo; isso e' so' uma 2a camada de
+    segurança pra nunca desenhar um botao que parece funcional mas nao
+    abre nada (ex: link vazio/relativo que escape do pipeline)."""
+    return isinstance(link, str) and link.strip().startswith(("http://", "https://"))
 
 
 def _truncar(texto: str, limite: int = _TRUNCA_MANCHETE) -> str:
@@ -984,14 +1061,27 @@ def _capa_html(imagem: str | None, veiculo_principal: str) -> str:
     requisicao SEM referer e so' bloquear quando o referer aponta pra
     um dominio estranho - sem custo nenhum quando o host nao valida
     referer."""
-    marca = html.escape(veiculo_principal or "NOTÍCIA")
+    marca = html.escape(veiculo_principal or "fonte não identificada")
+    rotulo_fonte = (
+        "<span class='news-capa-fallback-rotulo'>SEM IMAGEM</span>"
+        f"<span class='news-capa-fallback-fonte'>{marca}</span>"
+    )
     if not imagem:
-        return f"<div class='news-capa'><div class='news-capa-fallback'><span>{marca}</span></div></div>"
+        # classe propria (nao so' :has() no CSS) pro caso JA' sabido em
+        # tempo de render (sem candidata de imagem nenhuma) - a altura
+        # compacta nao depende de JS aqui. Quando HA' candidata mas ela
+        # falha no navegador (ramo abaixo), o <img> e' quem pode falhar
+        # em runtime - o CSS cobre esse 2o caso via :has() no proprio
+        # .news-capa-fallback (ver _CSS_WIRE): nunca a mesma altura
+        # reservada pra foto real - achado real, captura de tela: area
+        # vazia do tamanho de 2-3 linhas de texto quando a fonte nao
+        # tinha imagem.
+        return f"<div class='news-capa news-capa-vazia'><div class='news-capa-fallback'>{rotulo_fonte}</div></div>"
     return (
         "<div class='news-capa'>"
         f"<img src='{html.escape(imagem)}' loading='lazy' decoding='async' "
         "referrerpolicy='no-referrer' alt=''>"
-        f"<div class='news-capa-fallback' style='display:none;'><span>{marca}</span></div>"
+        f"<div class='news-capa-fallback' style='display:none;'>{rotulo_fonte}</div>"
         "</div>"
     )
 
@@ -1190,7 +1280,14 @@ def _abrir_card(n: dict, watchlist: list):
         motivo = resultado.get("motivo_indisponivel") or "motivo desconhecido"
         st.caption(f"Resumo indisponível ({motivo}).")
 
-    st.link_button("ABRIR MATÉRIA ↗", n["link"], use_container_width=True)
+    if _link_valido(n.get("link")):
+        st.link_button("ABRIR MATÉRIA ↗", n["link"], use_container_width=True)
+    else:
+        # upstream (data/news.py:_montar_item) ja' descarta item sem link
+        # antes de montar o grupo - isso so' protege contra um link
+        # malformado (nao http/https) que eventualmente escape disso;
+        # nunca mostra um botao que parece funcional mas nao abre nada.
+        st.caption("Link original indisponível para esta notícia.")
 
     secundario = [f"<b>Veículos</b> ({n['fontes_count']}): {_linha_veiculos(n['fontes'])}"]
     if n.get("tickers"):

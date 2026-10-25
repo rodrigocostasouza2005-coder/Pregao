@@ -593,9 +593,19 @@ def test_12c_capa_falha_no_servidor_vira_img_com_fallback_e_sem_foto_vira_marca(
 def test_12d_regressoes_da_validacao_visual():
     fonte = open(news_tab.__file__, encoding="utf-8").read()
     # capa COM foto também carrega o fallback oculto - a regra de "capa sem
-    # foto" (64px no celular) não pode casar com ela
+    # foto" não pode casar com ela SEM distinguir se o fallback está
+    # realmente visível (senão espreme a foto real na mesma altura compacta)
     assert ".news-capa:has(.news-capa-fallback)" not in fonte
-    assert ".news-capa:not(:has(img))" in fonte
+    # redesign 2026-10-24 (correção cirúrgica do modal): o seletor antigo
+    # (".news-capa:not(:has(img))", só no celular) foi substituído por um
+    # mecanismo que cobre os 2 casos reais em QUALQUER largura de tela -
+    # (a) nunca houve candidata de imagem (classe .news-capa-vazia,
+    # decidida em Python por _capa_html) e (b) a imagem existia mas falhou
+    # no navegador em runtime (:has() checando se o fallback está
+    # efetivamente visível, display != none) - o seletor antigo só cobria
+    # o caso (a), nunca o (b).
+    assert "news-capa-vazia" in fonte
+    assert ":has(.news-capa-fallback:not([style*=\"display: none\"]))" in fonte
     # imagem que falhou antes do listener existir também cai no fallback
     script = news_tab._SCRIPT_FALLBACK_IMAGEM
     assert "naturalWidth === 0" in script and "setInterval" in script
