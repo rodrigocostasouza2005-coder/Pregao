@@ -82,7 +82,7 @@ from pathlib import Path
 
 import config
 from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
-from data.eventos import salvar_snapshot_calendario, universo_calendario
+from data.eventos import salvar_snapshot_calendario, universo_calendario_priorizado
 from data.eventos_coleta import coletar_eventos_universo
 from data.news import pregerar_imagens_news, pregerar_resumos_news
 from data.research import coletar_todas_disponiveis
@@ -342,19 +342,30 @@ def main() -> int:
     )
 
     # universo do calendario (reforma estrutural, ver docstring do
-    # modulo) - calculado 1x e reaproveitado nos 2 passos abaixo (coleta
-    # de eventos + snapshot), pro log/painel de saude refletirem o MESMO
-    # universo que foi de fato usado nesta execucao.
-    universo = universo_calendario()
+    # modulo) - calculado 1x (cacheado, ver universo_calendario_priorizado)
+    # e reaproveitado nos 2 passos abaixo (coleta de eventos + snapshot),
+    # pro log/painel de saude refletirem o MESMO universo que foi de
+    # fato usado nesta execucao.
+    #
+    # Priorizacao watchlist-primeiro (2026-10-25): a watchlist NUNCA
+    # rotaciona junto com o resto do universo - sem isso, numa execucao
+    # qualquer ela podia comecar no MEIO/FIM da rotacao e nao receber
+    # orcamento de rede nenhum, ficando refem de quantas execucoes
+    # faltam pra "dar a volta" no universo inteiro (~500 tickers hoje).
+    # Rotacionar so' o RESTO (CVM+BDRs fora de toda watchlist) preserva
+    # a garantia "100% das watchlists" em TODA execucao.
+    watchlist_universo, resto_universo = universo_calendario_priorizado()
+    universo = watchlist_universo + resto_universo
     logger.info(
         f"  universo do calendario: {len(universo)} ticker(s) "
-        "(CVM/FCA + BDRs curados + watchlists reais de todos os usuarios)"
+        f"({len(watchlist_universo)} de watchlists reais, sempre processados primeiro; "
+        f"{len(resto_universo)} do restante CVM/FCA + BDRs curados, em rotacao)"
     )
 
     # datas reais de resultado (RI->NEWS->PRAZO_CVM, 2026-10-02) - ver
     # data/eventos_coleta.py. Orcamento proprio de tempo (5min), pode nao
     # cobrir o universo inteiro numa execucao so' (ver docstring do modulo).
-    stats_eventos = coletar_eventos_universo(_universo_rotativo(universo))
+    stats_eventos = coletar_eventos_universo(watchlist_universo + _universo_rotativo(resto_universo))
     if stats_eventos["tabela_disponivel"] is False:
         logger.warning(
             "  eventos de resultado: tabela 'eventos_resultados' nao encontrada/inacessivel no "
