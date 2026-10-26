@@ -52,6 +52,15 @@ _ATUAL = {
              "argumento_contrario": "custo de insumos", "acompanhar": "preço do Brent", "fonte": "Reuters",
              "data_fonte": "2026-10-26"},
         ],
+        "cenarios": [
+            {"tipo": "principal", "cenario": "Alta se sustenta", "condicao": "exterior seguir positivo",
+             "sinalizadores": "futuros dos EUA"},
+            {"tipo": "alternativo", "cenario": "Reversão", "condicao": "exterior perder força",
+             "sinalizadores": "abertura americana"},
+        ],
+        "observar_proximas_sessoes": [
+            {"item": "Preço do Brent", "motivo": "catalisador do dia", "fonte": "Reuters", "data_fonte": "2026-10-26"},
+        ],
         "o_que_nao_sabemos": ["Sem dado recente sobre o Focus Selic."],
     },
 }
@@ -140,8 +149,30 @@ def test_tempo_relativo_com_iso_recente_nao_lanca_excecao():
 def test_registro_paineis_inclui_analista_de_mercado_sem_duplicar_ids():
     ids = [pid for pid, _, _ in vg.REGISTRO_PAINEIS]
     _checar("ids dos paineis são únicos (sem duplicação)", len(ids) == len(set(ids)))
-    for esperado in ("analista_resumo", "analista_movimentos", "analista_oportunidades", "agenda_watchlist"):
+    for esperado in (
+        "analista_resumo", "analista_movimentos", "analista_oportunidades",
+        "analista_cenarios", "agenda_watchlist",
+    ):
         _checar(f"painel '{esperado}' está registrado", esperado in ids)
+
+
+def test_cenarios_vazio_mostra_mensagem_sem_lancar_excecao():
+    sem_cenarios = {**_ATUAL, "dados": {**_ATUAL["dados"], "cenarios": [], "observar_proximas_sessoes": []}}
+    with patch.object(vg, "obter_sintese_mercado", return_value=sem_cenarios):
+        vg._painel_analista_cenarios(_PREFS)
+    _checar("cenários vazio não lança excecao", True)
+
+
+def test_cenarios_com_item_nao_lanca_excecao():
+    with patch.object(vg, "obter_sintese_mercado", return_value=_ATUAL):
+        vg._painel_analista_cenarios(_PREFS)
+    _checar("cenários com item não lança excecao", True)
+
+
+def test_cenarios_sem_sintese_nao_lanca_excecao():
+    with patch.object(vg, "obter_sintese_mercado", return_value=_SEM_SINTESE):
+        vg._painel_analista_cenarios(_PREFS)
+    _checar("cenários sem síntese não lança excecao", True)
 
 
 if __name__ == "__main__":
@@ -156,6 +187,9 @@ if __name__ == "__main__":
     test_tempo_relativo_sem_iso_nao_inventa_horario()
     test_tempo_relativo_com_iso_recente_nao_lanca_excecao()
     test_registro_paineis_inclui_analista_de_mercado_sem_duplicar_ids()
+    test_cenarios_vazio_mostra_mensagem_sem_lancar_excecao()
+    test_cenarios_com_item_nao_lanca_excecao()
+    test_cenarios_sem_sintese_nao_lanca_excecao()
     if _FALHAS:
         print(f"\n{len(_FALHAS)} falha(s): {_FALHAS}")
         sys.exit(1)

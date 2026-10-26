@@ -228,6 +228,78 @@ def _painel_analista_oportunidades(prefs):
     _aviso_fontes_indisponiveis(resultado.get("fontes_indisponiveis") or [])
 
 
+def _painel_analista_cenarios(prefs):
+    """(D) Cenários e o que observar - adaptação do skill oficial
+    "market-researcher"/"competitive-analysis" (bull/base/bear +
+    catalisadores/signposts), ver data/sintese_mercado.py. Cenário
+    'principal' é a leitura mais consistente com os fatos coletados
+    agora; 'alternativo' é o que os MESMOS fatos também sustentam, com
+    menos peso - nunca uma probabilidade numérica (isso seria
+    inventado). 'O que observar' lista só catalisadores que já vieram
+    da agenda/movimentos/oportunidades já coletados, nunca um evento
+    novo inventado pela IA."""
+    st.markdown('<div class="painel-titulo">CENÁRIOS E O QUE OBSERVAR</div>', unsafe_allow_html=True)
+    resultado = obter_sintese_mercado()
+    if not resultado.get("ok"):
+        st.markdown(
+            "<div class='cinza' style='font-size:0.78rem;'>Sem leitura analítica disponível no momento.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+    dados = resultado["dados"]
+    cenarios = dados.get("cenarios") or []
+    observar = dados.get("observar_proximas_sessoes") or []
+    if not cenarios and not observar:
+        st.markdown(
+            "<div class='cinza' style='font-size:0.78rem;'>Sem evidência suficiente nesta rodada para "
+            "projetar cenário ou apontar o que observar.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    for item in cenarios:
+        rotulo = "CENÁRIO PRINCIPAL" if item.get("tipo") == "principal" else "CENÁRIO ALTERNATIVO"
+        cor = "alta" if item.get("tipo") == "principal" else "cinza"
+        st.markdown(
+            f"<div style='padding:0.45rem 0; border-bottom:1px solid var(--borda);'>"
+            f"<div class='{cor}' style='font-size:0.64rem; font-weight:700; letter-spacing:0.03em;'>{rotulo}</div>"
+            f"<div style='font-size:0.84rem; font-weight:600; margin-top:0.1rem;'>{item.get('cenario') or ''}</div>"
+            + (f"<div style='font-size:0.76rem; margin-top:0.15rem;'>Condição: {item['condicao']}</div>"
+               if item.get("condicao") else "")
+            + (f"<div class='cinza' style='font-size:0.68rem; margin-top:0.1rem;'>Sinalizadores a observar: "
+               f"{item['sinalizadores']}</div>" if item.get("sinalizadores") else "")
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+    if cenarios:
+        st.markdown(
+            "<div class='cinza' style='font-size:0.66rem; margin-top:0.2rem;'>Cenários não têm "
+            "probabilidade numérica - são leituras qualitativas sobre os mesmos fatos coletados, nunca uma "
+            "previsão de preço.</div>",
+            unsafe_allow_html=True,
+        )
+
+    if observar:
+        st.markdown(
+            "<div style='font-size:0.72rem; font-weight:600; margin-top:0.6rem;'>O que observar nas "
+            "próximas sessões</div>",
+            unsafe_allow_html=True,
+        )
+        for item in observar:
+            fonte = item.get("fonte") or "fonte não informada"
+            data_fonte = f" · {item['data_fonte']}" if item.get("data_fonte") else ""
+            st.markdown(
+                f"<div style='padding:0.3rem 0; border-bottom:1px solid var(--borda);'>"
+                f"<div style='font-size:0.78rem;'>{item.get('item') or ''}</div>"
+                + (f"<div class='cinza' style='font-size:0.68rem;'>{item['motivo']}</div>"
+                   if item.get("motivo") else "")
+                + f"<div class='cinza' style='font-size:0.64rem; margin-top:0.1rem;'>{fonte}{data_fonte}</div>"
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+    _aviso_fontes_indisponiveis(resultado.get("fontes_indisponiveis") or [])
+
+
 def _painel_mercado_agora(prefs):
     st.markdown('<div class="painel-titulo">MERCADO AGORA</div>', unsafe_allow_html=True)
     # achado real (2026-10-08): VISAO GERAL reaproveita _painel_altas_baixas/
@@ -382,6 +454,7 @@ REGISTRO_PAINEIS = [
     ("analista_resumo", "Resumo executivo do mercado", _painel_analista_resumo),
     ("analista_movimentos", "O que está movendo o mercado", _painel_analista_movimentos),
     ("analista_oportunidades", "Para investigar", _painel_analista_oportunidades),
+    ("analista_cenarios", "Cenários e o que observar", _painel_analista_cenarios),
     ("mercado_agora", "Mercado agora", _painel_mercado_agora),
     ("ibov_grafico", "Ibovespa", _painel_ibov_grafico),
     ("altas_baixas", "Maiores altas/baixas", _painel_altas_baixas),
