@@ -272,6 +272,36 @@ def test_cenario_com_tipo_invalido_vira_alternativo_nunca_descartado():
     assert resultado["dados"]["cenarios"][0]["tipo"] == "alternativo"
 
 
+def test_cenario_principal_sobrevive_ao_corte_de_3_mesmo_fora_das_3_primeiras_posicoes():
+    """Regressão: se a IA (por erro) mandar mais de 3 cenários e o
+    'principal' não estiver entre os 3 primeiros da lista, um corte
+    ingênuo por posição (cenarios[:3]) descartaria justamente a leitura
+    mais consistente com os fatos, deixando só alternativos na UI. O
+    corte tem que PRIORIZAR manter o 'principal' (se existir) e só então
+    completar com até 2 'alternativo'."""
+    payload = json.dumps({
+        "resumo_executivo": {"texto": "Texto válido.", "ressalvas": ""},
+        "movimentos": [], "oportunidades_riscos": [],
+        "cenarios": [
+            {"tipo": "alternativo", "cenario": "A1"},
+            {"tipo": "alternativo", "cenario": "A2"},
+            {"tipo": "alternativo", "cenario": "A3"},
+            {"tipo": "principal", "cenario": "P1"},
+            {"tipo": "alternativo", "cenario": "A4"},
+        ],
+        "observar_proximas_sessoes": [], "o_que_nao_sabemos": [],
+    })
+    with patch.object(sm, "_coletar_fatos", return_value=_fatos_minimos()), \
+         patch.object(sm.config, "obter_credenciais_groq", return_value=("fake-key", "modelo-principal")), \
+         patch.object(sm.config, "obter_modelo_groq_fallback", return_value="modelo-fallback"), \
+         patch.object(sm, "_chamar_groq", return_value=(payload, None)):
+        resultado = sm._gerar_sintese()
+    cenarios = resultado["dados"]["cenarios"]
+    assert len(cenarios) == 3
+    assert cenarios[0] == {"tipo": "principal", "cenario": "P1", "condicao": None, "sinalizadores": None}
+    assert [c["cenario"] for c in cenarios[1:]] == ["A1", "A2"]
+
+
 def test_observar_proximas_sessoes_sem_item_e_descartado():
     payload = json.dumps({
         "resumo_executivo": {"texto": "Texto válido.", "ressalvas": ""},

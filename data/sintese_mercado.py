@@ -430,6 +430,17 @@ def _validar_e_limpar(dados: dict) -> dict | None:
         limpo = _filtrar_campos(item, _CAMPOS_CENARIO)
         limpo["tipo"] = tipo
         cenarios.append(limpo)
+    # corte pro limite de 3 PRESERVA o "principal" (se existir) em vez de um
+    # corte bruto por posição - se a IA (por erro) mandar mais de 3 cenários
+    # e o "principal" não estiver entre os 3 primeiros da lista, um
+    # cenarios[:3] ingênuo descartaria justamente a leitura mais
+    # consistente com os fatos, deixando só alternativos na UI.
+    principal = next((c for c in cenarios if c["tipo"] == "principal"), None)
+    alternativos = [c for c in cenarios if c["tipo"] != "principal"]
+    if principal:
+        cenarios = [principal] + alternativos[:2]
+    else:
+        cenarios = alternativos[:3]
 
     observar = [
         _filtrar_campos(item, _CAMPOS_OBSERVAR)
