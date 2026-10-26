@@ -157,7 +157,7 @@ def motivo_ultima_falha() -> str | None:
 # correcao do exit code de coletor_local.py). Um 403 de outra causa (sem
 # essa pagina/Reference ID) nao ganha o marcador - fica como falha
 # generica/nao classificada de proposito, ver categoria_ultima_falha().
-_MARCADOR_BLOQUEIO_CDN = "bloqueio de borda do CDN (Akamai)"
+MARCADOR_BLOQUEIO_CDN = "bloqueio de borda do CDN (Akamai)"
 
 
 def categoria_ultima_falha() -> str:
@@ -171,7 +171,7 @@ def categoria_ultima_falha() -> str:
     erro novo/desconhecido) devolve 'erro' de proposito, pra nunca
     mascarar uma mudanca real de comportamento."""
     motivo = _ultimo_motivo_falha or ""
-    return "bloqueio_externo_conhecido" if _MARCADOR_BLOQUEIO_CDN in motivo else "erro"
+    return "bloqueio_externo_conhecido" if MARCADOR_BLOQUEIO_CDN in motivo else "erro"
 
 
 def _tentar_requisitar(url: str, params: dict, timeout: float = TIMEOUT):
