@@ -1,12 +1,19 @@
 # -*- coding: utf-8 -*-
 """Cobertura do caminho SMTP de jobs/email_utils.py - provedor padrão
 (EMAIL_PROVIDER ausente/"smtp") sem nenhum teste dedicado até aqui.
-Mocka smtplib.SMTP inteiro (nunca abre conexão real)."""
+Mocka smtplib.SMTP inteiro (nunca abre conexão real).
+
+`destinatario` é sempre passado explicitamente nas chamadas de
+enviar_email() (nunca via env EMAIL_TO - fallback removido em
+2026-10-26, auditoria "Radar/Morning Call: consentimento") - mesma
+convenção real de jobs/morning_call.py e jobs/radar_quedas.py."""
 import socket
 import ssl
 from unittest.mock import MagicMock
 
 from jobs import email_utils
+
+_DESTINATARIO = "destino@example.com"
 
 
 def _smtp_mock(monkeypatch):
@@ -22,11 +29,10 @@ def test_smtp_envia_anexo_com_tipo_mime_correto(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("SMTP_USER", "user@example.com")
     monkeypatch.setenv("SMTP_PASSWORD", "segredo")
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
     smtp_instancia = _smtp_mock(monkeypatch)
 
     resultado = email_utils.enviar_email(
-        "Assunto", "Texto", "<p>HTML</p>",
+        "Assunto", "Texto", "<p>HTML</p>", destinatario=_DESTINATARIO,
         anexos=[{"nome": "mc.pdf", "conteudo": b"%PDF-conteudo", "tipo_mime": "application/pdf"}],
     )
 
@@ -44,10 +50,9 @@ def test_smtp_sem_anexos_nao_adiciona_parte_extra(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("SMTP_USER", "user@example.com")
     monkeypatch.setenv("SMTP_PASSWORD", "segredo")
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
     smtp_instancia = _smtp_mock(monkeypatch)
 
-    email_utils.enviar_email("Assunto", "Texto", "<p>HTML</p>")
+    email_utils.enviar_email("Assunto", "Texto", "<p>HTML</p>", destinatario=_DESTINATARIO)
 
     msg_enviada = smtp_instancia.send_message.call_args[0][0]
     assert list(msg_enviada.iter_attachments()) == []
@@ -58,11 +63,10 @@ def test_smtp_anexo_vazio_e_ignorado_sem_quebrar_envio(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("SMTP_USER", "user@example.com")
     monkeypatch.setenv("SMTP_PASSWORD", "segredo")
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
     smtp_instancia = _smtp_mock(monkeypatch)
 
     resultado = email_utils.enviar_email(
-        "Assunto", "Texto", anexos=[{"nome": "vazio.pdf", "conteudo": b""}],
+        "Assunto", "Texto", destinatario=_DESTINATARIO, anexos=[{"nome": "vazio.pdf", "conteudo": b""}],
     )
 
     assert resultado == {"ok": True, "erro": None}
@@ -75,7 +79,6 @@ def _env_smtp(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("SMTP_USER", "user@example.com")
     monkeypatch.setenv("SMTP_PASSWORD", "segredo")
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
 
 
 def test_smtp_falha_informa_a_etapa_e_nao_reenvia(monkeypatch):
@@ -88,7 +91,7 @@ def test_smtp_falha_informa_a_etapa_e_nao_reenvia(monkeypatch):
     smtp_instancia.send_message.side_effect = smtplib.SMTPServerDisconnected(
         "Connection unexpectedly closed: The read operation timed out")
 
-    resultado = email_utils.enviar_email("Assunto", "Texto")
+    resultado = email_utils.enviar_email("Assunto", "Texto", destinatario=_DESTINATARIO)
 
     assert resultado["ok"] is False
     assert "etapa SMTP: envio da mensagem" in resultado["erro"]
@@ -102,7 +105,7 @@ def test_smtp_falha_no_login_e_identificada(monkeypatch):
     smtp_instancia = _smtp_mock(monkeypatch)
     smtp_instancia.login.side_effect = smtplib.SMTPAuthenticationError(535, b"auth failed")
 
-    resultado = email_utils.enviar_email("Assunto", "Texto")
+    resultado = email_utils.enviar_email("Assunto", "Texto", destinatario=_DESTINATARIO)
 
     assert "etapa SMTP: login" in resultado["erro"]
     assert not smtp_instancia.send_message.called
@@ -115,7 +118,7 @@ def test_smtp_usa_timeout_de_60s(monkeypatch):
     smtp_cls = MagicMock(return_value=smtp_instancia)
     monkeypatch.setattr(email_utils.smtplib, "SMTP", smtp_cls)
 
-    email_utils.enviar_email("Assunto", "Texto")
+    email_utils.enviar_email("Assunto", "Texto", destinatario=_DESTINATARIO)
 
     assert smtp_cls.call_args.kwargs["timeout"] == 60
 
@@ -128,7 +131,7 @@ def test_smtp_starttls_valida_certificado_do_servidor(monkeypatch):
     _env_smtp(monkeypatch)
     smtp_instancia = _smtp_mock(monkeypatch)
 
-    email_utils.enviar_email("Assunto", "Texto")
+    email_utils.enviar_email("Assunto", "Texto", destinatario=_DESTINATARIO)
 
     assert smtp_instancia.starttls.call_count == 1
     contexto_usado = smtp_instancia.starttls.call_args.kwargs.get("context")
@@ -142,11 +145,10 @@ def test_smtp_sem_host_retorna_erro_sem_tentar_conexao(monkeypatch):
     monkeypatch.delenv("SMTP_HOST", raising=False)
     monkeypatch.setenv("SMTP_USER", "user@example.com")
     monkeypatch.setenv("SMTP_PASSWORD", "segredo")
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
     smtp_cls = MagicMock()
     monkeypatch.setattr(email_utils.smtplib, "SMTP", smtp_cls)
 
-    resultado = email_utils.enviar_email("Assunto", "Texto")
+    resultado = email_utils.enviar_email("Assunto", "Texto", destinatario=_DESTINATARIO)
 
     assert resultado["ok"] is False
     assert "SMTP_HOST, SMTP_USER e SMTP_PASSWORD" in resultado["erro"]
@@ -158,11 +160,10 @@ def test_smtp_sem_senha_retorna_erro_sem_tentar_conexao(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
     monkeypatch.setenv("SMTP_USER", "user@example.com")
     monkeypatch.delenv("SMTP_PASSWORD", raising=False)
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
     smtp_cls = MagicMock()
     monkeypatch.setattr(email_utils.smtplib, "SMTP", smtp_cls)
 
-    resultado = email_utils.enviar_email("Assunto", "Texto")
+    resultado = email_utils.enviar_email("Assunto", "Texto", destinatario=_DESTINATARIO)
 
     assert resultado["ok"] is False
     assert "SMTP_HOST, SMTP_USER e SMTP_PASSWORD" in resultado["erro"]
@@ -175,11 +176,10 @@ def test_smtp_porta_invalida_retorna_erro_sem_tentar_conexao(monkeypatch):
     monkeypatch.setenv("SMTP_USER", "user@example.com")
     monkeypatch.setenv("SMTP_PASSWORD", "segredo")
     monkeypatch.setenv("SMTP_PORT", "nao-e-numero")
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
     smtp_cls = MagicMock()
     monkeypatch.setattr(email_utils.smtplib, "SMTP", smtp_cls)
 
-    resultado = email_utils.enviar_email("Assunto", "Texto")
+    resultado = email_utils.enviar_email("Assunto", "Texto", destinatario=_DESTINATARIO)
 
     assert resultado["ok"] is False
     assert "SMTP_PORT deve ser uma porta numérica" in resultado["erro"]
@@ -194,7 +194,7 @@ def test_smtp_falha_de_conexao_e_identificada_na_etapa_conexao(monkeypatch):
     smtp_cls = MagicMock(side_effect=socket.timeout("timed out"))
     monkeypatch.setattr(email_utils.smtplib, "SMTP", smtp_cls)
 
-    resultado = email_utils.enviar_email("Assunto", "Texto")
+    resultado = email_utils.enviar_email("Assunto", "Texto", destinatario=_DESTINATARIO)
 
     assert resultado["ok"] is False
     assert "etapa SMTP: conexão" in resultado["erro"]
@@ -206,7 +206,7 @@ def test_smtp_corpo_com_caracteres_em_portugues_e_preservado(monkeypatch):
     texto = "Resumo do pregão: ação cai após balanço; inflação em alta."
     html = "<p>Resumo do pregão: ação cai após balanço; inflação em alta.</p>"
 
-    resultado = email_utils.enviar_email("Édição de hoje", texto, html=html)
+    resultado = email_utils.enviar_email("Édição de hoje", texto, html=html, destinatario=_DESTINATARIO)
 
     assert resultado == {"ok": True, "erro": None}
     msg_enviada = smtp_instancia.send_message.call_args[0][0]
@@ -223,10 +223,9 @@ def test_gmail_workspace_smtp_usa_starttls_login_e_remetente_da_conta(monkeypatc
     monkeypatch.setenv("SMTP_USER", "pregao@example-workspace.com")
     monkeypatch.setenv("SMTP_PASSWORD", "senha-de-app-ficticia")
     monkeypatch.delenv("EMAIL_FROM", raising=False)
-    monkeypatch.setenv("EMAIL_TO", "assinante@example.com")
     smtp_instancia = _smtp_mock(monkeypatch)
 
-    resultado = email_utils.enviar_email("Morning Call", "Resumo do pregão")
+    resultado = email_utils.enviar_email("Morning Call", "Resumo do pregão", destinatario="assinante@example.com")
 
     assert resultado == {"ok": True, "erro": None}
     smtp_cls = email_utils.smtplib.SMTP
@@ -238,3 +237,19 @@ def test_gmail_workspace_smtp_usa_starttls_login_e_remetente_da_conta(monkeypatc
     msg_enviada = smtp_instancia.send_message.call_args.args[0]
     assert msg_enviada["From"] == "pregao@example-workspace.com"
     assert msg_enviada["To"] == "assinante@example.com"
+
+
+def test_sem_destinatario_e_sem_env_to_retorna_erro_sem_tentar_conexao(monkeypatch):
+    """EMAIL_TO deixou de ser fallback (2026-10-26, auditoria
+    "Radar/Morning Call: consentimento") - sem `destinatario` explícito,
+    o envio falha mesmo que EMAIL_TO esteja definido no ambiente."""
+    _env_smtp(monkeypatch)
+    monkeypatch.setenv("EMAIL_TO", "nao-deveria-ser-usado@example.com")
+    smtp_cls = MagicMock()
+    monkeypatch.setattr(email_utils.smtplib, "SMTP", smtp_cls)
+
+    resultado = email_utils.enviar_email("Assunto", "Texto")
+
+    assert resultado["ok"] is False
+    assert "precisam estar configurados" in resultado["erro"]
+    assert not smtp_cls.called

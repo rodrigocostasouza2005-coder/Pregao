@@ -81,7 +81,7 @@ def test_alerta_com_envio_bem_sucedido_atualiza_status(monkeypatch):
         "fontes": ["https://example.com"],
     }
 
-    assert radar_quedas._enviar_alerta(cliente, alerta) is True
+    assert radar_quedas._enviar_alerta(cliente, alerta, ["assinante@exemplo.com"]) == "ENVIADO"
     assert cliente.query.update_payload["status"] == "ENVIADO"
     assert cliente.query.update_payload["email_enviado_em"]
     assert cliente.query.update_payload["erro_envio"] is None
@@ -105,10 +105,71 @@ def test_falha_de_email_permanece_reprocessavel(monkeypatch):
         "fontes": [],
     }
 
-    assert radar_quedas._enviar_alerta(cliente, alerta) is False
+    assert radar_quedas._enviar_alerta(cliente, alerta, ["assinante@exemplo.com"]) == "FALHA_ENVIO"
     assert cliente.query.update_payload["status"] == "FALHA_ENVIO"
     assert cliente.query.update_payload["erro_envio"] == "SMTP indisponível"
     assert cliente.query.update_payload["email_enviado_em"] is None
+
+
+def test_sem_destinatario_autorizado_nao_envia_nem_atualiza_status(monkeypatch):
+    """Caso normal "ninguém autorizou ainda" (missão "Radar/Morning
+    Call: consentimento") - nunca é tratado como falha nem reenvia pra
+    um EMAIL_TO fixo."""
+    cliente = _Cliente()
+    chamadas_envio = []
+    monkeypatch.setattr(
+        radar_quedas, "enviar_email",
+        lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None},
+    )
+    alerta = {"id": 9, "ticker": "ITUB4", "variacao_pct": -4.2, "preco_atual": 30.0, "fechamento_anterior": 31.3}
+
+    assert radar_quedas._enviar_alerta(cliente, alerta, []) == "SEM_DESTINATARIO"
+    assert chamadas_envio == []
+    assert cliente.query.update_payload is None
+
+
+def test_sem_destinatario_autorizado_none_tambem_nao_envia():
+    """destinatarios=None (Supabase indisponível pra consultar opt-in)
+    tem o mesmo efeito prático de [] em _enviar_alerta: nunca envia sem
+    saber quem autorizou - a distinção None/[] importa só pra
+    executar() decidir o código de saída (ver testes de executar())."""
+    cliente = _Cliente()
+    alerta = {"id": 10, "ticker": "BBDC4", "variacao_pct": -4.8, "preco_atual": 20.0, "fechamento_anterior": 21.0}
+
+    assert radar_quedas._enviar_alerta(cliente, alerta, None) == "SEM_DESTINATARIO"
+    assert cliente.query.update_payload is None
+
+
+def test_multiplos_destinatarios_recebem_e_falha_parcial_nao_e_falha_total(monkeypatch):
+    """2 assinantes, 1 falha: status final é ENVIADO (quem já recebeu
+    não pode ser reenviado - duplicaria), e os 2 e-mails são
+    efetivamente disparados (1 por destinatário)."""
+    cliente = _Cliente()
+    chamadas = []
+
+    def _fake_enviar(_assunto, _texto, destinatario=None, **_k):
+        chamadas.append(destinatario)
+        if destinatario == "falha@exemplo.com":
+            return {"ok": False, "erro": "SMTP indisponível"}
+        return {"ok": True, "erro": None}
+
+    monkeypatch.setattr(radar_quedas, "enviar_email", _fake_enviar)
+    alerta = {"id": 11, "ticker": "WEGE3", "variacao_pct": -4.1, "preco_atual": 40.0, "fechamento_anterior": 41.7}
+
+    desfecho = radar_quedas._enviar_alerta(cliente, alerta, ["ok@exemplo.com", "falha@exemplo.com"])
+
+    assert desfecho == "ENVIADO"
+    assert sorted(chamadas) == ["falha@exemplo.com", "ok@exemplo.com"]
+    assert cliente.query.update_payload["status"] == "ENVIADO"
+    assert "1/2" in cliente.query.update_payload["erro_envio"]
+
+
+def test_hash_destinatario_nunca_expoe_o_email_e_e_estavel():
+    h1 = radar_quedas._hash_destinatario("Assinante@Exemplo.com")
+    h2 = radar_quedas._hash_destinatario("assinante@exemplo.com")
+    assert h1 == h2
+    assert "assinante" not in h1
+    assert len(h1) == 10
 
 
 def test_executar_registra_tentativa_no_painel_saude(monkeypatch):
@@ -123,6 +184,7 @@ def test_executar_registra_tentativa_no_painel_saude(monkeypatch):
         lambda: {"coleta_ok": True, "alertas_novos": [], "erro": ""},
     )
     monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "listar_assinantes_radar_quedas", lambda cliente: [])
     monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
 
     codigo = radar_quedas.executar()
@@ -143,6 +205,7 @@ def test_executar_registra_falha_quando_coleta_falha(monkeypatch):
         lambda: {"coleta_ok": False, "alertas_novos": [], "erro": "zero recomendações coletadas"},
     )
     monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "listar_assinantes_radar_quedas", lambda cliente: [])
     monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
 
     codigo = radar_quedas.executar()
@@ -150,6 +213,54 @@ def test_executar_registra_falha_quando_coleta_falha(monkeypatch):
     assert codigo == 1
     assert chamadas[0][1]["execucao_ok"] is False
     assert chamadas[0][1]["erro"] == "zero recomendações coletadas"
+
+
+def test_executar_com_destinatarios_indisponiveis_registra_falha_sem_enviar(monkeypatch):
+    """destinatarios=None (Supabase indisponível pra consultar opt-in) é
+    uma falha de execução visível (mesmo espírito de
+    jobs/morning_call.py), mesmo com coleta_ok=True - nunca mascara a
+    falha de infra como sucesso silencioso."""
+    chamadas = []
+    chamadas_envio = []
+    monkeypatch.setattr(
+        radar_quedas, "processar_monitoramento",
+        lambda: {"coleta_ok": True, "alertas_novos": [{"id": 99, "ticker": "ABCD3"}], "erro": ""},
+    )
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "listar_assinantes_radar_quedas", lambda cliente: None)
+    monkeypatch.setattr(radar_quedas, "_alertas_pendentes", lambda cliente, hoje=None: [{"id": 99, "ticker": "ABCD3"}])
+    monkeypatch.setattr(radar_quedas, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)))
+    monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+
+    codigo = radar_quedas.executar()
+
+    assert codigo == 1
+    assert chamadas_envio == []  # nunca tenta enviar sem saber quem autorizou, mesmo com pendente real
+    assert chamadas[0][1]["execucao_ok"] is False
+    assert "destinatários opt-in" in chamadas[0][1]["erro"]
+
+
+def test_executar_sem_destinatarios_autorizados_finaliza_sem_falha(monkeypatch):
+    """Caso normal "ninguém autorizou ainda" (destinatarios=[]) - nunca
+    deve contar como falha mesmo havendo alertas pendentes de verdade."""
+    chamadas = []
+    chamadas_envio = []
+    monkeypatch.setattr(
+        radar_quedas, "processar_monitoramento",
+        lambda: {"coleta_ok": True, "alertas_novos": [{"id": 99, "ticker": "ABCD3"}], "erro": ""},
+    )
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "listar_assinantes_radar_quedas", lambda cliente: [])
+    monkeypatch.setattr(radar_quedas, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)))
+    monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+    monkeypatch.setattr(radar_quedas, "_alertas_pendentes", lambda cliente, hoje=None: [{"id": 99, "ticker": "ABCD3"}])
+
+    codigo = radar_quedas.executar()
+
+    assert codigo == 0
+    assert chamadas_envio == []
+    assert chamadas[0][1]["execucao_ok"] is True
+    assert chamadas[0][1]["erro"] is None
 
 
 def test_executar_chama_self_test_de_persistencia_antes_de_tudo(monkeypatch):
@@ -184,11 +295,13 @@ def test_so_reenvia_pendentes_de_pregao_recente():
 
 def test_assunto_do_alerta_traz_a_data_do_pregao(monkeypatch):
     enviados = []
-    monkeypatch.setattr(radar_quedas, "enviar_email",
-                        lambda assunto, texto: enviados.append(assunto) or {"ok": True, "erro": None})
+    monkeypatch.setattr(
+        radar_quedas, "enviar_email",
+        lambda assunto, texto, destinatario=None, **_k: enviados.append(assunto) or {"ok": True, "erro": None},
+    )
     alerta = {"id": 7, "ticker": "WEGE3", "pregao": "2026-10-21", "variacao_pct": -4.3, "preco_atual": 40.0,
               "fechamento_anterior": 41.8}
-    radar_quedas._enviar_alerta(_Cliente(), alerta)
+    radar_quedas._enviar_alerta(_Cliente(), alerta, ["assinante@exemplo.com"])
     assert enviados == ["[PREGÃO] Queda >4% — WEGE3 (pregão 21/10)"]
 
 
@@ -216,6 +329,7 @@ def test_executar_registra_tentativa_por_casa_quando_uma_falha_e_outra_ok(monkey
         },
     )
     monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "listar_assinantes_radar_quedas", lambda cliente: [])
     monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
 
     radar_quedas.executar()
@@ -242,6 +356,7 @@ def test_executar_registra_snapshot_vazio_como_parcial_nao_falha_nem_sucesso_ple
         },
     )
     monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "listar_assinantes_radar_quedas", lambda cliente: [])
     monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
 
     radar_quedas.executar()
@@ -263,6 +378,7 @@ def test_executar_registra_falha_de_persistencia_por_casa(monkeypatch):
         },
     )
     monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "listar_assinantes_radar_quedas", lambda cliente: [])
     monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
 
     radar_quedas.executar()
@@ -282,6 +398,7 @@ def test_executar_sem_fontes_no_resultado_nunca_quebra_e_nao_gera_chamada_extra(
         lambda: {"coleta_ok": True, "alertas_novos": [], "erro": ""},
     )
     monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "listar_assinantes_radar_quedas", lambda cliente: [])
     monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
 
     radar_quedas.executar()

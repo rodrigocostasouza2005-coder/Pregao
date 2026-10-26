@@ -39,7 +39,7 @@ def test_subabas_exigidas_pela_arquitetura():
     subs = {a.id: [s.rotulo for s in a.subabas] for a in AREAS}
     assert subs["mercado"] == ["Visão Geral", "Painel", "Agenda", "Mercados Globais"]
     assert subs["noticias"][:4] == ["Destaques", "Brasil", "Internacional", "Empresas"]
-    assert subs["radar"] == ["Alertas", "Carteiras Recomendadas", "Oportunidades", "Acompanhamento"]
+    assert subs["radar"] == ["Alertas", "Carteiras Recomendadas", "Oportunidades", "Acompanhamento", "Preferências"]
     assert subs["research"] == ["Feed", "Casas de Análise", "Minha Tese"]
     assert subs["analises"] == ["Empresas", "Fundamentos", "Valuation"]
     assert subs["macro"] == ["Indicadores", "Juros", "Câmbio e Commodities", "Calendário Econômico"]
@@ -79,11 +79,14 @@ def test_preferencia_antiga_de_abas_esconde_subabas():
     areas = navegacao.disponiveis([a for a in config.ABAS_DISPONIVEIS if a != "CVM"], eh_admin=False)
     noticias = next(a for a in areas if a.id == "noticias")
     assert "documentos" not in [s.id for s in noticias.subabas]
-    # tudo escondido: so' sobra o que nao depende de aba antiga (CONFIG e
-    # Casas de Analise sempre acessiveis - "research" sobrevive so' com
-    # essa 1 subaba, mesmo sem nenhuma aba antiga visivel)
+    # tudo escondido: so' sobra o que nao depende de aba antiga (CONFIG,
+    # Casas de Analise e as duas Preferencias - Morning Call e Radar -
+    # sempre acessiveis; "radar" e "research" sobrevivem so' com essa 1
+    # subaba cada, mesmo sem nenhuma aba antiga visivel)
     minimas = navegacao.disponiveis([], eh_admin=False)
-    assert [a.id for a in minimas] == ["research", "setores", "morning-call", "mais"]
+    assert [a.id for a in minimas] == ["radar", "research", "setores", "morning-call", "mais"]
+    radar_minimo = next(a for a in minimas if a.id == "radar")
+    assert [s.id for s in radar_minimo.subabas] == ["preferencias"]
     pesquisa_minima = next(a for a in minimas if a.id == "research")
     assert [s.id for s in pesquisa_minima.subabas] == ["casas"]
     assert "config" in [s.id for s in minimas[-1].subabas]

@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """Testes de data/user_prefs.py: filtro/dedupe de assinantes do Morning
-Call (opt-in explícito) e persistência da preferência (round-trip no
-Supabase) - ver missão "Morning Call: consentimento e destinatários".
+Call e do Radar de Quedas (opt-in explícito, independentes entre si) e
+persistência das preferências (round-trip no Supabase) - ver missão
+"Morning Call: consentimento e destinatários" e "Radar/Morning Call:
+consentimento".
 """
 from unittest.mock import MagicMock, patch
 
@@ -129,6 +131,71 @@ def test_falha_na_consulta_retorna_none_sem_lancar_excecao():
 
 
 # ---------------------------------------------------------------------
+# listar_assinantes_radar_quedas - mesma bateria de testes de
+# listar_assinantes_morning_call (preferência própria e independente,
+# nunca a mesma lista).
+# ---------------------------------------------------------------------
+
+def test_radar_usuario_sem_preferencia_ativada_nao_entra_na_lista():
+    cliente = _cliente_paginas([
+        {"email": "semopt-in@exemplo.com", "preferencias": {}},
+    ])
+    assert user_prefs.listar_assinantes_radar_quedas(cliente) == []
+
+
+def test_radar_usuario_com_preferencia_ativada_e_email_valido_entra_na_lista():
+    cliente = _cliente_paginas([
+        {"email": "Assinante@Exemplo.com", "preferencias": {"radar_quedas_email_ativo": True}},
+    ])
+    assert user_prefs.listar_assinantes_radar_quedas(cliente) == ["assinante@exemplo.com"]
+
+
+def test_radar_preferencia_ativada_mas_email_invalido_nao_entra_na_lista():
+    cliente = _cliente_paginas([
+        {"email": "nao-e-email", "preferencias": {"radar_quedas_email_ativo": True}},
+    ])
+    assert user_prefs.listar_assinantes_radar_quedas(cliente) == []
+
+
+def test_radar_e_morning_call_sao_preferencias_independentes():
+    """Ligar o Morning Call nunca inscreve no Radar, e vice-versa - são
+    duas listas/colunas (dentro do mesmo JSON `preferencias`) lidas por
+    filtros diferentes."""
+    cliente_so_morning_call = _cliente_paginas([
+        {"email": "so-mc@exemplo.com", "preferencias": {"morning_call_email_ativo": True}},
+    ])
+    assert user_prefs.listar_assinantes_radar_quedas(cliente_so_morning_call) == []
+
+    cliente_so_radar = _cliente_paginas([
+        {"email": "so-radar@exemplo.com", "preferencias": {"radar_quedas_email_ativo": True}},
+    ])
+    assert user_prefs.listar_assinantes_morning_call(cliente_so_radar) == []
+
+
+def test_radar_dedupe_de_email_repetido_entre_usuarios_diferentes():
+    cliente = _cliente_paginas([
+        {"email": "duplicado@exemplo.com", "preferencias": {"radar_quedas_email_ativo": True}},
+        {"email": "DUPLICADO@exemplo.com", "preferencias": {"radar_quedas_email_ativo": True}},
+    ])
+    assinantes = user_prefs.listar_assinantes_radar_quedas(cliente)
+    assert assinantes == ["duplicado@exemplo.com"]
+
+
+def test_radar_cliente_none_retorna_none_sem_lancar_excecao():
+    """None (nao []) - mesma distincao de listar_assinantes_morning_call
+    (ver teste equivalente acima)."""
+    with patch.object(user_prefs, "obter_cliente", return_value=None):
+        assert user_prefs.listar_assinantes_radar_quedas() is None
+        assert user_prefs.listar_assinantes_radar_quedas(None) is None
+
+
+def test_radar_falha_na_consulta_retorna_none_sem_lancar_excecao():
+    cliente = MagicMock()
+    cliente.table.side_effect = RuntimeError("Supabase fora do ar")
+    assert user_prefs.listar_assinantes_radar_quedas(cliente) is None
+
+
+# ---------------------------------------------------------------------
 # Persistência da preferência (toggle) - round-trip salvar/obter.
 # ---------------------------------------------------------------------
 
@@ -188,3 +255,9 @@ def test_toggle_default_e_desligado_para_usuario_novo_sem_registro():
     como assinante."""
     from config import PREFS_PADRAO
     assert PREFS_PADRAO["morning_call_email_ativo"] is False
+
+
+def test_toggle_radar_default_e_desligado_para_usuario_novo_sem_registro():
+    """Mesma garantia acima, pro opt-in do Radar de Quedas."""
+    from config import PREFS_PADRAO
+    assert PREFS_PADRAO["radar_quedas_email_ativo"] is False
