@@ -7,6 +7,7 @@ data/mercado.py, sobre a composição oficial do Ibovespa direto da B3
 no topo da aba e o comentário em data/ibovespa.py)."""
 
 import html
+from datetime import datetime, timezone
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -16,10 +17,35 @@ import config
 from data.ibovespa import obter_composicao_oficial
 from data.mercado import (
     CAMPO_VARIACAO_POR_JANELA, obter_altas_baixas, obter_desempenho_setorial,
-    obter_mais_negociados, obter_mercados_globais, obter_panorama_ibovespa, obter_termometro,
+    obter_mais_negociados, obter_mercados_globais, obter_momento_panorama,
+    obter_panorama_ibovespa, obter_termometro,
 )
 from data.prices import obter_cotacao_indice, rotulo_cotacao_em_cache
 from ui import graficos, navegacao, workspace
+
+# altura (rem) reservada por padrao pro painel MAPA DO MERCADO no
+# workspace livre - bem maior que _ALTURA_PADRAO_REM generico (18rem):
+# causa raiz real do heatmap "pequeno" (confirmado por screenshot real
+# via Playwright, 2026-10-26): ui/workspace.py reserva 18rem (288px) de
+# altura por painel quando nenhum _ALTURAS_PADRAO e' passado pra
+# renderizar_workspace - a div do painel vira "height:18rem;
+# overflow:auto", recortando o treemap (420px de altura de figura) e
+# escondendo a maior parte dos setores atras de scroll interno. Mesma
+# causa raiz/mesmo fix ja usados em MACRO pra um grafico Plotly alto
+# (ver ui/macro_tab.py:_ALTURAS_PADRAO) - nunca uma segunda versao do
+# heatmap, so' o container certo pro que ja existe. O heatmap e' o
+# elemento central da aba (pedido explicito: "ocupar praticamente toda
+# a largura util" com "altura ampla no desktop, sem ficar comprimido
+# em um card pequeno" - ver render_mercado).
+#
+# O valor em PX do grafico (_ALTURA_TREEMAP_PX, usado dentro de
+# _painel_treemap) fica deliberadamente MENOR que este REM*16 - sobra
+# pro titulo do painel, a legenda "atualizado ha' Xmin", a caption e a
+# barra de escala de cor abaixo do grafico (~160px de chrome) - os dois
+# precisam andar juntos, senao volta o bug original.
+_ALTURA_TREEMAP_REM = 46.0
+_ALTURA_TREEMAP_PX = 580
+_ALTURAS_PADRAO_MERCADO = {"treemap": _ALTURA_TREEMAP_REM}
 
 _JANELAS_DESEMPENHO = ["DIA", "SEMANA", "MÊS"]
 _JANELA_ROTULO_PARA_CHAVE = {"DIA": "dia", "SEMANA": "semana", "MÊS": "mes"}
@@ -460,6 +486,25 @@ def _cor_treemap(variacao_pct: float, limite: float, tema: dict) -> str:
     return _rgb_pra_hex(tuple(a[i] + (b[i] - a[i]) * f for i in range(3)))
 
 
+def _tempo_relativo(dt: datetime | None) -> str:
+    """'há Xmin'/'há Xh' a partir de um datetime real (UTC) - nunca um
+    rótulo fixo tipo 'agora': None (momento indisponível) vira texto
+    explícito, nunca um horário inventado."""
+    if dt is None:
+        return "horário indisponível"
+    try:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        delta_min = max(0, int((datetime.now(timezone.utc) - dt).total_seconds() // 60))
+    except (TypeError, ValueError):
+        return "horário indisponível"
+    if delta_min < 1:
+        return "agora mesmo"
+    if delta_min < 60:
+        return f"há {delta_min}min"
+    return f"há {delta_min // 60}h{delta_min % 60:02d}"
+
+
 def _painel_treemap(prefs):
     st.markdown('<div class="painel-titulo">MAPA DO MERCADO</div>', unsafe_allow_html=True)
     st.caption("Tamanho do retângulo = volume financeiro no dia · cor = variação % no dia.")
@@ -467,6 +512,13 @@ def _painel_treemap(prefs):
     if not papeis:
         st.markdown("<div class='cinza' style='font-size:0.78rem;'>—</div>", unsafe_allow_html=True)
         return
+
+    rotulo_momento = _tempo_relativo(obter_momento_panorama())
+    st.markdown(
+        f"<div class='cinza' style='font-size:0.66rem; margin:-0.1rem 0 0.3rem 0;'>Atualizado {rotulo_momento} "
+        f"· {len(papeis)} papéis</div>",
+        unsafe_allow_html=True,
+    )
 
     tema = _tema_atual(prefs)
     fmt = prefs["formato_numerico"]
@@ -523,16 +575,25 @@ def _painel_treemap(prefs):
     fig = go.Figure(go.Treemap(
         ids=ids, labels=labels, parents=parents, values=values,
         branchvalues="total",
-        marker=dict(colors=colors, line=dict(width=1, color=tema["fundo"])),
+        marker=dict(colors=colors, line=dict(width=1.5, color=tema["fundo"]), pad=dict(t=22, l=2, r=2, b=2)),
         text=textos, textinfo="text", textposition="middle center",
+        textfont=dict(size=13, family="IBM Plex Mono"),
+        # texto do bloco (ticker+%) e' SEMPRE o par real coletado (nunca
+        # logo/imagem: o projeto nao tem nenhuma fonte legitima de logo
+        # de empresa da B3 hoje - ver PROGRESSO.md - e inventar URL de
+        # CDN de logo externo pra cada ticker violaria a mesma regra de
+        # "nunca URL inventada" que o resto do painel ja segue. O
+        # proprio ticker em destaque (textfont acima) E' o "fallback
+        # elegante" pedido - aqui ele e' o estado normal, nao so' um
+        # caso de erro.
         hovertext=hovertextos, hoverinfo="text",
         hovertemplate="%{hovertext}<extra></extra>",
         root_color=tema["fundo"],
     ))
     fig.update_layout(
         paper_bgcolor=tema["fundo"], plot_bgcolor=tema["fundo"],
-        font=dict(color=tema["neutro"], family="IBM Plex Mono", size=11),
-        height=420, margin=dict(l=4, r=4, t=4, b=4),
+        font=dict(color=tema["neutro"], family="IBM Plex Mono", size=12),
+        height=_ALTURA_TREEMAP_PX, margin=dict(l=4, r=4, t=4, b=4),
     )
     chave = graficos.zoom_key("mercado_treemap")
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave)
@@ -599,4 +660,7 @@ def render_mercado(prefs: dict, persistir_fn=None):
     # visibilidade/layout salvos do usuario. 2o prefs: repassado como
     # argumento pra cada _painel_*(prefs) do registro acima (todos tem
     # essa mesma assinatura de 1 argumento).
-    workspace.renderizar_workspace("MERCADO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn)
+    workspace.renderizar_workspace(
+        "MERCADO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn,
+        alturas_padrao=_ALTURAS_PADRAO_MERCADO,
+    )
