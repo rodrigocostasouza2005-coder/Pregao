@@ -1136,6 +1136,8 @@ if rota == ("analises", "empresas"):
             with st.container(border=True):
                 render_cvm_ticker(ticker_selecionado, prefs)
 
+            analises_tab.render_revisao_resultados(ticker_selecionado, prefs)
+
             analises_tab.render_conclusao_investimento(ticker_selecionado, prefs, usuario)
 
 
