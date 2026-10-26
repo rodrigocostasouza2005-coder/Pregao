@@ -450,6 +450,13 @@ PREFS_PADRAO = {
     # separada, nao daria pra distinguir "nunca vi a pergunta" de "vi e
     # recusei" - os dois tem morning_call_email_ativo=False.
     "morning_call_email_perguntado": False,
+    # Opt-in explicito pra receber alertas do Radar de Quedas por e-mail
+    # (ver data/user_prefs.py:listar_assinantes_radar_quedas e ui/
+    # radar_tab.py:render_preferencias) - mesmo padrao do Morning Call
+    # acima, consentimento proprio e separado: default DESLIGADO, nenhum
+    # usuario recebe alerta automatico sem ligar esta flag, e ligar o
+    # Morning Call nunca liga o Radar (ou vice-versa).
+    "radar_quedas_email_ativo": False,
     # ordem/visibilidade/tamanho dos paineis dentro de cada aba que adota
     # o sistema de paineis registrados (ver ui/paineis.py) -
     # {aba_id: [painel_id, ...]} pra ordem e tamanho, {aba_id: [painel_id

@@ -1439,3 +1439,34 @@ def render_teses(prefs: dict, usuario: dict):
         _secao_evidencias(tickers, watchlist)
     with st.expander("COPILOTO DE RESEARCH", expanded=False):
         _secao_copiloto(tickers)
+
+
+def render_preferencias(prefs: dict, usuario: dict, persistir_fn):
+    """Mesmo toggle de efeito imediato de ui/morning_call_tab.py:
+    render_preferencias (default DESLIGADO, opt-in explicito - ver
+    config.PREFS_PADRAO e data/user_prefs.py:listar_assinantes_radar_
+    quedas). Preferência própria e separada da do Morning Call: ligar
+    uma nunca liga a outra. Só muda a preferência do próprio usuário;
+    nunca dispara envio."""
+    with st.container(border=True):
+        st.markdown('<div class="painel-titulo">PREFERÊNCIAS DE RECEBIMENTO</div>', unsafe_allow_html=True)
+        ativo = st.toggle(
+            "RECEBER ALERTAS DO RADAR POR E-MAIL",
+            value=prefs.get("radar_quedas_email_ativo", False),
+            help=(
+                "Envia um e-mail sempre que um ativo monitorado pelo Radar de Quedas cair "
+                f"mais de 4% no dia, para {usuario['email']}. "
+                "Pode ser desligado a qualquer momento - efeito imediato."
+            ),
+            key="toggle_radar_quedas_email",
+        )
+        if ativo != prefs.get("radar_quedas_email_ativo", False):
+            prefs["radar_quedas_email_ativo"] = ativo
+            if persistir_fn():
+                st.toast(
+                    "Preferência de alertas do Radar por e-mail salva." if ativo
+                    else "Você não vai mais receber alertas do Radar por e-mail.",
+                )
+            else:
+                st.warning("Preferência aplicada nesta sessão (banco indisponível, não foi salva).")
+            st.rerun()

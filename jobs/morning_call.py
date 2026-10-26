@@ -810,14 +810,16 @@ def gerar_preview(agora=None):
     e-mail estar configurado (EMAIL_PROVIDER/EMAIL_FROM/RESEND_API_KEY/
     etc podem estar todos ausentes - gerar_preview nunca olha pra eles).
 
-    "destinatario" aqui é só o EMAIL_TO legado (usado pelo Radar de
-    Quedas e por fallback de jobs/email_utils.py, nunca pelos assinantes
-    reais do Morning Call - ver enviar_teste); "total_assinantes_ativos"
-    é a contagem REAL (lida do Supabase via listar_assinantes_morning_call)
-    de quem receberia o envio automático agora - 0 tanto se não há
-    nenhum opt-in quanto se o Supabase estiver indisponível (não dá pra
-    distinguir os dois aqui sem mudar o contrato de retorno; ver
-    executar() pro log que diferencia de verdade os dois casos).
+    "total_assinantes_ativos" é a contagem REAL (lida do Supabase via
+    listar_assinantes_morning_call) de quem receberia o envio automático
+    agora - 0 tanto se não há nenhum opt-in quanto se o Supabase estiver
+    indisponível (não dá pra distinguir os dois aqui sem mudar o
+    contrato de retorno; ver executar() pro log que diferencia de
+    verdade os dois casos). Sem campo "destinatario": até 2026-10-26
+    isto expunha o EMAIL_TO legado (removido - ver jobs/email_utils.py e
+    jobs/radar_quedas.py, auditoria "Radar/Morning Call: consentimento"
+    - nenhum dos dois envios reais usa EMAIL_TO como destinatário fixo
+    mais).
 
     Uso manual: `python -c "from jobs.morning_call import gerar_preview;
     p = gerar_preview(); print(p['texto']); print(p['valido'],
@@ -825,18 +827,17 @@ def gerar_preview(agora=None):
     tests/test_morning_call.py) pra validar as SECOES_OBRIGATORIAS
     sempre com enviar_email mockado/nunca chamado.
 
-    Retorna {"assunto", "destinatario", "total_assinantes_ativos",
-    "texto", "html", "secoes_faltantes", "valido"} - "valido" é True só
-    se TODAS as SECOES_OBRIGATORIAS aparecem no texto gerado; nunca
-    garante que o provedor de e-mail aceitaria o envio, só que o
-    CONTEÚDO está completo."""
+    Retorna {"assunto", "total_assinantes_ativos", "texto", "html",
+    "secoes_faltantes", "valido"} - "valido" é True só se TODAS as
+    SECOES_OBRIGATORIAS aparecem no texto gerado; nunca garante que o
+    provedor de e-mail aceitaria o envio, só que o CONTEÚDO está
+    completo."""
     agora = agora or datetime.now(TZ_SP)
     texto = montar_morning_call(agora)
     faltantes = [secao for secao in SECOES_OBRIGATORIAS if secao not in texto]
     assinantes = listar_assinantes_morning_call()
     return {
         "assunto": _assunto(agora),
-        "destinatario": os.getenv("EMAIL_TO", "").strip(),
         "total_assinantes_ativos": len(assinantes or []),
         "texto": texto,
         "html": montar_morning_call_html(texto),
@@ -958,10 +959,10 @@ def executar(agora=None):
     # Destinatarios dinamicos: todo usuario autenticado com a preferencia
     # 'morning_call_email_ativo'=True em user_prefs E e-mail valido (ver
     # data/user_prefs.py:listar_assinantes_morning_call) - já vem
-    # deduplicado por e-mail. NUNCA usa EMAIL_TO como lista de
-    # assinantes (EMAIL_TO so' existe pra jobs/email_utils.py decidir um
-    # destinatario quando nenhum e' passado explicitamente - aqui
-    # SEMPRE passamos destinatario=email por assinante).
+    # deduplicado por e-mail. jobs/email_utils.py nao tem mais fallback
+    # de EMAIL_TO (removido - auditoria "Radar/Morning Call:
+    # consentimento") - aqui SEMPRE passamos destinatario=email por
+    # assinante, como sempre foi.
     #
     # None (nao []) diferencia "Supabase indisponivel" (falha real de
     # infra - nunca reportar como sucesso silencioso) de "ninguem

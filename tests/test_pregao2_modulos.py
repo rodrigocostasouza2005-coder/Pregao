@@ -155,6 +155,32 @@ mc.render_preferencias(prefs, {"email": "teste@exemplo.com"}, persistir)
     assert at.session_state["salvos"] == 1
 
 
+def test_appteste_radar_preferencias_toggle_persiste_e_e_independente_do_morning_call():
+    """Mesmo padrão do teste acima, pro opt-in do Radar de Quedas - e
+    confirma que ligar o Radar nunca liga o Morning Call (preferências
+    independentes, ver missão "Radar/Morning Call: consentimento")."""
+    from streamlit.testing.v1 import AppTest
+
+    script = '''
+import streamlit as st
+import ui.radar_tab as radar_tab
+prefs = st.session_state.setdefault(
+    "prefs", {"radar_quedas_email_ativo": False, "morning_call_email_ativo": False},
+)
+st.session_state.setdefault("salvos", 0)
+def persistir():
+    st.session_state.salvos += 1
+    return True
+radar_tab.render_preferencias(prefs, {"email": "teste@exemplo.com"}, persistir)
+'''
+    at = AppTest.from_string(script, default_timeout=30).run()
+    assert not at.exception
+    at.toggle(key="toggle_radar_quedas_email").set_value(True).run()
+    assert at.session_state["prefs"]["radar_quedas_email_ativo"] is True
+    assert at.session_state["prefs"]["morning_call_email_ativo"] is False
+    assert at.session_state["salvos"] == 1
+
+
 # --- revisao de integracao (PR #82) ---------------------------------------------
 
 def test_ticker_externo_tem_chave_propria_e_sai_ao_remover_da_watchlist():

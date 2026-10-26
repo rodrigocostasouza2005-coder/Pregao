@@ -68,6 +68,7 @@ AREAS = (
         Subaba("carteiras", "Carteiras Recomendadas", ("RADAR",)),
         Subaba("oportunidades", "Oportunidades", ("RADAR",)),
         Subaba("acompanhamento", "Acompanhamento", ("RADAR",)),
+        Subaba("preferencias", "Preferências"),
     )),
     # Area propria (2026-10-23, missao "RESEARCH institucional"): antes
     # "Research" (feed/recomendacoes das casas) vivia em RADAR e "Teses"

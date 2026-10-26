@@ -126,20 +126,33 @@ _TIMEOUT_SMTP_S = 60
 
 
 def enviar_email(assunto, texto, html=None, destinatario=None, anexos=None):
-    """`anexos` (opcional): lista de {"nome": str, "conteudo": bytes,
+    """`destinatario` e' obrigatorio na pratica (sem fallback de
+    ambiente): quem chama sempre sabe, em cada envio, pra quem esta'
+    mandando - um assinante opt-in do Morning Call ou do Radar de
+    Quedas (ver data/user_prefs.py), ou um destinatario de teste
+    explicito. Ate' 2026-10-26 havia um fallback pra EMAIL_TO quando
+    `destinatario` nao era passado - usado so' por jobs/radar_quedas.py,
+    que enviava pra um endereco fixo sem checar consentimento nenhum
+    (auditoria "Radar/Morning Call: consentimento"). Removido porque
+    nenhuma chamada real deste projeto mais depende dele (o Radar agora
+    sempre passa destinatario=email por assinante, igual ao Morning
+    Call) - manter o fallback seria reabrir a mesma porta pra um envio
+    sem consentimento no futuro.
+
+    `anexos` (opcional): lista de {"nome": str, "conteudo": bytes,
     "tipo_mime": str} - ex. o PDF editorial do Morning Call
     (jobs/morning_call_pdf.py). Anexo ausente/None nunca muda o
-    comportamento de quem já chamava enviar_email sem esse parâmetro
-    (ex. jobs/radar_quedas.py)."""
+    comportamento de quem já chamava enviar_email sem esse parâmetro."""
     # Bug real (achado 2026-10-17, 1a execucao que passou da checagem de
-    # EMAIL_FROM/EMAIL_TO): os.getenv(key, default) so' usa o default
-    # quando a chave esta' AUSENTE do ambiente - no GitHub Actions,
-    # `env: EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER }}` com o secret
-    # NAO configurado ainda define a variavel, so' que com valor ""
-    # (presente, vazia) - entao o default "smtp" nunca era aplicado,
-    # provedor virava "" e caia no erro "deve ser smtp/resend/brevo"
-    # mesmo sem ninguem ter configurado EMAIL_PROVIDER=qualquer-coisa-
-    # invalida de proposito. `or` cobre os dois casos (ausente E vazia).
+    # EMAIL_FROM/destinatario): os.getenv(key, default) so' usa o
+    # default quando a chave esta' AUSENTE do ambiente - no GitHub
+    # Actions, `env: EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER }}` com
+    # o secret NAO configurado ainda define a variavel, so' que com
+    # valor "" (presente, vazia) - entao o default "smtp" nunca era
+    # aplicado, provedor virava "" e caia no erro "deve ser
+    # smtp/resend/brevo" mesmo sem ninguem ter configurado
+    # EMAIL_PROVIDER=qualquer-coisa-invalida de proposito. `or` cobre os
+    # dois casos (ausente E vazia).
     provedor = (os.getenv("EMAIL_PROVIDER") or "smtp").strip().lower()
     usuario = os.getenv("SMTP_USER", "").strip()
     # Mesma classe de bug do provedor acima: EMAIL_FROM "presente mas
@@ -147,10 +160,10 @@ def enviar_email(assunto, texto, html=None, destinatario=None, anexos=None):
     # o fallback pro SMTP_USER - os.getenv(key, default) so' aplicaria
     # o default se a chave estivesse AUSENTE, nao vazia.
     remetente = (os.getenv("EMAIL_FROM") or usuario).strip()
-    destinatario = (destinatario or os.getenv("EMAIL_TO", "")).strip()
+    destinatario = (destinatario or "").strip()
 
     if not remetente or not destinatario:
-        return {"ok": False, "erro": "EMAIL_FROM e EMAIL_TO precisam estar configurados."}
+        return {"ok": False, "erro": "EMAIL_FROM e um destinatário precisam estar configurados."}
 
     if provedor == "resend":
         api_key = os.getenv("RESEND_API_KEY", "").strip()

@@ -629,6 +629,8 @@ if rota == ("radar", "oportunidades"):
     radar_tab.render_radar_oportunidades(prefs)
 if rota == ("radar", "acompanhamento"):
     radar_tab.render_radar_acompanhamento(prefs, usuario)
+if rota == ("radar", "preferencias"):
+    radar_tab.render_preferencias(prefs, usuario, _persistir_prefs)
 
 
 # --- RESEARCH (ver ui/research_tab.py) - area propria 2026-10-23 -------------

@@ -173,6 +173,57 @@ def listar_assinantes_morning_call(cliente=None) -> list[str] | None:
     return sorted(assinantes.keys())
 
 
+def listar_assinantes_radar_quedas(cliente=None) -> list[str] | None:
+    """E-mails (minusculos, deduplicados) de usuarios com a preferencia
+    'radar_quedas_email_ativo'=True em user_prefs E e-mail em formato
+    valido - usado por jobs/radar_quedas.py pra decidir quem recebe o
+    alerta de queda >4% automatico.
+
+    Copia estrutural de listar_assinantes_morning_call (mesma paginacao,
+    mesma distincao None/[] abaixo) em vez de uma funcao generica
+    parametrizada por nome de preferencia - mesma convencao do projeto
+    de nao acoplar dois fluxos de consentimento independentes (Radar e
+    Morning Call) a uma funcao compartilhada: um ajuste futuro em UM dos
+    dois (ex: um terceiro campo so' do Radar) nunca arrisca mudar
+    silenciosamente o comportamento do outro.
+
+    None (nao []) se Supabase estiver indisponivel ou a consulta lancar
+    excecao - quem chama (jobs/radar_quedas.py:executar) NUNCA deve
+    tratar None como "ninguem autorizou": enviaria pra zero pessoas e
+    reportaria sucesso quando na verdade a causa foi uma falha de
+    infraestrutura, mesma distincao de listar_assinantes_morning_call."""
+    cliente = cliente if cliente is not None else obter_cliente()
+    if cliente is None:
+        return None
+    assinantes = {}
+    try:
+        inicio = 0
+        while True:
+            fim = inicio + _TAMANHO_PAGINA_ASSINANTES - 1
+            resp = (
+                cliente.table("user_prefs")
+                .select("email,preferencias")
+                .range(inicio, fim)
+                .execute()
+            )
+            linhas = resp.data or []
+            for linha in linhas:
+                preferencias_usuario = linha.get("preferencias") or {}
+                if not preferencias_usuario.get("radar_quedas_email_ativo"):
+                    continue
+                email = (linha.get("email") or "").strip().lower()
+                if not email_valido(email):
+                    continue
+                assinantes[email] = True
+            if len(linhas) < _TAMANHO_PAGINA_ASSINANTES:
+                break
+            inicio += _TAMANHO_PAGINA_ASSINANTES
+    except Exception as exc:
+        print(f"[user_prefs] falha ao listar assinantes do Radar de Quedas: {exc!r}")
+        return None
+    return sorted(assinantes.keys())
+
+
 def uniao_watchlists_todos_usuarios(cliente=None) -> set | None:
     """UNIAO de todas as watchlists de todos os usuarios (tickers em
     maiusculo, deduplicados) - usado pro universo do coletor de
