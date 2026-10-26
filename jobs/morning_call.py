@@ -15,7 +15,10 @@ from data.eventos import (
     STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_LABEL, STATUS_PRAZO_CVM,
     calcular_calendario_cacheado,
 )
-from data.macro import obter_cdi, obter_focus_ipca, obter_focus_selic, obter_selic_meta, obter_selic_meta_copom
+from data.macro import (
+    obter_cdi, obter_curva_pre, obter_focus_ipca, obter_focus_selic, obter_ipca,
+    obter_selic_meta, obter_selic_meta_copom,
+)
 from data.morning_call_editorial import (
     _com_fonte_preferida, _macro_rows, _ordem_editorial, _referencia_cotacao, e_noticia_de_empresa,
     editoria_por_assunto, filtrar_noticias, montar_edicao, nota_sessao,
@@ -936,6 +939,20 @@ def executar(agora=None):
             f"[morning_call] persistencia (self-test escrita+leitura): FALHOU "
             f"na etapa {diagnostico['etapa']} - {diagnostico['detalhe']}"
         )
+
+    # Mantém SAÚDE DOS DADOS fiel ao comportamento real (auditoria
+    # 2026-10-26): "MACRO (BCB)" (IPCA) e "MACRO (ANBIMA)" só eram chamados
+    # a partir de ui/macro_tab.py - sob demanda, exigindo que alguém abra a
+    # aba MACRO - sem nenhum cron tocando essas fontes (diferente de
+    # Selic/CDI/Focus, que este job já aquece mais abaixo via _macro_rows).
+    # Resultado real: 167h sem sucesso registrado pros dois, mesmo com o
+    # restante do painel Macro recente. Roda sempre, independente do envio
+    # do dia ser pulado depois (corte de horário, sem assinante) - mesmo
+    # espírito do self-test acima. obter_ipca/obter_curva_pre já tratam a
+    # própria falha e registram a tentativa internamente; nunca lançam
+    # excecao pra aqui.
+    obter_ipca(dias_historico=760)
+    obter_curva_pre()
 
     agora = agora or datetime.now(TZ_SP)
     if os.getenv("GITHUB_EVENT_NAME") == "schedule" and agora.time() >= _CORTE_ENVIO_AGENDADO:

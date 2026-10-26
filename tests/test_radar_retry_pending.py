@@ -1,4 +1,16 @@
+import pytest
+
 from jobs import radar_quedas
+
+
+@pytest.fixture(autouse=True)
+def _sem_aquecimento_cenario_global_real(monkeypatch):
+    """executar() aquece "MACRO (Cenário Global)" incondicionalmente
+    (achado real, auditoria SAÚDE DOS DADOS 2026-10-26: sem isto, essa
+    fonte só é chamada por quem abre a aba MACRO/Visão Geral, nunca por
+    este job - ver jobs/radar_quedas.py) - nenhum teste deste módulo deve
+    bater rede real do yfinance por causa disso."""
+    monkeypatch.setattr(radar_quedas, "obter_cenario_global", lambda: [])
 
 
 class _Resposta:
@@ -271,6 +283,26 @@ def test_executar_registra_falha_de_persistencia_por_casa(monkeypatch):
     safra = por_nome["Safra Corretora (carteiras)"]
     assert safra["execucao_ok"] is True
     assert safra["persistencia_ok"] is False
+
+
+def test_executar_aquece_cenario_global_mesmo_quando_coleta_falha(monkeypatch):
+    """Regressão (auditoria SAÚDE DOS DADOS 2026-10-26): idade_maxima_horas=2
+    pra "MACRO (Cenário Global)" só é sustentável se algo roda com frequência
+    - este job já roda a cada 15min em dia de pregão (ver .github/workflows/
+    radar-morning-call.yml), então precisa aquecer essa fonte SEMPRE, mesmo
+    quando o resto da execução falha."""
+    chamadas = []
+    monkeypatch.setattr(radar_quedas, "obter_cenario_global", lambda: chamadas.append(1) or [])
+    monkeypatch.setattr(
+        radar_quedas, "processar_monitoramento",
+        lambda: {"coleta_ok": False, "alertas_novos": [], "erro": "zero recomendações coletadas"},
+    )
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: None)
+
+    radar_quedas.executar()
+
+    assert len(chamadas) == 1
 
 
 def test_executar_sem_fontes_no_resultado_nunca_quebra_e_nao_gera_chamada_extra(monkeypatch):

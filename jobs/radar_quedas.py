@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
+from data.macro import obter_cenario_global
 from data.radar_quedas import processar_monitoramento
 from data.supabase_client import obter_cliente
 from jobs.email_utils import enviar_email
@@ -166,6 +167,18 @@ def executar():
             f"[radar_quedas] persistencia (self-test escrita+leitura): FALHOU "
             f"na etapa {diagnostico['etapa']} - {diagnostico['detalhe']}"
         )
+
+    # Mantém "MACRO (Cenário Global)" fiel ao comportamento real (auditoria
+    # SAÚDE DOS DADOS 2026-10-26): esse coletor só era chamado a partir de
+    # ui/macro_tab.py e data/sintese_mercado.py (sob demanda) -
+    # idade_maxima_horas=2 (mesmo TTL curto do resto de cotações globais,
+    # ver data/saude_dados.py) nunca fica coberta só por visita na UI. Este
+    # job já roda a cada 15min em dia de pregão (.github/workflows/radar-
+    # morning-call.yml) - reaproveita essa cadência pra manter a fonte
+    # dentro da janela esperada, sem cron novo nem chamada fora do horário
+    # de pregão. obter_cenario_global() já trata a própria falha e registra
+    # a tentativa internamente; nunca lança excecao pra aqui.
+    obter_cenario_global()
 
     resultado = processar_monitoramento()
     cliente = obter_cliente()

@@ -29,6 +29,16 @@ def _sem_copom_real(monkeypatch):
     monkeypatch.setattr(mc, "obter_selic_meta_copom", lambda: None)
 
 
+@pytest.fixture(autouse=True)
+def _sem_aquecimento_macro_real(monkeypatch):
+    """executar() aquece IPCA/ANBIMA incondicionalmente (achado real, auditoria
+    SAÚDE DOS DADOS 2026-10-26: sem isto, essas 2 fontes só são chamadas por
+    quem abre a aba MACRO - ver jobs/morning_call.py) - nenhum teste deste
+    módulo deve bater rede real do BCB/ANBIMA por causa disso."""
+    monkeypatch.setattr(mc, "obter_ipca", lambda *_a, **_k: None)
+    monkeypatch.setattr(mc, "obter_curva_pre", lambda *_a, **_k: None)
+
+
 _COT_INDISPONIVEL = lambda nome, ticker: ({"erro": "indisponível"}, f"- {nome}: indisponível")
 
 
@@ -457,6 +467,26 @@ def test_executar_chama_self_test_de_persistencia_antes_de_tudo(monkeypatch):
     mc.executar()
 
     assert len(chamadas_diagnostico) == 1
+
+
+def test_executar_aquece_ipca_e_anbima_mesmo_sem_assinante(monkeypatch):
+    """Regressão (auditoria SAÚDE DOS DADOS 2026-10-26): "MACRO (BCB)"
+    (IPCA) e "MACRO (ANBIMA)" só eram chamados a partir de ui/macro_tab.py
+    (sob demanda) - sem nenhum cron tocando essas fontes, diferente de
+    Selic/CDI/Focus (aquecidos por este job via _macro_rows). executar()
+    precisa chamar os dois SEMPRE, mesmo quando o envio do dia é pulado
+    depois (aqui: nenhum assinante ativo)."""
+    chamadas_ipca, chamadas_anbima = [], []
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_ipca", lambda *a, **k: chamadas_ipca.append((a, k)))
+    monkeypatch.setattr(mc, "obter_curva_pre", lambda *a, **k: chamadas_anbima.append((a, k)))
+    monkeypatch.setattr(mc, "obter_cliente", lambda: object())
+    monkeypatch.setattr(mc, "listar_assinantes_morning_call", lambda *_a, **_k: [])
+
+    mc.executar()
+
+    assert len(chamadas_ipca) == 1
+    assert len(chamadas_anbima) == 1
 
 
 def test_executar_sem_nenhum_assinante_ativo_nao_tenta_enviar(monkeypatch):
