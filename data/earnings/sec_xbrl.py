@@ -66,21 +66,48 @@ def _get_json(url: str):
 @st.cache_data(ttl=_TTL_TICKERS, show_spinner=False)
 def _mapa_ticker_cik() -> dict:
     """{ticker: cik} a partir do arquivo oficial da SEC. {} se a fonte
-    falhar - nunca derruba quem chama, so' faz obter_cik devolver None."""
+    falhar - nunca derruba quem chama, so' faz obter_cik devolver None.
+
+    Instrumentado (auditoria SAUDE DOS DADOS 2026-10-26: "SEC EDGAR
+    (XBRL)" aparecia NUNCA_EXECUTADO sem nenhuma evidencia, mesmo
+    distinguindo "fonte indisponivel" de "nunca rodou") - antes, so'
+    _serie_conceito() chamava registrar_tentativa, e so' e' alcancada
+    quando obter_cik(ticker) ja' encontrou um CIK; pra ticker fora do
+    universo SEC (ex: ticker B3 sem CIK, caso normal/esperado, nao
+    falha) a funcao retornava None ANTES de qualquer tentativa ser
+    registrada - o mapa ticker->CIK em si (esta funcao) nunca tinha
+    NENHUMA linha no painel, mesmo padrao de gap ja' corrigido pro mapa
+    ticker->CNPJ da CVM (ver data/cvm.py:_mapa_ticker_cnpj, "CVM
+    (FCA)"). Registra aqui pra uma falha real na fonte (company_tickers.
+    json fora do ar/formato mudou) ficar visivel INDEPENDENTE de qual
+    ticker foi pedido."""
     dados = _get_json(_URL_TICKERS)
     if not isinstance(dados, dict) or "data" not in dados:
+        registrar_tentativa(_NOME_COLETOR, _FONTE_COLETOR, execucao_ok=False,
+                             erro="mapa ticker->CIK (company_tickers.json) sem resposta válida",
+                             categoria="Earnings")
         return {}
     # formato: {"fields": [...], "data": [[cik, name, ticker, exchange], ...]}
     campos = dados.get("fields", [])
     try:
         idx_cik, idx_ticker = campos.index("cik"), campos.index("ticker")
     except ValueError:
+        registrar_tentativa(_NOME_COLETOR, _FONTE_COLETOR, execucao_ok=False,
+                             erro="mapa ticker->CIK sem colunas 'cik'/'ticker' esperadas",
+                             categoria="Earnings")
         return {}
-    return {
+    mapa = {
         str(linha[idx_ticker]).upper(): int(linha[idx_cik])
         for linha in dados.get("data", [])
         if len(linha) > max(idx_cik, idx_ticker)
     }
+    if not mapa:
+        registrar_tentativa(_NOME_COLETOR, _FONTE_COLETOR, execucao_ok=False,
+                             erro="mapa ticker->CIK vazio", categoria="Earnings")
+        return {}
+    registrar_tentativa(_NOME_COLETOR, _FONTE_COLETOR, execucao_ok=True,
+                         registros_novos=len(mapa), categoria="Earnings")
+    return mapa
 
 
 def obter_cik(ticker: str) -> int | None:
