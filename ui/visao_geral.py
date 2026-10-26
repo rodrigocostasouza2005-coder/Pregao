@@ -8,6 +8,8 @@ consulta nova). Onde a função original já é "pesada demais" pra um
 resumo (a lista completa de notícias, por exemplo), usa a mesma função
 de dado com um limite de itens menor, não uma cópia da lógica."""
 
+from datetime import datetime, timezone
+
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -19,7 +21,9 @@ from data.news import obter_top_mercado_tudo
 from data.prices import (
     obter_cotacao, obter_cotacao_indice, obter_historico, obter_historico_intraday, rotulo_cotacao_em_cache,
 )
+from data.sintese_mercado import obter_sintese_mercado
 from ui import graficos, workspace
+from ui.calendario_tab import _painel_proximos_watchlist
 from ui.mercado_tab import _painel_altas_baixas, _painel_globais, _painel_mais_negociados, _painel_setorial
 from ui.news_tab import _injetar_css, _prontos_para_lista, _renderizar_lista
 
@@ -61,6 +65,168 @@ def _card_mercado(rotulo: str, preco, variacao_pct, prefs, casas_preco: int = 2,
         f"<div class='card-mercado-variacao {cls}'>{_fmt_pct(variacao_pct, prefs)}</div>{status_html}</div>",
         unsafe_allow_html=True,
     )
+
+def _tempo_relativo(iso: str | None) -> str:
+    """'há Xmin'/'há Xh' a partir de um ISO 8601 (UTC) real - nunca um
+    rótulo fixo tipo 'agora': se o parse falhar ou vier vazio, mostra
+    'horário indisponível' em vez de inventar um tempo."""
+    if not iso:
+        return "horário indisponível"
+    try:
+        dt = datetime.fromisoformat(str(iso))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        delta_min = max(0, int((datetime.now(timezone.utc) - dt).total_seconds() // 60))
+    except (ValueError, TypeError):
+        return "horário indisponível"
+    if delta_min < 1:
+        return "agora mesmo"
+    if delta_min < 60:
+        return f"há {delta_min}min"
+    return f"há {delta_min // 60}h{delta_min % 60:02d}"
+
+
+def _aviso_fontes_indisponiveis(fontes: list):
+    if not fontes:
+        return
+    st.markdown(
+        f"<div class='cinza' style='font-size:0.68rem; margin-top:0.3rem;'>"
+        f"Fontes indisponíveis nesta leitura: {'; '.join(fontes)}.</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _painel_analista_resumo(prefs):
+    """(A) Resumo executivo do mercado - ANALISTA DE MERCADO. Camada de
+    INTERPRETAÇÃO sobre dados já coletados (ver data/sintese_mercado.py)
+    - nunca um dado novo. Três estados honestos, nunca disfarçados: sem
+    síntese (ok=False), síntese anterior usada como fallback (atual=
+    False, rotulada), síntese desta rodada (atual=True)."""
+    st.markdown('<div class="painel-titulo">RESUMO EXECUTIVO DO MERCADO</div>', unsafe_allow_html=True)
+    resultado = obter_sintese_mercado()
+    if not resultado.get("ok"):
+        st.markdown(
+            f"<div class='cinza' style='font-size:0.78rem;'>Análise indisponível no momento "
+            f"({resultado.get('motivo') or 'sem detalhe'}). Os dados de mercado abaixo continuam "
+            f"atualizados normalmente.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    dados = resultado["dados"]
+    resumo = dados["resumo_executivo"]
+    rotulo_tempo = _tempo_relativo(resultado.get("gerado_em"))
+    if resultado.get("atual"):
+        st.markdown(
+            f"<div class='cinza' style='font-size:0.68rem; margin-bottom:0.4rem;'>Atualizado {rotulo_tempo} "
+            f"· modelo {resultado.get('modelo') or '—'}</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"<div class='alerta' style='font-size:0.68rem; margin-bottom:0.4rem; font-weight:600;'>"
+            f"ANÁLISE ANTERIOR (atualizada {rotulo_tempo}) - a rodada atual não pôde ser gerada"
+            f"{' (' + resultado['motivo_atual_indisponivel'] + ')' if resultado.get('motivo_atual_indisponivel') else ''}."
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    st.markdown(f"<div style='font-size:0.86rem; line-height:1.5;'>{resumo['texto']}</div>", unsafe_allow_html=True)
+    if resumo.get("ressalvas"):
+        st.markdown(
+            f"<div class='cinza' style='font-size:0.74rem; margin-top:0.4rem;'>Ressalvas: {resumo['ressalvas']}</div>",
+            unsafe_allow_html=True,
+        )
+    nao_sabemos = dados.get("o_que_nao_sabemos") or []
+    if nao_sabemos:
+        st.markdown(
+            "<div class='cinza' style='font-size:0.72rem; margin-top:0.5rem;'>O que ainda não sabemos: "
+            + "; ".join(nao_sabemos) + "</div>",
+            unsafe_allow_html=True,
+        )
+    _aviso_fontes_indisponiveis(resultado.get("fontes_indisponiveis") or [])
+
+
+def _painel_analista_movimentos(prefs):
+    """(B) O que está movendo o mercado - lista priorizada pela própria
+    IA (máx. 6, ver _PROMPT_SISTEMA), cada item com fonte/evidência
+    citada. Nunca mostra confiança numérica (só qualitativa+motivo)."""
+    st.markdown('<div class="painel-titulo">O QUE ESTÁ MOVENDO O MERCADO</div>', unsafe_allow_html=True)
+    resultado = obter_sintese_mercado()
+    if not resultado.get("ok"):
+        st.markdown(
+            "<div class='cinza' style='font-size:0.78rem;'>Sem leitura analítica disponível no momento.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+    movimentos = resultado["dados"].get("movimentos") or []
+    if not movimentos:
+        st.markdown(
+            "<div class='cinza' style='font-size:0.78rem;'>Nenhum movimento com evidência suficiente nesta rodada.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+    for item in movimentos:
+        fonte = item.get("fonte") or "fonte não informada"
+        data_fonte = f" · {item['data_fonte']}" if item.get("data_fonte") else ""
+        st.markdown(
+            f"<div style='padding:0.45rem 0; border-bottom:1px solid var(--borda);'>"
+            f"<div style='font-size:0.84rem; font-weight:600;'>{item.get('evento') or ''}</div>"
+            f"<div class='cinza' style='font-size:0.68rem; margin:0.1rem 0 0.25rem 0;'>{fonte}{data_fonte}"
+            f" · confiança {item.get('confianca') or '—'}</div>"
+            f"<div style='font-size:0.78rem;'>{item.get('por_que_importa') or ''}</div>"
+            + (f"<div class='cinza' style='font-size:0.74rem; margin-top:0.15rem;'>Possível impacto: "
+               f"{item['impacto_possivel']}</div>" if item.get("impacto_possivel") else "")
+            + (f"<div class='cinza' style='font-size:0.68rem; margin-top:0.1rem;'>Horizonte: {item['horizonte']}"
+               f"</div>" if item.get("horizonte") else "")
+            + f"</div>",
+            unsafe_allow_html=True,
+        )
+    _aviso_fontes_indisponiveis(resultado.get("fontes_indisponiveis") or [])
+
+
+def _painel_analista_oportunidades(prefs):
+    """(C) Oportunidades e riscos para investigar - NUNCA recomendação
+    de compra/venda nem preço-alvo (ver _PROMPT_SISTEMA e a mesma regra
+    já aplicada em RESEARCH > Casas de Análise)."""
+    st.markdown('<div class="painel-titulo">PARA INVESTIGAR</div>', unsafe_allow_html=True)
+    resultado = obter_sintese_mercado()
+    if not resultado.get("ok"):
+        st.markdown(
+            "<div class='cinza' style='font-size:0.78rem;'>Sem leitura analítica disponível no momento.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+    itens = resultado["dados"].get("oportunidades_riscos") or []
+    if not itens:
+        st.markdown(
+            "<div class='cinza' style='font-size:0.78rem;'>Nada com evidência suficiente para destacar nesta rodada.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+    for item in itens:
+        fonte = item.get("fonte") or "fonte não informada"
+        data_fonte = f" · {item['data_fonte']}" if item.get("data_fonte") else ""
+        st.markdown(
+            f"<div style='padding:0.45rem 0; border-bottom:1px solid var(--borda);'>"
+            f"<div style='font-size:0.84rem; font-weight:600;'>{item.get('ativo_ou_setor') or ''}</div>"
+            f"<div class='cinza' style='font-size:0.68rem; margin:0.1rem 0 0.25rem 0;'>{fonte}{data_fonte}</div>"
+            f"<div style='font-size:0.78rem;'>Catalisador: {item.get('catalisador') or '—'}</div>"
+            f"<div style='font-size:0.76rem; margin-top:0.15rem;'><span class='alta'>A favor:</span> "
+            f"{item.get('argumento_favoravel') or '—'}</div>"
+            f"<div style='font-size:0.76rem; margin-top:0.1rem;'><span class='baixa'>Contra:</span> "
+            f"{item.get('argumento_contrario') or '—'}</div>"
+            + (f"<div class='cinza' style='font-size:0.68rem; margin-top:0.15rem;'>Acompanhar: "
+               f"{item['acompanhar']}</div>" if item.get("acompanhar") else "")
+            + f"</div>",
+            unsafe_allow_html=True,
+        )
+    st.markdown(
+        "<div class='cinza' style='font-size:0.66rem; margin-top:0.4rem;'>\"Para investigar\" não é "
+        "recomendação de compra/venda - não há preço-alvo nem indicação de operação aqui.</div>",
+        unsafe_allow_html=True,
+    )
+    _aviso_fontes_indisponiveis(resultado.get("fontes_indisponiveis") or [])
+
 
 def _painel_mercado_agora(prefs):
     st.markdown('<div class="painel-titulo">MERCADO AGORA</div>', unsafe_allow_html=True)
@@ -208,6 +374,14 @@ def _painel_watchlist_compacta(prefs):
 # ordem/visibilidade/layout em prefs). Ordem abaixo = ordem padrão atual
 # (mesma sequência que render_visao_geral já tinha antes da migração).
 REGISTRO_PAINEIS = [
+    # ANALISTA DE MERCADO (síntese/interpretação, 2026-10-26): síntese
+    # primeiro, evidências depois, detalhes técnicos por último -
+    # ordem padrão pensada pra "o que preciso entender sobre o mercado
+    # hoje" vir antes dos números crus que já existiam. Usuário pode
+    # reordenar livremente (workspace modular já suporta isso).
+    ("analista_resumo", "Resumo executivo do mercado", _painel_analista_resumo),
+    ("analista_movimentos", "O que está movendo o mercado", _painel_analista_movimentos),
+    ("analista_oportunidades", "Para investigar", _painel_analista_oportunidades),
     ("mercado_agora", "Mercado agora", _painel_mercado_agora),
     ("ibov_grafico", "Ibovespa", _painel_ibov_grafico),
     ("altas_baixas", "Maiores altas/baixas", _painel_altas_baixas),
@@ -216,6 +390,7 @@ REGISTRO_PAINEIS = [
     ("noticias_resumo", "Market news", _painel_noticias_resumo),
     ("globais", "Mercados globais", _painel_globais),
     ("watchlist_compacta", "Minha watchlist", _painel_watchlist_compacta),
+    ("agenda_watchlist", "Agenda do mercado", _painel_proximos_watchlist),
 ]
 
 

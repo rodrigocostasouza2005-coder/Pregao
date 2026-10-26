@@ -323,6 +323,31 @@ def obter_varios(chaves: list) -> dict:
     return encontrados
 
 
+def obter_mais_recente_concluido(origem: str) -> dict | None:
+    """Última linha CONCLUÍDA de uma `origem` (ex: síntese de mercado),
+    em QUALQUER chave/bucket - usado quando a geração da rodada atual
+    falha e quem chama precisa de uma análise anterior como fallback
+    (nunca apresentada como atual, ver data/sintese_mercado.py). Difere
+    de obter_resumo_com_cache (que só lê UMA chave exata): aqui a busca
+    é por origem, ordenada pela mais recente, porque o fallback é
+    "a última que funcionou", não "a desta hora específica". None se
+    não houver nenhuma linha concluída dessa origem ainda ou o Supabase
+    estiver fora do ar - nunca lança excecao."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        resp = (
+            cliente.table(_TABELA).select("resultado,criado_em,modelo")
+            .eq("origem", origem).eq("status", "concluido")
+            .order("criado_em", desc=True).limit(1).execute()
+        )
+        return resp.data[0] if resp.data else None
+    except Exception as e:
+        print(f"[ia_cache] obter_mais_recente_concluido({origem!r}) falhou: {e!r}")
+        return None
+
+
 def obter_resumos_news_por_link(links: list, desde_iso: str) -> dict:
     """Leitura em LOTE (sem reservar nem gerar) dos resumos de NEWS ja'
     concluidos cuja URL principal (link_principal = a materia de onde o
