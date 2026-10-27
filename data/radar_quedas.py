@@ -87,31 +87,75 @@ def coletar_carteiras_safra():
 
 
 def salvar_carteiras(casa, itens):
-    """Upsert + reativação ESCOPADOS a uma única casa - uma falha ou
-    ausência de outra casa nunca desativa as recomendações vigentes
-    desta (ver processar_monitoramento, que chama isto por fonte)."""
+    """Upsert ESCOPADO a uma única casa - uma falha ou ausência de outra
+    casa nunca desativa as recomendações vigentes desta (ver
+    processar_monitoramento, que chama isto por fonte).
+
+    Correção real (auditoria SAÚDE DOS DADOS 2026-10-26: Safra obteve 10
+    recomendações, gravação reportada como falha, zero registros novos no
+    Radar): a versão anterior fazia 1 upsert + 1 update "desativa tudo da
+    casa" + N updates sequenciais (1 por ticker/carteira) só pra reativar
+    o que a própria coleta tinha confirmado - qualquer exceção nesse
+    último loop (rede, timeout) abortava a função DEPOIS que o upsert já
+    tinha gravado os dados, deixando-os persistidos mas com vigente=False
+    (invisíveis em listar_carteiras, que filtra vigente=True) e reportando
+    "falha ao persistir" mesmo com os 10 registros no banco. Agora o
+    upsert já grava vigente=True e verificado_em=agora pra cada item
+    confirmado NUM ÚNICO comando (idempotente - mesma chave, mesmo
+    on_conflict de antes); a desativação do que ficou de fora usa esse
+    MESMO timestamp como corte (verificado_em < agora), sem precisar
+    reconstruir chave composta nem depender de N chamadas que podem falhar
+    no meio. Se só a etapa de desativação falhar, os dados novos e válidos
+    já estão persistidos e vigentes - não é razão para reportar a coleta
+    como perdida (ver segundo try/except abaixo).
+
+    Dedup por (ticker, carteira) antes do upsert: um lote com a MESMA
+    chave de conflito repetida 2x faz o Postgres rejeitar o INSERT inteiro
+    ("ON CONFLICT DO UPDATE command cannot affect row a second time"),
+    mesmo que as outras linhas do lote sejam válidas - risco real se a
+    mesma composição aparecer 2x na fonte (ex: tabela repetida em mais de
+    1 página do PDF da Safra). Mantém a ÚLTIMA ocorrência: sem informação
+    adicional pra preferir uma sobre a outra.
+
+    Retorna (persistiu: bool, erro: str | None) - `erro` é o texto REAL da
+    exceção (quando houver), não um rótulo genérico, pra quem registra a
+    tentativa (jobs/radar_quedas.py) e o painel SAÚDE DOS DADOS conseguirem
+    mostrar a causa raiz de verdade (tabela, permissão, conflito de chave,
+    conexão) em vez de só "falha ao persistir"."""
     cliente = obter_cliente()
     if cliente is None:
-        return False
+        return False, "Supabase indisponível (sem cliente)."
+    if not itens:
+        return True, None
+
+    agora = datetime.now(timezone.utc).isoformat()
+    por_chave = {}
+    for item in itens:
+        por_chave[(item["ticker"], item["carteira"])] = {
+            **item, "casa": casa, "vigente": True,
+            "verificado_em": agora, "status_coleta": "COLETADO",
+        }
+    itens_confirmados = list(por_chave.values())
+
     try:
-        if itens:
-            cliente.table("radar_carteiras_recomendadas").upsert(
-                itens, on_conflict="casa,ticker,carteira"
-            ).execute()
+        cliente.table("radar_carteiras_recomendadas").upsert(
+            itens_confirmados, on_conflict="casa,ticker,carteira"
+        ).execute()
+    except Exception as exc:
+        erro = f"upsert de {len(itens_confirmados)} recomendação(ões): {exc!r}"
+        print(f"[radar_quedas] falha ao persistir carteiras ({casa}): {erro}")
+        return False, erro
+
+    try:
         cliente.table("radar_carteiras_recomendadas").update(
             {"vigente": False}
-        ).eq("casa", casa).execute()
-        chaves = {(i["ticker"], i["carteira"]) for i in itens}
-        # Reativa somente as recomendações confirmadas nesta coleta.
-        for ticker, carteira in chaves:
-            cliente.table("radar_carteiras_recomendadas").update(
-                {"vigente": True, "verificado_em": datetime.now(timezone.utc).isoformat(),
-                 "status_coleta": "COLETADO"}
-            ).eq("casa", casa).eq("ticker", ticker).eq("carteira", carteira).execute()
-        return True
+        ).eq("casa", casa).lt("verificado_em", agora).execute()
     except Exception as exc:
-        print(f"[radar_quedas] falha ao persistir carteiras ({casa}): {exc!r}")
-        return False
+        print(
+            f"[radar_quedas] carteiras ({casa}) persistidas, mas desativação "
+            f"de recomendações antigas falhou: {exc!r}"
+        )
+    return True, None
 
 
 def _carteira_expirada(linha, agora=None):
@@ -264,8 +308,9 @@ def processar_monitoramento():
         if not snapshot:
             status_fontes[casa] = "snapshot vazio, rejeitado (carteira anterior preservada)"
             continue
-        if not salvar_carteiras(casa, snapshot):
-            status_fontes[casa] = "falha ao persistir (carteira anterior preservada)"
+        persistiu, erro_persistencia = salvar_carteiras(casa, snapshot)
+        if not persistiu:
+            status_fontes[casa] = f"falha ao persistir ({erro_persistencia}; carteira anterior preservada)"
             continue
         status_fontes[casa] = f"ok ({len(snapshot)} recomendações)"
         pelo_menos_uma_ok = True
