@@ -151,15 +151,11 @@ _PAINEIS_NOVOS_MERCADO_20261027 = [
 if paineis.migrar_visibilidade_paineis_novos("MERCADO", _PAINEIS_NOVOS_MERCADO_20261027, prefs):
     _persistir_prefs()
 
-# --- migra o painel novo LEITURA RAPIDA de VISAO GERAL (2026-10-27) -
-# mesmo motivo/mesma funcao da migracao de MERCADO acima. mercado_agora/
-# altas_baixas_resumo/noticias_resumo/mapa_setorial_compacto/
-# desempenho_tabela/agenda_watchlist NAO precisam de migracao: viraram
-# secoes FIXAS (fora do REGISTRO_PAINEIS, ver ui/visao_geral.py:
-# render_visao_geral) no redesign seguindo a referencia visual - nao
-# passam mais por paineis_visiveis/_pid_visivel_salvo.
-if paineis.migrar_visibilidade_paineis_novos("VISÃO GERAL", ["leitura_rapida"], prefs):
-    _persistir_prefs()
+# VISAO GERAL (redesign terminal, 2026-10-27): REGISTRO_PAINEIS ficou
+# vazio - todo o conteudo virou composicao FIXA (ver ui/visao_geral.py:
+# render_visao_geral), sem drag/resize por painel nesta aba. Nao ha'
+# mais nada ali pra migrar visibilidade (paineis_visiveis/
+# _pid_visivel_salvo nao se aplicam a secao fixa).
 
 
 def _escolha_estavel(chave_widget: str, opcoes: list, padrao):
@@ -1278,12 +1274,20 @@ if rota == ("mais", "config"):
             novos_visiveis_macro = paineis.controle_visibilidade_config(
                 "MACRO", "MACRO", _REGISTRO_PAINEIS_MACRO, prefs,
             )
-            nova_ordem_visao_geral = paineis.controle_ordem_config(
-                "VISÃO GERAL", "VISÃO GERAL", _REGISTRO_PAINEIS_VISAO_GERAL, prefs,
-            )
-            novos_visiveis_visao_geral = paineis.controle_visibilidade_config(
-                "VISÃO GERAL", "VISÃO GERAL", _REGISTRO_PAINEIS_VISAO_GERAL, prefs,
-            )
+            # VISAO GERAL (redesign terminal, 2026-10-27): sem paineis
+            # arrastaveis/configuraveis nesta aba (REGISTRO_PAINEIS vazio -
+            # tudo virou secao fixa, ver ui/visao_geral.py) - sem isso o
+            # multiselect aparecia vazio/sem sentido aqui no CONFIG.
+            if _REGISTRO_PAINEIS_VISAO_GERAL:
+                nova_ordem_visao_geral = paineis.controle_ordem_config(
+                    "VISÃO GERAL", "VISÃO GERAL", _REGISTRO_PAINEIS_VISAO_GERAL, prefs,
+                )
+                novos_visiveis_visao_geral = paineis.controle_visibilidade_config(
+                    "VISÃO GERAL", "VISÃO GERAL", _REGISTRO_PAINEIS_VISAO_GERAL, prefs,
+                )
+            else:
+                nova_ordem_visao_geral = []
+                novos_visiveis_visao_geral = []
 
             ids_casas_research = [c["id"] for c in CASAS_RESEARCH]
             nomes_casas_research = {c["id"]: c["nome"] for c in CASAS_RESEARCH}
