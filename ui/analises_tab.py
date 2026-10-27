@@ -19,7 +19,10 @@ import config
 from data.earnings import reviewer as earnings_reviewer
 from data.market_researcher import analise_ticker
 from data.prices import obter_cotacao, obter_indicadores
-from data.radar import TIPO_CALCULO, TIPO_ESTIMATIVA_TERCEIRO, TIPO_FATO, TIPO_HIPOTESE, TIPO_INSUFICIENTE
+from data.radar import (
+    TIPO_CALCULO, TIPO_ESTIMATIVA_TERCEIRO, TIPO_FATO, TIPO_HIPOTESE, TIPO_INSUFICIENTE,
+    comparaveis_setor,
+)
 from data.research.historico import historico_ticker
 from data.research.tese import scorecard
 from ui import navegacao
@@ -68,6 +71,56 @@ def _analise_ticker_cacheada(ticker: str) -> dict:
     tempo dentro da análise agregada), evita recompor tudo a cada
     rerun do Streamlit (troca de widget na mesma página, etc)."""
     return analise_ticker(ticker)
+
+
+# ============================================================
+# COMPARATIVO SETORIAL DE MÚLTIPLOS (2026-10-27)
+#
+# ANÁLISES › Empresas mostrava P/L, P/VP, ROE e DÍV/EBITDA do ticker
+# isolados, sem nenhum ponto de referência - o usuário precisava ir até
+# RADAR › Valuation (ui/radar_tab.py:_dialog_comparaveis) pra ver a
+# mediana do setor pro MESMO múltiplo, perdendo o contexto do ticker que
+# estava analisando. Esta seção só CONSOME data/radar.py:comparaveis_setor
+# (mesma função que RADAR já usa) - nenhuma consulta nova, nenhum cálculo
+# novo, nenhuma chamada de IA. Sob demanda (botão), não no primeiro
+# render - mesmo motivo de radar_tab.py: evita N consultas yfinance em
+# cascata (1 por par do setor) a cada vez que a página abre.
+# ============================================================
+
+@st.dialog("COMPARATIVO SETORIAL DE MÚLTIPLOS", width="large")
+def _dialog_comparativo_setor_empresa(ticker: str, prefs: dict):
+    fmt = prefs["formato_numerico"]
+    with st.spinner("Calculando medianas do setor (consulta ao vivo, pode levar alguns segundos)..."):
+        try:
+            comp = comparaveis_setor(ticker)
+        except Exception:
+            st.warning(f"Comparativo setorial de {ticker} indisponível agora (fonte não respondeu).")
+            return
+    if comp.get("insuficiente"):
+        st.warning(f"Dado insuficiente pra comparação setorial de {ticker}: "
+                    f"{comp.get('motivo', 'sem pares válidos')}.")
+        return
+    st.caption(f"Setor: {comp['setor']} · {comp['pares_considerados']} papéis no universo (Ibovespa)")
+    for rotulo, chave, sufixo in (
+        ("P/L", "pl_mediana", "x"), ("P/VP", "pvp_mediana", "x"), ("Dividend yield", "dy_mediana", "%"),
+    ):
+        valor = comp.get(chave)
+        n = comp.get(f"{chave}_n", 0)
+        if valor is None:
+            st.markdown(f"**{rotulo}**: dado insuficiente (menos de 3 pares com valor válido - {n} disponível(is))")
+        else:
+            texto_valor = config.formatar_multiplo(valor, 2, fmt) if sufixo == "x" else (
+                config.formatar_numero(valor, 2, fmt) + "%"
+            )
+            st.markdown(f"**{rotulo} mediano do setor**: {texto_valor} ({n} pares considerados)")
+    st.caption(
+        "Mediana calculada agora, sobre os múltiplos atuais do yfinance pros outros papéis do mesmo "
+        "setor (classificação setorial própria do PREGÃO) - não é um índice oficial nem estimativa de "
+        "analista, é um cálculo interno pra dar contexto relativo. Limitação: P/L e P/VP comparam preço "
+        "contra lucro/patrimônio contábil do momento - empresas com margens, crescimento ou estrutura de "
+        "capital diferentes dentro do mesmo setor podem justificar múltiplos diferentes; isto não é um "
+        "preço justo nem uma recomendação."
+    )
 
 
 def render_equity_research_executivo(ticker: str, prefs: dict):
@@ -119,6 +172,10 @@ def render_equity_research_executivo(ticker: str, prefs: dict):
                                                   lambda v: config.formatar_numero(v, 1, fmt) + "x"))
             for alerta in fundamentos.get("alerta_qualidade") or []:
                 st.warning(alerta)
+            if st.button("Comparar com o setor ↗", key=f"empresa_comp_setor_{ticker}",
+                          help="P/L, P/VP e dividend yield mediano dos outros papéis do mesmo setor "
+                               "(RADAR/data/radar.py:comparaveis_setor) - consulta ao vivo sob demanda."):
+                _dialog_comparativo_setor_empresa(ticker, prefs)
 
         st.markdown("**Catalisadores**")
         if catalisadores is None:
