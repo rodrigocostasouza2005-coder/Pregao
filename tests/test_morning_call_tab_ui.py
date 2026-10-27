@@ -39,7 +39,9 @@ from zoneinfo import ZoneInfo
 import ui.morning_call_tab as mc
 ed = {"data": datetime(2026, 10, 21).date(), "executado_em": datetime(2026, 10, 21, 15, 58, tzinfo=ZoneInfo("UTC")),
       "conteudo": "1. RESUMO EXECUTIVO\\n- Ibovespa abriu em alta.", "status": "ENVIADA"}
-with patch.object(mc, "listar_edicoes", return_value=[ed]):
+with patch.object(mc, "listar_edicoes", return_value=[ed]), \\
+     patch.object(mc, "obter_sintese_mercado", return_value={"ok": False, "motivo": "teste"}), \\
+     patch.object(mc, "_alertas_confiabilidade_cacheados", return_value=[]):
     mc.render_edicao_atual({})
 '''
     at = AppTest.from_string(script, default_timeout=30).run()
@@ -47,7 +49,7 @@ with patch.object(mc, "listar_edicoes", return_value=[ed]):
     textos = " ".join(m.value for m in at.markdown)
     assert "gerada às 12:58" in textos and "fora do horário previsto" in textos
     rotulos = [b.label for b in at.button]
-    assert rotulos.count("GERAR PRÉVIA") == 1
+    assert rotulos.count("GERAR JORNAL COMPLETO") == 1
     assert not any("ATUALIZAR" in r for r in rotulos)  # sem prévia ainda, só a ação de gerar
 
 
