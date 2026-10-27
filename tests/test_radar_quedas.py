@@ -306,6 +306,24 @@ def test_listar_carteiras_sem_verificado_em_nao_quebra():
     assert resultado == [linha_sem_campo]
 
 
+def test_listar_carteiras_verificado_em_sem_timezone_nao_quebra_a_listagem_inteira():
+    """Achado varredura 2026-10-27: verificado_em naive (sem tz) fazia
+    _carteira_expirada levantar TypeError FORA do try/except, propagando
+    pra fora da list comprehension em listar_carteiras - 1 linha
+    malformada derrubava a listagem INTEIRA, não só essa linha."""
+    import data.radar_quedas as radar
+    linha_naive = {"ticker": "VALE3", "casa": "Safra Corretora", "verificado_em": "2026-10-20T10:00:00"}
+    linha_ok = {"ticker": "PETR4", "casa": "Safra Corretora",
+                "verificado_em": datetime.now(timezone.utc).isoformat()}
+    cliente = MagicMock()
+    resposta = MagicMock()
+    resposta.data = [linha_naive, linha_ok]
+    cliente.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = resposta
+    with patch.object(radar, "obter_cliente", return_value=cliente):
+        resultado = radar.listar_carteiras()
+    assert resultado == [linha_naive, linha_ok]
+
+
 def test_registrar_alerta_e_idempotente_mesmo_ticker_mesmo_pregao():
     """Duas execuções no mesmo pregão não podem duplicar o alerta."""
     cliente = MagicMock()
@@ -526,6 +544,14 @@ def test_resumo_fontes_vigentes_agrupa_por_casa_e_conta_ativos_unicos():
                             "carteiras": [], "data_publicacao": None},
     }
     assert "Genial Analisa" not in resumo  # sem linha vigente -> casa ausente (UI rotula "indisponível")
+
+
+def test_desatualizada_verificado_em_sem_timezone_nao_lanca_excecao():
+    """Mesma classe de achado (varredura 2026-10-27) que _carteira_expirada
+    - usada em resumo_fontes_vigentes(), também sobre list/dict
+    comprehension: 1 linha malformada não pode derrubar o resumo inteiro."""
+    import data.radar_quedas as radar
+    assert radar._desatualizada("2026-10-20T10:00:00") is False
 
 
 def test_resumo_fontes_vigentes_marca_desatualizada_apos_idade_fresca_horas():

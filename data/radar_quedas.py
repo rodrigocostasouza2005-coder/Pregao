@@ -182,9 +182,15 @@ def _carteira_expirada(linha, agora=None):
         return False
     try:
         quando = datetime.fromisoformat(str(verificado).replace("Z", "+00:00"))
-    except ValueError:
+        return (agora - quando) > timedelta(days=IDADE_MAXIMA_CARTEIRA_DIAS)
+    except (ValueError, TypeError):
+        # TypeError (achado varredura 2026-10-27): verificado_em sem
+        # timezone faz a subtracao acima levantar "can't subtract
+        # offset-naive and offset-aware datetimes" - antes ficava fora
+        # do try/except e propagava pra fora de listar_carteiras() (list
+        # comprehension chamando isto por linha), derrubando a listagem
+        # INTEIRA por 1 linha malformada. Mesmo fail-open do ValueError.
         return False
-    return (agora - quando) > timedelta(days=IDADE_MAXIMA_CARTEIRA_DIAS)
 
 
 def listar_carteiras():
@@ -479,9 +485,9 @@ def _desatualizada(verificado_em, agora=None):
         return False
     try:
         quando = datetime.fromisoformat(str(verificado_em).replace("Z", "+00:00"))
-    except ValueError:
+        return (agora - quando) > timedelta(hours=IDADE_FRESCA_HORAS)
+    except (ValueError, TypeError):
         return False
-    return (agora - quando) > timedelta(hours=IDADE_FRESCA_HORAS)
 
 
 def resumo_fontes_vigentes():
