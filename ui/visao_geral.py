@@ -29,7 +29,9 @@ from data.sintese_mercado import obter_sintese_mercado
 from ui import graficos, workspace
 from ui.calendario_tab import _painel_proximos_watchlist
 from ui.mercado_tab import _painel_globais, _painel_leitura_rapida
-from ui.news_tab import _injetar_css, _prontos_para_lista, _renderizar_lista
+from ui.news_tab import (
+    _CLASSE_SELO, _fmt_hora, _injetar_css, _plural_fontes, _texto_tag, _tooltip_regras, _truncar,
+)
 
 _PERIODOS_IBOV = ["1D", "1S", "1M", "3M", "6M", "1A", "5A"]
 _QTD_NOTICIAS = 4
@@ -402,6 +404,15 @@ def _painel_ibov_grafico(prefs):
 
 
 def _painel_noticias_resumo(prefs):
+    """Renderer PRÓPRIO (não `ui.news_tab._renderizar_lista`, que é "wire
+    denso" pensado pra largura cheia de TOP MERCADO/EQUITY) - achado real
+    (redesign em grade, 2026-10-27): `_renderizar_lista` usa `st.columns`
+    com pesos fixos pra selo/hora/manchete/fontes/link; numa coluna
+    estreita (~36% da página, grade de 3) essas colunas espremiam a ponto
+    do selo (badge) sobrepor o início da manchete - texto ilegível. Esta
+    versão é 1 bloco HTML empilhado por item (sem múltiplas colunas),
+    mesma função de dado (obter_top_mercado_tudo) e mesmos campos/selo já
+    usados lá - zero dado novo, só layout diferente pra caber estreito."""
     _injetar_css()
     st.markdown('<div class="painel-titulo">MARKET NEWS <span class="cinza" style="font-size:0.68rem;font-weight:400;">ÚLTIMAS 4</span></div>', unsafe_allow_html=True)
     itens = obter_top_mercado_tudo("TODOS")
@@ -410,9 +421,22 @@ def _painel_noticias_resumo(prefs):
         return
     # A visão geral é um resumo executivo, não o feed completo: quatro manchetes
     # no máximo, sem texto longo nem contexto extra. O feed completo fica em NEWS.
-    prontos = _prontos_para_lista(itens[:_QTD_NOTICIAS])
-    _renderizar_lista(itens[:_QTD_NOTICIAS], mostrar_ticker=True, prefixo="vg", watchlist=prefs.get("watchlist") or [],
-                      resumos_prontos=prontos)
+    blocos = []
+    for n in itens[:_QTD_NOTICIAS]:
+        classe_selo = _CLASSE_SELO.get(n["selo"], "selo-naoconfirmada")
+        tooltip = html.escape(_tooltip_regras(n))
+        titulo = html.escape(_truncar(n["titulo"], 68))
+        blocos.append(
+            f"<div style='padding:0.4rem 0; border-bottom:1px solid var(--borda);'>"
+            f"<span class='selo-tag {classe_selo}' title='{tooltip}' style='font-size:0.58rem;'>"
+            f"{_texto_tag(n)}</span>"
+            f"<a href='{n['link']}' target='_blank' style='display:block; margin-top:0.25rem; "
+            f"font-size:0.76rem; font-weight:600; color:var(--neutro); text-decoration:none; "
+            f"line-height:1.3;'>{titulo}</a>"
+            f"<div class='cinza' style='font-size:0.64rem; margin-top:0.15rem;'>"
+            f"{_fmt_hora(n['data'])} · {_plural_fontes(n['fontes_count'])}</div></div>"
+        )
+    st.markdown("".join(blocos), unsafe_allow_html=True)
 
 
 def _painel_watchlist_compacta(prefs):
@@ -442,6 +466,23 @@ def _painel_watchlist_compacta(prefs):
     st.markdown(f"<table style='width:100%; font-size:0.8rem; border-collapse:collapse;'>{''.join(linhas)}</table>", unsafe_allow_html=True)
 
 
+def _badge_ticker(ticker: str, tema: dict) -> str:
+    """Selo compacto com as iniciais do ticker - substituto leve de logo
+    de empresa (pedido do Rodrigo, redesign 2026-10-27): não existe
+    mecanismo de logo real por ticker no projeto hoje (nenhum serviço
+    externo configurado) - gerar um exigiria CDN novo ou banco de
+    assets mantido manualmente, fora do que reaproveita infraestrutura
+    existente. CSS puro, derivado do próprio ticker, sem dado inventado."""
+    iniciais = ("".join(c for c in ticker if c.isalpha())[:2] or ticker[:2]).upper()
+    return (
+        f"<span style='display:inline-flex; align-items:center; justify-content:center; "
+        f"width:1.5rem; height:1.5rem; min-width:1.5rem; border-radius:4px; "
+        f"background:{tema['destaque']}22; color:{tema['destaque']}; "
+        f"font-size:0.58rem; font-weight:700; margin-right:0.35rem; vertical-align:middle;'>"
+        f"{html.escape(iniciais)}</span>"
+    )
+
+
 def _painel_altas_baixas_resumo(prefs):
     """(NOVO, 2026-10-27) Versão compacta de "Maiores altas/baixas" pra
     VISÃO GERAL - 2 colunas lado a lado (altas | baixas), top 5 do dia,
@@ -450,33 +491,36 @@ def _painel_altas_baixas_resumo(prefs):
     zero consulta nova - só um recorte menor, mesmo padrão já usado
     pelos outros painéis "resumo" desta aba (ver docstring do módulo)."""
     st.markdown('<div class="painel-titulo">PRINCIPAIS ALTAS E BAIXAS</div>', unsafe_allow_html=True)
-    altas, baixas = obter_altas_baixas(5, "dia")
+    tema = _tema_atual(prefs)
+    # 4 (nao 5): coluna estreita na grade de 3 (redesign 2026-10-27) - 5
+    # linhas por lado deixava a linha mais larga que MARKET NEWS/MAPA
+    # SETORIAL ao lado, quebrando o alinhamento da linha inteira.
+    altas, baixas = obter_altas_baixas(4, "dia")
 
     def _coluna(titulo, papeis, cls):
-        st.markdown(f"<div class='{cls}' style='font-size:0.72rem; font-weight:700; margin-bottom:0.3rem;'>{titulo}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='{cls}' style='font-size:0.68rem; font-weight:700; margin-bottom:0.25rem;'>{titulo}</div>", unsafe_allow_html=True)
         if not papeis:
-            st.markdown("<div class='cinza' style='font-size:0.76rem;'>—</div>", unsafe_allow_html=True)
+            st.markdown("<div class='cinza' style='font-size:0.74rem;'>—</div>", unsafe_allow_html=True)
             return
         linhas = []
         for p in papeis:
             linhas.append(
-                f"<tr><td style='padding:0.18rem 0.3rem 0.18rem 0; font-weight:600;'>{p['ticker']}</td>"
-                f"<td style='padding:0.18rem 0.3rem; text-align:right;' class='neutro'>"
-                f"{config.formatar_numero(p['preco'], 2, prefs['formato_numerico'])}</td>"
-                f"<td style='padding:0.18rem 0 0.18rem 0.3rem; text-align:right;' class='{cls}'>"
+                f"<tr><td style='padding:0.16rem 0.2rem 0.16rem 0; white-space:nowrap;'>"
+                f"{_badge_ticker(p['ticker'], tema)}<span style='font-weight:600; font-size:0.72rem;'>{p['ticker']}</span></td>"
+                f"<td style='padding:0.16rem 0 0.16rem 0.2rem; text-align:right;' class='{cls}'>"
                 f"{_fmt_pct(p['variacao_pct'], prefs)}</td></tr>"
             )
         st.markdown(
-            f"<table style='width:100%; font-size:0.78rem; border-collapse:collapse;'>{''.join(linhas)}</table>",
+            f"<table style='width:100%; font-size:0.74rem; border-collapse:collapse;'>{''.join(linhas)}</table>",
             unsafe_allow_html=True,
         )
 
     with st.container(key="vg_altas_baixas_resumo_cols"):
         col_altas, col_baixas = st.columns(2, gap="small")
         with col_altas:
-            _coluna("MAIORES ALTAS", altas, "alta")
+            _coluna("ALTAS", altas, "alta")
         with col_baixas:
-            _coluna("MAIORES BAIXAS", baixas, "baixa")
+            _coluna("BAIXAS", baixas, "baixa")
 
 
 def _painel_mapa_setorial_compacto(prefs):
@@ -492,19 +536,23 @@ def _painel_mapa_setorial_compacto(prefs):
         return
     tema = _tema_atual(prefs)
     blocos = []
-    for s in setores[:9]:
+    # 6 (nao 9) em grade 2 por linha (nao 3): esta coluna agora e' so' ~28%
+    # da pagina (grade de 3, redesign 2026-10-27) - 3 por linha nessa
+    # largura deixava o nome de setor cortado/sem espaco pro numero.
+    # Secundario de proposito: metade dos setores, nao todos.
+    for s in setores[:6]:
         v = s["variacao_media_pct"]
         cor = tema["alta"] if v >= 0 else tema["baixa"]
         blocos.append(
-            f"<div style='flex:1 1 30%; min-width:7rem; border:1px solid {cor}55; "
-            f"background:{cor}1c; border-radius:3px; padding:0.45rem 0.55rem;'>"
-            f"<div class='neutro' style='font-size:0.68rem; font-weight:600; white-space:nowrap; "
+            f"<div style='flex:1 1 44%; min-width:6rem; border:1px solid {cor}55; "
+            f"background:{cor}1c; border-radius:3px; padding:0.35rem 0.45rem;'>"
+            f"<div class='neutro' style='font-size:0.62rem; font-weight:600; white-space:nowrap; "
             f"overflow:hidden; text-overflow:ellipsis;'>{html.escape(s['setor'])}</div>"
-            f"<div style='color:{cor}; font-size:0.82rem; font-weight:700; margin-top:0.15rem;'>"
+            f"<div style='color:{cor}; font-size:0.76rem; font-weight:700; margin-top:0.1rem;'>"
             f"{_fmt_pct(v, prefs)}</div></div>"
         )
     st.markdown(
-        f"<div style='display:flex; flex-wrap:wrap; gap:0.4rem;'>{''.join(blocos)}</div>",
+        f"<div style='display:flex; flex-wrap:wrap; gap:0.35rem;'>{''.join(blocos)}</div>",
         unsafe_allow_html=True,
     )
 
@@ -518,34 +566,40 @@ def _painel_desempenho_tabela(prefs):
     próprio dict de obter_mais_negociados) - nenhum dado novo, nenhuma
     consulta nova."""
     st.markdown('<div class="painel-titulo">DESEMPENHO DO IBOVESPA</div>', unsafe_allow_html=True)
-    papeis = obter_mais_negociados(8)
+    tema = _tema_atual(prefs)
+    # 6 (nao 8): compacto na grade lado a lado com AGENDA (redesign
+    # 2026-10-27) - evita bloco alto/espaco vazio desproporcional ao
+    # lado da agenda, que normalmente tem menos linhas.
+    papeis = obter_mais_negociados(6)
     if not papeis:
         st.markdown("<div class='cinza' style='font-size:0.78rem;'>—</div>", unsafe_allow_html=True)
         return
     cabecalho = (
-        "<tr style='font-size:0.64rem; color:var(--cinza);'>"
-        "<td style='padding:0 0.3rem 0.25rem 0;'>CÓDIGO</td><td style='padding:0 0.3rem 0.25rem;'>EMPRESA</td>"
-        "<td style='padding:0 0.3rem 0.25rem;'>SETOR</td><td style='padding:0 0.3rem 0.25rem; text-align:right;'>PREÇO</td>"
+        "<tr style='font-size:0.62rem; color:var(--cinza);'>"
+        "<td style='padding:0 0.3rem 0.25rem 0;'>ATIVO</td><td style='padding:0 0.3rem 0.25rem;'>SETOR</td>"
+        "<td style='padding:0 0.3rem 0.25rem; text-align:right;'>PREÇO</td>"
         "<td style='padding:0 0.3rem 0.25rem; text-align:right;'>VAR. %</td>"
-        "<td style='padding:0 0 0.25rem 0.3rem; text-align:right;'>VOLUME (R$ MI)</td></tr>"
+        "<td style='padding:0 0 0.25rem 0.3rem; text-align:right;'>VOL. (R$ MI)</td></tr>"
     )
     linhas = [cabecalho]
     for p in papeis:
         cls = "alta" if p["variacao_pct"] >= 0 else "baixa"
         nome = config.TICKER_NOME.get(p["ticker"], p["ticker"])
         linhas.append(
-            f"<tr style='font-size:0.78rem;'>"
-            f"<td style='padding:0.22rem 0.3rem 0.22rem 0; font-weight:600; color:var(--destaque);'>{p['ticker']}</td>"
-            f"<td style='padding:0.22rem 0.3rem;' class='neutro'>{html.escape(nome)}</td>"
-            f"<td style='padding:0.22rem 0.3rem;' class='cinza'>{html.escape(p['setor'])}</td>"
-            f"<td style='padding:0.22rem 0.3rem; text-align:right;' class='neutro'>"
+            f"<tr style='font-size:0.76rem;'>"
+            f"<td style='padding:0.2rem 0.3rem 0.2rem 0; white-space:nowrap;'>"
+            f"{_badge_ticker(p['ticker'], tema)}<b>{p['ticker']}</b> "
+            f"<span class='cinza' style='font-size:0.64rem;'>{html.escape(nome)}</span></td>"
+            f"<td style='padding:0.2rem 0.3rem;' class='cinza'>{html.escape(p['setor'])}</td>"
+            f"<td style='padding:0.2rem 0.3rem; text-align:right;' class='neutro'>"
             f"{config.formatar_numero(p['preco'], 2, prefs['formato_numerico'])}</td>"
-            f"<td style='padding:0.22rem 0.3rem; text-align:right;' class='{cls}'>{_fmt_pct(p['variacao_pct'], prefs)}</td>"
-            f"<td style='padding:0.22rem 0 0.22rem 0.3rem; text-align:right;' class='neutro'>"
+            f"<td style='padding:0.2rem 0.3rem; text-align:right;' class='{cls}'>{_fmt_pct(p['variacao_pct'], prefs)}</td>"
+            f"<td style='padding:0.2rem 0 0.2rem 0.3rem; text-align:right;' class='neutro'>"
             f"{config.formatar_numero(p['volume_financeiro'] / 1_000_000, 1, prefs['formato_numerico'])}</td></tr>"
         )
     st.markdown(
-        f"<table style='width:100%; border-collapse:collapse;'>{''.join(linhas)}</table>",
+        f"<div style='overflow-x:auto;'><table style='width:100%; border-collapse:collapse;'>"
+        f"{''.join(linhas)}</table></div>",
         unsafe_allow_html=True,
     )
 
@@ -559,24 +613,13 @@ def _painel_desempenho_tabela(prefs):
 # (mesma sequência que render_visao_geral já tinha antes da migração).
 REGISTRO_PAINEIS = [
     # ORDEM PADRAO (redesign 2026-10-27, referencia visual fornecida pelo
-    # Rodrigo): visao geral em ~10s primeiro (metricas -> altas/baixas ->
-    # destaques -> setorial -> desempenho -> agenda), detalhes/interpretacao
-    # mais profunda depois (grafico/leitura rapida/analista/globais/
-    # watchlist). Usuario pode reordenar livremente (workspace modular).
-    ("mercado_agora", "Mercado agora", _painel_mercado_agora),
-    # PRINCIPAIS ALTAS E BAIXAS / MAPA SETORIAL / DESEMPENHO (2026-10-27):
-    # versoes COMPACTAS novas, so' pra esta aba - substituem os paineis
-    # completos (altas_baixas/setorial/mais_negociados) que continuam
-    # intocados em MERCADO > PAINEL. Mesmas funcoes de dado, zero consulta
-    # nova - mesmo principio ja' documentado no topo deste arquivo.
-    ("altas_baixas_resumo", "Principais altas e baixas", _painel_altas_baixas_resumo),
-    ("noticias_resumo", "Market news", _painel_noticias_resumo),
-    # heatmap setorial deliberadamente SECUNDARIO aqui (grade pequena, nao
-    # o treemap inteiro de MERCADO > PAINEL) - pedido explicito do Rodrigo
-    # pra nao dominar a pagina.
-    ("mapa_setorial_compacto", "Mapa setorial", _painel_mapa_setorial_compacto),
-    ("desempenho_tabela", "Desempenho do Ibovespa", _painel_desempenho_tabela),
-    ("agenda_watchlist", "Agenda do mercado", _painel_proximos_watchlist),
+    # Rodrigo) - detalhes/interpretacao mais profunda depois do "resumo em
+    # ~10s" fixo (ver render_visao_geral: MERCADO AGORA + as 2 linhas em
+    # grade NAO estao mais aqui, viraram secoes FIXAS fora do workspace
+    # arrastavel - mesmo padrao ja usado por TERMOMETRO em MERCADO >
+    # PAINEL - pra reproduzir o layout lado-a-lado da referencia de
+    # verdade, nao só empilhado). Usuario pode reordenar o que sobra
+    # livremente (workspace modular).
     ("ibov_grafico", "Ibovespa", _painel_ibov_grafico),
     # LEITURA RÁPIDA (2026-10-27): reaproveitado de ui/mercado_tab.py -
     # introduzido originalmente na aba PAINEL (PR #182), mas o pedido real
@@ -597,5 +640,44 @@ REGISTRO_PAINEIS = [
 
 def render_visao_geral(prefs: dict, persistir_fn=None):
     """Ponto de entrada da aba VISÃO GERAL, chamado pelo app.py.
-    `persistir_fn` (opcional): ver ui/workspace.py:renderizar_workspace."""
+    `persistir_fn` (opcional): ver ui/workspace.py:renderizar_workspace.
+
+    Composição FIXA no topo (redesign 2026-10-27, seguindo referência
+    visual fornecida pelo Rodrigo) - 3 seções lado a lado (reproduz o
+    grid da imagem de verdade, não uma lista empilhada): MERCADO AGORA
+    sozinho, depois ALTAS/BAIXAS + NOTÍCIAS + MAPA SETORIAL numa linha
+    de 3 colunas, depois DESEMPENHO + AGENDA numa linha de 2 colunas.
+    Mesmo padrão já usado por TERMOMETRO em MERCADO > PAINEL (fora do
+    REGISTRO_PAINEIS de propósito) - essas seções NÃO são arrastáveis/
+    redimensionáveis individualmente (trade-off aceito explicitamente
+    pelo Rodrigo pra bater com a referência). st.columns do Streamlit já
+    reflow pra empilhado em telas estreitas (mesmo CSS global usado em
+    MERCADO/outras abas), sem precisar de nenhuma regra nova aqui.
+
+    O restante (REGISTRO_PAINEIS) continua no workspace modular normal,
+    abaixo desta composição fixa."""
+    with st.container(border=True):
+        _painel_mercado_agora(prefs)
+
+    with st.container(key="vg_grid_linha1"):
+        col_ab, col_news, col_setor = st.columns([0.36, 0.36, 0.28], gap="small")
+        with col_ab:
+            with st.container(border=True):
+                _painel_altas_baixas_resumo(prefs)
+        with col_news:
+            with st.container(border=True):
+                _painel_noticias_resumo(prefs)
+        with col_setor:
+            with st.container(border=True):
+                _painel_mapa_setorial_compacto(prefs)
+
+    with st.container(key="vg_grid_linha2"):
+        col_desemp, col_agenda = st.columns([0.6, 0.4], gap="small")
+        with col_desemp:
+            with st.container(border=True):
+                _painel_desempenho_tabela(prefs)
+        with col_agenda:
+            with st.container(border=True):
+                _painel_proximos_watchlist(prefs)
+
     workspace.renderizar_workspace("VISÃO GERAL", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn)
