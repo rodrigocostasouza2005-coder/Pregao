@@ -879,6 +879,20 @@ def _bloco_interpretacao_earnings(texto: str):
     )
 
 
+def _bloco_educacao_financeira_earnings(texto: str):
+    """Bloco visualmente separado pra [O QUE ISSO SIGNIFICA] (educação
+    financeira determinística, data/earnings/reviewer.py:
+    _nota_educativa_receita_vs_lucro) - cor diferente da usada em
+    [INTERPRETAÇÃO] (var(--destaque) acima) de propósito: aqui é um
+    conceito geral de finanças ancorado no número desta empresa, nunca
+    uma leitura do resultado dela nem recomendação."""
+    st.markdown(
+        f"<div style='border-left:3px solid var(--ciano); padding:0.25rem 0 0.25rem 0.6rem; "
+        f"margin:0.3rem 0; font-size:0.78rem; background:rgba(255,255,255,0.03);'>{html.escape(texto)}</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_revisao_resultados(ticker: str, prefs: dict):
     """ANÁLISES › Empresas: nota estruturada de resultado trimestral
     (Earnings Reviewer) pro ticker selecionado - só números já
@@ -976,6 +990,9 @@ def render_revisao_resultados(ticker: str, prefs: dict):
         else:
             st.caption("Nenhuma [INTERPRETAÇÃO] gerada nesta nota (variação de margem bruta abaixo do limiar de "
                        "1 p.p., ou dado insuficiente pra calculá-la).")
+
+        for texto_educativo in nota.get("educacao_financeira") or []:
+            _bloco_educacao_financeira_earnings(texto_educativo)
 
         historico = _historico_revisao_earnings(nota)
         anterior, mudancas = historico["anterior"], historico["mudancas"]

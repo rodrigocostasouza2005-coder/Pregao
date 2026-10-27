@@ -64,6 +64,52 @@ def _margem_pct(numerador, receita):
     return numerador / receita * 100
 
 
+# ---------------------------------------------------------------------
+# EDUCAÇÃO FINANCEIRA CONTEXTUAL (2026-10-27) - nota determinística
+# (zero IA, zero consulta nova) que ensina o CONCEITO geral "crescimento
+# de receita != crescimento de lucro" ancorado nos números REAIS desta
+# nota (nunca um texto genérico desvinculado do resultado reportado).
+# Rotulada [O QUE ISSO SIGNIFICA] - visualmente e semanticamente
+# diferente de [INTERPRETAÇÃO] (que é uma leitura do PRÓPRIO resultado
+# desta empresa) e de FATO (número rastreável): aqui o objetivo é
+# ensinar um conceito de educação financeira, nunca recomendar compra/
+# venda nem substituir a leitura em FATO/INTERPRETAÇÃO já existente.
+# ---------------------------------------------------------------------
+_LIMIAR_DIVERGENCIA_RECEITA_LUCRO_PP = 3.0
+
+
+def _nota_educativa_receita_vs_lucro(metricas: dict) -> list:
+    """[] quando faltar receita líquida OU lucro líquido consolidado YoY
+    (nunca estima o que falta), ou quando a diferença entre as duas
+    variações for pequena (<3 p.p. - didaticamente não compensa chamar
+    ruído de padrão relevante; crescimento "proporcional" não precisa
+    de nota educativa)."""
+    receita = metricas.get("receita_liquida", {}).get("yoy_variacao_pct")
+    lucro = metricas.get("lucro_liquido_consolidado", {}).get("yoy_variacao_pct")
+    if receita is None or lucro is None:
+        return []
+    diferenca = lucro - receita
+    if abs(diferenca) < _LIMIAR_DIVERGENCIA_RECEITA_LUCRO_PP:
+        return []
+    if lucro > receita:
+        texto = (
+            f"[O QUE ISSO SIGNIFICA] o lucro líquido cresceu mais rápido ({lucro:+.1f}%) do que a "
+            f"receita líquida ({receita:+.1f}%) na comparação anual. Em geral isso indica que a empresa "
+            "ficou mais eficiente (custos/despesas cresceram menos que a receita) ou se beneficiou de um "
+            "evento não recorrente (ex: venda de ativo, crédito fiscal, efeito cambial) - esta nota não "
+            "calcula qual dos dois foi o motivo; ver detalhamento completo na fonte original."
+        )
+    else:
+        texto = (
+            f"[O QUE ISSO SIGNIFICA] a receita líquida cresceu mais rápido ({receita:+.1f}%) do que o "
+            f"lucro líquido ({lucro:+.1f}%) na comparação anual. Em geral isso indica compressão de "
+            "margem (custos/despesas cresceram mais que a receita) - pode ser repasse de custo não feito "
+            "ao cliente, investimento em crescimento, despesa não recorrente ou efeito cambial; esta nota "
+            "não calcula qual dos motivos foi responsável; ver detalhamento completo na fonte original."
+        )
+    return [texto]
+
+
 def _montar_metricas_br(contas: dict) -> dict:
     metricas = {}
     for rotulo, valores in contas.items():
@@ -139,7 +185,8 @@ def montar_nota_br(ticker: str, ano: int, trimestre: int) -> dict:
         "dt_referencia": atual["dt_referencia"], "moeda": atual["moeda"],
         "escala_moeda": atual["escala_moeda"], "metricas": metricas,
         "margem_bruta_pct": margem_bruta, "margem_bruta_yoy_anterior_pct": margem_bruta_ant,
-        "interpretacoes": interpretacoes, "limitacoes": limitacoes,
+        "interpretacoes": interpretacoes, "educacao_financeira": _nota_educativa_receita_vs_lucro(metricas),
+        "limitacoes": limitacoes,
         "fontes": [{"nome": atual["fonte_nome"], "url": atual["fonte_url"],
                      "coletado_em": datetime.now(timezone.utc).isoformat()}],
         "gerado_em": datetime.now(timezone.utc).isoformat(),
@@ -209,7 +256,8 @@ def montar_nota_internacional(ticker: str, inicio: str, fim: str, inicio_ano_ant
         "periodo_label": f"{inicio} a {fim}", "moeda": dados["moeda"],
         "metricas": metricas, "margem_bruta_pct": margem_bruta,
         "margem_bruta_yoy_anterior_pct": margem_bruta_ant,
-        "interpretacoes": interpretacoes, "limitacoes": limitacoes,
+        "interpretacoes": interpretacoes, "educacao_financeira": _nota_educativa_receita_vs_lucro(metricas),
+        "limitacoes": limitacoes,
         "fontes": fontes, "gerado_em": datetime.now(timezone.utc).isoformat(),
     }
 
