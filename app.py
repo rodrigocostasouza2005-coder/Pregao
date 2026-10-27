@@ -151,9 +151,16 @@ _PAINEIS_NOVOS_MERCADO_20261027 = [
 if paineis.migrar_visibilidade_paineis_novos("MERCADO", _PAINEIS_NOVOS_MERCADO_20261027, prefs):
     _persistir_prefs()
 
-# --- migra o painel novo LEITURA RAPIDA de VISAO GERAL (2026-10-27) -
-# mesmo motivo/mesma funcao da migracao de MERCADO acima.
-if paineis.migrar_visibilidade_paineis_novos("VISÃO GERAL", ["leitura_rapida"], prefs):
+# --- migra os paineis novos de VISAO GERAL (2026-10-27, leitura_rapida +
+# redesign seguindo referencia visual) - mesmo motivo/mesma funcao da
+# migracao de MERCADO acima. altas_baixas/setorial/mais_negociados
+# (antigos) saem do registro mas nao precisam de migracao nenhuma -
+# ordem_efetiva/_pid_visivel_salvo ja ignoram ids removidos do registro
+# sem erro.
+_PAINEIS_NOVOS_VISAO_GERAL_20261027 = [
+    "leitura_rapida", "altas_baixas_resumo", "mapa_setorial_compacto", "desempenho_tabela",
+]
+if paineis.migrar_visibilidade_paineis_novos("VISÃO GERAL", _PAINEIS_NOVOS_VISAO_GERAL_20261027, prefs):
     _persistir_prefs()
 
 

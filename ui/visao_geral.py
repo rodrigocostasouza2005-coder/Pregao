@@ -8,6 +8,7 @@ consulta nova). Onde a função original já é "pesada demais" pra um
 resumo (a lista completa de notícias, por exemplo), usa a mesma função
 de dado com um limite de itens menor, não uma cópia da lógica."""
 
+import html
 from datetime import datetime, timezone
 
 import plotly.graph_objects as go
@@ -16,7 +17,10 @@ import streamlit as st
 import config
 from data.ibovespa import obter_composicao_oficial
 from data.macro import obter_cdi
-from data.mercado import obter_cotacoes_lote, obter_mercados_globais
+from data.mercado import (
+    obter_altas_baixas, obter_cotacoes_lote, obter_desempenho_setorial, obter_mais_negociados,
+    obter_mercados_globais,
+)
 from data.news import obter_top_mercado_tudo
 from data.prices import (
     obter_cotacao, obter_cotacao_indice, obter_historico, obter_historico_intraday, rotulo_cotacao_em_cache,
@@ -24,9 +28,7 @@ from data.prices import (
 from data.sintese_mercado import obter_sintese_mercado
 from ui import graficos, workspace
 from ui.calendario_tab import _painel_proximos_watchlist
-from ui.mercado_tab import (
-    _painel_altas_baixas, _painel_globais, _painel_leitura_rapida, _painel_mais_negociados, _painel_setorial,
-)
+from ui.mercado_tab import _painel_globais, _painel_leitura_rapida
 from ui.news_tab import _injetar_css, _prontos_para_lista, _renderizar_lista
 
 _PERIODOS_IBOV = ["1D", "1S", "1M", "3M", "6M", "1A", "5A"]
@@ -440,6 +442,114 @@ def _painel_watchlist_compacta(prefs):
     st.markdown(f"<table style='width:100%; font-size:0.8rem; border-collapse:collapse;'>{''.join(linhas)}</table>", unsafe_allow_html=True)
 
 
+def _painel_altas_baixas_resumo(prefs):
+    """(NOVO, 2026-10-27) Versão compacta de "Maiores altas/baixas" pra
+    VISÃO GERAL - 2 colunas lado a lado (altas | baixas), top 5 do dia,
+    sem filtros/controles (esses ficam na versão completa, MERCADO ›
+    PAINEL). Mesma função de dado (data/mercado.py:obter_altas_baixas),
+    zero consulta nova - só um recorte menor, mesmo padrão já usado
+    pelos outros painéis "resumo" desta aba (ver docstring do módulo)."""
+    st.markdown('<div class="painel-titulo">PRINCIPAIS ALTAS E BAIXAS</div>', unsafe_allow_html=True)
+    altas, baixas = obter_altas_baixas(5, "dia")
+
+    def _coluna(titulo, papeis, cls):
+        st.markdown(f"<div class='{cls}' style='font-size:0.72rem; font-weight:700; margin-bottom:0.3rem;'>{titulo}</div>", unsafe_allow_html=True)
+        if not papeis:
+            st.markdown("<div class='cinza' style='font-size:0.76rem;'>—</div>", unsafe_allow_html=True)
+            return
+        linhas = []
+        for p in papeis:
+            linhas.append(
+                f"<tr><td style='padding:0.18rem 0.3rem 0.18rem 0; font-weight:600;'>{p['ticker']}</td>"
+                f"<td style='padding:0.18rem 0.3rem; text-align:right;' class='neutro'>"
+                f"{config.formatar_numero(p['preco'], 2, prefs['formato_numerico'])}</td>"
+                f"<td style='padding:0.18rem 0 0.18rem 0.3rem; text-align:right;' class='{cls}'>"
+                f"{_fmt_pct(p['variacao_pct'], prefs)}</td></tr>"
+            )
+        st.markdown(
+            f"<table style='width:100%; font-size:0.78rem; border-collapse:collapse;'>{''.join(linhas)}</table>",
+            unsafe_allow_html=True,
+        )
+
+    with st.container(key="vg_altas_baixas_resumo_cols"):
+        col_altas, col_baixas = st.columns(2, gap="small")
+        with col_altas:
+            _coluna("MAIORES ALTAS", altas, "alta")
+        with col_baixas:
+            _coluna("MAIORES BAIXAS", baixas, "baixa")
+
+
+def _painel_mapa_setorial_compacto(prefs):
+    """(NOVO, 2026-10-27) "Mapa setorial" compacto pra VISÃO GERAL -
+    grade de blocos coloridos (até 9 setores), NÃO o treemap completo
+    de MERCADO › PAINEL (que segue intocado) - aqui é um painel
+    secundário, não o protagonista da tela. Mesma função de dado
+    (data/mercado.py:obter_desempenho_setorial), zero consulta nova."""
+    st.markdown('<div class="painel-titulo">MAPA SETORIAL</div>', unsafe_allow_html=True)
+    setores = obter_desempenho_setorial("dia")
+    if not setores:
+        st.markdown("<div class='cinza' style='font-size:0.78rem;'>—</div>", unsafe_allow_html=True)
+        return
+    tema = _tema_atual(prefs)
+    blocos = []
+    for s in setores[:9]:
+        v = s["variacao_media_pct"]
+        cor = tema["alta"] if v >= 0 else tema["baixa"]
+        blocos.append(
+            f"<div style='flex:1 1 30%; min-width:7rem; border:1px solid {cor}55; "
+            f"background:{cor}1c; border-radius:3px; padding:0.45rem 0.55rem;'>"
+            f"<div class='neutro' style='font-size:0.68rem; font-weight:600; white-space:nowrap; "
+            f"overflow:hidden; text-overflow:ellipsis;'>{html.escape(s['setor'])}</div>"
+            f"<div style='color:{cor}; font-size:0.82rem; font-weight:700; margin-top:0.15rem;'>"
+            f"{_fmt_pct(v, prefs)}</div></div>"
+        )
+    st.markdown(
+        f"<div style='display:flex; flex-wrap:wrap; gap:0.4rem;'>{''.join(blocos)}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _painel_desempenho_tabela(prefs):
+    """(NOVO, 2026-10-27) "Desempenho do Ibovespa" - tabela com
+    Código/Empresa/Setor/Preço/Var.%/Volume pros papéis mais negociados
+    do dia. Mesma função de dado de MERCADO › PAINEL (mais_negociados,
+    data/mercado.py:obter_mais_negociados) - Empresa/Setor vêm de mapas
+    estáticos já existentes (config.TICKER_NOME, e "setor" já vem no
+    próprio dict de obter_mais_negociados) - nenhum dado novo, nenhuma
+    consulta nova."""
+    st.markdown('<div class="painel-titulo">DESEMPENHO DO IBOVESPA</div>', unsafe_allow_html=True)
+    papeis = obter_mais_negociados(8)
+    if not papeis:
+        st.markdown("<div class='cinza' style='font-size:0.78rem;'>—</div>", unsafe_allow_html=True)
+        return
+    cabecalho = (
+        "<tr style='font-size:0.64rem; color:var(--cinza);'>"
+        "<td style='padding:0 0.3rem 0.25rem 0;'>CÓDIGO</td><td style='padding:0 0.3rem 0.25rem;'>EMPRESA</td>"
+        "<td style='padding:0 0.3rem 0.25rem;'>SETOR</td><td style='padding:0 0.3rem 0.25rem; text-align:right;'>PREÇO</td>"
+        "<td style='padding:0 0.3rem 0.25rem; text-align:right;'>VAR. %</td>"
+        "<td style='padding:0 0 0.25rem 0.3rem; text-align:right;'>VOLUME (R$ MI)</td></tr>"
+    )
+    linhas = [cabecalho]
+    for p in papeis:
+        cls = "alta" if p["variacao_pct"] >= 0 else "baixa"
+        nome = config.TICKER_NOME.get(p["ticker"], p["ticker"])
+        linhas.append(
+            f"<tr style='font-size:0.78rem;'>"
+            f"<td style='padding:0.22rem 0.3rem 0.22rem 0; font-weight:600; color:var(--destaque);'>{p['ticker']}</td>"
+            f"<td style='padding:0.22rem 0.3rem;' class='neutro'>{html.escape(nome)}</td>"
+            f"<td style='padding:0.22rem 0.3rem;' class='cinza'>{html.escape(p['setor'])}</td>"
+            f"<td style='padding:0.22rem 0.3rem; text-align:right;' class='neutro'>"
+            f"{config.formatar_numero(p['preco'], 2, prefs['formato_numerico'])}</td>"
+            f"<td style='padding:0.22rem 0.3rem; text-align:right;' class='{cls}'>{_fmt_pct(p['variacao_pct'], prefs)}</td>"
+            f"<td style='padding:0.22rem 0 0.22rem 0.3rem; text-align:right;' class='neutro'>"
+            f"{config.formatar_numero(p['volume_financeiro'] / 1_000_000, 1, prefs['formato_numerico'])}</td></tr>"
+        )
+    st.markdown(
+        f"<table style='width:100%; border-collapse:collapse;'>{''.join(linhas)}</table>",
+        unsafe_allow_html=True,
+    )
+
+
 # paineis registrados (ver ui/paineis.py/ui/workspace.py) - ETAPA 5
 # (2026-10-01): VISÃO GERAL migra pro workspace modular, mesma mecanica
 # ja' validada em MERCADO/MACRO. Conteúdo de cada painel intocado (3
@@ -448,31 +558,40 @@ def _painel_watchlist_compacta(prefs):
 # ordem/visibilidade/layout em prefs). Ordem abaixo = ordem padrão atual
 # (mesma sequência que render_visao_geral já tinha antes da migração).
 REGISTRO_PAINEIS = [
-    # ANALISTA DE MERCADO (síntese/interpretação, 2026-10-26): síntese
-    # primeiro, evidências depois, detalhes técnicos por último -
-    # ordem padrão pensada pra "o que preciso entender sobre o mercado
-    # hoje" vir antes dos números crus que já existiam. Usuário pode
-    # reordenar livremente (workspace modular já suporta isso).
-    ("analista_resumo", "Resumo executivo do mercado", _painel_analista_resumo),
-    ("analista_movimentos", "O que está movendo o mercado", _painel_analista_movimentos),
-    ("analista_oportunidades", "Para investigar", _painel_analista_oportunidades),
-    ("analista_cenarios", "Cenários e o que observar", _painel_analista_cenarios),
+    # ORDEM PADRAO (redesign 2026-10-27, referencia visual fornecida pelo
+    # Rodrigo): visao geral em ~10s primeiro (metricas -> altas/baixas ->
+    # destaques -> setorial -> desempenho -> agenda), detalhes/interpretacao
+    # mais profunda depois (grafico/leitura rapida/analista/globais/
+    # watchlist). Usuario pode reordenar livremente (workspace modular).
     ("mercado_agora", "Mercado agora", _painel_mercado_agora),
+    # PRINCIPAIS ALTAS E BAIXAS / MAPA SETORIAL / DESEMPENHO (2026-10-27):
+    # versoes COMPACTAS novas, so' pra esta aba - substituem os paineis
+    # completos (altas_baixas/setorial/mais_negociados) que continuam
+    # intocados em MERCADO > PAINEL. Mesmas funcoes de dado, zero consulta
+    # nova - mesmo principio ja' documentado no topo deste arquivo.
+    ("altas_baixas_resumo", "Principais altas e baixas", _painel_altas_baixas_resumo),
+    ("noticias_resumo", "Market news", _painel_noticias_resumo),
+    # heatmap setorial deliberadamente SECUNDARIO aqui (grade pequena, nao
+    # o treemap inteiro de MERCADO > PAINEL) - pedido explicito do Rodrigo
+    # pra nao dominar a pagina.
+    ("mapa_setorial_compacto", "Mapa setorial", _painel_mapa_setorial_compacto),
+    ("desempenho_tabela", "Desempenho do Ibovespa", _painel_desempenho_tabela),
+    ("agenda_watchlist", "Agenda do mercado", _painel_proximos_watchlist),
     ("ibov_grafico", "Ibovespa", _painel_ibov_grafico),
     # LEITURA RÁPIDA (2026-10-27): reaproveitado de ui/mercado_tab.py -
     # introduzido originalmente na aba PAINEL (PR #182), mas o pedido real
     # do Rodrigo era aqui em VISÃO GERAL (os outros 3 painéis daquele PR -
     # métricas/gráfico/notícias - já tinham equivalente aqui antes, só
-    # esse faltava). Mesmo padrão de reaproveitamento já usado pros 4
-    # painéis importados abaixo.
+    # esse faltava).
     ("leitura_rapida", "Leitura rápida", _painel_leitura_rapida),
-    ("altas_baixas", "Maiores altas/baixas", _painel_altas_baixas),
-    ("mais_negociados", "Mais negociados", _painel_mais_negociados),
-    ("setorial", "Desempenho setorial", _painel_setorial),
-    ("noticias_resumo", "Market news", _painel_noticias_resumo),
+    # ANALISTA DE MERCADO (síntese/interpretação, 2026-10-26): leitura mais
+    # profunda, fica depois do resumo "em ~10s" acima.
+    ("analista_resumo", "Resumo executivo do mercado", _painel_analista_resumo),
+    ("analista_movimentos", "O que está movendo o mercado", _painel_analista_movimentos),
+    ("analista_oportunidades", "Para investigar", _painel_analista_oportunidades),
+    ("analista_cenarios", "Cenários e o que observar", _painel_analista_cenarios),
     ("globais", "Mercados globais", _painel_globais),
     ("watchlist_compacta", "Minha watchlist", _painel_watchlist_compacta),
-    ("agenda_watchlist", "Agenda do mercado", _painel_proximos_watchlist),
 ]
 
 
