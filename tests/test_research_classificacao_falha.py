@@ -233,6 +233,52 @@ def test_3f_coletar_todas_disponiveis_pula_sem_chamar_obter_relatorios():
     )
 
 
+def test_3g_excecao_na_verificacao_do_cooldown_nao_impede_coleta_nem_das_demais_casas():
+    """Achado da revisão independente (2026-10-26): uma exceção SÓ na
+    VERIFICAÇÃO do cooldown (ex: timestamp persistido sem timezone,
+    TypeError ao comparar datetimes) não pode abortar o for inteiro - a
+    própria casa afetada precisa seguir pra tentativa de coleta normal
+    (nunca "pular" por causa de uma falha na checagem), e as casas
+    SEGUINTES na lista (aqui: BTG, sem marcador_bloqueio_conhecido, nem
+    chega a chamar obter_status) precisam continuar sendo processadas
+    normalmente - antes, a exceção não tratada aqui derrubava o loop
+    inteiro nesse ponto."""
+    casa_genial = {
+        "id": "genial", "nome": "Genial Analisa", "fonte": "Genial",
+        "disponivel": True,
+        "obter_relatorios": lambda: [{"link": "https://x/1"}],  # coleta normal funcionaria
+        "motivo_falha": None, "categoria_falha": lambda: "erro",
+        "marcador_bloqueio_conhecido": "bloqueio X",
+    }
+    casa_btg = {
+        "id": "btg", "nome": "BTG Pactual Research", "fonte": "BTG",
+        "disponivel": True,
+        "obter_relatorios": lambda: [{"link": "https://y/1"}],
+        "motivo_falha": None,
+    }
+
+    def _obter_status_explode(nome):
+        if nome == "Genial Analisa":
+            raise TypeError("can't subtract offset-naive and offset-aware datetimes")
+        return None
+
+    with patch.object(research_mod, "CASAS", [casa_genial, casa_btg]), \
+         patch.object(research_mod.store, "salvar_itens", return_value=True), \
+         patch.object(research_mod, "registrar_tentativa"), \
+         patch.object(research_mod, "obter_status", side_effect=_obter_status_explode):
+        resultado = research_mod.coletar_todas_disponiveis()
+
+    _checar(
+        "3g casa com falha na verificação ainda tenta coleta normal (não pula)",
+        resultado["Genial Analisa"]["ok"] is True, f"(resultado={resultado.get('Genial Analisa')})",
+    )
+    _checar("3g casa SEGUINTE na lista continua sendo processada", "BTG Pactual Research" in resultado)
+    _checar(
+        "3g BTG coletado normalmente (loop não foi abortado)",
+        resultado["BTG Pactual Research"]["ok"] is True, f"(resultado={resultado.get('BTG Pactual Research')})",
+    )
+
+
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-v"]))

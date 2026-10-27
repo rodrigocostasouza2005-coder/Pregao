@@ -351,12 +351,27 @@ def coletar_todas_disponiveis() -> dict:
     bloqueio conhecido ja' foi confirmado ha' poucos minutos (ver
     _bloqueio_conhecido_em_cooldown) - NUNCA chama registrar_tentativa de
     novo nesse caso (a tentativa real/persistida continua sendo a
-    anterior; pular nao e' uma nova tentativa)."""
+    anterior; pular nao e' uma nova tentativa).
+
+    Correcao real (revisao independente 2026-10-26, achado na PR #177):
+    uma excecao inesperada so' na VERIFICACAO do cooldown (ex: timestamp
+    persistido sem timezone, Supabase devolvendo formato inesperado)
+    propagava e abortava este for inteiro - impedindo a coleta de TODAS
+    as casas seguintes na lista (genial_lives, btg, montebravo, nord),
+    nao so' a casa que falhou a verificacao. Agora essa falha e' isolada
+    por casa: trata como 'sem bloqueio conhecido confirmado' (sempre
+    tenta a coleta normal dessa casa) e nunca impede as demais. Nunca
+    esconde excecao real da COLETA em si (coletar_casa abaixo continua
+    sem nenhum try/except novo)."""
     resultado = {}
     for casa in CASAS:
         if not casa["disponivel"]:
             continue
-        bloqueio = _bloqueio_conhecido_em_cooldown(casa)
+        try:
+            bloqueio = _bloqueio_conhecido_em_cooldown(casa)
+        except Exception as exc:
+            print(f"[research] falha ao verificar cooldown de {casa['nome']} (tentando coleta normal): {exc!r}")
+            bloqueio = None
         if bloqueio:
             print(f"[research] pulando {casa['nome']}: bloqueio conhecido confirmado há poucos minutos ({bloqueio})")
             resultado[casa["nome"]] = {"coletados": 0, "ok": False, "categoria_falha": "bloqueio_externo_conhecido"}
