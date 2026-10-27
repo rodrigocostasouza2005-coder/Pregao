@@ -45,3 +45,17 @@ def test_nao_afeta_outra_aba():
     mudou = migrar_visibilidade_paineis_novos("MERCADO", NOVOS_MERCADO, prefs)
     assert mudou is False
     assert prefs["paineis_visiveis"] == {"MACRO": ["selic"]}
+
+
+def test_leitura_rapida_novo_em_visao_geral_migra_sem_afetar_mercado():
+    # mesmo bug, agora pro painel novo de VISAO GERAL (2026-10-27) - usuario
+    # que ja customizou visibilidade em VISAO GERAL (e tambem em MERCADO,
+    # sem relacao) ganha "leitura_rapida" la', sem misturar as 2 abas.
+    prefs = {"paineis_visiveis": {
+        "VISÃO GERAL": ["mercado_agora", "ibov_grafico"],
+        "MERCADO": ["altas_baixas"],
+    }}
+    mudou = migrar_visibilidade_paineis_novos("VISÃO GERAL", ["leitura_rapida"], prefs)
+    assert mudou is True
+    assert "leitura_rapida" in prefs["paineis_visiveis"]["VISÃO GERAL"]
+    assert prefs["paineis_visiveis"]["MERCADO"] == ["altas_baixas"]

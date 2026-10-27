@@ -151,6 +151,11 @@ _PAINEIS_NOVOS_MERCADO_20261027 = [
 if paineis.migrar_visibilidade_paineis_novos("MERCADO", _PAINEIS_NOVOS_MERCADO_20261027, prefs):
     _persistir_prefs()
 
+# --- migra o painel novo LEITURA RAPIDA de VISAO GERAL (2026-10-27) -
+# mesmo motivo/mesma funcao da migracao de MERCADO acima.
+if paineis.migrar_visibilidade_paineis_novos("VISÃO GERAL", ["leitura_rapida"], prefs):
+    _persistir_prefs()
+
 
 def _escolha_estavel(chave_widget: str, opcoes: list, padrao):
     """Guarda a ultima escolha valida de um segmented_control (que pode voltar None ao desmarcar)."""
