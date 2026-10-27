@@ -24,7 +24,9 @@ from data.prices import (
 from data.sintese_mercado import obter_sintese_mercado
 from ui import graficos, workspace
 from ui.calendario_tab import _painel_proximos_watchlist
-from ui.mercado_tab import _painel_altas_baixas, _painel_globais, _painel_mais_negociados, _painel_setorial
+from ui.mercado_tab import (
+    _painel_altas_baixas, _painel_globais, _painel_leitura_rapida, _painel_mais_negociados, _painel_setorial,
+)
 from ui.news_tab import _injetar_css, _prontos_para_lista, _renderizar_lista
 
 _PERIODOS_IBOV = ["1D", "1S", "1M", "3M", "6M", "1A", "5A"]
@@ -457,6 +459,13 @@ REGISTRO_PAINEIS = [
     ("analista_cenarios", "Cenários e o que observar", _painel_analista_cenarios),
     ("mercado_agora", "Mercado agora", _painel_mercado_agora),
     ("ibov_grafico", "Ibovespa", _painel_ibov_grafico),
+    # LEITURA RÁPIDA (2026-10-27): reaproveitado de ui/mercado_tab.py -
+    # introduzido originalmente na aba PAINEL (PR #182), mas o pedido real
+    # do Rodrigo era aqui em VISÃO GERAL (os outros 3 painéis daquele PR -
+    # métricas/gráfico/notícias - já tinham equivalente aqui antes, só
+    # esse faltava). Mesmo padrão de reaproveitamento já usado pros 4
+    # painéis importados abaixo.
+    ("leitura_rapida", "Leitura rápida", _painel_leitura_rapida),
     ("altas_baixas", "Maiores altas/baixas", _painel_altas_baixas),
     ("mais_negociados", "Mais negociados", _painel_mais_negociados),
     ("setorial", "Desempenho setorial", _painel_setorial),
