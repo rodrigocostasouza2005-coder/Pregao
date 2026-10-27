@@ -143,3 +143,115 @@ def test_analise_ticker_cacheada_nao_recalcula_dentro_do_ttl():
         analises_mod._analise_ticker_cacheada("WEGE3_CACHE_TESTE")
         analises_mod._analise_ticker_cacheada("WEGE3_CACHE_TESTE")
     assert chamadas == ["WEGE3_CACHE_TESTE"]  # só 1 chamada real pros 2 acessos
+
+
+# ============================================================
+# COMPARATIVO SETORIAL DE MÚLTIPLOS (2026-10-27) - botão em "Momento
+# da empresa" que abre _dialog_comparativo_setor_empresa, reaproveitando
+# data/radar.py:comparaveis_setor (mesma função usada em RADAR › Valuation).
+# ============================================================
+
+def test_botao_comparativo_setor_nao_aparece_sem_fundamentos():
+    """Sem fundamentos, a seção inteira já diz 'indisponível agora' - não
+    faz sentido oferecer comparação setorial do que não existe."""
+    analise = _analise()
+    with patch.object(analises_mod, "_analise_ticker_cacheada", return_value=analise), \
+         patch.object(analises_mod.st, "markdown"), patch.object(analises_mod.st, "caption"), \
+         patch.object(analises_mod.st, "button") as mock_button, \
+         patch.object(analises_mod.st, "columns", return_value=[MagicMock()] * 4), \
+         patch.object(analises_mod.st, "container") as container_mock:
+        container_mock.return_value.__enter__ = lambda self: self
+        container_mock.return_value.__exit__ = lambda *a: False
+        analises_mod.render_equity_research_executivo("WEGE3", _PREFS)
+    mock_button.assert_not_called()
+
+
+def test_botao_comparativo_setor_abre_dialogo_quando_clicado():
+    fundamentos = {"pl": 10.0, "pvp": 1.5, "roe": 12.0, "divida_liquida_ebitda": 1.0, "alerta_qualidade": []}
+    analise = _analise(fundamentos=fundamentos)
+    with patch.object(analises_mod, "_analise_ticker_cacheada", return_value=analise), \
+         patch.object(analises_mod.st, "markdown"), patch.object(analises_mod.st, "caption"), \
+         patch.object(analises_mod.st, "button", return_value=True), \
+         patch.object(analises_mod.st, "columns", return_value=[MagicMock()] * 4), \
+         patch.object(analises_mod, "_dialog_comparativo_setor_empresa") as mock_dialog, \
+         patch.object(analises_mod.st, "container") as container_mock:
+        container_mock.return_value.__enter__ = lambda self: self
+        container_mock.return_value.__exit__ = lambda *a: False
+        analises_mod.render_equity_research_executivo("WEGE3", _PREFS)
+    mock_dialog.assert_called_once_with("WEGE3", _PREFS)
+
+
+def test_botao_comparativo_setor_nao_abre_dialogo_sem_clique():
+    fundamentos = {"pl": 10.0, "pvp": 1.5, "roe": 12.0, "divida_liquida_ebitda": 1.0, "alerta_qualidade": []}
+    analise = _analise(fundamentos=fundamentos)
+    with patch.object(analises_mod, "_analise_ticker_cacheada", return_value=analise), \
+         patch.object(analises_mod.st, "markdown"), patch.object(analises_mod.st, "caption"), \
+         patch.object(analises_mod.st, "button", return_value=False), \
+         patch.object(analises_mod.st, "columns", return_value=[MagicMock()] * 4), \
+         patch.object(analises_mod, "_dialog_comparativo_setor_empresa") as mock_dialog, \
+         patch.object(analises_mod.st, "container") as container_mock:
+        container_mock.return_value.__enter__ = lambda self: self
+        container_mock.return_value.__exit__ = lambda *a: False
+        analises_mod.render_equity_research_executivo("WEGE3", _PREFS)
+    mock_dialog.assert_not_called()
+
+
+def _capturar_dialog_setor(comp=None, levanta=None):
+    """st.dialog preserva __wrapped__ (mesmo padrão de tests/test_cvm_ui.py:
+    _abrir_card) - testa o corpo da função sem precisar de sessão real."""
+    blocos = []
+    with patch.object(analises_mod, "comparaveis_setor",
+                       side_effect=levanta if levanta else lambda t: comp), \
+         patch.object(analises_mod.st, "markdown", side_effect=lambda t, **k: blocos.append(str(t))), \
+         patch.object(analises_mod.st, "caption", side_effect=lambda t, **k: blocos.append(str(t))), \
+         patch.object(analises_mod.st, "warning", side_effect=lambda t, **k: blocos.append(str(t))), \
+         patch.object(analises_mod.st, "spinner") as mock_spinner:
+        mock_spinner.return_value.__enter__ = lambda self: None
+        mock_spinner.return_value.__exit__ = lambda self, *a: False
+        analises_mod._dialog_comparativo_setor_empresa.__wrapped__("WEGE3", _PREFS)
+    return "\n".join(blocos)
+
+
+def test_dialog_setor_insuficiente_mostra_aviso_honesto():
+    comp = {"insuficiente": True, "motivo": "menos de 3 pares do setor com dado válido",
+            "setor": "Bens industriais", "pares_considerados": 1}
+    html_render = _capturar_dialog_setor(comp=comp)
+    assert "Dado insuficiente" in html_render
+    assert "menos de 3 pares" in html_render
+
+
+def test_dialog_setor_sem_setor_cadastrado_mostra_aviso_honesto():
+    comp = {"setor": None, "pares_considerados": 0, "insuficiente": True, "motivo": "ticker sem setor cadastrado"}
+    html_render = _capturar_dialog_setor(comp=comp)
+    assert "ticker sem setor cadastrado" in html_render
+
+
+def test_dialog_setor_sucesso_mostra_medianas_e_limitacao():
+    comp = {"insuficiente": False, "setor": "Bens industriais", "pares_considerados": 10,
+            "pl_mediana": 15.2, "pl_mediana_n": 8, "pvp_mediana": 2.1, "pvp_mediana_n": 7,
+            "dy_mediana": 4.5, "dy_mediana_n": 6}
+    html_render = _capturar_dialog_setor(comp=comp)
+    assert "P/L mediano do setor" in html_render
+    assert "P/VP mediano do setor" in html_render
+    assert "Dividend yield mediano do setor" in html_render
+    assert "8 pares considerados" in html_render
+    assert "não é um índice oficial" in html_render
+    assert "não é um preço justo nem uma recomendação" in html_render
+
+
+def test_dialog_setor_metrica_isolada_insuficiente_nao_contamina_as_demais():
+    """Mesmo princípio de isolamento por bloco já usado no resto do
+    arquivo: 1 métrica sem pares válidos nunca escondo as outras 2 que
+    têm dado suficiente."""
+    comp = {"insuficiente": False, "setor": "Bens industriais", "pares_considerados": 5,
+            "pl_mediana": None, "pl_mediana_n": 1, "pvp_mediana": 2.1, "pvp_mediana_n": 4,
+            "dy_mediana": 4.5, "dy_mediana_n": 5}
+    html_render = _capturar_dialog_setor(comp=comp)
+    assert "P/L" in html_render and "dado insuficiente" in html_render
+    assert "P/VP mediano do setor" in html_render
+    assert "Dividend yield mediano do setor" in html_render
+
+
+def test_dialog_setor_fonte_indisponivel_nunca_lanca_excecao():
+    html_render = _capturar_dialog_setor(levanta=lambda t: (_ for _ in ()).throw(RuntimeError("yfinance fora do ar")))
+    assert "indisponível agora" in html_render
