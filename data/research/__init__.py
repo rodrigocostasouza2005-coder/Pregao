@@ -30,10 +30,11 @@ total de tempo - ver data/research/base.py); a coleta roda no maximo a
 cada 30min por casa (store.precisa_recoletar)."""
 
 import time
+from datetime import datetime, timezone
 
 import streamlit as st
 
-from data.coletores_status import registrar_tentativa
+from data.coletores_status import obter_status, registrar_tentativa
 
 from . import btg, genial, genial_lives, montebravo, nord, store, xp
 from .base import TEMPO_MAX_COLETA_S
@@ -75,6 +76,16 @@ CASAS = [
         # casa sem essa chave continua tratada como 'erro' (nunca
         # bloqueio conhecido por padrao), ver _classificar_falha.
         "categoria_falha": genial.categoria_ultima_falha,
+        # achado real (auditoria SAUDE DOS DADOS 2026-10-26): coletor_local.py
+        # (coletar_todas_disponiveis, abaixo) nao tinha NENHUM cooldown -
+        # cada execucao (processo novo, agendador do sistema) tentava de
+        # novo as 4 tentativas/20s de orcamento mesmo sabendo, pela ultima
+        # tentativa PERSISTIDA, que o bloqueio de WAF e' o mesmo de sempre.
+        # Usado por _bloqueio_conhecido_em_cooldown pra pular a tentativa
+        # cara quando a ULTIMA falha real teve esse marcador exato ha'
+        # menos de _COOLDOWN_BLOQUEIO_CONHECIDO_S - qualquer erro diferente
+        # (ou sucesso) sempre tenta de novo.
+        "marcador_bloqueio_conhecido": genial.MARCADOR_BLOQUEIO_WAF,
     },
     {
         "id": "xp",
@@ -87,6 +98,7 @@ CASAS = [
         "tentar_coleta_automatica": False,  # idem Genial - bloqueada no Cloud (403), ver coletor_local.py
         "motivo_falha": xp.motivo_ultima_falha,
         "categoria_falha": xp.categoria_ultima_falha,  # ver comentario equivalente em Genial Analisa acima
+        "marcador_bloqueio_conhecido": xp.MARCADOR_BLOQUEIO_CDN,  # ver comentario equivalente em Genial Analisa acima
     },
     {
         # Ligada em 2026-09-28 a pedido explicito do Rodrigo ("quero a
@@ -277,6 +289,53 @@ def _classificar_falha(casa: dict) -> str:
     return categoria if categoria == "bloqueio_externo_conhecido" else "erro"
 
 
+# Mesmo cooldown do path do app ao vivo (_COOLDOWN_FALHA_S acima) -
+# coletor_local.py roda como PROCESSO NOVO a cada chamada (agendador do
+# sistema), diferente do servidor do Cloud (st.cache_resource sobrevive
+# entre reruns no MESMO processo); por isso este cooldown le' a ULTIMA
+# TENTATIVA PERSISTIDA (coletores_status), nunca um dict em memoria.
+_COOLDOWN_BLOQUEIO_CONHECIDO_S = 10 * 60
+
+
+def _bloqueio_conhecido_em_cooldown(casa: dict) -> str | None:
+    """Achado real (auditoria SAUDE DOS DADOS 2026-10-26, P2 Genial/XP):
+    coletar_todas_disponiveis() nao tinha NENHUM cooldown - cada execucao
+    de coletor_local.py (processo novo) tentava de novo as ~4 tentativas/
+    20s de orcamento (genial.py)/~15s (xp.py) mesmo quando a ULTIMA
+    tentativa real, ja' persistida em coletores_status, foi exatamente o
+    MESMO bloqueio de borda ja' documentado (WAF Akamai/CDN Akamai) ha'
+    poucos minutos - tentativa inutil, sem nenhuma informacao nova desde
+    a ultima vez.
+
+    Devolve o `ultimo_erro` persistido (pra log) quando: a casa declara
+    `marcador_bloqueio_conhecido` (so' Genial/XP, ver CASAS); a ULTIMA
+    tentativa registrada falhou (execucao_ok=False) E contem esse
+    marcador exato; e essa tentativa foi ha' menos de
+    _COOLDOWN_BLOQUEIO_CONHECIDO_S. None (sempre tenta de novo) em
+    qualquer outro caso - casa sem o campo, nunca tentou, ultimo
+    resultado foi sucesso, falha SEM o marcador (erro novo/diferente -
+    nunca mascara uma mudanca real), ou cooldown ja' expirado."""
+    marcador = casa.get("marcador_bloqueio_conhecido")
+    if not marcador:
+        return None
+    status = obter_status(casa["nome"])
+    if not status or status.get("execucao_ok") is not False:
+        return None
+    erro = status.get("ultimo_erro") or ""
+    if marcador not in erro:
+        return None
+    tentativa_em = status.get("ultima_tentativa_em")
+    if not tentativa_em:
+        return None
+    try:
+        quando = datetime.fromisoformat(str(tentativa_em).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if (datetime.now(timezone.utc) - quando).total_seconds() >= _COOLDOWN_BLOQUEIO_CONHECIDO_S:
+        return None
+    return erro
+
+
 def coletar_todas_disponiveis() -> dict:
     """Coleta (sem gate de tempo) todas as casas marcadas como disponiveis.
     Pensada pra ser chamada por um job agendado, nao pelo app ao vivo (o
@@ -286,10 +345,36 @@ def coletar_todas_disponiveis() -> dict:
     ok=False (ver _classificar_falha); usado por coletor_local.py pra
     decidir o exit code sem derrubar a build por um bloqueio externo ja'
     documentado (ex: Akamai na Genial/XP), mas sem mascarar nenhuma falha
-    nova ou falha de persistencia (que continua sempre 'erro')."""
+    nova ou falha de persistencia (que continua sempre 'erro').
+
+    Pula a tentativa cara (sem chamar obter_relatorios) quando o MESMO
+    bloqueio conhecido ja' foi confirmado ha' poucos minutos (ver
+    _bloqueio_conhecido_em_cooldown) - NUNCA chama registrar_tentativa de
+    novo nesse caso (a tentativa real/persistida continua sendo a
+    anterior; pular nao e' uma nova tentativa).
+
+    Correcao real (revisao independente 2026-10-26, achado na PR #177):
+    uma excecao inesperada so' na VERIFICACAO do cooldown (ex: timestamp
+    persistido sem timezone, Supabase devolvendo formato inesperado)
+    propagava e abortava este for inteiro - impedindo a coleta de TODAS
+    as casas seguintes na lista (genial_lives, btg, montebravo, nord),
+    nao so' a casa que falhou a verificacao. Agora essa falha e' isolada
+    por casa: trata como 'sem bloqueio conhecido confirmado' (sempre
+    tenta a coleta normal dessa casa) e nunca impede as demais. Nunca
+    esconde excecao real da COLETA em si (coletar_casa abaixo continua
+    sem nenhum try/except novo)."""
     resultado = {}
     for casa in CASAS:
         if not casa["disponivel"]:
+            continue
+        try:
+            bloqueio = _bloqueio_conhecido_em_cooldown(casa)
+        except Exception as exc:
+            print(f"[research] falha ao verificar cooldown de {casa['nome']} (tentando coleta normal): {exc!r}")
+            bloqueio = None
+        if bloqueio:
+            print(f"[research] pulando {casa['nome']}: bloqueio conhecido confirmado há poucos minutos ({bloqueio})")
+            resultado[casa["nome"]] = {"coletados": 0, "ok": False, "categoria_falha": "bloqueio_externo_conhecido"}
             continue
         coletados, ok = coletar_casa(casa)
         entrada = {"coletados": coletados, "ok": ok, "categoria_falha": None}

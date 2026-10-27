@@ -128,7 +128,7 @@ _ultimo_motivo_falha = None
 # conhecido, nao uma regressao nova) - qualquer erro DIFERENTE desses 2
 # sintomas (ex: HTTP 500, erro de parsing) nao ganha esse marcador, fica
 # como falha generica/nao classificada de proposito.
-_MARCADOR_BLOQUEIO_WAF = "bloqueio de borda do WAF (Akamai)"
+MARCADOR_BLOQUEIO_WAF = "bloqueio de borda do WAF (Akamai)"
 
 
 def _eh_padrao_bloqueio_conhecido(erro: str) -> bool:
@@ -165,7 +165,7 @@ def categoria_ultima_falha() -> str:
     motivo None, erro novo/desconhecido) devolve 'erro' de proposito,
     pra nunca mascarar uma mudanca real de comportamento."""
     motivo = _ultimo_motivo_falha or ""
-    return "bloqueio_externo_conhecido" if _MARCADOR_BLOQUEIO_WAF in motivo else "erro"
+    return "bloqueio_externo_conhecido" if MARCADOR_BLOQUEIO_WAF in motivo else "erro"
 
 
 def _tentar_buscar(url: str, orcamento_s: float = _ORCAMENTO_TOTAL_S):
@@ -182,7 +182,7 @@ def _tentar_buscar(url: str, orcamento_s: float = _ORCAMENTO_TOTAL_S):
             print("[genial] orçamento de tempo esgotado, parando tentativas")
             _ultimo_motivo_falha = f"orçamento de {orcamento_s:.0f}s esgotado antes de tentar todos os perfis; último erro: {ultimo_erro or 'nenhum'}"
             if _eh_padrao_bloqueio_conhecido(ultimo_erro or ""):
-                _ultimo_motivo_falha += f" - {_MARCADOR_BLOQUEIO_WAF}"
+                _ultimo_motivo_falha += f" - {MARCADOR_BLOQUEIO_WAF}"
             return None, None
         rotulo = f"impersonate={tentativa.get('impersonate')} http={tentativa.get('http_version', 'auto')}"
         try:
@@ -198,7 +198,7 @@ def _tentar_buscar(url: str, orcamento_s: float = _ORCAMENTO_TOTAL_S):
             print(f"[genial] tentativa falhou ({rotulo}): {e}")
     _ultimo_motivo_falha = f"todas as {len(_TENTATIVAS)} tentativas falharam; última: {ultimo_erro or 'nenhum erro capturado'}"
     if _eh_padrao_bloqueio_conhecido(ultimo_erro or ""):
-        _ultimo_motivo_falha += f" - {_MARCADOR_BLOQUEIO_WAF}"
+        _ultimo_motivo_falha += f" - {MARCADOR_BLOQUEIO_WAF}"
     return None, None
 
 
