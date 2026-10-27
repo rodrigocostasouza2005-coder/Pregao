@@ -15,13 +15,19 @@ import streamlit as st
 
 import config
 from data.ibovespa import obter_composicao_oficial
+from data.macro import obter_cdi
 from data.mercado import (
     CAMPO_VARIACAO_POR_JANELA, obter_altas_baixas, obter_desempenho_setorial,
     obter_mais_negociados, obter_mercados_globais, obter_momento_panorama,
     obter_panorama_ibovespa, obter_termometro,
 )
-from data.prices import obter_cotacao_indice, rotulo_cotacao_em_cache
+from data.news import obter_top_mercado_tudo
+from data.prices import (
+    obter_cotacao_indice, obter_historico, obter_historico_intraday, rotulo_cotacao_em_cache,
+)
 from ui import graficos, navegacao, workspace
+from ui.news_tab import _injetar_css as _injetar_css_news
+from ui.news_tab import _prontos_para_lista, _renderizar_lista
 
 # altura (rem) reservada por padrao pro painel MAPA DO MERCADO no
 # workspace livre - bem maior que _ALTURA_PADRAO_REM generico (18rem):
@@ -45,10 +51,33 @@ from ui import graficos, navegacao, workspace
 # precisam andar juntos, senao volta o bug original.
 _ALTURA_TREEMAP_REM = 46.0
 _ALTURA_TREEMAP_PX = 580
-_ALTURAS_PADRAO_MERCADO = {"treemap": _ALTURA_TREEMAP_REM}
+# alturas padrao de painel menores/maiores que o generico (_ALTURA_PADRAO_
+# REM=18rem, ver ui/workspace.py) pros 2 paineis novos - confirmado por
+# screenshot real (Playwright, 2026-10-27): sem isso, VISÃO GERAL DO
+# MERCADO (so' 4 cards curtos) sobrava ~13rem de espaco vazio dentro do
+# painel, e IBOVESPA · TRAJETÓRIA (titulo + seletor de periodo + grafico
+# de 300px) ficava mais alto que o padrao, cortado atras do scroll
+# interno do painel.
+_ALTURAS_PADRAO_MERCADO = {
+    "treemap": _ALTURA_TREEMAP_REM,
+    "metricas_principais": 10.0,
+    "grafico_ibov": 24.0,
+}
 
 _JANELAS_DESEMPENHO = ["DIA", "SEMANA", "MÊS"]
 _JANELA_ROTULO_PARA_CHAVE = {"DIA": "dia", "SEMANA": "semana", "MÊS": "mes"}
+
+# períodos do gráfico IBOVESPA · TRAJETÓRIA (painel novo, auditoria visual
+# vs. protótipo pregao_mercado_prototipo.html, 2026-10-27) - mesmos rótulos
+# do seletor de referência (1D/1S/1M/3M/6M/1A); 1D/1S usam o histórico
+# intradiário (config.PERIODOS_INTRADIARIOS), os demais o histórico diário
+# - mesma distinção já usada em ui/visao_geral.py:_painel_ibov_grafico.
+_PERIODOS_GRAFICO_IBOV = ["1D", "1S", "1M", "3M", "6M", "1A"]
+
+# quantidade de manchetes no painel NOTÍCIAS (resumo) desta aba - mesmo
+# recorte/mesma fonte (data/news.py:obter_top_mercado_tudo) já usado em
+# ui/visao_geral.py:_painel_noticias_resumo, nenhuma consulta nova.
+_QTD_NOTICIAS_MERCADO = 4
 
 # --- ranking de retornos (MAIORES ALTAS/BAIXAS), estilo "member ranked
 # returns" de terminal financeiro - linha de controles inline (periodo/
@@ -140,6 +169,240 @@ def _layout_grafico_escuro(fig, tema, altura=340):
     # 2026-10-16): acompanha o tema CLARO tambem, nao so' os temas escuros.
     fig.update_xaxes(gridcolor=tema["borda"])
     fig.update_yaxes(gridcolor=tema["borda"])
+
+
+# --- painéis novos (auditoria visual vs. protótipo pregao_mercado_
+# prototipo.html, 2026-10-27): o protótipo é só referência ILUSTRATIVA de
+# hierarquia/espaçamento (métricas no topo -> gráfico -> altas/baixas +
+# mais negociados -> setorial, depois leitura rápida/notícias/globais) -
+# nenhum valor dele (176.045, MGLU3 +9,43% etc.) foi copiado; todo dado
+# abaixo vem das MESMAS funções de data/mercado.py, data/prices.py,
+# data/macro.py e data/news.py já usadas no resto desta aba/em
+# ui/visao_geral.py, reaproveitadas (nunca uma consulta de rede nova).
+def _card_metrica(rotulo: str, preco, variacao, prefs, casas_preco: int, status: str | None,
+                   rodape: str, unidade_variacao: str = "%"):
+    """Card do topo (reaproveita .card-mercado-agora, já usado em
+    ui/visao_geral.py - borda superior âmbar, mesmo visual do protótipo) -
+    `unidade_variacao` troca "%" por "p.p." pro card de DI (a variação do
+    CDI anualizado é em pontos percentuais, não percentual relativo)."""
+    status_html = f"<div class='card-mercado-status'>{status}</div>" if status else ""
+    if preco is None or variacao is None:
+        st.markdown(
+            f"<div class='card-mercado-agora'>"
+            f"<div class='card-mercado-rotulo'>{rotulo}</div>"
+            f"<div class='card-mercado-valor indisponivel'>—</div>"
+            f"<div class='card-mercado-variacao cinza'>SEM DADO</div>{status_html}</div>",
+            unsafe_allow_html=True,
+        )
+        return
+    cls = "alta" if variacao >= 0 else "baixa"
+    seta = "▲" if variacao >= 0 else "▼"
+    sinal = "+" if variacao >= 0 else ""
+    valor_variacao = f"{sinal}{config.formatar_numero(variacao, 2, prefs['formato_numerico'])}{unidade_variacao}"
+    st.markdown(
+        f"<div class='card-mercado-agora'>"
+        f"<div class='card-mercado-rotulo'>{rotulo}</div>"
+        f"<div class='card-mercado-valor'>{config.formatar_numero(preco, casas_preco, prefs['formato_numerico'])}</div>"
+        f"<div class='card-mercado-variacao {cls}'>{seta} {valor_variacao}</div>"
+        f"<div class='cinza' style='font-size:0.6rem;'>{rodape}</div>{status_html}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _painel_metricas_principais(prefs):
+    """(novo) 4 cards de topo - IBOVESPA/DÓLAR/DI/S&P 500 - mesma
+    hierarquia "VISÃO GERAL DO MERCADO" do protótipo. Reaproveita
+    exatamente as mesmas fontes já usadas em ui/visao_geral.py:
+    _painel_mercado_agora (obter_cotacao_indice, data/macro.py:obter_cdi,
+    obter_mercados_globais) - nenhuma chamada nova."""
+    st.markdown('<div class="painel-titulo">VISÃO GERAL DO MERCADO</div>', unsafe_allow_html=True)
+    ibov = obter_cotacao_indice("IBOVESPA", config.SIMBOLO_IBOVESPA)
+    dolar = obter_cotacao_indice("DÓLAR", "USDBRL=X")
+
+    cdi_df = obter_cdi(dias_historico=5)
+    cdi_atual = float(cdi_df["cdi_anualizado_pct"].iloc[-1]) if cdi_df is not None and not cdi_df.empty else None
+    # None (nunca 0.0) com so' 1 leitura disponivel - sem dado suficiente
+    # pra comparar, o card mostra "SEM DADO" (ver _card_metrica), nunca
+    # uma variacao inventada (mesmo criterio de ui/visao_geral.py).
+    cdi_variacao = None
+    if cdi_df is not None and len(cdi_df) >= 2:
+        anterior = float(cdi_df["cdi_anualizado_pct"].iloc[-2])
+        cdi_variacao = cdi_atual - anterior if cdi_atual is not None else None
+
+    globais = {g["nome"]: g for g in obter_mercados_globais()}
+    sp500 = globais.get("S&P 500")
+
+    with st.container(key="mercado_metricas_cols"):
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            _card_metrica(
+                "IBOVESPA", None if ibov.get("erro") else ibov["preco"],
+                None if ibov.get("erro") else ibov["variacao_pct"], prefs, 0,
+                rotulo_cotacao_em_cache(ibov), "Índice · pontos",
+            )
+        with c2:
+            _card_metrica(
+                "DÓLAR / BRL", None if dolar.get("erro") else dolar["preco"],
+                None if dolar.get("erro") else dolar["variacao_pct"], prefs, 2,
+                rotulo_cotacao_em_cache(dolar), "Câmbio · R$",
+            )
+        with c3:
+            _card_metrica("DI (CDI anual.)", cdi_atual, cdi_variacao, prefs, 2, None,
+                          "Taxa indicativa", unidade_variacao=" p.p.")
+        with c4:
+            _card_metrica(
+                "S&P 500", sp500["preco"] if sp500 else None,
+                sp500["variacao_pct"] if sp500 else None, prefs, 0, None, "Mercado global",
+            )
+
+
+def _painel_grafico_ibov(prefs):
+    """(novo) IBOVESPA · TRAJETÓRIA - gráfico com seletor de período
+    (1D/1S/1M/3M/6M/1A), mesma lógica/fonte de ui/visao_geral.py:
+    _painel_ibov_grafico (data/prices.py:obter_historico/
+    obter_historico_intraday) - nenhuma consulta nova, so' reaproveitada
+    aqui pra a aba MERCADO ter o mesmo gráfico de referência do
+    protótipo."""
+    st.markdown('<div class="painel-titulo">IBOVESPA · TRAJETÓRIA</div>', unsafe_allow_html=True)
+    tema = _tema_atual(prefs)
+
+    padrao, mem = _escolha_estavel_mercado("grafico_ibov_periodo", _PERIODOS_GRAFICO_IBOV, "6M")
+    sel = st.segmented_control(
+        "Período", _PERIODOS_GRAFICO_IBOV, default=padrao,
+        label_visibility="collapsed", key="mercado_grafico_ibov_periodo",
+    )
+    periodo = sel or padrao
+    st.session_state[mem] = periodo
+
+    if periodo in config.PERIODOS_INTRADIARIOS:
+        df = obter_historico_intraday(config.SIMBOLO_IBOVESPA, periodo)
+    else:
+        df = obter_historico(config.SIMBOLO_IBOVESPA, periodo)
+    if df is None or df.empty:
+        st.warning("Não foi possível obter o histórico do Ibovespa.")
+        return
+
+    fig = go.Figure(go.Scatter(
+        x=df["Data"], y=df["Close"], mode="lines",
+        line=dict(color=tema["destaque"], width=1.8), fill="tozeroy",
+        fillcolor=tema["destaque"] + "18",
+    ))
+    _layout_grafico_escuro(fig, tema, altura=300)
+    chave = graficos.zoom_key("mercado_grafico_ibov", periodo)
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave)
+
+
+def _painel_leitura_rapida(prefs):
+    """(novo) LEITURA RÁPIDA - NÃO é um resumo gerado por IA (ver TAREFA:
+    sem fonte real pra prosa editorial aqui): é só interpolação de número
+    real (cotação do Ibovespa, maior alta do dia, pior setor do dia,
+    status B3 oficial/fallback + cotação em cache) num template fixo,
+    reaproveitando exatamente as mesmas funções já usadas no resto desta
+    aba (obter_cotacao_indice/obter_altas_baixas/obter_desempenho_
+    setorial/obter_composicao_oficial) - nenhum texto fixo nem dado
+    inventado, nenhuma chamada nova."""
+    st.markdown('<div class="painel-titulo">LEITURA RÁPIDA</div>', unsafe_allow_html=True)
+
+    ibov = obter_cotacao_indice("IBOVESPA", config.SIMBOLO_IBOVESPA)
+    if ibov.get("erro"):
+        st.markdown(
+            "<div class='cinza' style='font-size:0.78rem;'>Cotação do Ibovespa indisponível no "
+            "momento - leitura rápida depende dela.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    variacao = ibov["variacao_pct"]
+    cls_dir = "alta" if variacao >= 0 else "baixa"
+    if variacao > 0.15:
+        direcao = "Pressão compradora"
+    elif variacao < -0.15:
+        direcao = "Pressão vendedora"
+    else:
+        direcao = "Sessão estável"
+    st.markdown(
+        f"<div class='cinza' style='font-size:0.66rem;'>DIREÇÃO DO ÍNDICE</div>"
+        f"<div style='font-size:0.92rem; font-weight:700; margin-top:0.15rem;'>{direcao} "
+        f"<span class='{cls_dir}'>{_fmt_pct(variacao, prefs)}</span></div>"
+        f"<div class='cinza' style='font-size:0.68rem; margin-top:0.1rem;'>Ibovespa "
+        f"{'em alta' if variacao >= 0 else 'em queda'} no pregão de hoje.</div>",
+        unsafe_allow_html=True,
+    )
+
+    altas, _baixas = obter_altas_baixas(1, "dia")
+    if altas:
+        p = altas[0]
+        nome = _nome_papel(p["ticker"])
+        st.markdown(
+            f"<div style='border-top:1px solid var(--borda); padding-top:0.5rem; margin-top:0.5rem;'>"
+            f"<div class='cinza' style='font-size:0.66rem;'>DESTAQUE POSITIVO</div>"
+            f"<div style='margin-top:0.15rem;'><b class='alta'>{html.escape(p['ticker'])} "
+            f"{_fmt_pct(p['variacao_pct'], prefs)}</b>"
+            + (f" <span class='cinza' style='font-size:0.74rem;'>· {html.escape(nome)}</span>" if nome else "")
+            + "</div><div class='cinza' style='font-size:0.68rem; margin-top:0.1rem;'>"
+            + "Maior alta do dia no Ibovespa.</div></div>",
+            unsafe_allow_html=True,
+        )
+
+    setores = obter_desempenho_setorial("dia")
+    if setores:
+        pior = setores[-1]
+        cls_setor = "alta" if pior["variacao_media_pct"] >= 0 else "baixa"
+        st.markdown(
+            f"<div style='border-top:1px solid var(--borda); padding-top:0.5rem; margin-top:0.5rem;'>"
+            f"<div class='cinza' style='font-size:0.66rem;'>PONTO DE ATENÇÃO</div>"
+            f"<div style='margin-top:0.15rem;'><b class='{cls_setor}'>{html.escape(pior['setor'])} "
+            f"{_fmt_pct(pior['variacao_media_pct'], prefs)}</b></div>"
+            f"<div class='cinza' style='font-size:0.68rem; margin-top:0.1rem;'>Setor com a pior "
+            f"variação média no dia ({pior['n_papeis']} papel(éis)) - verificar se é movimento "
+            f"concentrado ou disseminado.</div></div>",
+            unsafe_allow_html=True,
+        )
+
+    composicao = obter_composicao_oficial()
+    status_cache = rotulo_cotacao_em_cache(ibov)
+    if composicao and not status_cache:
+        cls_qualidade, rotulo_qualidade = "alta", "Dados ao vivo"
+        detalhe_qualidade = f"Composição oficial da B3 ({len(composicao)} papéis) · cotação ao vivo."
+    elif composicao:
+        cls_qualidade, rotulo_qualidade = "cinza", "Atenção à fonte"
+        detalhe_qualidade = f"Composição oficial da B3, mas {status_cache.lower()}."
+    else:
+        cls_qualidade, rotulo_qualidade = "cinza", "Atenção à fonte"
+        detalhe_qualidade = (
+            f"B3 indisponível no momento - usando lista curada de fallback "
+            f"({len(config.IBOVESPA_SETORES)} papéis)."
+        )
+    st.markdown(
+        f"<div style='border-top:1px solid var(--borda); padding-top:0.5rem; margin-top:0.5rem;'>"
+        f"<div class='cinza' style='font-size:0.66rem;'>QUALIDADE DOS DADOS</div>"
+        f"<div class='{cls_qualidade}' style='margin-top:0.15rem;'>● {rotulo_qualidade}</div>"
+        f"<div class='cinza' style='font-size:0.68rem; margin-top:0.1rem;'>{detalhe_qualidade}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _painel_noticias_resumo(prefs):
+    """(novo) NOTÍCIAS · ÚLTIMAS 4 - mesma fonte/mesmo recorte de
+    ui/visao_geral.py:_painel_noticias_resumo (data/news.py:
+    obter_top_mercado_tudo), reaproveitada aqui pra a aba MERCADO ter a
+    mesma coluna lateral do protótipo (link/fonte/horário preservados -
+    nunca manchete inventada)."""
+    _injetar_css_news()
+    st.markdown(
+        '<div class="painel-titulo">NOTÍCIAS <span class="cinza" '
+        'style="font-size:0.68rem;font-weight:400;">ÚLTIMAS 4</span></div>',
+        unsafe_allow_html=True,
+    )
+    itens = obter_top_mercado_tudo("TODOS")
+    if not itens:
+        st.markdown("<div class='cinza' style='font-size:0.78rem;'>Sem notícias disponíveis.</div>", unsafe_allow_html=True)
+        return
+    prontos = _prontos_para_lista(itens[:_QTD_NOTICIAS_MERCADO])
+    _renderizar_lista(
+        itens[:_QTD_NOTICIAS_MERCADO], mostrar_ticker=True, prefixo="mercado_news",
+        watchlist=prefs.get("watchlist") or [], resumos_prontos=prontos,
+    )
 
 
 def _painel_termometro(prefs):
@@ -630,14 +893,30 @@ def _painel_globais(prefs):
 
 # TERMOMETRO fica de fora do registro reordenavel de proposito: alem de
 # ser o painel de abertura da aba, ele tambem funciona como "gate" (se
-# nao tem dado nenhum, os outros 5 nem tentam renderizar - ver
-# render_mercado). Os outros 5 sao os que fazem sentido reordenar (ver
+# nao tem dado nenhum, os outros nem tentam renderizar - ver
+# render_mercado). Os demais sao os que fazem sentido reordenar (ver
 # ui/paineis.py, adotado pela primeira vez aqui).
+#
+# ORDEM PADRAO (auditoria visual vs. protótipo pregao_mercado_prototipo.
+# html, 2026-10-27): segue a MESMA hierarquia do protótipo - métricas de
+# topo -> gráfico do índice -> altas/baixas + mais negociados -> setorial
+# -> mapa do mercado (recurso real que o protótipo não tinha, mas já
+# existia aqui e não foi removido) -> leitura rápida -> notícias ->
+# globais. Isso é só a ordem INICIAL empilhada (1a vez/sem personalização
+# salva, ver ui/workspace.py:layout_efetivo) - o workspace modular já
+# permite ao usuário arrastar/redimensionar livremente (inclusive montar
+# as 2 colunas do protótipo manualmente), então esta lista NUNCA é lida
+# como posição fixa, só como ordem padrão + fonte de reordenação/
+# visibilidade em MAIS › Configurações.
 REGISTRO_PAINEIS = [
+    ("metricas_principais", "Visão geral do mercado", _painel_metricas_principais),
+    ("grafico_ibov", "Ibovespa · trajetória", _painel_grafico_ibov),
     ("altas_baixas", "Maiores altas/baixas", _painel_altas_baixas),
     ("mais_negociados", "Mais negociados", _painel_mais_negociados),
     ("setorial", "Desempenho setorial", _painel_setorial),
     ("treemap", "Mapa do mercado", _painel_treemap),
+    ("leitura_rapida", "Leitura rápida", _painel_leitura_rapida),
+    ("noticias_resumo", "Notícias", _painel_noticias_resumo),
     ("globais", "Mercados globais", _painel_globais),
 ]
 
