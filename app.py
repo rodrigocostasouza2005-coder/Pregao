@@ -139,16 +139,15 @@ if _abas_novas:
     prefs["abas_conhecidas"] = list(prefs.get("abas_conhecidas", [])) + _abas_novas
     _persistir_prefs()
 
-# --- migra os 4 paineis novos de MERCADO (PR #182, 2026-10-27) pra quem
-# ja tinha uma lista de paineis_visiveis['MERCADO'] salva, ou seja, ja
-# escondeu pelo menos 1 painel nessa aba antes - sem isso esses 4
-# paineis ficavam ocultos pra sempre pra esse usuario (ver
-# ui/paineis.py:migrar_visibilidade_paineis_novos), mesmo com refresh
-# forcado, porque nao existiam quando a lista foi salva.
-_PAINEIS_NOVOS_MERCADO_20261027 = [
-    "metricas_principais", "grafico_ibov", "leitura_rapida", "noticias_resumo",
-]
-if paineis.migrar_visibilidade_paineis_novos("MERCADO", _PAINEIS_NOVOS_MERCADO_20261027, prefs):
+# --- migra o painel novo LEITURA RAPIDA de MERCADO (PR #182, 2026-10-27) -
+# mesmo motivo/mesma funcao da migracao de VISAO GERAL abaixo.
+# metricas_principais/altas_baixas/mais_negociados/setorial/treemap/
+# noticias_resumo/destaques NAO precisam de migracao: viraram secoes
+# FIXAS (fora do REGISTRO_PAINEIS, ver ui/mercado_tab.py:render_mercado)
+# no redesign em grade (2026-10-27, mesmo padrao de VISAO GERAL) - nao
+# passam mais por paineis_visiveis/_pid_visivel_salvo. grafico_ibov saiu
+# de vez (duplicava o grafico canonico de VISAO GERAL).
+if paineis.migrar_visibilidade_paineis_novos("MERCADO", ["leitura_rapida"], prefs):
     _persistir_prefs()
 
 # --- migra o painel novo LEITURA RAPIDA de VISAO GERAL (2026-10-27) -

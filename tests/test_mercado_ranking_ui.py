@@ -1,21 +1,18 @@
 # -*- coding: utf-8 -*-
-"""Testes de regressao da auditoria visual do ranking MAIORES ALTAS/
-BAIXAS (ui/mercado_tab.py), 3a passada (2026-10-17) - cobre os 4
-problemas reais encontrados/corrigidos nas rodadas anteriores desta
-auditoria, sem depender de navegador/screenshot (Chrome e secrets.toml
-continuam indisponiveis nesta sessao - ver PROGRESSO.md/relatorios da
-auditoria):
+"""Testes de regressao do ranking MAIORES ALTAS/BAIXAS (ui/mercado_tab.py).
 
-1. Grid de colunas da linha do ranking (numero/ticker/nome+valor/barra)
-   tem que ser IDENTICO independente do tamanho do ticker, do nome da
-   empresa ou da magnitude do percentual (ex: "+1,07%" vs "-12,34%") -
-   e' isso que garante que a barra nasce sempre na MESMA posicao
-   horizontal em toda linha (o usuario suspeitava do contrario; esta
-   auditoria confirmou por analise de CSS/flexbox que nao acontece, mas
-   nunca tinha teste automatizado que comprovasse isso de verdade).
-2. Largura da barra (%) e' clampada em 100% e a classe/cor CSS (alta/
-   baixa) reflete o SINAL do valor, nao o grupo (alta/baixa) em que a
-   linha esta' sendo renderizada.
+Testes 1/2 ATUALIZADOS no redesign em grade do Painel (2026-10-27, mesmo
+padrao validado em ui/visao_geral.py, PR #186): _linha_ranking perdeu a
+coluna de numero e a barra horizontal (decorativas, risco de "wire
+denso" numa coluna de ~33% da grade) e ganhou um monograma tipografico
+(substituto leve de logo, pedido explicito do Rodrigo - ver
+_badge_ticker). O grid agora e' monograma/ticker/nome+valor (3 colunas),
+nao mais numero/ticker/nome+valor/barra (4 colunas).
+
+Testes 3/3b/4/5/5d SEM mudanca de comportamento - cobrem a linha de
+controles (periodo/qtd/setor), tokens de tema e o botao de MAIS
+NEGOCIADOS, nenhum desses tocado por esta rodada do redesign:
+
 3. O filtro SETOR (22 pills, config.IBOVESPA_SETORES) nao fica mais
    espremido numa coluna de 56% ao lado de PERIODO/QTD (22% cada) - a
    linha de controles agora tem SO' 2 colunas iguais (periodo/qtd),
@@ -25,6 +22,8 @@ auditoria):
    arquivo de UI - esses hardcodes so' funcionavam no tema AMBAR/
    escuro, quebrando contraste/consistencia nos temas FOSFORO/AZUL/
    CLARO (ver config.TEMAS).
+5. MAIS NEGOCIADOS: ticker clicavel (st.button real, on_click pra
+   EQUITY) - preservado mesmo apos o monograma entrar como nova coluna.
 
 st.columns/st.segmented_control/st.pills/st.session_state funcionam em
 "bare mode" (fora de um ScriptRunContext real) sem lancar excecao -
@@ -45,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import ui.mercado_tab as mercado_tab_mod
 
 _BASE_DIR = Path(__file__).parent.parent
-_PREFS = {"formato_numerico": "BR", "watchlist": []}
+_PREFS = {"formato_numerico": "BR", "watchlist": [], "tema": "AMBAR"}
 
 _FALHAS = []
 
@@ -61,7 +60,11 @@ def _checar(nome, condicao, detalhe=""):
         raise AssertionError(f"{nome} {detalhe}".strip())
 
 
-def _renderizar_linha(papel: dict, campo: str, max_abs: float, numero: int = 1):
+_TEMA = {"alta": "#00D26A", "baixa": "#FF3B3B", "neutro": "#E6E6E6", "cinza": "#8C8C8C",
+         "destaque": "#FFA028", "fundo": "#000000", "borda": "#262626"}
+
+
+def _renderizar_linha(papel: dict, campo: str):
     """Chama _linha_ranking de verdade, espiando (sem substituir) o
     st.columns real - pra capturar as fracoes/kwargs usadas - e
     capturando todo HTML passado a st.markdown. Retorna
@@ -76,13 +79,14 @@ def _renderizar_linha(papel: dict, campo: str, max_abs: float, numero: int = 1):
     htmls = []
     with patch.object(mercado_tab_mod.st, "columns", side_effect=_espiao_columns), \
          patch.object(mercado_tab_mod.st, "markdown", side_effect=lambda html, **k: htmls.append(html)):
-        mercado_tab_mod._linha_ranking(numero, papel, campo, _PREFS, max_abs)
+        mercado_tab_mod._linha_ranking(papel, campo, _PREFS, _TEMA)
 
     return chamadas_columns, htmls
 
 
 # ============================================================
-# 1. Grid de colunas identico independente do tamanho do conteudo
+# 1. Grid de colunas identico independente do tamanho do conteudo +
+#    monograma com as iniciais corretas do ticker
 # ============================================================
 
 def test_1_grid_de_colunas_identico_para_ticker_nome_e_percentual_de_tamanhos_diferentes():
@@ -99,23 +103,26 @@ def test_1_grid_de_colunas_identico_para_ticker_nome_e_percentual_de_tamanhos_di
     ]
     fracoes_vistas = set()
     kwargs_vistos = set()
-    for i, papel in enumerate(casos):
-        chamadas, htmls = _renderizar_linha(papel, campo="variacao_pct", max_abs=20.0, numero=i + 1)
-        _checar(f"1.{i} st.columns chamado exatamente 1x por linha", len(chamadas) == 1, f"(ticker={papel['ticker']})")
+    for papel in casos:
+        chamadas, htmls = _renderizar_linha(papel, campo="variacao_pct")
+        _checar(f"1 st.columns chamado exatamente 1x por linha", len(chamadas) == 1, f"(ticker={papel['ticker']})")
         args, kwargs = chamadas[0]
         fracoes_vistas.add(tuple(args[0]))
         kwargs_vistos.add(kwargs.get("vertical_alignment"))
         _checar(
-            f"1.{i} cada coluna tem seu HTML (numero/nome+valor/barra) presente",
-            any("rank-numero" in h for h in htmls) and any("rank-nome-valor" in h for h in htmls)
-            and any("rank-barra-trilho" in h for h in htmls),
+            f"1 cada coluna tem seu HTML (monograma/nome+valor) presente",
+            any("rank-nome-valor" in h for h in htmls),
             f"(ticker={papel['ticker']})",
+        )
+        iniciais_esperadas = "".join(c for c in papel["ticker"] if c.isalpha())[:2].upper()
+        _checar(
+            f"1 monograma mostra as 2 primeiras letras do ticker ({iniciais_esperadas})",
+            any(iniciais_esperadas in h for h in htmls), f"(ticker={papel['ticker']})",
         )
 
     _checar(
         "1 o grid de colunas (fracoes passadas a st.columns) NAO varia entre linhas com "
-        "ticker/nome/percentual de tamanhos bem diferentes - garante que a barra nasce "
-        "sempre na MESMA posicao horizontal em toda linha do ranking",
+        "ticker/nome/percentual de tamanhos bem diferentes",
         len(fracoes_vistas) == 1, f"(fracoes vistas: {fracoes_vistas})",
     )
     _checar(
@@ -126,37 +133,23 @@ def test_1_grid_de_colunas_identico_para_ticker_nome_e_percentual_de_tamanhos_di
 
 
 # ============================================================
-# 2. Largura da barra clampada + classe/cor conforme o SINAL do valor
+# 2. Cor do valor (coluna nome+valor) reflete o SINAL, nao o campo usado
 # ============================================================
 
-def _largura_pct_da_barra(html_barra: str) -> float:
-    m = re.search(r"rank-barra-fill ([\w-]+)' style='width:(\d+\.\d)%;'", html_barra)
-    assert m, f"nao encontrou a barra no HTML: {html_barra!r}"
-    return m.group(1), float(m.group(2))
-
-
-def test_2_largura_da_barra_clampada_e_classe_reflete_o_sinal_do_valor():
+def test_2_cor_do_valor_reflete_o_sinal_do_campo():
     casos = [
-        # (valor, max_abs, classe_esperada, largura_esperada_pct)
-        (10.0, 20.0, "rank-barra-pos", 50.0),
-        (-10.0, 20.0, "rank-barra-neg", 50.0),
-        (25.0, 20.0, "rank-barra-pos", 100.0),  # valor > max_abs: clampa em 100%, nunca estoura
-        (0.0, 20.0, "rank-barra-pos", 0.0),  # zero conta como "alta" (valor >= 0), barra vazia
-        (-0.01, 20.0, "rank-barra-neg", 0.1),
+        (10.0, "var(--alta)"),
+        (-10.0, "var(--baixa)"),
+        (0.0, "var(--alta)"),  # zero conta como "alta" (valor >= 0)
+        (-0.01, "var(--baixa)"),
     ]
-    for valor, max_abs, classe_esperada, largura_esperada in casos:
+    for valor, cor_esperada in casos:
         papel = {"ticker": "TEST3", "variacao_pct": valor}
-        _, htmls = _renderizar_linha(papel, campo="variacao_pct", max_abs=max_abs)
-        html_barra = next(h for h in htmls if "rank-barra-trilho" in h)
-        classe, largura = _largura_pct_da_barra(html_barra)
+        _, htmls = _renderizar_linha(papel, campo="variacao_pct")
+        html_nome_valor = next(h for h in htmls if "rank-nome-valor" in h)
         _checar(
-            f"2 valor={valor}/max_abs={max_abs}: classe da barra e' {classe_esperada}",
-            classe == classe_esperada, f"(obtido: {classe})",
-        )
-        _checar(
-            f"2 valor={valor}/max_abs={max_abs}: largura da barra e' {largura_esperada}% "
-            "(nunca > 100%, mesmo com valor > max_abs)",
-            abs(largura - largura_esperada) < 0.05, f"(obtido: {largura})",
+            f"2 valor={valor}: cor do valor é {cor_esperada}",
+            f"color:{cor_esperada};" in html_nome_valor, f"(html: {html_nome_valor!r})",
         )
 
 
