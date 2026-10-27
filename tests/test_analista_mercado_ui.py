@@ -150,10 +150,13 @@ def test_registro_paineis_inclui_analista_de_mercado_sem_duplicar_ids():
     ids = [pid for pid, _, _ in vg.REGISTRO_PAINEIS]
     _checar("ids dos paineis são únicos (sem duplicação)", len(ids) == len(set(ids)))
     for esperado in (
-        "analista_resumo", "analista_movimentos", "analista_oportunidades",
-        "analista_cenarios", "agenda_watchlist",
+        "analista_resumo", "analista_movimentos", "analista_oportunidades", "analista_cenarios",
     ):
         _checar(f"painel '{esperado}' está registrado", esperado in ids)
+    # agenda_watchlist saiu do REGISTRO_PAINEIS no redesign em grade
+    # (2026-10-27) - virou seção fixa em render_visao_geral (ver
+    # tests/test_visao_geral_redesign.py), não é mais arrastável.
+    _checar("'agenda_watchlist' NÃO está mais no registro arrastável", "agenda_watchlist" not in ids)
 
 
 def test_cenarios_vazio_mostra_mensagem_sem_lancar_excecao():
