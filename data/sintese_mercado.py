@@ -29,7 +29,31 @@ _PROMPT_SISTEMA abaixo):
 - sem dado suficiente numa seção, a seção fica vazia - nunca preenchida
   com algo genérico só pra não parecer vazia;
 - confiança é SEMPRE qualitativa (alta/média/baixa) com justificativa -
-  nunca um número de probabilidade inventado."""
+  nunca um número de probabilidade inventado.
+
+--- Metodologia (2026-10-26): adaptação do skill "market-researcher" -----
+
+Estrutura inspirada nos agentes oficiais `market-researcher` e
+`competitive-analysis` do pacote "Claude for Financial Services"
+(anthropics/financial-services, licença Apache-2.0 - ver atribuição
+completa no corpo da PR). Esses agentes rodam via Claude Code/Managed
+Agents com MCP pago (CapIQ/FactSet) - nada disso foi importado como
+código ou dependência; só a DISCIPLINA ANALÍTICA foi portada pro
+pipeline Groq que o Pregão já tinha (ver docs/market-researcher-
+integracao.md pra auditoria completa de que mais já foi adaptado de lá
+em sessões anteriores - comps/thesis-tracker/earnings-reviewer já
+existem em módulos próprios, não repetidos aqui).
+
+Dessa adaptação vieram os dois campos novos abaixo (`cenarios` e
+`observar_proximas_sessoes`), que fecham a lacuna real entre o que a
+síntese já fazia (resumo + movimentos + oportunidades/riscos + o que
+não sabemos) e os dois pontos do skill oficial que ainda faltavam:
+cenário alternativo (adaptado de "bull/base/bear", mas SEM
+probabilidade numérica - o skill oficial usa %, aqui isso seria uma
+probabilidade inventada, proibida) e uma lista curta do que observar
+nas próximas sessões (equivalente aos "catalysts"/"signposts" do skill
+oficial, mas só com catalisadores que já apareceram nos fatos
+coletados - nunca um evento novo inventado pela IA)."""
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
@@ -40,7 +64,7 @@ import config
 from data import eventos, ia_cache, macro, market_researcher, mercado, news, prices
 
 _URL_GROQ = "https://api.groq.com/openai/v1/chat/completions"
-_MAX_TOKENS = 2400
+_MAX_TOKENS = 3000
 _TIMEOUT_S = 45
 # 20min: mesma ordem de grandeza do cache de NEWS (ver mencao a "cache de
 # 20 minutos" no pedido) - muda bucket, muda chave, sem TTL explicito na
@@ -75,6 +99,19 @@ _PROMPT_SISTEMA = (
     "para ela - nunca preencha com algo genérico.\n"
     "- Todo item de 'movimentos' e 'oportunidades_riscos' precisa citar 'fonte' (nome "
     "da fonte do payload) e, quando o fato tiver, a data/horário do dado.\n"
+    "- 'cenarios': no máximo 3 leituras do que pode acontecer a partir de agora, cada "
+    "uma com 'tipo' EXATAMENTE 'principal' (a leitura mais consistente com os fatos "
+    "coletados agora - só 1 'principal') ou 'alternativo' (até 2, cenários que os "
+    "mesmos fatos também sustentam, mas com menos peso). NUNCA inclua probabilidade "
+    "numérica/percentual - isso seria inventado. Cada cenário tem 'condicao' (o que "
+    "precisaria se confirmar pra esse cenário prevalecer) e 'sinalizadores' (o que, "
+    "nos PRÓPRIOS fatos coletados ou no que normalmente se observaria, indicaria esse "
+    "cenário se fortalecendo). Sem fatos suficientes pra sustentar nem 1 cenário, "
+    "devolva lista vazia.\n"
+    "- 'observar_proximas_sessoes': no máximo 6 itens curtos do que acompanhar nas "
+    "próximas sessões - priorize o que já está na agenda/calendário do payload ou nos "
+    "próprios 'movimentos'/'oportunidades_riscos' que você já identificou. NUNCA cite "
+    "um evento/data que não esteja no payload.\n"
     "- Responda APENAS com um objeto JSON válido, sem markdown, sem texto antes ou "
     "depois, no formato exato:\n"
     "{\n"
@@ -88,12 +125,16 @@ _PROMPT_SISTEMA = (
     '  "oportunidades_riscos": [{"ativo_ou_setor": "string", "catalisador": "string", '
     '"argumento_favoravel": "string", "argumento_contrario": "string", '
     '"acompanhar": "string", "fonte": "string", "data_fonte": "string ou null"}],\n'
+    '  "cenarios": [{"tipo": "principal|alternativo", "cenario": "string", "condicao": '
+    '"string", "sinalizadores": "string"}],\n'
+    '  "observar_proximas_sessoes": [{"item": "string", "motivo": "string", "fonte": '
+    '"string ou null", "data_fonte": "string ou null"}],\n'
     '  "o_que_nao_sabemos": ["string"]\n'
     "}\n"
-    "Máximo 6 itens em 'movimentos', 5 em 'oportunidades_riscos', 6 em "
-    "'o_que_nao_sabemos'. Escreva em português do Brasil, tom de terminal profissional, "
-    "sem exagero ('despencou', 'disparou', 'colapsou' só se o fato for realmente desse "
-    "tamanho)."
+    "Máximo 6 itens em 'movimentos', 5 em 'oportunidades_riscos', 3 em 'cenarios', 6 em "
+    "'observar_proximas_sessoes', 6 em 'o_que_nao_sabemos'. Escreva em português do "
+    "Brasil, tom de terminal profissional, sem exagero ('despencou', 'disparou', "
+    "'colapsou' só se o fato for realmente desse tamanho)."
 )
 
 
@@ -317,6 +358,28 @@ def _extrair_json(conteudo: str) -> dict | None:
 
 
 _CONFIANCAS_VALIDAS = {"alta", "media", "média", "baixa"}
+_TIPOS_CENARIO_VALIDOS = {"principal", "alternativo"}
+
+# Whitelist explícita de campos por item (em vez de **item) - garante que
+# nenhum campo fora do schema pedido (ex: 'recomendacao', 'preco_alvo', se
+# o modelo algum dia tentar injetar isso) sobrevive à validação, mesma
+# regra já aplicada a recomendacao/preco_alvo em RESEARCH > Casas de
+# Análise (só existem depois de um resumo por IA - aqui nem existem,
+# nunca são um campo esperado neste painel).
+_CAMPOS_MOVIMENTO = (
+    "evento", "fonte", "data_fonte", "por_que_importa", "impacto_possivel",
+    "horizonte", "confianca", "confianca_motivo",
+)
+_CAMPOS_OPORTUNIDADE = (
+    "ativo_ou_setor", "catalisador", "argumento_favoravel", "argumento_contrario",
+    "acompanhar", "fonte", "data_fonte",
+)
+_CAMPOS_CENARIO = ("tipo", "cenario", "condicao", "sinalizadores")
+_CAMPOS_OBSERVAR = ("item", "motivo", "fonte", "data_fonte")
+
+
+def _filtrar_campos(item: dict, campos: tuple) -> dict:
+    return {campo: item.get(campo) for campo in campos}
 
 
 def _validar_e_limpar(dados: dict) -> dict | None:
@@ -324,7 +387,10 @@ def _validar_e_limpar(dados: dict) -> dict | None:
     confia ciegamente na saída do modelo. Remove item malformado em vez
     de invalidar a síntese inteira (um item ruim não derruba os bons),
     mas EXIGE resumo_executivo.texto não vazio - sem isso não há síntese
-    utilizável, mesmo que os demais blocos existam."""
+    utilizável, mesmo que os demais blocos existam. Todo item é
+    reconstruído por whitelist de campo (_filtrar_campos) - nunca um
+    `**item` que deixaria passar uma chave extra que o modelo tenha
+    inventado (ex: 'recomendacao', 'preco_alvo')."""
     if not isinstance(dados, dict):
         return None
     resumo = dados.get("resumo_executivo")
@@ -337,15 +403,49 @@ def _validar_e_limpar(dados: dict) -> dict | None:
         if not isinstance(item, dict) or not item.get("evento") or not item.get("fonte"):
             continue
         confianca = str(item.get("confianca") or "").strip().lower()
+        limpo = _filtrar_campos(item, _CAMPOS_MOVIMENTO)
         if confianca not in _CONFIANCAS_VALIDAS:
             confianca = "baixa"
-            item = {**item, "confianca_motivo": (item.get("confianca_motivo") or "") +
-                     " (confiança não informada pela análise; marcada como baixa por padrão)"}
-        movimentos.append({**item, "confianca": confianca})
+            limpo["confianca_motivo"] = (limpo.get("confianca_motivo") or "") + \
+                " (confiança não informada pela análise; marcada como baixa por padrão)"
+        limpo["confianca"] = confianca
+        movimentos.append(limpo)
 
     oportunidades = [
-        item for item in (dados.get("oportunidades_riscos") or [])
+        _filtrar_campos(item, _CAMPOS_OPORTUNIDADE)
+        for item in (dados.get("oportunidades_riscos") or [])
         if isinstance(item, dict) and item.get("ativo_ou_setor") and item.get("fonte")
+    ]
+
+    cenarios = []
+    tem_principal = False
+    for item in (dados.get("cenarios") or []):
+        if not isinstance(item, dict) or not str(item.get("cenario") or "").strip():
+            continue
+        tipo = str(item.get("tipo") or "").strip().lower()
+        if tipo == "principal" and not tem_principal:
+            tem_principal = True
+        else:
+            tipo = "alternativo"  # nunca mais de 1 "principal" - demais ficam "alternativo"
+        limpo = _filtrar_campos(item, _CAMPOS_CENARIO)
+        limpo["tipo"] = tipo
+        cenarios.append(limpo)
+    # corte pro limite de 3 PRESERVA o "principal" (se existir) em vez de um
+    # corte bruto por posição - se a IA (por erro) mandar mais de 3 cenários
+    # e o "principal" não estiver entre os 3 primeiros da lista, um
+    # cenarios[:3] ingênuo descartaria justamente a leitura mais
+    # consistente com os fatos, deixando só alternativos na UI.
+    principal = next((c for c in cenarios if c["tipo"] == "principal"), None)
+    alternativos = [c for c in cenarios if c["tipo"] != "principal"]
+    if principal:
+        cenarios = [principal] + alternativos[:2]
+    else:
+        cenarios = alternativos[:3]
+
+    observar = [
+        _filtrar_campos(item, _CAMPOS_OBSERVAR)
+        for item in (dados.get("observar_proximas_sessoes") or [])
+        if isinstance(item, dict) and str(item.get("item") or "").strip()
     ]
     nao_sabemos = [s for s in (dados.get("o_que_nao_sabemos") or []) if isinstance(s, str) and s.strip()]
 
@@ -353,6 +453,8 @@ def _validar_e_limpar(dados: dict) -> dict | None:
         "resumo_executivo": {"texto": texto.strip(), "ressalvas": (resumo.get("ressalvas") or "").strip()},
         "movimentos": movimentos[:6],
         "oportunidades_riscos": oportunidades[:5],
+        "cenarios": cenarios[:3],
+        "observar_proximas_sessoes": observar[:6],
         "o_que_nao_sabemos": nao_sabemos[:6],
     }
 
