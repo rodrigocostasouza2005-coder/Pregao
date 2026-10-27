@@ -117,16 +117,29 @@ def salvar_carteiras(casa, itens):
     1 página do PDF da Safra). Mantém a ÚLTIMA ocorrência: sem informação
     adicional pra preferir uma sobre a outra.
 
-    Retorna (persistiu: bool, erro: str | None) - `erro` é o texto REAL da
-    exceção (quando houver), não um rótulo genérico, pra quem registra a
-    tentativa (jobs/radar_quedas.py) e o painel SAÚDE DOS DADOS conseguirem
-    mostrar a causa raiz de verdade (tabela, permissão, conflito de chave,
-    conexão) em vez de só "falha ao persistir"."""
+    Retorna (persistiu: bool, erro: str | None, aviso_desativacao: str | None):
+    `erro` é o texto REAL da exceção do UPSERT (quando houver), não um
+    rótulo genérico, pra quem registra a tentativa (jobs/radar_quedas.py)
+    e o painel SAÚDE DOS DADOS conseguirem mostrar a causa raiz de verdade
+    (tabela, permissão, conflito de chave, conexão) em vez de só "falha ao
+    persistir".
+
+    `aviso_desativacao` (achado real, revisão independente 2026-10-27):
+    antes, uma falha SÓ na etapa de desativação (ver try/except abaixo)
+    virava `return True, None` silencioso - os itens novos e válidos estão
+    persistidos de verdade, mas qualquer recomendação que SAIU da carteira
+    deste mês (ex: trocada por outra) continuaria `vigente=True` pra
+    sempre se essa desativação seguir falhando, sem NENHUM sinal no painel
+    (a tentativa aparecia como sucesso pleno). Agora `persistiu=True` com
+    `aviso_desativacao` preenchido deixa quem chama (processar_monitoramento)
+    reportar isso como execução PARCIAL, nunca como sucesso silencioso nem
+    como falha de persistência (os dados novos estão corretos - só a
+    limpeza do que ficou de fora que não foi confirmada)."""
     cliente = obter_cliente()
     if cliente is None:
-        return False, "Supabase indisponível (sem cliente)."
+        return False, "Supabase indisponível (sem cliente).", None
     if not itens:
-        return True, None
+        return True, None, None
 
     agora = datetime.now(timezone.utc).isoformat()
     por_chave = {}
@@ -144,18 +157,17 @@ def salvar_carteiras(casa, itens):
     except Exception as exc:
         erro = f"upsert de {len(itens_confirmados)} recomendação(ões): {exc!r}"
         print(f"[radar_quedas] falha ao persistir carteiras ({casa}): {erro}")
-        return False, erro
+        return False, erro, None
 
     try:
         cliente.table("radar_carteiras_recomendadas").update(
             {"vigente": False}
         ).eq("casa", casa).lt("verificado_em", agora).execute()
     except Exception as exc:
-        print(
-            f"[radar_quedas] carteiras ({casa}) persistidas, mas desativação "
-            f"de recomendações antigas falhou: {exc!r}"
-        )
-    return True, None
+        aviso = f"desativação de recomendações antigas falhou: {exc!r}"
+        print(f"[radar_quedas] carteiras ({casa}) persistidas, mas {aviso}")
+        return True, None, aviso
+    return True, None, None
 
 
 def _carteira_expirada(linha, agora=None):
@@ -308,11 +320,18 @@ def processar_monitoramento():
         if not snapshot:
             status_fontes[casa] = "snapshot vazio, rejeitado (carteira anterior preservada)"
             continue
-        persistiu, erro_persistencia = salvar_carteiras(casa, snapshot)
+        persistiu, erro_persistencia, aviso_desativacao = salvar_carteiras(casa, snapshot)
         if not persistiu:
             status_fontes[casa] = f"falha ao persistir ({erro_persistencia}; carteira anterior preservada)"
             continue
         status_fontes[casa] = f"ok ({len(snapshot)} recomendações)"
+        if aviso_desativacao:
+            # Os itens novos e válidos JÁ estão persistidos (ver
+            # salvar_carteiras) - isto é PARCIAL, nunca falha de
+            # persistência nem sucesso silencioso: só a limpeza do que
+            # saiu da carteira deste mês não foi confirmada ainda (ver
+            # jobs/radar_quedas.py:_registrar_tentativas_por_casa).
+            status_fontes[casa] += f"; aviso: {aviso_desativacao}"
         pelo_menos_uma_ok = True
 
     resumo_fontes = "; ".join(f"{casa}: {status}" for casa, status in status_fontes.items())

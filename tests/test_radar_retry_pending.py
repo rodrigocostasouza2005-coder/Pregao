@@ -380,6 +380,34 @@ def test_executar_registra_snapshot_vazio_como_parcial_nao_falha_nem_sucesso_ple
     assert genial["registros_novos"] == 0
 
 
+def test_executar_registra_aviso_de_desativacao_como_parcial_nao_falha(monkeypatch):
+    """Regressão (revisão independente 2026-10-27): status 'ok (N); aviso:
+    ...' (ver data/radar_quedas.py:salvar_carteiras, aviso_desativacao)
+    precisa virar parcial=True com o erro real - nunca sucesso pleno
+    silencioso nem falha de persistência (os dados novos já estão
+    corretos, só a limpeza do que saiu da carteira não foi confirmada)."""
+    chamadas = []
+    monkeypatch.setattr(
+        radar_quedas, "processar_monitoramento",
+        lambda: {
+            "coleta_ok": True, "alertas_novos": [], "erro": None,
+            "fontes": {"Safra Corretora": "ok (10 recomendações); aviso: desativação falhou: timeout"},
+        },
+    )
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+
+    radar_quedas.executar()
+
+    por_nome = {args[0]: kwargs for args, kwargs in chamadas}
+    safra = por_nome["Safra Corretora (carteiras)"]
+    assert safra["execucao_ok"] is True
+    assert safra["persistencia_ok"] is True
+    assert safra["parcial"] is True
+    assert safra["registros_novos"] == 10
+    assert "desativação falhou: timeout" in safra["erro"]
+
+
 def test_executar_registra_falha_de_persistencia_por_casa(monkeypatch):
     chamadas = []
     monkeypatch.setattr(
