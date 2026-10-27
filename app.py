@@ -139,6 +139,18 @@ if _abas_novas:
     prefs["abas_conhecidas"] = list(prefs.get("abas_conhecidas", [])) + _abas_novas
     _persistir_prefs()
 
+# --- migra os 4 paineis novos de MERCADO (PR #182, 2026-10-27) pra quem
+# ja tinha uma lista de paineis_visiveis['MERCADO'] salva, ou seja, ja
+# escondeu pelo menos 1 painel nessa aba antes - sem isso esses 4
+# paineis ficavam ocultos pra sempre pra esse usuario (ver
+# ui/paineis.py:migrar_visibilidade_paineis_novos), mesmo com refresh
+# forcado, porque nao existiam quando a lista foi salva.
+_PAINEIS_NOVOS_MERCADO_20261027 = [
+    "metricas_principais", "grafico_ibov", "leitura_rapida", "noticias_resumo",
+]
+if paineis.migrar_visibilidade_paineis_novos("MERCADO", _PAINEIS_NOVOS_MERCADO_20261027, prefs):
+    _persistir_prefs()
+
 
 def _escolha_estavel(chave_widget: str, opcoes: list, padrao):
     """Guarda a ultima escolha valida de um segmented_control (que pode voltar None ao desmarcar)."""

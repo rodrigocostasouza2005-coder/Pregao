@@ -91,6 +91,32 @@ def _pid_visivel_salvo(aba_id: str, pid: str, prefs: dict) -> bool:
     return True if salvo is None else pid in salvo
 
 
+def migrar_visibilidade_paineis_novos(aba_id: str, ids_novos: list, prefs: dict) -> bool:
+    """Pra paineis NOVOS adicionados ao REGISTRO_PAINEIS de uma aba depois
+    que usuarios existentes ja tinham salvo uma lista de visibilidade
+    (prefs['paineis_visiveis'][aba_id]) - sem isso, um painel novo nunca
+    aparece pra quem ja escondeu antes pelo menos 1 painel dessa aba
+    (lista salva = "mundo fechado", ver _pid_visivel_salvo), mesmo com
+    refresh forcado, porque ele nao existia quando a lista foi salva
+    (achado real, PR #182/MERCADO, 2026-10-27). `ids_novos` e' uma lista
+    EXPLICITA dos ids introduzidos numa rodada especifica - nunca um
+    diff generico contra o registro atual - assim nunca reabre um
+    painel ANTIGO que o usuario escondeu de proposito. Muta `prefs`
+    in-place; retorna True se algo mudou (quem chama decide se
+    persiste, mesmo padrao de abas_conhecidas em app.py)."""
+    tabela = prefs.get("paineis_visiveis") or {}
+    salvo = tabela.get(aba_id)
+    if salvo is None:
+        return False
+    faltando = [pid for pid in ids_novos if pid not in salvo]
+    if not faltando:
+        return False
+    nova_tabela = dict(tabela)
+    nova_tabela[aba_id] = list(salvo) + faltando
+    prefs["paineis_visiveis"] = nova_tabela
+    return True
+
+
 def _tamanho_efetivo(aba_id: str, pid: str, prefs: dict) -> str:
     salvo = (prefs.get("tamanho_paineis") or {}).get(aba_id, {}).get(pid)
     return salvo if salvo in TAMANHOS else _TAMANHO_PADRAO
