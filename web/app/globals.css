@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #060604;
+  --surface: #0b0a08;
+  --border: #262016;
+  --text: #e9e4d6;
+  --text-dim: #8c8575;
+  --text-faint: #5c5648;
+  --accent: #ffa028;
+  --accent-dim: #ffa02820;
+  --up: #2fd27a;
+  --down: #ff5250;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-text-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --font-mono: var(--font-ibm-plex-mono), ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
