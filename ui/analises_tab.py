@@ -391,6 +391,20 @@ def _montar_conclusao(analise: dict, tese: dict | None) -> list:
     return blocos
 
 
+# rótulo + cor por tipo de evidência (pedido do redesign institucional:
+# "diferencie dados observados, conclusões dos agentes, hipóteses e
+# alertas" - antes FATO/CALCULO/ESTIMATIVA/HIPOTESE renderizavam todos
+# com o mesmo st.markdown, sem nenhuma pista visual da natureza de cada
+# resposta). Mesma linguagem de tag monoespaçada já usada em
+# ui/mercado_tab.py (_tag_fato_interpretacao) e ui/news_tab.py (selo-*).
+_ROTULO_EVIDENCIA = {
+    TIPO_FATO: ("FATO", "var(--cinza)"),
+    TIPO_CALCULO: ("CÁLCULO INTERNO", "var(--ciano)"),
+    TIPO_ESTIMATIVA_TERCEIRO: ("ESTIMATIVA DE TERCEIRO", "var(--destaque)"),
+    TIPO_HIPOTESE: ("HIPÓTESE DO ANALISTA", "var(--destaque)"),
+}
+
+
 def render_conclusao_investimento(ticker: str, prefs: dict, usuario: dict):
     """Painel final de ANÁLISES › Empresas (depois de NOTÍCIAS/CVM, pra
     fechar a análise com uma síntese depois de ver todo o detalhe) -
@@ -408,10 +422,19 @@ def render_conclusao_investimento(ticker: str, prefs: dict, usuario: dict):
         st.markdown('<div class="painel-titulo">CONCLUSÃO DE INVESTIMENTO</div>', unsafe_allow_html=True)
         for bloco in _montar_conclusao(analise, tese):
             st.markdown(f"**{bloco['pergunta']}**")
-            if bloco["tipo_evidencia"] == TIPO_INSUFICIENTE:
+            tipo = bloco["tipo_evidencia"]
+            if tipo == TIPO_INSUFICIENTE:
                 st.caption(bloco["resposta"])
             else:
-                st.markdown(bloco["resposta"])
+                rotulo, cor = _ROTULO_EVIDENCIA.get(tipo, (None, None))
+                if rotulo:
+                    st.markdown(
+                        f"<span style='font-size:0.62rem; letter-spacing:0.04em; color:{cor};'>"
+                        f"[{rotulo}]</span> {bloco['resposta']}",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(bloco["resposta"])
         if tese:
             st.caption(
                 f"Você já registrou uma Tese própria para {ticker} em {str(tese['registrado_em'])[:10]} "
