@@ -3,7 +3,9 @@ import { EstadoDados } from "@/components/EstadoDados";
 import { Tabela } from "@/components/Tabela";
 import { Variacao } from "@/components/Variacao";
 import { num } from "@/lib/formatos";
+import { usuarioAtual } from "@/lib/server/auth";
 import { type Acao, painelIbovespa } from "@/lib/server/dominio/mercado";
+import { lerWatchlist } from "@/lib/server/dominio/userPrefs";
 import { resultado } from "@/lib/tipos";
 
 export const metadata = { title: "Empresas · Pregão" };
@@ -23,19 +25,22 @@ const ORDENS: Array<{ id: Ordem; rotulo: string }> = [
   { id: "setor", rotulo: "Setor" },
 ];
 
-export default async function Empresas({ searchParams }: { searchParams: Promise<{ q?: string; setor?: string; ordem?: string }> }) {
-  const { q = "", setor = "", ordem: ordemRaw = "ticker" } = await searchParams;
+export default async function Empresas({ searchParams }: { searchParams: Promise<{ q?: string; setor?: string; ordem?: string; so?: string }> }) {
+  const { q = "", setor = "", ordem: ordemRaw = "ticker", so = "" } = await searchParams;
   const termo = q.trim().toUpperCase();
   const ordem: Ordem = ordemRaw === "variacao" || ordemRaw === "setor" ? ordemRaw : "ticker";
-  const painel = await painelIbovespa();
+  const soWatchlist = so === "watchlist";
+  const usuario = await usuarioAtual();
+  const [painel, watchlist] = await Promise.all([painelIbovespa(), usuario?.sub ? lerWatchlist(usuario.sub) : Promise.resolve<string[]>([])]);
   const setores = [...new Set(painel.acoes.map((a) => a.setor))].sort();
   let acoes = painel.acoes;
+  if (soWatchlist) acoes = acoes.filter((a) => watchlist.includes(a.ticker));
   if (setor) acoes = acoes.filter((a) => a.setor === setor);
   if (termo) acoes = acoes.filter((a) => a.ticker.includes(termo) || a.setor.toUpperCase().includes(termo));
   acoes = ordenar(acoes, ordem);
   const resultadoAcoes = resultado(acoes.length ? "ok" : "vazio", acoes, "Yahoo Finance (universo Ibovespa)");
   const linkFiltro = (patch: Record<string, string>) => {
-    const p = new URLSearchParams({ q, setor, ordem, ...patch });
+    const p = new URLSearchParams({ q, setor, ordem, so, ...patch });
     for (const [k, v] of [...p.entries()]) if (!v) p.delete(k);
     const s = p.toString();
     return s ? `/empresas?${s}` : "/empresas";
@@ -49,6 +54,7 @@ export default async function Empresas({ searchParams }: { searchParams: Promise
       <form action="/empresas" className="mb-3 flex flex-wrap items-center gap-2">
         <input type="hidden" name="setor" value={setor} />
         <input type="hidden" name="ordem" value={ordem} />
+        <input type="hidden" name="so" value={so} />
         <input
           name="q"
           defaultValue={q}
@@ -56,6 +62,11 @@ export default async function Empresas({ searchParams }: { searchParams: Promise
           aria-label="Buscar empresa"
           className="w-56 rounded-sm border border-filete bg-base px-2.5 py-1 text-[12.5px] text-texto placeholder:text-apagado focus:border-ambar focus:outline-none"
         />
+        {usuario ? (
+          <a href={linkFiltro({ so: soWatchlist ? "" : "watchlist" })} className={`rounded-sm border px-2 py-0.5 text-[11.5px] ${soWatchlist ? "border-ambar text-ambar" : "border-filete text-suave"}`}>
+            ★ Minha watchlist ({watchlist.length})
+          </a>
+        ) : null}
         <div className="flex flex-wrap gap-1.5 text-[11.5px]">
           <a href={linkFiltro({ setor: "" })} className={`rounded-sm border px-2 py-0.5 ${!setor ? "border-ambar text-texto" : "border-filete text-suave"}`}>Todos os setores</a>
           {setores.map((s) => (
