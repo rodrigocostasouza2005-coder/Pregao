@@ -5,7 +5,7 @@ import { Painel } from "@/components/Painel";
 import { Selo } from "@/components/Selo";
 import { TabelaIndicadores } from "@/components/TabelaIndicadores";
 import { data, hojeSaoPaulo, num } from "@/lib/formatos";
-import { focus, historicoSgs, ptaxOlinda, selicPeloCopom, SERIES_SGS, ultimaSgs, type LeituraSgs } from "@/lib/server/bcb";
+import { focus, historicoPtax, historicoSgs, ptaxOlinda, selicPeloCopom, SERIES_SGS, ultimaSgs, type LeituraSgs } from "@/lib/server/bcb";
 import { lerIndicadores, type Indicador } from "@/lib/server/dominio/mercado";
 import { obterSerie } from "@/lib/server/yahoo";
 import type { Resultado } from "@/lib/tipos";
@@ -31,7 +31,7 @@ export default async function Macro() {
     lerIndicadores(EXTERIOR),
     historicoSgs(SERIES_SGS.selicMeta.codigo, 3 * 365),
     historicoSgs(SERIES_SGS.ipca12m.codigo, 5 * 365),
-    historicoSgs(SERIES_SGS.ptaxVenda.codigo, 365),
+    historicoSgs(SERIES_SGS.ptaxVenda.codigo, 365).then((r) => (r.estado === "ok" ? r : historicoPtax(365))),
     obterSerie("^TNX", "1A"),
   ]);
   // a série diária da meta já vem até a próxima reunião: só até hoje
@@ -110,13 +110,13 @@ export default async function Macro() {
           <Painel key={h.titulo} titulo={h.titulo} acao={<Selo tipo="fato" />} rodape={`Fonte: ${h.r.fonte}${h.pontos.length ? ` · até ${data(new Date(h.pontos.at(-1)!.t).toISOString().slice(0, 10))}` : ""}`}>
             <EstadoDados r={h.r} vazio="Série sem leituras no período." />
             {h.pontos.length > 1 ? (
-              <Grafico pontos={h.pontos} eixoX={h.eixo} fuso="UTC" casas={h.sufixo ? 2 : 4} sufixo={h.sufixo} degrau={h.degrau} cor="neutro" altura={150} titulo={h.titulo} />
+              <Grafico pontos={h.pontos} eixoX={h.eixo} fuso="UTC" rotulosX={4} casas={h.sufixo ? 2 : 4} sufixo={h.sufixo} degrau={h.degrau} cor="neutro" altura={150} titulo={h.titulo} />
             ) : null}
           </Painel>
         ))}
         <Painel titulo="Treasury 10 anos · 1 ano" acao={<Selo tipo="fato" texto="Cotação" />} rodape={`Fonte: ${treasury.fonte} · rendimento em % ao ano`}>
           <EstadoDados r={treasury} vazio="Sem negócios no período." />
-          {treasury.dados ? <Grafico pontos={treasury.dados.pontos} eixoX="mes" fuso={treasury.dados.fuso} casas={2} sufixo="%" cor="neutro" altura={150} titulo="Treasury 10 anos" /> : null}
+          {treasury.dados ? <Grafico pontos={treasury.dados.pontos} eixoX="mes" fuso={treasury.dados.fuso} rotulosX={4} casas={2} sufixo="%" cor="neutro" altura={150} titulo="Treasury 10 anos" /> : null}
         </Painel>
       </div>
       <Painel titulo="Exterior · juros, dólar e petróleo" className="mt-3" acao={<Selo tipo="fato" texto="Cotação" />} rodape="Fonte: Yahoo Finance · juros dos Treasuries em % ao ano">

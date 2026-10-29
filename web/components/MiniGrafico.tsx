@@ -20,7 +20,7 @@ export function MiniGrafico({ linha, altura = 92 }: { linha: LinhaIndicador; alt
         <span className="font-mono text-[9.5px] text-apagado">{referenciaCotacao(c)}</span>
       </div>
       {s ? (
-        <Grafico pontos={s.pontos} referencia={c?.fechamentoAnterior ?? null} eixoX="hora" fuso={s.fuso} casas={linha.casas} altura={altura} titulo={linha.nome} />
+        <Grafico pontos={s.pontos} referencia={c?.fechamentoAnterior ?? null} eixoX="hora" fuso={s.fuso} casas={linha.casas} altura={altura} titulo={linha.nome} rotulosX={3} />
       ) : (
         <p className="flex items-center text-[11px] text-apagado" style={{ height: altura + 16 }}>
           {linha.s?.mensagem || "Gráfico indisponível na fonte."}

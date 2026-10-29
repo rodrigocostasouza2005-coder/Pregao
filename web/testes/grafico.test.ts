@@ -42,9 +42,16 @@ describe("geometria", () => {
 });
 
 describe("marcasX", () => {
-  it("marca cada troca de chave e respeita o máximo", () => {
-    const pontos = Array.from({ length: 30 }, (_, i) => ({ t: i, v: 1 }));
-    expect(marcasX(pontos, (t) => String(Math.floor(t / 10)))).toEqual([0, 10, 20]);
+  const pontos = Array.from({ length: 30 }, (_, i) => ({ t: i, v: 1 }));
+  it("marca cada troca de chave (sem rótulo colado na borda) e respeita o máximo", () => {
+    expect(marcasX(pontos, (t) => String(Math.floor(t / 10)))).toEqual([10, 20]);
     expect(marcasX(pontos, (t) => String(t), 5).length).toBeLessThanOrEqual(5);
+  });
+  it("não deixa dois rótulos mais próximos que a largura de um rótulo", () => {
+    // trocas em 2, 3 e 20: 3 fica fora (colado em 2)
+    const marcas = marcasX(pontos, (t) => (t < 2 ? "a" : t < 3 ? "b" : t < 20 ? "c" : "d"), 3);
+    expect(marcas).toEqual([20]);
+    const m = marcasX(pontos, (t) => String(Math.floor(t / 4)), 3);
+    for (let i = 1; i < m.length; i++) expect(m[i] - m[i - 1]).toBeGreaterThanOrEqual(29 / 4);
   });
 });
