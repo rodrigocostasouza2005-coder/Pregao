@@ -22,11 +22,10 @@ export const INDICADORES: Indicador[] = [
   { nome: "Bitcoin (USD)", simbolo: "BTC-USD", grupo: "Commodities", casas: 0 },
 ];
 
-/** Siglas de terminal (usadas na faixa do topo e nos mini-gráficos). */
-export const SIGLAS: Record<string, string> = {
-  "^BVSP": "IBOV", "USDBRL=X": "USDBRL", "EURBRL=X": "EURBRL", "^GSPC": "SPX", "^IXIC": "CCMP", "^DJI": "INDU",
-  "ES=F": "ES1", "^TNX": "UST10", "DX-Y.NYB": "DXY", "BZ=F": "CO1", "CL=F": "CL1", "GC=F": "GC1", "BTC-USD": "BTC",
-};
+/** Re-exportado de lib/siglas.ts (ver lá o motivo: precisa ser
+ * importável por um Client Component, que não pode tocar neste módulo
+ * "server-only"). */
+export { SIGLAS } from "@/lib/siglas";
 
 /** `s` é a série intradiária da última sessão (para gráficos e linhas). */
 export type LinhaIndicador = Indicador & { r: Resultado<Cotacao | null>; s?: Resultado<Serie | null> };
