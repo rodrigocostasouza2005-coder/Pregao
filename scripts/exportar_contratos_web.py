@@ -56,7 +56,7 @@ def _regras_editoriais() -> dict:
         "termos_impacto_mercado": list(ed._TERMOS_IMPACTO_MERCADO),
         "servico_financas_pessoais": list(ed._SERVICO_FINANCAS_PESSOAIS),
         "termos_fora_de_pauta": list(ed._TERMOS_FORA_DE_PAUTA),
-        "nomes_empresas": list(ed._NOMES_EMPRESAS),
+        "nomes_empresas": sorted(ed._NOMES_EMPRESAS),  # vem de um set: ordem estável
         "regex": {
             nome: {"padrao": rx.pattern, "flags": "i" if rx.flags & re.IGNORECASE else ""}
             for nome, rx in (
