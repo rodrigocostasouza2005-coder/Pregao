@@ -42,6 +42,37 @@ export async function lerTabela<T>(tabela: string, consulta: Consulta): Promise<
   }
 }
 
+/** Escrita pontual (UPDATE por filtro) via PostgREST - mesma chave
+ * secreta das leituras, mesmo princípio de nunca lançar exceção. Uso
+ * restrito: só a triagem manual de incidentes do Backoffice chama isto
+ * hoje (ver dominio/backofficeAcoes.ts) - nenhuma rota de escrita
+ * genérica é exposta ao cliente. */
+export async function atualizarLinha(
+  tabela: string, filtros: Record<string, string>, campos: Record<string, unknown>,
+): Promise<{ ok: boolean; mensagem?: string }> {
+  if (!supabaseConfigurado()) return { ok: false, mensagem: "Banco de dados não configurado neste ambiente." };
+  const params = new URLSearchParams();
+  for (const [coluna, filtro] of Object.entries(filtros)) params.append(coluna, filtro);
+  try {
+    const resp = await fetch(`${env.supabaseUrl}/rest/v1/${tabela}?${params}`, {
+      method: "PATCH",
+      headers: {
+        apikey: env.supabaseChave, Authorization: `Bearer ${env.supabaseChave}`,
+        "Content-Type": "application/json", Prefer: "return=minimal",
+      },
+      body: JSON.stringify(campos),
+    });
+    if (!resp.ok) {
+      console.error(`[supabase] atualizarLinha ${tabela}: HTTP ${resp.status} ${await resp.text().catch(() => "")}`);
+      return { ok: false, mensagem: "O banco de dados não aceitou esta atualização." };
+    }
+    return { ok: true };
+  } catch (erro) {
+    console.error(`[supabase] atualizarLinha ${tabela}:`, erro);
+    return { ok: false, mensagem: "O banco de dados não respondeu a esta atualização." };
+  }
+}
+
 /** Upsert de UMA linha via PostgREST (on_conflict pela coluna dada) - só
  * pra escritas simples e explícitas do próprio usuário logado (ex:
  * watchlist em user_prefs), nunca em massa. Mesmo padrão de

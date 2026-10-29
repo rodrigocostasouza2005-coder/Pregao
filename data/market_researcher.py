@@ -222,12 +222,21 @@ def analise_ticker(ticker: str, janela: str = "7 DIAS") -> dict:
 # aparecer na lista atual é marcado RESOLVIDO automaticamente - fecha o
 # ciclo sem exigir ação manual por achado.
 #
-# Acionado SÓ pelo clique em "ATUALIZAR" (ui/saude_dados_tab.py) - nunca
-# a cada renderização de página (mesmo cuidado de
-# data/research/__init__.py:_COOLDOWN_FALHA_S, só que aqui é o próprio
-# usuário quem decide a frequência, clicando).
+# Acionado pelo clique em "ATUALIZAR" (ui/saude_dados_tab.py) OU pelo
+# job agendado jobs/coordenador.py (auditoria "Coordenador de
+# Inteligência", 2026-10-29 - ver docs/auditoria-coordenador-
+# inteligencia-20261029.md) - os dois caminhos chamam a mesma função,
+# sem duplicar lógica.
 # ============================================================
 _TABELA_ACHADOS = "market_researcher_achados"
+
+# Estados de triagem manual (Coordenador/Backoffice, 2026-10-29) - além
+# de ABERTO/RESOLVIDO (os únicos que este módulo escrevia antes), a
+# interface web agora permite o Rodrigo avançar um achado pra
+# INVESTIGANDO/AGUARDANDO_INTERVENCAO/INCONCLUSIVO (ver
+# web/lib/server/dominio/backoffice.ts:definirEstadoIncidente). Esses 3
+# nunca são escritos por este módulo - só lidos/preservados.
+_ESTADOS_TRIAGEM_MANUAL = ("INVESTIGANDO", "AGUARDANDO_INTERVENCAO", "INCONCLUSIVO")
 
 
 def _chave_achado(coletor: str, categoria: str, tipo: str) -> str:
@@ -254,10 +263,23 @@ def registrar_achados_atuais() -> dict:
             )
             if existente.data:
                 linha = existente.data[0]
-                cliente.table(_TABELA_ACHADOS).update({
+                atualizacao = {
                     "ultima_ocorrencia_em": agora, "ocorrencias": linha["ocorrencias"] + 1,
-                    "status": "ABERTO", "descricao": a["rotulo_estado"],
-                }).eq("id", linha["id"]).execute()
+                    "descricao": a["rotulo_estado"],
+                }
+                # Nunca sobrescreve uma triagem manual em andamento (achado
+                # real, 2026-10-29: antes desta checagem, rodar este job de
+                # hora em hora - jobs/coordenador.py - resetava pra ABERTO
+                # qualquer achado que o Rodrigo tivesse marcado
+                # INVESTIGANDO/AGUARDANDO_INTERVENCAO/INCONCLUSIVO na
+                # interface web, apagando o trabalho de triagem a cada
+                # execução). Só reabre explicitamente um achado já
+                # RESOLVIDO (o problema voltou a acontecer) - nunca um em
+                # triagem manual.
+                status_atual = linha.get("status")
+                if status_atual not in _ESTADOS_TRIAGEM_MANUAL:
+                    atualizacao["status"] = "ABERTO"
+                cliente.table(_TABELA_ACHADOS).update(atualizacao).eq("id", linha["id"]).execute()
             else:
                 cliente.table(_TABELA_ACHADOS).insert({
                     "chave": chave, "coletor": a["coletor"], "categoria": a["categoria"],
