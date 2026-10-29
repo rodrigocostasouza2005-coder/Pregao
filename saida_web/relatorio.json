@@ -1,0 +1,194 @@
+[
+ {
+  "rota": "/",
+  "tela": "desktop",
+  "http": 200,
+  "scrollWidth": 1440,
+  "erros_console": [],
+  "texto": "Visão Geral\n\nO que importa agora, com atalhos para cada área\n\nMKT\nMERCADO AGORA\nMercado →\nATIVO\tÚLTIMO\tVAR.\tREFERÊNCIA\nIbovespa^BVSP\t171.004\t-0,00%\t29/10, 10:32\nDólar (USD/BRL)USDBRL=X\t5,3573\t+0,13%\t29/10, 10:47\nS&P 500^GSPC\t7.715,87\t-0,36%\t29/10, 10:47\nTreasury 10 anos (%)^TNX\t4,982\t-1,25%\t29/10, 10:32\nPetróleo BrentBZ=F\t109,44\t-5,10%\t29/10, 10:37\nMC\nMORNING CALL\nEdição →\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\nAGD\nHOJE\nAgenda →\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\n\nColetores: 0/33 OK · detalhes\n\nINT\nO QUE MUDOU\nInteligência →\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Coletores e agentes do Pregão (Supabase))"
+ },
+ {
+  "rota": "/",
+  "tela": "celular",
+  "http": 200,
+  "scrollWidth": 390,
+  "erros_console": [],
+  "texto": ""
+ },
+ {
+  "rota": "/mercado",
+  "tela": "desktop",
+  "http": 200,
+  "scrollWidth": 1440,
+  "erros_console": [],
+  "texto": "Mercado\n\nCotações com a referência de cada uma · variação contra o fechamento anterior\n\nBRASIL\nATIVO\tÚLTIMO\tVAR.\tREFERÊNCIA\nIbovespa^BVSP\t171.004\t-0,00%\t29/10, 10:32\nDólar (USD/BRL)USDBRL=X\t5,3573\t+0,13%\t29/10, 10:47\nEuro (EUR/BRL)EURBRL=X\t5,9604\t+0,15%\t29/10, 10:46\nFonte: Yahoo Finance · cotações podem ter atraso\nEXTERIOR\nATIVO\tÚLTIMO\tVAR.\tREFERÊNCIA\nS&P 500^GSPC\t7.715,87\t-0,36%\t29/10, 10:47\nNasdaq^IXIC\t26.175,17\t-1,41%\t29/10, 10:47\nDow Jones^DJI\t52.344,45\t-0,25%\t29/10, 10:47\nS&P 500 futuroES=F\t7.739,25\t-0,57%\t29/10, 10:37\nFonte: Yahoo Finance · cotações podem ter atraso\nJUROS E MOEDAS\nATIVO\tÚLTIMO\tVAR.\tREFERÊNCIA\nTreasury 10 anos (%)^TNX\t4,982\t-1,25%\t29/10, 10:32\nÍndice dólar (DXY)DX-Y.NYB\t102,28\t+0,08%\t29/10, 10:37\nFonte: Yahoo Finance · cotações podem ter atraso\nCOMMODITIES\nATIVO\tÚLTIMO\tVAR.\tREFERÊNCIA\nPetróleo BrentBZ=F\t109,44\t-5,10%\t29/10, 10:37\nPetróleo WTICL=F\t100,23\t-2,48%\t29/10, 10:37\nOuroGC=F\t4.041,30\t-0,25%\t29/10, 10:37\nBitcoin (USD)BTC-USD\t79.953\t-1,62%\t29/10, 10:47\nFonte: Yahoo Finance · cotações podem ter atraso\nIBOV\nMAIORES ALTAS\nATIVO\tSETOR\tPREÇO\tVAR.\nGGBR4\tMineração e Siderurgia\t25,01\t+3,82%\nGOAU4\tMineração e Siderurgia\t11,05\t+3,76%\nCSNA3\tMineração e Siderurgia\t4,48\t+3,46%\nCSAN3\tPetróleo e Gás\t2,43\t+3,40%\nMGLU3\tVarejo\t5,39\t+3,26%\nMRVE3\tConstrução Civil\t4,47\t+3,23%\nCOGN3\tEducação\t1,76\t+2,92%\nVAMO3\tTransporte e Logística\t2,65\t+2,71%\nUniverso: 84 de 84 ações do Ibovespa com cotação\nIBOV\nMAIORES BAIXAS\nATIVO\tSETOR\tPREÇO\tVAR.\nABEV3\tBebidas\t14,78\t-2,89%\nBBDC4\tBanc"
+ },
+ {
+  "rota": "/mercado",
+  "tela": "celular",
+  "http": 200,
+  "scrollWidth": 390,
+  "erros_console": [],
+  "texto": ""
+ },
+ {
+  "rota": "/macro",
+  "tela": "desktop",
+  "http": 200,
+  "scrollWidth": 1440,
+  "erros_console": [],
+  "texto": "Macro\n\nDados oficiais divulgados, expectativas de mercado e referências internacionais\n\nBRASIL · DADO DIVULGADO\nFATO\nSelic meta SGS 432\tindisponível\t—\nCDI anualizado SGS 4389\t13,65 % a.a.\t28/10/2026\nIPCA no mês SGS 433\t0,82 %\t01/09/2026\nIPCA em 12 meses SGS 13522\t4,58 %\t01/09/2026\nDólar PTAX (venda) SGS 1\tindisponível\t—\nFonte: Banco Central do Brasil (SGS)\nBRASIL · EXPECTATIVAS DE MERCADO\nEXPECTATIVA (FOCUS)\nINDICADOR\tANO\tMEDIANA\tBOLETIM\nCâmbio\t2026\t5,05\t23/10/2026\nCâmbio\t2027\t5,15\t23/10/2026\nIPCA\t2026\t5,19%\t23/10/2026\nIPCA\t2027\t4,34%\t23/10/2026\nPIB Total\t2026\t1,80%\t23/10/2026\nPIB Total\t2027\t1,31%\t23/10/2026\nSelic\t2026\t13,25%\t23/10/2026\nSelic\t2027\t11,75%\t23/10/2026\nMediana do Boletim Focus (Banco Central) · data do boletim na linha\nEXTERIOR · JUROS, DÓLAR E PETRÓLEO\nCOTAÇÃO\nATIVO\tÚLTIMO\tVAR.\tREFERÊNCIA\nTreasury 10 anos (%)^TNX\t4,982\t-1,25%\t29/10, 10:32\nTreasury 5 anos (%)^FVX\t4,807\t-1,31%\t29/10, 10:32\nTreasury 30 anos (%)^TYX\t5,311\t-0,93%\t29/10, 10:32\nÍndice dólar (DXY)DX-Y.NYB\t102,28\t+0,08%\t29/10, 10:37\nDólar (USD/BRL)USDBRL=X\t5,3573\t+0,13%\t29/10, 10:47\nPetróleo BrentBZ=F\t109,44\t-5,10%\t29/10, 10:37\nFonte: Yahoo Finance · juros dos Treasuries em % ao ano"
+ },
+ {
+  "rota": "/macro",
+  "tela": "celular",
+  "http": 200,
+  "scrollWidth": 390,
+  "erros_console": [],
+  "texto": ""
+ },
+ {
+  "rota": "/research",
+  "tela": "desktop",
+  "http": 200,
+  "scrollWidth": 1440,
+  "erros_console": [],
+  "texto": "Research\n\nCasas monitoradas: 6 · publicações, carteiras recomendadas e mudanças capturadas pelos coletores\n\nVISÃO DE ANALISTA\nTodas\nGenial Analisa 0\nXP Investimentos 0\nGenial (Lives) 0\nBTG Pactual Research 0\nMonte Bravo 0\nNord Research 0\nRSH\nPUBLICAÇÕES\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\nresearch_itens · resumo por IA quando disponível, nunca o texto integral\nMUDANÇAS DE RECOMENDAÇÃO\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\nComparação entre capturas sucessivas (research_recomendacoes_historico)\nDIVERGÊNCIAS ENTRE CASAS\n\nSem carteiras para comparar.\n\nSó quando ≥ 2 casas têm recomendação estruturada diferente (regra do Market Researcher)\nCARTEIRAS RECOMENDADAS VIGENTES\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\n\nNenhum registro.\n\nradar_carteiras_recomendadas · vigente = true\nATIVOS COM MAIS COBERTURA\n—"
+ },
+ {
+  "rota": "/research",
+  "tela": "celular",
+  "http": 200,
+  "scrollWidth": 390,
+  "erros_console": [],
+  "texto": ""
+ },
+ {
+  "rota": "/noticias",
+  "tela": "desktop",
+  "http": 200,
+  "scrollWidth": 1440,
+  "erros_console": [],
+  "texto": "Notícias\n\nÚltimas 36 h · manchete original, veículo, horário e link · duplicatas agrupadas\n\nTodas\nBrasil\nInternacional\nNWS\n433 MANCHETES\n29/10, 10:44\nServiceNow&#x2019;s stock is on track for its worst day ever. Here&#x2019;s what went wrong.\nMarketWatchEM INGLÊS · TRADUÇÃO PENDENTE\nMUNDO\n29/10, 10:42\nHomem é preso após xingar fiscal durante abordagem em BC\nDIARINHO\nBRASIL\n29/10, 10:41\nRestaurant Brands reports mixed results as Burger King's U.S. turnaround shows signs of success\nCNBCEM INGLÊS · TRADUÇÃO PENDENTE\nMUNDO\n29/10, 10:40\nIbovespa fecha leilões em queda de 0,15%, com bancos e petroleiras no vermelho\nEuQueroInvestir\nBRASIL\n29/10, 10:40\nGoverno central tem superávit primário de R$ 4,839 bilhões em setembro com forte elevação de receitas\nMoney Times\nBRASIL\n29/10, 10:38\nDólar sobe e bolsa oscila com política no Brasil e juros, PIB e inflação nos EUA\nRevista Oeste\nBRASIL\n29/10, 10:38\nStock market today: Dow, S&P 500, Nasdaq fall as Alphabet stock sell-off drags on tech, AI jitters return\nYahoo FinanceEM INGLÊS · TRADUÇÃO PENDENTE\nMUNDO\n29/10, 10:38\nPolícia investiga esquema de sonegação fiscal superior a R$ 100 milhões\nA Tribuna RJ\nBRASIL\n29/10, 10:36\nTesouro Direto hoje: prefixados continuam acima de 15% quatro dias após a eleição\nInvestNews\nBRASIL\n29/10, 10:35\nIbovespa tem leve queda de olho na formação do governo Lula 4 e no exterior\nValor Econômico\nBRASIL\n29/10, 10:33\nDólar disparou após a eleição. Até onde Lula testará o câmbio?\nGZH\nBRASIL\n29/10, 10:27\nIbovespa hoje"
+ },
+ {
+  "rota": "/noticias",
+  "tela": "celular",
+  "http": 200,
+  "scrollWidth": 390,
+  "erros_console": [],
+  "texto": ""
+ },
+ {
+  "rota": "/cvm",
+  "tela": "desktop",
+  "http": 200,
+  "scrollWidth": 1440,
+  "erros_console": [],
+  "texto": "CVM\n\nDocumentos coletados da CVM (IPE): fatos relevantes, comunicados e avisos\n\nDOCUMENTO OFICIAL\nTodos\nDestaques\nCVM\n0 DOCUMENTOS\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\n\nNenhum registro.\n\ncvm_documentos · coletor CVM do Pregão · resumo do documento ainda não é gerado nesta tela"
+ },
+ {
+  "rota": "/cvm",
+  "tela": "celular",
+  "http": 200,
+  "scrollWidth": 390,
+  "erros_console": [],
+  "texto": ""
+ },
+ {
+  "rota": "/agenda",
+  "tela": "desktop",
+  "http": 200,
+  "scrollWidth": 1440,
+  "erros_console": [],
+  "texto": "Agenda\n\nResultados e eventos corporativos por data · status indica a confiabilidade da data\n\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\n\nIndicadores econômicos (IPCA, Copom, payroll...) ainda não têm coletor de calendário no Pregão; esta agenda cobre os eventos corporativos coletados."
+ },
+ {
+  "rota": "/agenda",
+  "tela": "celular",
+  "http": 200,
+  "scrollWidth": 390,
+  "erros_console": [],
+  "texto": ""
+ },
+ {
+  "rota": "/morning-call",
+  "tela": "desktop",
+  "http": 200,
+  "scrollWidth": 1440,
+  "erros_console": [],
+  "texto": "Morning Call\n\nEdições geradas e enviadas pelo job do Pregão (GitHub Actions) · o envio, o PDF e os assinantes continuam no pipeline existente\n\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)"
+ },
+ {
+  "rota": "/morning-call",
+  "tela": "celular",
+  "http": 200,
+  "scrollWidth": 390,
+  "erros_console": [],
+  "texto": ""
+ },
+ {
+  "rota": "/inteligencia",
+  "tela": "desktop",
+  "http": 200,
+  "scrollWidth": 1440,
+  "erros_console": [],
+  "texto": "Inteligência\n\nMudanças, divergências e catalisadores a partir dos coletores e agentes do Pregão · cada item mostra se é fato, visão de analista ou inferência\n\nFATO\nVISÃO DE ANALISTA\nINFERÊNCIA\n\nEvidência incompleta: 29 coletor(es) do núcleo sem coleta OK (NEWS, NEWS (Brasil), NEWS (Internacional), NEWS (watchlist), NEWS (ticker único)…). Conclusões abaixo podem estar desatualizadas - ver Configurações.\n\nINT\nO QUE MUDOU?\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Coletores e agentes do Pregão (Supabase))\nFonte: Coletores e agentes do Pregão (Supabase)\nCOMITÊ · DIVERGÊNCIAS\nVISÃO DE ANALISTA\n\nBanco de dados não configurado neste ambiente.\n\n≥ 2 casas com recomendação estruturada diferente; nunca inferida\nCOMITÊ · COBERTURA\n\nSem carteira vigente coletada: Genial Analisa, XP Investimentos, Genial (Lives), BTG Pactual Research, Monte Bravo, Nord Research.\n\nQuantas casas monitoradas incluem o ativo em carteira vigente\nCATALISADORES · 10 DIAS\nDATA\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\nResultados de ativos com cobertura de research (agenda × carteiras)\nRESULTADOS PROCESSADOS · AGENTE DE EARNINGS\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\nearnings_reviews · números da CVM/SEC; interpretações do agente marcadas como inferência"
+ },
+ {
+  "rota": "/inteligencia",
+  "tela": "celular",
+  "http": 200,
+  "scrollWidth": 390,
+  "erros_console": [],
+  "texto": ""
+ },
+ {
+  "rota": "/configuracoes",
+  "tela": "desktop",
+  "http": 200,
+  "scrollWidth": 1440,
+  "erros_console": [],
+  "texto": "Configurações\n\nConta, integrações deste ambiente e saúde dos coletores\n\nCONTA\nUsuário\n—\nPerfil\nUsuário\nINTEGRAÇÕES DESTE AMBIENTE\nBanco (Supabase)\nNão configurado\nLogin Google\nNão configurado\nSó o estado de configuração - nenhum valor de credencial é exibido\nSAÚDE DOS COLETORES\n0/33 OK\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\nCOLETOR\tCATEGORIA\tESTADO\tÚLTIMO SUCESSO\tFREQUÊNCIA\nNEWS\tNoticias\tNunca executado\t—\tsob demanda (cache 20min)\nNEWS (Brasil)\tNoticias\tNunca executado\t—\tsob demanda (cache 20min)\nNEWS (Internacional)\tNoticias\tNunca executado\t—\tsob demanda (cache 20min)\nNEWS (watchlist)\tNoticias\tNunca executado\t—\tsob demanda (cache 20min)\nNEWS (ticker único)\tNoticias\tNunca executado\t—\tsob demanda (cache 20min)\nMERCADO\tCotacoes\tNunca executado\t—\tsob demanda (cache 90s)\nMERCADO (cotação individual)\tCotacoes\tNunca executado\t—\tsob demanda (cache 30s)\nB3 (composição Ibovespa)\tCotacoes\tNunca executado\t—\tsob demanda (cache 24h)\nMERCADO (Globais)\tCotacoes\tNunca executado\t—\tsob demanda (cache 90s)\nMACRO (BCB)\tMacro\tNunca executado\t—\tsob demanda (cache 4h)\nMACRO (BCB - Selic)\tMacro\tNunca executado\t—\tsob demanda (cache 4h)\nMACRO (BCB - CDI)\tMacro\tNunca executado\t—\tsob demanda (cache 4h)\nMACRO (BCB - Focus IPCA)\tMacro\tNunca executado\t—\tsob demanda (cache 4h)\nMACRO (BCB - Focus Selic)\tMacro\tNunca executado\t—\tsob demanda (cache 4h)\nMACRO (Cenário Global)\tMacro\tNunca executado\t—\tsob demanda (cache 90s)\nMACRO (ANBIMA)\tMacro\tNunca executado\t—\tsob dema"
+ },
+ {
+  "rota": "/configuracoes",
+  "tela": "celular",
+  "http": 200,
+  "scrollWidth": 390,
+  "erros_console": [],
+  "texto": ""
+ },
+ {
+  "rota": "/ativo/PETR4",
+  "tela": "desktop",
+  "http": 200,
+  "scrollWidth": 1440,
+  "erros_console": [],
+  "texto": "PETR4\n\nSetor: Petróleo e Gás · Ibovespa\n\n52,41\n-0,19% 29/10, 10:32\nEVENTOS E DOCUMENTOS\nFATO\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\neventos_resultados · cvm_documentos\nNÚMEROS PUBLICADOS\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\nAgente de earnings (CVM/SEC)\nRESEARCH\nVISÃO DE ANALISTA\n\nNenhuma casa monitorada com o ativo em carteira vigente.\n\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)\nCarteiras vigentes e publicações das casas monitoradas\nNOTÍCIAS · 7 DIAS\n26/10, 10:48\nBanco do Brasil (BBAS3) e Petrobras (PETR4) desabam e perdem R$ 100 bilhões em valor de mercado\nValor Investe\n26/10, 07:39\nApós eleição de Lula, até onde podem cair as ações de PETR4, ITUB4, BBAS3 e VALE3?\nInfoMoney\n26/10, 12:47\nA reação de CEO da Petrobras (PETR4) após vitória de Lula; ‘a hora é de comprar’\nMoney Times\n23/10, 18:35\nIbovespa reage antes das eleições; Petrobras (PETR4) sobe 1,47% e Banco do Brasil (BBAS3) dispara - Suno\nSuno - Investimentos Inteligentes\n22/10, 16:42\nPetrobras (PETR4) supera gigantes globais e emplaca a maior valorização do setor em outubro. Além do petróleo, o que está por trás?\nSeu Dinheiro\n28/10, 14:22\nPetrobras (PETR4): diesel pode subir mesmo com subsídios?\nISTOÉ DINHEIRO\n26/10, 11:59\nPetrobras (PETR4) e ações de combustíveis tombam; CSAN3 perde mais de 44%\nInvestidor10\n23/10"
+ },
+ {
+  "rota": "/ativo/PETR4",
+  "tela": "celular",
+  "http": 200,
+  "scrollWidth": 390,
+  "erros_console": [],
+  "texto": ""
+ },
+ {
+  "rota": "/busca?q=vale",
+  "tela": "desktop",
+  "http": 200,
+  "scrollWidth": 1440,
+  "erros_console": [],
+  "texto": "Busca\n\nResultados para \"vale\"\n\nATIVOS\nVALE3 Mineração e Siderurgia\nRESEARCH\nNÃO CONFIGURADOBanco de dados não configurado neste ambiente.(Supabase do Pregão)"
+ },
+ {
+  "rota": "/busca?q=vale",
+  "tela": "celular",
+  "http": 200,
+  "scrollWidth": 390,
+  "erros_console": [],
+  "texto": ""
+ }
+]
