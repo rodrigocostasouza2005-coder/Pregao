@@ -72,3 +72,31 @@ export async function atualizarLinha(
     return { ok: false, mensagem: "O banco de dados não respondeu a esta atualização." };
   }
 }
+
+/** Upsert de UMA linha via PostgREST (on_conflict pela coluna dada) - só
+ * pra escritas simples e explícitas do próprio usuário logado (ex:
+ * watchlist em user_prefs), nunca em massa. Mesmo padrão de
+ * data/user_prefs.py:salvar_prefs (upsert do objeto inteiro, não merge
+ * parcial no banco) - quem chama é responsável por já ter lido e
+ * mesclado o valor anterior quando precisar preservar outros campos.
+ * Retorna true só em sucesso real (HTTP 2xx); nunca lança exceção. */
+export async function upsertLinha(tabela: string, onConflict: string, linha: Record<string, unknown>): Promise<boolean> {
+  if (!supabaseConfigurado()) return false;
+  try {
+    const resp = await fetch(`${env.supabaseUrl}/rest/v1/${tabela}?on_conflict=${onConflict}`, {
+      method: "POST",
+      headers: {
+        apikey: env.supabaseChave,
+        Authorization: `Bearer ${env.supabaseChave}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify(linha),
+    });
+    if (!resp.ok) console.error(`[supabase] upsert ${tabela}: HTTP ${resp.status} ${await resp.text().catch(() => "")}`);
+    return resp.ok;
+  } catch (erro) {
+    console.error(`[supabase] upsert ${tabela}:`, erro);
+    return false;
+  }
+}

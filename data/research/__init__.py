@@ -18,9 +18,23 @@ coletavel sem login:
   proprio lote, nao so' no detalhe - coletor filtra por AREA_PUBLICA antes
   de persistir, nunca toca em conteudo de area logada (ver data/research/
   btg.py e CASAS['btg'] abaixo pros detalhes completos da investigacao).
-- Itau BBA, BB Investimentos, Santander, Safra, Agora/Bradesco, Inter:
-  ainda nao investigadas (ver BACKLOG.md; reconhecimento rapido de
-  reachability em data/diagnostico.py).
+- Itau BBA, Santander, Bradesco BBI: investigadas em 2026-10-29 (pedido
+  explicito do Rodrigo) - nenhuma tem fonte publica coletavel. Itau BBA e
+  Santander bloqueiam fetch automatizado (403, mesmo padrao de borda do
+  XP/Genial) nas paginas institucionais de research; o unico acesso real
+  e' um portal logado de cliente (Itau: "Open Finance" nao cobre research
+  de acoes; Santander: "Painel do Investidor" da corretora). Bradesco BBI
+  nao bloqueia a pagina institucional, mas ela e' so' apresentacao da
+  equipe - zero link de relatorio, RSS ou API; a area com conteudo real
+  nao e' publica. Nenhuma tem RSS/sitemap no estilo Monte Bravo/Nord nem
+  API publica no estilo BTG - sao research sell-side distribuido so a
+  cliente autenticado, nao HTML frio que valha a pena tentar raspar.
+  Registradas abaixo com disponivel=False (nunca tenta coletar, aparece
+  em SAUDE DOS DADOS via falhas em preparar_leitura) em vez de um coletor
+  fragil sem fonte real. BB Investimentos, Safra (research de acoes;
+  Safra Corretora/carteiras recomendadas e' outro coletor, ver
+  data/research/safra_carteiras.py), Agora, Inter: ainda nao
+  investigadas.
 
 Os itens coletados sao persistidos no Supabase (tabela research_itens,
 ver data/research/store.py) - a aba RESEARCH sempre le do banco primeiro
@@ -213,6 +227,55 @@ CASAS = [
         "obter_relatorios": nord.obter_relatorios,
         "extrator_texto": None,
         "motivo_falha": nord.motivo_ultima_falha,
+    },
+    {
+        # Investigada em 2026-10-29 (pedido explicito do Rodrigo): pagina
+        # institucional de research bloqueia fetch automatizado (403,
+        # borda/WAF) - mesmo padrao de genial.py/xp.py, mas sem nenhum
+        # endpoint publico alternativo encontrado (o portal de API do
+        # Itau e' Open Finance/bancario, nao cobre research de acoes).
+        # disponivel=False (nunca tenta coletar) em vez de
+        # tentar_coleta_automatica=False (que ainda tentaria 1x/30min no
+        # app ao vivo) - aqui nao ha' NENHUM endpoint coletavel, tentar
+        # de novo nao vai mudar isso.
+        "id": "itau_bba",
+        "nome": "Itaú BBA Research",
+        "fonte": "itau.com.br/itaubba-pt (bloqueado - sem API/RSS publico)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        # ui/research_tab.py monta _EXTRATOR_POR_CASA pra TODA casa em
+        # CASAS sem .get() - precisa da chave mesmo nunca sendo chamada.
+        "extrator_texto": None,
+        "motivo_indisponivel": "research institucional sem canal publico - distribuicao so a cliente autenticado (403 na pagina institucional)",
+    },
+    {
+        # Investigada em 2026-10-29: pagina institucional bloqueia fetch
+        # automatizado (403); relatorios reais ficam no "Painel do
+        # Investidor" da corretora (login), sem API/RSS publico.
+        "id": "santander_research",
+        "nome": "Santander Research",
+        "fonte": "santander.com.br/investimentos (bloqueado - sem API/RSS publico)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        # ui/research_tab.py monta _EXTRATOR_POR_CASA pra TODA casa em
+        # CASAS sem .get() - precisa da chave mesmo nunca sendo chamada.
+        "extrator_texto": None,
+        "motivo_indisponivel": "relatorios so acessiveis via login no Painel do Investidor da corretora - nenhum endpoint publico encontrado",
+    },
+    {
+        # Investigada em 2026-10-29: pagina institucional carrega
+        # normalmente (sem bloqueio), mas e' so apresentacao da equipe -
+        # zero link de relatorio/RSS/API; nao ha' NADA coletavel ali, nao
+        # e' caso de scraping fragil e sim de fonte sem conteudo publico.
+        "id": "bradesco_bbi",
+        "nome": "Bradesco BBI Research",
+        "fonte": "bradescobbi.com.br/pt/research (sem relatorios na area publica)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        # ui/research_tab.py monta _EXTRATOR_POR_CASA pra TODA casa em
+        # CASAS sem .get() - precisa da chave mesmo nunca sendo chamada.
+        "extrator_texto": None,
+        "motivo_indisponivel": "pagina institucional sem nenhum relatorio/RSS/API publico - distribuicao institucional sem canal aberto identificado",
     },
 ]
 

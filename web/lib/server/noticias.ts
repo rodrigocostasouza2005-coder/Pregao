@@ -2,6 +2,7 @@ import "server-only";
 
 import { editoriaPorAssunto, eNoticiaDeEmpresa, foraDePauta, semAcento, temRelevanciaFinanceira } from "@/lib/regrasEditoriais";
 import { resultado, type Resultado } from "@/lib/tipos";
+import { lerTabela } from "./supabase";
 
 /** Mesmos feeds de data/news.py (Google News Brasil/EUA + diretos). */
 const FEEDS: Array<{ url: string; regiao: "BR" | "INT"; veiculo?: string }> = [
@@ -24,8 +25,13 @@ export type Noticia = {
   idioma: "pt" | "en";
   /** veículos que publicaram o mesmo título (deduplicação) */
   veiculos: string[];
+  /** links de todas as fontes do grupo (pra cruzar com resumos_ia_cache.link_principal) */
+  links: string[];
   /** empresa listada/ticker no título (regra de e_noticia_de_empresa) */
   empresa: boolean;
+  /** resumo por IA já cacheado (data/news.py:pregerar_resumos_news) - nunca gerado aqui, só lido */
+  resumo?: string;
+  imagem?: string;
 };
 
 const ENTIDADES: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&apos;": "'" };
@@ -65,7 +71,8 @@ export function interpretarRss(xml: string, regiao: "BR" | "INT", veiculoPadrao?
     const publicadaEm = data && !Number.isNaN(Date.parse(data)) ? new Date(data).toISOString() : null;
     return [{
       titulo, link, veiculo: veiculo || "—", publicadaEm,
-      regiao: editoriaPorAssunto(titulo, regiao), empresa: eNoticiaDeEmpresa(titulo), idioma: regiao === "INT" ? "en" : "pt", veiculos: [veiculo || "—"],
+      regiao: editoriaPorAssunto(titulo, regiao), empresa: eNoticiaDeEmpresa(titulo), idioma: regiao === "INT" ? "en" : "pt",
+      veiculos: [veiculo || "—"], links: [link],
     } satisfies Noticia];
   });
 }
@@ -95,14 +102,55 @@ export async function obterNoticias(revalidar = 900): Promise<Resultado<Noticia[
       const existente = porChave.get(chave);
       if (existente) {
         if (!existente.veiculos.includes(n.veiculo)) existente.veiculos.push(n.veiculo);
+        if (!existente.links.includes(n.link)) existente.links.push(n.link);
         continue;
       }
       porChave.set(chave, n);
     }
   }
   const lista = [...porChave.values()].sort((a, b) => (b.publicadaEm || "").localeCompare(a.publicadaEm || ""));
+  await anexarResumosCache(lista);
   const msg = falhas ? `${falhas} de ${FEEDS.length} feeds não responderam nesta leitura.` : undefined;
   return resultado(lista.length ? "ok" : "vazio", lista, fonte, msg);
+}
+
+type ResultadoResumoCache = { link_principal: string | null; resultado: { resumo?: string; imagem?: string } | null };
+
+/** Anexa resumo/imagem já gerados pelo coletor (resumos_ia_cache,
+ * origem='news') quando o link bate com algum já processado - NUNCA
+ * chama IA daqui (Vercel é só leitura); grupo sem cache fica sem resumo,
+ * nunca com um texto inventado. Lotes pequenos (a URL de cada notícia do
+ * Google News passa de 300 chars; um IN(...) com muitas de uma vez
+ * ultrapassa o limite prático de querystring do PostgREST). */
+async function anexarResumosCache(lista: Noticia[], tamanhoLote = 10): Promise<void> {
+  const todosLinks = [...new Set(lista.flatMap((n) => n.links))];
+  if (!todosLinks.length) return;
+  const porLink = new Map<string, { resumo?: string; imagem?: string }>();
+  for (let i = 0; i < todosLinks.length; i += tamanhoLote) {
+    const lote = todosLinks.slice(i, i + tamanhoLote);
+    const filtroIn = `in.(${lote.map((l) => `"${l.replace(/"/g, '\\"')}"`).join(",")})`;
+    const r = await lerTabela<ResultadoResumoCache>("resumos_ia_cache", {
+      select: "link_principal,resultado",
+      filtros: { origem: "eq.news", status: "eq.concluido", link_principal: filtroIn },
+      limite: tamanhoLote,
+      revalidar: 300,
+    });
+    if (r.estado !== "ok") continue;
+    for (const linha of r.dados) {
+      if (linha.link_principal && linha.resultado?.resumo) porLink.set(linha.link_principal, linha.resultado);
+    }
+  }
+  if (!porLink.size) return;
+  for (const n of lista) {
+    for (const link of n.links) {
+      const achado = porLink.get(link);
+      if (achado) {
+        n.resumo = achado.resumo;
+        n.imagem = achado.imagem;
+        break;
+      }
+    }
+  }
 }
 
 /** Busca no Google News (mesma URL de busca do coletor) - para a página

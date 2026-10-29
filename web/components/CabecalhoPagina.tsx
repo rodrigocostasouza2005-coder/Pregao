@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export function CabecalhoPagina({ titulo, descricao, direita }: { titulo: string; descricao?: string; direita?: ReactNode }) {
+export function CabecalhoPagina({ titulo, descricao, direita }: { titulo: ReactNode; descricao?: string; direita?: ReactNode }) {
   return (
     <div className="mb-3 flex flex-wrap items-end justify-between gap-2 border-b border-filete pb-2">
       <div>
