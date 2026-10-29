@@ -61,13 +61,18 @@ export function geometria(pontos: PontoGrafico[], opcoes: { referencia?: number 
 }
 
 /** Índices dos rótulos do eixo x: um a cada mudança de dia/mês/ano
- * (conforme o período), no máximo `maximo` rótulos. */
+ * (conforme o período), no máximo `maximo` rótulos e nunca dois mais
+ * próximos que 1/(maximo+1) da largura (rótulos não se sobrepõem). */
 export function marcasX(pontos: PontoGrafico[], chave: (t: number) => string, maximo = 6): number[] {
   const trocas: number[] = [];
-  for (let i = 0; i < pontos.length; i++) {
-    if (i === 0 || chave(pontos[i].t) !== chave(pontos[i - 1].t)) trocas.push(i);
+  for (let i = 1; i < pontos.length; i++) {
+    if (chave(pontos[i].t) !== chave(pontos[i - 1].t)) trocas.push(i);
   }
-  if (trocas.length <= maximo) return trocas;
-  const passo = Math.ceil(trocas.length / maximo);
-  return trocas.filter((_, n) => n % passo === 0);
+  const passo = Math.max(1, Math.ceil(trocas.length / maximo));
+  const distancia = (pontos.length - 1) / (maximo + 1);
+  const saida: number[] = [];
+  for (const i of trocas.filter((_, n) => n % passo === 0)) {
+    if (i >= distancia / 2 && (!saida.length || i - (saida.at(-1) as number) >= distancia)) saida.push(i);
+  }
+  return saida;
 }

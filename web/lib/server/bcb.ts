@@ -102,20 +102,30 @@ export async function selicPeloCopom(revalidar = 3600): Promise<Resultado<(Leitu
 /** PTAX de venda pela API oficial PTAX (Olinda) - última cotação dos
  * últimos 10 dias. Alternativa oficial quando a série SGS 1 falha. */
 export async function ptaxOlinda(revalidar = 1800): Promise<Resultado<LeituraSgs | null>> {
+  const r = await historicoPtax(10, revalidar);
+  const ultimo = r.dados.at(-1);
+  if (r.estado !== "ok" || !ultimo) return resultado(r.estado, null, r.fonte, r.mensagem);
+  return resultado("ok", ultimo, r.fonte);
+}
+
+/** PTAX de venda (fechamento de cada dia) pela API PTAX, em ordem. */
+export async function historicoPtax(dias: number, revalidar = 1800): Promise<Resultado<LeituraSgs[]>> {
   const fonte = "Banco Central (PTAX)";
   const fmt = (d: Date) => `${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}-${d.getUTCFullYear()}`;
   const fim = new Date();
-  const inicio = new Date(Date.now() - 10 * 86400000);
+  const inicio = new Date(Date.now() - dias * 86400000);
   const url = `https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarPeriodo(dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)?@dataInicial='${fmt(inicio)}'&@dataFinalCotacao='${fmt(fim)}'&$format=json&$select=cotacaoVenda,dataHoraCotacao`;
   try {
     const r = await fetch(url, { next: { revalidate: revalidar } });
-    if (!r.ok) return resultado("erro", null, fonte, "A PTAX não respondeu.");
+    if (!r.ok) return resultado("erro", [], fonte, "A PTAX não respondeu.");
     const valores = ((await r.json()) as { value?: Array<{ cotacaoVenda: number; dataHoraCotacao: string }> }).value || [];
-    const ultimo = valores.sort((a, b) => a.dataHoraCotacao.localeCompare(b.dataHoraCotacao)).at(-1);
-    if (!ultimo) return resultado("vazio", null, fonte, "Sem PTAX no período.");
-    return resultado("ok", { valor: ultimo.cotacaoVenda, data: ultimo.dataHoraCotacao.slice(0, 10) }, fonte);
+    // a API traz os boletins intermediários do dia: vale o último de cada data
+    const porDia = new Map<string, number>();
+    for (const v of valores.sort((a, b) => a.dataHoraCotacao.localeCompare(b.dataHoraCotacao))) porDia.set(v.dataHoraCotacao.slice(0, 10), v.cotacaoVenda);
+    const saida = [...porDia.entries()].map(([data, valor]) => ({ data, valor }));
+    return resultado(saida.length ? "ok" : "vazio", saida, fonte, saida.length ? undefined : "Sem PTAX no período.");
   } catch {
-    return resultado("erro", null, fonte, "A PTAX não respondeu.");
+    return resultado("erro", [], fonte, "A PTAX não respondeu.");
   }
 }
 

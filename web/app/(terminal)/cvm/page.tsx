@@ -23,6 +23,7 @@ export default async function Cvm({ searchParams }: { searchParams: Promise<{ de
         <EstadoDados r={docs} vazio="Nenhum documento coletado." />
         <Tabela
           linhas={docs.dados}
+          vazio={docs.estado === "ok" ? undefined : null}
           chave={(d) => d.link}
           colunas={[
             { titulo: "Data", celula: (d) => <span className="font-mono text-[11px]">{data(d.data)}</span> },

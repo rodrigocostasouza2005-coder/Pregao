@@ -10,8 +10,9 @@ export type Coluna<T> = {
 };
 
 /** Tabela densa do terminal: números à direita em fonte mono. */
-export function Tabela<T>({ linhas, colunas, chave, vazio }: { linhas: T[]; colunas: Coluna<T>[]; chave: (l: T, i: number) => string; vazio?: string }) {
-  if (!linhas.length) return <p className="text-[12px] text-apagado">{vazio || "Nenhum registro."}</p>;
+export function Tabela<T>({ linhas, colunas, chave, vazio }: { linhas: T[]; colunas: Coluna<T>[]; chave: (l: T, i: number) => string; vazio?: string | null }) {
+  // vazio={null}: o aviso de estado da fonte (EstadoDados) já explica a ausência
+  if (!linhas.length) return vazio === null ? null : <p className="text-[12px] text-apagado">{vazio || "Nenhum registro."}</p>;
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-[12.5px]">

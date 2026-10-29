@@ -43,11 +43,13 @@ type GraficoProps = {
   cor?: "auto" | "neutro";
   altura?: number;
   titulo?: string;
+  /** máximo de rótulos no eixo x (menos em gráficos estreitos) */
+  rotulosX?: number;
 };
 
 /** Gráfico de linha do terminal: área discreta, grade horizontal, eixo de
  * valores à direita e etiqueta do último valor - desenhado no servidor. */
-export function Grafico({ pontos, referencia = null, rotuloReferencia, eixoX, fuso = "America/Sao_Paulo", casas = 2, sufixo = "", degrau, cor = "auto", altura = 160, titulo }: GraficoProps) {
+export function Grafico({ pontos, referencia = null, rotuloReferencia, eixoX, fuso = "America/Sao_Paulo", casas = 2, sufixo = "", degrau, cor = "auto", altura = 160, titulo, rotulosX = 6 }: GraficoProps) {
   const g = geometria(pontos, { referencia, degrau });
   if (!g) return <p className="text-[12px] text-apagado">Sem pontos suficientes para o gráfico.</p>;
   const base = referencia ?? g.primeiro.v;
@@ -55,7 +57,9 @@ export function Grafico({ pontos, referencia = null, rotuloReferencia, eixoX, fu
   const corLinha = CORES[tom];
   const yUltimo = 100 - ((g.ultimo.v - g.min) / (g.max - g.min)) * 100;
   const fx = formatadorX(eixoX, fuso);
-  const marcas = marcasX(pontos, chaveX(eixoX, fuso)).filter((i) => i > 0 || eixoX !== "hora");
+  const marcas = marcasX(pontos, chaveX(eixoX, fuso), rotulosX);
+  // a etiqueta do último valor tem prioridade sobre o rótulo da grade
+  const ticksVisiveis = g.ticksY.filter((t) => Math.abs(t.y - yUltimo) * altura / 100 > 11);
   const id = `g${Math.abs(hash(`${titulo}${pontos.length}${g.ultimo.t}`))}`;
   const variacao = base ? ((g.ultimo.v - base) / base) * 100 : null;
   return (
@@ -82,7 +86,7 @@ export function Grafico({ pontos, referencia = null, rotuloReferencia, eixoX, fu
           <path d={g.linha} fill="none" stroke={corLinha} strokeWidth="1.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         </svg>
         {/* eixo de valores à direita, como nos terminais */}
-        {g.ticksY.map((t) => (
+        {ticksVisiveis.map((t) => (
           <span key={t.v} className="absolute right-0 w-14 -translate-y-1/2 pl-1.5 font-mono text-[10px] text-apagado" style={{ top: `${t.y}%` }}>
             {num(t.v, casas)}
           </span>
@@ -101,7 +105,7 @@ export function Grafico({ pontos, referencia = null, rotuloReferencia, eixoX, fu
       </div>
       <div className="relative mr-14 h-4">
         {marcas.map((i) => (
-          <span key={i} className="absolute -translate-x-1/2 whitespace-nowrap font-mono text-[9.5px] text-apagado first:translate-x-0" style={{ left: `${(i / (pontos.length - 1)) * 100}%` }}>
+          <span key={i} className="absolute -translate-x-1/2 whitespace-nowrap font-mono text-[9.5px] text-apagado" style={{ left: `${(i / (pontos.length - 1)) * 100}%` }}>
             {fx(pontos[i].t)}
           </span>
         ))}
