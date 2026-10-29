@@ -9,7 +9,11 @@ export const metadata = { title: "Agenda · Pregão" };
 
 type EventoSnapshot = { data?: string; ticker?: string; empresa?: string; tipo_evento?: string; periodo?: string; horario?: string; status?: string; fonte?: string; url_fonte?: string };
 
-const STATUS: Record<string, string> = { CONFIRMADO: "text-alta", ESTIMADO: "text-ambar", PRAZO_REGULATORIO: "text-suave" };
+// Nomes reais em eventos_resultados/calendario_snapshot (ver coletor_local.py e
+// data/eventos_coleta.py) - PRAZO_CVM é o status dominante (446 de 466 eventos
+// reais hoje), "PRAZO_REGULATORIO" nunca existiu nos dados e deixava quase todo
+// evento sem cor (cai no default text-apagado).
+const STATUS: Record<string, string> = { CONFIRMADO: "text-alta", ESTIMADO: "text-ambar", PRAZO_CVM: "text-suave" };
 
 export default async function Agenda() {
   const [snaps, resultados] = await Promise.all([lerSnapshotsCalendario(), lerResultadosFuturos()]);
