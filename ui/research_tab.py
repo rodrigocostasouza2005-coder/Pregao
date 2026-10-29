@@ -769,7 +769,13 @@ def render_casas_analise(prefs: dict):
             if not resultado["cobertura"] and not resultado["divergencia"]:
                 continue  # nenhuma casa cobriu - sem achado, não polui a tela
             with st.container(border=True):
-                st.markdown(f"<span class='casas-nome'>{html.escape(ticker)}</span>", unsafe_allow_html=True)
+                # font-size explicito (nao so' a classe .casas-nome, que
+                # tambem veste a <td> da tabela de recomendacoes - essa
+                # aqui e' um cabecalho de card, nao celula de tabela densa;
+                # sem isso herdava o tamanho base do app, menor que o
+                # mesmo rotulo de ticker em ui/research_tab.py:460, uma
+                # deriva de tamanho entre dois cabecalhos equivalentes).
+                st.markdown(f"<span class='casas-nome' style='font-size:0.85rem;'>{html.escape(ticker)}</span>", unsafe_allow_html=True)
                 for c in resultado["cobertura"]:
                     rec = f" · {html.escape(c['recomendacao'])}" if c.get("recomendacao") else ""
                     st.markdown(
