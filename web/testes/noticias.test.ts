@@ -33,11 +33,13 @@ describe("RSS", () => {
       <pubDate>Wed, 29 Oct 2026 13:00:00 GMT</pubDate><source url="https://infomoney.com.br">InfoMoney</source></item>
     <item><title><![CDATA[Fed holds rates &amp; signals caution]]></title><link>https://cnbc.com/b</link>
       <pubDate>Wed, 29 Oct 2026 12:00:00 GMT</pubDate></item>
+    <item><title>Alphabet&#x2019;s stock &#8212; worst day</title><link>https://mw.com/c</link></item>
     <item><title>sem link</title><link>javascript:alert(1)</link></item>
   </channel></rss>`;
   it("extrai manchete, veículo (sufixo do Google News), link e data; descarta link inválido", () => {
     const br = interpretarRss(xml, "BR");
-    expect(br).toHaveLength(2);
+    expect(br).toHaveLength(3);
+    expect(br[2].titulo).toBe("Alphabet’s stock — worst day");
     expect(br[0]).toMatchObject({ titulo: "Ibovespa sobe 1% com Petrobras", veiculo: "InfoMoney", link: "https://news.google.com/a", regiao: "BR" });
     expect(br[0].publicadaEm).toBe("2026-10-29T13:00:00.000Z");
   });
