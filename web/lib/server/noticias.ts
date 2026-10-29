@@ -36,6 +36,8 @@ function texto(bloco: string, tag: string): string {
   return m[1]
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
     .replace(/&(amp|lt|gt|quot|#39|apos);/g, (e) => ENTIDADES[e] || e)
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
     .replace(/<[^>]+>/g, "")
     .trim();
 }

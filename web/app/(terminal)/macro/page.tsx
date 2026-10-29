@@ -3,7 +3,7 @@ import { EstadoDados } from "@/components/EstadoDados";
 import { Painel } from "@/components/Painel";
 import { Selo } from "@/components/Selo";
 import { TabelaIndicadores } from "@/components/TabelaIndicadores";
-import { data, num } from "@/lib/formatos";
+import { data, hojeSaoPaulo, num } from "@/lib/formatos";
 import { focus, ptaxOlinda, selicPeloCopom, SERIES_SGS, ultimaSgs } from "@/lib/server/bcb";
 import { lerIndicadores, type Indicador } from "@/lib/server/dominio/mercado";
 
@@ -20,6 +20,7 @@ const EXTERIOR: Indicador[] = [
 
 export default async function Macro() {
   const ano = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric" }).format(new Date()));
+  const hoje = hojeSaoPaulo();
   const chaves = Object.keys(SERIES_SGS) as Array<keyof typeof SERIES_SGS>;
   const [sgsBruto, expectativas, exterior] = await Promise.all([
     Promise.all(chaves.map((k) => ultimaSgs(SERIES_SGS[k].codigo))),
@@ -52,7 +53,10 @@ export default async function Macro() {
                     <td className="py-1.5 text-right font-mono">
                       {r.dados ? `${num(r.dados.valor, s.unidade === "R$" ? 4 : 2)}${s.unidade === "R$" ? "" : ` ${s.unidade}`}` : <span className="text-apagado" title={r.mensagem}>indisponível</span>}
                     </td>
-                    <td className="py-1.5 text-right font-mono text-[11px] text-apagado">{r.dados ? data(r.dados.data) : "—"}</td>
+                    <td className="py-1.5 text-right font-mono text-[11px] text-apagado">
+                      {/* a série diária da meta Selic já traz datas até a próxima reunião */}
+                      {r.dados ? (r.dados.data > hoje ? "vigente" : data(r.dados.data)) : "—"}
+                    </td>
                   </tr>
                 );
               })}
