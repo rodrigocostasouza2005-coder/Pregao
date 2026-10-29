@@ -36,7 +36,7 @@ export default async function VisaoGeral() {
       </div>
       <div className="grid gap-3 xl:grid-cols-3">
         <Painel titulo="Mercado agora" sigla="MKT" acao={<a href="/mercado" className="text-[11px] text-ambar hover:underline">Mercado →</a>}>
-          <TabelaIndicadores linhas={indicadores} />
+          <TabelaIndicadores linhas={indicadores} semSessao />
         </Painel>
         <Painel titulo="Morning Call" sigla="MC" acao={<a href="/morning-call" className="text-[11px] text-ambar hover:underline">Edição →</a>}>
           <EstadoDados r={edicoes} vazio="Nenhuma edição registrada." />

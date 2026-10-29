@@ -110,13 +110,13 @@ export default async function Macro() {
           <Painel key={h.titulo} titulo={h.titulo} acao={<Selo tipo="fato" />} rodape={`Fonte: ${h.r.fonte}${h.pontos.length ? ` · até ${data(new Date(h.pontos.at(-1)!.t).toISOString().slice(0, 10))}` : ""}`}>
             <EstadoDados r={h.r} vazio="Série sem leituras no período." />
             {h.pontos.length > 1 ? (
-              <Grafico pontos={h.pontos} eixoX={h.eixo} fuso="UTC" rotulosX={4} casas={h.sufixo ? 2 : 4} sufixo={h.sufixo} degrau={h.degrau} cor="neutro" altura={150} titulo={h.titulo} />
+              <Grafico pontos={h.pontos} eixoX={h.eixo} fuso="UTC" rotulosX={3} casas={h.sufixo ? 2 : 4} sufixo={h.sufixo} degrau={h.degrau} cor="neutro" altura={150} titulo={h.titulo} />
             ) : null}
           </Painel>
         ))}
         <Painel titulo="Treasury 10 anos · 1 ano" acao={<Selo tipo="fato" texto="Cotação" />} rodape={`Fonte: ${treasury.fonte} · rendimento em % ao ano`}>
           <EstadoDados r={treasury} vazio="Sem negócios no período." />
-          {treasury.dados ? <Grafico pontos={treasury.dados.pontos} eixoX="mes" fuso={treasury.dados.fuso} rotulosX={4} casas={2} sufixo="%" cor="neutro" altura={150} titulo="Treasury 10 anos" /> : null}
+          {treasury.dados ? <Grafico pontos={treasury.dados.pontos} eixoX="mes" fuso={treasury.dados.fuso} rotulosX={3} casas={2} sufixo="%" cor="neutro" altura={150} titulo="Treasury 10 anos" /> : null}
         </Painel>
       </div>
       <Painel titulo="Exterior · juros, dólar e petróleo" className="mt-3" acao={<Selo tipo="fato" texto="Cotação" />} rodape="Fonte: Yahoo Finance · juros dos Treasuries em % ao ano">
