@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { Usuario } from "@/lib/server/auth";
+import { IndicadorSaude } from "./IndicadorSaude";
 
 export function Cabecalho({ usuario }: { usuario: Usuario | null }) {
   return (
@@ -18,6 +19,7 @@ export function Cabecalho({ usuario }: { usuario: Usuario | null }) {
         />
       </form>
       <div className="ml-auto flex items-center gap-3 text-[11px] text-apagado">
+        <IndicadorSaude />
         {usuario ? (
           <>
             <span className="hidden max-w-40 truncate sm:inline" title={usuario.email}>{usuario.nome}</span>
