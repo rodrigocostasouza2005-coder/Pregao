@@ -1,0 +1,30 @@
+name: DIAG temporario - terminal web (somente leitura)
+on:
+  push:
+    branches: [diag/web-terminal-20261029]
+    paths: [diag_web/**, .github/workflows/_diag-web.yml]
+permissions:
+  contents: write
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: cd web && npm ci && npm test && npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+      # SEM secrets de proposito: Supabase e login ficam "nao configurados";
+      # so as fontes publicas (Yahoo, Banco Central, RSS) sao reais
+      - run: |
+          cd web && (PREGAO_DIAG_SEM_LOGIN=1 NEXT_TELEMETRY_DISABLED=1 npx next start -p 3000 > ../next.log 2>&1 &)
+          for i in $(seq 1 60); do curl -s -o /dev/null http://localhost:3000/login && break; sleep 1; done
+      - run: pip install -q playwright==1.55.0 && python -m playwright install --with-deps chromium > /dev/null
+      - run: mkdir -p saida_web && python diag_web/capturar.py
+      - run: |
+          cp next.log saida_web/next.log || true
+          git config user.name "diag-bot"; git config user.email "diag-bot@users.noreply.github.com"
+          git add saida_web && git commit -m "diag: saida web (nao mergear)" && git push origin HEAD:diag/web-terminal-20261029
