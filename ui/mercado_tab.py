@@ -852,7 +852,10 @@ def _painel_setorial(prefs):
     # buscar historico novo do indice, fora do escopo desta etapa). Limiar
     # de 0.5pp evita apontar "divergencia" quando tudo so' acompanha o
     # indice de perto (nunca um padrao inventado quando nao ha').
-    if _JANELA_ROTULO_PARA_CHAVE[janela] == "dia":
+    # `janela` já é a chave interna ("dia"/"semana"/"mes") devolvida por
+    # _seletor_janela - indexar o dicionário de RÓTULOS com ela dava
+    # KeyError: 'dia' e derrubava a aba MERCADO inteira (29/10/2026)
+    if janela == "dia":
         ibov = obter_cotacao_indice("IBOVESPA", config.SIMBOLO_IBOVESPA)
         if not ibov.get("erro"):
             destaque_divergencia = max(setores, key=lambda s: abs(s["variacao_media_pct"] - ibov["variacao_pct"]))
