@@ -118,3 +118,26 @@ export async function ptaxOlinda(revalidar = 1800): Promise<Resultado<LeituraSgs
     return resultado("erro", null, fonte, "A PTAX não respondeu.");
   }
 }
+
+/** Histórico de uma série SGS desde `dias` atrás (janela por data: o
+ * endpoint "ultimos/N" é limitado pela fonte). */
+export async function historicoSgs(codigo: number, dias: number, revalidar = 3600): Promise<Resultado<LeituraSgs[]>> {
+  const fonte = `Banco Central (SGS ${codigo})`;
+  const fmt = (d: Date) => `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+  const inicio = new Date(Date.now() - dias * 86400000);
+  const url = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${codigo}/dados?formato=json&dataInicial=${fmt(inicio)}&dataFinal=${fmt(new Date())}`;
+  try {
+    const resp = await fetch(url, { next: { revalidate: revalidar } });
+    if (!resp.ok) return resultado("erro", [], fonte, "A fonte oficial não respondeu.");
+    const corpo = await resp.json().catch(() => null);
+    if (!Array.isArray(corpo)) return resultado("erro", [], fonte, "A fonte oficial não respondeu.");
+    const saida = corpo.flatMap((l: { data?: string; valor?: string }) => {
+      const valor = Number(String(l.valor).replace(",", "."));
+      const [d, m, a] = String(l.data).split("/");
+      return Number.isFinite(valor) && a ? [{ valor, data: `${a}-${m}-${d}` }] : [];
+    });
+    return resultado(saida.length ? "ok" : "vazio", saida, fonte);
+  } catch {
+    return resultado("erro", [], fonte, "A fonte oficial não respondeu.");
+  }
+}

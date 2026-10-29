@@ -2,7 +2,7 @@ import "server-only";
 
 import ibovespa from "@/contratos/ibovespa.json";
 import type { Resultado } from "@/lib/tipos";
-import { obterCotacao, obterCotacoes, type Cotacao } from "../yahoo";
+import { obterCotacao, obterCotacoes, obterSerie, type Cotacao, type Serie } from "../yahoo";
 
 export type Indicador = { nome: string; simbolo: string; grupo: "Brasil" | "Exterior" | "Commodities" | "Juros e moedas"; casas: number };
 
@@ -22,11 +22,15 @@ export const INDICADORES: Indicador[] = [
   { nome: "Bitcoin (USD)", simbolo: "BTC-USD", grupo: "Commodities", casas: 0 },
 ];
 
-export type LinhaIndicador = Indicador & { r: Resultado<Cotacao | null> };
+/** `s` é a série intradiária da última sessão (para gráficos e linhas). */
+export type LinhaIndicador = Indicador & { r: Resultado<Cotacao | null>; s?: Resultado<Serie | null> };
 
-export async function lerIndicadores(lista = INDICADORES): Promise<LinhaIndicador[]> {
-  const leituras = await Promise.all(lista.map((i) => obterCotacao(i.simbolo)));
-  return lista.map((i, n) => ({ ...i, r: leituras[n] }));
+export async function lerIndicadores(lista = INDICADORES, comSerie = true): Promise<LinhaIndicador[]> {
+  const [leituras, series] = await Promise.all([
+    Promise.all(lista.map((i) => obterCotacao(i.simbolo))),
+    comSerie ? Promise.all(lista.map((i) => obterSerie(i.simbolo, "1D"))) : Promise.resolve([]),
+  ]);
+  return lista.map((i, n) => ({ ...i, r: leituras[n], s: series[n] }));
 }
 
 export type Acao = { ticker: string; setor: string; cotacao: Cotacao };

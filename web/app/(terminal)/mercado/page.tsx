@@ -1,6 +1,8 @@
 import { CabecalhoPagina } from "@/components/CabecalhoPagina";
 import { EstadoDados } from "@/components/EstadoDados";
+import { BarrasVariacao } from "@/components/Grafico";
 import { LinkFonte } from "@/components/LinkFonte";
+import { MiniGrafico } from "@/components/MiniGrafico";
 import { Painel } from "@/components/Painel";
 import { Tabela } from "@/components/Tabela";
 import { TabelaIndicadores } from "@/components/TabelaIndicadores";
@@ -15,6 +17,8 @@ export default async function Mercado() {
   const [indicadores, painel, noticias] = await Promise.all([lerIndicadores(), painelIbovespa(), obterNoticias()]);
   const { altas, baixas } = altasEBaixas(painel.acoes);
   const grupos = ["Brasil", "Exterior", "Juros e moedas", "Commodities"] as const;
+  const DESTAQUES = ["^BVSP", "USDBRL=X", "ES=F", "^IXIC", "BZ=F", "GC=F"];
+  const destaques = DESTAQUES.flatMap((d) => indicadores.filter((i) => i.simbolo === d));
   const relevantes = noticias.dados.filter((n) => n.regiao === "BR").slice(0, 8);
   const tabelaAcoes = (lista: typeof altas) => (
     <Tabela
@@ -32,6 +36,9 @@ export default async function Mercado() {
   return (
     <>
       <CabecalhoPagina titulo="Mercado" descricao="Cotações com a referência de cada uma · variação contra o fechamento anterior" />
+      <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+        {destaques.map((l) => <MiniGrafico key={l.simbolo} linha={l} />)}
+      </div>
       <div className="grid gap-3 xl:grid-cols-2">
         {grupos.map((g) => (
           <Painel key={g} titulo={g} rodape="Fonte: Yahoo Finance · cotações podem ter atraso">
@@ -52,17 +59,8 @@ export default async function Mercado() {
           }>
           {tabelaAcoes(baixas)}
         </Painel>
-        <Painel titulo="Desempenho setorial" rodape="Média simples da variação das ações de cada setor do Ibovespa">
-          <Tabela
-            linhas={painel.setores}
-            chave={(s) => s.setor}
-            vazio="Sem cotações para calcular os setores."
-            colunas={[
-              { titulo: "Setor", celula: (s) => s.setor },
-              { titulo: "Ações", celula: (s) => s.n, alinhar: "dir" },
-              { titulo: "Var. média", celula: (s) => <Variacao v={s.variacaoMedia} />, alinhar: "dir" },
-            ]}
-          />
+        <Painel titulo="Desempenho setorial" rodape="Média simples da variação das ações de cada setor do Ibovespa (número de ações ao passar o mouse)">
+          <BarrasVariacao itens={painel.setores.map((s) => ({ rotulo: s.setor, valor: s.variacaoMedia, detalhe: `${s.n} ações` }))} />
         </Painel>
       </div>
       <Painel titulo="Notícias relevantes · Brasil" sigla="NWS" className="mt-3" acao={<a href="/noticias" className="text-[11px] text-ambar hover:underline">Ver todas →</a>}>

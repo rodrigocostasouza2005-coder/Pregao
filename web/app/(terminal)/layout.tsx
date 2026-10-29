@@ -1,5 +1,6 @@
 import { BarraLateral } from "@/components/BarraLateral";
 import { Cabecalho } from "@/components/Cabecalho";
+import { FitaCotacoes } from "@/components/FitaCotacoes";
 import { usuarioAtual } from "@/lib/server/auth";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +11,7 @@ export default async function LayoutTerminal({ children }: { children: React.Rea
   return (
     <div className="flex min-h-screen flex-col">
       <Cabecalho usuario={usuario} />
+      <FitaCotacoes />
       <div className="flex flex-1 flex-col md:flex-row">
         <BarraLateral urlStreamlit={urlStreamlit} />
         <main className="min-w-0 flex-1 p-3 md:p-4">{children}</main>
