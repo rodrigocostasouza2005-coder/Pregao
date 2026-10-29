@@ -26,3 +26,4 @@ with sync_playwright() as p:
     b.close()
 json.dump(relatorio, open("saida_web/relatorio.json", "w"), ensure_ascii=False, indent=1)
 print(json.dumps([{k: v for k, v in x.items() if k != "texto"} for x in relatorio], ensure_ascii=False, indent=1))
+# rodada 2
