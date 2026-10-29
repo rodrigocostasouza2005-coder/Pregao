@@ -1,0 +1,293 @@
+{
+  "coletores": [
+    {
+      "categoria": "Noticias",
+      "fonte": "Google News + extracao (InfoMoney/Money Times/trafilatura)",
+      "frequencia_esperada": "sob demanda (cache 20min)",
+      "idade_maxima_horas": 6,
+      "instrumentado": true,
+      "nome": "NEWS"
+    },
+    {
+      "categoria": "Noticias",
+      "fonte": "Google News Brasil (RSS de negócios + temas)",
+      "frequencia_esperada": "sob demanda (cache 20min)",
+      "idade_maxima_horas": 6,
+      "instrumentado": true,
+      "nome": "NEWS (Brasil)"
+    },
+    {
+      "categoria": "Noticias",
+      "fonte": "Google News EUA + CNBC/MarketWatch/Yahoo Finance",
+      "frequencia_esperada": "sob demanda (cache 20min)",
+      "idade_maxima_horas": 6,
+      "instrumentado": true,
+      "nome": "NEWS (Internacional)"
+    },
+    {
+      "categoria": "Noticias",
+      "fonte": "Google News (busca por ticker)",
+      "frequencia_esperada": "sob demanda (cache 20min)",
+      "idade_maxima_horas": 6,
+      "instrumentado": true,
+      "nome": "NEWS (watchlist)"
+    },
+    {
+      "categoria": "Noticias",
+      "fonte": "Google News (busca por ticker)",
+      "frequencia_esperada": "sob demanda (cache 20min)",
+      "idade_maxima_horas": 6,
+      "instrumentado": true,
+      "nome": "NEWS (ticker único)"
+    },
+    {
+      "categoria": "Cotacoes",
+      "fonte": "yfinance (cotacoes em lote)",
+      "frequencia_esperada": "sob demanda (cache 90s)",
+      "idade_maxima_horas": 2,
+      "instrumentado": true,
+      "nome": "MERCADO"
+    },
+    {
+      "categoria": "Cotacoes",
+      "fonte": "yfinance (fast_info, por ticker)",
+      "frequencia_esperada": "sob demanda (cache 30s)",
+      "idade_maxima_horas": 2,
+      "instrumentado": true,
+      "nome": "MERCADO (cotação individual)"
+    },
+    {
+      "categoria": "Cotacoes",
+      "fonte": "sistemaswebb3-listados.b3.com.br",
+      "frequencia_esperada": "sob demanda (cache 24h)",
+      "idade_maxima_horas": 48,
+      "instrumentado": true,
+      "nome": "B3 (composição Ibovespa)"
+    },
+    {
+      "categoria": "Cotacoes",
+      "fonte": "yfinance (índices globais)",
+      "frequencia_esperada": "sob demanda (cache 90s)",
+      "idade_maxima_horas": 2,
+      "instrumentado": true,
+      "nome": "MERCADO (Globais)"
+    },
+    {
+      "categoria": "Macro",
+      "fonte": "Banco Central (SGS - IPCA)",
+      "frequencia_esperada": "sob demanda (cache 4h)",
+      "idade_maxima_horas": 30,
+      "instrumentado": true,
+      "nome": "MACRO (BCB)"
+    },
+    {
+      "categoria": "Macro",
+      "fonte": "Banco Central (SGS)",
+      "frequencia_esperada": "sob demanda (cache 4h)",
+      "idade_maxima_horas": 30,
+      "instrumentado": true,
+      "nome": "MACRO (BCB - Selic)"
+    },
+    {
+      "categoria": "Macro",
+      "fonte": "Banco Central (SGS)",
+      "frequencia_esperada": "sob demanda (cache 4h)",
+      "idade_maxima_horas": 30,
+      "instrumentado": true,
+      "nome": "MACRO (BCB - CDI)"
+    },
+    {
+      "categoria": "Macro",
+      "fonte": "Banco Central (Olinda/Expectativas)",
+      "frequencia_esperada": "sob demanda (cache 4h)",
+      "idade_maxima_horas": 30,
+      "instrumentado": true,
+      "nome": "MACRO (BCB - Focus IPCA)"
+    },
+    {
+      "categoria": "Macro",
+      "fonte": "Banco Central (Olinda/Expectativas)",
+      "frequencia_esperada": "sob demanda (cache 4h)",
+      "idade_maxima_horas": 30,
+      "instrumentado": true,
+      "nome": "MACRO (BCB - Focus Selic)"
+    },
+    {
+      "categoria": "Macro",
+      "fonte": "yfinance (ouro/petróleo/minério/Treasuries/VIX)",
+      "frequencia_esperada": "sob demanda (cache 90s)",
+      "idade_maxima_horas": 2,
+      "instrumentado": true,
+      "nome": "MACRO (Cenário Global)"
+    },
+    {
+      "categoria": "Macro",
+      "fonte": "ANBIMA (ETTJ - curva pre)",
+      "frequencia_esperada": "sob demanda (cache 6h)",
+      "idade_maxima_horas": 30,
+      "instrumentado": true,
+      "nome": "MACRO (ANBIMA)"
+    },
+    {
+      "categoria": "CVM",
+      "fonte": "dados.cvm.gov.br (IPE)",
+      "frequencia_esperada": "sob demanda (cache 6h)",
+      "idade_maxima_horas": 30,
+      "instrumentado": true,
+      "nome": "CVM"
+    },
+    {
+      "categoria": "CVM",
+      "fonte": "dados.cvm.gov.br (FCA - mapa ticker->CNPJ)",
+      "frequencia_esperada": "sob demanda (cache 24h)",
+      "idade_maxima_horas": 48,
+      "instrumentado": true,
+      "nome": "CVM (FCA)"
+    },
+    {
+      "categoria": "CVM",
+      "fonte": "dados.cvm.gov.br (IPE/FCA - documentos por ticker)",
+      "frequencia_esperada": "sob demanda (cache 6h)",
+      "idade_maxima_horas": 30,
+      "instrumentado": true,
+      "nome": "CVM (watchlist)"
+    },
+    {
+      "categoria": "Research",
+      "fonte": "analisa.genialinvestimentos.com.br",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 48,
+      "instrumentado": true,
+      "nome": "Genial Analisa"
+    },
+    {
+      "categoria": "Research",
+      "fonte": "conteudos.xpi.com.br (WP REST)",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 48,
+      "instrumentado": true,
+      "nome": "XP Investimentos"
+    },
+    {
+      "categoria": "Research",
+      "fonte": "YouTube RSS (canal Genial Analisa)",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 72,
+      "instrumentado": true,
+      "nome": "Genial (Lives)"
+    },
+    {
+      "categoria": "Research",
+      "fonte": "content.btgpactual.com (API de research, filtrado por tier publico)",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 48,
+      "instrumentado": true,
+      "nome": "BTG Pactual Research"
+    },
+    {
+      "categoria": "Research",
+      "fonte": "montebravo.com.br (feed RSS do blog, seção de análise)",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 48,
+      "instrumentado": true,
+      "nome": "Monte Bravo"
+    },
+    {
+      "categoria": "Research",
+      "fonte": "nordinvestimentos.com.br (sitemap do blog, posts de resultado por ticker)",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 120,
+      "instrumentado": true,
+      "nome": "Nord Research"
+    },
+    {
+      "categoria": "Calendario",
+      "fonte": "RI das empresas + NEWS + prazo CVM",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 48,
+      "instrumentado": true,
+      "nome": "CALENDARIO"
+    },
+    {
+      "categoria": "Earnings",
+      "fonte": "dados.cvm.gov.br (ITR - DRE consolidada)",
+      "frequencia_esperada": "sob demanda (cache 6h)",
+      "idade_maxima_horas": 30,
+      "instrumentado": true,
+      "nome": "CVM (DRE trimestral)"
+    },
+    {
+      "categoria": "Earnings",
+      "fonte": "data.sec.gov (companyconcept, us-gaap)",
+      "frequencia_esperada": "sob demanda (cache 6h)",
+      "idade_maxima_horas": 30,
+      "instrumentado": true,
+      "nome": "SEC EDGAR (XBRL)"
+    },
+    {
+      "categoria": "Radar",
+      "fonte": "Carteiras recomendadas (Genial + Safra) + cotacoes",
+      "frequencia_esperada": ".github/workflows/radar-morning-call.yml, 15min (seg-sex, pregao)",
+      "idade_maxima_horas": 1,
+      "instrumentado": true,
+      "nome": "RADAR DE QUEDAS"
+    },
+    {
+      "categoria": "Radar",
+      "fonte": "analisa.genialinvestimentos.com.br (carteiras recomendadas)",
+      "frequencia_esperada": ".github/workflows/radar-morning-call.yml, 15min (seg-sex, pregao)",
+      "idade_maxima_horas": 1,
+      "instrumentado": true,
+      "nome": "Genial Analisa (carteiras)"
+    },
+    {
+      "categoria": "Radar",
+      "fonte": "safra.com.br (carteiras recomendadas, HTML + PDF mensal)",
+      "frequencia_esperada": ".github/workflows/radar-morning-call.yml, 15min (seg-sex, pregao)",
+      "idade_maxima_horas": 1,
+      "instrumentado": true,
+      "nome": "Safra Corretora (carteiras)"
+    },
+    {
+      "categoria": "Morning Call",
+      "fonte": "Macro+Mercado+NEWS agregados, e-mail (Resend/SMTP)",
+      "frequencia_esperada": ".github/workflows/radar-morning-call.yml, diario 07h BRT (seg-sex)",
+      "idade_maxima_horas": 30,
+      "instrumentado": true,
+      "nome": "MORNING CALL"
+    },
+    {
+      "categoria": "Fundamentos",
+      "fonte": "yfinance (tk.info - P/L, P/VP, DY, ROE, margens, dívida líquida)",
+      "frequencia_esperada": "sob demanda (cache 12h)",
+      "idade_maxima_horas": 30,
+      "instrumentado": true,
+      "nome": "EQUITY (Fundamentos)"
+    }
+  ],
+  "estados": {
+    "DADOS_DESATUALIZADOS": "Dados desatualizados",
+    "FALHA_EXECUCAO": "Falha de execucao",
+    "FALHA_PERSISTENCIA": "Falha de persistencia",
+    "FONTE_INDISPONIVEL": "Fonte indisponivel",
+    "NAO_COMPROVADO": "Nao comprovado",
+    "NUNCA_EXECUTADO": "Nunca executado",
+    "PARCIAL": "Coleta parcial",
+    "SUCESSO_COM_NOVIDADE": "Coleta OK - dados novos",
+    "SUCESSO_SEM_NOVIDADE": "Coleta OK - sem novidades"
+  },
+  "termos_indisponibilidade": [
+    "timeout",
+    "timed out",
+    "conexao",
+    "conexão",
+    "connection",
+    "bloquead",
+    "403",
+    "waf",
+    "dns",
+    "ssl",
+    "indispon",
+    "unreachable"
+  ]
+}

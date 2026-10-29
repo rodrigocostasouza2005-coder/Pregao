@@ -1,0 +1,40 @@
+{
+  "casas": [
+    {
+      "ativa_por_padrao": true,
+      "fonte": "analisa.genialinvestimentos.com.br",
+      "id": "genial",
+      "nome": "Genial Analisa"
+    },
+    {
+      "ativa_por_padrao": true,
+      "fonte": "conteudos.xpi.com.br (WP REST)",
+      "id": "xp",
+      "nome": "XP Investimentos"
+    },
+    {
+      "ativa_por_padrao": true,
+      "fonte": "YouTube RSS (canal Genial Analisa)",
+      "id": "genial_lives",
+      "nome": "Genial (Lives)"
+    },
+    {
+      "ativa_por_padrao": true,
+      "fonte": "content.btgpactual.com (API de research, filtrado por tier publico)",
+      "id": "btg",
+      "nome": "BTG Pactual Research"
+    },
+    {
+      "ativa_por_padrao": true,
+      "fonte": "montebravo.com.br (feed RSS do blog, seção de análise)",
+      "id": "montebravo",
+      "nome": "Monte Bravo"
+    },
+    {
+      "ativa_por_padrao": true,
+      "fonte": "nordinvestimentos.com.br (sitemap do blog, posts de resultado por ticker)",
+      "id": "nord",
+      "nome": "Nord Research"
+    }
+  ]
+}

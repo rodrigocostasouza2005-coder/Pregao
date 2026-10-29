@@ -4,12 +4,14 @@ type PainelProps = {
   titulo: string;
   sigla?: string;
   acao?: ReactNode;
+  rodape?: ReactNode;
   children: ReactNode;
   className?: string;
 };
 
-/** Bloco padrão do terminal: cabeçalho compacto em caixa alta, conteúdo denso. */
-export function Painel({ titulo, sigla, acao, children, className = "" }: PainelProps) {
+/** Bloco padrão do terminal: cabeçalho compacto em caixa alta, conteúdo
+ * denso e um rodapé opcional com a fonte/horário do dado. */
+export function Painel({ titulo, sigla, acao, rodape, children, className = "" }: PainelProps) {
   return (
     <section className={`flex min-w-0 flex-col border border-filete bg-painel ${className}`}>
       <header className="flex items-center justify-between gap-3 border-b border-filete px-3 py-2">
@@ -19,7 +21,8 @@ export function Painel({ titulo, sigla, acao, children, className = "" }: Painel
         </h2>
         {acao}
       </header>
-      <div className="flex-1 p-3">{children}</div>
+      <div className="min-w-0 flex-1 p-3">{children}</div>
+      {rodape ? <footer className="border-t border-filete px-3 py-1.5 text-[10px] text-apagado">{rodape}</footer> : null}
     </section>
   );
 }
