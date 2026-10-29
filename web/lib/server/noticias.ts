@@ -1,5 +1,6 @@
 import "server-only";
 
+import { editoriaPorAssunto, eNoticiaDeEmpresa, foraDePauta, semAcento, temRelevanciaFinanceira } from "@/lib/regrasEditoriais";
 import { resultado, type Resultado } from "@/lib/tipos";
 
 /** Mesmos feeds de data/news.py (Google News Brasil/EUA + diretos). */
@@ -23,6 +24,8 @@ export type Noticia = {
   idioma: "pt" | "en";
   /** veículos que publicaram o mesmo título (deduplicação) */
   veiculos: string[];
+  /** empresa listada/ticker no título (regra de e_noticia_de_empresa) */
+  empresa: boolean;
 };
 
 const ENTIDADES: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&apos;": "'" };
@@ -37,36 +40,10 @@ function texto(bloco: string, tag: string): string {
     .trim();
 }
 
-function semAcento(s: string) {
-  return s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
-}
-
-// Regras editoriais do Pregão (data/morning_call_editorial.py): opinião,
-// colunas em 1ª pessoa e serviço/loterias ficam fora do feed.
-const OPINIAO = /\b(estelionato|irresponsabilidade|vergonh|vexame|farsa|desgoverno|descalabro|hipocrisia)\b/;
-const FORA_DE_PAUTA = /\b(quina|mega-sena|mega sena|lotofacil|loteria|horoscopo)\b|^(opiniao|artigo|editorial|coluna)\s*[:|]/;
-const CARTA = /^["'‘’“”].{3,}?["'‘’“”]\s*:\s*(i\b|i['’]m\b|my\b|we\b)|^i['’]m \d+/i;
-const MARCADOR_EXTERIOR = /\b(eua|estados unidos|fed|trump|wall street|treasury|china|europa|bce|nasdaq|s&p 500|dow jones)\b/;
-const MARCADOR_BRASIL = /\b(brasil|brasileir\w*|ibovespa|b3|copom|selic|ipca|lula|haddad|petrobras|reais|brazil\w*)\b/;
-
-export function foraDePauta(titulo: string) {
-  const t = semAcento(titulo);
-  return OPINIAO.test(t) || FORA_DE_PAUTA.test(t) || CARTA.test(titulo.trim());
-}
-
-/** Editoria pelo assunto do título (mesma regra do PDF): assunto do
- * exterior sem marcador do Brasil vai para INT, e vice-versa. */
-export function regiaoPorAssunto(titulo: string, regiaoColeta: "BR" | "INT"): "BR" | "INT" {
-  const t = semAcento(titulo);
-  const ext = MARCADOR_EXTERIOR.test(t);
-  const br = MARCADOR_BRASIL.test(t);
-  if (ext && !br) return "INT";
-  if (br && !ext) return "BR";
-  return regiaoColeta;
-}
+export { foraDePauta, editoriaPorAssunto as regiaoPorAssunto } from "@/lib/regrasEditoriais";
 
 function chaveTitulo(titulo: string) {
-  return semAcento(titulo).replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim().slice(0, 90);
+  return semAcento(titulo).toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim().slice(0, 90);
 }
 
 export function interpretarRss(xml: string, regiao: "BR" | "INT", veiculoPadrao?: string): Noticia[] {
@@ -86,7 +63,7 @@ export function interpretarRss(xml: string, regiao: "BR" | "INT", veiculoPadrao?
     const publicadaEm = data && !Number.isNaN(Date.parse(data)) ? new Date(data).toISOString() : null;
     return [{
       titulo, link, veiculo: veiculo || "—", publicadaEm,
-      regiao: regiaoPorAssunto(titulo, regiao), idioma: regiao === "INT" ? "en" : "pt", veiculos: [veiculo || "—"],
+      regiao: editoriaPorAssunto(titulo, regiao), empresa: eNoticiaDeEmpresa(titulo), idioma: regiao === "INT" ? "en" : "pt", veiculos: [veiculo || "—"],
     } satisfies Noticia];
   });
 }
@@ -109,7 +86,8 @@ export async function obterNoticias(revalidar = 900): Promise<Resultado<Noticia[
   for (const r of respostas) {
     if (r.status !== "fulfilled") continue;
     for (const n of r.value) {
-      if (foraDePauta(n.titulo)) continue;
+      // mesmas regras do PDF: fora de pauta/opinião e piso de relevância
+      if (foraDePauta(n.titulo) || !temRelevanciaFinanceira(n.titulo)) continue;
       if (n.publicadaEm && Date.parse(n.publicadaEm) < limite) continue;
       const chave = chaveTitulo(n.titulo);
       const existente = porChave.get(chave);
