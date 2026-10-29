@@ -1,6 +1,6 @@
 import { num } from "@/lib/formatos";
 import { referenciaCotacao } from "@/lib/referencia";
-import type { LinhaIndicador } from "@/lib/server/dominio/mercado";
+import { SIGLAS, type LinhaIndicador } from "@/lib/server/dominio/mercado";
 import { Grafico } from "./Grafico";
 import { Variacao } from "./Variacao";
 
@@ -12,7 +12,10 @@ export function MiniGrafico({ linha, altura = 92 }: { linha: LinhaIndicador; alt
   return (
     <div className="min-w-0 border border-filete bg-painel px-2.5 pb-1.5 pt-2">
       <div className="mb-1 flex items-baseline justify-between gap-2">
-        <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-suave">{linha.nome}</span>
+        <span className="min-w-0 truncate text-[11px] font-semibold tracking-wider text-suave" title={linha.nome}>
+          <span className="font-mono text-ambar">{SIGLAS[linha.simbolo] || linha.simbolo}</span>
+          <span className="ml-1.5 hidden font-normal text-apagado min-[1700px]:inline">{linha.nome}</span>
+        </span>
         <Variacao v={c?.variacaoPct} />
       </div>
       <div className="mb-1 flex items-baseline justify-between gap-2">

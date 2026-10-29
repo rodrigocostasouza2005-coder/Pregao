@@ -91,6 +91,7 @@ export default async function Research({ searchParams }: { searchParams: Promise
         <EstadoDados r={carteiras} vazio="Nenhuma carteira vigente coletada." />
         <Tabela
           linhas={carteiras.dados}
+          vazio={carteiras.estado === "ok" ? undefined : null}
           chave={(c) => String(c.id)}
           colunas={[
             { titulo: "Casa", celula: (c) => <span className="text-ambar">{c.casa}</span> },
@@ -109,7 +110,7 @@ export default async function Research({ searchParams }: { searchParams: Promise
               <span className="font-mono">{c.ticker}</span> <span className="text-apagado">{c.casas.length} casa(s)</span>
             </a>
           ))}
-          {!cobertura.length ? <span className="text-apagado">—</span> : null}
+          {!cobertura.length ? <span className="text-apagado">{carteiras.estado === "ok" ? "Nenhum ativo com carteira vigente coletada." : "Indisponível: a leitura das carteiras não retornou dados."}</span> : null}
         </div>
       </Painel>
     </>
