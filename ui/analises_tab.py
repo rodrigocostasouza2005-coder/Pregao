@@ -659,13 +659,13 @@ def render_fundamentos(prefs: dict):
             )
             linhas.append(f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>{nome_t}</td>{celulas}"
                           f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='cinza'>{coleta}</td></tr>")
-        cabecalho = "".join(f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>{r}</th>"
+        cabecalho = "".join(f"<th style='text-align:right; padding:0 0.4rem 0.2rem;'>{r}</th>"
                             for r, _, _ in colunas)
         st.markdown(
             "<div style='overflow-x:auto; overflow-y:hidden;'><table style='width:100%; font-size:0.78rem; "
             "border-collapse:collapse;'><thead><tr class='cinza' style='font-size:0.66rem;'>"
-            f"<th style='text-align:left; font-weight:400; padding:0 0.4rem 0.2rem 0;'>TICKER</th>{cabecalho}"
-            "<th style='text-align:right; font-weight:400; padding:0 0 0.2rem 0.4rem;'>COLETA</th></tr>"
+            f"<th style='text-align:left; padding:0 0.4rem 0.2rem 0;'>TICKER</th>{cabecalho}"
+            "<th style='text-align:right; padding:0 0 0.2rem 0.4rem;'>COLETA</th></tr>"
             f"</thead><tbody>{''.join(linhas)}</tbody></table></div>",
             unsafe_allow_html=True,
         )
