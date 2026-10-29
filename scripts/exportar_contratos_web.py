@@ -25,9 +25,16 @@ def contratos() -> dict:
 
     return {
         "ibovespa.json": {"setores": dict(config.IBOVESPA_SETORES)},
+        # Só casas com fonte coletável de verdade (disponivel=True, ver
+        # data/research/__init__.py) - casas sem nenhum canal público
+        # (ex: Itaú BBA/Santander/Bradesco BBI, investigadas 2026-10-29)
+        # não entram aqui: não faz sentido um filtro na UI do Research
+        # pra uma casa que nunca vai ter item, ela já fica registrada na
+        # limitação via motivo_indisponivel no app Python.
         "casas_research.json": {
             "casas": [{"id": c["id"], "nome": c["nome"], "fonte": c.get("fonte"),
-                       "ativa_por_padrao": bool(c.get("ativa_por_padrao"))} for c in CASAS],
+                       "ativa_por_padrao": bool(c.get("ativa_por_padrao"))}
+                      for c in CASAS if c.get("disponivel")],
         },
         "regras_editoriais.json": _regras_editoriais(),
         "casos_editoriais.json": _casos_editoriais(),

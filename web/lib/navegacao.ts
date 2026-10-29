@@ -5,6 +5,7 @@ export type ItemNavegacao = { rota: string; rotulo: string; sigla: string; descr
 export const NAVEGACAO: ItemNavegacao[] = [
   { rota: "/", rotulo: "Visão Geral", sigla: "VG", descricao: "Síntese, alertas e atalhos" },
   { rota: "/mercado", rotulo: "Mercado", sigla: "MKT", descricao: "Índices, câmbio, altas e baixas, setores" },
+  { rota: "/empresas", rotulo: "Empresas", sigla: "EMP", descricao: "Busca e filtro por ticker, nome e setor" },
   { rota: "/macro", rotulo: "Macro", sigla: "MAC", descricao: "Juros, inflação, câmbio e expectativas" },
   { rota: "/research", rotulo: "Research", sigla: "RSH", descricao: "Casas de análise, recomendações e teses" },
   { rota: "/noticias", rotulo: "Notícias", sigla: "NWS", descricao: "Brasil e internacional, com fonte e horário" },
