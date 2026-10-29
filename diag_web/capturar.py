@@ -6,7 +6,7 @@ from playwright.sync_api import sync_playwright
 
 base = "http://localhost:3000"
 rotas = ["/", "/mercado", "/macro", "/research", "/noticias", "/cvm", "/agenda", "/morning-call",
-         "/inteligencia", "/configuracoes", "/ativo/PETR4", "/busca?q=vale"]
+         "/inteligencia", "/configuracoes", "/ativo/PETR4", "/ativo/PETR4?p=1A", "/busca?q=vale"]
 relatorio = []
 with sync_playwright() as p:
     b = p.chromium.launch()
@@ -27,4 +27,4 @@ with sync_playwright() as p:
 json.dump(relatorio, open("saida_web/relatorio.json", "w"), ensure_ascii=False, indent=1)
 print(json.dumps([{k: v for k, v in x.items() if k != "texto"} for x in relatorio], ensure_ascii=False, indent=1))
 # rodada 2
-# rodada 3
+# rodada 4 (graficos)
