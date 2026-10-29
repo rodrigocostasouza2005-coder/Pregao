@@ -1,6 +1,7 @@
 import { CabecalhoPagina } from "@/components/CabecalhoPagina";
 import { EstadoDados } from "@/components/EstadoDados";
 import { ListaMudancas } from "@/components/ListaMudancas";
+import { MiniGrafico } from "@/components/MiniGrafico";
 import { Painel } from "@/components/Painel";
 import { TabelaIndicadores } from "@/components/TabelaIndicadores";
 import { data, dataHora, hojeSaoPaulo } from "@/lib/formatos";
@@ -12,7 +13,7 @@ import { ESTADOS_OK, painelSaude } from "@/lib/server/dominio/saude";
 
 export const metadata = { title: "Visão Geral · Pregão" };
 
-const PRINCIPAIS = ["^BVSP", "USDBRL=X", "^GSPC", "BZ=F", "^TNX"];
+const PRINCIPAIS = ["^BVSP", "USDBRL=X", "^GSPC", "ES=F", "BZ=F", "^TNX"];
 
 export default async function VisaoGeral() {
   const [indicadores, mudou, edicoes, agenda, saude] = await Promise.all([
@@ -30,6 +31,9 @@ export default async function VisaoGeral() {
   return (
     <>
       <CabecalhoPagina titulo="Visão Geral" descricao="O que importa agora, com atalhos para cada área" />
+      <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+        {indicadores.map((l) => <MiniGrafico key={l.simbolo} linha={l} />)}
+      </div>
       <div className="grid gap-3 xl:grid-cols-3">
         <Painel titulo="Mercado agora" sigla="MKT" acao={<a href="/mercado" className="text-[11px] text-ambar hover:underline">Mercado →</a>}>
           <TabelaIndicadores linhas={indicadores} />

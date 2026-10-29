@@ -89,3 +89,51 @@ export async function obterCotacoes(simbolos: string[], concorrencia = 12, reval
   await Promise.all(Array.from({ length: Math.min(concorrencia, simbolos.length) }, trabalhador));
   return saida;
 }
+
+export type Ponto = { t: number; v: number };
+export type Serie = { simbolo: string; pontos: Ponto[]; fechamentoAnterior: number | null; moeda: string | null; fuso: string };
+
+/** Períodos de gráfico aceitos (range/interval do Yahoo). */
+export const PERIODOS = {
+  "1D": { range: "1d", interval: "5m", revalidar: 300 },
+  "5D": { range: "5d", interval: "30m", revalidar: 600 },
+  "1M": { range: "1mo", interval: "1d", revalidar: 1800 },
+  "6M": { range: "6mo", interval: "1d", revalidar: 3600 },
+  "1A": { range: "1y", interval: "1d", revalidar: 3600 },
+  "5A": { range: "5y", interval: "1wk", revalidar: 21600 },
+} as const;
+export type Periodo = keyof typeof PERIODOS;
+
+/** Série histórica de fechamentos como a fonte publica: pontos sem preço
+ * são descartados (nunca interpolados). No intradiário, a referência é o
+ * fechamento anterior informado pela própria fonte. */
+export async function obterSerie(simbolo: string, periodo: Periodo = "1D"): Promise<Resultado<Serie | null>> {
+  const p = PERIODOS[periodo];
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(simbolo)}?range=${p.range}&interval=${p.interval}`;
+  try {
+    const resp = await fetch(url, { headers: { "User-Agent": UA }, next: { revalidate: p.revalidar } });
+    if (!resp.ok) {
+      console.error(`[yahoo] série ${simbolo} ${periodo}: HTTP ${resp.status}`);
+      return resultado("erro", null, FONTE, "Série indisponível na fonte.");
+    }
+    const corpo = (await resp.json()) as ChartResposta & {
+      chart?: { result?: Array<{ meta?: { chartPreviousClose?: number; previousClose?: number } }> };
+    };
+    const r = corpo.chart?.result?.[0];
+    const ts = r?.timestamp || [];
+    const fech = r?.indicators?.quote?.[0]?.close || [];
+    const pontos = ts.flatMap((t, i) => (typeof fech[i] === "number" ? [{ t: t * 1000, v: fech[i] as number }] : []));
+    if (pontos.length < 2) return resultado("vazio", null, FONTE, "Sem negócios suficientes no período.");
+    const meta = r?.meta as { chartPreviousClose?: number; previousClose?: number; currency?: string; exchangeTimezoneName?: string } | undefined;
+    return resultado("ok", {
+      simbolo,
+      pontos,
+      fechamentoAnterior: periodo === "1D" ? (meta?.previousClose ?? meta?.chartPreviousClose ?? null) : null,
+      moeda: meta?.currency ?? null,
+      fuso: meta?.exchangeTimezoneName || "America/Sao_Paulo",
+    }, FONTE);
+  } catch (erro) {
+    console.error(`[yahoo] série ${simbolo}:`, erro);
+    return resultado("erro", null, FONTE, "Série indisponível na fonte.");
+  }
+}
