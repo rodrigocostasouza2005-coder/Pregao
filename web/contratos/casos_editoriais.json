@@ -1,0 +1,184 @@
+{
+  "casos": [
+    {
+      "editoria": "BR",
+      "empresa": false,
+      "fora_de_pauta": true,
+      "opiniao": true,
+      "regiao_coleta": "BR",
+      "relevante": true,
+      "titulo": "O Estelionato Eleitoral e a Irresponsabilidade Fiscal do Governo Lula"
+    },
+    {
+      "editoria": "BR",
+      "empresa": false,
+      "fora_de_pauta": false,
+      "opiniao": false,
+      "regiao_coleta": "BR",
+      "relevante": false,
+      "titulo": "Lula desafia Flávio Bolsonaro a abrir sigilos bancário, telefônico e fiscal em debate"
+    },
+    {
+      "editoria": "BR",
+      "empresa": false,
+      "fora_de_pauta": false,
+      "opiniao": false,
+      "regiao_coleta": "BR",
+      "relevante": false,
+      "titulo": "Saiba como emitir a nova Certidão Única de Débitos do Estado de São Paulo"
+    },
+    {
+      "editoria": "BR",
+      "empresa": false,
+      "fora_de_pauta": false,
+      "opiniao": false,
+      "regiao_coleta": "BR",
+      "relevante": true,
+      "titulo": "Saiba como fica o IR com a reforma tributária"
+    },
+    {
+      "editoria": "INT",
+      "empresa": false,
+      "fora_de_pauta": false,
+      "opiniao": false,
+      "regiao_coleta": "BR",
+      "relevante": true,
+      "titulo": "Déficit orçamentário dos EUA se aproxima de US$ 2 trilhões no ano fiscal de 2026"
+    },
+    {
+      "editoria": "INT",
+      "empresa": false,
+      "fora_de_pauta": false,
+      "opiniao": false,
+      "regiao_coleta": "BR",
+      "relevante": true,
+      "titulo": "Bitcoin se mantém acima de US$ 80 mil enquanto os mercados reduzem apostas em alta de juros pelo Fed"
+    },
+    {
+      "editoria": "BR",
+      "empresa": false,
+      "fora_de_pauta": false,
+      "opiniao": false,
+      "regiao_coleta": "INT",
+      "relevante": true,
+      "titulo": "Brazil central bank holds Selic at 15%"
+    },
+    {
+      "editoria": "BR",
+      "empresa": true,
+      "fora_de_pauta": false,
+      "opiniao": false,
+      "regiao_coleta": "BR",
+      "relevante": true,
+      "titulo": "Petrobras (PETR4) sobe mais de 6% e escapa do tombo do Ibovespa"
+    },
+    {
+      "editoria": "BR",
+      "empresa": false,
+      "fora_de_pauta": true,
+      "opiniao": false,
+      "regiao_coleta": "BR",
+      "relevante": false,
+      "titulo": "Vale a pena investir em CDB?"
+    },
+    {
+      "editoria": "BR",
+      "empresa": false,
+      "fora_de_pauta": false,
+      "opiniao": false,
+      "regiao_coleta": "BR",
+      "relevante": true,
+      "titulo": "Ibovespa sobe com Petrobras e Vale; dólar cai"
+    },
+    {
+      "editoria": "BR",
+      "empresa": false,
+      "fora_de_pauta": true,
+      "opiniao": false,
+      "regiao_coleta": "BR",
+      "relevante": true,
+      "titulo": "Tesouro Selic, Tesouro Reserva ou CDB: qual rende mais"
+    },
+    {
+      "editoria": "INT",
+      "empresa": false,
+      "fora_de_pauta": true,
+      "opiniao": false,
+      "regiao_coleta": "INT",
+      "relevante": false,
+      "titulo": "‘My husband suffered a massive stroke at 53’: I’m 64 and will rent for the rest of my life"
+    },
+    {
+      "editoria": "INT",
+      "empresa": false,
+      "fora_de_pauta": true,
+      "opiniao": false,
+      "regiao_coleta": "INT",
+      "relevante": false,
+      "titulo": "I'm 63 and diagnosed with lymphoma. Should I take my Social Security next year?"
+    },
+    {
+      "editoria": "INT",
+      "empresa": false,
+      "fora_de_pauta": false,
+      "opiniao": false,
+      "regiao_coleta": "INT",
+      "relevante": false,
+      "titulo": "OpenAI bugging suspect WhatsApp'ed Saudi royal days before arrest, feds reveal"
+    },
+    {
+      "editoria": "INT",
+      "empresa": false,
+      "fora_de_pauta": false,
+      "opiniao": false,
+      "regiao_coleta": "INT",
+      "relevante": false,
+      "titulo": "Celebrity chef opens new restaurant in Manhattan"
+    },
+    {
+      "editoria": "BR",
+      "empresa": false,
+      "fora_de_pauta": false,
+      "opiniao": false,
+      "regiao_coleta": "BR",
+      "relevante": true,
+      "titulo": "Governo central tem superávit primário de R$ 4,839 bilhões em setembro"
+    },
+    {
+      "editoria": "BR",
+      "empresa": false,
+      "fora_de_pauta": true,
+      "opiniao": false,
+      "regiao_coleta": "BR",
+      "relevante": true,
+      "titulo": "Resultado da Quina concurso 6900"
+    },
+    {
+      "editoria": "BR",
+      "empresa": true,
+      "fora_de_pauta": false,
+      "opiniao": false,
+      "regiao_coleta": "BR",
+      "relevante": true,
+      "titulo": "Magazine Luiza anuncia nova rodada de reestruturação"
+    },
+    {
+      "editoria": "INT",
+      "empresa": false,
+      "fora_de_pauta": false,
+      "opiniao": false,
+      "regiao_coleta": "INT",
+      "relevante": true,
+      "titulo": "Tech stocks stumbled. Now comes a crucial week for Wall Street."
+    },
+    {
+      "editoria": "BR",
+      "empresa": false,
+      "fora_de_pauta": true,
+      "opiniao": true,
+      "regiao_coleta": "BR",
+      "relevante": true,
+      "titulo": "Opinião: o Copom errou ao manter os juros"
+    }
+  ]
+}

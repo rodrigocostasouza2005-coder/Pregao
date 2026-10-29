@@ -11,12 +11,18 @@ const FILTROS = [
   { id: "todas", rotulo: "Todas" },
   { id: "BR", rotulo: "Brasil" },
   { id: "INT", rotulo: "Internacional" },
+  { id: "EMP", rotulo: "Empresas" },
 ] as const;
 
-export default async function Noticias({ searchParams }: { searchParams: Promise<{ r?: string }> }) {
-  const { r: filtro = "todas" } = await searchParams;
+const POR_PAGINA = 60;
+
+export default async function Noticias({ searchParams }: { searchParams: Promise<{ r?: string; p?: string }> }) {
+  const { r: filtro = "todas", p = "1" } = await searchParams;
+  const pagina = Math.max(1, Number(p) || 1);
   const noticias = await obterNoticias();
-  const lista = noticias.dados.filter((n) => filtro === "todas" || n.regiao === filtro);
+  const filtradas = noticias.dados.filter((n) => filtro === "todas" || (filtro === "EMP" ? n.empresa : n.regiao === filtro));
+  const lista = filtradas.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
+  const paginas = Math.max(1, Math.ceil(filtradas.length / POR_PAGINA));
   return (
     <>
       <CabecalhoPagina titulo="Notícias" descricao="Últimas 36 h · manchete original, veículo, horário e link · duplicatas agrupadas" />
@@ -27,7 +33,14 @@ export default async function Noticias({ searchParams }: { searchParams: Promise
           </a>
         ))}
       </div>
-      <Painel titulo={`${lista.length} manchetes`} sigla="NWS" rodape={`Fonte: ${noticias.fonte} · editoria pelo assunto da manchete · opinião, colunas pessoais e loterias fora`}>
+      <Painel titulo={`${filtradas.length} manchetes`}
+        acao={paginas > 1 ? (
+          <span className="flex gap-2 font-mono text-[11px]">
+            {pagina > 1 ? <a href={`/noticias?r=${filtro}&p=${pagina - 1}`} className="text-ambar">←</a> : null}
+            <span className="text-apagado">{pagina}/{paginas}</span>
+            {pagina < paginas ? <a href={`/noticias?r=${filtro}&p=${pagina + 1}`} className="text-ambar">→</a> : null}
+          </span>
+        ) : null} sigla="NWS" rodape={`Fonte: ${noticias.fonte} · editoria pelo assunto da manchete · mesmas regras do Morning Call: opinião, serviço e matérias sem relevância financeira ficam fora`}>
         <AvisoParcial mensagem={noticias.estado === "ok" ? noticias.mensagem : undefined} />
         <EstadoDados r={noticias} />
         <ul className="divide-y divide-filete/60">

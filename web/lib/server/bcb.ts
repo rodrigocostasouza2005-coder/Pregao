@@ -73,3 +73,48 @@ export async function focus(indicadores: string[], anos: number[], revalidar = 3
     return resultado("erro", [], fonte, "O Boletim Focus não respondeu.");
   }
 }
+
+/** Plano B oficial da meta Selic (mesmo de data/macro.py:
+ * obter_selic_meta_copom): histórico de taxas do Copom no bcb.gov.br -
+ * exatamente UMA meta vigente, senão indisponível. */
+export async function selicPeloCopom(revalidar = 3600): Promise<Resultado<(LeituraSgs & { reuniao: number | null }) | null>> {
+  const fonte = "Banco Central (histórico do Copom)";
+  try {
+    const r = await fetch("https://www.bcb.gov.br/api/servico/sitebcb/historicotaxasjuros", {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; PregaoTerminal/1.0)" }, next: { revalidate: revalidar },
+    });
+    if (!r.ok) return resultado("erro", null, fonte, "O histórico do Copom não respondeu.");
+    const registros = ((await r.json()) as { conteudo?: Array<Record<string, string | number | null>> }).conteudo || [];
+    const agora = Date.now();
+    const vigentes = registros.filter((x) => {
+      const inicio = Date.parse(String(x.DataInicioVigencia));
+      const valor = Number(x.MetaSelic);
+      return x.DataFimVigencia == null && Number.isFinite(inicio) && inicio <= agora && valor > 0 && valor < 100;
+    });
+    if (vigentes.length !== 1) return resultado("erro", null, fonte, "O histórico do Copom não trouxe uma única meta vigente.");
+    const v = vigentes[0];
+    return resultado("ok", { valor: Number(v.MetaSelic), data: String(v.DataInicioVigencia).slice(0, 10), reuniao: v.NumeroReuniaoCopom == null ? null : Number(v.NumeroReuniaoCopom) }, fonte);
+  } catch {
+    return resultado("erro", null, fonte, "O histórico do Copom não respondeu.");
+  }
+}
+
+/** PTAX de venda pela API oficial PTAX (Olinda) - última cotação dos
+ * últimos 10 dias. Alternativa oficial quando a série SGS 1 falha. */
+export async function ptaxOlinda(revalidar = 1800): Promise<Resultado<LeituraSgs | null>> {
+  const fonte = "Banco Central (PTAX)";
+  const fmt = (d: Date) => `${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}-${d.getUTCFullYear()}`;
+  const fim = new Date();
+  const inicio = new Date(Date.now() - 10 * 86400000);
+  const url = `https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarPeriodo(dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)?@dataInicial='${fmt(inicio)}'&@dataFinalCotacao='${fmt(fim)}'&$format=json&$select=cotacaoVenda,dataHoraCotacao`;
+  try {
+    const r = await fetch(url, { next: { revalidate: revalidar } });
+    if (!r.ok) return resultado("erro", null, fonte, "A PTAX não respondeu.");
+    const valores = ((await r.json()) as { value?: Array<{ cotacaoVenda: number; dataHoraCotacao: string }> }).value || [];
+    const ultimo = valores.sort((a, b) => a.dataHoraCotacao.localeCompare(b.dataHoraCotacao)).at(-1);
+    if (!ultimo) return resultado("vazio", null, fonte, "Sem PTAX no período.");
+    return resultado("ok", { valor: ultimo.cotacaoVenda, data: ultimo.dataHoraCotacao.slice(0, 10) }, fonte);
+  } catch {
+    return resultado("erro", null, fonte, "A PTAX não respondeu.");
+  }
+}

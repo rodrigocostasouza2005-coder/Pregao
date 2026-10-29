@@ -4,7 +4,7 @@ import { Painel } from "@/components/Painel";
 import { Selo } from "@/components/Selo";
 import { TabelaIndicadores } from "@/components/TabelaIndicadores";
 import { data, num } from "@/lib/formatos";
-import { focus, SERIES_SGS, ultimaSgs } from "@/lib/server/bcb";
+import { focus, ptaxOlinda, selicPeloCopom, SERIES_SGS, ultimaSgs } from "@/lib/server/bcb";
 import { lerIndicadores, type Indicador } from "@/lib/server/dominio/mercado";
 
 export const metadata = { title: "Macro · Pregão" };
@@ -21,16 +21,26 @@ const EXTERIOR: Indicador[] = [
 export default async function Macro() {
   const ano = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric" }).format(new Date()));
   const chaves = Object.keys(SERIES_SGS) as Array<keyof typeof SERIES_SGS>;
-  const [sgs, expectativas, exterior] = await Promise.all([
+  const [sgsBruto, expectativas, exterior] = await Promise.all([
     Promise.all(chaves.map((k) => ultimaSgs(SERIES_SGS[k].codigo))),
     focus(["IPCA", "Selic", "PIB Total", "Câmbio"], [ano, ano + 1]),
     lerIndicadores(EXTERIOR),
   ]);
+  // planos B oficiais (mesma instituição): Selic pelo histórico do Copom,
+  // dólar pela API PTAX - a fonte usada fica escrita na linha
+  const sgs = await Promise.all(
+    chaves.map(async (k, i) => {
+      if (sgsBruto[i].estado === "ok") return sgsBruto[i];
+      if (k === "selicMeta") return selicPeloCopom();
+      if (k === "ptaxVenda") return ptaxOlinda();
+      return sgsBruto[i];
+    }),
+  );
   return (
     <>
       <CabecalhoPagina titulo="Macro" descricao="Dados oficiais divulgados, expectativas de mercado e referências internacionais" />
       <div className="grid gap-3 xl:grid-cols-2">
-        <Painel titulo="Brasil · dado divulgado" acao={<Selo tipo="fato" />} rodape="Fonte: Banco Central do Brasil (SGS)">
+        <Painel titulo="Brasil · dado divulgado" acao={<Selo tipo="fato" />} rodape="Fonte: Banco Central do Brasil - SGS; planos B oficiais: histórico do Copom (Selic) e API PTAX (dólar)">
           <table className="w-full text-[12.5px]">
             <tbody>
               {chaves.map((k, i) => {
@@ -38,7 +48,7 @@ export default async function Macro() {
                 const r = sgs[i];
                 return (
                   <tr key={k} className="border-b border-filete/60 last:border-0">
-                    <td className="py-1.5">{s.nome} <span className="ml-1 font-mono text-[10px] text-apagado">SGS {s.codigo}</span></td>
+                    <td className="py-1.5">{s.nome} <span className="ml-1 font-mono text-[10px] text-apagado">{r.fonte.replace("Banco Central ", "")}</span></td>
                     <td className="py-1.5 text-right font-mono">
                       {r.dados ? `${num(r.dados.valor, s.unidade === "R$" ? 4 : 2)}${s.unidade === "R$" ? "" : ` ${s.unidade}`}` : <span className="text-apagado" title={r.mensagem}>indisponível</span>}
                     </td>

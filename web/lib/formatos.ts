@@ -7,6 +7,8 @@ export function num(valor: number | null | undefined, casas = 2): string {
 
 export function pct(valor: number | null | undefined, casas = 2, sinal = true): string {
   if (valor === null || valor === undefined || !Number.isFinite(valor)) return "—";
+  // -0,001 arredondado vira "0,00" (nunca "-0,00%")
+  if (Math.abs(valor) < 0.5 / 10 ** casas) valor = 0;
   return `${sinal && valor > 0 ? "+" : ""}${num(valor, casas)}%`;
 }
 
