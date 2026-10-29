@@ -897,7 +897,7 @@ def _bloco_interpretacao_earnings(texto: str):
     ui/research_tab.py), cor diferente pra não confundir com fato."""
     st.markdown(
         f"<div style='border-left:3px solid var(--destaque); padding:0.25rem 0 0.25rem 0.6rem; "
-        f"margin:0.3rem 0; font-size:0.78rem; background:rgba(255,255,255,0.03);'>{html.escape(texto)}</div>",
+        f"margin:0.3rem 0; font-size:0.78rem; background:color-mix(in srgb, var(--neutro) 3%, transparent);'>{html.escape(texto)}</div>",
         unsafe_allow_html=True,
     )
 
@@ -911,7 +911,7 @@ def _bloco_educacao_financeira_earnings(texto: str):
     uma leitura do resultado dela nem recomendação."""
     st.markdown(
         f"<div style='border-left:3px solid var(--ciano); padding:0.25rem 0 0.25rem 0.6rem; "
-        f"margin:0.3rem 0; font-size:0.78rem; background:rgba(255,255,255,0.03);'>{html.escape(texto)}</div>",
+        f"margin:0.3rem 0; font-size:0.78rem; background:color-mix(in srgb, var(--neutro) 3%, transparent);'>{html.escape(texto)}</div>",
         unsafe_allow_html=True,
     )
 
