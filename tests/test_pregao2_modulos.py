@@ -140,7 +140,11 @@ st.session_state.setdefault("salvos", 0)
 def persistir():
     st.session_state.salvos += 1
     return True
-with patch.object(mc, "listar_edicoes", return_value=[ed]):
+# sem rede de verdade: a síntese de mercado e os alertas de saúde
+# consultavam cotações/IA ao vivo e estouravam o limite de 30s no CI
+with patch.object(mc, "listar_edicoes", return_value=[ed]), \\
+     patch.object(mc, "obter_sintese_mercado", return_value={}), \\
+     patch.object(mc, "_alertas_confiabilidade_cacheados", return_value=[]):
     mc.render_edicao_atual(prefs)
     mc.render_historico(prefs)
 mc.render_preferencias(prefs, {"email": "teste@exemplo.com"}, persistir)
