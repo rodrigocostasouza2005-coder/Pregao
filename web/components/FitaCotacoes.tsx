@@ -46,7 +46,7 @@ export function FitaCotacoes({ inicial }: { inicial: LinhaIndicador[] }) {
   }, []);
 
   return (
-    <div className="sticky top-12 z-10 flex overflow-x-auto border-b border-filete bg-base text-[11px] [scrollbar-width:none]">
+    <div className="sticky top-12 z-10 flex h-8 items-center overflow-x-auto border-b border-filete bg-base text-[11px] [scrollbar-width:none]">
       {linhas.map((l) => (
         <a
           key={l.simbolo}

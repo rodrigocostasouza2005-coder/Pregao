@@ -11,7 +11,11 @@ export function BarraLateral({ urlStreamlit }: { urlStreamlit?: string }) {
   return (
     <nav
       aria-label="Áreas do Pregão"
-      className="flex shrink-0 gap-1 overflow-x-auto border-b border-filete bg-painel p-2 md:sticky md:top-12 md:h-[calc(100vh-3rem)] md:w-48 md:flex-col md:overflow-y-auto md:border-r md:border-b-0"
+      // top-20/h-[...-5rem] = altura do Cabeçalho (h-12=3rem) + FitaCotacoes
+      // (h-8=2rem), que agora é sticky também (ver FitaCotacoes.tsx) - sem
+      // isso os dois sticky disputavam o mesmo top-12 e a barra lateral
+      // ficava por baixo da fita ao rolar a página.
+      className="flex shrink-0 gap-1 overflow-x-auto border-b border-filete bg-painel p-2 md:sticky md:top-20 md:h-[calc(100vh-5rem)] md:w-48 md:flex-col md:overflow-y-auto md:border-r md:border-b-0"
     >
       {NAVEGACAO.map((item) => {
         const atual = item.rota === "/" ? caminho === "/" : caminho.startsWith(item.rota);
