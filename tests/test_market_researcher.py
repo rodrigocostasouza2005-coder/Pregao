@@ -210,6 +210,49 @@ def test_achado_que_some_da_lista_atual_e_marcado_resolvido():
     assert linha["resolvido_em"] is not None
 
 
+def test_registrar_achados_preserva_triagem_manual_em_andamento():
+    """Coordenador/Backoffice (2026-10-29): registrar_achados_atuais()
+    agora roda por agendamento (jobs/coordenador.py), não só por clique
+    - precisa parar de resetar pra ABERTO um achado que o Rodrigo já
+    avançou manualmente na interface web (INVESTIGANDO/
+    AGUARDANDO_INTERVENCAO/INCONCLUSIVO), senão toda rodada do cron
+    apagaria a triagem em andamento."""
+    achado = {"coletor": "NEWS (Brasil)", "categoria": "Noticias", "codigo_estado": "FALHA_EXECUCAO",
+              "rotulo_estado": "Falha de execucao", "critico": True, "evidencia": {}}
+    cliente = _ClienteAchadosFake()
+    with patch.object(mr, "obter_cliente", return_value=cliente), \
+         patch.object(mr, "achados_qualidade_coletores", return_value=[achado]):
+        mr.registrar_achados_atuais()
+    linha = next(iter(cliente.linhas.values()))
+    linha["status"] = "INVESTIGANDO"  # triagem manual feita na web
+
+    with patch.object(mr, "obter_cliente", return_value=cliente), \
+         patch.object(mr, "achados_qualidade_coletores", return_value=[achado]):
+        mr.registrar_achados_atuais()
+
+    linha = next(iter(cliente.linhas.values()))
+    assert linha["status"] == "INVESTIGANDO"  # preservado, não resetado pra ABERTO
+    assert linha["ocorrencias"] == 2  # continua contando ocorrência normalmente
+
+
+def test_registrar_achados_reabre_achado_resolvido_que_volta_a_acontecer():
+    achado = {"coletor": "NEWS (Brasil)", "categoria": "Noticias", "codigo_estado": "FALHA_EXECUCAO",
+              "rotulo_estado": "Falha de execucao", "critico": True, "evidencia": {}}
+    cliente = _ClienteAchadosFake()
+    with patch.object(mr, "obter_cliente", return_value=cliente), \
+         patch.object(mr, "achados_qualidade_coletores", return_value=[achado]):
+        mr.registrar_achados_atuais()
+    linha = next(iter(cliente.linhas.values()))
+    linha["status"] = "RESOLVIDO"
+
+    with patch.object(mr, "obter_cliente", return_value=cliente), \
+         patch.object(mr, "achados_qualidade_coletores", return_value=[achado]):
+        mr.registrar_achados_atuais()
+
+    linha = next(iter(cliente.linhas.values()))
+    assert linha["status"] == "ABERTO"  # problema voltou -> reabre, nunca fica RESOLVIDO escondendo recorrência
+
+
 def test_listar_achados_historico_banco_indisponivel_e_none():
     with patch.object(mr, "obter_cliente", return_value=None):
         assert mr.listar_achados_historico() is None
