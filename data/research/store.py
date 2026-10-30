@@ -169,6 +169,61 @@ def apagar_itens_antigos(dias: int = RETENCAO_DIAS) -> int:
     return total
 
 
+def salvar_premissas(
+    link: str, casa: str, titulo: str, tickers: list, data_publicacao,
+    tipo_documento, premissas: list, projecoes: dict,
+    recomendacao, preco_alvo, modelo,
+) -> bool:
+    """Upsert por link na tabela PERMANENTE research_premissas (ver
+    sql/research_premissas.sql) - diferente de salvar_resumo (research_itens,
+    apagada em 5 dias por apagar_itens_antigos), esta tabela nunca e'
+    limpa: guarda so' a ESTRUTURA extraida por IA (tipo de documento,
+    premissas da tese, projecoes citadas) + metadado minimo (casa/titulo/
+    tickers/data) pra o documento continuar identificavel mesmo depois
+    que a linha original de research_itens tiver sido apagada. Nunca o
+    texto completo do relatorio. True se salvou, False se o banco estiver
+    fora do ar ou a escrita falhar."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return False
+    try:
+        cliente.table("research_premissas").upsert(
+            {
+                "link": link, "casa": casa, "titulo": titulo,
+                "tickers": tickers or [], "data_publicacao": data_publicacao or None,
+                "tipo_documento": tipo_documento, "premissas": premissas or [],
+                "projecoes": projecoes or {}, "recomendacao": recomendacao,
+                "preco_alvo": preco_alvo, "modelo_extracao": modelo,
+            },
+            on_conflict="link",
+        ).execute()
+        return True
+    except Exception:
+        return False
+
+
+def listar_premissas(tickers: list = None, casa: str = None) -> list | None:
+    """Le a biblioteca PERMANENTE de premissas/projecoes (research_premissas)
+    - diferente de listar_itens, nunca filtra por data/retencao (essa
+    tabela nao perece). tickers filtra por qualquer overlap com a coluna
+    tickers (array); casa filtra por casa exata; os dois None lista tudo.
+    Mais recente primeiro (extraido_em). None se o banco estiver fora do
+    ar - mesma convencao de listar_itens (distinguir de lista vazia)."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        consulta = cliente.table("research_premissas").select("*")
+        if tickers:
+            consulta = consulta.overlaps("tickers", tickers)
+        if casa:
+            consulta = consulta.eq("casa", casa)
+        resp = consulta.order("extraido_em", desc=True).execute()
+        return resp.data
+    except Exception:
+        return None
+
+
 def salvar_resumo(link: str, resumo: str, modelo: str, preco_alvo: float = None, recomendacao: str = None) -> bool:
     """Grava o resumo (palavras proprias, nunca o texto original) de um
     item ja existente, mais preco_alvo/recomendacao quando extraidos
