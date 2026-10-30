@@ -60,6 +60,55 @@ export function geometria(pontos: PontoGrafico[], opcoes: { referencia?: number 
   };
 }
 
+export type VelaGrafico = { t: number; open: number; high: number; low: number; close: number };
+
+export type ItemVela = { x: number; largura: number; yAlta: number; yBaixa: number; yAbre: number; yFecha: number; alta: boolean };
+
+export type GeometriaVelas = {
+  min: number;
+  max: number;
+  ticksY: Array<{ v: number; y: number }>;
+  yReferencia: number | null;
+  itens: ItemVela[];
+  ultimo: VelaGrafico;
+  primeiro: VelaGrafico;
+};
+
+/** Mesma régua de `geometria` (escala com folga de 6%, referência incluída
+ * na escala, nunca interpolada), mas pro candle: a faixa considera os
+ * máximos/mínimos de CADA barra (high/low), não só o fechamento. */
+export function geometriaVelas(velas: VelaGrafico[], opcoes: { referencia?: number | null } = {}): GeometriaVelas | null {
+  if (velas.length < 2) return null;
+  const ref = opcoes.referencia ?? null;
+  let min = Math.min(...velas.map((v) => v.low), ...(ref !== null ? [ref] : []));
+  let max = Math.max(...velas.map((v) => v.high), ...(ref !== null ? [ref] : []));
+  const folga = (max - min || Math.abs(max) || 1) * 0.06;
+  min -= folga;
+  max += folga;
+  const y = (v: number) => 100 - ((v - min) / (max - min)) * 100;
+  const n = velas.length;
+  const slot = 100 / n;
+  const largura = Math.min(slot * 0.62, 3.2);
+  const itens = velas.map((v, i) => ({
+    x: i * slot + slot / 2,
+    largura,
+    yAlta: y(v.high),
+    yBaixa: y(v.low),
+    yAbre: y(v.open),
+    yFecha: y(v.close),
+    alta: v.close >= v.open,
+  }));
+  return {
+    min,
+    max,
+    ticksY: ticksBonitos(min, max).map((v) => ({ v, y: y(v) })).filter((t) => t.y >= 4 && t.y <= 96),
+    yReferencia: ref !== null ? y(ref) : null,
+    itens,
+    ultimo: velas.at(-1) as VelaGrafico,
+    primeiro: velas[0],
+  };
+}
+
 /** Índices dos rótulos do eixo x: um a cada mudança de dia/mês/ano
  * (conforme o período), no máximo `maximo` rótulos e nunca dois mais
  * próximos que 1/(maximo+1) da largura (rótulos não se sobrepõem). */

@@ -15,12 +15,13 @@ import { lerEventosDoTicker } from "@/lib/server/dominio/agenda";
 import { lerDocumentosCvm } from "@/lib/server/dominio/cvm";
 import { lerEarnings } from "@/lib/server/dominio/inteligencia";
 import { lerCarteiras, lerItensDoTicker } from "@/lib/server/dominio/research";
+import { normalizarSimbolo } from "@/lib/server/dominio/mercado";
 import { lerWatchlist } from "@/lib/server/dominio/userPrefs";
 import { buscarNoticias } from "@/lib/server/noticias";
 import { usuarioAtual } from "@/lib/server/auth";
 import { obterCotacao, obterSerie, PERIODOS, type Periodo } from "@/lib/server/yahoo";
 
-const EIXO: Record<Periodo, EixoX> = { "1D": "hora", "5D": "dia", "1M": "dia", "6M": "mes", "1A": "mes", "5A": "ano" };
+const EIXO: Record<Periodo, EixoX> = { "1D": "hora", "1S": "dia", "1M": "dia", "3M": "dia", "6M": "mes", "1A": "mes", "5A": "ano" };
 
 const SETORES = (ibovespa as { setores: Record<string, string> }).setores;
 
@@ -30,7 +31,7 @@ export default async function Ativo({ params, searchParams }: { params: Promise<
   const pedido = (await searchParams).p?.toUpperCase();
   const periodo: Periodo = pedido && pedido in PERIODOS ? (pedido as Periodo) : "1D";
   const ticker = decodeURIComponent((await params).ticker).toUpperCase().replace(/[^A-Z0-9.\-^=]/g, "");
-  const simbolo = /^[A-Z]{4}\d{1,2}$/.test(ticker) ? `${ticker}.SA` : ticker;
+  const simbolo = normalizarSimbolo(ticker);
   const usuario = await usuarioAtual();
   const [serie, cotacao, eventos, cvm, earnings, itens, carteiras, noticias, watchlist] = await Promise.all([
     obterSerie(simbolo, periodo),
