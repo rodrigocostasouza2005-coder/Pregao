@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
 import data.mercado as mercado_mod
 import data.prices as prices_mod
+import ui.graficos as graficos_mod
 import ui.visao_geral as visao_geral_mod
 from data.prices import (
     _TIMEOUT_YF, _calcular_beta, _historico_semanal_indice, obter_cotacao,
@@ -311,12 +312,27 @@ class _FakeSessionState(dict):
     pass
 
 
+class _ColunaFake:
+    """Dublê de uma coluna de `st.columns` - só o protocolo de context
+    manager, sem renderização nenhuma."""
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return False
+
+
 class _FakeStVisaoGeral:
-    """Dublê mínimo de streamlit pra exercitar _painel_ibov_grafico sem
-    sessão real - so' os metodos que a funcao de fato chama."""
-    def __init__(self, selecao):
+    """Dublê mínimo de streamlit pra exercitar _painel_grafico_principal
+    sem sessão real - so' os metodos que a funcao (e o componente
+    compartilhado ui.graficos.renderizar_grafico_preco, que ela chama)
+    de fato usam. Precisa ser aplicado tanto em ui.visao_geral quanto em
+    ui.graficos (extraído de dentro de visao_geral em 2026-10-30) - ver
+    _rodar_painel_grafico_principal."""
+    def __init__(self, selecao, ticker="IBOVESPA"):
         self.session_state = _FakeSessionState()
         self._selecao = selecao
+        self._ticker = ticker
         self.avisos = []
 
     def markdown(self, *_a, **_k):
@@ -325,6 +341,19 @@ class _FakeStVisaoGeral:
     def segmented_control(self, *_a, **_k):
         return self._selecao
 
+    def selectbox(self, *_a, **_k):
+        return self._ticker
+
+    def columns(self, spec, **_k):
+        n = spec if isinstance(spec, int) else len(spec)
+        return [_ColunaFake() for _ in range(n)]
+
+    def button(self, *_a, **_k):
+        return False
+
+    def checkbox(self, *_a, **_k):
+        return False
+
     def warning(self, msg, **_k):
         self.avisos.append(msg)
 
@@ -332,20 +361,23 @@ class _FakeStVisaoGeral:
         pass
 
 
-def _rodar_painel_ibov_grafico(selecao):
+def _rodar_painel_grafico_principal(selecao):
     chamadas = {"intraday": None, "diario": None}
     fake_st = _FakeStVisaoGeral(selecao)
     with patch.object(visao_geral_mod, "st", fake_st), \
-         patch.object(visao_geral_mod, "obter_historico_intraday",
+         patch.object(graficos_mod, "st", fake_st), \
+         patch.object(graficos_mod, "obter_historico_intraday",
                       side_effect=lambda t, p: chamadas.__setitem__("intraday", (t, p))), \
-         patch.object(visao_geral_mod, "obter_historico",
+         patch.object(graficos_mod, "obter_historico",
                       side_effect=lambda t, p: chamadas.__setitem__("diario", (t, p))):
-        visao_geral_mod._painel_ibov_grafico({"tema": "AMBAR"})
+        visao_geral_mod._painel_grafico_principal(
+            {"tema": "AMBAR", "watchlist": [], "formato_numerico": "BR", "grafico_tipo": "LINHA"}
+        )
     return chamadas
 
 
 def test_16c_painel_ibov_grafico_roteia_1d_pra_obter_historico_intraday():
-    chamadas = _rodar_painel_ibov_grafico("1D")
+    chamadas = _rodar_painel_grafico_principal("1D")
     _checar("16c selecionar '1D' na VISAO GERAL chama obter_historico_intraday(IBOV, '1D')",
             chamadas["intraday"] == (config.SIMBOLO_IBOVESPA, "1D"), f"(chamadas={chamadas})")
     _checar("16c selecionar '1D' NUNCA chama obter_historico() (o bug real de producao)",
@@ -353,14 +385,14 @@ def test_16c_painel_ibov_grafico_roteia_1d_pra_obter_historico_intraday():
 
 
 def test_16d_painel_ibov_grafico_roteia_1s_pra_obter_historico_intraday():
-    chamadas = _rodar_painel_ibov_grafico("1S")
+    chamadas = _rodar_painel_grafico_principal("1S")
     _checar("16d selecionar '1S' na VISAO GERAL chama obter_historico_intraday(IBOV, '1S')",
             chamadas["intraday"] == (config.SIMBOLO_IBOVESPA, "1S"), f"(chamadas={chamadas})")
     _checar("16d selecionar '1S' NUNCA chama obter_historico()", chamadas["diario"] is None, f"(chamadas={chamadas})")
 
 
 def test_16e_painel_ibov_grafico_roteia_periodo_diario_pro_obter_historico():
-    chamadas = _rodar_painel_ibov_grafico("6M")
+    chamadas = _rodar_painel_grafico_principal("6M")
     _checar("16e selecionar '6M' na VISAO GERAL chama obter_historico(IBOV, '6M')",
             chamadas["diario"] == (config.SIMBOLO_IBOVESPA, "6M"), f"(chamadas={chamadas})")
     _checar("16e selecionar '6M' NUNCA chama obter_historico_intraday()",

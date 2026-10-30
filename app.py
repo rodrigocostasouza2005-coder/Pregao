@@ -6,9 +6,7 @@ import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-import plotly.graph_objects as go
 import streamlit as st
-from plotly.subplots import make_subplots
 
 import auth
 import config
@@ -16,11 +14,8 @@ from data import diagnostico
 from data.mercado import obter_cotacoes_lote
 from data.prices import (
     calcular_retornos,
-    dias_sem_pregao,
     obter_cotacao,
     obter_cotacao_indice,
-    obter_historico,
-    obter_historico_intraday,
     obter_indicadores,
     obter_nome_yf,
     rotulo_cotacao_em_cache,
@@ -976,176 +971,16 @@ if rota == ("analises", "empresas"):
                 )
 
             with st.container(border=True):
-                titulo_grafico = st.empty()
-                titulo_grafico.markdown('<div class="painel-titulo">GRÁFICO</div>', unsafe_allow_html=True)
+                st.markdown('<div class="painel-titulo">GRÁFICO</div>', unsafe_allow_html=True)
 
                 periodos = config.PERIODOS_INTRADIARIOS + list(config.PERIODOS_GRAFICO.keys())
                 padrao_periodo = prefs["grafico_periodo_padrao"] if prefs["grafico_periodo_padrao"] in periodos else "6M"
-                padrao_periodo, mem_periodo = _escolha_estavel("periodo_grafico", periodos, padrao_periodo)
-                sel_periodo = st.segmented_control(
-                    "Período", periodos, default=padrao_periodo,
-                    label_visibility="collapsed", key="periodo_grafico",
+
+                graficos.renderizar_grafico_preco(
+                    ticker_selecionado, prefs, tema, key_prefix="equity_grafico",
+                    periodos=periodos, periodo_padrao=padrao_periodo, altura=480,
+                    permitir_comparar_ibov=True, permitir_mm=True, mostrar_stats_periodo=False,
                 )
-                periodo = sel_periodo or padrao_periodo
-                st.session_state[mem_periodo] = periodo
-                eh_intraday = periodo in config.PERIODOS_INTRADIARIOS
-
-                comparar_ibov = st.checkbox("Comparar com Ibovespa (base 100)", value=False, key="comparar_ibov")
-
-                if eh_intraday:
-                    df = obter_historico_intraday(ticker_selecionado, periodo)
-                else:
-                    df = obter_historico(ticker_selecionado, periodo)
-
-                if eh_intraday and periodo == "1D" and df is not None and not df.empty:
-                    data_pregao = df["Data"].iloc[-1].strftime("%d/%m")
-                    titulo_grafico.markdown(
-                        f'<div class="painel-titulo">GRÁFICO — PREGÃO DE {data_pregao}</div>',
-                        unsafe_allow_html=True,
-                    )
-
-                def _layout_grafico_escuro(fig, altura=480):
-                    fig.update_layout(
-                        template="plotly_dark",
-                        paper_bgcolor=tema["fundo"],
-                        plot_bgcolor=tema["fundo"],
-                        font=dict(color=tema["cinza"], family="IBM Plex Mono", size=11),
-                        xaxis_rangeslider_visible=False,
-                        height=altura,
-                        margin=dict(l=10, r=10, t=10, b=10),
-                        legend=dict(orientation="h", yanchor="bottom", y=1.01, font=dict(size=10)),
-                    )
-                    # tema["borda"] (nao "#1A1A1A" fixo, achado da
-                    # auditoria visual 2026-10-16): no tema CLARO (fundo
-                    # claro), um grid quase-preto fixo ficava bem mais
-                    # proeminente do que a grade sutil pretendida - cada
-                    # tema ja' calibra sua propria cor de borda sutil.
-                    fig.update_xaxes(gridcolor=tema["borda"])
-                    fig.update_yaxes(gridcolor=tema["borda"])
-
-                if df is None:
-                    if eh_intraday:
-                        st.warning(f"Não foi possível obter o histórico intradiário de {ticker_selecionado}.")
-                    else:
-                        st.warning(f"Não foi possível obter o histórico de {ticker_selecionado} para o período {periodo}.")
-                elif comparar_ibov and not eh_intraday:
-                    fig = go.Figure()
-                    serie_acao = (df["Close"] / df["Close"].iloc[0]) * 100
-                    fig.add_trace(go.Scatter(x=df["Data"], y=serie_acao, name=ticker_selecionado,
-                                              line=dict(color=tema["destaque"], width=1.5)))
-
-                    df_ibov = obter_historico(config.SIMBOLO_IBOVESPA, periodo)
-                    if df_ibov is None:
-                        st.warning("Não foi possível obter o histórico do Ibovespa para comparação.")
-                    else:
-                        serie_ibov = (df_ibov["Close"] / df_ibov["Close"].iloc[0]) * 100
-                        fig.add_trace(go.Scatter(x=df_ibov["Data"], y=serie_ibov, name="IBOVESPA",
-                                                  line=dict(color=tema["ciano"], width=1.5)))
-
-                    _layout_grafico_escuro(fig)
-                    fig.update_yaxes(title="Base 100")
-
-                    _, intervalo_periodo = config.PERIODOS_GRAFICO[periodo]
-                    if intervalo_periodo == "1d":
-                        fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=dias_sem_pregao(df))])
-
-                    chave_zoom = graficos.zoom_key("equity_comparativo_ibov", ticker_selecionado, periodo)
-                    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave_zoom)
-                else:
-                    if comparar_ibov and eh_intraday:
-                        st.info("Comparação com Ibovespa não disponível para períodos intradiários (1D/1S).")
-
-                    fig = make_subplots(
-                        rows=2, cols=1, shared_xaxes=True,
-                        row_heights=[0.75, 0.25], vertical_spacing=0.03,
-                    )
-
-                    tipo_grafico = prefs["grafico_tipo"]
-                    if tipo_grafico == "CANDLE":
-                        fig.add_trace(
-                            go.Candlestick(
-                                x=df["Data"], open=df["Open"], high=df["High"],
-                                low=df["Low"], close=df["Close"], name=ticker_selecionado,
-                                increasing_line_color=tema["alta"], decreasing_line_color=tema["baixa"],
-                            ),
-                            row=1, col=1,
-                        )
-                    elif tipo_grafico == "AREA":
-                        fig.add_trace(
-                            go.Scatter(
-                                x=df["Data"], y=df["Close"], name=ticker_selecionado, fill="tozeroy",
-                                line=dict(color=tema["destaque"], width=1.5),
-                            ),
-                            row=1, col=1,
-                        )
-                    else:  # LINHA
-                        fig.add_trace(
-                            go.Scatter(
-                                x=df["Data"], y=df["Close"], name=ticker_selecionado,
-                                line=dict(color=tema["destaque"], width=1.5),
-                            ),
-                            row=1, col=1,
-                        )
-
-                    sufixo_mm = ""
-                    if eh_intraday:
-                        sufixo_mm = " (5 min)" if periodo == "1D" else " (30 min)"
-
-                    # em CANDLE o preco vira barras alta/baixa (sem cor propria) - MM20
-                    # pode usar --destaque sem colidir. Em LINHA/AREA o preco JA usa
-                    # --destaque, entao MM20 precisa de outra cor pra nao ficar
-                    # indistinguivel da linha de preco (ver BACKLOG.md)
-                    cor_mm20 = tema["neutro"] if tipo_grafico in ("LINHA", "AREA") else tema["destaque"]
-                    if prefs["mm20"] and df["MM20"].notna().any():
-                        fig.add_trace(
-                            go.Scatter(x=df["Data"], y=df["MM20"], name=f"MM20{sufixo_mm}",
-                                       line=dict(color=cor_mm20, width=1)),
-                            row=1, col=1,
-                        )
-                    if prefs["mm50"] and df["MM50"].notna().any():
-                        fig.add_trace(
-                            go.Scatter(x=df["Data"], y=df["MM50"], name=f"MM50{sufixo_mm}",
-                                       line=dict(color=tema["ciano"], width=1)),
-                            row=1, col=1,
-                        )
-                    if prefs["mm200"] and df["MM200"].notna().any():
-                        fig.add_trace(
-                            go.Scatter(x=df["Data"], y=df["MM200"], name=f"MM200{sufixo_mm}",
-                                       line=dict(color=tema["cinza"], width=1)),
-                            row=1, col=1,
-                        )
-
-                    cores_volume = [
-                        tema["alta"] if c >= o else tema["baixa"]
-                        for o, c in zip(df["Open"], df["Close"])
-                    ]
-                    fig.add_trace(
-                        go.Bar(x=df["Data"], y=df["Volume"], name="Volume",
-                               marker_color=cores_volume, opacity=0.6),
-                        row=2, col=1,
-                    )
-
-                    _layout_grafico_escuro(fig)
-
-                    if eh_intraday:
-                        # esconde fim de semana e fora do horario de pregao da B3
-                        # (10h-17h, conferido nos dados intradiarios reais)
-                        fig.update_xaxes(rangebreaks=[
-                            dict(bounds=["sat", "mon"]),
-                            dict(bounds=[17, 10], pattern="hour"),
-                        ])
-                    else:
-                        # remove buracos de fim de semana/feriado no eixo X (so faz sentido em barras diarias)
-                        _, intervalo_periodo = config.PERIODOS_GRAFICO[periodo]
-                        if intervalo_periodo == "1d":
-                            feriados = dias_sem_pregao(df)
-                            fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=feriados)])
-
-                    chave_zoom = graficos.zoom_key(
-                        "equity_grafico", ticker_selecionado, periodo, tipo_grafico,
-                        prefs["mm20"], prefs["mm50"], prefs["mm200"],
-                    )
-                    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave_zoom)
 
             with st.container(border=True):
                 render_news_ticker(ticker_selecionado, prefs)
