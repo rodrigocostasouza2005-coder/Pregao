@@ -202,6 +202,44 @@ def test_12_buscar_sinais_respeita_max_resultados_entre_paginas():
     _checar("12 para no max_resultados mesmo com mais paginas disponiveis", len(sinais) == 3)
 
 
+def test_13_toda_chamada_requests_tem_timeout_explicito():
+    """Regressao (revisao final PR RADAR X, 2026-10-30, ponto A -
+    isolamento do coordenador): nenhuma chamada de rede deste modulo
+    pode ficar pendurada indefinidamente - inspecao estatica do
+    codigo-fonte, nao so' dos mocks (mock aceita qualquer kwarg, nao
+    pegaria um timeout removido por acidente numa edicao futura)."""
+    import inspect
+    import re
+    fonte = inspect.getsource(x_signals_mod)
+    chamadas = re.findall(r"requests\.(?:get|post)\([^)]*\)", fonte, re.DOTALL)
+    _checar("13a pelo menos 1 chamada de rede encontrada no modulo", len(chamadas) >= 2, f"(achadas={len(chamadas)})")
+    sem_timeout = [c for c in chamadas if "timeout=" not in c]
+    _checar("13b todas as chamadas requests.get/post tem timeout= explicito",
+             sem_timeout == [], f"(sem timeout={sem_timeout})")
+
+
+def test_14_buscar_sinais_paginas_sao_limitadas_mesmo_sem_next_token_parar():
+    """max_paginas limita o numero de requisicoes mesmo se a API
+    devolver next_token indefinidamente (nunca um loop sem fim)."""
+    from unittest.mock import patch
+    pagina_com_proximo_token_sempre = _RespostaFake(200, {
+        "data": [{"id": "x", "text": "post", "author_id": "u1", "created_at": "2026-10-30T10:00:00Z"}],
+        "includes": {"users": [{"id": "u1", "username": "autor1"}]},
+        "meta": {"next_token": "sempre_tem_mais"},
+    })
+    chamadas = {"n": 0}
+
+    def _contar(*_a, **_k):
+        chamadas["n"] += 1
+        return pagina_com_proximo_token_sempre
+
+    with patch.object(x_signals_mod, "status_credencial", return_value={"estado": "ok", "motivo": None, "token_presente": True}), \
+         patch.object(x_signals_mod.config, "obter_credencial_x", return_value="fake-token"), \
+         patch.object(x_signals_mod.requests, "get", side_effect=_contar):
+        x_signals_mod.buscar_sinais("PETR4", max_resultados=1000, max_paginas=4)
+    _checar("14 numero de chamadas limitado por max_paginas mesmo com next_token infinito", chamadas["n"] == 4, f"(chamadas={chamadas['n']})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
