@@ -1,7 +1,8 @@
 import "server-only";
 
 import ibovespa from "@/contratos/ibovespa.json";
-import type { Resultado } from "@/lib/tipos";
+import { resultado, type Resultado } from "@/lib/tipos";
+import { historicoSgs, SERIES_SGS } from "../bcb";
 import { obterCotacao, obterCotacoes, obterSerie, type Cotacao, type Serie } from "../yahoo";
 
 export type Indicador = { nome: string; simbolo: string; grupo: "Brasil" | "Exterior" | "Commodities" | "Juros e moedas"; casas: number };
@@ -71,4 +72,93 @@ export async function painelIbovespa(): Promise<Painel> {
 export function altasEBaixas(acoes: Acao[], n = 8) {
   const ord = [...acoes].sort((a, b) => (b.cotacao.variacaoPct as number) - (a.cotacao.variacaoPct as number));
   return { altas: ord.slice(0, n).filter((a) => (a.cotacao.variacaoPct as number) > 0), baixas: ord.slice(-n).reverse().filter((a) => (a.cotacao.variacaoPct as number) < 0) };
+}
+
+/** Ranking por liquidez EFETIVA (preço × volume de ações da última barra
+ * diária, ver Cotacao.volumeFinanceiro em lib/server/yahoo.ts) - nunca
+ * pela contagem de negócios nem pelo volume em ações puro, que é o que o
+ * protótipo rotula de "proxy de liquidez". */
+export function maisNegociados(acoes: Acao[], n = 8) {
+  return [...acoes]
+    .filter((a) => typeof a.cotacao.volumeFinanceiro === "number")
+    .sort((a, b) => (b.cotacao.volumeFinanceiro as number) - (a.cotacao.volumeFinanceiro as number))
+    .slice(0, n);
+}
+
+/** "PETR4" -> "PETR4.SA" (ticker da B3 pro sufixo do Yahoo); símbolos que
+ * já não são um ticker de 4 letras + número (índices, FX, futuros) saem
+ * inalterados. Mesma regra que estava duplicada em app/(terminal)/
+ * ativo/[ticker]/page.tsx e app/api/ativo/[ticker]/serie/route.ts. */
+export function normalizarSimbolo(tickerBruto: string): string {
+  const ticker = tickerBruto.toUpperCase().replace(/[^A-Z0-9.\-^=]/g, "");
+  return /^[A-Z]{4}\d{1,2}$/.test(ticker) ? `${ticker}.SA` : ticker;
+}
+
+/** Seleção padrão de ações da B3 pra fita de cotações (brief: PETR4,
+ * VALE3, ITUB4, B3SA3, BBAS3, BBDC4, WEGE3, PRIO3, RENT3, ABEV3) - usada
+ * quando o usuário não está logado ou não tem watchlist própria; sempre
+ * complementada pela watchlist real de quem está logado. */
+export const ATIVOS_FITA_PADRAO = ["PETR4", "VALE3", "ITUB4", "B3SA3", "BBAS3", "BBDC4", "WEGE3", "PRIO3", "RENT3", "ABEV3"];
+
+export type ItemFita = { simbolo: string; nome: string; casas: number; unidade?: string; r: Resultado<Cotacao | null> };
+
+export type CotacaoTicker = { ticker: string; cotacao: Cotacao };
+
+/** Cotação de QUALQUER lista de tickers da B3 (não só o universo
+ * Ibovespa de painelIbovespa) - base da watchlist (brief: "a watchlist é
+ * de verdade", qualquer ativo que o usuário escolher). Ticker sem
+ * cotação na leitura simplesmente não entra na saída (nunca um preço
+ * zerado ou inventado). */
+export async function lerCotacoesTickers(tickers: string[]): Promise<CotacaoTicker[]> {
+  if (!tickers.length) return [];
+  const leituras = await obterCotacoes(tickers.map((t) => normalizarSimbolo(t)));
+  return tickers.flatMap((t) => {
+    const c = leituras[normalizarSimbolo(t)]?.dados;
+    return c ? [{ ticker: t, cotacao: c }] : [];
+  });
+}
+
+/** DI (CDI anualizado, série SGS 4389 do Banco Central) com variação
+ * contra a leitura anterior, em pontos percentuais - mesma fonte oficial
+ * de lib/server/bcb.ts, nunca uma estimativa. */
+async function lerDI(): Promise<Resultado<Cotacao | null>> {
+  const r = await historicoSgs(SERIES_SGS.cdiAnualizado.codigo, 20, 3600);
+  const serie = r.dados;
+  if (r.estado !== "ok" || serie.length < 1) return resultado(r.estado === "ok" ? "vazio" : r.estado, null, r.fonte, r.mensagem);
+  const ultima = serie.at(-1) as { valor: number; data: string };
+  const anterior = serie.length >= 2 ? serie[serie.length - 2] : null;
+  return resultado("ok", {
+    simbolo: "DI",
+    preco: ultima.valor,
+    variacaoPct: anterior ? ultima.valor - anterior.valor : null,
+    fechamentoAnterior: anterior?.valor ?? null,
+    negocioEm: null,
+    sessao: ultima.data,
+    moeda: null,
+    volumeFinanceiro: null,
+  }, r.fonte);
+}
+
+/** Indicadores compactos do terminal: Ibovespa + dólar + DI (brief:
+ * tiles de número, nunca mini-gráfico) - opcionalmente + Petróleo Brent,
+ * pedido só na aba Mercado. Nunca índice americano aqui (fica nos
+ * "Mercados Globais", secundário/opcional). Base compartilhada por
+ * lerFita (fita) e pelas páginas de Visão Geral/Mercado (tiles). */
+export async function lerIndicadoresCompactos(opcoes: { comBrent?: boolean } = {}): Promise<ItemFita[]> {
+  const indicadoresBr = INDICADORES.filter((i) => i.simbolo === "^BVSP" || i.simbolo === "USDBRL=X" || (opcoes.comBrent && i.simbolo === "BZ=F"));
+  const [leituras, di] = await Promise.all([Promise.all(indicadoresBr.map((i) => obterCotacao(i.simbolo))), lerDI()]);
+  const itensIdx: ItemFita[] = indicadoresBr.map((i, n) => ({ simbolo: i.simbolo, nome: i.nome, casas: i.casas, r: leituras[n] }));
+  const itemDI: ItemFita[] = di.estado === "ok" ? [{ simbolo: "DI", nome: "DI (CDI anualizado)", casas: 2, unidade: "p.p.", r: di }] : [];
+  return [...itensIdx, ...itemDI];
+}
+
+/** Fita de cotações "viva": indicadores compactos (Ibovespa, dólar, DI) +
+ * ações da B3 (watchlist do usuário, complementada pela seleção padrão
+ * quando a lista é curta) - nunca índices americanos, que ficam fora da
+ * fita principal (brief: "não quero SPX, Nasdaq, Dow Jones... na fita"). */
+export async function lerFita(watchlist: string[] = []): Promise<ItemFita[]> {
+  const tickers = [...new Set([...watchlist.map((t) => t.toUpperCase()), ...ATIVOS_FITA_PADRAO])].slice(0, 20);
+  const [compactos, leiturasAcoes] = await Promise.all([lerIndicadoresCompactos(), obterCotacoes(tickers.map((t) => normalizarSimbolo(t)))]);
+  const itensAcoes: ItemFita[] = tickers.map((t) => ({ simbolo: t, nome: t, casas: 2, r: leiturasAcoes[normalizarSimbolo(t)] }));
+  return [...compactos, ...itensAcoes];
 }

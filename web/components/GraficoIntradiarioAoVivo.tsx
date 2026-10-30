@@ -10,7 +10,7 @@ const INTERVALO_MS = 60_000;
 type Resposta = { serie: Resultado<Serie | null>; cotacao: Resultado<Cotacao | null> };
 
 /** Gráfico intradiário (período "1D") que se atualiza sozinho (Fase 9) -
- * só usado pra "1D": gráficos de períodos históricos (5D em diante) são
+ * só usado pra "1D": gráficos de períodos históricos (1S em diante) são
  * sempre o Server Component estático (ver app/(terminal)/ativo/[ticker]/
  * page.tsx) pra nunca sobrescrever uma série histórica com uma leitura
  * parcial do dia. O ritmo real continua limitado pelo revalidate de

@@ -35,3 +35,15 @@ body {
   background: var(--color-ambar);
   color: var(--color-base);
 }
+
+/* Fita de cotações (FitaCotacoes.tsx): duas cópias da mesma lista lado a
+   lado, deslocando -50% = exatamente uma cópia - looping contínuo sem
+   salto nem "costura" visível no ponto de reinício. */
+@keyframes fita-rolagem {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}

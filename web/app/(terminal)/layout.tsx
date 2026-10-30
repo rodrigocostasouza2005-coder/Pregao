@@ -2,12 +2,15 @@ import { BarraLateral } from "@/components/BarraLateral";
 import { Cabecalho } from "@/components/Cabecalho";
 import { FitaCotacoes } from "@/components/FitaCotacoes";
 import { usuarioAtual } from "@/lib/server/auth";
-import { INDICADORES, lerIndicadores } from "@/lib/server/dominio/mercado";
+import { lerFita } from "@/lib/server/dominio/mercado";
+import { lerWatchlist } from "@/lib/server/dominio/userPrefs";
 
 export const dynamic = "force-dynamic";
 
 export default async function LayoutTerminal({ children }: { children: React.ReactNode }) {
-  const [usuario, fitaInicial] = await Promise.all([usuarioAtual(), lerIndicadores(INDICADORES, false)]);
+  const usuario = await usuarioAtual();
+  const watchlist = usuario?.sub ? await lerWatchlist(usuario.sub) : [];
+  const fitaInicial = await lerFita(watchlist);
   const urlStreamlit = process.env.NEXT_PUBLIC_STREAMLIT_URL || undefined;
   return (
     <div className="flex min-h-screen flex-col">

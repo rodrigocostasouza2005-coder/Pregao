@@ -1,47 +1,71 @@
 import { CabecalhoPagina } from "@/components/CabecalhoPagina";
 import { EstadoDados } from "@/components/EstadoDados";
+import { GraficoPrincipal } from "@/components/GraficoPrincipal";
+import { IndicadoresCompactos } from "@/components/IndicadoresCompactos";
 import { ListaMudancas } from "@/components/ListaMudancas";
-import { MiniGraficoGridAoVivo } from "@/components/MiniGraficoGridAoVivo";
 import { Painel } from "@/components/Painel";
+import { PainelWatchlist } from "@/components/PainelWatchlist";
+import { SelecaoAtivoProvider } from "@/components/SelecaoAtivo";
 import { Selo } from "@/components/Selo";
-import { TabelaIndicadoresAoVivo } from "@/components/TabelaIndicadoresAoVivo";
+import { Variacao } from "@/components/Variacao";
 import { data, dataHora, hojeSaoPaulo, num } from "@/lib/formatos";
 import { lerResultadosFuturos } from "@/lib/server/dominio/agenda";
+import { usuarioAtual } from "@/lib/server/auth";
 import { lerSinteseMercado } from "@/lib/server/dominio/coordenador";
 import { oQueMudou } from "@/lib/server/dominio/inteligencia";
-import { INDICADORES, lerIndicadores } from "@/lib/server/dominio/mercado";
+import { altasEBaixas, lerCotacoesTickers, lerIndicadoresCompactos, painelIbovespa } from "@/lib/server/dominio/mercado";
 import { lerEdicoes, secoes } from "@/lib/server/dominio/morningCall";
 import { mudancasRecomendacao } from "@/lib/server/dominio/research";
 import { ESTADOS_OK, painelSaude } from "@/lib/server/dominio/saude";
+import { lerWatchlist } from "@/lib/server/dominio/userPrefs";
+import { obterCotacao, obterSerie } from "@/lib/server/yahoo";
 
 export const metadata = { title: "Visão Geral · Pregão" };
 
-const PRINCIPAIS = ["^BVSP", "USDBRL=X", "^GSPC", "ES=F", "BZ=F", "^TNX"];
+const ATIVO_PADRAO = "^BVSP";
 
 export default async function VisaoGeral() {
-  const [indicadores, mudou, edicoes, agenda, saude, sintese, mudancasTese] = await Promise.all([
-    lerIndicadores(INDICADORES.filter((i) => PRINCIPAIS.includes(i.simbolo))),
+  const usuario = await usuarioAtual();
+  const [compactos, serie, cotacao, watchlist, mudou, edicoes, agenda, saude, sintese, mudancasTese, painel] = await Promise.all([
+    lerIndicadoresCompactos(),
+    obterSerie(ATIVO_PADRAO, "1D"),
+    obterCotacao(ATIVO_PADRAO),
+    usuario?.sub ? lerWatchlist(usuario.sub) : Promise.resolve<string[]>([]),
     oQueMudou(8),
     lerEdicoes(1),
     lerResultadosFuturos(40),
     painelSaude(),
     lerSinteseMercado(),
     mudancasRecomendacao(6),
+    painelIbovespa(),
   ]);
+  const watchlistCotacoes = await lerCotacoesTickers(watchlist);
   const hoje = hojeSaoPaulo();
   const eventosHoje = agenda.dados.filter((e) => e.data_evento === hoje);
   const ultima = edicoes.dados[0];
   const resumo = ultima ? secoes(ultima.conteudo).find((s) => s.titulo.includes("RESUMO")) : undefined;
   const problemas = saude.linhas.filter((l) => !ESTADOS_OK.has(l.estado.codigo)).length;
+  const { altas } = altasEBaixas(painel.acoes, 5);
   return (
     <>
-      <CabecalhoPagina titulo="Visão Geral" descricao="O que importa agora, com atalhos para cada área" />
-      <MiniGraficoGridAoVivo inicial={indicadores} className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6" />
+      <CabecalhoPagina titulo="Visão Geral" descricao="O que importa agora, com atalhos para cada área · foco B3" />
+      <IndicadoresCompactos inicial={compactos} />
+
+      <SelecaoAtivoProvider padrao={ATIVO_PADRAO}>
+        <div className="mt-3 grid gap-3 xl:grid-cols-3">
+          <Painel titulo="Gráfico" sigla="GP" className="xl:col-span-2" acao={<a href="/mercado" className="text-[11px] text-ambar hover:underline">Mercado →</a>}>
+            <GraficoPrincipal simboloPadrao={ATIVO_PADRAO} nomePadrao="Ibovespa" serieInicial={serie} cotacaoInicial={cotacao} />
+          </Painel>
+          <Painel titulo="Minha watchlist" sigla="WL" rodape="Clique num ticker pra ver no gráfico · ★ adiciona/remove na página do ativo">
+            <PainelWatchlist inicial={watchlistCotacoes} />
+          </Painel>
+        </div>
+      </SelecaoAtivoProvider>
 
       <Painel
         titulo="Resumo executivo · Coordenador de Inteligência"
         sigla="COORD"
-        className="mb-3"
+        className="mt-3"
         acao={<><Selo tipo="inferencia" /><a href="/inteligencia" className="ml-2 text-[11px] text-ambar hover:underline">Inteligência →</a></>}
       >
         <EstadoDados r={sintese} vazio="Síntese ainda não gerada - roda a cada ciclo do Coordenador." />
@@ -56,9 +80,20 @@ export default async function VisaoGeral() {
         ) : null}
       </Painel>
 
-      <div className="grid gap-3 xl:grid-cols-3">
-        <Painel titulo="Mercado agora" sigla="MKT" acao={<a href="/mercado" className="text-[11px] text-ambar hover:underline">Mercado →</a>}>
-          <TabelaIndicadoresAoVivo inicial={indicadores} semSessao />
+      <div className="mt-3 grid gap-3 xl:grid-cols-3">
+        <Painel titulo="Maiores altas" sigla="IBOV" acao={<a href="/mercado" className="text-[11px] text-ambar hover:underline">Mercado →</a>}>
+          {altas.length ? (
+            <ul className="space-y-1 text-[12px]">
+              {altas.map((a) => (
+                <li key={a.ticker} className="flex items-center gap-2">
+                  <a href={`/ativo/${a.ticker}`} className="font-mono hover:text-ambar">{a.ticker}</a>
+                  <span className="text-apagado">{a.setor}</span>
+                  <span className="ml-auto font-mono">{num(a.cotacao.preco)}</span>
+                  <Variacao v={a.cotacao.variacaoPct} />
+                </li>
+              ))}
+            </ul>
+          ) : <p className="text-[12px] text-apagado">Nenhuma ação em alta nesta leitura.</p>}
         </Painel>
         <Painel titulo="Morning Call" sigla="MC" acao={<a href="/morning-call" className="text-[11px] text-ambar hover:underline">Edição →</a>}>
           <EstadoDados r={edicoes} vazio="Nenhuma edição registrada." />

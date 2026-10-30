@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { geometria, marcasX, ticksBonitos } from "@/lib/grafico";
+import { geometria, geometriaVelas, marcasX, ticksBonitos } from "@/lib/grafico";
 
 describe("ticksBonitos", () => {
   it("usa passos redondos dentro do intervalo", () => {
@@ -38,6 +38,36 @@ describe("geometria", () => {
     const g = geometria(pts, { degrau: true })!;
     expect(g.linha).not.toContain("L");
     expect(g.linha.match(/H/g)).toHaveLength(pts.length - 1);
+  });
+});
+
+describe("geometriaVelas", () => {
+  const velas = [
+    { t: 0, open: 10, high: 12, low: 9, close: 11 },
+    { t: 1, open: 11, high: 13, low: 10, close: 9 },
+    { t: 2, open: 9, high: 10, low: 8, close: 9.5 },
+  ];
+
+  it("exige ao menos duas velas (não desenha com uma só)", () => {
+    expect(geometriaVelas([velas[0]])).toBeNull();
+  });
+
+  it("a faixa de preço considera high/low de cada barra, não só o fechamento", () => {
+    const g = geometriaVelas(velas)!;
+    expect(g.max).toBeGreaterThan(13);
+    expect(g.min).toBeLessThan(8);
+  });
+
+  it("classifica alta/baixa pelo próprio corpo (fechamento vs. abertura da barra)", () => {
+    const g = geometriaVelas(velas)!;
+    expect(g.itens[0].alta).toBe(true); // 11 >= 10
+    expect(g.itens[1].alta).toBe(false); // 9 < 11
+  });
+
+  it("inclui a referência na escala, mesmo fora da faixa das barras", () => {
+    const g = geometriaVelas(velas, { referencia: 20 })!;
+    expect(g.max).toBeGreaterThan(20);
+    expect(g.yReferencia).not.toBeNull();
   });
 });
 

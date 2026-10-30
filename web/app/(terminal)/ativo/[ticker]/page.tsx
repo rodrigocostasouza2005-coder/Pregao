@@ -2,7 +2,7 @@ import ibovespa from "@/contratos/ibovespa.json";
 import { BotaoWatchlist } from "@/components/BotaoWatchlist";
 import { CabecalhoPagina } from "@/components/CabecalhoPagina";
 import { EstadoDados } from "@/components/EstadoDados";
-import { Grafico, type EixoX } from "@/components/Grafico";
+import { Grafico } from "@/components/Grafico";
 import { GraficoIntradiarioAoVivo } from "@/components/GraficoIntradiarioAoVivo";
 import { LinkFonte } from "@/components/LinkFonte";
 import { NotaEarnings } from "@/components/NotaEarnings";
@@ -10,17 +10,17 @@ import { Painel } from "@/components/Painel";
 import { Selo } from "@/components/Selo";
 import { Variacao } from "@/components/Variacao";
 import { data, dataHora, num } from "@/lib/formatos";
+import { EIXO_POR_PERIODO } from "@/lib/grafico";
 import { referenciaCotacao } from "@/lib/referencia";
 import { lerEventosDoTicker } from "@/lib/server/dominio/agenda";
 import { lerDocumentosCvm } from "@/lib/server/dominio/cvm";
 import { lerEarnings } from "@/lib/server/dominio/inteligencia";
 import { lerCarteiras, lerItensDoTicker } from "@/lib/server/dominio/research";
+import { normalizarSimbolo } from "@/lib/server/dominio/mercado";
 import { lerWatchlist } from "@/lib/server/dominio/userPrefs";
 import { buscarNoticias } from "@/lib/server/noticias";
 import { usuarioAtual } from "@/lib/server/auth";
 import { obterCotacao, obterSerie, PERIODOS, type Periodo } from "@/lib/server/yahoo";
-
-const EIXO: Record<Periodo, EixoX> = { "1D": "hora", "5D": "dia", "1M": "dia", "6M": "mes", "1A": "mes", "5A": "ano" };
 
 const SETORES = (ibovespa as { setores: Record<string, string> }).setores;
 
@@ -30,7 +30,7 @@ export default async function Ativo({ params, searchParams }: { params: Promise<
   const pedido = (await searchParams).p?.toUpperCase();
   const periodo: Periodo = pedido && pedido in PERIODOS ? (pedido as Periodo) : "1D";
   const ticker = decodeURIComponent((await params).ticker).toUpperCase().replace(/[^A-Z0-9.\-^=]/g, "");
-  const simbolo = /^[A-Z]{4}\d{1,2}$/.test(ticker) ? `${ticker}.SA` : ticker;
+  const simbolo = normalizarSimbolo(ticker);
   const usuario = await usuarioAtual();
   const [serie, cotacao, eventos, cvm, earnings, itens, carteiras, noticias, watchlist] = await Promise.all([
     obterSerie(simbolo, periodo),
@@ -86,7 +86,7 @@ export default async function Ativo({ params, searchParams }: { params: Promise<
             volumes={serie.dados.volumes}
             referencia={null}
             rotuloReferencia="fech. ant."
-            eixoX={EIXO[periodo]}
+            eixoX={EIXO_POR_PERIODO[periodo]}
             fuso={serie.dados.fuso}
             altura={260}
             titulo={`${ticker} ${periodo}`}

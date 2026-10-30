@@ -1,9 +1,9 @@
 import { num, numCompacto, pct } from "@/lib/formatos";
-import { geometria, marcasX, type PontoGrafico } from "@/lib/grafico";
+import { geometria, marcasX, type EixoX, type PontoGrafico } from "@/lib/grafico";
+
+export type { EixoX };
 
 const CORES = { alta: "var(--color-alta)", baixa: "var(--color-baixa)", neutro: "var(--color-ambar)" } as const;
-
-export type EixoX = "hora" | "dia" | "mes" | "ano";
 
 function formatadorX(eixo: EixoX, fuso: string) {
   const opcoes: Record<EixoX, Intl.DateTimeFormatOptions> = {
@@ -53,7 +53,7 @@ type GraficoProps = {
  * acima (mesma contagem de marcas) - "comparação de preço e volume"
  * pedida pro terminal, sem inventar dado: só desenha quando a fonte
  * (Yahoo) trouxe volume pro intervalo pedido (ver lib/server/yahoo.ts). */
-function PainelVolume({ volumes, altura = 46 }: { volumes: PontoGrafico[]; altura?: number }) {
+export function PainelVolume({ volumes, altura = 46 }: { volumes: PontoGrafico[]; altura?: number }) {
   if (volumes.length < 2) return null;
   const maximo = Math.max(...volumes.map((p) => p.v), 1);
   return (

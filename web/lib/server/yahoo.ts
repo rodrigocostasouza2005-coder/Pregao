@@ -24,7 +24,15 @@ type ChartResposta = {
     result?: Array<{
       meta?: { regularMarketPrice?: number; regularMarketTime?: number; currency?: string; exchangeTimezoneName?: string };
       timestamp?: number[];
-      indicators?: { quote?: Array<{ close?: Array<number | null>; volume?: Array<number | null> }> };
+      indicators?: {
+        quote?: Array<{
+          close?: Array<number | null>;
+          volume?: Array<number | null>;
+          open?: Array<number | null>;
+          high?: Array<number | null>;
+          low?: Array<number | null>;
+        }>;
+      };
     }>;
   };
 };
@@ -96,21 +104,30 @@ export async function obterCotacoes(simbolos: string[], concorrencia = 12, reval
 }
 
 export type Ponto = { t: number; v: number };
+/** Barra OHLC real da fonte (nunca um candle artificial feito só com o
+ * fechamento): só entra em `velas` quando open/high/low/close vieram
+ * todos presentes na mesma barra. */
+export type Vela = { t: number; open: number; high: number; low: number; close: number; volume: number | null };
 export type Serie = {
   simbolo: string;
   pontos: Ponto[];
   /** preço × quantidade de cada barra (mesma ordem/timestamps de `pontos`) - ausente quando a fonte não traz volume pro intervalo pedido */
   volumes: Ponto[];
+  /** candles OHLC reais da fonte para o mesmo intervalo - vazio quando a fonte não trouxe open/high/low pro período (ver `pontos`, que cobre todo período com fechamento) */
+  velas: Vela[];
   fechamentoAnterior: number | null;
   moeda: string | null;
   fuso: string;
 };
 
-/** Períodos de gráfico aceitos (range/interval do Yahoo). */
+/** Períodos de gráfico aceitos (range/interval do Yahoo). "1S" é a janela
+ * de 5 dias de pregão (a API do Yahoo não tem um range nativo de
+ * "1 semana"); "3M" usa barras diárias, como "6M"/"1A". */
 export const PERIODOS = {
   "1D": { range: "1d", interval: "5m", revalidar: 300 },
-  "5D": { range: "5d", interval: "30m", revalidar: 600 },
+  "1S": { range: "5d", interval: "30m", revalidar: 600 },
   "1M": { range: "1mo", interval: "1d", revalidar: 1800 },
+  "3M": { range: "3mo", interval: "1d", revalidar: 3600 },
   "6M": { range: "6mo", interval: "1d", revalidar: 3600 },
   "1A": { range: "1y", interval: "1d", revalidar: 3600 },
   "5A": { range: "5y", interval: "1wk", revalidar: 21600 },
@@ -134,18 +151,30 @@ export async function obterSerie(simbolo: string, periodo: Periodo = "1D"): Prom
     };
     const r = corpo.chart?.result?.[0];
     const ts = r?.timestamp || [];
-    const fech = r?.indicators?.quote?.[0]?.close || [];
-    const vol = r?.indicators?.quote?.[0]?.volume || [];
+    const quote = r?.indicators?.quote?.[0];
+    const fech = quote?.close || [];
+    const vol = quote?.volume || [];
+    const abre = quote?.open || [];
+    const alta = quote?.high || [];
+    const baixa = quote?.low || [];
     const pontos = ts.flatMap((t, i) => (typeof fech[i] === "number" ? [{ t: t * 1000, v: fech[i] as number }] : []));
     if (pontos.length < 2) return resultado("vazio", null, FONTE, "Sem negócios suficientes no período.");
     // volume financeiro por barra (preço × quantidade) - só entram barras
     // com os dois valores presentes, na mesma ordem de `pontos`
     const volumes = ts.flatMap((t, i) => (typeof fech[i] === "number" && typeof vol[i] === "number" ? [{ t: t * 1000, v: (vol[i] as number) * (fech[i] as number) }] : []));
+    // candle OHLC real: só entra a barra com os 4 valores presentes (nunca
+    // monta high/low artificiais a partir só do fechamento)
+    const velas = ts.flatMap((t, i) =>
+      typeof abre[i] === "number" && typeof alta[i] === "number" && typeof baixa[i] === "number" && typeof fech[i] === "number"
+        ? [{ t: t * 1000, open: abre[i] as number, high: alta[i] as number, low: baixa[i] as number, close: fech[i] as number, volume: typeof vol[i] === "number" ? (vol[i] as number) : null }]
+        : [],
+    );
     const meta = r?.meta as { chartPreviousClose?: number; previousClose?: number; currency?: string; exchangeTimezoneName?: string } | undefined;
     return resultado("ok", {
       simbolo,
       pontos,
       volumes,
+      velas,
       fechamentoAnterior: periodo === "1D" ? (meta?.previousClose ?? meta?.chartPreviousClose ?? null) : null,
       moeda: meta?.currency ?? null,
       fuso: meta?.exchangeTimezoneName || "America/Sao_Paulo",

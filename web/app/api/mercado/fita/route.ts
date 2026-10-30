@@ -1,9 +1,14 @@
-import { INDICADORES, lerIndicadores } from "@/lib/server/dominio/mercado";
+import { lerFita } from "@/lib/server/dominio/mercado";
+import { usuarioAtual } from "@/lib/server/auth";
+import { lerWatchlist } from "@/lib/server/dominio/userPrefs";
 
 /** Dados da fita de cotações pro polling do cliente (FitaCotacoes.tsx) -
- * mesma leitura/cache do Server Component original (lerIndicadores já
- * respeita o revalidate de lib/server/yahoo.ts); só serializa pra JSON. */
+ * mesma leitura/cache do Server Component original (lerFita já respeita
+ * o revalidate de lib/server/yahoo.ts e lib/server/bcb.ts); só serializa
+ * pra JSON. Inclui a watchlist de quem está logado, igual ao layout. */
 export async function GET() {
-  const linhas = await lerIndicadores(INDICADORES, false);
+  const usuario = await usuarioAtual();
+  const watchlist = usuario?.sub ? await lerWatchlist(usuario.sub) : [];
+  const linhas = await lerFita(watchlist);
   return Response.json({ linhas });
 }
