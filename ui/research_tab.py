@@ -591,22 +591,22 @@ def _painel_radar(relatorios: list, mudancas_todas: list):
         )
         return
 
+    # Sem style= por célula (achado da auditoria institucional 2026-10-29):
+    # os valores batiam quase exatamente com o `table`/`th`/`td` globais de
+    # style.css, só com um padding/tamanho levemente diferente sem motivo -
+    # essa era a única tabela do RESEARCH com alinhamento sutilmente distinto
+    # das outras do app. Herda o padrão global; só o ticker continua com
+    # cor/peso próprios (destaque real, não coberto pela regra genérica).
     linhas_html = "".join(
-        f"<tr style='border-bottom:1px solid var(--borda);'>"
-        f"<td style='padding:0.25rem 0.4rem 0.25rem 0;'>{l['casa']}</td>"
-        f"<td style='padding:0.25rem 0.4rem; color:var(--destaque); font-weight:600;'>{l['ticker']}</td>"
-        f"<td style='padding:0.25rem 0.4rem;'>{l['tipo']}</td>"
-        f"<td style='padding:0.25rem 0.4rem;'>{l['data']}</td>"
-        f"<td style='padding:0.25rem 0 0.25rem 0.4rem;'>{l['status']}</td></tr>"
+        f"<tr><td>{l['casa']}</td>"
+        f"<td style='color:var(--destaque); font-weight:600;'>{l['ticker']}</td>"
+        f"<td>{l['tipo']}</td><td>{l['data']}</td><td>{l['status']}</td></tr>"
         for l in linhas[:30]
     )
     st.markdown(
-        "<table style='width:100%; font-size:0.78rem; border-collapse:collapse;'>"
-        "<thead><tr class='cinza' style='text-align:left; font-size:0.65rem; letter-spacing:0.04em;'>"
-        "<th style='padding:0 0.4rem 0.3rem 0;'>CASA</th><th style='padding:0 0.4rem 0.3rem;'>TICKER</th>"
-        "<th style='padding:0 0.4rem 0.3rem;'>TIPO</th><th style='padding:0 0.4rem 0.3rem;'>DATA</th>"
-        "<th style='padding:0 0.4rem 0.3rem;'>STATUS</th></tr></thead>"
-        f"<tbody>{linhas_html}</tbody></table>",
+        "<table><thead><tr>"
+        "<th>CASA</th><th>TICKER</th><th>TIPO</th><th>DATA</th><th>STATUS</th>"
+        f"</tr></thead><tbody>{linhas_html}</tbody></table>",
         unsafe_allow_html=True,
     )
 
@@ -1076,6 +1076,11 @@ def render_casas_analise(prefs: dict):
     _secao_teses(prefs, relatorios, falhas)
 
     itens_dedup = _dedupe_teses(relatorios)
+    # cobertura cruzada por watchlist (data/market_researcher.py) já vive
+    # DENTRO de _secao_cobertura_saude (ver acima) - não duplicar aqui
+    # (achado real reconciliando com origin/main: a versão antiga, sem
+    # área de teses, tinha essa mesma chamada inline no corpo de
+    # render_casas_analise; a versão nova já absorveu isso na área B).
     _secao_cobertura_saude(prefs, _quantidade_por_casa(itens_dedup))
 
     if casas_para_coletar:

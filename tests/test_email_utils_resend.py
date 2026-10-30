@@ -20,10 +20,9 @@ def test_resend_envia_texto_e_html(monkeypatch):
     monkeypatch.setenv("EMAIL_PROVIDER", "resend")
     monkeypatch.setenv("RESEND_API_KEY", "re_test_secret")
     monkeypatch.setenv("EMAIL_FROM", "Pregao <alerts@example.com>")
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
     monkeypatch.setattr(email_utils, "urlopen", fake_urlopen)
 
-    resultado = email_utils.enviar_email("Assunto", "Texto", "<p>HTML</p>")
+    resultado = email_utils.enviar_email("Assunto", "Texto", "<p>HTML</p>", destinatario="destino@example.com")
 
     request = capturado["request"]
     payload = json.loads(request.data.decode("utf-8"))
@@ -49,11 +48,10 @@ def test_resend_envia_anexo_em_base64(monkeypatch):
     monkeypatch.setenv("EMAIL_PROVIDER", "resend")
     monkeypatch.setenv("RESEND_API_KEY", "re_test_secret")
     monkeypatch.setenv("EMAIL_FROM", "Pregao <alerts@example.com>")
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
     monkeypatch.setattr(email_utils, "urlopen", fake_urlopen)
 
     resultado = email_utils.enviar_email(
-        "Assunto", "Texto", "<p>HTML</p>",
+        "Assunto", "Texto", "<p>HTML</p>", destinatario="destino@example.com",
         anexos=[{"nome": "mc.pdf", "conteudo": b"%PDF-conteudo", "tipo_mime": "application/pdf"}],
     )
 
@@ -77,10 +75,9 @@ def test_resend_sem_anexos_nao_inclui_a_chave_no_payload(monkeypatch):
     monkeypatch.setenv("EMAIL_PROVIDER", "resend")
     monkeypatch.setenv("RESEND_API_KEY", "re_test_secret")
     monkeypatch.setenv("EMAIL_FROM", "alerts@example.com")
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
     monkeypatch.setattr(email_utils, "urlopen", fake_urlopen)
 
-    email_utils.enviar_email("Assunto", "Texto")
+    email_utils.enviar_email("Assunto", "Texto", destinatario="destino@example.com")
 
     payload = json.loads(capturado["request"].data.decode("utf-8"))
     assert "attachments" not in payload
@@ -90,9 +87,8 @@ def test_resend_sem_chave_retorna_erro_sem_tentar_rede(monkeypatch):
     monkeypatch.setenv("EMAIL_PROVIDER", "resend")
     monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.setenv("EMAIL_FROM", "alerts@example.com")
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
 
-    resultado = email_utils.enviar_email("Assunto", "Texto")
+    resultado = email_utils.enviar_email("Assunto", "Texto", destinatario="destino@example.com")
 
     assert resultado["ok"] is False
     assert "RESEND_API_KEY" in resultado["erro"]
@@ -109,10 +105,9 @@ def test_resend_http_error_nao_expoe_chave(monkeypatch):
     monkeypatch.setenv("EMAIL_PROVIDER", "resend")
     monkeypatch.setenv("RESEND_API_KEY", "nao-deve-aparecer")
     monkeypatch.setenv("EMAIL_FROM", "alerts@example.com")
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
     monkeypatch.setattr(email_utils, "urlopen", lambda *_a, **_k: (_ for _ in ()).throw(erro))
 
-    resultado = email_utils.enviar_email("Assunto", "Texto")
+    resultado = email_utils.enviar_email("Assunto", "Texto", destinatario="destino@example.com")
 
     assert resultado["ok"] is False
     assert "401" in resultado["erro"]
@@ -149,10 +144,9 @@ def test_resend_http_error_403_extrai_mensagem_do_corpo_json(monkeypatch):
     monkeypatch.setenv("EMAIL_PROVIDER", "resend")
     monkeypatch.setenv("RESEND_API_KEY", "nao-deve-aparecer")
     monkeypatch.setenv("EMAIL_FROM", "alerts@example.com")
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
     monkeypatch.setattr(email_utils, "urlopen", lambda *_a, **_k: (_ for _ in ()).throw(erro))
 
-    resultado = email_utils.enviar_email("Assunto", "Texto")
+    resultado = email_utils.enviar_email("Assunto", "Texto", destinatario="destino@example.com")
 
     assert resultado["ok"] is False
     assert resultado["erro"] == (
@@ -178,9 +172,8 @@ def test_resend_http_error_com_corpo_nao_json_nunca_quebra(monkeypatch):
     monkeypatch.setenv("EMAIL_PROVIDER", "resend")
     monkeypatch.setenv("RESEND_API_KEY", "chave")
     monkeypatch.setenv("EMAIL_FROM", "alerts@example.com")
-    monkeypatch.setenv("EMAIL_TO", "destino@example.com")
     monkeypatch.setattr(email_utils, "urlopen", lambda *_a, **_k: (_ for _ in ()).throw(erro))
 
-    resultado = email_utils.enviar_email("Assunto", "Texto")
+    resultado = email_utils.enviar_email("Assunto", "Texto", destinatario="destino@example.com")
 
     assert resultado == {"ok": False, "erro": "Resend HTTP 500"}

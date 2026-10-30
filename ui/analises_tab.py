@@ -9,15 +9,20 @@ obter_indicadores, Yahoo Finance, cache de 12h) - receita, lucro e fluxo
 de caixa em serie historica nao existem em nenhuma fonte integrada, e a
 tela diz isso em vez de estimar."""
 
-from datetime import date, datetime
+import html
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 import config
+from data.earnings import reviewer as earnings_reviewer
 from data.market_researcher import analise_ticker
 from data.prices import obter_cotacao, obter_indicadores
-from data.radar import TIPO_CALCULO, TIPO_ESTIMATIVA_TERCEIRO, TIPO_FATO, TIPO_HIPOTESE, TIPO_INSUFICIENTE
+from data.radar import (
+    TIPO_CALCULO, TIPO_ESTIMATIVA_TERCEIRO, TIPO_FATO, TIPO_HIPOTESE, TIPO_INSUFICIENTE,
+    comparaveis_setor,
+)
 from data.research.historico import historico_ticker
 from data.research.tese import scorecard
 from ui import navegacao
@@ -66,6 +71,56 @@ def _analise_ticker_cacheada(ticker: str) -> dict:
     tempo dentro da análise agregada), evita recompor tudo a cada
     rerun do Streamlit (troca de widget na mesma página, etc)."""
     return analise_ticker(ticker)
+
+
+# ============================================================
+# COMPARATIVO SETORIAL DE MÚLTIPLOS (2026-10-27)
+#
+# ANÁLISES › Empresas mostrava P/L, P/VP, ROE e DÍV/EBITDA do ticker
+# isolados, sem nenhum ponto de referência - o usuário precisava ir até
+# RADAR › Valuation (ui/radar_tab.py:_dialog_comparaveis) pra ver a
+# mediana do setor pro MESMO múltiplo, perdendo o contexto do ticker que
+# estava analisando. Esta seção só CONSOME data/radar.py:comparaveis_setor
+# (mesma função que RADAR já usa) - nenhuma consulta nova, nenhum cálculo
+# novo, nenhuma chamada de IA. Sob demanda (botão), não no primeiro
+# render - mesmo motivo de radar_tab.py: evita N consultas yfinance em
+# cascata (1 por par do setor) a cada vez que a página abre.
+# ============================================================
+
+@st.dialog("COMPARATIVO SETORIAL DE MÚLTIPLOS", width="large")
+def _dialog_comparativo_setor_empresa(ticker: str, prefs: dict):
+    fmt = prefs["formato_numerico"]
+    with st.spinner("Calculando medianas do setor (consulta ao vivo, pode levar alguns segundos)..."):
+        try:
+            comp = comparaveis_setor(ticker)
+        except Exception:
+            st.warning(f"Comparativo setorial de {ticker} indisponível agora (fonte não respondeu).")
+            return
+    if comp.get("insuficiente"):
+        st.warning(f"Dado insuficiente pra comparação setorial de {ticker}: "
+                    f"{comp.get('motivo', 'sem pares válidos')}.")
+        return
+    st.caption(f"Setor: {comp['setor']} · {comp['pares_considerados']} papéis no universo (Ibovespa)")
+    for rotulo, chave, sufixo in (
+        ("P/L", "pl_mediana", "x"), ("P/VP", "pvp_mediana", "x"), ("Dividend yield", "dy_mediana", "%"),
+    ):
+        valor = comp.get(chave)
+        n = comp.get(f"{chave}_n", 0)
+        if valor is None:
+            st.markdown(f"**{rotulo}**: dado insuficiente (menos de 3 pares com valor válido - {n} disponível(is))")
+        else:
+            texto_valor = config.formatar_multiplo(valor, 2, fmt) if sufixo == "x" else (
+                config.formatar_numero(valor, 2, fmt) + "%"
+            )
+            st.markdown(f"**{rotulo} mediano do setor**: {texto_valor} ({n} pares considerados)")
+    st.caption(
+        "Mediana calculada agora, sobre os múltiplos atuais do yfinance pros outros papéis do mesmo "
+        "setor (classificação setorial própria do PREGÃO) - não é um índice oficial nem estimativa de "
+        "analista, é um cálculo interno pra dar contexto relativo. Limitação: P/L e P/VP comparam preço "
+        "contra lucro/patrimônio contábil do momento - empresas com margens, crescimento ou estrutura de "
+        "capital diferentes dentro do mesmo setor podem justificar múltiplos diferentes; isto não é um "
+        "preço justo nem uma recomendação."
+    )
 
 
 def render_equity_research_executivo(ticker: str, prefs: dict):
@@ -117,6 +172,10 @@ def render_equity_research_executivo(ticker: str, prefs: dict):
                                                   lambda v: config.formatar_numero(v, 1, fmt) + "x"))
             for alerta in fundamentos.get("alerta_qualidade") or []:
                 st.warning(alerta)
+            if st.button("Comparar com o setor ↗", key=f"empresa_comp_setor_{ticker}",
+                          help="P/L, P/VP e dividend yield mediano dos outros papéis do mesmo setor "
+                               "(RADAR/data/radar.py:comparaveis_setor) - consulta ao vivo sob demanda."):
+                _dialog_comparativo_setor_empresa(ticker, prefs)
 
         st.markdown("**Catalisadores**")
         if catalisadores is None:
@@ -332,6 +391,20 @@ def _montar_conclusao(analise: dict, tese: dict | None) -> list:
     return blocos
 
 
+# rótulo + cor por tipo de evidência (pedido do redesign institucional:
+# "diferencie dados observados, conclusões dos agentes, hipóteses e
+# alertas" - antes FATO/CALCULO/ESTIMATIVA/HIPOTESE renderizavam todos
+# com o mesmo st.markdown, sem nenhuma pista visual da natureza de cada
+# resposta). Mesma linguagem de tag monoespaçada já usada em
+# ui/mercado_tab.py (_tag_fato_interpretacao) e ui/news_tab.py (selo-*).
+_ROTULO_EVIDENCIA = {
+    TIPO_FATO: ("FATO", "var(--cinza)"),
+    TIPO_CALCULO: ("CÁLCULO INTERNO", "var(--ciano)"),
+    TIPO_ESTIMATIVA_TERCEIRO: ("ESTIMATIVA DE TERCEIRO", "var(--destaque)"),
+    TIPO_HIPOTESE: ("HIPÓTESE DO ANALISTA", "var(--destaque)"),
+}
+
+
 def render_conclusao_investimento(ticker: str, prefs: dict, usuario: dict):
     """Painel final de ANÁLISES › Empresas (depois de NOTÍCIAS/CVM, pra
     fechar a análise com uma síntese depois de ver todo o detalhe) -
@@ -349,10 +422,19 @@ def render_conclusao_investimento(ticker: str, prefs: dict, usuario: dict):
         st.markdown('<div class="painel-titulo">CONCLUSÃO DE INVESTIMENTO</div>', unsafe_allow_html=True)
         for bloco in _montar_conclusao(analise, tese):
             st.markdown(f"**{bloco['pergunta']}**")
-            if bloco["tipo_evidencia"] == TIPO_INSUFICIENTE:
+            tipo = bloco["tipo_evidencia"]
+            if tipo == TIPO_INSUFICIENTE:
                 st.caption(bloco["resposta"])
             else:
-                st.markdown(bloco["resposta"])
+                rotulo, cor = _ROTULO_EVIDENCIA.get(tipo, (None, None))
+                if rotulo:
+                    st.markdown(
+                        f"<span style='font-size:0.62rem; letter-spacing:0.04em; color:{cor};'>"
+                        f"[{rotulo}]</span> {bloco['resposta']}",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(bloco["resposta"])
         if tese:
             st.caption(
                 f"Você já registrou uma Tese própria para {ticker} em {str(tese['registrado_em'])[:10]} "
@@ -577,13 +659,13 @@ def render_fundamentos(prefs: dict):
             )
             linhas.append(f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>{nome_t}</td>{celulas}"
                           f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='cinza'>{coleta}</td></tr>")
-        cabecalho = "".join(f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>{r}</th>"
+        cabecalho = "".join(f"<th style='text-align:right; padding:0 0.4rem 0.2rem;'>{r}</th>"
                             for r, _, _ in colunas)
         st.markdown(
             "<div style='overflow-x:auto; overflow-y:hidden;'><table style='width:100%; font-size:0.78rem; "
             "border-collapse:collapse;'><thead><tr class='cinza' style='font-size:0.66rem;'>"
-            f"<th style='text-align:left; font-weight:400; padding:0 0.4rem 0.2rem 0;'>TICKER</th>{cabecalho}"
-            "<th style='text-align:right; font-weight:400; padding:0 0 0.2rem 0.4rem;'>COLETA</th></tr>"
+            f"<th style='text-align:left; padding:0 0.4rem 0.2rem 0;'>TICKER</th>{cabecalho}"
+            "<th style='text-align:right; padding:0 0 0.2rem 0.4rem;'>COLETA</th></tr>"
             f"</thead><tbody>{''.join(linhas)}</tbody></table></div>",
             unsafe_allow_html=True,
         )
@@ -601,3 +683,354 @@ def render_fundamentos(prefs: dict):
         navegacao.link("Documentos de resultado (CVM) ↗", "noticias", "documentos", chave="fund_cvm", width="stretch")
     with cols[1]:
         navegacao.link("Valuation por múltiplos ↗", "analises", "valuation", chave="fund_val", width="stretch")
+
+
+# ============================================================
+# REVISÃO DE RESULTADOS TRIMESTRAIS (2026-10-26)
+#
+# Integra o Earnings Reviewer (data/earnings/reviewer.py + cvm_dre.py/
+# sec_xbrl.py) na aba ANÁLISES › Empresas - esses módulos já existiam
+# prontos, testados e 100% determinísticos (zero IA), mas sem NENHUM
+# consumidor de UI (confirmado por busca no repositório inteiro antes
+# de começar esta integração: zero import de data.earnings em ui/*.py
+# ou jobs/*.py). Esta seção só CONSOME o que reviewer.py já calcula -
+# nenhuma conta nova, nenhuma estimativa, nenhuma chamada de IA.
+#
+# Isolamento de falha (mesmo padrão de data/sintese_mercado.py e
+# data/market_researcher.py): _gerar_nota_earnings nunca deixa uma
+# exceção da fonte (CVM/SEC fora do ar, dado malformado) escapar pra
+# quem chama - devolve disponivel=False com motivo explícito. Isso
+# garante que abrir a revisão de UM ticker nunca derruba a tela nem
+# contamina a revisão de outro ticker chamado depois (mesma função,
+# chamada de novo) - ver tests/test_analises_earnings_review_ui.py.
+# ============================================================
+
+_ROTULOS_METRICAS_EARNINGS = (
+    ("receita_liquida", "Receita líquida"),
+    ("resultado_bruto", "Resultado bruto"),
+    ("ebit", "EBIT"),
+    ("resultado_antes_tributos", "Resultado antes de tributos"),
+    ("lucro_liquido_consolidado", "Lucro líquido consolidado"),
+)
+# lucro_liquido_controladora só existe no plano de contas da CVM
+# (cvm_dre.CONTAS_DRE) - sec_xbrl.TAGS_POR_METRICA nunca tenta essa
+# conta pra empresas internacionais, então essa linha é estrutural
+# (não aplicável), nunca "fonte não respondeu" - por isso só entra na
+# tabela quando pais_code == "BR" (ver _linhas_metricas_earnings).
+_ROTULO_LUCRO_CONTROLADORA_BR = ("lucro_liquido_controladora", "Lucro líquido - controladora")
+
+_FIM_TRIMESTRE_CIVIL = {1: (3, 31), 2: (6, 30), 3: (9, 30)}
+_INICIO_TRIMESTRE_CIVIL = {1: 1, 2: 4, 3: 7}
+_PREFIXO_MOEDA_EARNINGS = {"REAL": "R$", "USD": "US$"}
+_ESCALA_EARNINGS = {"MIL": 1_000.0, "MILHAO": 1_000_000.0}
+
+
+def _trimestres_candidatos_br(hoje: date, n: int = 6) -> list:
+    """Últimos `n` trimestres CIVIS (1-3, nunca o 4º - cvm_dre.py não
+    calcula Q4 isolado, ver docstring do módulo) com data-fim <= hoje,
+    do mais recente pro mais antigo. Só diz que o trimestre já FECHOU
+    no calendário - quem diz se o número já foi PUBLICADO pela CVM é
+    reviewer.montar_nota_br (disponivel/motivo), nunca esta função."""
+    candidatos = []
+    ano = hoje.year
+    limite = hoje.year - 6
+    while len(candidatos) < n and ano > limite:
+        for tri in (3, 2, 1):
+            mes, dia = _FIM_TRIMESTRE_CIVIL[tri]
+            if date(ano, mes, dia) <= hoje:
+                candidatos.append((ano, tri))
+        ano -= 1
+    return candidatos[:n]
+
+
+def _ultimo_trimestre_civil(hoje: date) -> tuple:
+    """(início, fim) do trimestre civil mais recente já encerrado - só
+    um PONTO DE PARTIDA editável pro seletor de empresas internacionais
+    (o calendário fiscal real da empresa pode ser diferente do civil;
+    reviewer.montar_nota_internacional já documenta que detectar o
+    calendário fiscal automaticamente está fora do escopo desta
+    versão - por isso a UI pede confirmação em vez de assumir)."""
+    ano, tri = _trimestres_candidatos_br(hoje, n=1)[0]
+    mes_fim, dia_fim = _FIM_TRIMESTRE_CIVIL[tri]
+    fim = date(ano, mes_fim, dia_fim)
+    inicio = date(ano, _INICIO_TRIMESTRE_CIVIL[tri], 1)
+    return inicio, fim
+
+
+def _mesmo_dia_ano_anterior(d: date) -> date:
+    try:
+        return d.replace(year=d.year - 1)
+    except ValueError:
+        return d.replace(year=d.year - 1, day=28)  # 29/02 em ano não bissexto
+
+
+def _fmt_moeda_earnings(valor, moeda, escala_moeda=None, fmt="BR") -> str:
+    """Valor monetário compacto (R$/US$ ... bi/mi), com sinal explícito
+    pra prejuízo - mesma lógica de data/earnings/editorial.py:_fmt_moeda,
+    reimplementada aqui (não importada) de propósito: a UI não deve
+    depender de função privada (prefixo `_`) de outro módulo que pode
+    mudar sem aviso - mesmo raciocínio de cvm_dre.py ao duplicar
+    _baixar_csv_do_zip em vez de importar de data/cvm.py."""
+    if valor is None:
+        return "indisponível"
+    absoluto = valor * _ESCALA_EARNINGS.get((escala_moeda or "").upper(), 1.0)
+    prefixo = _PREFIXO_MOEDA_EARNINGS.get((moeda or "").upper(), f"{moeda or ''} ")
+    grandeza = abs(absoluto)
+    if grandeza >= 1_000_000_000:
+        texto = f"{prefixo}{config.formatar_numero(grandeza / 1_000_000_000, 1, fmt)} bi"
+    elif grandeza >= 1_000_000:
+        texto = f"{prefixo}{config.formatar_numero(grandeza / 1_000_000, 1, fmt)} mi"
+    else:
+        texto = f"{prefixo}{config.formatar_numero(grandeza, 0, fmt)}"
+    return ("-" if absoluto < 0 else "") + texto
+
+
+def _fmt_variacao_pct_earnings(pct, limiar: float = 1.0) -> str:
+    """'indisponível' (nunca 0/estimado) quando a fonte não devolveu o
+    número; caso contrário, sempre mostra o valor REAL, rotulando
+    'estável' quando |pct| < limiar - estável é um FATO (variação
+    pequena/neutra), nunca confundido com dado ausente."""
+    if pct is None:
+        return "indisponível"
+    rotulo = "alta" if pct > limiar else ("queda" if pct < -limiar else "estável")
+    return f"{pct:+.1f}% ({rotulo})"
+
+
+def _linhas_metricas_earnings(nota: dict, pais_code: str, fmt: str) -> list:
+    moeda, escala = nota.get("moeda"), nota.get("escala_moeda")
+    rotulos = list(_ROTULOS_METRICAS_EARNINGS)
+    if pais_code == "BR":
+        rotulos.append(_ROTULO_LUCRO_CONTROLADORA_BR)
+    linhas = []
+    for chave, rotulo in rotulos:
+        valores = nota.get("metricas", {}).get(chave)
+        if valores is None:
+            linhas.append({"Conta": rotulo, "Valor atual": "indisponível",
+                            "Variação YoY": "indisponível", "Variação QoQ": "indisponível"})
+            continue
+        # QoQ nao e' calculado NA NOTA INTERNACIONAL (montar_nota_internacional
+        # nunca adiciona qoq_variacao_pct - ver docstring de reviewer.py) -
+        # distinto de "fonte nao respondeu": e' uma limitacao estrutural
+        # desta chamada, por isso o rotulo e' diferente de "indisponivel".
+        qoq_texto = ("não calculado nesta nota (ver Limitações)" if pais_code != "BR"
+                     else _fmt_variacao_pct_earnings(valores.get("qoq_variacao_pct")))
+        linhas.append({
+            "Conta": rotulo,
+            "Valor atual": _fmt_moeda_earnings(valores.get("atual"), moeda, escala, fmt),
+            "Variação YoY": _fmt_variacao_pct_earnings(valores.get("yoy_variacao_pct")),
+            "Variação QoQ": qoq_texto,
+        })
+    return linhas
+
+
+def _fmt_gerado_em(valor: str) -> str:
+    if not valor:
+        return "—"
+    try:
+        instante = datetime.fromisoformat(str(valor))
+        if instante.tzinfo is None:
+            instante = instante.replace(tzinfo=timezone.utc)
+        return instante.astimezone(TZ_SP).strftime("%d/%m/%Y %H:%M")
+    except (TypeError, ValueError, OverflowError):
+        return str(valor)[:10]
+
+
+def _gerar_nota_earnings(ticker: str, pais_code: str, periodo: dict) -> dict:
+    """Gera a nota do Earnings Reviewer pra 1 ticker, isolada por
+    try/except (mesmo padrão de data/sintese_mercado.py e
+    data/market_researcher.py): qualquer falha na consulta à fonte
+    (CVM/SEC fora do ar, dado malformado, exceção inesperada) vira
+    disponivel=False com motivo explícito - NUNCA propaga, nunca
+    derruba a tela, nunca afeta a revisão de outro ticker chamado
+    depois nesta mesma sessão. Persistência (salvar_versao) também é
+    best-effort: se o Supabase falhar na gravação, a nota JÁ CALCULADA
+    ainda é mostrada (falha de persistência não é falha de exibição)."""
+    try:
+        if pais_code == "BR":
+            nota = earnings_reviewer.montar_nota_br(ticker, periodo["ano"], periodo["trimestre"])
+        else:
+            nota = earnings_reviewer.montar_nota_internacional(
+                ticker, periodo["inicio"], periodo["fim"], periodo["inicio_ant"], periodo["fim_ant"],
+            )
+    except Exception:
+        # nunca expõe tipo/mensagem bruta da exceção na tela (mesmo
+        # principio de data/research/resumir.py:_log_erro_ia - detalhe
+        # tecnico fica so' no log, aqui nem logado por falta de logger
+        # dedicado nesta integracao, so' nunca mostrado ao usuario).
+        return {
+            "ticker": ticker.upper(), "pais": pais_code, "disponivel": False,
+            "motivo": "falha ao consultar a fonte agora (CVM/SEC indisponível ou dado malformado).",
+        }
+    if nota.get("disponivel"):
+        try:
+            earnings_reviewer.salvar_versao(nota)
+        except Exception:
+            pass
+    return nota
+
+
+def _historico_revisao_earnings(nota: dict) -> dict:
+    """{'anterior': conteudo_da_ultima_nota_persistida|None, 'mudancas':
+    list} - NUNCA sobrescreve nem apaga a versão anterior (só lê, via
+    reviewer.obter_ultima_versao); isolado por try/except pra uma falha
+    de leitura do histórico não derrubar a revisão atual, que já foi
+    calculada com sucesso."""
+    if not nota.get("disponivel"):
+        return {"anterior": None, "mudancas": []}
+    try:
+        anterior = earnings_reviewer.obter_ultima_versao(
+            nota["ticker"], nota["pais"], excluir_periodo=nota.get("periodo_label"),
+        )
+    except Exception:
+        anterior = None
+    try:
+        mudancas = earnings_reviewer.comparar_com_versao_anterior(nota, anterior)
+    except Exception:
+        mudancas = []
+    return {"anterior": anterior, "mudancas": mudancas}
+
+
+def _bloco_interpretacao_earnings(texto: str):
+    """Bloco visualmente separado pra [INTERPRETAÇÃO] (nunca misturado
+    na mesma linha de um FATO sem rótulo) - borda lateral colorida,
+    mesmo princípio visual de data/research resumos (_bloco_resumo em
+    ui/research_tab.py), cor diferente pra não confundir com fato."""
+    st.markdown(
+        f"<div style='border-left:3px solid var(--destaque); padding:0.25rem 0 0.25rem 0.6rem; "
+        f"margin:0.3rem 0; font-size:0.78rem; background:color-mix(in srgb, var(--neutro) 3%, transparent);'>{html.escape(texto)}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _bloco_educacao_financeira_earnings(texto: str):
+    """Bloco visualmente separado pra [O QUE ISSO SIGNIFICA] (educação
+    financeira determinística, data/earnings/reviewer.py:
+    _nota_educativa_receita_vs_lucro) - cor diferente da usada em
+    [INTERPRETAÇÃO] (var(--destaque) acima) de propósito: aqui é um
+    conceito geral de finanças ancorado no número desta empresa, nunca
+    uma leitura do resultado dela nem recomendação."""
+    st.markdown(
+        f"<div style='border-left:3px solid var(--ciano); padding:0.25rem 0 0.25rem 0.6rem; "
+        f"margin:0.3rem 0; font-size:0.78rem; background:color-mix(in srgb, var(--neutro) 3%, transparent);'>{html.escape(texto)}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_revisao_resultados(ticker: str, prefs: dict):
+    """ANÁLISES › Empresas: nota estruturada de resultado trimestral
+    (Earnings Reviewer) pro ticker selecionado - só números já
+    normalizados por cvm_dre.py (Brasil) ou sec_xbrl.py (EUA/registrados
+    em config.ATIVOS_CADASTRO_US), ZERO chamada de IA/estimativa nesta
+    integração (reaproveita só o que data/earnings/reviewer.py já
+    calcula). Reaproveita o versionamento append-only já existente
+    (salvar_versao/comparar_com_versao_anterior) - nunca sobrescreve a
+    nota anterior do mesmo ticker/período.
+
+    Período: para empresas brasileiras, a UI já sabe enumerar
+    trimestres civis (1T/2T/3T - Q4 fora de escopo, ver cvm_dre.py) e
+    oferece o mais recente por padrão, com os anteriores disponíveis no
+    seletor (controle inline, efeito imediato). Para empresas
+    internacionais, o calendário fiscal real não é detectado
+    automaticamente (limitação já documentada em reviewer.py) - a UI
+    oferece um ponto de partida editável (trimestre civil) e pede
+    confirmação das datas exatas do 10-Q/10-K antes de consultar."""
+    fmt = prefs["formato_numerico"]
+    hoje = datetime.now(TZ_SP).date()
+    pais_cfg = config.info_ativo(ticker).get("pais")
+    pais_code = "BR" if pais_cfg == "Brasil" else "US"
+
+    with st.container(border=True):
+        st.markdown('<div class="painel-titulo">REVISÃO DE RESULTADOS TRIMESTRAIS</div>', unsafe_allow_html=True)
+        st.caption(
+            "Nota determinística a partir de dados oficiais (CVM/SEC) - nunca gerada por IA. "
+            "FATOS (números e variações já calculadas) ficam no corpo do texto; blocos destacados "
+            "marcados [INTERPRETAÇÃO] são leituras derivadas só dos deltas já calculados, nunca texto livre."
+        )
+
+        if pais_code == "BR":
+            candidatos = _trimestres_candidatos_br(hoje)
+            if not candidatos:
+                st.info("Nenhum trimestre civil (1T-3T) já encerrado ainda para calcular.")
+                return
+            rotulos = [f"{tri}T{ano}" for ano, tri in candidatos]
+            escolha = st.selectbox(
+                "Trimestre", rotulos, index=0, key=f"earnings_periodo_br_{ticker}",
+                help="Trimestre civil já encerrado - a disponibilidade real depende da CVM já ter publicado o ITR correspondente.",
+            )
+            ano, tri = candidatos[rotulos.index(escolha)]
+            periodo = {"ano": ano, "trimestre": tri}
+        else:
+            inicio_padrao, fim_padrao = _ultimo_trimestre_civil(hoje)
+            col1, col2 = st.columns(2)
+            inicio = col1.date_input("Início do trimestre reportado", value=inicio_padrao,
+                                      key=f"earnings_inicio_us_{ticker}")
+            fim = col2.date_input("Fim do trimestre reportado", value=fim_padrao,
+                                   key=f"earnings_fim_us_{ticker}")
+            st.caption(
+                "Empresa internacional: o PREGÃO não detecta o calendário fiscal automaticamente (pode ser "
+                "diferente do calendário civil) - confirme as datas exatas do período reportado no 10-Q/10-K "
+                "antes de consultar. A comparação anual usa a mesma data um ano antes."
+            )
+            inicio_ant, fim_ant = _mesmo_dia_ano_anterior(inicio), _mesmo_dia_ano_anterior(fim)
+            periodo = {
+                "inicio": inicio.isoformat(), "fim": fim.isoformat(),
+                "inicio_ant": inicio_ant.isoformat(), "fim_ant": fim_ant.isoformat(),
+            }
+
+        nota = _gerar_nota_earnings(ticker, pais_code, periodo)
+
+        if not nota.get("disponivel"):
+            st.info(f"Revisão indisponível para {ticker} neste período: "
+                    f"{nota.get('motivo') or 'motivo não especificado'}.")
+            return
+
+        nomes_fonte = ", ".join(dict.fromkeys(f.get("nome") for f in (nota.get("fontes") or []) if f.get("nome")))
+        st.markdown(f"**{nota.get('empresa') or ticker}** ({nota['ticker']}) · {nota['periodo_label']}")
+        st.caption(
+            f"Análise gerada em {_fmt_gerado_em(nota.get('gerado_em'))} · "
+            f"fonte: {nomes_fonte or 'não identificada'} ({'CVM' if pais_code == 'BR' else 'SEC'})."
+        )
+
+        st.dataframe(_linhas_metricas_earnings(nota, pais_code, fmt), hide_index=True, width="stretch")
+
+        if nota.get("margem_bruta_pct") is not None:
+            texto_margem = f"Margem bruta: {config.formatar_numero(nota['margem_bruta_pct'], 1, fmt)}%"
+            anterior_pct = nota.get("margem_bruta_yoy_anterior_pct")
+            if anterior_pct is not None:
+                delta = nota["margem_bruta_pct"] - anterior_pct
+                texto_margem += (f" · mesmo período ano anterior: {config.formatar_numero(anterior_pct, 1, fmt)}% "
+                                  f"({delta:+.1f} p.p.)")
+            else:
+                texto_margem += " · sem margem bruta do mesmo período do ano anterior pra comparar"
+            st.markdown(texto_margem)
+        else:
+            st.caption("Margem bruta: indisponível (receita líquida ou resultado bruto não reportados no trimestre isolado).")
+
+        interpretacoes = nota.get("interpretacoes") or []
+        if interpretacoes:
+            for texto in interpretacoes:
+                _bloco_interpretacao_earnings(texto)
+        else:
+            st.caption("Nenhuma [INTERPRETAÇÃO] gerada nesta nota (variação de margem bruta abaixo do limiar de "
+                       "1 p.p., ou dado insuficiente pra calculá-la).")
+
+        for texto_educativo in nota.get("educacao_financeira") or []:
+            _bloco_educacao_financeira_earnings(texto_educativo)
+
+        historico = _historico_revisao_earnings(nota)
+        anterior, mudancas = historico["anterior"], historico["mudancas"]
+        if anterior is None:
+            st.caption("Primeira revisão registrada para este ticker (sem versão anterior persistida pra comparar).")
+        elif mudancas:
+            for m in mudancas:
+                st.warning(
+                    f"{m['metrica']}: mudou de {m['direcao_anterior']} pra {m['direcao_atual']} (YoY) entre "
+                    f"{m['periodo_anterior']} e {m['periodo_atual']}."
+                )
+        else:
+            st.caption(f"Nenhuma métrica mudou de direção (YoY) desde a última revisão persistida "
+                       f"({anterior.get('periodo_label', '—')}).")
+
+        with st.expander("Limitações desta nota"):
+            for lim in nota.get("limitacoes") or []:
+                st.caption(f"- {lim}")

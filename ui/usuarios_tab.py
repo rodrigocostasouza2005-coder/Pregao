@@ -133,7 +133,7 @@ def _tabela_html(linhas: list[dict]) -> str:
         "<div style=\"overflow-x:auto; overflow-y:hidden;\">"
         "<table style=\"width:100%; border-collapse:collapse;\">"
         "<thead><tr>"
-        "<th style=\"text-align:left; font-weight:400;\" class=\"cinza\">E-MAIL</th>"
+        "<th style=\"text-align:left;\" class=\"cinza\">E-MAIL</th>"
         "<th class=\"cinza\">CADASTRO</th>"
         "<th class=\"cinza\">ÚLTIMO ACESSO</th>"
         "<th class=\"cinza\">MORNING CALL</th>"

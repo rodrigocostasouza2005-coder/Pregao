@@ -901,6 +901,20 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
         min-width: 6.3rem !important;
         width: auto !important;
     }
+
+    /* Os 4 indicadores de topo da aba MERCADO (IBOVESPA/DÓLAR/DI/S&P 500,
+       painel novo - auditoria visual vs. protótipo, 2026-10-27) viram
+       grade 2x2 no mobile, mesma hierarquia do protótipo
+       (.metrics{grid-template-columns:repeat(2,...)} em <650px). */
+    .st-key-mercado_metricas_cols div[data-testid="stHorizontalBlock"] {
+        column-gap: 0.4rem !important;
+        row-gap: 0.45rem !important;
+    }
+    .st-key-mercado_metricas_cols div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        flex: 1 1 45% !important;
+        min-width: 7rem !important;
+        width: auto !important;
+    }
     .card-mercado-agora {
         min-height: 4rem;
         padding: 0.4rem 0.45rem;

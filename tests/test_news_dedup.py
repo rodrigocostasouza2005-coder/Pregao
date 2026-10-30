@@ -351,3 +351,83 @@ def test_18_grupo_grande_nao_atrai_titulo_por_percentual_de_outro_membro():
     _checar("18 as duas de 0,54% juntam; a de 6% fica fora", len(grupos) == 2 and
             any(len(g["titulos"]) == 2 for g in grupos), f"(grupos={[g['titulos'] for g in grupos]})")
 
+
+# ============================================================
+# 5. Entidade GEOGRAFICA generica (achado real, auditoria 2026-10-22):
+#    um local sozinho (estado/pais/cidade) NAO pode unir materias sem
+#    relacao so' por aparecer nas duas - so' empresa/pessoa (nome
+#    proprio especifico) conta como entidade de verdade.
+# ============================================================
+
+def test_19_reproducao_do_bug_real_3_materias_internacionais_sem_relacao_nao_fundem():
+    """Reproducao DETERMINISTICA do achado real (auditoria 2026-10-22,
+    PR #141): 3 materias sem NENHUMA relacao entre si, cada uma citando
+    'California' - antes desta correcao, viravam 1 grupo so' (a entidade
+    generica 'california' batia nas 3). Agora tem que ficar em 3 grupos
+    separados (sem titulo identico, sem percentual em comum, sem
+    similaridade de conteudo real)."""
+    itens = [
+        _item("Tech CEO plan to pay California's proposed billionaire tax without losing control of company",
+              "Reuters", ticker="", data=_AGORA),
+        _item("911 Outages Hit Multiple Cities in California", "AP News", ticker="",
+              data=_AGORA - timedelta(hours=2)),
+        _item("Self-driving car hits and kills pedestrian on California freeway", "CNBC", ticker="",
+              data=_AGORA - timedelta(hours=4)),
+    ]
+    grupos = _agrupar(itens)
+    _checar(
+        "19 3 materias internacionais sem relacao, so' compartilhando 'California' -> 3 grupos, NUNCA 1",
+        len(grupos) == 3, f"(qtd={len(grupos)}, grupos={[g['titulos'] for g in grupos]})",
+    )
+
+
+def test_20_outros_locais_genericos_tambem_nao_fundem_pais_estado_cidade():
+    """Generaliza o teste 19 pra outros tipos de local generico (pais,
+    estado, cidade) - nao e' so' 'California' que foi corrigido."""
+    casos = [
+        ("Startup raises funding round in Texas", "Reuters", "Teacher strike shuts down schools across Texas", "AP News"),
+        ("Company announces new factory in China", "Bloomberg", "Earthquake damages infrastructure in China", "Reuters"),
+        ("Mayor of London unveils transit plan", "BBC", "Museum in London reports record attendance", "Reuters"),
+    ]
+    for titulo_a, veiculo_a, titulo_b, veiculo_b in casos:
+        itens = [
+            _item(titulo_a, veiculo_a, ticker="", data=_AGORA),
+            _item(titulo_b, veiculo_b, ticker="", data=_AGORA - timedelta(hours=2)),
+        ]
+        grupos = _agrupar(itens)
+        _checar(
+            f"20 '{titulo_a}' x '{titulo_b}' (so' local em comum) -> 2 grupos",
+            len(grupos) == 2, f"(qtd={len(grupos)})",
+        )
+
+
+def test_21_empresa_especifica_continua_fundindo_mesmo_internacional():
+    """Positivo: nome de empresa especifico (nao generico) continua
+    funcionando como entidade de verdade pra unir a MESMA materia
+    reportada por veiculos diferentes - a correcao do teste 19/20 NAO
+    pode quebrar esse caso (mesmo espirito do test_3b/test_6 em
+    português, agora confirmado tambem em ingles)."""
+    itens = [
+        _item("Tesla recalls vehicles over battery defect, regulators say", "Reuters", ticker="", data=_AGORA),
+        _item("Tesla faces new scrutiny after battery-related recall announcement", "CNBC", ticker="",
+              data=_AGORA - timedelta(hours=5)),
+    ]
+    grupos = _agrupar(itens)
+    _checar("21 mesma materia (Tesla), veiculos diferentes -> 1 grupo (entidade de empresa preservada)",
+            len(grupos) == 1, f"(qtd={len(grupos)})")
+
+
+def test_22_local_generico_e_entidade_especifica_juntos_ainda_fundem_pela_entidade():
+    """Positivo adicional: quando ALEM do local generico tambem ha' uma
+    entidade de verdade em comum (empresa), o grupo continua unindo -
+    colocar 'california' na lista de ignorados nao deve atrapalhar o
+    match pela entidade real que esta' do lado."""
+    itens = [
+        _item("Meta announces new data center investment in California", "Reuters", ticker="", data=_AGORA),
+        _item("Meta's California data center project faces local opposition", "AP News", ticker="",
+              data=_AGORA - timedelta(hours=3)),
+    ]
+    grupos = _agrupar(itens)
+    _checar("22 'Meta' (entidade real) funde mesmo com 'California' (ignorado) presente nos dois",
+            len(grupos) == 1, f"(qtd={len(grupos)})")
+

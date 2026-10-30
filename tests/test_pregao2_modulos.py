@@ -140,7 +140,11 @@ st.session_state.setdefault("salvos", 0)
 def persistir():
     st.session_state.salvos += 1
     return True
-with patch.object(mc, "listar_edicoes", return_value=[ed]):
+# sem rede de verdade: a síntese de mercado e os alertas de saúde
+# consultavam cotações/IA ao vivo e estouravam o limite de 30s no CI
+with patch.object(mc, "listar_edicoes", return_value=[ed]), \\
+     patch.object(mc, "obter_sintese_mercado", return_value={}), \\
+     patch.object(mc, "_alertas_confiabilidade_cacheados", return_value=[]):
     mc.render_edicao_atual(prefs)
     mc.render_historico(prefs)
 mc.render_preferencias(prefs, {"email": "teste@exemplo.com"}, persistir)
@@ -152,6 +156,32 @@ mc.render_preferencias(prefs, {"email": "teste@exemplo.com"}, persistir)
     assert "<a href='https://exemplo.com'" in textos
     at.toggle(key="toggle_morning_call_email").set_value(True).run()
     assert at.session_state["prefs"]["morning_call_email_ativo"] is True
+    assert at.session_state["salvos"] == 1
+
+
+def test_appteste_radar_preferencias_toggle_persiste_e_e_independente_do_morning_call():
+    """Mesmo padrão do teste acima, pro opt-in do Radar de Quedas - e
+    confirma que ligar o Radar nunca liga o Morning Call (preferências
+    independentes, ver missão "Radar/Morning Call: consentimento")."""
+    from streamlit.testing.v1 import AppTest
+
+    script = '''
+import streamlit as st
+import ui.radar_tab as radar_tab
+prefs = st.session_state.setdefault(
+    "prefs", {"radar_quedas_email_ativo": False, "morning_call_email_ativo": False},
+)
+st.session_state.setdefault("salvos", 0)
+def persistir():
+    st.session_state.salvos += 1
+    return True
+radar_tab.render_preferencias(prefs, {"email": "teste@exemplo.com"}, persistir)
+'''
+    at = AppTest.from_string(script, default_timeout=30).run()
+    assert not at.exception
+    at.toggle(key="toggle_radar_quedas_email").set_value(True).run()
+    assert at.session_state["prefs"]["radar_quedas_email_ativo"] is True
+    assert at.session_state["prefs"]["morning_call_email_ativo"] is False
     assert at.session_state["salvos"] == 1
 
 

@@ -82,6 +82,7 @@ from pathlib import Path
 
 import config
 from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
+from data.cvm import obter_documentos_watchlist
 from data.eventos import salvar_snapshot_calendario, universo_calendario
 from data.eventos_coleta import coletar_eventos_universo
 from data.news import pregerar_imagens_news, pregerar_resumos_news
@@ -350,6 +351,32 @@ def main() -> int:
         f"  universo do calendario: {len(universo)} ticker(s) "
         "(CVM/FCA + BDRs curados + watchlists reais de todos os usuarios)"
     )
+
+    # documentos CVM (fatos relevantes/comunicados) pro universo INTEIRO
+    # (achado real, auditoria 2026-10-30): obter_documentos_watchlist so'
+    # era chamada de dentro de ui/cvm_tab.py, quando um usuario logado
+    # com watchlist abria a aba CVM no Streamlit ao vivo - nenhum
+    # workflow agendado rodava isso, entao sem alguem abrindo o app os
+    # documentos persistidos em research_itens (casa="CVM") iam ficando
+    # velhos e saindo pela retencao de data/research/store.py. Barato
+    # rodar pro universo inteiro aqui: obter_documentos_cvm so' baixa o
+    # IPE (zip anual) 1x por ano via @st.cache_data e reusa em memoria
+    # pra cada ticker - nao e' 1 requisicao de rede por ticker, entao nao
+    # precisa do mesmo orcamento/rotacao do RI/NEWS abaixo.
+    try:
+        docs_cvm, falhas_cvm = obter_documentos_watchlist(universo)
+        logger.info(
+            f"  documentos CVM: {len(docs_cvm)} documento(s) no universo, "
+            f"{len(falhas_cvm)} ticker(s) sem IPE valido"
+        )
+    except Exception:
+        # Isolamento (pedido explicito, auditoria 2026-10-30): uma falha
+        # inesperada aqui (fora do try/except por-ticker que
+        # obter_documentos_watchlist ja tem) nao pode derrubar o resto
+        # da execucao (eventos/snapshot/news abaixo); registrar_tentativa
+        # ja' seria chamado DENTRO de obter_documentos_watchlist em
+        # execucoes normais - aqui so' loga, nao duplica o registro.
+        logger.exception("  documentos CVM: falha inesperada (demais coletores seguem normalmente)")
 
     # datas reais de resultado (RI->NEWS->PRAZO_CVM, 2026-10-02) - ver
     # data/eventos_coleta.py. Orcamento proprio de tempo (5min), pode nao

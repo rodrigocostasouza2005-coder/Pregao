@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+/* Identidade do Pregão: terminal financeiro escuro, âmbar como acento
+   (o mesmo âmbar discreto do Morning Call em PDF). */
+@theme {
+  --color-base: #0b0d10;
+  --color-painel: #111418;
+  --color-painel-alto: #161a1f;
+  --color-filete: #232830;
+  --color-texto: #e6e3dc;
+  --color-suave: #a8a49b;
+  --color-apagado: #6f6c66;
+  --color-ambar: #e0a526;
+  --color-ambar-fundo: #2a2210;
+  --color-alta: #3fb68b;
+  --color-baixa: #e5534b;
+
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  background: var(--color-base);
+  color: var(--color-texto);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "tnum" 1;
+}
+
+::selection {
+  background: var(--color-ambar);
+  color: var(--color-base);
+}
+
+/* Fita de cotações (FitaCotacoes.tsx): duas cópias da mesma lista lado a
+   lado, deslocando -50% = exatamente uma cópia - looping contínuo sem
+   salto nem "costura" visível no ponto de reinício. */
+@keyframes fita-rolagem {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}

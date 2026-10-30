@@ -20,6 +20,7 @@ calendário confiável que o projeto ainda não integra (não dá pra inventar
 datas) - ver MELHORIAS FUTURAS em PROGRESSO.md."""
 
 import math
+from datetime import datetime, timezone
 
 import pandas as pd
 import streamlit as st
@@ -227,6 +228,29 @@ def obter_panorama_ibovespa() -> list:
             linha["setor"] = IBOVESPA_SETORES.get(ticker, "Outros")
             resultado.append(linha)
     return resultado
+
+
+@st.cache_data(ttl=_TTL_LOTE, show_spinner=False)
+def _momento_lote(tickers: tuple) -> datetime:
+    """So' captura o instante (UTC) em que ESTE cache populou - mesma
+    chave/TTL de _baixar_lote (chamada com os mesmos `tickers`), entao
+    expira junto com o lote de cotacoes que ele descreve, sem nenhuma
+    chamada de rede extra nem risco de mostrar um horario mais 'fresco'
+    que o dado real exibido (ver obter_momento_panorama)."""
+    return datetime.now(timezone.utc)
+
+
+def obter_momento_panorama() -> datetime | None:
+    """Horário (UTC) da última coleta do lote usado por
+    obter_panorama_ibovespa() - pra UI mostrar 'atualizado há Xs/min'
+    sem inventar um horário. None só se nem a composição oficial nem o
+    fallback estático (IBOVESPA_SETORES) existirem, o que não deveria
+    acontecer (IBOVESPA_SETORES é estático, sempre presente)."""
+    composicao = obter_composicao_oficial()
+    tickers = tuple(composicao.keys()) if composicao else tuple(IBOVESPA_SETORES.keys())
+    if not tickers:
+        return None
+    return _momento_lote(tickers)
 
 
 def obter_altas_baixas(n: int = 10, janela: str = "dia") -> tuple:

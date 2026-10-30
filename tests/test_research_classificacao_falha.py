@@ -157,6 +157,128 @@ def test_2d_falha_de_persistencia_com_coleta_ok_usa_categoria_real_do_modulo_e_e
     )
 
 
+# ============================================================
+# _bloqueio_conhecido_em_cooldown / coletar_todas_disponiveis - cooldown
+# pra bloqueio ja' CONFIRMADO (auditoria SAUDE DOS DADOS 2026-10-26, P2
+# Genial/XP): coletor_local.py (processo novo a cada execucao) nao tinha
+# nenhum cooldown - repetia a tentativa cara (ate' ~20s de orcamento)
+# mesmo sabendo, pela ULTIMA tentativa persistida em coletores_status,
+# que o bloqueio e' o mesmo de sempre ha' poucos minutos.
+# ============================================================
+from datetime import datetime, timedelta, timezone
+
+
+def _status(execucao_ok, erro, minutos_atras):
+    quando = datetime.now(timezone.utc) - timedelta(minutes=minutos_atras)
+    return {"execucao_ok": execucao_ok, "ultimo_erro": erro, "ultima_tentativa_em": quando.isoformat()}
+
+
+def test_3a_sem_marcador_na_casa_nunca_pula():
+    casa = {"nome": "X"}
+    with patch.object(research_mod, "obter_status") as mock_status:
+        resultado = research_mod._bloqueio_conhecido_em_cooldown(casa)
+    _checar("3a casa sem marcador -> None (nunca consulta status)", resultado is None)
+    mock_status.assert_not_called()
+
+
+def test_3b_ultima_tentativa_foi_sucesso_nao_pula():
+    casa = {"nome": "X", "marcador_bloqueio_conhecido": "bloqueio X"}
+    with patch.object(research_mod, "obter_status", return_value=_status(True, None, 1)):
+        resultado = research_mod._bloqueio_conhecido_em_cooldown(casa)
+    _checar("3b ultimo sucesso -> None", resultado is None)
+
+
+def test_3c_falha_recente_com_marcador_pula():
+    casa = {"nome": "X", "marcador_bloqueio_conhecido": "bloqueio X"}
+    with patch.object(research_mod, "obter_status", return_value=_status(False, "falha: bloqueio X", 2)):
+        resultado = research_mod._bloqueio_conhecido_em_cooldown(casa)
+    _checar("3c falha recente com marcador -> devolve o erro persistido", resultado == "falha: bloqueio X")
+
+
+def test_3d_falha_recente_sem_marcador_nao_pula():
+    """Erro novo/diferente (sem o marcador exato) sempre tenta de novo -
+    nunca mascara uma mudanca real de comportamento."""
+    casa = {"nome": "X", "marcador_bloqueio_conhecido": "bloqueio X"}
+    with patch.object(research_mod, "obter_status", return_value=_status(False, "HTTP 500 inesperado", 2)):
+        resultado = research_mod._bloqueio_conhecido_em_cooldown(casa)
+    _checar("3d falha diferente -> None (tenta de novo)", resultado is None)
+
+
+def test_3e_falha_com_marcador_mas_cooldown_expirado_nao_pula():
+    casa = {"nome": "X", "marcador_bloqueio_conhecido": "bloqueio X"}
+    with patch.object(research_mod, "obter_status", return_value=_status(False, "falha: bloqueio X", 11)):
+        resultado = research_mod._bloqueio_conhecido_em_cooldown(casa)
+    _checar("3e cooldown expirado (11min > 10min) -> None (tenta de novo)", resultado is None)
+
+
+def test_3f_coletar_todas_disponiveis_pula_sem_chamar_obter_relatorios():
+    chamou_rede = []
+    casa = {
+        "id": "genial", "nome": "Genial Analisa", "fonte": "Genial",
+        "disponivel": True,
+        "obter_relatorios": lambda: chamou_rede.append(1) or None,
+        "motivo_falha": None, "categoria_falha": lambda: "bloqueio_externo_conhecido",
+        "marcador_bloqueio_conhecido": "bloqueio X",
+    }
+    with patch.object(research_mod, "CASAS", [casa]), \
+         patch.object(research_mod, "registrar_tentativa") as mock_registrar, \
+         patch.object(research_mod, "obter_status", return_value=_status(False, "falha: bloqueio X", 2)):
+        resultado = research_mod.coletar_todas_disponiveis()
+    _checar("3f pula sem chamar obter_relatorios", chamou_rede == [])
+    _checar("3f nunca registra nova tentativa ao pular", not mock_registrar.called)
+    _checar(
+        "3f resultado reflete bloqueio_externo_conhecido",
+        resultado["Genial Analisa"] == {"coletados": 0, "ok": False, "categoria_falha": "bloqueio_externo_conhecido"},
+        f"(resultado={resultado['Genial Analisa']})",
+    )
+
+
+def test_3g_excecao_na_verificacao_do_cooldown_nao_impede_coleta_nem_das_demais_casas():
+    """Achado da revisão independente (2026-10-26): uma exceção SÓ na
+    VERIFICAÇÃO do cooldown (ex: timestamp persistido sem timezone,
+    TypeError ao comparar datetimes) não pode abortar o for inteiro - a
+    própria casa afetada precisa seguir pra tentativa de coleta normal
+    (nunca "pular" por causa de uma falha na checagem), e as casas
+    SEGUINTES na lista (aqui: BTG, sem marcador_bloqueio_conhecido, nem
+    chega a chamar obter_status) precisam continuar sendo processadas
+    normalmente - antes, a exceção não tratada aqui derrubava o loop
+    inteiro nesse ponto."""
+    casa_genial = {
+        "id": "genial", "nome": "Genial Analisa", "fonte": "Genial",
+        "disponivel": True,
+        "obter_relatorios": lambda: [{"link": "https://x/1"}],  # coleta normal funcionaria
+        "motivo_falha": None, "categoria_falha": lambda: "erro",
+        "marcador_bloqueio_conhecido": "bloqueio X",
+    }
+    casa_btg = {
+        "id": "btg", "nome": "BTG Pactual Research", "fonte": "BTG",
+        "disponivel": True,
+        "obter_relatorios": lambda: [{"link": "https://y/1"}],
+        "motivo_falha": None,
+    }
+
+    def _obter_status_explode(nome):
+        if nome == "Genial Analisa":
+            raise TypeError("can't subtract offset-naive and offset-aware datetimes")
+        return None
+
+    with patch.object(research_mod, "CASAS", [casa_genial, casa_btg]), \
+         patch.object(research_mod.store, "salvar_itens", return_value=True), \
+         patch.object(research_mod, "registrar_tentativa"), \
+         patch.object(research_mod, "obter_status", side_effect=_obter_status_explode):
+        resultado = research_mod.coletar_todas_disponiveis()
+
+    _checar(
+        "3g casa com falha na verificação ainda tenta coleta normal (não pula)",
+        resultado["Genial Analisa"]["ok"] is True, f"(resultado={resultado.get('Genial Analisa')})",
+    )
+    _checar("3g casa SEGUINTE na lista continua sendo processada", "BTG Pactual Research" in resultado)
+    _checar(
+        "3g BTG coletado normalmente (loop não foi abortado)",
+        resultado["BTG Pactual Research"]["ok"] is True, f"(resultado={resultado.get('BTG Pactual Research')})",
+    )
+
+
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-v"]))

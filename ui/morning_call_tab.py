@@ -41,7 +41,9 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+from data.morning_call_briefing import alertas_confiabilidade, tickers_novos
 from data.morning_call_historico import listar_edicoes
+from data.sintese_mercado import obter_sintese_mercado
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 _URL = re.compile(r"https?://[^\s<>\"')]+")
@@ -172,6 +174,38 @@ def _estilo_mc() -> str:
         ".mc-radar-bloco:last-child{border-bottom:none;}"
         ".mc-radar-nome{color:var(--destaque);font-family:'IBM Plex Mono',monospace;font-weight:700;"
         "font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;}"
+        # resumo executivo (ANALISTA DE MERCADO, data/sintese_mercado.py) -
+        # bloco A do briefing, topo da edição
+        ".mc-resumo{margin-bottom:4px;}"
+        ".mc-resumo-meta{color:var(--cinza);font-size:.66rem;margin-bottom:6px;}"
+        ".mc-resumo-anterior{color:var(--destaque);font-size:.7rem;font-weight:600;margin-bottom:6px;}"
+        # faixa compacta de alertas (bloco G) - nunca uma caixa grande,
+        # só uma linha de atenção acima do conteúdo detalhado
+        ".mc-alertas-faixa{display:flex;flex-direction:column;gap:3px;margin-bottom:10px;"
+        "padding:6px 9px;border-left:2px solid var(--destaque);"
+        "background:color-mix(in srgb, var(--painel-bg) 80%, transparent);font-size:.72rem;}"
+        ".mc-alertas-faixa-item{color:var(--neutro);}"
+        ".mc-alertas-faixa-item .mc-marca{color:var(--destaque);margin-right:4px;}"
+        # radar de ações (oportunidades/riscos + movimentos, data/
+        # sintese_mercado.py) - bloco C do briefing; mesma "forma" de
+        # .mc-tese (topo com chips + corpo + fonte) pra consistência
+        # visual com teses de research, mas classe própria (semântica
+        # diferente: leitura do sistema, não recomendação de casa)
+        ".mc-oportunidade{padding:8px 0;border-bottom:1px solid color-mix(in srgb, var(--borda) 40%, transparent);}"
+        ".mc-oportunidade:last-child{border-bottom:none;}"
+        ".mc-oportunidade-topo{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:3px;}"
+        ".mc-oportunidade-ativo{font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--destaque);"
+        "font-size:.78rem;}"
+        ".mc-oportunidade-corpo{font-family:" + _SANS + ";line-height:1.5;color:var(--neutro);font-size:.82rem;}"
+        ".mc-oportunidade-linha{font-size:.76rem;margin-top:2px;}"
+        ".mc-oportunidade-fonte{color:var(--cinza);font-size:.66rem;margin-top:3px;}"
+        # cenários (bull/base/bear qualitativo, data/sintese_mercado.py) -
+        # bloco F
+        ".mc-cenario{padding:8px 0;border-bottom:1px solid color-mix(in srgb, var(--borda) 40%, transparent);}"
+        ".mc-cenario:last-child{border-bottom:none;}"
+        ".mc-cenario-rotulo{font-size:.64rem;font-weight:700;letter-spacing:.03em;margin-bottom:2px;}"
+        ".mc-cenario-texto{font-family:" + _SANS + ";font-weight:600;font-size:.84rem;color:var(--neutro);}"
+        ".mc-cenario-linha{font-size:.76rem;margin-top:2px;color:var(--neutro);}"
         "</style>"
     )
 
@@ -522,12 +556,178 @@ def _linha_agenda_estruturada(evento: dict) -> str:
     )
 
 
-def render_edicao_estruturada_html(edicao: dict) -> str:
-    """Jornal completo (capa/Brasil/Exterior/Empresas/Agenda/Radar/Fontes)
-    a partir do MESMO dict que jobs/morning_call_pdf.py usa pro PDF -
-    camada de apresentação nova (Streamlit/HTML), sem recalcular nenhum
-    dado nem reimplementar a seleção editorial."""
-    partes = [_estilo_mc(), "<div class='mc-wrap'>"]
+def _bloco_resumo_executivo_html(sintese: dict) -> str:
+    """Bloco A do briefing (RESUMO EXECUTIVO) - data/sintese_mercado.py,
+    mesmo motor de IA já usado pela VISÃO GERAL, nenhuma chamada nova.
+    Distingue FATO coletado de LEITURA (ressalvas/o_que_nao_sabemos é a
+    lacuna, nunca preenchida com algo genérico)."""
+    if not sintese.get("ok"):
+        return (
+            "<div class='mc-secao'><div class='mc-secao-titulo'>RESUMO EXECUTIVO</div>"
+            "<div class='mc-aviso'>Análise indisponível nesta execução.</div></div>"
+        )
+    dados = sintese["dados"]
+    resumo = dados["resumo_executivo"]
+    partes = ["<div class='mc-secao'><div class='mc-secao-titulo'>RESUMO EXECUTIVO</div><div class='mc-resumo'>"]
+    if not sintese.get("atual"):
+        partes.append(
+            "<div class='mc-resumo-anterior'>ANÁLISE ANTERIOR - a rodada atual não pôde ser gerada"
+            + (f" ({html.escape(str(sintese['motivo_atual_indisponivel']))})" if sintese.get("motivo_atual_indisponivel") else "")
+            + "</div>"
+        )
+    partes.append(f"<div class='mc-prosa-inline'>{texto_para_html(resumo['texto'])}</div>")
+    if resumo.get("ressalvas"):
+        partes.append(f"<div class='mc-noticia-meta' style='margin-top:4px;'>Ressalvas: {texto_para_html(resumo['ressalvas'])}</div>")
+    nao_sabemos = dados.get("o_que_nao_sabemos") or []
+    if nao_sabemos:
+        partes.append(
+            "<div class='mc-noticia-meta' style='margin-top:4px;'>O que ainda não sabemos: "
+            + texto_para_html("; ".join(nao_sabemos)) + "</div>"
+        )
+    partes.append("</div></div>")
+    return "".join(partes)
+
+
+def _bloco_alertas_html(alertas_saude: list, novidades: list) -> str:
+    """Bloco G do briefing (ALERTAS E ATUALIZAÇÕES) - faixa compacta,
+    nunca uma caixa grande nem um 2º sistema de monitoramento: lê o
+    painel SAÚDE DOS DADOS já existente (data/saude_dados.py) e compara
+    texto simples com a última edição publicada (data/
+    morning_call_briefing.py). [] nas duas listas -> sem seção (nada a
+    avisar, não é omissão silenciosa de erro)."""
+    if not alertas_saude and not novidades:
+        return ""
+    itens = []
+    for a in alertas_saude:
+        itens.append(
+            f"<div class='mc-alertas-faixa-item'><span class='mc-marca'>›</span>"
+            f"{html.escape(str(a.get('nome') or ''))} — {html.escape(str(a.get('rotulo_estado') or ''))}</div>"
+        )
+    if novidades:
+        itens.append(
+            "<div class='mc-alertas-faixa-item'><span class='mc-marca'>›</span>"
+            "Novos no radar desde a última edição enviada: "
+            + html.escape(", ".join(novidades)) + "</div>"
+        )
+    return "<div class='mc-alertas-faixa'>" + "".join(itens) + "</div>"
+
+
+def _bloco_radar_acoes_html(sintese: dict) -> str:
+    """Bloco C do briefing (RADAR DE AÇÕES E OPORTUNIDADES DE
+    INVESTIGAÇÃO) - data/sintese_mercado.py: 'movimentos' (o que está
+    movendo o mercado) + 'oportunidades_riscos' ('para investigar').
+    Chip INTERPRETAÇÃO (já usado em outras partes da aba) marca que é
+    LEITURA DO SISTEMA sobre os fatos coletados - nunca recomendação de
+    compra/venda nem confundida com recomendação de casa (essa vive só
+    na seção TESES E RECOMENDAÇÕES DE RESEARCH, abaixo)."""
+    if not sintese.get("ok"):
+        return ""
+    dados = sintese["dados"]
+    movimentos = dados.get("movimentos") or []
+    oportunidades = dados.get("oportunidades_riscos") or []
+    if not movimentos and not oportunidades:
+        return ""
+    partes = ["<div class='mc-secao'><div class='mc-secao-titulo'>RADAR DE AÇÕES E OPORTUNIDADES DE INVESTIGAÇÃO</div>"]
+    partes.append(
+        "<p class='mc-aviso' style='margin-bottom:8px;'>Leitura do sistema sobre os fatos já coletados nesta "
+        "edição - nunca uma recomendação de compra/venda. Recomendações com atribuição de casa estão na seção "
+        "TESES E RECOMENDAÇÕES DE RESEARCH.</p>"
+    )
+    for m in movimentos:
+        fonte = m.get("fonte") or "fonte não informada"
+        data_fonte = f" · {html.escape(str(m['data_fonte']))}" if m.get("data_fonte") else ""
+        partes.append(
+            "<div class='mc-oportunidade'><div class='mc-oportunidade-topo'>"
+            "<span class='mc-chip mc-chip-interp'>INTERPRETAÇÃO</span>"
+            f"<span class='mc-oportunidade-ativo'>{html.escape(str(m.get('evento') or ''))}</span>"
+            f"<span class='mc-tese-data'>{html.escape(str(fonte))}{data_fonte} · confiança {html.escape(str(m.get('confianca') or '—'))}</span>"
+            "</div>"
+            f"<div class='mc-oportunidade-corpo'>{texto_para_html(m.get('por_que_importa') or '')}</div>"
+            + (f"<div class='mc-oportunidade-linha'>Possível impacto: {texto_para_html(m['impacto_possivel'])}</div>"
+               if m.get("impacto_possivel") else "")
+            + "</div>"
+        )
+    for o in oportunidades:
+        fonte = o.get("fonte") or "fonte não informada"
+        data_fonte = f" · {html.escape(str(o['data_fonte']))}" if o.get("data_fonte") else ""
+        partes.append(
+            "<div class='mc-oportunidade'><div class='mc-oportunidade-topo'>"
+            "<span class='mc-chip mc-chip-interp'>PARA INVESTIGAR</span>"
+            f"<span class='mc-oportunidade-ativo'>{html.escape(str(o.get('ativo_ou_setor') or ''))}</span>"
+            f"<span class='mc-tese-data'>{html.escape(str(fonte))}{data_fonte}</span>"
+            "</div>"
+            f"<div class='mc-oportunidade-linha'>Catalisador: {texto_para_html(o.get('catalisador') or '—')}</div>"
+            f"<div class='mc-oportunidade-linha'><span class='alta'>A favor:</span> {texto_para_html(o.get('argumento_favoravel') or '—')}</div>"
+            f"<div class='mc-oportunidade-linha'><span class='baixa'>Contra:</span> {texto_para_html(o.get('argumento_contrario') or '—')}</div>"
+            + (f"<div class='mc-oportunidade-fonte'>Investigar: {texto_para_html(o['acompanhar'])}</div>"
+               if o.get("acompanhar") else "")
+            + "</div>"
+        )
+    partes.append("</div>")
+    return "".join(partes)
+
+
+def _bloco_cenarios_html(sintese: dict) -> str:
+    """Bloco F do briefing (CENÁRIOS E RISCOS) - data/sintese_mercado.py
+    ('cenarios'/'observar_proximas_sessoes'), mesma lógica de seleção
+    do cenário principal já validada naquele módulo (nunca recalculada
+    aqui) - preservada mesmo quando o 'principal' não vier primeiro na
+    lista da IA (ver data/sintese_mercado.py:_validar_e_limpar)."""
+    if not sintese.get("ok"):
+        return ""
+    dados = sintese["dados"]
+    cenarios = dados.get("cenarios") or []
+    observar = dados.get("observar_proximas_sessoes") or []
+    if not cenarios and not observar:
+        return ""
+    # Garante "principal" primeiro na renderização mesmo se, por algum
+    # motivo, não vier assim na lista (defesa em profundidade - a
+    # mesma garantia já existe na geração/validação, ver
+    # data/sintese_mercado.py:_validar_e_limpar, mas o renderer nunca
+    # deve confiar ciegamente na ordem recebida).
+    cenarios = sorted(cenarios, key=lambda c: c.get("tipo") != "principal")
+    partes = ["<div class='mc-secao'><div class='mc-secao-titulo'>CENÁRIOS E RISCOS</div>"]
+    for c in cenarios:
+        principal = c.get("tipo") == "principal"
+        rotulo = "CENÁRIO PRINCIPAL" if principal else "CENÁRIO ALTERNATIVO"
+        cor = "alta" if principal else "cinza"
+        partes.append(
+            f"<div class='mc-cenario'><div class='mc-cenario-rotulo {cor}'>{rotulo}</div>"
+            f"<div class='mc-cenario-texto'>{texto_para_html(c.get('cenario') or '')}</div>"
+            + (f"<div class='mc-cenario-linha'>Condição: {texto_para_html(c['condicao'])}</div>" if c.get("condicao") else "")
+            + (f"<div class='mc-oportunidade-fonte'>Sinalizadores: {texto_para_html(c['sinalizadores'])}</div>" if c.get("sinalizadores") else "")
+            + "</div>"
+        )
+    if cenarios:
+        partes.append(
+            "<div class='mc-aviso'>Cenários não têm probabilidade numérica - são leituras qualitativas, "
+            "nunca uma previsão de preço.</div>"
+        )
+    if observar:
+        partes.append("<div class='mc-radar-nome' style='margin-top:8px;'>O que observar nas próximas sessões</div>")
+        for item in observar:
+            fonte = item.get("fonte") or "fonte não informada"
+            data_fonte = f" · {html.escape(str(item['data_fonte']))}" if item.get("data_fonte") else ""
+            partes.append(
+                "<div class='mc-linha'><span class='mc-marca'>›</span>"
+                f"<span class='mc-prosa-inline'>{texto_para_html(item.get('item') or '')} — "
+                f"{texto_para_html(item.get('motivo') or '')} <span class='cinza'>({html.escape(str(fonte))}{data_fonte})</span></span></div>"
+            )
+    partes.append("</div>")
+    return "".join(partes)
+
+
+def _corpo_edicao_estruturada_html(edicao: dict) -> str:
+    """Conteúdo do jornal (capa/Brasil/Exterior/Empresas/Agenda/Radar/
+    Teses/Catalisadores/Fontes), SEM <style> nem o wrapper '.mc-wrap' -
+    extraído de render_edicao_estruturada_html (2026-10-27, missão
+    "Morning Call: briefing profissional") pra poder ser reaproveitado
+    sem duplicar
+    <style> nem reimplementar nada desta função - comportamento
+    idêntico ao de antes da extração (ver
+    tests/test_morning_call_tab_ui.py, que cobre render_edicao_
+    estruturada_html com o conteúdo inalterado)."""
+    partes = []
     nota = edicao.get("mercados_nota")
     if nota:
         partes.append(f"<div class='mc-aviso'>{texto_para_html(nota)}</div>")
@@ -697,8 +897,15 @@ def render_edicao_estruturada_html(edicao: dict) -> str:
             )
         partes.append("</div>")
 
-    partes.append("</div>")
     return "".join(partes)
+
+
+def render_edicao_estruturada_html(edicao: dict) -> str:
+    """Jornal completo (capa/Brasil/Exterior/Empresas/Agenda/Radar/Fontes)
+    a partir do MESMO dict que jobs/morning_call_pdf.py usa pro PDF -
+    camada de apresentação nova (Streamlit/HTML), sem recalcular nenhum
+    dado nem reimplementar a seleção editorial."""
+    return _estilo_mc() + "<div class='mc-wrap'>" + _corpo_edicao_estruturada_html(edicao) + "</div>"
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -718,6 +925,15 @@ def _pdf_bytes(hora_ref: str) -> bytes:
 
 def _hora_ref() -> str:
     return datetime.now(TZ_SP).strftime("%Y-%m-%d %H")
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _alertas_confiabilidade_cacheados(hora_ref: str) -> list:
+    # hora_ref so' entra na chave do cache; ttl curto (5min, bem menor
+    # que o da edicao/PDF) porque e' so' 1 leitura do painel SAUDE DOS
+    # DADOS (ja cacheado por si so' no Supabase/coletores_status) - nao
+    # justifica os mesmos 30min do conteudo editorial.
+    return alertas_confiabilidade()
 
 
 # horário previsto do envio (radar-morning-call.yml: 08:03 BRT + reservas
@@ -778,29 +994,54 @@ def _cabecalho_edicao(ed: dict):
 
 
 def render_edicao_atual(prefs: dict):
+    """Briefing do Morning Call (missão "Morning Call: briefing
+    profissional", 2026-10-27). Dois níveis de custo, de propósito
+    separados (ver seção de desempenho da missão - "evitar chamadas
+    externas durante a renderização de cada componente"):
+
+    1. Resumo executivo/radar de ações/cenários/alertas (A/C/F/G) -
+       data/sintese_mercado.py:obter_sintese_mercado() (mesma função
+       que a VISÃO GERAL já chama sem gate nenhum - cache de 20min
+       compartilhado via data/ia_cache.py, não é uma 2ª chamada de IA)
+       + data/morning_call_briefing.py:alertas_confiabilidade() (leitura
+       do painel SAÚDE DOS DADOS, cache de 5min aqui). Sem botão -
+       barato, igual à VISÃO GERAL.
+    2. Jornal completo (B/D/E - agenda/teses/notícias/radar setorial) -
+       data/morning_call_editorial.py:montar_edicao(), live (news +
+       tradução), continua atrás do botão GERAR/ATUALIZAR PRÉVIA que já
+       existia (cache de 30min em _edicao_estruturada depois do 1º
+       clique) - comportamento preservado, só o rótulo mudou.
+
+    A edição OFICIAL enviada por e-mail continua disponível, só que num
+    expander: o texto nunca muda, o conteúdo acima é que fica mais
+    completo/rico (dados de agora, não só o que foi enviado hoje)."""
+    edicoes = listar_edicoes()
+    publicada = next((e for e in (edicoes or []) if e["conteudo"]), None)
+
     with st.container(border=True):
-        st.markdown('<div class="painel-titulo">MORNING CALL — EDIÇÃO ATUAL</div>', unsafe_allow_html=True)
-        edicoes = listar_edicoes()
-        publicada = next((e for e in (edicoes or []) if e["conteudo"]), None)
+        st.markdown('<div class="painel-titulo">MORNING CALL — RESUMO EXECUTIVO</div>', unsafe_allow_html=True)
         if edicoes is not None:
             ausente = aviso_edicao_de_hoje_ausente(publicada["data"] if publicada else None, datetime.now(TZ_SP))
             if ausente:
                 st.warning(ausente)
-        if edicoes is None:
-            st.warning("Histórico indisponível (banco fora do ar) — use a prévia abaixo.")
-        elif publicada is None:
-            st.info("Nenhuma edição publicada registrada ainda.")
-        else:
-            _cabecalho_edicao(publicada)
-            st.caption("Edição publicada · conteúdo original do e-mail. Seções e itens foram organizados visualmente para facilitar a leitura; o texto factual não é reescrito.")
-            _exibir_texto(publicada["conteudo"])
+        sintese = obter_sintese_mercado()
+        alertas_saude = _alertas_confiabilidade_cacheados(_hora_ref())
+        st.markdown(
+            _estilo_mc() + "<div class='mc-wrap'>"
+            + _bloco_alertas_html(alertas_saude, [])
+            + _bloco_resumo_executivo_html(sintese)
+            + _bloco_radar_acoes_html(sintese)
+            + _bloco_cenarios_html(sintese)
+            + "</div>",
+            unsafe_allow_html=True,
+        )
 
-    with st.expander("Gerar prévia estruturada com os dados de agora (não envia e-mail)"):
+    with st.expander("Gerar jornal completo com os dados de agora (agenda, teses, notícias - não envia e-mail)"):
         st.caption("Monta o jornal completo com as mesmas funções/dados do PDF anexado ao e-mail "
                    "(data/morning_call_editorial.montar_edicao) — leva alguns segundos e consulta as "
                    "fontes ao vivo. Nada é enviado nem registrado.")
         tem_previa = bool(st.session_state.get("mc_previa"))
-        if st.button("ATUALIZAR PRÉVIA" if tem_previa else "GERAR PRÉVIA", key="mc_previa_btn"):
+        if st.button("ATUALIZAR JORNAL" if tem_previa else "GERAR JORNAL COMPLETO", key="mc_previa_btn"):
             if tem_previa:
                 # .clear() do st.cache_data limpa TODAS as chaves da função,
                 # não só a hora atual (confirmado: streamlit.runtime.caching).
@@ -809,23 +1050,40 @@ def render_edicao_atual(prefs: dict):
                 # "ATUALIZAR" aqui invalidava o dict mas deixava o PDF e o
                 # "ver conteúdo na tela" de RELATÓRIO COMPLETO com os bytes
                 # antigos, pra mesma hora_ref - o PDF baixado passava a
-                # divergir do que a tela mostra, exatamente o que esta
-                # reconstrução prometeu resolver (consistência aba/PDF).
+                # divergir do que a tela mostra.
                 _edicao_estruturada.clear()
                 _pdf_bytes.clear()
             st.session_state.pop("mc_previa", None)
-            with st.spinner("Montando o Morning Call com as fontes de agora..."):
+            with st.spinner("Montando o jornal com as fontes de agora..."):
                 try:
                     st.session_state["mc_previa"] = _edicao_estruturada(_hora_ref())
                     st.session_state["mc_previa_em"] = datetime.now(TZ_SP)
                 except Exception as exc:
                     print(f"[morning_call_tab] previa falhou: {exc!r}")
-                    st.error("Não foi possível montar a prévia agora (fontes indisponíveis). Tente novamente em alguns minutos.")
+                    st.error("Não foi possível montar o jornal agora (fontes indisponíveis). Tente novamente em alguns minutos.")
         if st.session_state.get("mc_previa"):
+            previa = st.session_state["mc_previa"]
             gerada_em = st.session_state.get("mc_previa_em")
             if gerada_em:
-                st.caption(f"Prévia montada em {gerada_em.strftime('%d/%m/%Y às %H:%M:%S')} (Brasília) — dados de agora, não da abertura do dia.")
-            st.markdown(render_edicao_estruturada_html(st.session_state["mc_previa"]), unsafe_allow_html=True)
+                st.caption(f"Jornal montado em {gerada_em.strftime('%d/%m/%Y às %H:%M:%S')} (Brasília) — dados de agora, não da abertura do dia.")
+            novidades = tickers_novos(previa, publicada)
+            if novidades:
+                st.markdown(
+                    "<div class='cinza' style='font-size:0.7rem; margin-bottom:0.4rem;'>Novos no radar desde a "
+                    f"última edição enviada: {html.escape(', '.join(novidades))}</div>",
+                    unsafe_allow_html=True,
+                )
+            st.markdown(render_edicao_estruturada_html(previa), unsafe_allow_html=True)
+
+    with st.expander("Edição oficial enviada por e-mail hoje"):
+        if edicoes is None:
+            st.warning("Histórico indisponível (banco fora do ar).")
+        elif publicada is None:
+            st.info("Nenhuma edição publicada registrada ainda.")
+        else:
+            _cabecalho_edicao(publicada)
+            st.caption("Conteúdo original do e-mail. Seções e itens foram organizados visualmente para facilitar a leitura; o texto factual não é reescrito.")
+            _exibir_texto(publicada["conteudo"])
 
 
 def render_relatorio_completo(prefs: dict):

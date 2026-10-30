@@ -67,19 +67,22 @@ Os envios aceitam três provedores, escolhidos por `EMAIL_PROVIDER`. Configure e
 **`EMAIL_PROVIDER=brevo`** (recomendado quando o remetente é um e-mail comum, ex. Gmail, sem domínio próprio) — Brevo verifica o remetente só com um código de 6 dígitos enviado pro próprio e-mail, sem exigir DNS. Free tier: 300 e-mails/dia, sem expiração.
 - `BREVO_API_KEY`: chave gerada em app.brevo.com (SMTP & API → API Keys)
 - `EMAIL_FROM`: o e-mail verificado na conta Brevo (Senders → Add a sender → confirmar o código recebido)
-- `EMAIL_TO`: endereço fixo usado pelo Radar de quedas e pelo envio administrativo/teste manual do Morning Call — **não é a lista de destinatários do envio automático do Morning Call** (ver abaixo)
 
 **`EMAIL_PROVIDER=resend`** (exige domínio próprio verificado por DNS):
 - `RESEND_API_KEY`: chave secreta gerada na conta Resend
 - `EMAIL_FROM`: remetente de um domínio autorizado e verificado no Resend (não aceita domínios de provedor gratuito como gmail.com)
-- `EMAIL_TO`: mesmo uso acima
 
-**`EMAIL_PROVIDER=smtp`** (ou deixe a variável ausente — é o default): configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` (senha de app, se o provedor exigir 2FA), `EMAIL_FROM` e `EMAIL_TO`.
+**`EMAIL_PROVIDER=smtp`** (ou deixe a variável ausente — é o default): configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` (senha de app, se o provedor exigir 2FA) e `EMAIL_FROM`.
 
-Nenhuma chave/senha deve ir pro código nem em mensagens — sempre via GitHub Secret. A troca de provedor não altera a lógica do Radar nem do Morning Call. Os envios só serão efetivos depois que os secrets e um remetente verificado estiverem configurados.
+Nenhuma chave/senha deve ir pro código nem em mensagens — sempre via GitHub Secret. A troca de provedor não altera a lógica do Radar nem do Morning Call. Os envios só serão efetivos depois que os secrets e um remetente verificado estiverem configurados. Não existe mais `EMAIL_TO`: desde a auditoria "Radar/Morning Call: consentimento" (2026-10-26), nenhum envio automático usa um destinatário fixo de ambiente — configurá-lo não tem efeito nenhum.
 
-### Destinatários do Morning Call automático (opt-in por usuário)
+### Destinatários automáticos (opt-in por usuário, um para cada fluxo)
 
-O envio diário automático do Morning Call (`jobs/morning_call.py:executar`, workflow `.github/workflows/radar-morning-call.yml`) **não usa mais `EMAIL_TO` como lista de assinantes**. Em vez disso, ele busca em `user_prefs` (Supabase) todo usuário autenticado (login Google) que tenha explicitamente ativado o toggle **"RECEBER MORNING CALL POR E-MAIL"** na aba CONFIG do app, com e-mail em formato válido — deduplicado por e-mail. O default dessa preferência é **desligado**: sem esse opt-in explícito, nenhum usuário (novo ou já existente) recebe e-mail automático. Uma falha de envio para um assinante não impede a tentativa para os demais, nem é reportada como sucesso total no painel SAÚDE DOS DADOS. Logs de execução referenciam cada destinatário só por um hash curto (nunca o e-mail completo).
+O Radar de Quedas (`jobs/radar_quedas.py:executar`) e o Morning Call (`jobs/morning_call.py:executar`) são disparados pelo mesmo workflow (`.github/workflows/radar-morning-call.yml`) mas **cada um resolve sua própria lista de destinatários, de forma independente** — ligar um nunca liga o outro:
 
-`EMAIL_TO` continua existindo só para dois usos administrativos: os alertas do Radar de quedas e um envio de teste manual do Morning Call (`python -c "from jobs.morning_call import enviar_teste; print(enviar_teste('seu-email-de-teste@exemplo.com'))"`) — nunca dispara para a lista real de assinantes.
+- Morning Call: `data/user_prefs.py:listar_assinantes_morning_call` busca em `user_prefs` (Supabase) todo usuário autenticado (login Google) com o toggle **"RECEBER MORNING CALL POR E-MAIL"** (aba MORNING CALL › Preferências) ativado.
+- Radar de Quedas: `data/user_prefs.py:listar_assinantes_radar_quedas` busca, na mesma tabela, quem ativou **"RECEBER ALERTAS DO RADAR POR E-MAIL"** (aba RADAR › Preferências).
+
+Os dois filtram por e-mail em formato válido e deduplicam. O default de ambas as preferências é **desligado**: sem opt-in explícito, nenhum usuário (novo ou já existente) recebe e-mail automático de nenhum dos dois fluxos. Sem nenhum destinatário autorizado, a execução termina normalmente sem enviar nada (não é tratado como falha); já não conseguir CONSULTAR quem autorizou (Supabase fora do ar) é tratado como falha de execução, visível no painel SAÚDE DOS DADOS. Uma falha de envio para um assinante não impede a tentativa para os demais, nem é reportada como sucesso total. Logs de execução referenciam cada destinatário só por um hash curto (nunca o e-mail completo).
+
+Envio de teste manual (nunca usa a lista de assinantes, nunca dispara pros assinantes reais): `python -c "from jobs.morning_call import enviar_teste; print(enviar_teste('seu-email-de-teste@exemplo.com'))"`, ou via GitHub Actions → **Radar e Morning Call** → Run workflow → `teste_destinatario`.

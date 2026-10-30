@@ -139,6 +139,23 @@ if _abas_novas:
     prefs["abas_conhecidas"] = list(prefs.get("abas_conhecidas", [])) + _abas_novas
     _persistir_prefs()
 
+# --- migra o painel novo LEITURA RAPIDA de MERCADO (PR #182, 2026-10-27) -
+# mesmo motivo/mesma funcao da migracao de VISAO GERAL abaixo.
+# metricas_principais/altas_baixas/mais_negociados/setorial/treemap/
+# noticias_resumo/destaques NAO precisam de migracao: viraram secoes
+# FIXAS (fora do REGISTRO_PAINEIS, ver ui/mercado_tab.py:render_mercado)
+# no redesign em grade (2026-10-27, mesmo padrao de VISAO GERAL) - nao
+# passam mais por paineis_visiveis/_pid_visivel_salvo. grafico_ibov saiu
+# de vez (duplicava o grafico canonico de VISAO GERAL).
+if paineis.migrar_visibilidade_paineis_novos("MERCADO", ["leitura_rapida"], prefs):
+    _persistir_prefs()
+
+# VISAO GERAL (redesign terminal, 2026-10-27): REGISTRO_PAINEIS ficou
+# vazio - todo o conteudo virou composicao FIXA (ver ui/visao_geral.py:
+# render_visao_geral), sem drag/resize por painel nesta aba. Nao ha'
+# mais nada ali pra migrar visibilidade (paineis_visiveis/
+# _pid_visivel_salvo nao se aplicam a secao fixa).
+
 
 def _escolha_estavel(chave_widget: str, opcoes: list, padrao):
     """Guarda a ultima escolha valida de um segmented_control (que pode voltar None ao desmarcar)."""
@@ -629,6 +646,8 @@ if rota == ("radar", "oportunidades"):
     radar_tab.render_radar_oportunidades(prefs)
 if rota == ("radar", "acompanhamento"):
     radar_tab.render_radar_acompanhamento(prefs, usuario)
+if rota == ("radar", "preferencias"):
+    radar_tab.render_preferencias(prefs, usuario, _persistir_prefs)
 
 
 # --- RESEARCH (ver ui/research_tab.py) - area propria 2026-10-23 -------------
@@ -772,12 +791,12 @@ if rota == ("analises", "empresas"):
                                 f"<div style='overflow-x:auto; overflow-y:hidden;'>"
                                 f"<table style='width:100%; font-size:0.8rem; border-collapse:collapse;'>"
                                 f"<thead><tr class='cinza' style='font-size:0.68rem;'>"
-                                f"<th style='text-align:left; font-weight:400; padding:0 0.4rem 0.2rem 0;'>TICKER</th>"
-                                f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>PREÇO</th>"
-                                f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>VAR. DIA</th>"
-                                f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>P/L</th>"
-                                f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>P/VP</th>"
-                                f"<th style='text-align:right; font-weight:400; padding:0 0 0.2rem 0.4rem;'>DY</th>"
+                                f"<th style='text-align:left; padding:0 0.4rem 0.2rem 0;'>TICKER</th>"
+                                f"<th style='text-align:right; padding:0 0.4rem 0.2rem;'>PREÇO</th>"
+                                f"<th style='text-align:right; padding:0 0.4rem 0.2rem;'>VAR. DIA</th>"
+                                f"<th style='text-align:right; padding:0 0.4rem 0.2rem;'>P/L</th>"
+                                f"<th style='text-align:right; padding:0 0.4rem 0.2rem;'>P/VP</th>"
+                                f"<th style='text-align:right; padding:0 0 0.2rem 0.4rem;'>DY</th>"
                                 f"</tr></thead><tbody>{linhas_html}</tbody></table></div>",
                                 unsafe_allow_html=True,
                             )
@@ -812,7 +831,7 @@ if rota == ("analises", "empresas"):
                         <div style="overflow-x:auto; overflow-y:hidden;">
                         <table style="width:100%; border-collapse:collapse;">
                         <thead><tr>
-                            <th style="text-align:left; font-weight:400; white-space:normal;" class="cinza">{ticker_sel} {nome_empresa_sel}</th>
+                            <th style="text-align:left; white-space:normal;" class="cinza">{ticker_sel} {nome_empresa_sel}</th>
                             <th class="cinza">VARIAÇÃO DIA</th>
                             <th class="cinza">MÁX/MÍN DIA</th>
                             <th class="cinza">VOLUME</th>
@@ -1134,6 +1153,8 @@ if rota == ("analises", "empresas"):
             with st.container(border=True):
                 render_cvm_ticker(ticker_selecionado, prefs)
 
+            analises_tab.render_revisao_resultados(ticker_selecionado, prefs)
+
             analises_tab.render_conclusao_investimento(ticker_selecionado, prefs, usuario)
 
 
@@ -1252,12 +1273,20 @@ if rota == ("mais", "config"):
             novos_visiveis_macro = paineis.controle_visibilidade_config(
                 "MACRO", "MACRO", _REGISTRO_PAINEIS_MACRO, prefs,
             )
-            nova_ordem_visao_geral = paineis.controle_ordem_config(
-                "VISÃO GERAL", "VISÃO GERAL", _REGISTRO_PAINEIS_VISAO_GERAL, prefs,
-            )
-            novos_visiveis_visao_geral = paineis.controle_visibilidade_config(
-                "VISÃO GERAL", "VISÃO GERAL", _REGISTRO_PAINEIS_VISAO_GERAL, prefs,
-            )
+            # VISAO GERAL (redesign terminal, 2026-10-27): sem paineis
+            # arrastaveis/configuraveis nesta aba (REGISTRO_PAINEIS vazio -
+            # tudo virou secao fixa, ver ui/visao_geral.py) - sem isso o
+            # multiselect aparecia vazio/sem sentido aqui no CONFIG.
+            if _REGISTRO_PAINEIS_VISAO_GERAL:
+                nova_ordem_visao_geral = paineis.controle_ordem_config(
+                    "VISÃO GERAL", "VISÃO GERAL", _REGISTRO_PAINEIS_VISAO_GERAL, prefs,
+                )
+                novos_visiveis_visao_geral = paineis.controle_visibilidade_config(
+                    "VISÃO GERAL", "VISÃO GERAL", _REGISTRO_PAINEIS_VISAO_GERAL, prefs,
+                )
+            else:
+                nova_ordem_visao_geral = []
+                novos_visiveis_visao_geral = []
 
             ids_casas_research = [c["id"] for c in CASAS_RESEARCH]
             nomes_casas_research = {c["id"]: c["nome"] for c in CASAS_RESEARCH}
@@ -1355,7 +1384,7 @@ if rota == ("mais", "config"):
                     <div style="overflow-x:auto; overflow-y:hidden;">
                     <table style="width:100%; border-collapse:collapse;">
                     <thead><tr>
-                        <th style="text-align:left; font-weight:400;" class="cinza">FONTE</th>
+                        <th style="text-align:left;" class="cinza">FONTE</th>
                         <th class="cinza">STATUS</th>
                         <th class="cinza">TEMPO</th>
                         <th class="cinza">TAMANHO</th>

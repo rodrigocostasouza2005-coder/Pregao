@@ -92,3 +92,57 @@ def test_mapa_ticker_cik_fonte_indisponivel_devolve_dict_vazio():
     with patch.object(sec_xbrl, "_get_json", return_value=None):
         assert sec_xbrl._mapa_ticker_cik() == {}
     sec_xbrl._mapa_ticker_cik.clear()
+
+
+# ---------------------------------------------------------------------
+# Regressão (auditoria SAÚDE DOS DADOS 2026-10-26): "SEC EDGAR (XBRL)"
+# aparecia NUNCA_EXECUTADO sem nenhuma evidência real - só _serie_conceito
+# chamava registrar_tentativa, e só é alcançada quando obter_cik(ticker)
+# já encontrou um CIK; o próprio mapa ticker->CIK (_mapa_ticker_cik, esta
+# função) nunca registrava tentativa nenhuma, sucesso ou falha. Mesmo gap
+# já corrigido pro mapa ticker->CNPJ da CVM (ver data/cvm.py:
+# _mapa_ticker_cnpj, "CVM (FCA)").
+# ---------------------------------------------------------------------
+
+def test_mapa_ticker_cik_fonte_indisponivel_registra_tentativa_de_falha():
+    sec_xbrl._mapa_ticker_cik.clear()
+    chamadas = []
+    with patch.object(sec_xbrl, "_get_json", return_value=None), \
+         patch.object(sec_xbrl, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k))):
+        sec_xbrl._mapa_ticker_cik()
+    sec_xbrl._mapa_ticker_cik.clear()
+    assert len(chamadas) == 1
+    args, kwargs = chamadas[0]
+    assert args[0] == "SEC EDGAR (XBRL)"
+    assert kwargs["execucao_ok"] is False
+    assert kwargs["erro"]
+
+
+def test_mapa_ticker_cik_sucesso_registra_tentativa_com_registros_novos():
+    sec_xbrl._mapa_ticker_cik.clear()
+    chamadas = []
+    resposta = {"fields": ["cik", "name", "ticker", "exchange"],
+                "data": [[320193, "Apple Inc", "AAPL", "Nasdaq"]]}
+    with patch.object(sec_xbrl, "_get_json", return_value=resposta), \
+         patch.object(sec_xbrl, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k))):
+        mapa = sec_xbrl._mapa_ticker_cik()
+    sec_xbrl._mapa_ticker_cik.clear()
+    assert mapa == {"AAPL": 320193}
+    assert len(chamadas) == 1
+    args, kwargs = chamadas[0]
+    assert args[0] == "SEC EDGAR (XBRL)"
+    assert kwargs["execucao_ok"] is True
+    assert kwargs["registros_novos"] == 1
+
+
+def test_mapa_ticker_cik_formato_inesperado_registra_tentativa_de_falha():
+    """Mesma proteção já existente (colunas 'cik'/'ticker' ausentes) -
+    antes devolvia {} silenciosamente, sem nenhum rastro no painel."""
+    sec_xbrl._mapa_ticker_cik.clear()
+    chamadas = []
+    resposta = {"fields": ["name", "ticker", "exchange"], "data": []}
+    with patch.object(sec_xbrl, "_get_json", return_value=resposta), \
+         patch.object(sec_xbrl, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k))):
+        assert sec_xbrl._mapa_ticker_cik() == {}
+    sec_xbrl._mapa_ticker_cik.clear()
+    assert chamadas and chamadas[0][1]["execucao_ok"] is False

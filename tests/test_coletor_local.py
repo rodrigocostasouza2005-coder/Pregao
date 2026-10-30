@@ -163,6 +163,7 @@ def _rodar_main_mockado(stats_eventos: dict, snapshot_ok: bool, stats_news: dict
     resultado/historico vazios de proposito (nao e' o que este teste cobre)."""
     with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
          patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -209,6 +210,52 @@ def test_4a2_calendario_universo_calculado_1x_e_reaproveitado_no_snapshot(mock_u
             mock_universo_calendario.call_count == 1, f"(call_count={mock_universo_calendario.call_count})")
 
 
+def test_4a3_documentos_cvm_rodam_pro_universo_inteiro_sem_rotacao(mock_universo_calendario):
+    """Achado real (auditoria 2026-10-30): obter_documentos_watchlist so'
+    era chamada pelo app Streamlit ao vivo (ui/cvm_tab.py), nunca por um
+    workflow agendado - coletor_local.py precisa chamar pro universo
+    INTEIRO (sem _universo_rotativo: e' barato, so' baixa o IPE 1x/ano e
+    filtra em memoria, nao e' 1 requisicao de rede por ticker)."""
+    stats = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
+              "tempo_esgotado": False, "tabela_disponivel": True}
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])) as mock_cvm, \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa"):
+        coletor_local.main()
+    _checar("4a3 obter_documentos_watchlist foi chamado exatamente 1x", mock_cvm.call_count == 1)
+    _checar("4a3 recebeu o universo INTEIRO (nao rotacionado)", mock_cvm.call_args[0][0] == ["PETR4", "VALE3"],
+            f"(recebido={mock_cvm.call_args[0][0]})")
+
+
+def test_4a4_falha_inesperada_em_documentos_cvm_nao_derruba_a_execucao(mock_universo_calendario):
+    """Isolamento (pedido explicito, Fase 4): uma excecao inesperada em
+    obter_documentos_watchlist (fora do try/except por-ticker que ela ja
+    tem) nao pode impedir eventos/snapshot/news de rodar nem travar
+    main() com uma excecao nao tratada."""
+    stats = {"processados": 1, "confirmados": 1, "estimados": 0, "mantidos_prazo_cvm": 0,
+              "tempo_esgotado": False, "tabela_disponivel": True}
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "obter_documentos_watchlist", side_effect=RuntimeError("falha inesperada")), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats) as mock_eventos, \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa"):
+        codigo = coletor_local.main()
+    _checar("4a4 main() nao lanca excecao (retorna exit code normal)", codigo == 0, f"(codigo={codigo})")
+    _checar("4a4 coletar_eventos_universo ainda roda depois da falha", mock_eventos.call_count == 1)
+
+
 def test_4b_calendario_tabela_ausente_marca_persistencia_falsa_com_erro():
     stats = {"processados": 5, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 5,
               "tempo_esgotado": False, "tabela_disponivel": False}
@@ -240,6 +287,7 @@ def test_4e_timeout_calendario_retorna_codigo_erro_ao_agendador():
              "falhas": 0, "tempo_esgotado": True, "tabela_disponivel": True}
     with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
          patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -273,6 +321,7 @@ def test_5a_news_usa_checkpoint_proprio_nao_o_do_calendario():
 
     with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
          patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
          patch.object(coletor_local, "_universo_rotativo", side_effect=_fake_rotativo), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -299,6 +348,7 @@ def test_5f_registra_saude_dados_news_resumos():
                       "tempo_esgotado": False, "tabela_disponivel": True}
     with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
          patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -321,6 +371,7 @@ def test_5k_news_tempo_esgotado_marca_parcial_mas_nao_falha_exit_code():
                       "tempo_esgotado": False, "tabela_disponivel": True}
     with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
          patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -346,6 +397,7 @@ def test_5n_news_sem_groq_api_key_aparece_como_erro_na_saude_dos_dados():
                       "tempo_esgotado": False, "tabela_disponivel": True}
     with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
          patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -451,6 +503,7 @@ def _rodar_main_com_resultado_research(resultado: dict) -> int:
                       "falhas": 0, "tempo_esgotado": False, "tabela_disponivel": True}
     with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
          patch.object(coletor_local, "coletar_todas_disponiveis", return_value=resultado), \
+         patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
@@ -587,6 +640,7 @@ def _rodar_main_news(stats_news: dict, diagnostico_ok: bool = True) -> int:
     with patch.object(coletor_local, "diagnosticar_persistencia",
                       return_value={"ok": diagnostico_ok, "etapa": "OK" if diagnostico_ok else "INSERT", "detalhe": "x"}), \
          patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \

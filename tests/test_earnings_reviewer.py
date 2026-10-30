@@ -261,3 +261,38 @@ def test_variacao_pct_base_positiva_fica_numericamente_identica_de_antes():
     positiva) - mesma formula de antes nesse caso (abs(anterior)==anterior)."""
     assert reviewer._variacao_pct(110.0, 100.0) == pytest.approx(10.0)
     assert reviewer._variacao_pct(90.0, 100.0) == pytest.approx(-10.0)
+
+
+def test_educacao_financeira_vazia_sem_receita_ou_lucro():
+    assert reviewer._nota_educativa_receita_vs_lucro({}) == []
+    metricas = {"receita_liquida": {"yoy_variacao_pct": 5.0}}
+    assert reviewer._nota_educativa_receita_vs_lucro(metricas) == []
+
+
+def test_educacao_financeira_vazia_quando_diferenca_pequena():
+    metricas = {
+        "receita_liquida": {"yoy_variacao_pct": 5.0},
+        "lucro_liquido_consolidado": {"yoy_variacao_pct": 6.5},
+    }
+    assert reviewer._nota_educativa_receita_vs_lucro(metricas) == []
+
+
+def test_educacao_financeira_lucro_crescendo_mais_que_receita():
+    metricas = {
+        "receita_liquida": {"yoy_variacao_pct": 5.0},
+        "lucro_liquido_consolidado": {"yoy_variacao_pct": 20.0},
+    }
+    notas = reviewer._nota_educativa_receita_vs_lucro(metricas)
+    assert len(notas) == 1
+    assert notas[0].startswith("[O QUE ISSO SIGNIFICA]")
+    assert "lucro líquido cresceu mais rápido" in notas[0]
+
+
+def test_educacao_financeira_receita_crescendo_mais_que_lucro():
+    metricas = {
+        "receita_liquida": {"yoy_variacao_pct": 20.0},
+        "lucro_liquido_consolidado": {"yoy_variacao_pct": 5.0},
+    }
+    notas = reviewer._nota_educativa_receita_vs_lucro(metricas)
+    assert len(notas) == 1
+    assert "receita líquida cresceu mais rápido" in notas[0]

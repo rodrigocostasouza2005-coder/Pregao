@@ -207,8 +207,8 @@ def render_saude_dados():
                 <div style="overflow-x:auto; overflow-y:hidden;">
                 <table style="width:100%; border-collapse:collapse;">
                 <thead><tr>
-                    <th style="text-align:left; font-weight:400;" class="cinza">COLETOR</th>
-                    <th style="text-align:left; font-weight:400;" class="cinza">FONTE</th>
+                    <th style="text-align:left;" class="cinza">COLETOR</th>
+                    <th style="text-align:left;" class="cinza">FONTE</th>
                     <th class="cinza">ESTADO</th>
                     <th class="cinza">ÚLTIMA TENTATIVA</th>
                     <th class="cinza">ÚLTIMO SUCESSO</th>
@@ -279,8 +279,8 @@ def render_saude_dados():
             <div style="overflow-x:auto; overflow-y:hidden;">
             <table style="width:100%; border-collapse:collapse;">
             <thead><tr>
-                <th style="text-align:left; font-weight:400;" class="cinza">FONTE</th>
-                <th style="text-align:left; font-weight:400;" class="cinza">SEÇÃO NO MORNING CALL</th>
+                <th style="text-align:left;" class="cinza">FONTE</th>
+                <th style="text-align:left;" class="cinza">SEÇÃO NO MORNING CALL</th>
                 <th class="cinza">CONSUMO NA ÚLTIMA EDIÇÃO</th>
                 <th class="cinza">DATA DA EDIÇÃO</th>
             </tr></thead>

@@ -18,9 +18,23 @@ coletavel sem login:
   proprio lote, nao so' no detalhe - coletor filtra por AREA_PUBLICA antes
   de persistir, nunca toca em conteudo de area logada (ver data/research/
   btg.py e CASAS['btg'] abaixo pros detalhes completos da investigacao).
-- Itau BBA, BB Investimentos, Santander, Safra, Agora/Bradesco, Inter:
-  ainda nao investigadas (ver BACKLOG.md; reconhecimento rapido de
-  reachability em data/diagnostico.py).
+- Itau BBA, Santander, Bradesco BBI: investigadas em 2026-10-29 (pedido
+  explicito do Rodrigo) - nenhuma tem fonte publica coletavel. Itau BBA e
+  Santander bloqueiam fetch automatizado (403, mesmo padrao de borda do
+  XP/Genial) nas paginas institucionais de research; o unico acesso real
+  e' um portal logado de cliente (Itau: "Open Finance" nao cobre research
+  de acoes; Santander: "Painel do Investidor" da corretora). Bradesco BBI
+  nao bloqueia a pagina institucional, mas ela e' so' apresentacao da
+  equipe - zero link de relatorio, RSS ou API; a area com conteudo real
+  nao e' publica. Nenhuma tem RSS/sitemap no estilo Monte Bravo/Nord nem
+  API publica no estilo BTG - sao research sell-side distribuido so a
+  cliente autenticado, nao HTML frio que valha a pena tentar raspar.
+  Registradas abaixo com disponivel=False (nunca tenta coletar, aparece
+  em SAUDE DOS DADOS via falhas em preparar_leitura) em vez de um coletor
+  fragil sem fonte real. BB Investimentos, Safra (research de acoes;
+  Safra Corretora/carteiras recomendadas e' outro coletor, ver
+  data/research/safra_carteiras.py), Agora, Inter: ainda nao
+  investigadas.
 
 Os itens coletados sao persistidos no Supabase (tabela research_itens,
 ver data/research/store.py) - a aba RESEARCH sempre le do banco primeiro
@@ -30,10 +44,11 @@ total de tempo - ver data/research/base.py); a coleta roda no maximo a
 cada 30min por casa (store.precisa_recoletar)."""
 
 import time
+from datetime import datetime, timezone
 
 import streamlit as st
 
-from data.coletores_status import registrar_tentativa
+from data.coletores_status import obter_status, registrar_tentativa
 
 from . import btg, genial, genial_lives, montebravo, nord, store, xp
 from .base import TEMPO_MAX_COLETA_S
@@ -75,6 +90,16 @@ CASAS = [
         # casa sem essa chave continua tratada como 'erro' (nunca
         # bloqueio conhecido por padrao), ver _classificar_falha.
         "categoria_falha": genial.categoria_ultima_falha,
+        # achado real (auditoria SAUDE DOS DADOS 2026-10-26): coletor_local.py
+        # (coletar_todas_disponiveis, abaixo) nao tinha NENHUM cooldown -
+        # cada execucao (processo novo, agendador do sistema) tentava de
+        # novo as 4 tentativas/20s de orcamento mesmo sabendo, pela ultima
+        # tentativa PERSISTIDA, que o bloqueio de WAF e' o mesmo de sempre.
+        # Usado por _bloqueio_conhecido_em_cooldown pra pular a tentativa
+        # cara quando a ULTIMA falha real teve esse marcador exato ha'
+        # menos de _COOLDOWN_BLOQUEIO_CONHECIDO_S - qualquer erro diferente
+        # (ou sucesso) sempre tenta de novo.
+        "marcador_bloqueio_conhecido": genial.MARCADOR_BLOQUEIO_WAF,
     },
     {
         "id": "xp",
@@ -87,6 +112,7 @@ CASAS = [
         "tentar_coleta_automatica": False,  # idem Genial - bloqueada no Cloud (403), ver coletor_local.py
         "motivo_falha": xp.motivo_ultima_falha,
         "categoria_falha": xp.categoria_ultima_falha,  # ver comentario equivalente em Genial Analisa acima
+        "marcador_bloqueio_conhecido": xp.MARCADOR_BLOQUEIO_CDN,  # ver comentario equivalente em Genial Analisa acima
     },
     {
         # Ligada em 2026-09-28 a pedido explicito do Rodrigo ("quero a
@@ -202,6 +228,55 @@ CASAS = [
         "extrator_texto": None,
         "motivo_falha": nord.motivo_ultima_falha,
     },
+    {
+        # Investigada em 2026-10-29 (pedido explicito do Rodrigo): pagina
+        # institucional de research bloqueia fetch automatizado (403,
+        # borda/WAF) - mesmo padrao de genial.py/xp.py, mas sem nenhum
+        # endpoint publico alternativo encontrado (o portal de API do
+        # Itau e' Open Finance/bancario, nao cobre research de acoes).
+        # disponivel=False (nunca tenta coletar) em vez de
+        # tentar_coleta_automatica=False (que ainda tentaria 1x/30min no
+        # app ao vivo) - aqui nao ha' NENHUM endpoint coletavel, tentar
+        # de novo nao vai mudar isso.
+        "id": "itau_bba",
+        "nome": "Itaú BBA Research",
+        "fonte": "itau.com.br/itaubba-pt (bloqueado - sem API/RSS publico)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        # ui/research_tab.py monta _EXTRATOR_POR_CASA pra TODA casa em
+        # CASAS sem .get() - precisa da chave mesmo nunca sendo chamada.
+        "extrator_texto": None,
+        "motivo_indisponivel": "research institucional sem canal publico - distribuicao so a cliente autenticado (403 na pagina institucional)",
+    },
+    {
+        # Investigada em 2026-10-29: pagina institucional bloqueia fetch
+        # automatizado (403); relatorios reais ficam no "Painel do
+        # Investidor" da corretora (login), sem API/RSS publico.
+        "id": "santander_research",
+        "nome": "Santander Research",
+        "fonte": "santander.com.br/investimentos (bloqueado - sem API/RSS publico)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        # ui/research_tab.py monta _EXTRATOR_POR_CASA pra TODA casa em
+        # CASAS sem .get() - precisa da chave mesmo nunca sendo chamada.
+        "extrator_texto": None,
+        "motivo_indisponivel": "relatorios so acessiveis via login no Painel do Investidor da corretora - nenhum endpoint publico encontrado",
+    },
+    {
+        # Investigada em 2026-10-29: pagina institucional carrega
+        # normalmente (sem bloqueio), mas e' so apresentacao da equipe -
+        # zero link de relatorio/RSS/API; nao ha' NADA coletavel ali, nao
+        # e' caso de scraping fragil e sim de fonte sem conteudo publico.
+        "id": "bradesco_bbi",
+        "nome": "Bradesco BBI Research",
+        "fonte": "bradescobbi.com.br/pt/research (sem relatorios na area publica)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        # ui/research_tab.py monta _EXTRATOR_POR_CASA pra TODA casa em
+        # CASAS sem .get() - precisa da chave mesmo nunca sendo chamada.
+        "extrator_texto": None,
+        "motivo_indisponivel": "pagina institucional sem nenhum relatorio/RSS/API publico - distribuicao institucional sem canal aberto identificado",
+    },
 ]
 
 
@@ -277,6 +352,53 @@ def _classificar_falha(casa: dict) -> str:
     return categoria if categoria == "bloqueio_externo_conhecido" else "erro"
 
 
+# Mesmo cooldown do path do app ao vivo (_COOLDOWN_FALHA_S acima) -
+# coletor_local.py roda como PROCESSO NOVO a cada chamada (agendador do
+# sistema), diferente do servidor do Cloud (st.cache_resource sobrevive
+# entre reruns no MESMO processo); por isso este cooldown le' a ULTIMA
+# TENTATIVA PERSISTIDA (coletores_status), nunca um dict em memoria.
+_COOLDOWN_BLOQUEIO_CONHECIDO_S = 10 * 60
+
+
+def _bloqueio_conhecido_em_cooldown(casa: dict) -> str | None:
+    """Achado real (auditoria SAUDE DOS DADOS 2026-10-26, P2 Genial/XP):
+    coletar_todas_disponiveis() nao tinha NENHUM cooldown - cada execucao
+    de coletor_local.py (processo novo) tentava de novo as ~4 tentativas/
+    20s de orcamento (genial.py)/~15s (xp.py) mesmo quando a ULTIMA
+    tentativa real, ja' persistida em coletores_status, foi exatamente o
+    MESMO bloqueio de borda ja' documentado (WAF Akamai/CDN Akamai) ha'
+    poucos minutos - tentativa inutil, sem nenhuma informacao nova desde
+    a ultima vez.
+
+    Devolve o `ultimo_erro` persistido (pra log) quando: a casa declara
+    `marcador_bloqueio_conhecido` (so' Genial/XP, ver CASAS); a ULTIMA
+    tentativa registrada falhou (execucao_ok=False) E contem esse
+    marcador exato; e essa tentativa foi ha' menos de
+    _COOLDOWN_BLOQUEIO_CONHECIDO_S. None (sempre tenta de novo) em
+    qualquer outro caso - casa sem o campo, nunca tentou, ultimo
+    resultado foi sucesso, falha SEM o marcador (erro novo/diferente -
+    nunca mascara uma mudanca real), ou cooldown ja' expirado."""
+    marcador = casa.get("marcador_bloqueio_conhecido")
+    if not marcador:
+        return None
+    status = obter_status(casa["nome"])
+    if not status or status.get("execucao_ok") is not False:
+        return None
+    erro = status.get("ultimo_erro") or ""
+    if marcador not in erro:
+        return None
+    tentativa_em = status.get("ultima_tentativa_em")
+    if not tentativa_em:
+        return None
+    try:
+        quando = datetime.fromisoformat(str(tentativa_em).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if (datetime.now(timezone.utc) - quando).total_seconds() >= _COOLDOWN_BLOQUEIO_CONHECIDO_S:
+        return None
+    return erro
+
+
 def coletar_todas_disponiveis() -> dict:
     """Coleta (sem gate de tempo) todas as casas marcadas como disponiveis.
     Pensada pra ser chamada por um job agendado, nao pelo app ao vivo (o
@@ -286,10 +408,36 @@ def coletar_todas_disponiveis() -> dict:
     ok=False (ver _classificar_falha); usado por coletor_local.py pra
     decidir o exit code sem derrubar a build por um bloqueio externo ja'
     documentado (ex: Akamai na Genial/XP), mas sem mascarar nenhuma falha
-    nova ou falha de persistencia (que continua sempre 'erro')."""
+    nova ou falha de persistencia (que continua sempre 'erro').
+
+    Pula a tentativa cara (sem chamar obter_relatorios) quando o MESMO
+    bloqueio conhecido ja' foi confirmado ha' poucos minutos (ver
+    _bloqueio_conhecido_em_cooldown) - NUNCA chama registrar_tentativa de
+    novo nesse caso (a tentativa real/persistida continua sendo a
+    anterior; pular nao e' uma nova tentativa).
+
+    Correcao real (revisao independente 2026-10-26, achado na PR #177):
+    uma excecao inesperada so' na VERIFICACAO do cooldown (ex: timestamp
+    persistido sem timezone, Supabase devolvendo formato inesperado)
+    propagava e abortava este for inteiro - impedindo a coleta de TODAS
+    as casas seguintes na lista (genial_lives, btg, montebravo, nord),
+    nao so' a casa que falhou a verificacao. Agora essa falha e' isolada
+    por casa: trata como 'sem bloqueio conhecido confirmado' (sempre
+    tenta a coleta normal dessa casa) e nunca impede as demais. Nunca
+    esconde excecao real da COLETA em si (coletar_casa abaixo continua
+    sem nenhum try/except novo)."""
     resultado = {}
     for casa in CASAS:
         if not casa["disponivel"]:
+            continue
+        try:
+            bloqueio = _bloqueio_conhecido_em_cooldown(casa)
+        except Exception as exc:
+            print(f"[research] falha ao verificar cooldown de {casa['nome']} (tentando coleta normal): {exc!r}")
+            bloqueio = None
+        if bloqueio:
+            print(f"[research] pulando {casa['nome']}: bloqueio conhecido confirmado há poucos minutos ({bloqueio})")
+            resultado[casa["nome"]] = {"coletados": 0, "ok": False, "categoria_falha": "bloqueio_externo_conhecido"}
             continue
         coletados, ok = coletar_casa(casa)
         entrada = {"coletados": coletados, "ok": ok, "categoria_falha": None}
