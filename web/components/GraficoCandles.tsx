@@ -1,10 +1,8 @@
 import { num, numCompacto, pct } from "@/lib/formatos";
-import { geometriaVelas, marcasX, type VelaGrafico } from "@/lib/grafico";
+import { geometriaVelas, marcasX, type EixoX, type VelaGrafico } from "@/lib/grafico";
 import { PainelVolume } from "./Grafico";
 
 const CORES = { alta: "var(--color-alta)", baixa: "var(--color-baixa)" } as const;
-
-export type EixoX = "hora" | "dia" | "mes" | "ano";
 
 function formatadorX(eixo: EixoX, fuso: string) {
   const opcoes: Record<EixoX, Intl.DateTimeFormatOptions> = {

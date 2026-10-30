@@ -4,6 +4,17 @@
 
 export type PontoGrafico = { t: number; v: number };
 
+/** Períodos aceitos pelo gráfico principal (GraficoPrincipal.tsx) e seu
+ * eixo x - cópia client-safe das chaves de PERIODOS em lib/server/
+ * yahoo.ts ("server-only", não pode ser importado por Client Component).
+ * Mudar um período ali exige espelhar aqui. */
+export const PERIODOS_GRAFICO = ["1D", "1S", "1M", "3M", "6M", "1A", "5A"] as const;
+export type PeriodoGrafico = (typeof PERIODOS_GRAFICO)[number];
+
+export type EixoX = "hora" | "dia" | "mes" | "ano";
+
+export const EIXO_POR_PERIODO: Record<PeriodoGrafico, EixoX> = { "1D": "hora", "1S": "dia", "1M": "dia", "3M": "dia", "6M": "mes", "1A": "mes", "5A": "ano" };
+
 /** Marcações "redondas" do eixo vertical (1, 2 ou 5 × 10^n: sem 2,5,
  * que pediria uma casa a mais do que o eixo mostra). */
 export function ticksBonitos(min: number, max: number, alvo = 4): number[] {

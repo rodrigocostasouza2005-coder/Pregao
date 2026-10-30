@@ -102,6 +102,22 @@ export const ATIVOS_FITA_PADRAO = ["PETR4", "VALE3", "ITUB4", "B3SA3", "BBAS3", 
 
 export type ItemFita = { simbolo: string; nome: string; casas: number; unidade?: string; r: Resultado<Cotacao | null> };
 
+export type CotacaoTicker = { ticker: string; cotacao: Cotacao };
+
+/** Cotação de QUALQUER lista de tickers da B3 (não só o universo
+ * Ibovespa de painelIbovespa) - base da watchlist (brief: "a watchlist é
+ * de verdade", qualquer ativo que o usuário escolher). Ticker sem
+ * cotação na leitura simplesmente não entra na saída (nunca um preço
+ * zerado ou inventado). */
+export async function lerCotacoesTickers(tickers: string[]): Promise<CotacaoTicker[]> {
+  if (!tickers.length) return [];
+  const leituras = await obterCotacoes(tickers.map((t) => normalizarSimbolo(t)));
+  return tickers.flatMap((t) => {
+    const c = leituras[normalizarSimbolo(t)]?.dados;
+    return c ? [{ ticker: t, cotacao: c }] : [];
+  });
+}
+
 /** DI (CDI anualizado, série SGS 4389 do Banco Central) com variação
  * contra a leitura anterior, em pontos percentuais - mesma fonte oficial
  * de lib/server/bcb.ts, nunca uma estimativa. */
@@ -123,20 +139,26 @@ async function lerDI(): Promise<Resultado<Cotacao | null>> {
   }, r.fonte);
 }
 
-/** Fita de cotações "viva": índices brasileiros (Ibovespa, dólar) + DI +
+/** Indicadores compactos do terminal: Ibovespa + dólar + DI (brief:
+ * tiles de número, nunca mini-gráfico) - opcionalmente + Petróleo Brent,
+ * pedido só na aba Mercado. Nunca índice americano aqui (fica nos
+ * "Mercados Globais", secundário/opcional). Base compartilhada por
+ * lerFita (fita) e pelas páginas de Visão Geral/Mercado (tiles). */
+export async function lerIndicadoresCompactos(opcoes: { comBrent?: boolean } = {}): Promise<ItemFita[]> {
+  const indicadoresBr = INDICADORES.filter((i) => i.simbolo === "^BVSP" || i.simbolo === "USDBRL=X" || (opcoes.comBrent && i.simbolo === "BZ=F"));
+  const [leituras, di] = await Promise.all([Promise.all(indicadoresBr.map((i) => obterCotacao(i.simbolo))), lerDI()]);
+  const itensIdx: ItemFita[] = indicadoresBr.map((i, n) => ({ simbolo: i.simbolo, nome: i.nome, casas: i.casas, r: leituras[n] }));
+  const itemDI: ItemFita[] = di.estado === "ok" ? [{ simbolo: "DI", nome: "DI (CDI anualizado)", casas: 2, unidade: "p.p.", r: di }] : [];
+  return [...itensIdx, ...itemDI];
+}
+
+/** Fita de cotações "viva": indicadores compactos (Ibovespa, dólar, DI) +
  * ações da B3 (watchlist do usuário, complementada pela seleção padrão
  * quando a lista é curta) - nunca índices americanos, que ficam fora da
  * fita principal (brief: "não quero SPX, Nasdaq, Dow Jones... na fita"). */
 export async function lerFita(watchlist: string[] = []): Promise<ItemFita[]> {
-  const indicadoresBr = INDICADORES.filter((i) => i.simbolo === "^BVSP" || i.simbolo === "USDBRL=X");
   const tickers = [...new Set([...watchlist.map((t) => t.toUpperCase()), ...ATIVOS_FITA_PADRAO])].slice(0, 20);
-  const [leiturasIdx, leiturasAcoes, di] = await Promise.all([
-    Promise.all(indicadoresBr.map((i) => obterCotacao(i.simbolo))),
-    obterCotacoes(tickers.map((t) => normalizarSimbolo(t))),
-    lerDI(),
-  ]);
-  const itensIdx: ItemFita[] = indicadoresBr.map((i, n) => ({ simbolo: i.simbolo, nome: i.nome, casas: i.casas, r: leiturasIdx[n] }));
-  const itemDI: ItemFita[] = di.estado === "ok" ? [{ simbolo: "DI", nome: "DI (CDI anualizado)", casas: 2, unidade: "p.p.", r: di }] : [];
+  const [compactos, leiturasAcoes] = await Promise.all([lerIndicadoresCompactos(), obterCotacoes(tickers.map((t) => normalizarSimbolo(t)))]);
   const itensAcoes: ItemFita[] = tickers.map((t) => ({ simbolo: t, nome: t, casas: 2, r: leiturasAcoes[normalizarSimbolo(t)] }));
-  return [...itensIdx, ...itemDI, ...itensAcoes];
+  return [...compactos, ...itensAcoes];
 }

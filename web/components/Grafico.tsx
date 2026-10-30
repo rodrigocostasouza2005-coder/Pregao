@@ -1,9 +1,9 @@
 import { num, numCompacto, pct } from "@/lib/formatos";
-import { geometria, marcasX, type PontoGrafico } from "@/lib/grafico";
+import { geometria, marcasX, type EixoX, type PontoGrafico } from "@/lib/grafico";
+
+export type { EixoX };
 
 const CORES = { alta: "var(--color-alta)", baixa: "var(--color-baixa)", neutro: "var(--color-ambar)" } as const;
-
-export type EixoX = "hora" | "dia" | "mes" | "ano";
 
 function formatadorX(eixo: EixoX, fuso: string) {
   const opcoes: Record<EixoX, Intl.DateTimeFormatOptions> = {
