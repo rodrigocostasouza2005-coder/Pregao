@@ -174,6 +174,44 @@ _PROMPT_DADOS_ESTRUTURADOS = (
 # resultado->valuation->recomendacao)
 _TIPOS_COM_DADOS_ESTRUTURADOS = {"ACOES"}
 
+# classificacao fina de documento (Equity Research Library, 2026-10-30) -
+# lista FECHADA: se o modelo devolver qualquer coisa fora disso, descarta
+# (ver _extrair_premissas_projecoes) em vez de confiar num rotulo livre.
+_TIPOS_DOCUMENTO_VALIDOS = {
+    "INICIACAO_COBERTURA", "ATUALIZACAO_COBERTURA", "ATUALIZACAO_RESULTADOS",
+    "RELATORIO_SETORIAL", "ESTRATEGIA_INVESTIMENTOS", "CARTEIRA_RECOMENDADA",
+    "REVISAO_PRECO_ALVO", "MUDANCA_RECOMENDACAO", "VALUATION",
+    "COMENTARIO_RESULTADO_TRIMESTRAL",
+}
+
+_PROMPT_PREMISSAS_PROJECOES = (
+    "Leia o texto do relatorio e responda EXATAMENTE neste formato, "
+    "5 linhas, nada mais, sem nenhum comentario antes ou depois:\n"
+    "TIPO_DOCUMENTO: <um destes: INICIACAO_COBERTURA, ATUALIZACAO_COBERTURA, "
+    "ATUALIZACAO_RESULTADOS, RELATORIO_SETORIAL, ESTRATEGIA_INVESTIMENTOS, "
+    "CARTEIRA_RECOMENDADA, REVISAO_PRECO_ALVO, MUDANCA_RECOMENDACAO, "
+    "VALUATION, COMENTARIO_RESULTADO_TRIMESTRAL> ou NAO_IDENTIFICADO\n"
+    "PREMISSAS: <premissas/hipoteses centrais da tese do analista, "
+    "separadas por ' | ', cada uma com no maximo 1 frase curta> ou "
+    "NAO_IDENTIFICADO\n"
+    "PROJECAO_RECEITA: <o que o texto diz sobre projecao/estimativa de "
+    "receita, com o horizonte se houver> ou NAO_IDENTIFICADO\n"
+    "PROJECAO_EBITDA_MARGEM: <o que o texto diz sobre projecao/estimativa "
+    "de EBITDA ou margem> ou NAO_IDENTIFICADO\n"
+    "PROJECAO_LUCRO: <o que o texto diz sobre projecao/estimativa de "
+    "lucro> ou NAO_IDENTIFICADO\n\n"
+    "Regras obrigatorias, sem excecao:\n"
+    "- cada campo SO conta se estiver EXPLICITO no texto - nunca estime, "
+    "calcule, deduza ou complete um numero/classificacao que nao esteja "
+    "ali;\n"
+    "- PREMISSAS sao as hipoteses que SUSTENTAM a tese do analista (ex: "
+    "'expansao de capacidade conclui em 2027', 'ganho de market share em "
+    "equipamentos industriais'), nunca uma frase generica sem conteudo "
+    "real;\n"
+    "- na duvida entre identificar algo ou nao, SEMPRE prefira "
+    "NAO_IDENTIFICADO a arriscar um valor inventado ou generico."
+)
+
 
 def _extrair_dados_estruturados(texto: str, titulo: str, chave: str, modelo: str) -> tuple:
     """Chamada adicional pequena e barata (max_tokens=60, mesmo texto ja'
@@ -214,6 +252,59 @@ def _extrair_dados_estruturados(texto: str, titulo: str, chave: str, modelo: str
             recomendacao = valor.upper()
 
     return preco_alvo, recomendacao
+
+
+def _extrair_premissas_projecoes(texto: str, titulo: str, chave: str, modelo: str) -> tuple:
+    """Chamada adicional pequena (mesmo texto ja' carregado, max_tokens=250,
+    nenhuma nova requisicao de rede) pra extrair tipo de documento mais
+    fino + premissas da tese + projecoes citadas, SEM tocar no resumo
+    narrativo - alimenta a biblioteca PERMANENTE (sql/research_premissas.sql,
+    ver store.salvar_premissas), que sobrevive aos 5 dias de retencao de
+    research_itens (ver apagar_itens_antigos). Retorna (tipo_documento:
+    str|None, premissas: list[str], projecoes: dict) - tudo vazio/None se
+    a chamada falhar ou nada for identificado (nunca inventa)."""
+    conteudo, motivo = _chamar_groq(
+        chave, modelo,
+        [
+            {"role": "system", "content": _PROMPT_PREMISSAS_PROJECOES},
+            {"role": "user", "content": f"Titulo: {titulo}\n\nTexto:\n{texto[:_LIMITE_TEXTO_DIRETO]}"},
+        ],
+        max_tokens=250,
+    )
+    if conteudo is None:
+        return None, [], {}
+
+    def _campo(nome: str) -> str | None:
+        m = re.search(rf"{nome}:\s*([^\n]+)", conteudo, re.IGNORECASE)
+        if not m:
+            return None
+        valor = m.group(1).strip()
+        if not valor or "NAO_IDENTIFICADO" in valor.upper() or "NÃO_IDENTIFICADO" in valor.upper():
+            return None
+        return valor
+
+    tipo_documento = _campo("TIPO_DOCUMENTO")
+    if tipo_documento and tipo_documento.upper() not in _TIPOS_DOCUMENTO_VALIDOS:
+        # modelo devolveu algo fora da lista fechada - nao confia num
+        # rotulo livre, melhor None (nao-identificado) que um valor errado.
+        tipo_documento = None
+    elif tipo_documento:
+        tipo_documento = tipo_documento.upper()
+
+    premissas_bruto = _campo("PREMISSAS")
+    premissas = [p.strip() for p in premissas_bruto.split("|") if p.strip()] if premissas_bruto else []
+
+    projecoes = {}
+    for chave_projecao, rotulo in (
+        ("receita", "PROJECAO_RECEITA"),
+        ("ebitda_margem", "PROJECAO_EBITDA_MARGEM"),
+        ("lucro", "PROJECAO_LUCRO"),
+    ):
+        valor = _campo(rotulo)
+        if valor:
+            projecoes[chave_projecao] = valor
+
+    return tipo_documento, premissas, projecoes
 
 
 _PROMPT_EXTRACAO_CHUNK = (
@@ -563,11 +654,20 @@ def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") ->
         preco_alvo, recomendacao = _extrair_dados_estruturados(texto, titulo, chave, modelo)
         dados_estruturados["preco_alvo"] = preco_alvo
         dados_estruturados["recomendacao"] = recomendacao
+        # biblioteca permanente (ver _gerar_resumo/store.salvar_premissas) -
+        # mesmo texto/escopo da chamada acima, so' mais uma chamada leve.
+        tipo_documento, premissas, projecoes = _extrair_premissas_projecoes(texto, titulo, chave, modelo)
+        dados_estruturados["tipo_documento"] = tipo_documento
+        dados_estruturados["premissas"] = premissas
+        dados_estruturados["projecoes"] = projecoes
 
     return _normalizar_formatacao(conteudo), None, dados_estruturados
 
 
-def _gerar_resumo(link: str, titulo: str, extrator_texto, casa: str, tipo: str) -> dict:
+def _gerar_resumo(
+    link: str, titulo: str, extrator_texto, casa: str, tipo: str,
+    tickers: list = None, data_publicacao: str = None,
+) -> dict:
     """Fluxo de geracao de verdade (extrai texto -> Groq -> grava em
     research_itens) - EXATAMENTE o que obter_resumo fazia antes do cache
     global existir (ver obter_resumo). Chamado por
@@ -604,13 +704,33 @@ def _gerar_resumo(link: str, titulo: str, extrator_texto, casa: str, tipo: str) 
     # defensivo em que dados_estruturados nao trouxer a chave.
     modelo_usado = dados_estruturados.get("modelo")
     store.salvar_resumo(link, resumo, modelo_usado, preco_alvo=preco_alvo, recomendacao=recomendacao)
+
+    # Biblioteca PERMANENTE (Equity Research Library, 2026-10-30) - so'
+    # grava quando a extracao achou PELO MENOS um campo real (nunca uma
+    # linha vazia so' pra marcar "foi analisado"). So' roda pra tipo
+    # ACOES (ver _TIPOS_COM_DADOS_ESTRUTURADOS/resumir_com_groq) - as
+    # chaves abaixo so' existem em dados_estruturados nesse caso.
+    tipo_documento = dados_estruturados.get("tipo_documento")
+    premissas = dados_estruturados.get("premissas") or []
+    projecoes = dados_estruturados.get("projecoes") or {}
+    if tipo_documento or premissas or projecoes or preco_alvo or recomendacao:
+        store.salvar_premissas(
+            link, casa=casa, titulo=titulo, tickers=tickers or [],
+            data_publicacao=data_publicacao, tipo_documento=tipo_documento,
+            premissas=premissas, projecoes=projecoes,
+            recomendacao=recomendacao, preco_alvo=preco_alvo, modelo=modelo_usado,
+        )
+
     return {
         "resumo": resumo, "motivo_indisponivel": None, "preco_alvo": preco_alvo,
         "recomendacao": recomendacao, "modelo": modelo_usado,
     }
 
 
-def obter_resumo(link: str, titulo: str, extrator_texto=None, casa: str = "", tipo: str = "") -> dict:
+def obter_resumo(
+    link: str, titulo: str, extrator_texto=None, casa: str = "", tipo: str = "",
+    tickers: list = None, data_publicacao: str = None,
+) -> dict:
     """Resumo de um relatorio: extrai texto+resume via Groq e grava no
     Supabase (upsert pelo link, ja existente na tabela - ver
     store.salvar_resumo). Quem chama deve conferir antes se o item ja tem
@@ -631,6 +751,13 @@ def obter_resumo(link: str, titulo: str, extrator_texto=None, casa: str = "", ti
     priorizacao do resumo (ver _detectar_foco) - opcionais, "" usa o
     prompt generico.
 
+    tickers/data_publicacao: so' usados pra gravar na biblioteca
+    PERMANENTE (ver _gerar_resumo/store.salvar_premissas) o metadado
+    minimo que identifica o documento depois que a linha perecivel de
+    research_itens for apagada - nunca afetam o resumo narrativo nem o
+    cache. Quem chama normalmente ja tem isso no dict do item (rel.get
+    ('tickers')/rel.get('data')).
+
     Retorna {resumo, motivo_indisponivel, preco_alvo, recomendacao};
     resumo=None se qualquer etapa falhar (nao grava nada nesse caso).
     preco_alvo/recomendacao vem de _extrair_dados_estruturados (so' pra
@@ -638,5 +765,5 @@ def obter_resumo(link: str, titulo: str, extrator_texto=None, casa: str = "", ti
     texto, nunca um valor inventado."""
     return ia_cache.obter_resumo_com_cache(
         ia_cache.chave_research(link), link, "research",
-        lambda: _gerar_resumo(link, titulo, extrator_texto, casa, tipo),
+        lambda: _gerar_resumo(link, titulo, extrator_texto, casa, tipo, tickers, data_publicacao),
     )

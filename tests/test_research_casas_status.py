@@ -58,3 +58,28 @@ def test_nunca_lanca_excecao_mesmo_com_painel_incompleto():
     with patch.object(casas_status_mod.saude_dados, "obter_painel_saude", return_value=[{"categoria": "Noticias", "nome": "NEWS"}]):
         resultado = casas_status_mod.obter_status_casas()
     assert len(resultado) == len(CASAS)
+
+
+def test_casas_investigadas_em_20261030_registram_motivo_verificavel():
+    """Agora/Ativa/Andbank/Planner foram investigadas (pedido explicito do
+    Rodrigo) e nenhuma virou coletor - cada uma precisa de disponivel=False
+    com motivo_indisponivel especifico (rastreabilidade: por que, nao so
+    que esta indisponivel)."""
+    por_id = {c["id"]: c for c in CASAS}
+    esperado_substring = {
+        "agora_insights": "descoberta",
+        "ativa_investimentos": "borda",
+        "andbank_brasil": "robots.txt",
+        "planner_investimentos": "robots.txt",
+    }
+    for casa_id, trecho in esperado_substring.items():
+        assert casa_id in por_id, f"casa {casa_id} nao encontrada em CASAS"
+        casa = por_id[casa_id]
+        assert casa["disponivel"] is False
+        assert casa["ativa_por_padrao"] is False
+        assert casa["extrator_texto"] is None
+        assert casa.get("motivo_indisponivel"), f"{casa_id} sem motivo_indisponivel"
+        assert trecho in casa["motivo_indisponivel"], (
+            f"{casa_id}: motivo_indisponivel nao cita '{trecho}' "
+            f"({casa['motivo_indisponivel']!r})"
+        )

@@ -33,8 +33,25 @@ coletavel sem login:
   em SAUDE DOS DADOS via falhas em preparar_leitura) em vez de um coletor
   fragil sem fonte real. BB Investimentos, Safra (research de acoes;
   Safra Corretora/carteiras recomendadas e' outro coletor, ver
-  data/research/safra_carteiras.py), Agora, Inter: ainda nao
-  investigadas.
+  data/research/safra_carteiras.py), Inter: ainda nao investigadas.
+- Agora Investimentos, Ativa Investimentos, Andbank Brasil, Planner
+  Investimentos: investigadas em 2026-10-30 (pedido explicito do Rodrigo,
+  expansao do ecossistema apos dificuldade de coleta de XP/BTG/Genial) -
+  nenhuma virou coletor nesta rodada, por motivos diferentes entre si
+  (ver comentario de cada entrada abaixo pro detalhe completo da
+  sondagem real):
+  - Agora: tem conteudo real e publico por item JA CONHECIDO (plataforma
+    "Agora Insights", teaser sem login), mas SEM nenhum RSS/sitemap/API
+    de listagem encontrado pra descobrir relatorio NOVO, e o texto
+    completo e' pago (carrinho de compra) - unico caso aqui que nao e'
+    bloqueio de borda, e' ausencia de mecanismo de descoberta.
+  - Ativa: bloqueio de borda (403) consistente em toda rota testada,
+    inclusive no robots.txt.
+  - Andbank e Planner: robots.txt do dominio e' "Disallow: /" (proibe
+    coleta do site inteiro) - decisao da propria instituicao, respeitada
+    sem excecao.
+  Itau BBA reconfirmado na mesma rodada (403 de novo, sem mudanca desde
+  29/10/2026).
 
 Os itens coletados sao persistidos no Supabase (tabela research_itens,
 ver data/research/store.py) - a aba RESEARCH sempre le do banco primeiro
@@ -276,6 +293,95 @@ CASAS = [
         # CASAS sem .get() - precisa da chave mesmo nunca sendo chamada.
         "extrator_texto": None,
         "motivo_indisponivel": "pagina institucional sem nenhum relatorio/RSS/API publico - distribuicao institucional sem canal aberto identificado",
+    },
+    {
+        # Investigada em 2026-10-30 (pedido explicito do Rodrigo, expansao
+        # do ecossistema de Research - Agora/Ativa/Andbank/Planner).
+        #
+        # Agora e' white-label da Bradesco (ver link "BFO - Bradesco Family
+        # Office" na home institucional) com conteudo real de research numa
+        # plataforma de terceiro ("Agora Insights", insights.
+        # agorainvestimentos.com.br, plataforma Toolzz/LMS). robots.txt do
+        # subdominio permite tudo ("User-agent: * " sem Disallow), e paginas
+        # de detalhe de relatorio ja' conhecidas (ex: /play/text/6614139/
+        # detalhe?school=visitantes) respondem 200 com titulo e um TEASER
+        # curto reais, sem exigir login - confirmado com texto real
+        # ("Estrategia para renda variavel: as Small Caps..."). Mas:
+        # (1) o relatorio COMPLETO fica atras de carrinho de compra/
+        #     pagamento ("Finalizar compra", mesmo texto de teaser) - e'
+        #     paywall de verdade, nunca contornado aqui;
+        # (2) a pagina de catalogo (/analisedeempresas-aberto) e' um SPA
+        #     React que nao renderiza nenhum item no HTML puro (sem JS) e
+        #     nenhum endpoint de API publico foi encontrado nos bundles JS
+        #     (index-BPSgioq2.js e' so o shell); nenhum RSS, nenhum
+        #     sitemap.xml (varias rotas tentadas, todas 404), nenhum
+        #     Sitemap: no robots.txt. Google tem paginas individuais
+        #     indexadas (confirma que ALGUM caminho de navegacao existe),
+        #     mas raspar resultado de busca nao e' um mecanismo de
+        #     descoberta aceitavel/estavel pra um coletor agendado.
+        # Sem mecanismo de descoberta de item NOVO, nao da' pra implementar
+        # um coletor de verdade (so' saberiamos reler um ID ja' conhecido,
+        # nunca descobrir o relatorio de hoje) - registrado indisponivel
+        # por ora, nao por bloqueio de borda e sim por falta de feed/API
+        # publica de listagem. Revisitar se a Agora publicar RSS/sitemap/
+        # API no futuro.
+        "id": "agora_insights",
+        "nome": "Ágora Insights",
+        "fonte": "insights.agorainvestimentos.com.br (sem RSS/sitemap/API de listagem; relatorio completo pago)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "extrator_texto": None,
+        "motivo_indisponivel": "conteudo publico existe por item conhecido (teaser, sem login), mas sem RSS/sitemap/API de descoberta de relatorio novo e com texto completo pago (carrinho de compra) - nao ha' como um coletor agendado encontrar relatorio novo de forma confiavel",
+    },
+    {
+        # Investigada em 2026-10-30: robots.txt do proprio dominio devolve
+        # 403 (nem o robots.txt e' servido pro nosso User-Agent OU pra um
+        # UA de navegador comum - mesmo resultado nos dois casos, varias
+        # rotas testadas) - bloqueio de borda consistente, mesmo padrao de
+        # Genial/XP (WAF/CDN), confirmado tambem no feed RSS pela sondagem
+        # anterior de 22/10/2026 (docstring de montebravo.py: Ativa deu 403
+        # no feed). Sem NENHUM endpoint respondendo, nao ha' fonte real pra
+        # tentar coletar.
+        "id": "ativa_investimentos",
+        "nome": "Ativa Investimentos",
+        "fonte": "ativainvestimentos.com.br (bloqueio de borda/WAF - 403 ate' no robots.txt)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "extrator_texto": None,
+        "motivo_indisponivel": "bloqueio de borda (403) em toda rota testada, inclusive robots.txt, com UA do projeto e UA de navegador comum - nenhum endpoint publico acessivel",
+    },
+    {
+        # Investigada em 2026-10-30: o dominio brasileiro (andbank.com.br)
+        # so' redireciona pro dominio global (andbank.com/brasil), cujo
+        # robots.txt e' "Disallow: /" pra todo User-agent - proibe
+        # explicitamente qualquer coleta automatizada do site inteiro,
+        # independente do conteudo existir ou nao (a pagina carrega
+        # normalmente, HTTP 200, mas o projeto respeita robots.txt sempre -
+        # ver data/research/base.py:permitido). Nao foi encontrada secao de
+        # research de acoes/recomendacoes (Andbank e' private
+        # banking/gestao de patrimonio, nao corretora de varejo com
+        # cobertura de acoes individuais).
+        "id": "andbank_brasil",
+        "nome": "Andbank Brasil",
+        "fonte": "andbank.com/brasil (robots.txt proibe coleta - 'Disallow: /')",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "extrator_texto": None,
+        "motivo_indisponivel": "robots.txt do dominio ('Disallow: /') proibe qualquer coleta automatizada, independente de conteudo; nenhuma secao de research de acoes encontrada (perfil de private banking)",
+    },
+    {
+        # Investigada em 2026-10-30: robots.txt de www.planner.com.br e'
+        # "Disallow: /" pra todo User-agent - proibe coleta do site
+        # inteiro. Nao investigamos conteudo alem disso (a proibicao no
+        # robots.txt e' suficiente pra decidir, nao importa o que exista
+        # atras dela - mesmo principio do Andbank acima).
+        "id": "planner_investimentos",
+        "nome": "Planner Investimentos",
+        "fonte": "planner.com.br (robots.txt proibe coleta - 'Disallow: /')",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "extrator_texto": None,
+        "motivo_indisponivel": "robots.txt do dominio ('Disallow: /') proibe qualquer coleta automatizada do site inteiro",
     },
 ]
 
