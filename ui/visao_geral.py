@@ -196,7 +196,7 @@ def _proximo_evento_watchlist(prefs):
 
 
 def _chip_html(tipo: str, texto_html: str) -> str:
-    cor = {"DADO": "#7fb8ff", "NOTÍCIA": "var(--destaque)", "AGENDA": "var(--cinza)"}.get(tipo, "var(--cinza)")
+    cor = {"DADO": "var(--ciano)", "NOTÍCIA": "var(--destaque)", "AGENDA": "var(--cinza)"}.get(tipo, "var(--cinza)")
     return (
         f"<span style='font-size:0.68rem; border:1px solid var(--borda); border-radius:2px; "
         f"padding:0.22rem 0.55rem; display:inline-flex; align-items:center; gap:0.4rem; "

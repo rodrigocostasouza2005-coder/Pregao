@@ -368,7 +368,7 @@ def _linha_destaque(rotulo: str, ticker: str | None, tema: dict, linha1_html: st
         f"<div style='flex:1; min-width:0;'>"
         f"<div class='cinza' style='font-size:0.58rem; letter-spacing:0.02em;'>{html.escape(rotulo)}</div>"
         f"<div style='font-size:0.78rem; font-weight:700; margin-top:0.08rem;'>{linha1_html}</div>"
-        f"<div style='font-size:0.66rem; color:#a8a8a8; margin-top:0.1rem;'>{html.escape(porque)}</div>"
+        f"<div style='font-size:0.66rem; color:var(--cinza); margin-top:0.1rem;'>{html.escape(porque)}</div>"
         f"{extra}</div></div>",
         unsafe_allow_html=True,
     )
@@ -601,7 +601,7 @@ def _nota_contextual(tag: str, texto: str):
     cor = "var(--cinza)" if tag == "FATO" else "var(--destaque)"
     st.markdown(
         f"<div style='margin-top:0.4rem; padding-top:0.35rem; border-top:1px solid var(--borda); "
-        f"font-size:0.66rem; color:#a8a8a8;'><b style='color:{cor};'>[{tag}]</b> {texto}</div>",
+        f"font-size:0.66rem; color:var(--cinza);'><b style='color:{cor};'>[{tag}]</b> {texto}</div>",
         unsafe_allow_html=True,
     )
 

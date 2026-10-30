@@ -791,12 +791,12 @@ if rota == ("analises", "empresas"):
                                 f"<div style='overflow-x:auto; overflow-y:hidden;'>"
                                 f"<table style='width:100%; font-size:0.8rem; border-collapse:collapse;'>"
                                 f"<thead><tr class='cinza' style='font-size:0.68rem;'>"
-                                f"<th style='text-align:left; font-weight:400; padding:0 0.4rem 0.2rem 0;'>TICKER</th>"
-                                f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>PREÇO</th>"
-                                f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>VAR. DIA</th>"
-                                f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>P/L</th>"
-                                f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>P/VP</th>"
-                                f"<th style='text-align:right; font-weight:400; padding:0 0 0.2rem 0.4rem;'>DY</th>"
+                                f"<th style='text-align:left; padding:0 0.4rem 0.2rem 0;'>TICKER</th>"
+                                f"<th style='text-align:right; padding:0 0.4rem 0.2rem;'>PREÇO</th>"
+                                f"<th style='text-align:right; padding:0 0.4rem 0.2rem;'>VAR. DIA</th>"
+                                f"<th style='text-align:right; padding:0 0.4rem 0.2rem;'>P/L</th>"
+                                f"<th style='text-align:right; padding:0 0.4rem 0.2rem;'>P/VP</th>"
+                                f"<th style='text-align:right; padding:0 0 0.2rem 0.4rem;'>DY</th>"
                                 f"</tr></thead><tbody>{linhas_html}</tbody></table></div>",
                                 unsafe_allow_html=True,
                             )
@@ -831,7 +831,7 @@ if rota == ("analises", "empresas"):
                         <div style="overflow-x:auto; overflow-y:hidden;">
                         <table style="width:100%; border-collapse:collapse;">
                         <thead><tr>
-                            <th style="text-align:left; font-weight:400; white-space:normal;" class="cinza">{ticker_sel} {nome_empresa_sel}</th>
+                            <th style="text-align:left; white-space:normal;" class="cinza">{ticker_sel} {nome_empresa_sel}</th>
                             <th class="cinza">VARIAÇÃO DIA</th>
                             <th class="cinza">MÁX/MÍN DIA</th>
                             <th class="cinza">VOLUME</th>
@@ -1384,7 +1384,7 @@ if rota == ("mais", "config"):
                     <div style="overflow-x:auto; overflow-y:hidden;">
                     <table style="width:100%; border-collapse:collapse;">
                     <thead><tr>
-                        <th style="text-align:left; font-weight:400;" class="cinza">FONTE</th>
+                        <th style="text-align:left;" class="cinza">FONTE</th>
                         <th class="cinza">STATUS</th>
                         <th class="cinza">TEMPO</th>
                         <th class="cinza">TAMANHO</th>

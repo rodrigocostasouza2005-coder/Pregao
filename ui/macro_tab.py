@@ -129,7 +129,7 @@ def _painel_resumo(prefs):
         f"""
         <table style="width:100%; border-collapse:collapse;">
         <thead><tr>
-            <th style="text-align:left; font-weight:400;" class="cinza">SELIC META</th>
+            <th style="text-align:left;" class="cinza">SELIC META</th>
             <th class="cinza">CDI (a.a.)</th>
             <th class="cinza">IPCA 12M</th>
             <th class="cinza">JURO REAL EX-POST</th>
@@ -174,8 +174,8 @@ def _painel_resumo(prefs):
         f"""
         <table style="width:100%; border-collapse:collapse; margin-top:0.3rem;">
         <thead><tr>
-            <th colspan="{QUANTIDADE_ANOS_FOCUS}" style="text-align:left; font-weight:400;" class="cinza">FOCUS IPCA (mediana)</th>
-            <th colspan="{QUANTIDADE_ANOS_FOCUS}" style="text-align:left; font-weight:400;" class="cinza">FOCUS SELIC (mediana)</th>
+            <th colspan="{QUANTIDADE_ANOS_FOCUS}" style="text-align:left;" class="cinza">FOCUS IPCA (mediana)</th>
+            <th colspan="{QUANTIDADE_ANOS_FOCUS}" style="text-align:left;" class="cinza">FOCUS SELIC (mediana)</th>
         </tr></thead>
         <tbody><tr>
             {_linha_focus("IPCA", focus_ipca_df)}
@@ -546,7 +546,7 @@ def _painel_expectativas(prefs):
             )
     st.markdown(
         "<div style='overflow-x:auto; overflow-y:hidden;'><table style='width:100%; border-collapse:collapse;'>"
-        "<thead><tr><th style='text-align:left; font-weight:400;' class='cinza'>PROJEÇÃO</th>"
+        "<thead><tr><th style='text-align:left;' class='cinza'>PROJEÇÃO</th>"
         "<th class='cinza'>MEDIANA</th><th class='cinza'>MÉDIA</th><th class='cinza'>RESPONDENTES</th></tr></thead>"
         f"<tbody>{''.join(linhas)}</tbody></table></div>",
         unsafe_allow_html=True,

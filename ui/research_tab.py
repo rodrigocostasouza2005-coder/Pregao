@@ -591,22 +591,22 @@ def _painel_radar(relatorios: list, mudancas_todas: list):
         )
         return
 
+    # Sem style= por célula (achado da auditoria institucional 2026-10-29):
+    # os valores batiam quase exatamente com o `table`/`th`/`td` globais de
+    # style.css, só com um padding/tamanho levemente diferente sem motivo -
+    # essa era a única tabela do RESEARCH com alinhamento sutilmente distinto
+    # das outras do app. Herda o padrão global; só o ticker continua com
+    # cor/peso próprios (destaque real, não coberto pela regra genérica).
     linhas_html = "".join(
-        f"<tr style='border-bottom:1px solid var(--borda);'>"
-        f"<td style='padding:0.25rem 0.4rem 0.25rem 0;'>{l['casa']}</td>"
-        f"<td style='padding:0.25rem 0.4rem; color:var(--destaque); font-weight:600;'>{l['ticker']}</td>"
-        f"<td style='padding:0.25rem 0.4rem;'>{l['tipo']}</td>"
-        f"<td style='padding:0.25rem 0.4rem;'>{l['data']}</td>"
-        f"<td style='padding:0.25rem 0 0.25rem 0.4rem;'>{l['status']}</td></tr>"
+        f"<tr><td>{l['casa']}</td>"
+        f"<td style='color:var(--destaque); font-weight:600;'>{l['ticker']}</td>"
+        f"<td>{l['tipo']}</td><td>{l['data']}</td><td>{l['status']}</td></tr>"
         for l in linhas[:30]
     )
     st.markdown(
-        "<table style='width:100%; font-size:0.78rem; border-collapse:collapse;'>"
-        "<thead><tr class='cinza' style='text-align:left; font-size:0.65rem; letter-spacing:0.04em;'>"
-        "<th style='padding:0 0.4rem 0.3rem 0;'>CASA</th><th style='padding:0 0.4rem 0.3rem;'>TICKER</th>"
-        "<th style='padding:0 0.4rem 0.3rem;'>TIPO</th><th style='padding:0 0.4rem 0.3rem;'>DATA</th>"
-        "<th style='padding:0 0.4rem 0.3rem;'>STATUS</th></tr></thead>"
-        f"<tbody>{linhas_html}</tbody></table>",
+        "<table><thead><tr>"
+        "<th>CASA</th><th>TICKER</th><th>TIPO</th><th>DATA</th><th>STATUS</th>"
+        f"</tr></thead><tbody>{linhas_html}</tbody></table>",
         unsafe_allow_html=True,
     )
 
@@ -769,7 +769,13 @@ def render_casas_analise(prefs: dict):
             if not resultado["cobertura"] and not resultado["divergencia"]:
                 continue  # nenhuma casa cobriu - sem achado, não polui a tela
             with st.container(border=True):
-                st.markdown(f"<span class='casas-nome'>{html.escape(ticker)}</span>", unsafe_allow_html=True)
+                # font-size explicito (nao so' a classe .casas-nome, que
+                # tambem veste a <td> da tabela de recomendacoes - essa
+                # aqui e' um cabecalho de card, nao celula de tabela densa;
+                # sem isso herdava o tamanho base do app, menor que o
+                # mesmo rotulo de ticker em ui/research_tab.py:460, uma
+                # deriva de tamanho entre dois cabecalhos equivalentes).
+                st.markdown(f"<span class='casas-nome' style='font-size:0.85rem;'>{html.escape(ticker)}</span>", unsafe_allow_html=True)
                 for c in resultado["cobertura"]:
                     rec = f" · {html.escape(c['recomendacao'])}" if c.get("recomendacao") else ""
                     st.markdown(

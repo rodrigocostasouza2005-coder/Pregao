@@ -391,6 +391,20 @@ def _montar_conclusao(analise: dict, tese: dict | None) -> list:
     return blocos
 
 
+# rótulo + cor por tipo de evidência (pedido do redesign institucional:
+# "diferencie dados observados, conclusões dos agentes, hipóteses e
+# alertas" - antes FATO/CALCULO/ESTIMATIVA/HIPOTESE renderizavam todos
+# com o mesmo st.markdown, sem nenhuma pista visual da natureza de cada
+# resposta). Mesma linguagem de tag monoespaçada já usada em
+# ui/mercado_tab.py (_tag_fato_interpretacao) e ui/news_tab.py (selo-*).
+_ROTULO_EVIDENCIA = {
+    TIPO_FATO: ("FATO", "var(--cinza)"),
+    TIPO_CALCULO: ("CÁLCULO INTERNO", "var(--ciano)"),
+    TIPO_ESTIMATIVA_TERCEIRO: ("ESTIMATIVA DE TERCEIRO", "var(--destaque)"),
+    TIPO_HIPOTESE: ("HIPÓTESE DO ANALISTA", "var(--destaque)"),
+}
+
+
 def render_conclusao_investimento(ticker: str, prefs: dict, usuario: dict):
     """Painel final de ANÁLISES › Empresas (depois de NOTÍCIAS/CVM, pra
     fechar a análise com uma síntese depois de ver todo o detalhe) -
@@ -408,10 +422,19 @@ def render_conclusao_investimento(ticker: str, prefs: dict, usuario: dict):
         st.markdown('<div class="painel-titulo">CONCLUSÃO DE INVESTIMENTO</div>', unsafe_allow_html=True)
         for bloco in _montar_conclusao(analise, tese):
             st.markdown(f"**{bloco['pergunta']}**")
-            if bloco["tipo_evidencia"] == TIPO_INSUFICIENTE:
+            tipo = bloco["tipo_evidencia"]
+            if tipo == TIPO_INSUFICIENTE:
                 st.caption(bloco["resposta"])
             else:
-                st.markdown(bloco["resposta"])
+                rotulo, cor = _ROTULO_EVIDENCIA.get(tipo, (None, None))
+                if rotulo:
+                    st.markdown(
+                        f"<span style='font-size:0.62rem; letter-spacing:0.04em; color:{cor};'>"
+                        f"[{rotulo}]</span> {bloco['resposta']}",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(bloco["resposta"])
         if tese:
             st.caption(
                 f"Você já registrou uma Tese própria para {ticker} em {str(tese['registrado_em'])[:10]} "
@@ -636,13 +659,13 @@ def render_fundamentos(prefs: dict):
             )
             linhas.append(f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>{nome_t}</td>{celulas}"
                           f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='cinza'>{coleta}</td></tr>")
-        cabecalho = "".join(f"<th style='text-align:right; font-weight:400; padding:0 0.4rem 0.2rem;'>{r}</th>"
+        cabecalho = "".join(f"<th style='text-align:right; padding:0 0.4rem 0.2rem;'>{r}</th>"
                             for r, _, _ in colunas)
         st.markdown(
             "<div style='overflow-x:auto; overflow-y:hidden;'><table style='width:100%; font-size:0.78rem; "
             "border-collapse:collapse;'><thead><tr class='cinza' style='font-size:0.66rem;'>"
-            f"<th style='text-align:left; font-weight:400; padding:0 0.4rem 0.2rem 0;'>TICKER</th>{cabecalho}"
-            "<th style='text-align:right; font-weight:400; padding:0 0 0.2rem 0.4rem;'>COLETA</th></tr>"
+            f"<th style='text-align:left; padding:0 0.4rem 0.2rem 0;'>TICKER</th>{cabecalho}"
+            "<th style='text-align:right; padding:0 0 0.2rem 0.4rem;'>COLETA</th></tr>"
             f"</thead><tbody>{''.join(linhas)}</tbody></table></div>",
             unsafe_allow_html=True,
         )
@@ -874,7 +897,7 @@ def _bloco_interpretacao_earnings(texto: str):
     ui/research_tab.py), cor diferente pra não confundir com fato."""
     st.markdown(
         f"<div style='border-left:3px solid var(--destaque); padding:0.25rem 0 0.25rem 0.6rem; "
-        f"margin:0.3rem 0; font-size:0.78rem; background:rgba(255,255,255,0.03);'>{html.escape(texto)}</div>",
+        f"margin:0.3rem 0; font-size:0.78rem; background:color-mix(in srgb, var(--neutro) 3%, transparent);'>{html.escape(texto)}</div>",
         unsafe_allow_html=True,
     )
 
@@ -888,7 +911,7 @@ def _bloco_educacao_financeira_earnings(texto: str):
     uma leitura do resultado dela nem recomendação."""
     st.markdown(
         f"<div style='border-left:3px solid var(--ciano); padding:0.25rem 0 0.25rem 0.6rem; "
-        f"margin:0.3rem 0; font-size:0.78rem; background:rgba(255,255,255,0.03);'>{html.escape(texto)}</div>",
+        f"margin:0.3rem 0; font-size:0.78rem; background:color-mix(in srgb, var(--neutro) 3%, transparent);'>{html.escape(texto)}</div>",
         unsafe_allow_html=True,
     )
 
