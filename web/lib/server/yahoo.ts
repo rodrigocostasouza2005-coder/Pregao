@@ -15,6 +15,8 @@ export type Cotacao = {
   /** data (AAAA-MM-DD, fuso da bolsa) da última barra diária */
   sessao: string | null;
   moeda: string | null;
+  /** preço × quantidade negociada na última barra diária (R$, proxy de liquidez - mesma definição de data/mercado.py:volume_financeiro) */
+  volumeFinanceiro: number | null;
 };
 
 type ChartResposta = {
@@ -22,7 +24,7 @@ type ChartResposta = {
     result?: Array<{
       meta?: { regularMarketPrice?: number; regularMarketTime?: number; currency?: string; exchangeTimezoneName?: string };
       timestamp?: number[];
-      indicators?: { quote?: Array<{ close?: Array<number | null> }> };
+      indicators?: { quote?: Array<{ close?: Array<number | null>; volume?: Array<number | null> }> };
     }>;
   };
 };
@@ -52,15 +54,17 @@ export async function obterCotacao(simbolo: string, revalidar = 300): Promise<Re
     const fuso = r?.meta?.exchangeTimezoneName || "America/Sao_Paulo";
     const ts = r?.timestamp || [];
     const fech = r?.indicators?.quote?.[0]?.close || [];
+    const vol = r?.indicators?.quote?.[0]?.volume || [];
     const barras = ts
-      .map((t, i) => ({ ...dataNoFuso(t, fuso), close: fech[i] }))
-      .filter((b) => typeof b.close === "number" && b.diaSemana !== 0 && b.diaSemana !== 6) as Array<{ iso: string; close: number }>;
+      .map((t, i) => ({ ...dataNoFuso(t, fuso), close: fech[i], volume: vol[i] }))
+      .filter((b) => typeof b.close === "number" && b.diaSemana !== 0 && b.diaSemana !== 6) as Array<{ iso: string; close: number; volume: number | null }>;
     const preco = r?.meta?.regularMarketPrice ?? barras.at(-1)?.close;
     if (typeof preco !== "number") return resultado("vazio", null, FONTE, "Sem cotação na fonte.");
     const anterior = barras.length >= 2 ? barras[barras.length - 2].close : null;
     const ultimoFech = barras.at(-1)?.close ?? null;
     const base = ultimoFech !== null && anterior !== null ? anterior : null;
     const variacaoPct = base ? ((preco - base) / base) * 100 : null;
+    const ultimoVolume = barras.at(-1)?.volume ?? null;
     return resultado("ok", {
       simbolo,
       preco,
@@ -69,6 +73,7 @@ export async function obterCotacao(simbolo: string, revalidar = 300): Promise<Re
       negocioEm: r?.meta?.regularMarketTime ? new Date(r.meta.regularMarketTime * 1000).toISOString() : null,
       sessao: barras.at(-1)?.iso ?? null,
       moeda: r?.meta?.currency ?? null,
+      volumeFinanceiro: typeof ultimoVolume === "number" ? ultimoVolume * preco : null,
     }, FONTE);
   } catch (erro) {
     console.error(`[yahoo] ${simbolo}:`, erro);
@@ -91,7 +96,15 @@ export async function obterCotacoes(simbolos: string[], concorrencia = 12, reval
 }
 
 export type Ponto = { t: number; v: number };
-export type Serie = { simbolo: string; pontos: Ponto[]; fechamentoAnterior: number | null; moeda: string | null; fuso: string };
+export type Serie = {
+  simbolo: string;
+  pontos: Ponto[];
+  /** preço × quantidade de cada barra (mesma ordem/timestamps de `pontos`) - ausente quando a fonte não traz volume pro intervalo pedido */
+  volumes: Ponto[];
+  fechamentoAnterior: number | null;
+  moeda: string | null;
+  fuso: string;
+};
 
 /** Períodos de gráfico aceitos (range/interval do Yahoo). */
 export const PERIODOS = {
@@ -122,12 +135,17 @@ export async function obterSerie(simbolo: string, periodo: Periodo = "1D"): Prom
     const r = corpo.chart?.result?.[0];
     const ts = r?.timestamp || [];
     const fech = r?.indicators?.quote?.[0]?.close || [];
+    const vol = r?.indicators?.quote?.[0]?.volume || [];
     const pontos = ts.flatMap((t, i) => (typeof fech[i] === "number" ? [{ t: t * 1000, v: fech[i] as number }] : []));
     if (pontos.length < 2) return resultado("vazio", null, FONTE, "Sem negócios suficientes no período.");
+    // volume financeiro por barra (preço × quantidade) - só entram barras
+    // com os dois valores presentes, na mesma ordem de `pontos`
+    const volumes = ts.flatMap((t, i) => (typeof fech[i] === "number" && typeof vol[i] === "number" ? [{ t: t * 1000, v: (vol[i] as number) * (fech[i] as number) }] : []));
     const meta = r?.meta as { chartPreviousClose?: number; previousClose?: number; currency?: string; exchangeTimezoneName?: string } | undefined;
     return resultado("ok", {
       simbolo,
       pontos,
+      volumes,
       fechamentoAnterior: periodo === "1D" ? (meta?.previousClose ?? meta?.chartPreviousClose ?? null) : null,
       moeda: meta?.currency ?? null,
       fuso: meta?.exchangeTimezoneName || "America/Sao_Paulo",
