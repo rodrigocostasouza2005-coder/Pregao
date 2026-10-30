@@ -275,6 +275,64 @@ def test_executar_sem_destinatarios_autorizados_finaliza_sem_falha(monkeypatch):
     assert chamadas[0][1]["erro"] is None
 
 
+def test_executar_falha_de_email_nao_marca_falha_de_persistencia(monkeypatch):
+    """Achado real (auditoria 2026-10-30): persistencia_ok do registro
+    'RADAR DE QUEDAS' media' `falhas == 0`, onde `falhas` conta e-mails
+    que não saíram (SMTP/Brevo) - nada a ver com persistência de dados
+    no Supabase. Isso acendia 'FALHA_PERSISTENCIA: coleta OK, gravacao
+    falhou' no painel SAÚDE DOS DADOS (e congelava ultimo_sucesso_em,
+    ver coletores_status.registrar_tentativa) por causa de um problema
+    de e-mail, não de banco. Com o dado já persistido com sucesso
+    (alertas_falha_persistencia=0) e só o ENVIO falhando,
+    persistencia_ok precisa continuar True - a falha deve aparecer só
+    em `parcial`/`erro`, nunca em `persistencia_ok`."""
+    chamadas = []
+    alerta = {
+        "id": 99, "ticker": "ABCD3", "variacao_pct": -4.5, "preco_atual": 10.0,
+        "fechamento_anterior": 10.5,
+    }
+    monkeypatch.setattr(
+        radar_quedas, "processar_monitoramento",
+        lambda: {
+            "coleta_ok": True, "alertas_novos": [alerta],
+            "alertas_falha_persistencia": 0, "erro": None,
+        },
+    )
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "listar_assinantes_radar_quedas", lambda cliente: ["assinante@exemplo.com"])
+    monkeypatch.setattr(radar_quedas, "_alertas_pendentes", lambda cliente, hoje=None: [alerta])
+    monkeypatch.setattr(radar_quedas, "enviar_email", lambda *a, **k: {"ok": False, "erro": "SMTP indisponível"})
+    monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+
+    codigo = radar_quedas.executar()
+
+    assert codigo == 1  # falha de envio ainda derruba o exit code (ver fim de executar())
+    assert chamadas[0][1]["persistencia_ok"] is True
+    assert chamadas[0][1]["parcial"] is True
+
+
+def test_executar_falha_ao_persistir_alerta_marca_falha_de_persistencia(monkeypatch):
+    """Caso oposto: alertas_falha_persistencia>0 (INSERT rejeitado em
+    radar_alertas_queda) precisa continuar acendendo persistencia_ok=
+    False, mesmo com todos os e-mails pendentes entregues com sucesso."""
+    chamadas = []
+    monkeypatch.setattr(
+        radar_quedas, "processar_monitoramento",
+        lambda: {
+            "coleta_ok": True, "alertas_novos": [],
+            "alertas_falha_persistencia": 1, "erro": "Falha ao persistir 1 alerta(s) de queda detectado(s)",
+        },
+    )
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "listar_assinantes_radar_quedas", lambda cliente: ["assinante@exemplo.com"])
+    monkeypatch.setattr(radar_quedas, "_alertas_pendentes", lambda cliente, hoje=None: [])
+    monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+
+    radar_quedas.executar()
+
+    assert chamadas[0][1]["persistencia_ok"] is False
+
+
 def test_executar_chama_self_test_de_persistencia_antes_de_tudo(monkeypatch):
     """Regressao 2026-10-15 (auditoria do secret errado em producao):
     executar() precisa rodar o self-test de escrita+leitura ANTES de
