@@ -222,7 +222,7 @@ def _abrir_resumo_live(rel: dict, extrator):
     if not resumo:
         extrator_item = extrator or _EXTRATOR_POR_CASA.get(rel["casa"])
         with st.spinner("Resumindo..."):
-            resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator_item, casa=rel["casa"], tipo=rel["tipo"])
+            resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator_item, casa=rel["casa"], tipo=rel["tipo"], tickers=rel.get("tickers"), data_publicacao=rel.get("data"))
         resumo = resultado["resumo"]
         motivo = resultado["motivo_indisponivel"]
         if resumo:
@@ -300,7 +300,7 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool, mostrar_contexto_new
 
     if permitir_resumo_auto:
         with st.spinner("Resumindo..."):
-            resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator, casa=rel["casa"], tipo=rel["tipo"])
+            resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator, casa=rel["casa"], tipo=rel["tipo"], tickers=rel.get("tickers"), data_publicacao=rel.get("data"))
         if resultado["resumo"]:
             _bloco_resumo(resultado["resumo"])
             if mostrar_contexto_news:
@@ -318,7 +318,7 @@ def _linha_relatorio(rel: dict, permitir_resumo_auto: bool, mostrar_contexto_new
     chave_botao = f"research_resumir_{abs(hash(rel['link']))}"
     if st.button("RESUMIR", key=chave_botao):
         with st.spinner("Resumindo..."):
-            resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator, casa=rel["casa"], tipo=rel["tipo"])
+            resultado = obter_resumo(rel["link"], rel["titulo"], extrator_texto=extrator, casa=rel["casa"], tipo=rel["tipo"], tickers=rel.get("tickers"), data_publicacao=rel.get("data"))
         if resultado["resumo"]:
             _bloco_resumo(resultado["resumo"])
             if mostrar_contexto_news:
