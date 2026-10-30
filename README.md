@@ -44,12 +44,16 @@ Tabelas usadas (rodar os `.sql` correspondentes uma vez no SQL Editor do Supabas
 | `sql/eventos.sql` | `eventos_resultados` | datas CONFIRMADO/ESTIMADO do calendário |
 | `sql/calendario_snapshot.sql` | `calendario_snapshot` | snapshot do calendário (lido pela UI, escrito pelo coletor) |
 | `sql/ia_cache.sql` | `resumos_ia_cache` | cache global de resumos de IA |
+| `sql/coordenador.sql` | `coordenador_execucoes` | histórico de rodadas do job `jobs/coordenador.py` (backoffice/síntese/radar_x) |
+| `sql/x_radar.sql` | `x_sinais`, `x_sinais_historico`, `x_radar_consumo` | RADAR X — sinais do X classificados, histórico de reclassificação, controle de consumo da API |
 
 (`sql/cvm.sql` é só histórico — a fase CVM acabou reaproveitando `research_itens`, não precisa ser rodado.)
 
 ## Configuração necessária antes de rodar
 
 Preencher `.streamlit/secrets.toml` (veja `secrets.toml.example`) com as credenciais OAuth do Google, do Supabase e (opcional, só pros resumos de IA) da Groq; e rodar as tabelas acima no Supabase.
+
+**RADAR X (inteligência social, 2026-10-30)**: `X_BEARER_TOKEN` (variável de ambiente) ou `st.secrets["x"]["bearer_token"]` — **não configurado neste projeto ainda**. Sem essa credencial o conector (`data/x_signals.py`) fica desligado de propósito (nunca simula coleta); ver `docs/x-radar-inteligencia-social-20261030.md` pro custo real e o que a credencial precisa cobrir (busca/descoberta de posts recentes, não só leitura de um post específico).
 
 ## Coleta em background
 
