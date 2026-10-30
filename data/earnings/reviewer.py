@@ -26,8 +26,11 @@ nem apaga o registro anterior."""
 
 from datetime import date, datetime, timezone
 
+from data.coletores_status import registrar_tentativa
 from data.earnings import cvm_dre, sec_xbrl
 from data.supabase_client import obter_cliente
+
+_NOME_COLETOR = "EARNINGS REVIEWER (persistencia)"
 
 _TABELA = "earnings_reviews"
 
@@ -331,9 +334,11 @@ def salvar_versao(nota: dict) -> bool:
         return False
     cliente = obter_cliente()
     if cliente is None:
+        registrar_tentativa(_NOME_COLETOR, _TABELA, execucao_ok=False, erro="Supabase indisponivel", categoria="Earnings")
         return False
     ultima_mesmo_periodo = _ultima_versao_mesmo_periodo(nota["ticker"], nota["pais"], nota["periodo_label"], cliente)
     if ultima_mesmo_periodo is not None and ultima_mesmo_periodo.get("metricas") == nota.get("metricas"):
+        registrar_tentativa(_NOME_COLETOR, _TABELA, execucao_ok=True, registros_novos=0, categoria="Earnings")
         return True
     try:
         cliente.table(_TABELA).insert({
@@ -341,8 +346,10 @@ def salvar_versao(nota: dict) -> bool:
             "periodo_label": nota["periodo_label"], "gerado_em": nota["gerado_em"],
             "conteudo": nota,
         }).execute()
+        registrar_tentativa(_NOME_COLETOR, _TABELA, execucao_ok=True, registros_novos=1, categoria="Earnings")
         return True
-    except Exception:
+    except Exception as exc:
+        registrar_tentativa(_NOME_COLETOR, _TABELA, execucao_ok=False, erro=f"insert em {_TABELA} falhou: {exc!r}", categoria="Earnings")
         return False
 
 

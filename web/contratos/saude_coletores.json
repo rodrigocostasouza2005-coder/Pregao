@@ -225,6 +225,14 @@
       "nome": "SEC EDGAR (XBRL)"
     },
     {
+      "categoria": "Earnings",
+      "fonte": "earnings_reviews (Supabase)",
+      "frequencia_esperada": "sob demanda (quando uma nota e' gerada)",
+      "idade_maxima_horas": 30,
+      "instrumentado": true,
+      "nome": "EARNINGS REVIEWER (persistencia)"
+    },
+    {
       "categoria": "Radar",
       "fonte": "Carteiras recomendadas (Genial + Safra) + cotacoes",
       "frequencia_esperada": ".github/workflows/radar-morning-call.yml, 15min (seg-sex, pregao)",

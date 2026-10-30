@@ -404,6 +404,19 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 30, "instrumentado": True,
     },
     {
+        # linha nova (achado real, auditoria geral de coletores 2026-10-30):
+        # data/earnings/reviewer.py:salvar_versao persistia em
+        # earnings_reviews sem NENHUM registrar_tentativa - a tabela em
+        # si nem existia no Supabase ainda (migracao sql/earnings_reviews.sql
+        # nunca tinha sido rodada), e essa falha ficava completamente
+        # invisivel no painel de saude. Instrumentado agora; continua
+        # sob demanda (mesmo padrao de CVM DRE/SEC EDGAR acima - decisao
+        # deliberada, nao agendado no coletor_local.py).
+        "nome": "EARNINGS REVIEWER (persistencia)", "fonte": "earnings_reviews (Supabase)",
+        "categoria": "Earnings", "frequencia_esperada": "sob demanda (quando uma nota e' gerada)",
+        "idade_maxima_horas": 30, "instrumentado": True,
+    },
+    {
         # linha nova (auditoria 2026-10-15): jobs/radar_quedas.py (GitHub
         # Actions, a cada 15min em pregao) nunca chamava registrar_tentativa -
         # a tabela radar_alertas_queda so' registra ALERTAS de queda, nao a
