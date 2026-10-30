@@ -55,7 +55,7 @@ export function lerEarnings(limite = 40, ticker?: string) {
 export async function oQueMudou(limite = 80): Promise<{ r: Resultado<Mudanca[]>; parciais: string[] }> {
   const [rec, cvm, quedas, earnings] = await Promise.all([
     mudancasRecomendacao(40),
-    lerDocumentosCvm(40, { destaque: "eq.true" }),
+    lerDocumentosCvm(40, { destaque: true }),
     lerAlertasQueda(30),
     lerEarnings(20),
   ]);
@@ -70,7 +70,7 @@ export async function oQueMudou(limite = 80): Promise<{ r: Resultado<Mudanca[]>;
     });
   }
   for (const d of cvm.dados) {
-    itens.push({ tipo: "CVM", natureza: "fato", tickers: [d.ticker], em: d.coletado_em, fonte: "CVM", link: d.link, titulo: `${d.ticker} · ${d.tipo}`, detalhe: d.assunto });
+    itens.push({ tipo: "CVM", natureza: "fato", tickers: d.tickers, em: d.coletado_em, fonte: "CVM", link: d.link, titulo: `${d.tickers.join(", ")} · ${d.tipo}`, detalhe: d.titulo });
   }
   for (const q of quedas.dados) {
     itens.push({

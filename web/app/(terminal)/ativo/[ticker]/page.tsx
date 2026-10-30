@@ -35,7 +35,7 @@ export default async function Ativo({ params, searchParams }: { params: Promise<
     obterSerie(simbolo, periodo),
     obterCotacao(simbolo),
     lerEventosDoTicker(ticker),
-    lerDocumentosCvm(20, { ticker: `eq.${ticker}` }),
+    lerDocumentosCvm(20, { ticker }),
     lerEarnings(4, ticker),
     lerItensDoTicker(ticker),
     lerCarteiras(),
@@ -90,7 +90,7 @@ export default async function Ativo({ params, searchParams }: { params: Promise<
         ) : null}
       </Painel>
       <div className="grid gap-3 xl:grid-cols-3">
-        <Painel titulo="Eventos e documentos" acao={<Selo tipo="fato" />} rodape="eventos_resultados · cvm_documentos">
+        <Painel titulo="Eventos e documentos" acao={<Selo tipo="fato" />} rodape="eventos_resultados · research_itens (CVM)">
           <EstadoDados r={eventos} vazio="Sem eventos de resultado registrados." />
           <ul className="space-y-1 text-[12px]">
             {eventos.dados.map((e, i) => <li key={i}><span className="font-mono text-apagado">{data(e.data_evento)}</span> resultado {e.periodo} <span className="text-[10px] text-apagado">({e.status})</span></li>)}
@@ -98,7 +98,7 @@ export default async function Ativo({ params, searchParams }: { params: Promise<
           <div className="my-2 h-px bg-filete" />
           <EstadoDados r={cvm} vazio="Nenhum documento CVM coletado para o ativo." />
           <ul className="space-y-1 text-[12px]">
-            {cvm.dados.map((d) => <li key={d.link}><span className="font-mono text-apagado">{data(d.data)}</span> <LinkFonte href={d.link}>{d.tipo}: {d.assunto}</LinkFonte></li>)}
+            {cvm.dados.map((d) => <li key={d.link}><span className="font-mono text-apagado">{data(d.data)}</span> <LinkFonte href={d.link}>{d.tipo}: {d.titulo}</LinkFonte></li>)}
           </ul>
         </Painel>
         <Painel titulo="Números publicados" rodape="Agente de earnings (CVM/SEC)">
