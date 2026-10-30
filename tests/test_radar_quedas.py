@@ -612,6 +612,50 @@ def test_monitoramento_sem_falha_de_cotacao_nao_gera_erro_espurio():
     assert resultado["erro"] is None
 
 
+def test_monitoramento_falha_ao_persistir_alerta_fica_visivel_e_nao_e_novidade():
+    """Achado real (auditoria 2026-10-30): uma queda real detectada cujo
+    INSERT em radar_alertas_queda é rejeitado (conflito/schema/RLS/
+    timeout - registrar_alerta nunca lança excecao, só degrada pra
+    (False, None)) ficava descartada em silêncio - coleta_ok=True, erro=
+    None, como se não houvesse nenhuma queda. Precisa aparecer tanto em
+    `alertas_falha_persistencia` quanto na mensagem de `erro`, e NUNCA
+    contar como alerta novo (nunca foi persistido de verdade)."""
+    import data.radar_quedas as radar
+    item = {"ticker": "PETR4", "casa": "Safra Corretora", "carteira": "Top 10 Ações"}
+    cotacao_com_queda = {"preco": 90.0, "fechamento_anterior": 100.0, "cotacao_em": "2026-10-30T10:00:00-03:00"}
+    with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
+         patch.object(radar, "coletar_carteiras_safra", return_value=[item]), \
+         patch.object(radar, "salvar_carteiras", return_value=(True, None)), \
+         patch.object(radar, "listar_carteiras", return_value=[item]), \
+         patch.object(radar, "obter_cotacao", return_value=cotacao_com_queda), \
+         patch.object(radar, "registrar_alerta", return_value=(False, None)):
+        resultado = radar.processar_monitoramento()
+    assert resultado["coleta_ok"] is True
+    assert resultado["alertas_novos"] == []
+    assert resultado["alertas_falha_persistencia"] == 1
+    assert resultado["erro"] and "falha ao persistir 1 alerta" in resultado["erro"].lower()
+
+
+def test_monitoramento_alerta_persistido_com_sucesso_nao_conta_falha():
+    """Mesmo cenário de queda real, mas registrar_alerta confirma a
+    gravação (ok=True, id real) - `alertas_falha_persistencia` fica 0,
+    sem erro espúrio."""
+    import data.radar_quedas as radar
+    item = {"ticker": "PETR4", "casa": "Safra Corretora", "carteira": "Top 10 Ações"}
+    cotacao_com_queda = {"preco": 90.0, "fechamento_anterior": 100.0, "cotacao_em": "2026-10-30T10:00:00-03:00"}
+    with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
+         patch.object(radar, "coletar_carteiras_safra", return_value=[item]), \
+         patch.object(radar, "salvar_carteiras", return_value=(True, None)), \
+         patch.object(radar, "listar_carteiras", return_value=[item]), \
+         patch.object(radar, "obter_cotacao", return_value=cotacao_com_queda), \
+         patch.object(radar, "registrar_alerta", return_value=(True, 123)):
+        resultado = radar.processar_monitoramento()
+    assert resultado["coleta_ok"] is True
+    assert len(resultado["alertas_novos"]) == 1
+    assert resultado["alertas_falha_persistencia"] == 0
+    assert not resultado["erro"] or "falha ao persistir" not in resultado["erro"].lower()
+
+
 # ---- revisao 2026-10-18 -------------------------------------------------
 
 def test_pregao_do_alerta_vem_da_cotacao_nao_do_relogio():

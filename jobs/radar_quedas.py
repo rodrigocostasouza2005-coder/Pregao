@@ -309,6 +309,19 @@ def executar():
         if destinatarios is None else None
     )
     execucao_ok = bool(resultado.get("coleta_ok")) and destinatarios is not None
+    # Achado real (auditoria 2026-10-30): `persistencia_ok` media' antes
+    # `falhas == 0`, isto e', falha de ENVIO DE E-MAIL - um problema
+    # completamente diferente de persistir o DADO coletado. Isso fazia
+    # uma falha pontual de SMTP/Brevo (nada a ver com Supabase) acender
+    # "FALHA_PERSISTENCIA: coleta OK, gravacao falhou" no painel SAUDE
+    # DOS DADOS e congelar `ultimo_sucesso_em` (so' avanca quando
+    # persistencia_ok=True - ver coletores_status.registrar_tentativa),
+    # fazendo o Radar parecer "dados desatualizados" mesmo coletando e
+    # gravando normalmente. O sinal correto de persistencia e'
+    # `alertas_falha_persistencia` (ver data/radar_quedas.py:
+    # processar_monitoramento) - quedas detectadas que o INSERT em
+    # radar_alertas_queda rejeitou (conflito/schema/RLS/timeout).
+    persistencia_ok = resultado.get("alertas_falha_persistencia", 0) == 0
     # Visibilidade no painel SAÚDE DOS DADOS: sem isto, o Radar podia parar
     # de rodar (ou falhar silenciosamente) sem nenhuma linha refletindo
     # isso - a tabela radar_alertas_queda só registra ALERTAS, não a
@@ -318,16 +331,17 @@ def executar():
         "RADAR DE QUEDAS",
         "Carteiras recomendadas (Genial + Safra) + cotações (variação diária)",
         execucao_ok=execucao_ok,
-        persistencia_ok=(falhas == 0),
+        persistencia_ok=persistencia_ok,
         registros_novos=len(resultado.get("alertas_novos", [])),
         erro=(
             resultado.get("erro") or erro_destinatarios
             or (f"{falhas} alerta(s) sem envio confirmado" if falhas else None)
         ),
         categoria="Radar",
-        # Parcial tanto por falha de ENVIO (falhas>0) quanto por falha de
-        # COLETA numa fonte só (resultado["erro"] setado mesmo com
-        # coleta_ok=True - ver processar_monitoramento: "Execução parcial: ...").
+        # Parcial tanto por falha de ENVIO (falhas>0, dado já persistido
+        # mas e-mail não confirmado) quanto por falha de COLETA numa
+        # fonte só (resultado["erro"] setado mesmo com coleta_ok=True -
+        # ver processar_monitoramento: "Execução parcial: ...").
         parcial=bool(resultado.get("coleta_ok")) and bool(falhas or resultado.get("erro")),
     )
     _registrar_tentativas_por_casa(resultado.get("fontes"))
