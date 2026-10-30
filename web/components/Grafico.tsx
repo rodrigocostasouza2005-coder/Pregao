@@ -1,4 +1,4 @@
-import { num, pct } from "@/lib/formatos";
+import { num, numCompacto, pct } from "@/lib/formatos";
 import { geometria, marcasX, type PontoGrafico } from "@/lib/grafico";
 
 const CORES = { alta: "var(--color-alta)", baixa: "var(--color-baixa)", neutro: "var(--color-ambar)" } as const;
@@ -45,11 +45,29 @@ type GraficoProps = {
   titulo?: string;
   /** máximo de rótulos no eixo x (menos em gráficos estreitos) */
   rotulosX?: number;
+  /** volume financeiro por barra (preço × quantidade) - painel secundário abaixo do preço, mesmo eixo x. Ausente = sem painel de volume. */
+  volumes?: PontoGrafico[];
 };
+
+/** Painel de barras de volume financeiro, alinhado ao eixo x do preço
+ * acima (mesma contagem de marcas) - "comparação de preço e volume"
+ * pedida pro terminal, sem inventar dado: só desenha quando a fonte
+ * (Yahoo) trouxe volume pro intervalo pedido (ver lib/server/yahoo.ts). */
+function PainelVolume({ volumes, altura = 46 }: { volumes: PontoGrafico[]; altura?: number }) {
+  if (volumes.length < 2) return null;
+  const maximo = Math.max(...volumes.map((p) => p.v), 1);
+  return (
+    <div className="mt-1 flex items-end gap-px pr-14" style={{ height: altura }} aria-hidden>
+      {volumes.map((p, i) => (
+        <span key={i} className="min-w-px flex-1 bg-apagado/50" style={{ height: `${Math.max((p.v / maximo) * 100, 1)}%` }} />
+      ))}
+    </div>
+  );
+}
 
 /** Gráfico de linha do terminal: área discreta, grade horizontal, eixo de
  * valores à direita e etiqueta do último valor - desenhado no servidor. */
-export function Grafico({ pontos, referencia = null, rotuloReferencia, eixoX, fuso = "America/Sao_Paulo", casas = 2, sufixo = "", degrau, cor = "auto", altura = 160, titulo, rotulosX = 6 }: GraficoProps) {
+export function Grafico({ pontos, referencia = null, rotuloReferencia, eixoX, fuso = "America/Sao_Paulo", casas = 2, sufixo = "", degrau, cor = "auto", altura = 160, titulo, rotulosX = 6, volumes }: GraficoProps) {
   const g = geometria(pontos, { referencia, degrau });
   if (!g) return <p className="text-[12px] text-apagado">Sem pontos suficientes para o gráfico.</p>;
   const base = referencia ?? g.primeiro.v;
@@ -103,6 +121,14 @@ export function Grafico({ pontos, referencia = null, rotuloReferencia, eixoX, fu
           </span>
         ) : null}
       </div>
+      {volumes?.length ? (
+        <>
+          <PainelVolume volumes={volumes} />
+          <p className="mr-14 mt-0.5 text-right font-mono text-[9.5px] text-apagado">
+            volume fin. acumulado no período: R$ {numCompacto(volumes.reduce((soma, p) => soma + p.v, 0))}
+          </p>
+        </>
+      ) : null}
       <div className="relative mr-14 h-4">
         {marcas.map((i) => (
           <span key={i} className="absolute -translate-x-1/2 whitespace-nowrap font-mono text-[9.5px] text-apagado" style={{ left: `${(i / (pontos.length - 1)) * 100}%` }}>
@@ -113,6 +139,7 @@ export function Grafico({ pontos, referencia = null, rotuloReferencia, eixoX, fu
       {titulo ? (
         <figcaption className="sr-only">
           {titulo}: último {num(g.ultimo.v, casas)}{sufixo}{variacao !== null ? `, ${pct(variacao)} no período` : ""}
+          {volumes?.length ? `, volume financeiro acumulado R$ ${numCompacto(volumes.reduce((soma, p) => soma + p.v, 0))}` : ""}
         </figcaption>
       ) : null}
     </figure>

@@ -3,6 +3,7 @@ import { BotaoWatchlist } from "@/components/BotaoWatchlist";
 import { CabecalhoPagina } from "@/components/CabecalhoPagina";
 import { EstadoDados } from "@/components/EstadoDados";
 import { Grafico, type EixoX } from "@/components/Grafico";
+import { GraficoIntradiarioAoVivo } from "@/components/GraficoIntradiarioAoVivo";
 import { LinkFonte } from "@/components/LinkFonte";
 import { NotaEarnings } from "@/components/NotaEarnings";
 import { Painel } from "@/components/Painel";
@@ -74,13 +75,16 @@ export default async function Ativo({ params, searchParams }: { params: Promise<
             ))}
           </nav>
         }
-        rodape={`Fonte: ${serie.fonte} · ${periodo === "1D" ? "intradiário da última sessão; tracejado = fechamento anterior" : "fechamentos do período"} · pontos sem negócio não são preenchidos`}
+        rodape={`Fonte: ${serie.fonte} · ${periodo === "1D" ? "intradiário da última sessão (atualiza sozinho); tracejado = fechamento anterior" : "fechamentos do período"} · pontos sem negócio não são preenchidos`}
       >
         <EstadoDados r={serie} vazio="Sem negócios no período." />
-        {serie.dados ? (
+        {serie.dados && periodo === "1D" ? (
+          <GraficoIntradiarioAoVivo ticker={ticker} inicial={{ serie, cotacao }} titulo={`${ticker} ${periodo}`} />
+        ) : serie.dados ? (
           <Grafico
             pontos={serie.dados.pontos}
-            referencia={periodo === "1D" ? (c?.fechamentoAnterior ?? null) : null}
+            volumes={serie.dados.volumes}
+            referencia={null}
             rotuloReferencia="fech. ant."
             eixoX={EIXO[periodo]}
             fuso={serie.dados.fuso}

@@ -5,6 +5,16 @@ export function num(valor: number | null | undefined, casas = 2): string {
   return valor.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
 }
 
+/** "1,2 mi" / "340,0 mil" - mesma escala de ui/mercado_tab.py (volume financeiro em R$). */
+export function numCompacto(valor: number | null | undefined): string {
+  if (valor === null || valor === undefined || !Number.isFinite(valor)) return "—";
+  const abs = Math.abs(valor);
+  if (abs >= 1_000_000_000) return `${num(valor / 1_000_000_000, 1)} bi`;
+  if (abs >= 1_000_000) return `${num(valor / 1_000_000, 1)} mi`;
+  if (abs >= 1_000) return `${num(valor / 1_000, 0)} mil`;
+  return num(valor, 0);
+}
+
 export function pct(valor: number | null | undefined, casas = 2, sinal = true): string {
   if (valor === null || valor === undefined || !Number.isFinite(valor)) return "—";
   // -0,001 arredondado vira "0,00" (nunca "-0,00%")

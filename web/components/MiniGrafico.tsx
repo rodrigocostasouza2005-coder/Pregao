@@ -1,6 +1,7 @@
 import { num } from "@/lib/formatos";
 import { referenciaCotacao } from "@/lib/referencia";
-import { SIGLAS, type LinhaIndicador } from "@/lib/server/dominio/mercado";
+import { SIGLAS } from "@/lib/siglas";
+import type { LinhaIndicador } from "@/lib/server/dominio/mercado";
 import { Grafico } from "./Grafico";
 import { Variacao } from "./Variacao";
 
