@@ -51,8 +51,17 @@ def _registrar_tentativas_por_casa(status_fontes: dict) -> None:
                 n = int(status.split("(")[1].split(" ")[0])
             except (IndexError, ValueError):
                 n = None
+            # Achado real (revisão independente 2026-10-27): salvar_carteiras
+            # pode persistir os itens novos com sucesso e, ainda assim, falhar
+            # SÓ ao desativar recomendações que saíram da carteira deste mês
+            # (ver data/radar_quedas.py:salvar_carteiras, aviso_desativacao) -
+            # "; aviso: ..." no status marca esse caso. Nunca sucesso pleno
+            # silencioso nem falha de persistência (os dados novos estão
+            # corretos) - PARCIAL, com o texto real do aviso.
+            aviso = status.split("; aviso: ", 1)[1] if "; aviso: " in status else None
             registrar_tentativa(nome_painel, fonte, execucao_ok=True, persistencia_ok=True,
-                                 registros_novos=n, categoria="Radar")
+                                 registros_novos=n, categoria="Radar",
+                                 parcial=bool(aviso), erro=aviso)
         elif status == "fonte indisponível":
             registrar_tentativa(nome_painel, fonte, execucao_ok=False, erro=status, categoria="Radar")
         elif status.startswith("snapshot vazio"):

@@ -57,6 +57,23 @@ def test_monitoramento_nao_usa_carteiras_antigas_quando_todas_fontes_falham():
     cotacao.assert_not_called()
 
 
+def test_monitoramento_propaga_aviso_de_desativacao_no_status_da_casa():
+    """processar_monitoramento precisa repassar o aviso (3º campo de
+    salvar_carteiras) no status_fontes, sem derrubar coleta_ok nem
+    pelo_menos_uma_ok (dados novos estão corretos)."""
+    import data.radar_quedas as radar
+    item = {"ticker": "PETR4", "casa": "Safra Corretora", "carteira": "Top 10 Ações"}
+    with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
+         patch.object(radar, "coletar_carteiras_safra", return_value=[item]), \
+         patch.object(radar, "salvar_carteiras", return_value=(True, None, "desativação falhou: timeout")), \
+         patch.object(radar, "listar_carteiras", return_value=[item]), \
+         patch.object(radar, "obter_cotacao", return_value={"erro": "indisponível"}):
+        resultado = radar.processar_monitoramento()
+    assert resultado["coleta_ok"] is True
+    status = resultado["fontes"]["Safra Corretora"]
+    assert status.startswith("ok (") and "; aviso: desativação falhou: timeout" in status
+
+
 def test_monitoramento_continua_quando_so_uma_fonte_falha():
     """Requisito do Radar multi-fonte: Genial bloqueada não pode impedir
     a avaliação das recomendações que a Safra entregou normalmente."""
@@ -66,7 +83,7 @@ def test_monitoramento_continua_quando_so_uma_fonte_falha():
                   "carteira": "Top 10 Ações", "fonte_url": "https://safra/x"}
     with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
          patch.object(radar, "coletar_carteiras_safra", return_value=[item_safra]), \
-         patch.object(radar, "salvar_carteiras", return_value=(True, None)) as salvar, \
+         patch.object(radar, "salvar_carteiras", return_value=(True, None, None)) as salvar, \
          patch.object(radar, "listar_carteiras", return_value=[item_safra]), \
          patch.object(radar, "obter_cotacao", return_value={"erro": "indisponível"}) as cotacao:
         resultado = radar.processar_monitoramento()
@@ -85,8 +102,8 @@ def test_monitoramento_para_persistir_uma_fonte_nao_bloqueia_a_outra():
 
     def _salvar(casa, itens):
         if casa == "Safra Corretora":
-            return True, None
-        return False, "erro simulado"
+            return True, None, None
+        return False, "erro simulado", None
 
     with patch.object(radar, "coletar_carteiras_genial", return_value=[item_genial]), \
          patch.object(radar, "coletar_carteiras_safra", return_value=[item_safra]), \
@@ -128,17 +145,18 @@ def test_monitoramento_rejeita_snapshot_vazio_e_preserva_carteiras_dessa_casa():
 def test_salvar_carteiras_sem_cliente_retorna_erro_sem_excecao():
     import data.radar_quedas as radar
     with patch.object(radar, "obter_cliente", return_value=None):
-        ok, erro = salvar_carteiras("Safra Corretora", [{"ticker": "PETR4", "carteira": "Top 10"}])
+        ok, erro, aviso = salvar_carteiras("Safra Corretora", [{"ticker": "PETR4", "carteira": "Top 10"}])
     assert ok is False
     assert erro and "supabase" in erro.lower()
+    assert aviso is None
 
 
 def test_salvar_carteiras_itens_vazios_nao_chama_banco():
     import data.radar_quedas as radar
     cliente = MagicMock()
     with patch.object(radar, "obter_cliente", return_value=cliente):
-        ok, erro = salvar_carteiras("Safra Corretora", [])
-    assert (ok, erro) == (True, None)
+        resultado = salvar_carteiras("Safra Corretora", [])
+    assert resultado == (True, None, None)
     cliente.table.assert_not_called()
 
 
@@ -151,8 +169,8 @@ def test_salvar_carteiras_um_unico_upsert_grava_vigente_e_verificado_em():
               "fonte_url": "https://safra/x"} for i in range(10)]
     cliente = MagicMock()
     with patch.object(radar, "obter_cliente", return_value=cliente):
-        ok, erro = salvar_carteiras("Safra Corretora", itens)
-    assert (ok, erro) == (True, None)
+        resultado = salvar_carteiras("Safra Corretora", itens)
+    assert resultado == (True, None, None)
     cliente.table.return_value.upsert.assert_called_once()
     payload = cliente.table.return_value.upsert.call_args[0][0]
     assert len(payload) == 10
@@ -173,8 +191,8 @@ def test_salvar_carteiras_dedup_por_chave_evita_conflito_de_lote():
     ]
     cliente = MagicMock()
     with patch.object(radar, "obter_cliente", return_value=cliente):
-        ok, erro = salvar_carteiras("Safra Corretora", itens)
-    assert (ok, erro) == (True, None)
+        resultado = salvar_carteiras("Safra Corretora", itens)
+    assert resultado == (True, None, None)
     payload = cliente.table.return_value.upsert.call_args[0][0]
     chaves = [(i["ticker"], i["carteira"]) for i in payload]
     assert len(chaves) == len(set(chaves)) == 2
@@ -188,23 +206,31 @@ def test_salvar_carteiras_falha_no_upsert_retorna_a_excecao_real():
     cliente = MagicMock()
     cliente.table.return_value.upsert.return_value.execute.side_effect = RuntimeError("42501: permission denied")
     with patch.object(radar, "obter_cliente", return_value=cliente):
-        ok, erro = salvar_carteiras("Safra Corretora", [{"ticker": "PETR4", "carteira": "Top 10 Ações"}])
+        ok, erro, aviso = salvar_carteiras("Safra Corretora", [{"ticker": "PETR4", "carteira": "Top 10 Ações"}])
     assert ok is False
     assert "42501" in erro and "permission denied" in erro
+    assert aviso is None
 
 
-def test_salvar_carteiras_falha_so_na_desativacao_nao_perde_dados_confirmados():
-    """Os itens confirmados nesta coleta já foram persistidos (upsert com
-    sucesso) - uma falha isolada ao desativar recomendações antigas dessa
-    casa não pode fazer a coleta inteira ser reportada como perdida."""
+def test_salvar_carteiras_falha_so_na_desativacao_sinaliza_aviso_sem_perder_dados_confirmados():
+    """Regressão (revisão independente 2026-10-27): os itens confirmados
+    nesta coleta já foram persistidos (upsert com sucesso) - uma falha
+    isolada ao desativar recomendações antigas dessa casa NÃO pode fazer
+    a coleta inteira ser reportada como perdida (persistiu=True), MAS
+    também não pode desaparecer silenciosamente: antes, essa falha virava
+    (True, None) idêntico ao sucesso pleno - sem nenhum sinal de que uma
+    recomendação que saiu da carteira pode continuar vigente=True pra
+    sempre. Agora o 3º campo (aviso) carrega o erro real dessa etapa."""
     import data.radar_quedas as radar
     cliente = MagicMock()
     cliente.table.return_value.update.return_value.eq.return_value.lt.return_value.execute.side_effect = (
         RuntimeError("timeout")
     )
     with patch.object(radar, "obter_cliente", return_value=cliente):
-        ok, erro = salvar_carteiras("Safra Corretora", [{"ticker": "PETR4", "carteira": "Top 10 Ações"}])
-    assert (ok, erro) == (True, None)
+        ok, erro, aviso = salvar_carteiras("Safra Corretora", [{"ticker": "PETR4", "carteira": "Top 10 Ações"}])
+    assert ok is True
+    assert erro is None
+    assert aviso and "desativa" in aviso.lower() and "timeout" in aviso.lower()
     cliente.table.return_value.upsert.assert_called_once()
 
 
@@ -217,8 +243,8 @@ def test_salvar_carteiras_chamado_2x_com_mesmos_itens_e_idempotente():
     with patch.object(radar, "obter_cliente", return_value=cliente):
         primeira = salvar_carteiras("Safra Corretora", itens)
         segunda = salvar_carteiras("Safra Corretora", itens)
-    assert primeira == (True, None)
-    assert segunda == (True, None)
+    assert primeira == (True, None, None)
+    assert segunda == (True, None, None)
     assert cliente.table.return_value.upsert.call_count == 2
 
 
@@ -278,6 +304,24 @@ def test_listar_carteiras_sem_verificado_em_nao_quebra():
     with patch.object(radar, "obter_cliente", return_value=cliente):
         resultado = radar.listar_carteiras()
     assert resultado == [linha_sem_campo]
+
+
+def test_listar_carteiras_verificado_em_sem_timezone_nao_quebra_a_listagem_inteira():
+    """Achado varredura 2026-10-27: verificado_em naive (sem tz) fazia
+    _carteira_expirada levantar TypeError FORA do try/except, propagando
+    pra fora da list comprehension em listar_carteiras - 1 linha
+    malformada derrubava a listagem INTEIRA, não só essa linha."""
+    import data.radar_quedas as radar
+    linha_naive = {"ticker": "VALE3", "casa": "Safra Corretora", "verificado_em": "2026-10-20T10:00:00"}
+    linha_ok = {"ticker": "PETR4", "casa": "Safra Corretora",
+                "verificado_em": datetime.now(timezone.utc).isoformat()}
+    cliente = MagicMock()
+    resposta = MagicMock()
+    resposta.data = [linha_naive, linha_ok]
+    cliente.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = resposta
+    with patch.object(radar, "obter_cliente", return_value=cliente):
+        resultado = radar.listar_carteiras()
+    assert resultado == [linha_naive, linha_ok]
 
 
 def test_registrar_alerta_e_idempotente_mesmo_ticker_mesmo_pregao():
@@ -502,6 +546,14 @@ def test_resumo_fontes_vigentes_agrupa_por_casa_e_conta_ativos_unicos():
     assert "Genial Analisa" not in resumo  # sem linha vigente -> casa ausente (UI rotula "indisponível")
 
 
+def test_desatualizada_verificado_em_sem_timezone_nao_lanca_excecao():
+    """Mesma classe de achado (varredura 2026-10-27) que _carteira_expirada
+    - usada em resumo_fontes_vigentes(), também sobre list/dict
+    comprehension: 1 linha malformada não pode derrubar o resumo inteiro."""
+    import data.radar_quedas as radar
+    assert radar._desatualizada("2026-10-20T10:00:00") is False
+
+
 def test_resumo_fontes_vigentes_marca_desatualizada_apos_idade_fresca_horas():
     """Distingue 'atualizada' (confirmação recente) de 'desatualizada'
     (ainda vigente/não-expirada, mas sem confirmação há mais de
@@ -536,7 +588,7 @@ def test_monitoramento_sem_queda_elegivel_e_execucao_valida():
     cotacao_sem_queda = {"preco": 99.0, "fechamento_anterior": 100.0, "cotacao_em": "2026-10-16T10:00:00-03:00"}
     with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
          patch.object(radar, "coletar_carteiras_safra", return_value=[item]), \
-         patch.object(radar, "salvar_carteiras", return_value=(True, None)), \
+         patch.object(radar, "salvar_carteiras", return_value=(True, None, None)), \
          patch.object(radar, "listar_carteiras", return_value=[item]), \
          patch.object(radar, "obter_cotacao", return_value=cotacao_sem_queda), \
          patch.object(radar, "registrar_alerta") as registrar:
@@ -559,7 +611,7 @@ def test_monitoramento_todas_cotacoes_falham_fica_visivel_no_erro():
     item = {"ticker": "PETR4", "casa": "Safra Corretora", "carteira": "Top 10 Ações"}
     with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
          patch.object(radar, "coletar_carteiras_safra", return_value=[item]), \
-         patch.object(radar, "salvar_carteiras", return_value=(True, None)), \
+         patch.object(radar, "salvar_carteiras", return_value=(True, None, None)), \
          patch.object(radar, "listar_carteiras", return_value=[item]), \
          patch.object(radar, "obter_cotacao", return_value={"erro": "indisponível"}):
         resultado = radar.processar_monitoramento()
@@ -584,7 +636,7 @@ def test_monitoramento_cotacao_falha_parcial_nao_conta_ticker_ok():
     }
     with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
          patch.object(radar, "coletar_carteiras_safra", return_value=itens), \
-         patch.object(radar, "salvar_carteiras", return_value=(True, None)), \
+         patch.object(radar, "salvar_carteiras", return_value=(True, None, None)), \
          patch.object(radar, "listar_carteiras", return_value=itens), \
          patch.object(radar, "obter_cotacao", side_effect=lambda t: respostas[t]):
         resultado = radar.processar_monitoramento()
@@ -603,7 +655,7 @@ def test_monitoramento_sem_falha_de_cotacao_nao_gera_erro_espurio():
     cotacao_ok = {"preco": 99.0, "fechamento_anterior": 100.0, "cotacao_em": "2026-10-19T10:00:00-03:00"}
     with patch.object(radar, "coletar_carteiras_genial", return_value=[item]), \
          patch.object(radar, "coletar_carteiras_safra", return_value=[item]), \
-         patch.object(radar, "salvar_carteiras", return_value=(True, None)), \
+         patch.object(radar, "salvar_carteiras", return_value=(True, None, None)), \
          patch.object(radar, "listar_carteiras", return_value=[item]), \
          patch.object(radar, "obter_cotacao", return_value=cotacao_ok):
         resultado = radar.processar_monitoramento()
@@ -641,7 +693,7 @@ def test_processar_monitoramento_usa_data_do_ultimo_pregao_do_provedor():
     registrados = []
     with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
          patch.object(radar, "coletar_carteiras_safra", return_value=recs), \
-         patch.object(radar, "salvar_carteiras", return_value=(True, None)), \
+         patch.object(radar, "salvar_carteiras", return_value=(True, None, None)), \
          patch.object(radar, "listar_carteiras", return_value=recs), \
          patch.object(radar, "obter_cotacao", return_value={"preco": 36.0, "fechamento_anterior": 38.0, "erro": None}), \
          patch.object(radar, "obter_data_ultimo_pregao", return_value=date(2026, 11, 19)), \
