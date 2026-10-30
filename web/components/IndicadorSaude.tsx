@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { usePolling } from "@/lib/usePolling";
 
 type Resumo = { nivel: "ok" | "atencao" | "falha" | "indisponivel"; ok: number; falhas: number; atencao: number; total: number; ultimaColetaEm: string | null };
 
@@ -26,33 +26,7 @@ function horaBR(iso: string | null): string {
  * de verdade chega. Nunca mostra um ponto verde genérico: a cor e o
  * texto vêm do estado real agregado dos coletores. */
 export function IndicadorSaude() {
-  const [resumo, setResumo] = useState<Resumo | null>(null);
-  const [atualizando, setAtualizando] = useState(false);
-  const emVoo = useRef(false);
-
-  useEffect(() => {
-    async function atualizar() {
-      if (emVoo.current || document.hidden) return;
-      emVoo.current = true;
-      setAtualizando(true);
-      try {
-        const r = await fetch("/api/saude/resumo", { cache: "no-store" });
-        if (r.ok) setResumo(await r.json());
-      } catch {
-        // mantém o último estado bom - próximo tick tenta de novo
-      } finally {
-        emVoo.current = false;
-        setAtualizando(false);
-      }
-    }
-    atualizar();
-    const id = setInterval(atualizar, INTERVALO_MS);
-    document.addEventListener("visibilitychange", atualizar);
-    return () => {
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", atualizar);
-    };
-  }, []);
+  const { dado: resumo, atualizando } = usePolling<Resumo | null>(null, "/api/saude/resumo", INTERVALO_MS);
 
   if (!resumo) return <span className="hidden font-mono text-[10px] text-apagado sm:inline">verificando…</span>;
   return (
