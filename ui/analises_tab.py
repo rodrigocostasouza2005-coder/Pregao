@@ -130,6 +130,34 @@ def _dialog_comparativo_setor_empresa(ticker: str, prefs: dict):
     )
 
 
+def _subtitulo(texto: str):
+    """Subtítulo de seção compacto (achado real, auditoria "missao master"
+    2026-10-31): render_equity_research_executivo/render_conclusao_
+    investimento usavam `st.markdown("**Texto**")` puro - renderiza no
+    tamanho de fonte PADRÃO do Streamlit, bem maior que o resto do app
+    (que usa HTML com font-size explícito em quase toda parte) - essa
+    era a seção mais visivelmente "fora do padrão" do terminal inteiro."""
+    st.markdown(
+        f"<div style='font-size:0.72rem; font-weight:700; letter-spacing:0.03em; "
+        f"margin:0.7rem 0 0.3rem 0; color:var(--neutro);'>{html.escape(texto)}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _lista_compacta(linhas_html):
+    """Lista com marcador, mesmo tamanho de fonte do resto do app (ver
+    _subtitulo) - substitui `st.markdown(f"- {texto}")` solto, que também
+    herdava o tamanho padrão do Streamlit."""
+    st.markdown(
+        "".join(
+            f"<div style='font-size:0.78rem; padding:0.12rem 0 0.12rem 0.9rem; position:relative;'>"
+            f"<span style='position:absolute; left:0;'>·</span>{linha}</div>"
+            for linha in linhas_html
+        ),
+        unsafe_allow_html=True,
+    )
+
+
 def render_equity_research_executivo(ticker: str, prefs: dict):
     """ANÁLISES › Empresas: síntese executiva de equity research pro
     ticker selecionado - agrega data/market_researcher.py:analise_ticker
@@ -167,16 +195,25 @@ def render_equity_research_executivo(ticker: str, prefs: dict):
         if indisponiveis:
             st.caption(f"Indisponível nesta execução: {', '.join(indisponiveis)}.")
 
-        st.markdown("**Momento da empresa**")
+        _subtitulo("Momento da empresa")
         if fundamentos is None:
             st.caption("Fundamentos indisponíveis agora (fonte não respondeu).")
         else:
-            cols = st.columns(4)
-            cols[0].metric("P/L", _celula(fundamentos.get("pl"), lambda v: config.formatar_multiplo(v, 2, fmt)))
-            cols[1].metric("P/VP", _celula(fundamentos.get("pvp"), lambda v: config.formatar_multiplo(v, 2, fmt)))
-            cols[2].metric("ROE", _celula(fundamentos.get("roe"), lambda v: config.formatar_numero(v, 2, fmt) + "%"))
-            cols[3].metric("DÍV/EBITDA", _celula(fundamentos.get("divida_liquida_ebitda"),
-                                                  lambda v: config.formatar_numero(v, 1, fmt) + "x"))
+            blocos_ind = [
+                ("P/L", _celula(fundamentos.get("pl"), lambda v: config.formatar_multiplo(v, 2, fmt))),
+                ("P/VP", _celula(fundamentos.get("pvp"), lambda v: config.formatar_multiplo(v, 2, fmt))),
+                ("ROE", _celula(fundamentos.get("roe"), lambda v: config.formatar_numero(v, 2, fmt) + "%")),
+                ("DÍV/EBITDA", _celula(fundamentos.get("divida_liquida_ebitda"),
+                                       lambda v: config.formatar_numero(v, 1, fmt) + "x")),
+            ]
+            st.markdown(
+                "<div style='display:flex; flex-wrap:wrap; gap:1.4rem; margin:0.3rem 0 0.5rem 0;'>" + "".join(
+                    f"<div><div class='cinza' style='font-size:0.6rem; letter-spacing:0.04em;'>{rot}</div>"
+                    f"<div class='neutro' style='font-size:0.92rem; font-weight:700; margin-top:0.1rem;'>{val}</div></div>"
+                    for rot, val in blocos_ind
+                ) + "</div>",
+                unsafe_allow_html=True,
+            )
             for alerta in fundamentos.get("alerta_qualidade") or []:
                 st.warning(alerta)
             if st.button("Comparar com o setor ↗", key=f"empresa_comp_setor_{ticker}",
@@ -184,32 +221,34 @@ def render_equity_research_executivo(ticker: str, prefs: dict):
                                "(RADAR/data/radar.py:comparaveis_setor) - consulta ao vivo sob demanda."):
                 _dialog_comparativo_setor_empresa(ticker, prefs)
 
-        st.markdown("**Catalisadores**")
+        _subtitulo("Catalisadores")
         if catalisadores is None:
             st.caption("Catalisadores indisponíveis agora.")
         elif not catalisadores:
             st.caption("Nenhum catalisador (resultado/proventos) identificado nos próximos 60 dias.")
         else:
-            for c in catalisadores:
-                selo = "confirmado" if c.get("confirmado") else "estimado/prazo regulatório"
-                st.markdown(f"- {c['categoria']} em {c['data'].strftime('%d/%m/%Y')} ({selo})")
+            _lista_compacta(
+                f"{c['categoria']} em {c['data'].strftime('%d/%m/%Y')} ({'confirmado' if c.get('confirmado') else 'estimado/prazo regulatório'})"
+                for c in catalisadores
+            )
 
-        st.markdown("**Mudanças de tese e CVM**")
+        _subtitulo("Mudanças de tese e CVM")
         if mudancas is None:
             st.caption("Mudanças de tese indisponíveis agora.")
         elif not mudancas:
             st.caption("Nenhuma mudança de tese/CVM verificada recentemente.")
         else:
-            for m in mudancas:
+            def _linha_mudanca(m):
                 if m.get("fonte_url"):
-                    fonte = f" — [{m.get('fonte_label') or 'fonte'}]({m['fonte_url']})"
+                    fonte = f" — <a href='{html.escape(m['fonte_url'], quote=True)}' target='_blank' style='color:var(--cinza);'>{html.escape(m.get('fonte_label') or 'fonte')}</a>"
                 elif m.get("fonte_label"):
-                    fonte = f" — {m['fonte_label']}"
+                    fonte = f" — {html.escape(m['fonte_label'])}"
                 else:
                     fonte = ""
-                st.markdown(f"- {m['data_evento'].strftime('%d/%m/%Y')}: {m['descricao']}{fonte}")
+                return f"{m['data_evento'].strftime('%d/%m/%Y')}: {html.escape(m['descricao'])}{fonte}"
+            _lista_compacta(_linha_mudanca(m) for m in mudancas)
 
-        st.markdown("**Research das casas**")
+        _subtitulo("Research das casas")
         # cobertura["cobertura"] é None quando o PRÓPRIO banco de research
         # está indisponível (ver data/market_researcher.py:cobertura_cruzada_casas)
         # - distinto de [] (banco respondeu, nenhuma casa publicou). Bug
@@ -223,10 +262,14 @@ def render_equity_research_executivo(ticker: str, prefs: dict):
             if not itens_cobertura:
                 st.caption("Nenhuma casa monitorada publicou research recente sobre este ativo.")
             else:
-                for item in itens_cobertura:
-                    rec = f" · {item['recomendacao']}" if item.get("recomendacao") else ""
-                    st.markdown(f"- **{item['casa']}** ({str(item['data'])[:10]}){rec}: "
-                                f"[{item.get('titulo') or 'ver relatório'}]({item['link']})")
+                def _linha_cobertura(item):
+                    rec = f" · {html.escape(item['recomendacao'])}" if item.get("recomendacao") else ""
+                    return (
+                        f"<b>{html.escape(item['casa'])}</b> ({str(item['data'])[:10]}){rec}: "
+                        f"<a href='{html.escape(item['link'], quote=True)}' target='_blank' style='color:var(--ciano);'>"
+                        f"{html.escape(item.get('titulo') or 'ver relatório')}</a>"
+                    )
+                _lista_compacta(_linha_cobertura(item) for item in itens_cobertura)
             if cobertura.get("sem_cobertura"):
                 st.caption(f"Sem cobertura recente: {', '.join(cobertura['sem_cobertura'])}.")
             if cobertura.get("divergencia"):
@@ -795,20 +838,17 @@ def render_conclusao_investimento(ticker: str, prefs: dict, usuario: dict):
             st.caption(f"Data de referência desta análise: {quando} (horário de Brasília) - dados pontuais "
                        "podem ser mais antigos, ver aviso de cada seção.")
         for bloco in _montar_conclusao(analise, tese):
-            st.markdown(f"**{bloco['pergunta']}**")
+            _subtitulo(bloco["pergunta"])
             tipo = bloco["tipo_evidencia"]
             if tipo == TIPO_INSUFICIENTE:
                 st.caption(bloco["resposta"])
             else:
                 rotulo, cor = _ROTULO_EVIDENCIA.get(tipo, (None, None))
-                if rotulo:
-                    st.markdown(
-                        f"<span style='font-size:0.62rem; letter-spacing:0.04em; color:{cor};'>"
-                        f"[{rotulo}]</span> {bloco['resposta']}",
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.markdown(bloco["resposta"])
+                prefixo = f"<span style='color:{cor};'>[{rotulo}]</span> " if rotulo else ""
+                st.markdown(
+                    f"<div style='font-size:0.78rem; letter-spacing:0.02em;'>{prefixo}{html.escape(bloco['resposta'])}</div>",
+                    unsafe_allow_html=True,
+                )
             if bloco["pergunta"] == "Valuation":
                 _controle_dcf_inline(ticker, analise.get("fundamentos"))
         if tese:
@@ -880,7 +920,7 @@ def render_comparativo_casas(ticker: str, prefs: dict):
                        "permanente de research ainda.")
             return
 
-        st.markdown("**Tabela comparativa (estado mais recente por casa)**")
+        _subtitulo("Tabela comparativa (estado mais recente por casa)")
         linhas = []
         for linha in relatorio["tabela_comparativa"]:
             rec = (f"{linha['recomendacao_original']} ({linha['recomendacao_categoria']})"
@@ -899,7 +939,7 @@ def render_comparativo_casas(ticker: str, prefs: dict):
 
         cols = st.columns(2)
         with cols[0]:
-            st.markdown("**Consenso de recomendação**")
+            _subtitulo("Consenso de recomendação")
             consenso = relatorio["consenso"]
             if consenso["categoria_mais_comum"]:
                 st.markdown(
@@ -916,7 +956,7 @@ def render_comparativo_casas(ticker: str, prefs: dict):
                 st.caption("Empate entre categorias de recomendação — sem consenso claro.")
 
         with cols[1]:
-            st.markdown("**Dispersão de preço-alvo (BRL)**")
+            _subtitulo("Dispersão de preço-alvo (BRL)")
             dispersao = relatorio["dispersao_precos_alvo"]
             if dispersao["amostra_insuficiente"]:
                 st.caption(dispersao["resumo"])
@@ -929,7 +969,7 @@ def render_comparativo_casas(ticker: str, prefs: dict):
 
         divergencias = relatorio["divergencias_premissas"]
         div_rec = divergencias["recomendacao"]
-        st.markdown("**Divergências**")
+        _subtitulo("Divergências")
         if div_rec["numerica"] or div_rec["qualitativa"]:
             partes = []
             if div_rec["numerica"]:
@@ -960,7 +1000,7 @@ def render_comparativo_casas(ticker: str, prefs: dict):
         else:
             st.caption("Nenhuma divergência de premissas identificada entre as casas.")
 
-        st.markdown("**Revisões recentes / evolução histórica**")
+        _subtitulo("Revisões recentes / evolução histórica")
         revisoes = relatorio["revisoes_recentes"]
         if not revisoes:
             st.caption("Sem evolução histórica disponível pra este ticker.")
@@ -991,14 +1031,14 @@ def render_comparativo_casas(ticker: str, prefs: dict):
 
         cols2 = st.columns(2)
         with cols2[0]:
-            st.markdown("**Riscos**")
+            _subtitulo("Riscos")
             st.caption(relatorio["riscos"]["motivo"])
         with cols2[1]:
-            st.markdown("**Indicadores adicionais (ROE/ROIC)**")
+            _subtitulo("Indicadores adicionais (ROE/ROIC)")
             st.caption(relatorio["indicadores_adicionais"]["motivo"])
 
         if relatorio.get("pontos_atencao"):
-            st.markdown("**Pontos de atenção**")
+            _subtitulo("Pontos de atenção")
             for aviso in relatorio["pontos_atencao"]:
                 st.caption(f"- {aviso}")
 
@@ -1156,7 +1196,7 @@ def _render_research_e_fatores(ticker: str, fmt: str):
             st.info("O registro mais recente não contém preço-alvo positivo válido. Um alvo histórico anterior não será apresentado como se fosse o atual.")
         st.caption("Fonte estruturada disponível nesta tela: Genial. Não há consenso multi-casa calculado enquanto os alvos comparáveis das demais casas não estiverem integrados.")
         if validos:
-            st.markdown("**Histórico recente de preço-alvo e recomendação**")
+            _subtitulo("Histórico recente de preço-alvo e recomendação")
             linhas = []
             for s in validos:
                 linhas.append({
@@ -1172,7 +1212,7 @@ def _render_research_e_fatores(ticker: str, fmt: str):
         if not fatores:
             st.caption("Ainda não há mapeamento curado de commodities/fatores para este ticker.")
             return
-        st.markdown("**Commodities e fatores relacionados**")
+        _subtitulo("Commodities e fatores relacionados")
         linhas_fatores = []
         for nome, simbolo in fatores:
             if not simbolo:

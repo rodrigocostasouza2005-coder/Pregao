@@ -352,20 +352,61 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
     box-shadow: none !important;
 }
 
-/* selectbox (BaseWeb) ----------------------------------------------------------- */
-[data-baseweb="select"] > div {
+/* selectbox/combobox (achado real, auditoria "missao master" 2026-10-31):
+   o Streamlit trocou o motor desses widgets de BaseWeb pra React Aria
+   (confirmado inspecionando o DOM real - data-testid="stSelectbox" >
+   .react-aria-ComboBox, dropdown como role="listbox"/role="option" solto
+   na arvore, NUNCA data-baseweb="select"/"popover") - a regra antiga
+   (abaixo, so' como lembrete do padrao anterior) parou de bater em
+   QUALQUER coisa silenciosamente, fazendo todo select do app inteiro
+   renderizar sem tema (fundo branco do navegador) - achado em quase toda
+   aba (RESEARCH > Memoria, VISAO GERAL > seletor de ativo do grafico,
+   CONFIG, ANALISES > Fundamentos...). Seletores novos abaixo usam
+   data-testid (estavel) + role ARIA (estavel), nunca a classe
+   st-emotion-cache-* (hash gerado, muda a cada build do Streamlit). */
+[data-testid="stSelectbox"] input[role="combobox"],
+[data-testid="stMultiSelect"] input[role="combobox"] {
     background-color: var(--bg) !important;
+    color: var(--neutro) !important;
     border-color: var(--borda) !important;
     border-radius: 0 !important;
-    min-height: 28px !important;
+    font-family: 'IBM Plex Mono', monospace !important;
     font-size: 0.8rem !important;
 }
-[data-baseweb="popover"] li {
+[data-testid="stSelectbox"] [role="group"],
+[data-testid="stMultiSelect"] [role="group"] {
+    background-color: var(--bg) !important;
+    border: 1px solid var(--borda) !important;
+    border-radius: 0 !important;
+    min-height: 28px !important;
+}
+[data-testid="stSelectbox"] button,
+[data-testid="stMultiSelect"] button {
+    background-color: transparent !important;
+    color: var(--cinza) !important;
+}
+/* dropdown aberto: portal fora do widget, sempre role=listbox/option
+   (padrao React Aria) - escopo global de proposito, mesmo motor atende
+   selectbox/multiselect/combobox de busca. */
+[role="listbox"] {
+    background-color: var(--painel-bg) !important;
+    border: 1px solid var(--borda) !important;
+    border-radius: 0 !important;
+}
+[role="listbox"] [role="option"] {
     background-color: var(--painel-bg) !important;
     color: var(--neutro) !important;
+    font-family: 'IBM Plex Mono', monospace !important;
     font-size: 0.8rem !important;
 }
-[data-baseweb="popover"] li:hover { background-color: var(--bg) !important; color: var(--destaque) !important; }
+[role="listbox"] [role="option"]:hover,
+[role="listbox"] [role="option"][data-hovered="true"] {
+    background-color: var(--bg) !important;
+    color: var(--destaque) !important;
+}
+[role="listbox"] [role="option"][aria-selected="true"] {
+    color: var(--destaque) !important;
+}
 
 /* checkbox --------------------------------------------------------------------- */
 .stCheckbox label p { color: var(--neutro) !important; font-size: 0.8rem !important; }
@@ -990,7 +1031,8 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
     }
     .stTextInput input,
     .stNumberInput input,
-    [data-baseweb="select"] > div {
+    [data-testid="stSelectbox"] input[role="combobox"],
+    [data-testid="stMultiSelect"] input[role="combobox"] {
         min-height: 38px !important;
         font-size: 16px !important; /* evita zoom automático do Safari iOS */
     }
