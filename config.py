@@ -459,6 +459,29 @@ def obter_credenciais_groq() -> tuple:
         pass
     return api_key, (modelo or GROQ_MODELO_PADRAO)
 
+
+def obter_credencial_x() -> str | None:
+    """Bearer token da API do X (data/x_signals.py), lido num lugar so -
+    mesmo padrao de obter_credenciais_groq() acima. Variavel de ambiente
+    X_BEARER_TOKEN primeiro (tarefas externas sem Streamlit, ex: GitHub
+    Actions), com fallback pra st.secrets["x"]["bearer_token"] ou
+    st.secrets["X_BEARER_TOKEN"] na raiz. None se nao configurada em
+    lugar nenhum - NUNCA retorna string vazia (quem chama trata None
+    como "sem credencial", nunca tenta usar "" como token real).
+
+    2026-10-30: nenhuma credencial configurada ainda neste projeto (ver
+    data/x_signals.py:MOTIVO_INDISPONIVEL) - funcao existe pronta pra
+    quando o Rodrigo aprovar orcamento/credencial nova, sem exigir
+    nenhuma mudanca de codigo alem de configurar o secret."""
+    token = os.getenv("X_BEARER_TOKEN", "").strip() or None
+    try:
+        import streamlit as st
+        secao_x = st.secrets.get("x", {})
+        token = token or secao_x.get("bearer_token") or st.secrets.get("X_BEARER_TOKEN")
+    except Exception:
+        pass
+    return token or None
+
 # --- Preferencias padrao (usuario novo ou banco fora do ar) -------------
 PREFS_PADRAO = {
     "tema": "AMBAR",

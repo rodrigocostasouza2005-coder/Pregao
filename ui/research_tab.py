@@ -18,6 +18,8 @@ from data.research.genial import obter_recomendacoes, obter_swing_trade
 from data.research.historico import historico_ticker, mudancas_hoje, processar_recomendacoes, ultimo_snapshot
 from data.research.resumir import obter_resumo
 from data.market_researcher import cobertura_cruzada_casas
+from data.x_radar import CATEGORIAS_PUBLICACAO, CONTAS_MONITORADAS
+from data.x_radar.store import listar_sinais, saude_conector
 from ui.saude_dados_tab import _COR_POR_ESTADO, _idade_formatada
 
 _TIPO_LABEL = {
@@ -1312,3 +1314,175 @@ def render_memoria_research(prefs: dict):
     fmt = prefs.get("formato_numerico", "BR")
     for item in resultado["resultados"]:
         st.markdown(_card_resultado_memoria(item, fmt), unsafe_allow_html=True)
+# RADAR X — INTELIGÊNCIA SOCIAL (2026-10-30, pedido explícito do
+# Rodrigo) - leitura pura de data/x_radar/store.py. Conector
+# (data/x_signals.py) permanece desligado sem X_BEARER_TOKEN (ver
+# docs/x-radar-inteligencia-social-20261030.md) - esta seção nunca
+# esconde isso: mostra a saúde real do conector sempre no topo.
+# ============================================================
+
+_CSS_RADAR_X = """
+.radarx-nota { color: var(--cinza); font-size: 0.7rem; margin: 0.1rem 0 0.8rem 0; line-height: 1.5; }
+.radarx-tabela { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+.radarx-tabela th {
+    text-align: left; color: var(--cinza); font-size: 0.63rem; letter-spacing: 0.03em;
+    padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--borda);
+}
+.radarx-tabela td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--borda); vertical-align: top; }
+.radarx-autor { color: var(--destaque); font-weight: 600; }
+.radarx-badge { display: inline-block; padding: 0.05rem 0.4rem; border-radius: 3px; font-size: 0.62rem; font-weight: 600; }
+.radarx-sub { color: var(--cinza); font-size: 0.68rem; }
+"""
+
+_COR_NIVEL_EVIDENCIA = {
+    "nivel_3_confirmado_fonte_confiavel": "alta",
+    "nivel_2_corroboracao_parcial": "alerta",
+    "nivel_1_sinal_social": "cinza",
+}
+
+_LABEL_CATEGORIA = {
+    "fato_confirmado": "FATO CONFIRMADO", "opiniao_analista": "OPINIÃO DE ANALISTA",
+    "tese_investimento": "TESE DE INVESTIMENTO", "estimativa_projecao": "ESTIMATIVA/PROJEÇÃO",
+    "rumor_nao_confirmado": "RUMOR NÃO CONFIRMADO", "noticia": "NOTÍCIA",
+    "comentario_macro": "COMENTÁRIO MACRO", "sem_relevancia": "SEM RELEVÂNCIA",
+}
+
+
+def _radarx_filtros(prefs: dict) -> dict:
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        dias = st.selectbox("Período", [1, 3, 7, 14, 30], index=2, key="radarx_dias", format_func=lambda d: f"{d}d")
+    with col2:
+        ticker = st.text_input("Ticker", key="radarx_ticker", placeholder="ex: PETR4").strip().upper() or None
+    with col3:
+        categoria = st.selectbox("Categoria", ["Todas"] + list(CATEGORIAS_PUBLICACAO), key="radarx_categoria")
+        categoria = None if categoria == "Todas" else categoria
+    with col4:
+        confirmado = st.selectbox("Evidência", ["Todas", "Confirmado", "Em verificação", "Não confirmado"], key="radarx_confirmado")
+    estado_map = {"Confirmado": "confirmado", "Em verificação": "em_verificacao", "Não confirmado": "detectado"}
+    return {"dias": dias, "ticker": ticker, "categoria": categoria, "estado": estado_map.get(confirmado)}
+
+
+def _radarx_linha_tabela(s: dict) -> str:
+    cor_nivel = _COR_NIVEL_EVIDENCIA.get(s.get("nivel_evidencia"), "cinza")
+    categoria_label = _LABEL_CATEGORIA.get(s.get("categoria"), s.get("categoria") or "—")
+    relevancia = s.get("relevancia")
+    relevancia_fmt = f"{relevancia}" if relevancia is not None else "—"
+    credibilidade = s.get("credibilidade")
+    credibilidade_fmt = f"{credibilidade}" if credibilidade is not None else "s/ histórico"
+    ticker = html.escape(s.get("ticker") or "—")
+    verificado = " ✓" if s.get("conta_verificada") else ""
+    resumo = html.escape((s.get("texto") or "")[:140])
+    link = html.escape(s.get("link_original") or "#", quote=True)
+    return (
+        "<tr>"
+        f"<td class='radarx-autor'>{html.escape(s.get('autor') or '—')}{verificado}</td>"
+        f"<td class='cinza'>{ticker}</td>"
+        f"<td class='cinza'>{html.escape(categoria_label)}</td>"
+        f"<td class='{cor_nivel}'>{html.escape((s.get('nivel_evidencia') or '').replace('nivel_1_sinal_social', 'SINAL SOCIAL').replace('nivel_2_corroboracao_parcial', 'EM VERIFICAÇÃO').replace('nivel_3_confirmado_fonte_confiavel', 'CONFIRMADO'))}</td>"
+        f"<td class='cinza'>{relevancia_fmt}</td>"
+        f"<td class='cinza'>{credibilidade_fmt}</td>"
+        f"<td class='radarx-sub'><a href='{link}' target='_blank' rel='noopener'>{resumo}…</a></td>"
+        "</tr>"
+    )
+
+
+@st.fragment
+def render_radar_x(prefs: dict):
+    """RADAR X — INTELIGÊNCIA SOCIAL: publicações classificadas do X
+    cruzadas com research/news já existentes (data/x_radar/). Conector
+    (data/x_signals.py) fica desligado sem X_BEARER_TOKEN - a saúde real
+    do conector aparece SEMPRE no topo, nunca escondida atrás de uma
+    tela vazia sem explicação (pedido explícito da seção 8: 'saúde do
+    conector' é um dos 9 itens)."""
+    st.markdown(f"<style>{_CSS_RADAR_X}</style>", unsafe_allow_html=True)
+    st.markdown('<div class="painel-titulo">RADAR X — INTELIGÊNCIA SOCIAL</div>', unsafe_allow_html=True)
+
+    saude = saude_conector()
+    status_cred = saude["status_credencial"]
+    with st.container(border=True):
+        st.markdown('<div class="radarx-sub" style="font-weight:600; margin-bottom:0.3rem;">SAÚDE DO CONECTOR</div>', unsafe_allow_html=True)
+        if status_cred["estado"] == "ok":
+            st.markdown(f"<span class='alta radarx-badge'>CONECTADO</span>", unsafe_allow_html=True)
+        else:
+            st.markdown(
+                f"<span class='baixa radarx-badge'>DESLIGADO</span> "
+                f"<span class='radarx-sub'>({html.escape(status_cred['estado'])})</span>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(f"<div class='radarx-nota'>{html.escape(status_cred['motivo'] or '')}</div>", unsafe_allow_html=True)
+        total = saude.get("total_sinais")
+        ultima = _idade_formatada(saude.get("ultima_captura")) if saude.get("ultima_captura") else "nunca"
+        st.markdown(
+            f"<div class='radarx-sub'>{total if total is not None else '—'} sinal(is) persistido(s) · última captura: {ultima}</div>",
+            unsafe_allow_html=True,
+        )
+
+    with st.expander("Contas e termos monitorados", expanded=False):
+        contas_fmt = ", ".join(f"@{c['handle']}" for c in CONTAS_MONITORADAS)
+        st.markdown(f"<div class='radarx-sub'>Contas: {html.escape(contas_fmt)}</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='radarx-sub'>Universo completo (tickers/setores/macro) configurável em "
+            "<code>data/x_radar/__init__.py</code>, sem precisar de migração.</div>",
+            unsafe_allow_html=True,
+        )
+
+    if status_cred["estado"] != "ok":
+        st.markdown(
+            "<div class='radarx-nota' style='margin-top:0.6rem;'>Sem publicações pra mostrar - o conector "
+            "está desligado (ver saúde acima). Nenhum dado é simulado nesta seção.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    filtros = _radarx_filtros(prefs)
+    sinais = listar_sinais(ticker=filtros["ticker"], categoria=filtros["categoria"],
+                            estado=filtros["estado"], dias=filtros["dias"])
+
+    if sinais is None:
+        st.warning("Banco indisponível - não foi possível carregar os sinais agora.")
+        return
+    if not sinais:
+        st.markdown("<div class='radarx-sub'>Nenhuma publicação no filtro atual.</div>", unsafe_allow_html=True)
+        return
+
+    mais_relevantes = sorted(sinais, key=lambda s: s.get("relevancia") or 0, reverse=True)[:20]
+    st.markdown('<div class="painel-titulo" style="font-size:0.78rem; margin-top:0.8rem;">PUBLICAÇÕES MAIS RELEVANTES</div>', unsafe_allow_html=True)
+    linhas = "".join(_radarx_linha_tabela(s) for s in mais_relevantes)
+    st.markdown(
+        "<div style='overflow-x:auto;'><table class='radarx-tabela'>"
+        "<thead><tr><th>AUTOR</th><th>TICKER</th><th>CATEGORIA</th><th>EVIDÊNCIA</th>"
+        "<th>RELEVÂNCIA</th><th>CREDIBILIDADE</th><th>RESUMO</th></tr></thead>"
+        f"<tbody>{linhas}</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
+
+    catalisadores = [s for s in sinais if s.get("catalisador")]
+    if catalisadores:
+        st.markdown('<div class="painel-titulo" style="font-size:0.78rem; margin-top:1rem;">CATALISADORES IDENTIFICADOS</div>', unsafe_allow_html=True)
+        for s in catalisadores[:10]:
+            st.markdown(
+                f"<div class='radarx-sub'><span class='radarx-autor'>{html.escape(s.get('ticker') or s.get('autor') or '')}</span> — "
+                f"{html.escape(s['catalisador'])}</div>",
+                unsafe_allow_html=True,
+            )
+
+    nao_corroboradas = [s for s in sinais if s.get("nivel_evidencia") == "nivel_1_sinal_social"]
+    if nao_corroboradas:
+        st.markdown('<div class="painel-titulo" style="font-size:0.78rem; margin-top:1rem;">AINDA NÃO CORROBORADAS</div>', unsafe_allow_html=True)
+        st.markdown(f"<div class='radarx-sub'>{len(nao_corroboradas)} publicação(ões) sem confirmação de outra fonte - exibidas na tabela acima com evidência 'SINAL SOCIAL'.</div>", unsafe_allow_html=True)
+
+    por_ticker: dict[str, list] = {}
+    for s in sinais:
+        if s.get("ticker"):
+            por_ticker.setdefault(s["ticker"], []).append(s)
+    if por_ticker:
+        st.markdown('<div class="painel-titulo" style="font-size:0.78rem; margin-top:1rem;">POR TICKER</div>', unsafe_allow_html=True)
+        for ticker, itens in sorted(por_ticker.items(), key=lambda kv: -len(kv[1])):
+            sentimentos = {i.get("sentimento") for i in itens if i.get("sentimento")}
+            divergente = " ⚠ opiniões divergentes" if len(sentimentos) > 1 else ""
+            st.markdown(
+                f"<div class='radarx-sub'><span class='radarx-autor'>{html.escape(ticker)}</span>: "
+                f"{len(itens)} publicação(ões){divergente}</div>",
+                unsafe_allow_html=True,
+            )
