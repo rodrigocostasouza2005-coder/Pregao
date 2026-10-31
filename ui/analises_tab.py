@@ -4,12 +4,18 @@ EQUITY (continua em app.py, intocada no miolo); aqui ficam a barra de
 vinculos da empresa (empresa -> setor/noticias/radar/fundamentos) e a
 subaba Fundamentos. Valuation/Teses vem de ui/radar_tab.py.
 
-Fundamentos so' mostra o que a fonte reporta HOJE (data/prices.py:
-obter_indicadores, Yahoo Finance, cache de 12h) - receita, lucro e fluxo
-de caixa em serie historica nao existem em nenhuma fonte integrada, e a
+Fundamentos (ponto atual) so' mostra o que a fonte reporta HOJE
+(data/prices.py:obter_indicadores, Yahoo Finance, cache de 12h). Série
+histórica trimestral REAL de receita líquida/EBIT/lucro líquido/margem
+bruta existe via Earnings Reviewer (data/earnings/reviewer.py:
+serie_historica_br, só Brasil) e alimenta a CONCLUSÃO DE INVESTIMENTO
+abaixo (2026-10-30) - mas ROIC, dívida líquida histórica, fluxo de caixa
+operacional/livre, CAPEX e dividendos em série histórica ainda não têm
+fonte integrada (ver seção "Lacunas de informação" da conclusão), e a
 tela diz isso em vez de estimar."""
 
 import html
+from collections import Counter
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -17,7 +23,7 @@ import streamlit as st
 
 import config
 from data.earnings import reviewer as earnings_reviewer
-from data.market_researcher import analise_ticker
+from data.market_researcher import analise_ticker, consenso_research
 from data.prices import obter_cotacao, obter_indicadores
 from data.radar import (
     TIPO_CALCULO, TIPO_ESTIMATIVA_TERCEIRO, TIPO_FATO, TIPO_HIPOTESE, TIPO_INSUFICIENTE,
@@ -234,161 +240,447 @@ def render_equity_research_executivo(ticker: str, prefs: dict):
 
 
 # ============================================================
-# CONCLUSÃO DE INVESTIMENTO (2026-10-23)
+# CONCLUSÃO DE INVESTIMENTO (2026-10-23, reformulada em 14 seções 2026-10-30)
 #
 # Complemento de render_equity_research_executivo (acima): aquele painel
-# já mostra momento/catalisadores/mudanças/research das casas - aqui só
-# falta sintetizar isso numa conclusão que responda as 7 perguntas de
-# equity research (qualidade do negócio, momento, tese a favor/contra,
-# avaliação, o que monitorar, o que invalidaria). _montar_conclusao é
-# função pura (sem Streamlit, sem IA): cada resposta cita só o que já
-# está em `analise` (mesmo dict de analise_ticker, via
-# _analise_ticker_cacheada - zero consulta nova) ou declara "dado
-# insuficiente" explícito. Nunca emite recomendação de compra/venda -
-# esse conceito não existe no retorno da função.
+# já mostra momento/catalisadores/mudanças/research das casas - aqui
+# sintetiza isso numa conclusão fundamentalista completa (resumo
+# executivo, qualidade do negócio, crescimento/rentabilidade, estrutura
+# de capital, geração de caixa, tese positiva/negativa, valuation,
+# catalisadores, riscos/invalidação, consenso de research, cenários,
+# confiança e lacunas). _montar_conclusao é função pura (sem Streamlit,
+# sem IA): cada resposta cita só o que já está em `analise` (mesmo dict
+# de analise_ticker, via _analise_ticker_cacheada - zero consulta nova)
+# ou declara "dado insuficiente" explícito. Nunca emite recomendação de
+# compra/venda - esse conceito não existe no retorno da função.
+#
+# Lacunas estruturais (ROIC, dívida líquida histórica, fluxo de caixa
+# operacional/livre/CAPEX/dividendos históricos, EV/EBIT, DCF, série
+# histórica internacional) são registradas UMA VEZ em `_TEXTOS_LACUNA` e
+# só citadas por nome nas seções analíticas (nunca repetidas por
+# extenso) - o texto completo mora só na seção 14 (Lacunas de
+# informação), pedido explícito de não duplicar lacuna em várias seções.
 # ============================================================
 
+_ROTULO_TENDENCIA = {
+    "RECUPERACAO": "recuperação", "DETERIORACAO": "deterioração", "ESTABILIDADE": "estabilidade",
+}
+
+_TEXTOS_LACUNA = {
+    "roic": "ROIC: não calculado nesta versão - yfinance não reporta o indicador e calcular à mão "
+            "viraria estimativa, não dado reportado; exigiria extrair o Balanço Patrimonial da CVM "
+            "(capital investido), fora do escopo desta fase.",
+    "divida_historica": "Dívida líquida em série histórica: só o ponto atual existe (yfinance) - série "
+            "temporal exigiria Balanço Patrimonial histórico da CVM, fora do escopo desta fase.",
+    "geracao_caixa": "Fluxo de caixa operacional, fluxo de caixa livre, CAPEX e dividendos pagos: sem "
+            "fonte integrada nesta versão (exigiria Demonstração de Fluxo de Caixa da CVM), nenhum "
+            "desses valores é estimado como substituto.",
+    "ev_ebit": "EV/EBIT: EBIT trimestral isolado da CVM não cobre o 4º trimestre e não há EBIT anual "
+            "consolidado ponto a ponto integrado nesta versão - aproximar via margem operacional "
+            "seria estimativa, não dado reportado, por isso não foi calculado.",
+    "dcf": "Valuation por fluxo de caixa descontado (DCF): bloqueado por falta de fluxo de caixa livre "
+            "histórico (ver lacuna de Geração de caixa) - mesmo informando taxa de crescimento e taxa "
+            "de desconto, não há FCF real pra descontar nesta versão.",
+    "historico_internacional": "Série histórica trimestral para empresas internacionais: calendário "
+            "fiscal não é detectado automaticamente nesta versão - só empresas brasileiras (CVM) têm "
+            "série histórica confiável hoje.",
+}
+
+_MOTIVO_FONTE_INDISPONIVEL = {
+    "fundamentos": "Fundamentos (cotação/múltiplos) indisponíveis nesta checagem (fonte não respondeu).",
+    "contexto_mercado": "Catalisadores/mudanças de tese/riscos de indicador indisponíveis nesta checagem.",
+    "cobertura_research": "Cobertura de research entre casas indisponível nesta checagem (banco fora do ar).",
+    "historico_fundamentos": "Histórico trimestral de fundamentos indisponível nesta checagem.",
+    "comparativo_setorial": "Comparativo setorial de múltiplos indisponível nesta checagem.",
+}
+
+
+def _dcf_calculo(fcf_atual, taxa_crescimento_pct, taxa_desconto_pct, anos_projecao: int = 5,
+                  valor_mercado=None) -> dict:
+    """Fluxo de caixa descontado - TODAS as premissas (fcf_atual,
+    taxa_crescimento_pct, taxa_desconto_pct) vêm de fora, nunca um
+    padrão interno; None em qualquer uma bloqueia o cálculo com `motivo`
+    explícito dizendo QUAL está faltando (nunca aproxima). Perpetuidade
+    de Gordon pro valor terminal - exige taxa_desconto > taxa_crescimento
+    (senão o denominador inverte de sinal, premissa inválida, não
+    calculado). Função pura, testável isoladamente - não é chamada pela
+    conclusão nesta versão porque fcf_atual nunca está disponível (ver
+    _TEXTOS_LACUNA['dcf']); fica pronta pra quando essa fonte existir."""
+    faltando = []
+    if fcf_atual is None:
+        faltando.append("fluxo de caixa livre atual")
+    if taxa_crescimento_pct is None:
+        faltando.append("taxa de crescimento esperada (premissa do usuário)")
+    if taxa_desconto_pct is None:
+        faltando.append("taxa de desconto / WACC (premissa do usuário)")
+    if faltando:
+        return {"calculavel": False, "motivo": f"faltando: {', '.join(faltando)}."}
+
+    g, wacc = taxa_crescimento_pct / 100, taxa_desconto_pct / 100
+    if wacc <= g:
+        return {"calculavel": False,
+                "motivo": "taxa de desconto precisa ser maior que a taxa de crescimento para o "
+                          "valor terminal (perpetuidade de Gordon) ser matematicamente válido."}
+
+    valor_presente_fluxos = 0.0
+    fcf_projetado = fcf_atual
+    for ano in range(1, anos_projecao + 1):
+        fcf_projetado *= (1 + g)
+        valor_presente_fluxos += fcf_projetado / ((1 + wacc) ** ano)
+    valor_terminal = fcf_projetado * (1 + g) / (wacc - g)
+    valor_presente_terminal = valor_terminal / ((1 + wacc) ** anos_projecao)
+    valor_justo_estimado = valor_presente_fluxos + valor_presente_terminal
+
+    resultado = {
+        "calculavel": True,
+        "premissas": {"fcf_atual": fcf_atual, "taxa_crescimento_pct": taxa_crescimento_pct,
+                       "taxa_desconto_pct": taxa_desconto_pct, "anos_projecao": anos_projecao},
+        "valor_presente_fluxos": valor_presente_fluxos,
+        "valor_presente_terminal": valor_presente_terminal,
+        "valor_justo_estimado": valor_justo_estimado,
+    }
+    if valor_mercado:
+        resultado["potencial_pct"] = (valor_justo_estimado / valor_mercado - 1) * 100
+    return resultado
+
+
+def _secao_qualidade_negocio(historico: dict, lacunas_ativas: set) -> dict:
+    if not (historico or {}).get("disponivel"):
+        motivo = (historico or {}).get("motivo", "histórico trimestral indisponível nesta checagem.")
+        if "internacional" in motivo or "calendário fiscal" in motivo:
+            lacunas_ativas.add("historico_internacional")
+        return {"pergunta": "Qualidade do negócio",
+                "resposta": f"Dado insuficiente: {motivo}", "tipo_evidencia": TIPO_INSUFICIENTE}
+    margem = historico.get("margem_bruta_pct", {})
+    receita = historico.get("receita_liquida", {})
+    tend_margem, tend_receita = margem.get("tendencia"), receita.get("tendencia")
+    partes = []
+    if tend_margem:
+        partes.append(f"margem bruta em {_ROTULO_TENDENCIA[tend_margem]}")
+    if tend_receita:
+        partes.append(f"receita líquida em {_ROTULO_TENDENCIA[tend_receita]} (YoY)")
+    periodos = f"{historico['periodos'][0]} a {historico['periodos'][-1]}"
+    if partes:
+        resposta = (f"{'; '.join(partes).capitalize()} nos trimestres observados ({periodos}, fonte "
+                    "CVM - ITR, DRE consolidada).")
+        tipo = TIPO_CALCULO
+    else:
+        resposta = (f"Trimestres disponíveis ({periodos}) insuficientes para apontar tendência (menos "
+                    "de 2 pontos válidos de margem bruta ou receita).")
+        tipo = TIPO_INSUFICIENTE
+    return {"pergunta": "Qualidade do negócio", "resposta": resposta, "tipo_evidencia": tipo}
+
+
+def _secao_crescimento_rentabilidade(fundamentos: dict, historico: dict, lacunas_ativas: set) -> dict:
+    lacunas_ativas.add("roic")
+    partes = []
+    if (historico or {}).get("disponivel"):
+        lucro_t = historico.get("lucro_liquido_consolidado", {}).get("tendencia")
+        ebit_t = historico.get("ebit", {}).get("tendencia")
+        if lucro_t:
+            partes.append(f"lucro líquido em {_ROTULO_TENDENCIA[lucro_t]} (YoY)")
+        if ebit_t:
+            partes.append(f"EBIT em {_ROTULO_TENDENCIA[ebit_t]} (YoY)")
+    roe = (fundamentos or {}).get("roe")
+    if roe is not None:
+        partes.append(f"ROE atual (ponto, yfinance): {roe:.1f}%")
+    if partes:
+        resposta = "; ".join(partes) + ". ROIC não calculado nesta versão (ver Lacunas)."
+        tipo = TIPO_CALCULO
+    else:
+        resposta = "Dado insuficiente: sem histórico de lucro/EBIT nem ROE disponíveis agora (ver Lacunas)."
+        tipo = TIPO_INSUFICIENTE
+    return {"pergunta": "Crescimento e rentabilidade", "resposta": resposta, "tipo_evidencia": tipo}
+
+
+def _secao_estrutura_capital(fundamentos: dict, lacunas_ativas: set) -> dict:
+    lacunas_ativas.add("divida_historica")
+    dl_ebitda = (fundamentos or {}).get("divida_liquida_ebitda")
+    if dl_ebitda is None:
+        return {"pergunta": "Estrutura de capital",
+                "resposta": "Dado insuficiente: dívida líquida/EBITDA indisponível agora (ver Lacunas).",
+                "tipo_evidencia": TIPO_INSUFICIENTE}
+    leitura = "elevada" if dl_ebitda > 4 else ("moderada" if dl_ebitda > 2 else "baixa")
+    return {"pergunta": "Estrutura de capital",
+            "resposta": f"Dívida líquida/EBITDA atual (ponto, yfinance): {dl_ebitda:.1f}x ({leitura}). "
+                        "Série histórica não disponível (ver Lacunas).",
+            "tipo_evidencia": TIPO_FATO}
+
+
+def _secao_geracao_caixa(lacunas_ativas: set) -> dict:
+    lacunas_ativas.add("geracao_caixa")
+    return {"pergunta": "Geração de caixa",
+            "resposta": "Dado insuficiente: fluxo de caixa operacional, fluxo de caixa livre, CAPEX e "
+                        "dividendos pagos não têm fonte integrada nesta versão (ver Lacunas).",
+            "tipo_evidencia": TIPO_INSUFICIENTE}
+
+
+def _secao_tese_positiva(cobertura_lista: list, proximos_cat: list) -> dict:
+    recomendacoes = [c for c in (cobertura_lista or []) if c.get("recomendacao")]
+    if not recomendacoes and not proximos_cat:
+        return {"pergunta": "Tese positiva",
+                "resposta": "Dado insuficiente: nenhuma recomendação estruturada nem catalisador futuro "
+                            "identificado nas fontes monitoradas.",
+                "tipo_evidencia": TIPO_INSUFICIENTE}
+    partes = [f"{r['casa']}: {r['recomendacao']} ({str(r['data'])[:10]})" for r in recomendacoes]
+    partes += [f"{c['categoria']} em {c['data'].strftime('%d/%m/%Y')} ({c['status_label']})"
+               for c in proximos_cat[:2]]
+    return {"pergunta": "Tese positiva", "resposta": "; ".join(partes) + ".",
+            "tipo_evidencia": TIPO_FATO if recomendacoes else TIPO_ESTIMATIVA_TERCEIRO}
+
+
+def _secao_tese_negativa(fundamentos: dict, divergencia, sem_cobertura: list) -> dict:
+    contrarios = list((fundamentos or {}).get("alerta_qualidade") or [])
+    if divergencia:
+        contrarios.append(divergencia["descricao"])
+    if sem_cobertura:
+        contrarios.append(f"sem cobertura recente de: {', '.join(sem_cobertura)}")
+    if not contrarios:
+        return {"pergunta": "Tese negativa",
+                "resposta": "Nenhum alerta de qualidade nos indicadores monitorados (P/L, margem, "
+                            "dívida/EBITDA) nem divergência de recomendação entre casas.",
+                "tipo_evidencia": TIPO_CALCULO if fundamentos else TIPO_INSUFICIENTE}
+    return {"pergunta": "Tese negativa", "resposta": "; ".join(contrarios) + ".",
+            "tipo_evidencia": TIPO_CALCULO if fundamentos else TIPO_INSUFICIENTE}
+
+
+def _secao_valuation(fundamentos: dict, setorial: dict | None, lacunas_ativas: set) -> dict:
+    lacunas_ativas.add("ev_ebit")
+    lacunas_ativas.add("dcf")
+    if not fundamentos or fundamentos.get("preco") is None:
+        return {"pergunta": "Valuation",
+                "resposta": "Dado insuficiente: sem cotação ou múltiplos disponíveis agora (ver Lacunas).",
+                "tipo_evidencia": TIPO_INSUFICIENTE}
+
+    pl, pvp, dy = fundamentos.get("pl"), fundamentos.get("pvp"), fundamentos.get("dividend_yield")
+    ev_ebitda = fundamentos.get("ev_ebitda")
+    partes = []
+    if pl is not None:
+        partes.append(f"P/L {pl:.1f}x")
+    if pvp is not None:
+        partes.append(f"P/VP {pvp:.2f}x")
+    if dy is not None:
+        partes.append(f"dividend yield {dy:.1f}%")
+    if ev_ebitda is not None:
+        partes.append(f"EV/EBITDA {ev_ebitda:.1f}x (cálculo interno)")
+    texto_multiplos = ", ".join(partes) if partes else (
+        "sem múltiplos comparáveis (lucro/patrimônio/EBITDA negativo ou indisponível)"
+    )
+
+    texto_setorial = ""
+    if setorial and not setorial.get("insuficiente"):
+        comp = []
+        if setorial.get("pl_mediana") is not None and pl is not None:
+            comp.append(f"P/L setor {setorial['pl_mediana']:.1f}x ({setorial['pl_mediana_n']} pares)")
+        if setorial.get("pvp_mediana") is not None and pvp is not None:
+            comp.append(f"P/VP setor {setorial['pvp_mediana']:.2f}x ({setorial['pvp_mediana_n']} pares)")
+        if setorial.get("dy_mediana") is not None and dy is not None:
+            comp.append(f"DY setor {setorial['dy_mediana']:.1f}% ({setorial['dy_mediana_n']} pares)")
+        if comp:
+            texto_setorial = f" Mediana do setor ({setorial.get('setor')}): {', '.join(comp)}."
+    elif setorial and setorial.get("insuficiente"):
+        texto_setorial = f" Comparação setorial indisponível ({setorial.get('motivo', 'sem pares suficientes')})."
+
+    desatualizado = " Múltiplos desatualizados (mais de 24h sem coleta nova)." if fundamentos.get("desatualizado") else ""
+    resposta = (f"Múltiplos reportados agora: {texto_multiplos}.{texto_setorial}{desatualizado} EV/EBIT e "
+                "valuation por fluxo de caixa descontado (DCF) não calculados nesta checagem (ver Lacunas).")
+    tipo = TIPO_CALCULO if ev_ebitda is not None else (TIPO_FATO if partes else TIPO_INSUFICIENTE)
+    return {"pergunta": "Valuation", "resposta": resposta, "tipo_evidencia": tipo}
+
+
+def _secao_catalisadores(catalisadores) -> dict:
+    if catalisadores is None:
+        return {"pergunta": "Catalisadores",
+                "resposta": "Dado insuficiente: fonte de catalisadores indisponível nesta checagem.",
+                "tipo_evidencia": TIPO_INSUFICIENTE}
+    proximos = sorted([c for c in catalisadores if c["data"] >= date.today()], key=lambda c: c["data"])
+    if not proximos:
+        return {"pergunta": "Catalisadores",
+                "resposta": "Nenhum catalisador (resultado corporativo/proventos) identificado nos "
+                            "próximos 60 dias nas fontes monitoradas.",
+                "tipo_evidencia": TIPO_FATO}
+    partes = [f"{c['categoria']} em {c['data'].strftime('%d/%m/%Y')} "
+              f"({'confirmado' if c.get('confirmado') else 'estimado/prazo regulatório'})" for c in proximos]
+    tipo = TIPO_FATO if any(c.get("confirmado") for c in proximos) else TIPO_ESTIMATIVA_TERCEIRO
+    return {"pergunta": "Catalisadores", "resposta": "; ".join(partes) + ".", "tipo_evidencia": tipo}
+
+
+def _secao_riscos_invalidacao(riscos, tese: dict | None) -> dict:
+    riscos_tese_usuario = (tese or {}).get("riscos") or []
+    invalidadores = list(riscos or []) + list(riscos_tese_usuario)
+    if not invalidadores:
+        return {"pergunta": "Riscos e invalidação da tese",
+                "resposta": "Dado insuficiente: nenhum risco estrutural identificado nos indicadores "
+                            "monitorados; registre riscos específicos em RESEARCH › Minha Tese.",
+                "tipo_evidencia": TIPO_INSUFICIENTE}
+    origem = " (inclui riscos registrados na sua Tese própria)" if riscos_tese_usuario else ""
+    return {"pergunta": "Riscos e invalidação da tese", "resposta": "; ".join(invalidadores) + f".{origem}",
+            "tipo_evidencia": TIPO_CALCULO if riscos else TIPO_HIPOTESE}
+
+
+def _secao_consenso_research(cobertura: dict | None) -> dict:
+    consenso = consenso_research(cobertura)
+    if not consenso.get("disponivel"):
+        return {"pergunta": "Consenso de Research",
+                "resposta": f"Dado insuficiente: {consenso.get('motivo')}", "tipo_evidencia": TIPO_INSUFICIENTE}
+    itens = consenso["itens"]
+    if not itens and not consenso["casas_sem_cobertura"]:
+        return {"pergunta": "Consenso de Research",
+                "resposta": "Nenhuma casa de research monitorada está cadastrada.", "tipo_evidencia": TIPO_INSUFICIENTE}
+    partes = [f"{i['casa']}: {i.get('recomendacao') or 'sem recomendação estruturada'} "
+              f"({str(i['data'])[:10]})" for i in itens]
+    resumo = (f"{consenso['n_casas_cobrindo']} casa(s) com cobertura recente, "
+              f"{consenso['n_casas_sem_cobertura']} sem cobertura ({', '.join(consenso['casas_sem_cobertura']) or '—'}). "
+              "Ausência de cobertura não é lida como sinal positivo ou negativo.")
+    texto = ("; ".join(partes) + f". {resumo}") if partes else resumo
+    if consenso["divergencia"]:
+        texto += f" {consenso['divergencia']['descricao']}"
+    return {"pergunta": "Consenso de Research", "resposta": texto,
+            "tipo_evidencia": TIPO_ESTIMATIVA_TERCEIRO if itens else TIPO_FATO}
+
+
+def _montar_cenarios(historico: dict | None, catalisadores, riscos, cobertura: dict | None) -> dict:
+    """3 leituras qualitativas (nunca preço-alvo nem probabilidade),
+    combinando só o que já foi calculado nas seções acima: tendência de
+    fundamentos (histórico real), catalisadores futuros confirmados,
+    riscos/divergência já identificados. HIPÓTESE DO ANALISTA (do
+    Pregão) - exercício de leitura de cenário, nunca previsão."""
+    tendencias = []
+    if (historico or {}).get("disponivel"):
+        for rotulo, chave in (("receita líquida", "receita_liquida"), ("EBIT", "ebit"),
+                               ("lucro líquido", "lucro_liquido_consolidado")):
+            t = historico.get(chave, {}).get("tendencia")
+            if t:
+                tendencias.append((rotulo, t))
+    confirmados = [c for c in (catalisadores or []) if c.get("confirmado") and c["data"] >= date.today()]
+    n_riscos = len(riscos or [])
+    divergencia = (cobertura or {}).get("divergencia")
+
+    if not (tendencias or confirmados or n_riscos or divergencia):
+        texto = ("Dado insuficiente: nenhuma tendência histórica de fundamentos, catalisador confirmado "
+                 "ou risco identificado para compor um cenário qualitativo nesta checagem.")
+        return {"pergunta": "Cenários (otimista, base e pessimista)", "resposta":
+                f"OTIMISTA: {texto} BASE: {texto} PESSIMISTA: {texto}", "tipo_evidencia": TIPO_INSUFICIENTE}
+
+    recuperacao = [r for r, t in tendencias if t == "RECUPERACAO"]
+    deterioracao = [r for r, t in tendencias if t == "DETERIORACAO"]
+    estaveis = [r for r, t in tendencias if t == "ESTABILIDADE"]
+
+    base = "; ".join(estaveis + recuperacao + deterioracao) or "sem tendência clara nos fundamentos disponíveis"
+    if confirmados:
+        base += f"; {len(confirmados)} catalisador(es) confirmado(s) nos próximos 60 dias"
+
+    otimista = "se " + (", ".join(recuperacao) or "a tendência atual de fundamentos se mantiver ou melhorar")
+    if confirmados:
+        otimista += f" e os catalisadores confirmados ({', '.join(c['categoria'] for c in confirmados[:2])}) se concretizarem favoravelmente"
+
+    pessimista = f"se {', '.join(deterioracao) or 'a tendência de fundamentos piorar'}"
+    pessimista += f", considerando {n_riscos} risco(s) de indicador já identificado(s)" if n_riscos else ", sem nenhum risco de indicador identificado ainda"
+    if divergencia:
+        pessimista += "; recomendação já diverge entre casas de research, reforçando a incerteza"
+
+    resposta = (f"OTIMISTA: {otimista.capitalize()}. BASE: cenário apoiado em {base}. "
+                f"PESSIMISTA: {pessimista.capitalize()}.")
+    return {"pergunta": "Cenários (otimista, base e pessimista)", "resposta": resposta,
+            "tipo_evidencia": TIPO_HIPOTESE}
+
+
+_PESO_CONFIANCA_POR_TIPO = {
+    TIPO_FATO: 1.0, TIPO_CALCULO: 0.9, TIPO_ESTIMATIVA_TERCEIRO: 0.7,
+    TIPO_HIPOTESE: 0.4, TIPO_INSUFICIENTE: 0.0,
+}
+
+
+def _calcular_confianca(blocos_avaliados: list) -> dict:
+    """Score 0-100 = média dos pesos de evidência das seções analíticas
+    (2 a 12, nunca a própria seção de confiança/lacunas nem o resumo
+    executivo) × 100. Pesos fixos e documentados - não é uma
+    probabilidade estatística calibrada, é uma régua simples e auditável:
+    FATO=1,0 · CÁLCULO INTERNO=0,9 · ESTIMATIVA DE TERCEIRO=0,7 ·
+    HIPÓTESE DO ANALISTA=0,4 · DADO INSUFICIENTE=0,0. >=70 ALTA, >=40
+    MÉDIA, caso contrário BAIXA."""
+    if not blocos_avaliados:
+        return {"nivel": "BAIXA", "score": 0, "motivo": "nenhuma seção avaliável."}
+    pesos = [_PESO_CONFIANCA_POR_TIPO.get(b["tipo_evidencia"], 0.0) for b in blocos_avaliados]
+    score = round(sum(pesos) / len(pesos) * 100)
+    nivel = "ALTA" if score >= 70 else ("MEDIA" if score >= 40 else "BAIXA")
+    contagem = Counter(b["tipo_evidencia"] for b in blocos_avaliados)
+    detalhe = ", ".join(f"{_ROTULO_EVIDENCIA.get(k, (k, None))[0]}: {v}" for k, v in contagem.items())
+    motivo = (f"{len(blocos_avaliados)} seção(ões) avaliadas - {detalhe}. Score = média dos pesos de "
+              "evidência (FATO=1,0 · CÁLCULO INTERNO=0,9 · ESTIMATIVA DE TERCEIRO=0,7 · HIPÓTESE DO "
+              "ANALISTA=0,4 · DADO INSUFICIENTE=0,0) × 100.")
+    return {"nivel": nivel, "score": score, "motivo": motivo}
+
+
 def _montar_conclusao(analise: dict, tese: dict | None) -> list:
-    """Lista de {pergunta, resposta, tipo_evidencia} - "dado insuficiente"
-    é uma resposta honesta aqui, não um placeholder a esconder."""
+    """Lista de {pergunta, resposta, tipo_evidencia} com as 14 seções da
+    Conclusão de Investimento - "dado insuficiente" é uma resposta
+    honesta aqui, não um placeholder a esconder."""
     fundamentos = analise.get("fundamentos")
     catalisadores = analise.get("catalisadores")
-    mudancas = analise.get("mudancas_tese")
     riscos = analise.get("riscos_indicadores")
     cobertura = analise.get("cobertura_research") or {}
     cobertura_lista = cobertura.get("cobertura")
     sem_cobertura = cobertura.get("sem_cobertura") or []
     divergencia = cobertura.get("divergencia")
     fontes_indisponiveis = analise.get("fontes_indisponiveis") or []
+    historico = analise.get("fundamentos_historicos")
+    setorial = analise.get("comparativo_setorial")
     proximos_cat = sorted(
         [c for c in (catalisadores or []) if c["data"] >= date.today()], key=lambda c: c["data"]
     )
 
-    blocos = [{
-        "pergunta": "Qualidade do negócio",
-        "resposta": "Dado insuficiente: o PREGÃO ainda não integra receita, margem ou fluxo de caixa em série "
-                    "histórica (só os múltiplos pontuais do período mais recente, em Avaliação abaixo) - não dá "
-                    "pra avaliar a qualidade do negócio em si com o que está disponível hoje.",
+    lacunas_ativas = set()
+
+    secoes_analiticas = [
+        _secao_qualidade_negocio(historico, lacunas_ativas),
+        _secao_crescimento_rentabilidade(fundamentos, historico, lacunas_ativas),
+        _secao_estrutura_capital(fundamentos, lacunas_ativas),
+        _secao_geracao_caixa(lacunas_ativas),
+        _secao_tese_positiva(cobertura_lista, proximos_cat),
+        _secao_tese_negativa(fundamentos, divergencia, sem_cobertura),
+        _secao_valuation(fundamentos, setorial, lacunas_ativas),
+        _secao_catalisadores(catalisadores),
+        _secao_riscos_invalidacao(riscos, tese),
+        _secao_consenso_research(cobertura if analise.get("cobertura_research") is not None else None),
+        _montar_cenarios(historico, catalisadores, riscos, cobertura),
+    ]
+
+    confianca = _calcular_confianca(secoes_analiticas)
+    bloco_confianca = {
+        "pergunta": "Confiança da análise",
+        "resposta": f"{confianca['nivel']} ({confianca['score']}/100). {confianca['motivo']}",
+        "tipo_evidencia": TIPO_CALCULO,
+    }
+
+    textos_lacuna = [_TEXTOS_LACUNA[k] for k in sorted(lacunas_ativas)]
+    textos_lacuna += list(dict.fromkeys(
+        _MOTIVO_FONTE_INDISPONIVEL.get(f, f"Fonte '{f}' indisponível nesta checagem.")
+        for f in fontes_indisponiveis
+    ))
+    bloco_lacunas = {
+        "pergunta": "Lacunas de informação",
+        "resposta": (("; ".join(textos_lacuna) + ".") if textos_lacuna else
+                     "Nenhuma lacuna estrutural adicional identificada nesta checagem.") +
+                    " Esta síntese organiza evidência real já coletada - não é e não substitui "
+                    "recomendação de compra ou venda.",
         "tipo_evidencia": TIPO_INSUFICIENTE,
-    }]
+    }
 
-    if mudancas:
-        m = mudancas[0]
-        blocos.append({
-            "pergunta": "Momento atual",
-            "resposta": f"{m['categoria']}: {m['descricao']} ({m['data_evento'].strftime('%d/%m/%Y')}).",
-            "tipo_evidencia": m.get("tipo_evidencia", TIPO_FATO),
-        })
-    elif mudancas is not None:
-        blocos.append({
-            "pergunta": "Momento atual",
-            "resposta": "Nenhuma mudança de tese ou fato relevante verificado nas fontes monitoradas na janela "
-                        "recente.",
-            "tipo_evidencia": TIPO_FATO,
-        })
-    else:
-        blocos.append({
-            "pergunta": "Momento atual",
-            "resposta": "Dado insuficiente: fonte de catalisadores/mudanças de tese indisponível nesta checagem.",
-            "tipo_evidencia": TIPO_INSUFICIENTE,
-        })
-
-    recomendacoes = [c for c in (cobertura_lista or []) if c.get("recomendacao")]
-    if recomendacoes or proximos_cat:
-        partes = [f"{r['casa']}: {r['recomendacao']} ({str(r['data'])[:10]})" for r in recomendacoes]
-        partes += [f"{c['categoria']} em {c['data'].strftime('%d/%m/%Y')} ({c['status_label']})"
-                   for c in proximos_cat[:2]]
-        blocos.append({
-            "pergunta": "O que sustenta uma leitura positiva",
-            "resposta": "; ".join(partes) + ".",
-            "tipo_evidencia": TIPO_FATO if recomendacoes else TIPO_ESTIMATIVA_TERCEIRO,
-        })
-    else:
-        blocos.append({
-            "pergunta": "O que sustenta uma leitura positiva",
-            "resposta": "Dado insuficiente: nenhuma recomendação estruturada nem catalisador futuro identificado "
-                        "nas fontes monitoradas.",
-            "tipo_evidencia": TIPO_INSUFICIENTE,
-        })
-
-    contrarios = list((fundamentos or {}).get("alerta_qualidade") or [])
+    n_fatos_calculos = sum(1 for b in secoes_analiticas if b["tipo_evidencia"] in (TIPO_FATO, TIPO_CALCULO))
+    resumo_partes = [f"{confianca['nivel']} confiança ({confianca['score']}/100)",
+                     f"{n_fatos_calculos} de {len(secoes_analiticas)} seções com FATO ou CÁLCULO INTERNO"]
     if divergencia:
-        contrarios.append(divergencia["descricao"])
-    if sem_cobertura:
-        contrarios.append(f"sem cobertura recente de: {', '.join(sem_cobertura)}")
-    if contrarios:
-        blocos.append({
-            "pergunta": "Principais argumentos contrários / lacunas de cobertura",
-            "resposta": "; ".join(contrarios) + ".",
-            "tipo_evidencia": TIPO_CALCULO if fundamentos else TIPO_INSUFICIENTE,
-        })
-    else:
-        blocos.append({
-            "pergunta": "Principais argumentos contrários / lacunas de cobertura",
-            "resposta": "Nenhum alerta de qualidade nos indicadores monitorados (P/L, margem, dívida/EBITDA) nem "
-                        "divergência de recomendação entre casas.",
-            "tipo_evidencia": TIPO_CALCULO if fundamentos else TIPO_INSUFICIENTE,
-        })
+        resumo_partes.append("recomendação diverge entre casas de research")
+    if proximos_cat:
+        resumo_partes.append(f"{len(proximos_cat)} catalisador(es) nos próximos 60 dias")
+    bloco_resumo = {
+        "pergunta": "Resumo executivo",
+        "resposta": "; ".join(resumo_partes) + ". Ver seções abaixo para a análise completa.",
+        "tipo_evidencia": TIPO_CALCULO,
+    }
 
-    if fundamentos and fundamentos.get("preco") is not None:
-        pl, pvp = fundamentos.get("pl"), fundamentos.get("pvp")
-        partes_val = []
-        if pl is not None:
-            partes_val.append(f"P/L {pl:.1f}x")
-        if pvp is not None:
-            partes_val.append(f"P/VP {pvp:.2f}x")
-        texto_val = ", ".join(partes_val) if partes_val else (
-            "sem P/L ou P/VP comparável (lucro ou patrimônio negativo, ou empresa fora do modelo tradicional)"
-        )
-        blocos.append({
-            "pergunta": "Avaliação (caro ou barato)",
-            "resposta": f"Múltiplos reportados agora: {texto_val}. Sem comparação com a mediana do setor nesta "
-                        "síntese e sem valor justo calculado pelo PREGÃO (modelo próprio ainda não existe).",
-            "tipo_evidencia": TIPO_FATO if partes_val else TIPO_INSUFICIENTE,
-        })
-    else:
-        blocos.append({
-            "pergunta": "Avaliação (caro ou barato)",
-            "resposta": "Dado insuficiente: sem cotação ou múltiplos disponíveis agora.",
-            "tipo_evidencia": TIPO_INSUFICIENTE,
-        })
-
-    monitorar = [f"{c['categoria']} em {c['data'].strftime('%d/%m/%Y')}" for c in proximos_cat[:3]]
-    if sem_cobertura:
-        monitorar.append(f"cobertura ainda ausente: {', '.join(sem_cobertura)}")
-    blocos.append({
-        "pergunta": "O que monitorar a seguir",
-        "resposta": ("; ".join(monitorar) + ".") if monitorar else
-                    "Nenhum catalisador identificado nos próximos 60 dias nas fontes monitoradas.",
-        "tipo_evidencia": TIPO_FATO if monitorar else TIPO_INSUFICIENTE,
-    })
-
-    riscos_tese_usuario = (tese or {}).get("riscos") or []
-    invalidadores = list(riscos or []) + list(riscos_tese_usuario)
-    if invalidadores:
-        origem = " (inclui riscos registrados na sua Tese própria)" if riscos_tese_usuario else ""
-        blocos.append({
-            "pergunta": "O que invalidaria a tese",
-            "resposta": "; ".join(invalidadores) + f".{origem}",
-            "tipo_evidencia": TIPO_CALCULO if riscos else TIPO_HIPOTESE,
-        })
-    else:
-        blocos.append({
-            "pergunta": "O que invalidaria a tese",
-            "resposta": "Dado insuficiente: nenhum risco estrutural identificado nos indicadores monitorados; "
-                        "registre riscos específicos em RESEARCH › Minha Tese.",
-            "tipo_evidencia": TIPO_INSUFICIENTE,
-        })
-
-    lacunas = list(fontes_indisponiveis) + ["receita/margem em série histórica (sem fonte integrada ainda)"]
-    blocos.append({
-        "pergunta": "Confiança e lacunas desta análise",
-        "resposta": f"Lacunas conhecidas: {', '.join(lacunas)}. Esta síntese organiza evidência real já "
-                    "coletada - não é e não substitui recomendação de compra ou venda.",
-        "tipo_evidencia": TIPO_INSUFICIENTE,
-    })
-
-    return blocos
+    return [bloco_resumo] + secoes_analiticas + [bloco_confianca, bloco_lacunas]
 
 
 # rótulo + cor por tipo de evidência (pedido do redesign institucional:
@@ -420,6 +712,14 @@ def render_conclusao_investimento(ticker: str, prefs: dict, usuario: dict):
 
     with st.container(border=True):
         st.markdown('<div class="painel-titulo">CONCLUSÃO DE INVESTIMENTO</div>', unsafe_allow_html=True)
+        gerado_em = analise.get("gerado_em")
+        if gerado_em:
+            try:
+                quando = gerado_em.astimezone(TZ_SP).strftime("%d/%m/%Y %H:%M")
+            except (AttributeError, ValueError, OverflowError):
+                quando = str(gerado_em)[:16]
+            st.caption(f"Data de referência desta análise: {quando} (horário de Brasília) - dados pontuais "
+                       "podem ser mais antigos, ver aviso de cada seção.")
         for bloco in _montar_conclusao(analise, tese):
             st.markdown(f"**{bloco['pergunta']}**")
             tipo = bloco["tipo_evidencia"]
@@ -719,42 +1019,16 @@ _ROTULOS_METRICAS_EARNINGS = (
 # tabela quando pais_code == "BR" (ver _linhas_metricas_earnings).
 _ROTULO_LUCRO_CONTROLADORA_BR = ("lucro_liquido_controladora", "Lucro líquido - controladora")
 
-_FIM_TRIMESTRE_CIVIL = {1: (3, 31), 2: (6, 30), 3: (9, 30)}
-_INICIO_TRIMESTRE_CIVIL = {1: 1, 2: 4, 3: 7}
 _PREFIXO_MOEDA_EARNINGS = {"REAL": "R$", "USD": "US$"}
 _ESCALA_EARNINGS = {"MIL": 1_000.0, "MILHAO": 1_000_000.0}
 
-
-def _trimestres_candidatos_br(hoje: date, n: int = 6) -> list:
-    """Últimos `n` trimestres CIVIS (1-3, nunca o 4º - cvm_dre.py não
-    calcula Q4 isolado, ver docstring do módulo) com data-fim <= hoje,
-    do mais recente pro mais antigo. Só diz que o trimestre já FECHOU
-    no calendário - quem diz se o número já foi PUBLICADO pela CVM é
-    reviewer.montar_nota_br (disponivel/motivo), nunca esta função."""
-    candidatos = []
-    ano = hoje.year
-    limite = hoje.year - 6
-    while len(candidatos) < n and ano > limite:
-        for tri in (3, 2, 1):
-            mes, dia = _FIM_TRIMESTRE_CIVIL[tri]
-            if date(ano, mes, dia) <= hoje:
-                candidatos.append((ano, tri))
-        ano -= 1
-    return candidatos[:n]
-
-
-def _ultimo_trimestre_civil(hoje: date) -> tuple:
-    """(início, fim) do trimestre civil mais recente já encerrado - só
-    um PONTO DE PARTIDA editável pro seletor de empresas internacionais
-    (o calendário fiscal real da empresa pode ser diferente do civil;
-    reviewer.montar_nota_internacional já documenta que detectar o
-    calendário fiscal automaticamente está fora do escopo desta
-    versão - por isso a UI pede confirmação em vez de assumir)."""
-    ano, tri = _trimestres_candidatos_br(hoje, n=1)[0]
-    mes_fim, dia_fim = _FIM_TRIMESTRE_CIVIL[tri]
-    fim = date(ano, mes_fim, dia_fim)
-    inicio = date(ano, _INICIO_TRIMESTRE_CIVIL[tri], 1)
-    return inicio, fim
+# Movidos pra data/earnings/reviewer.py em 2026-10-30 (evolução da Conclusão
+# de Investimento - data/market_researcher.py também precisa enumerar
+# trimestres civis, sem acoplar em ui/). Alias mantido com o nome privado
+# original - testes existentes (tests/test_analises_earnings_review_ui.py)
+# chamam esses nomes direto neste módulo, zero mudança de comportamento.
+_trimestres_candidatos_br = earnings_reviewer.trimestres_candidatos_br
+_ultimo_trimestre_civil = earnings_reviewer.ultimo_trimestre_civil
 
 
 def _mesmo_dia_ano_anterior(d: date) -> date:

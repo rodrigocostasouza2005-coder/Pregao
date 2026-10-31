@@ -31,9 +31,11 @@ Principios (nunca violados):
   data/market_makers.py): cada bloco degrada sozinho."""
 from datetime import datetime, timezone
 
+import config
 from data import saude_dados
+from data.earnings import reviewer as earnings_reviewer
 from data.market_makers import contexto_ticker
-from data.radar import linha_valuation
+from data.radar import comparaveis_setor, linha_valuation
 from data.research import CASAS
 from data.research.store import listar_itens
 from data.supabase_client import obter_cliente
@@ -157,6 +159,52 @@ def cobertura_cruzada_casas(ticker: str, dias: int = 30) -> dict:
     }
 
 
+def consenso_research(cobertura: dict | None) -> dict:
+    """A partir do dict de cobertura_cruzada_casas, monta o resumo direto
+    pra seção "Consenso de Research" da Conclusão de Investimento:
+    quantas casas cobrem vs. não cobrem, lista por casa (recomendação/
+    preço-alvo/data/link) e divergência (se houver) - nenhum cálculo
+    novo, só reorganiza o que cobertura_cruzada_casas já devolve.
+    `disponivel`=False quando o banco de research está fora do ar
+    (distinto de "disponivel=True, n_casas_cobrindo=0" = banco respondeu
+    e nenhuma casa monitorada publicou). Ausência de cobertura NUNCA é
+    tratada como sinal positivo/negativo aqui - só contagem/fato."""
+    if cobertura is None or cobertura.get("cobertura") is None:
+        return {"disponivel": False, "motivo": "banco de research indisponível nesta checagem."}
+    itens = cobertura.get("cobertura") or []
+    sem_cobertura = cobertura.get("sem_cobertura") or []
+    return {
+        "disponivel": True,
+        "n_casas_cobrindo": len(itens),
+        "n_casas_sem_cobertura": len(sem_cobertura),
+        "casas_sem_cobertura": sem_cobertura,
+        "itens": itens,
+        "divergencia": cobertura.get("divergencia"),
+    }
+
+
+def _pais_code(ticker: str) -> str:
+    try:
+        return "BR" if config.info_ativo(ticker).get("pais") == "Brasil" else "US"
+    except Exception:
+        return "BR"
+
+
+def historico_fundamentos(ticker: str) -> dict:
+    """Série histórica trimestral real (Earnings Reviewer) pra 1
+    ticker - só Brasil nesta versão (ver serie_historica_br). Isolado
+    por try/except (mesmo padrão dos demais blocos deste módulo): uma
+    falha aqui nunca derruba o restante de analise_ticker."""
+    if _pais_code(ticker) != "BR":
+        return {
+            "disponivel": False,
+            "motivo": "série histórica trimestral só cobre empresas brasileiras nesta versão "
+                      "(CVM) - calendário fiscal de empresa internacional não é detectado "
+                      "automaticamente (ver limitações do Earnings Reviewer).",
+        }
+    return earnings_reviewer.serie_historica_br(ticker)
+
+
 # ============================================================
 # ANÁLISE POR TICKER - agregador PURO dos módulos acima + fundamentos
 # (data/radar.py:linha_valuation) - nenhuma consulta nova, nenhum
@@ -170,12 +218,16 @@ def cobertura_cruzada_casas(ticker: str, dias: int = 30) -> dict:
 def analise_ticker(ticker: str, janela: str = "7 DIAS") -> dict:
     """Visão agregada de 1 ticker: fundamentos (linha_valuation),
     catalisadores/mudança de tese/risco de indicador (contexto_ticker,
-    data/market_makers.py) e cobertura de research entre casas
-    (cobertura_cruzada_casas, acima). Cada bloco é None quando a fonte
-    dele falha - nunca interrompe os demais nem inventa valor. `fontes_
-    indisponiveis` lista, por nome, quais blocos falharam nesta chamada
-    (lista vazia = todos os blocos responderam, não necessariamente com
-    dado - um bloco pode responder com tudo None/[] legitimamente)."""
+    data/market_makers.py), cobertura de research entre casas
+    (cobertura_cruzada_casas, acima), histórico trimestral de
+    fundamentos (historico_fundamentos, 2026-10-30) e comparativo
+    setorial de múltiplos (data/radar.py:comparaveis_setor, 2026-10-30 -
+    antes só usado num diálogo isolado em Fundamentos). Cada bloco é
+    None quando a fonte dele falha - nunca interrompe os demais nem
+    inventa valor. `fontes_indisponiveis` lista, por nome, quais blocos
+    falharam nesta chamada (lista vazia = todos os blocos responderam,
+    não necessariamente com dado - um bloco pode responder com tudo
+    None/[] legitimamente)."""
     ticker = (ticker or "").strip().upper()
     fontes_indisponiveis = []
 
@@ -200,6 +252,20 @@ def analise_ticker(ticker: str, janela: str = "7 DIAS") -> dict:
         cobertura = None
         fontes_indisponiveis.append("cobertura_research")
 
+    try:
+        historico = historico_fundamentos(ticker)
+    except Exception as exc:
+        print(f"[market_researcher] histórico de fundamentos indisponível pra {ticker}: {exc!r}")
+        historico = None
+        fontes_indisponiveis.append("historico_fundamentos")
+
+    try:
+        setorial = comparaveis_setor(ticker)
+    except Exception as exc:
+        print(f"[market_researcher] comparativo setorial indisponível pra {ticker}: {exc!r}")
+        setorial = None
+        fontes_indisponiveis.append("comparativo_setorial")
+
     return {
         "ticker": ticker,
         "gerado_em": datetime.now(timezone.utc),
@@ -209,6 +275,8 @@ def analise_ticker(ticker: str, janela: str = "7 DIAS") -> dict:
         "riscos_indicadores": (contexto or {}).get("riscos"),
         "interpretacao_movimento": (contexto or {}).get("interpretacao"),
         "cobertura_research": cobertura,
+        "fundamentos_historicos": historico,
+        "comparativo_setorial": setorial,
         "fontes_indisponiveis": fontes_indisponiveis,
     }
 
