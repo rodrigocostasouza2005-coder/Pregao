@@ -1,5 +1,22 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-30 — RADAR X: inteligência social do X integrada (conector desligado, sem credencial)
+
+- **Novo**: subaba RESEARCH › Radar X (`ui/research_tab.py`,
+  `ui/navegacao.py`) e pacote `data/x_radar/` (universo configurável,
+  classificação via Groq/`data/ia_cache.py`, relevância/credibilidade
+  explicáveis, cruzamento com `cobertura_cruzada_casas`/`obter_noticias`,
+  persistência em `sql/x_radar.sql`). `jobs/coordenador.py` ganhou uma 3ª
+  rotina independente (`radar_x`).
+- **`data/x_signals.py`** (FASE 4 da auditoria 2026-10-09) ganhou conector
+  real (paginação/dedup/rate-limit/validação de credencial), mas
+  **permanece desligado**: não existe `X_BEARER_TOKEN` configurado em
+  nenhum ambiente do projeto. Custo/plano necessário documentado em
+  `docs/x-radar-inteligencia-social-20261030.md` - nenhuma coleta real
+  simulada. Ver `PROGRESSO.md` 2026-10-30 pro relato completo.
+- **Testes**: +59 (pacote `data/x_radar/` + conector) - suíte completa
+  1728 passed, zero regressão.
+
 ## 2026-10-24 — Remoção da aba MARKET MAKERS + reformulação do Morning Call
 
 - **Remoção**: área própria "MARKET MAKERS" (`ui/navegacao.py`) e sua tela
