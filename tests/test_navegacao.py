@@ -19,7 +19,7 @@ from ui.navegacao import AREAS, ROTA_LEGADO
 
 RAIZ = Path(__file__).parent.parent
 
-ORDEM_ESPERADA = ["mercado", "noticias", "radar", "research", "analises", "macro", "setores",
+ORDEM_ESPERADA = ["mercado", "noticias", "radar", "research", "analises", "coordenador", "macro", "setores",
                   "morning-call", "mais"]
 
 
@@ -29,8 +29,8 @@ def _todas_rotas():
 
 def test_ordem_das_areas_principais():
     assert [a.id for a in AREAS] == ORDEM_ESPERADA
-    assert [a.rotulo for a in AREAS][:8] == [
-        "MERCADO", "NOTÍCIAS", "RADAR", "RESEARCH", "ANÁLISES", "MACRO", "SETORES",
+    assert [a.rotulo for a in AREAS][:9] == [
+        "MERCADO", "NOTÍCIAS", "RADAR", "RESEARCH", "ANÁLISES", "COORDENADOR", "MACRO", "SETORES",
         "MORNING CALL",
     ]
 
@@ -42,6 +42,7 @@ def test_subabas_exigidas_pela_arquitetura():
     assert subs["radar"] == ["Alertas", "Carteiras Recomendadas", "Oportunidades", "Acompanhamento", "Preferências"]
     assert subs["research"] == ["Feed", "Casas de Análise", "Radar X", "Minha Tese", "Memória de Research"]
     assert subs["analises"] == ["Empresas", "Fundamentos", "Valuation"]
+    assert subs["coordenador"] == ["Visão Geral", "Especialistas", "Execuções", "Histórico", "Analisar"]
     assert subs["macro"] == ["Indicadores", "Juros", "Câmbio e Commodities", "Calendário Econômico"]
     assert subs["setores"] == ["Mapa Setorial", "Visão por Setor", "Catalisadores"]
     assert subs["morning-call"] == ["Edição Atual", "Relatório Completo", "Histórico", "Preferências"]
@@ -85,7 +86,9 @@ def test_preferencia_antiga_de_abas_esconde_subabas():
     # sobrevive so' com 1 subaba, "research" com 3 (casas/radar-x/
     # memoria), mesmo sem nenhuma aba antiga visivel)
     minimas = navegacao.disponiveis([], eh_admin=False)
-    assert [a.id for a in minimas] == ["radar", "research", "setores", "morning-call", "mais"]
+    # "coordenador" sobrevive tambem (nenhuma subaba depende de aba antiga,
+    # mesmo padrao de "casas"/"radar-x"/"memoria" em research acima).
+    assert [a.id for a in minimas] == ["radar", "research", "coordenador", "setores", "morning-call", "mais"]
     radar_minimo = next(a for a in minimas if a.id == "radar")
     assert [s.id for s in radar_minimo.subabas] == ["preferencias"]
     pesquisa_minima = next(a for a in minimas if a.id == "research")

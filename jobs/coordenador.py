@@ -20,8 +20,19 @@ abria uma aba do Streamlit:
   estiver configurada (caso de hoje, ver data/x_signals.py), devolve
   ok=False com o motivo exato e só registra a tentativa, sem tentar
   nenhuma chamada de rede.
+- data.research.embeddings.indexar_pendentes() (2026-10-31, Coordenador
+  Central Fase E): indexação incremental da Memória de Research (RAG,
+  Fase C) - mesmo padrão isolado, nunca lança. IMPORTANTE (achado de
+  auditoria, 2026-10-31): esta rotina SÓ tem efeito real se
+  GEMINI_API_KEY estiver configurada nos secrets do GitHub Actions
+  (Settings > Secrets and variables > Actions, ou `gh secret set
+  GEMINI_API_KEY`) - a chave já configurada no painel do Streamlit
+  Community Cloud é um cofre DIFERENTE e não é visível aqui. Sem a
+  credencial, indexar_pendentes() já degrada graciosamente (0
+  processados, 0 falhas, nunca lança) - a rodada aparece OK no log, mas
+  não indexa nada de verdade até a credencial ser adicionada aqui.
 
-As três rodam de forma INDEPENDENTE (mesmo princípio de
+As quatro rodam de forma INDEPENDENTE (mesmo princípio de
 data/market_makers.py e data/sintese_mercado.py: falha de uma nunca
 contamina as outras) e cada execução é registrada em
 coordenador_execucoes (sql/coordenador.sql) com duração, resultado e
@@ -31,6 +42,7 @@ import time
 from datetime import datetime, timezone
 
 from data.market_researcher import registrar_achados_atuais
+from data.research.embeddings import indexar_pendentes
 from data.sintese_mercado import obter_sintese_mercado
 from data.supabase_client import obter_cliente
 from data.x_radar import executar_ciclo as executar_ciclo_radar_x
@@ -151,13 +163,44 @@ def _rodar_radar_x(cliente) -> bool:
         return False
 
 
+def _rodar_embeddings(cliente) -> bool:
+    """Indexação incremental da Memória de Research (RAG, Fase C) - ver
+    data/research/embeddings.py:indexar_pendentes (já testado e isolado
+    por item ali, não é um especialista novo aqui, só mais uma rotina
+    agendada, mesmo padrão de backoffice/síntese/radar_x acima). Sem
+    GEMINI_API_KEY configurada nos secrets do GitHub Actions (gap real -
+    ver docstring do módulo), indexar_pendentes() já degrada
+    graciosamente (0 processados, 0 falhas, nunca lança) - conta como
+    OK mesmo sem processar nada de verdade (mesma distinção que
+    radar_x/sintese já fazem pra "indisponível e documentado" não ser
+    um erro de execução do job)."""
+    execucao_id = _iniciar_execucao(cliente, "embeddings")
+    inicio = time.monotonic()
+    try:
+        resultado = indexar_pendentes()
+        duracao_ms = int((time.monotonic() - inicio) * 1000)
+        processados = resultado.get("processados", 0)
+        falhas = resultado.get("falhas", 0)
+        pendentes = resultado.get("pendentes_restantes", 0)
+        status = "ERRO" if (processados == 0 and falhas > 0 and pendentes == 0) else "OK"
+        _concluir_execucao(cliente, execucao_id, status=status, duracao_ms=duracao_ms,
+                            resumo=f"{processados} processado(s), {falhas} falha(s), {pendentes} pendente(s)")
+        return status == "OK"
+    except Exception as exc:
+        duracao_ms = int((time.monotonic() - inicio) * 1000)
+        print(f"[coordenador] embeddings falhou: {exc!r}")
+        _concluir_execucao(cliente, execucao_id, status="ERRO", duracao_ms=duracao_ms, erro=repr(exc))
+        return False
+
+
 def executar() -> int:
-    """Roda backoffice, síntese e radar_x de forma independente (uma
-    falha nunca impede as outras de rodar) - 0 se as três funcionaram
-    (ou, no caso do radar_x, estiverem indisponíveis e documentadas),
-    1 se qualquer uma falhou de fato (visível no log do GitHub Actions;
-    nenhuma envia e-mail nem alerta ninguém, só persiste estado pra
-    interface web ler)."""
+    """Roda backoffice, síntese, radar_x e embeddings de forma
+    independente (uma falha nunca impede as outras de rodar) - 0 se
+    todas funcionaram (ou, no caso do radar_x/embeddings sem
+    credencial, estiverem indisponíveis e documentadas), 1 se qualquer
+    uma falhou de fato (visível no log do GitHub Actions; nenhuma envia
+    e-mail nem alerta ninguém, só persiste estado pra interface web
+    ler)."""
     cliente = obter_cliente()
     if cliente is None:
         print("[coordenador] Supabase indisponível - nada a fazer nesta rodada")
@@ -165,7 +208,8 @@ def executar() -> int:
     ok_backoffice = _rodar_backoffice(cliente)
     ok_sintese = _rodar_sintese(cliente)
     ok_radar_x = _rodar_radar_x(cliente)
-    return 0 if (ok_backoffice and ok_sintese and ok_radar_x) else 1
+    ok_embeddings = _rodar_embeddings(cliente)
+    return 0 if (ok_backoffice and ok_sintese and ok_radar_x and ok_embeddings) else 1
 
 
 if __name__ == "__main__":
