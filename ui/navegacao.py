@@ -85,6 +85,13 @@ AREAS = (
         # data/radar.py, tese propria vem de data/research/tese.py) nao
         # mudou, so' a area que a hospeda.
         Subaba("teses", "Minha Tese", ("RADAR", "RESEARCH")),
+        # Memoria de Research (Equity Research Library, Fase C - RAG,
+        # 2026-10-30): busca em linguagem natural + filtros sobre a
+        # biblioteca PERMANENTE de premissas/projecoes (research_premissas,
+        # ver sql/research_premissas.sql e data/research/embeddings.py) -
+        # conteudo novo, sem aba antiga, sempre visivel (mesmo padrao de
+        # "casas" acima).
+        Subaba("memoria", "Memória de Research"),
     )),
     Area("analises", "ANÁLISES", ":material/query_stats:", (
         Subaba("empresas", "Empresas", ("EQUITY",)),
