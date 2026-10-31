@@ -920,7 +920,7 @@ def render_comparativo_casas(ticker: str, prefs: dict):
                        "permanente de research ainda.")
             return
 
-        st.markdown("**Tabela comparativa (estado mais recente por casa)**")
+        _subtitulo("Tabela comparativa (estado mais recente por casa)")
         linhas = []
         for linha in relatorio["tabela_comparativa"]:
             rec = (f"{linha['recomendacao_original']} ({linha['recomendacao_categoria']})"
@@ -939,7 +939,7 @@ def render_comparativo_casas(ticker: str, prefs: dict):
 
         cols = st.columns(2)
         with cols[0]:
-            st.markdown("**Consenso de recomendação**")
+            _subtitulo("Consenso de recomendação")
             consenso = relatorio["consenso"]
             if consenso["categoria_mais_comum"]:
                 st.markdown(
@@ -956,7 +956,7 @@ def render_comparativo_casas(ticker: str, prefs: dict):
                 st.caption("Empate entre categorias de recomendação — sem consenso claro.")
 
         with cols[1]:
-            st.markdown("**Dispersão de preço-alvo (BRL)**")
+            _subtitulo("Dispersão de preço-alvo (BRL)")
             dispersao = relatorio["dispersao_precos_alvo"]
             if dispersao["amostra_insuficiente"]:
                 st.caption(dispersao["resumo"])
@@ -969,7 +969,7 @@ def render_comparativo_casas(ticker: str, prefs: dict):
 
         divergencias = relatorio["divergencias_premissas"]
         div_rec = divergencias["recomendacao"]
-        st.markdown("**Divergências**")
+        _subtitulo("Divergências")
         if div_rec["numerica"] or div_rec["qualitativa"]:
             partes = []
             if div_rec["numerica"]:
@@ -1000,7 +1000,7 @@ def render_comparativo_casas(ticker: str, prefs: dict):
         else:
             st.caption("Nenhuma divergência de premissas identificada entre as casas.")
 
-        st.markdown("**Revisões recentes / evolução histórica**")
+        _subtitulo("Revisões recentes / evolução histórica")
         revisoes = relatorio["revisoes_recentes"]
         if not revisoes:
             st.caption("Sem evolução histórica disponível pra este ticker.")
@@ -1031,14 +1031,14 @@ def render_comparativo_casas(ticker: str, prefs: dict):
 
         cols2 = st.columns(2)
         with cols2[0]:
-            st.markdown("**Riscos**")
+            _subtitulo("Riscos")
             st.caption(relatorio["riscos"]["motivo"])
         with cols2[1]:
-            st.markdown("**Indicadores adicionais (ROE/ROIC)**")
+            _subtitulo("Indicadores adicionais (ROE/ROIC)")
             st.caption(relatorio["indicadores_adicionais"]["motivo"])
 
         if relatorio.get("pontos_atencao"):
-            st.markdown("**Pontos de atenção**")
+            _subtitulo("Pontos de atenção")
             for aviso in relatorio["pontos_atencao"]:
                 st.caption(f"- {aviso}")
 
@@ -1196,7 +1196,7 @@ def _render_research_e_fatores(ticker: str, fmt: str):
             st.info("O registro mais recente não contém preço-alvo positivo válido. Um alvo histórico anterior não será apresentado como se fosse o atual.")
         st.caption("Fonte estruturada disponível nesta tela: Genial. Não há consenso multi-casa calculado enquanto os alvos comparáveis das demais casas não estiverem integrados.")
         if validos:
-            st.markdown("**Histórico recente de preço-alvo e recomendação**")
+            _subtitulo("Histórico recente de preço-alvo e recomendação")
             linhas = []
             for s in validos:
                 linhas.append({
@@ -1212,7 +1212,7 @@ def _render_research_e_fatores(ticker: str, fmt: str):
         if not fatores:
             st.caption("Ainda não há mapeamento curado de commodities/fatores para este ticker.")
             return
-        st.markdown("**Commodities e fatores relacionados**")
+        _subtitulo("Commodities e fatores relacionados")
         linhas_fatores = []
         for nome, simbolo in fatores:
             if not simbolo:
