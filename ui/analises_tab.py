@@ -19,6 +19,7 @@ import config
 from data.earnings import reviewer as earnings_reviewer
 from data.market_researcher import analise_ticker
 from data.prices import obter_cotacao, obter_indicadores
+from data.research.comparador import montar_relatorio_comparativo
 from data.radar import (
     TIPO_CALCULO, TIPO_ESTIMATIVA_TERCEIRO, TIPO_FATO, TIPO_HIPOTESE, TIPO_INSUFICIENTE,
     comparaveis_setor,
@@ -442,6 +443,203 @@ def render_conclusao_investimento(ticker: str, prefs: dict, usuario: dict):
             )
         else:
             st.caption("Você ainda não registrou uma Tese própria para este ativo — ver RESEARCH › Minha Tese.")
+
+
+# ============================================================
+# COMPARATIVO DE CASAS DE ANÁLISE (Fase D, 2026-10-30)
+#
+# Consome data/research/comparador.py:montar_relatorio_comparativo -
+# le so' a biblioteca PERMANENTE de premissas/projecoes
+# (research_premissas), ja' estruturada por outra pipeline
+# (data/research/resumir.py). Nenhuma chamada de IA nesta integracao de
+# UI (o modulo de origem e' 100% determinístico - ver docstring dele e
+# o teste tests/test_research_comparador.py:test_modulo_nao_importa_
+# nada_de_ia). Reaproveita exatamente o mesmo mecanismo de "ticker em
+# foco" das demais secoes desta aba (parametro `ticker`, vindo de
+# app.py:ticker_selecionado) - nenhum seletor novo e redundante.
+#
+# Riscos e indicadores adicionais (ROE/ROIC) sao gaps HONESTOS da
+# pipeline de extracao atual (nunca inventados) - a secao mostra
+# disponivel=False com o motivo, em vez de omitir ou estimar.
+# ============================================================
+
+@st.cache_data(ttl=90, show_spinner=False)
+def _comparativo_casas_cacheado(ticker: str) -> dict:
+    """Cache na camada de UI (data/research/comparador.py nao importa
+    Streamlit de proposito - usado tambem fora de sessao) - mesmo TTL
+    de _analise_ticker_cacheada acima."""
+    return montar_relatorio_comparativo(ticker)
+
+
+def render_comparativo_casas(ticker: str, prefs: dict):
+    """ANÁLISES › Empresas: comparativo estruturado entre casas de
+    research pro ticker selecionado - estado atual por casa, consenso/
+    dispersao de preco-alvo, divergencias (numerica/qualitativa/
+    premissas), evolucao historica e fontes/evidencias. Cada secao
+    mostra o que existe e declara explicitamente amostra insuficiente/
+    dado ausente - nunca uma conclusao do Pregão nem preco-alvo
+    proprio; preco-alvo/recomendacao exibidos sao sempre ESTIMATIVA DE
+    TERCEIRO (da casa que publicou), em BRL (ver nota de moeda em
+    data/research/comparador.py)."""
+    fmt = prefs["formato_numerico"]
+    try:
+        relatorio = _comparativo_casas_cacheado(ticker)
+    except Exception:
+        st.warning(f"Comparativo de casas de research para {ticker} indisponível agora (fonte não respondeu).")
+        return
+
+    with st.container(border=True):
+        st.markdown('<div class="painel-titulo">COMPARATIVO DE CASAS DE ANÁLISE</div>', unsafe_allow_html=True)
+
+        if not relatorio.get("disponivel"):
+            st.caption(f"Comparativo indisponível agora: {relatorio.get('motivo') or 'banco de research fora do ar'}.")
+            return
+
+        st.markdown(
+            f"<div class='cinza' style='font-size:0.78rem;'>{relatorio['resumo_executivo']}</div>",
+            unsafe_allow_html=True,
+        )
+
+        if not relatorio.get("tabela_comparativa"):
+            st.caption("Nenhuma casa monitorada tem publicação estruturada sobre este ticker na biblioteca "
+                       "permanente de research ainda.")
+            return
+
+        st.markdown("**Tabela comparativa (estado mais recente por casa)**")
+        linhas = []
+        for linha in relatorio["tabela_comparativa"]:
+            rec = (f"{linha['recomendacao_original']} ({linha['recomendacao_categoria']})"
+                   if linha.get("recomendacao_original") else "—")
+            linhas.append({
+                "Casa": linha["casa"],
+                "Data publicação": linha.get("data_publicacao") or "—",
+                "Tipo de documento": linha.get("tipo_documento") or "—",
+                "Recomendação (original/categoria)": rec,
+                "Preço-alvo (BRL)": _fmt_reais(linha.get("preco_alvo"), fmt),
+                "Projeção receita": linha.get("projecao_receita") or "—",
+                "Projeção margem EBITDA": linha.get("projecao_ebitda_margem") or "—",
+                "Projeção lucro": linha.get("projecao_lucro") or "—",
+            })
+        st.dataframe(linhas, hide_index=True, width="stretch")
+
+        cols = st.columns(2)
+        with cols[0]:
+            st.markdown("**Consenso de recomendação**")
+            consenso = relatorio["consenso"]
+            if consenso["categoria_mais_comum"]:
+                st.markdown(
+                    f"{consenso['categoria_mais_comum']} "
+                    f"({consenso['contagem_por_categoria'][consenso['categoria_mais_comum']]} de "
+                    f"{consenso['n_casas_com_recomendacao_classificada']} casa(s) classificada(s))."
+                )
+            elif consenso["amostra_insuficiente"]:
+                st.caption(
+                    f"Amostra insuficiente ({consenso['n_casas_com_recomendacao_classificada']} de "
+                    f"{consenso['n_casas_total']} casa(s) com recomendação classificada; mínimo de 2 exigido)."
+                )
+            else:
+                st.caption("Empate entre categorias de recomendação — sem consenso claro.")
+
+        with cols[1]:
+            st.markdown("**Dispersão de preço-alvo (BRL)**")
+            dispersao = relatorio["dispersao_precos_alvo"]
+            if dispersao["amostra_insuficiente"]:
+                st.caption(dispersao["resumo"])
+            else:
+                st.markdown(
+                    f"Min {_fmt_reais(dispersao['minimo'], fmt)} · Máx {_fmt_reais(dispersao['maximo'], fmt)} · "
+                    f"Média {_fmt_reais(dispersao['media'], fmt)} · Mediana {_fmt_reais(dispersao['mediana'], fmt)}"
+                )
+                st.caption(dispersao["resumo"])
+
+        divergencias = relatorio["divergencias_premissas"]
+        div_rec = divergencias["recomendacao"]
+        st.markdown("**Divergências**")
+        if div_rec["numerica"] or div_rec["qualitativa"]:
+            partes = []
+            if div_rec["numerica"]:
+                partes.append("NUMÉRICA (preços-alvo distantes)")
+            if div_rec["qualitativa"]:
+                partes.append("QUALITATIVA (categorias de recomendação diferentes)")
+            extra = ""
+            if div_rec["casa_mais_otimista"]:
+                extra = (f" Casa mais otimista: {div_rec['casa_mais_otimista']}. Casa mais cautelosa: "
+                         f"{div_rec['casa_mais_cautelosa']} (critério: {div_rec['criterio_otimismo']}).")
+            st.warning(f"Divergência {' e '.join(partes)} entre as casas.{extra}")
+        else:
+            st.caption("Nenhuma divergência numérica ou qualitativa detectada entre as casas com dado suficiente "
+                       "pra comparar.")
+
+        premissas_div = divergencias["premissas"]["premissas_divergentes"]
+        if premissas_div:
+            st.markdown("Premissas mencionadas por algumas casas e não por outras pro mesmo ticker "
+                        "(fato observado, sem inferir o motivo):")
+            for item in premissas_div:
+                st.markdown(
+                    f"- \"{item['premissa']}\" — mencionada por {', '.join(item['casas_que_mencionam'])}; "
+                    f"não mencionada por {', '.join(item['casas_que_nao_mencionam'])}."
+                )
+        elif divergencias["premissas"]["amostra_insuficiente"]:
+            st.caption("Amostra insuficiente pra comparar premissas entre casas (menos de 2 casas com premissas "
+                       "extraídas pro estado mais recente).")
+        else:
+            st.caption("Nenhuma divergência de premissas identificada entre as casas.")
+
+        st.markdown("**Revisões recentes / evolução histórica**")
+        revisoes = relatorio["revisoes_recentes"]
+        if not revisoes:
+            st.caption("Sem evolução histórica disponível pra este ticker.")
+        else:
+            for casa, dados in sorted(revisoes.items()):
+                texto_atual = f"**{casa}** — atual: {dados.get('recomendacao_atual') or '—'}"
+                if dados.get("preco_alvo_atual") is not None:
+                    texto_atual += f" · {_fmt_reais(dados['preco_alvo_atual'], fmt)}"
+                if dados.get("data_publicacao_atual"):
+                    texto_atual += f" ({dados['data_publicacao_atual']})"
+                st.markdown(texto_atual)
+                if dados.get("mudou_recomendacao_ou_alvo_hoje"):
+                    st.caption("Mudança de recomendação/preço-alvo persistida hoje (ver histórico estruturado).")
+                publicacoes_antigas = dados.get("publicacoes_historicas") or []
+                if publicacoes_antigas:
+                    with st.expander(f"Publicações anteriores de {casa} ({len(publicacoes_antigas)}) — histórico, nunca o estado atual"):
+                        for pub in publicacoes_antigas:
+                            rec = f" · {pub['recomendacao']}" if pub.get("recomendacao") else ""
+                            alvo = f" · {_fmt_reais(pub['preco_alvo'], fmt)}" if pub.get("preco_alvo") is not None else ""
+                            st.markdown(
+                                f"- {pub.get('data_publicacao') or '—'}{rec}{alvo}: "
+                                f"[{pub.get('titulo') or 'ver relatório'}]({pub.get('link')})"
+                            )
+                if not dados.get("historico_estruturado_disponivel"):
+                    st.caption(f"{casa}: sem histórico estruturado de mudança de recomendação persistido "
+                               "(ver data/research/historico.py) — não é erro, só ausência real dessa fonte "
+                               "específica pra esta casa hoje.")
+
+        cols2 = st.columns(2)
+        with cols2[0]:
+            st.markdown("**Riscos**")
+            st.caption(relatorio["riscos"]["motivo"])
+        with cols2[1]:
+            st.markdown("**Indicadores adicionais (ROE/ROIC)**")
+            st.caption(relatorio["indicadores_adicionais"]["motivo"])
+
+        if relatorio.get("pontos_atencao"):
+            st.markdown("**Pontos de atenção**")
+            for aviso in relatorio["pontos_atencao"]:
+                st.caption(f"- {aviso}")
+
+        if relatorio.get("fontes_evidencias"):
+            with st.expander(f"Fontes/evidências ({len(relatorio['fontes_evidencias'])})"):
+                for fonte in relatorio["fontes_evidencias"]:
+                    st.markdown(
+                        f"- **{fonte['casa']}** ({fonte.get('data_publicacao') or '—'}): "
+                        f"[{fonte.get('titulo') or 'ver relatório'}]({fonte.get('link')})"
+                    )
+
+        st.caption(
+            "Comparativo determinístico sobre a biblioteca permanente de research (research_premissas) — "
+            "nenhuma recomendação própria do PREGÃO, nenhuma chamada de IA nesta integração. Preço-alvo em "
+            "BRL, sempre ESTIMATIVA DE TERCEIRO (da casa que publicou)."
+        )
 
 
 def _rotulo_coleta(ind: dict) -> str | None:

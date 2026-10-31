@@ -1155,6 +1155,8 @@ if rota == ("analises", "empresas"):
 
             analises_tab.render_revisao_resultados(ticker_selecionado, prefs)
 
+            analises_tab.render_comparativo_casas(ticker_selecionado, prefs)
+
             analises_tab.render_conclusao_investimento(ticker_selecionado, prefs, usuario)
 
 
