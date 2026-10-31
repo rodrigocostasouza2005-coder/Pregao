@@ -638,6 +638,7 @@ def render_fundamentos(prefs: dict):
             ("VALOR DE MERCADO", "valor_mercado", vm), ("P/L", "pl", mult), ("P/VP", "pvp", mult),
             ("DY 12M", "dividend_yield", pct), ("ROE", "roe", pct), ("M. LÍQUIDA", "margem_liquida", pct),
             ("M. OPERAC.", "margem_operacional", pct), ("M. EBITDA", "margem_ebitda", pct),
+            ("FLUXO DE CAIXA LIVRE", "fluxo_caixa_livre", vm),
             ("DÍV. LÍQUIDA", "divida_liquida", vm),
             ("DL/EBITDA", "divida_liquida_ebitda", lambda v: config.formatar_numero(v, 1, fmt) + "x"),
         ]

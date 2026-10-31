@@ -619,6 +619,12 @@ def obter_indicadores(ticker: str) -> dict:
         "margem_ebitda": _pct_ou_none(info.get("ebitdaMargins")),
         "divida_liquida": divida_liquida,
         "divida_liquida_ebitda": divida_liquida / ebitda if divida_liquida is not None and ebitda else None,
+        # fluxo_caixa_livre (2026-10-30, gap do pedido de redesign "ANÁLISES >
+        # Fluxo de caixa" - antes nao existia NENHUM campo de caixa): ja vem no
+        # mesmo tk.info ja' buscado acima, zero requisicao nova. Validado contra
+        # PETR4 real neste sandbox (freeCashflow ~R$94,2bi, ordem de grandeza
+        # plausivel pra uma empresa desse porte) antes de confiar no campo.
+        "fluxo_caixa_livre": info.get("freeCashflow"),
     }
 
     cache_fallback = _ultimo_indicadores_valido()
