@@ -110,6 +110,17 @@ def test_10_formatar_valor_mercado_trilhoes_nao_quebra_br():
     _checar("10b BRL trilhoes (mesma faixa, moeda default)", config.formatar_valor_mercado(1_200_000_000_000) == "R$ 1,2 tri")
 
 
+def test_11_formatar_valor_mercado_negativo_compacta_igual_ao_positivo():
+    """Achado real (2026-10-30, ao expor fluxo de caixa livre em ANALISES
+    - campo onde negativo e' comum, diferente de valor_mercado que so' e'
+    negativo por erro): antes, um valor negativo nunca batia nenhuma
+    faixa >= (ex: -2bi < 1mi) e saia cru ('R$ -2000000000' em vez de
+    '-R$ 2,0 bi')."""
+    _checar("11a bilhoes negativo", config.formatar_valor_mercado(-2_000_000_000) == "-R$ 2,0 bi")
+    _checar("11b milhoes negativo", config.formatar_valor_mercado(-45_200_000) == "-R$ 45,2 mi")
+    _checar("11c abaixo de 1mi negativo (sem sufixo)", config.formatar_valor_mercado(-500_000) == "-R$ 500.000")
+
+
 # ============================================================
 # 4. beta usa o indice de referencia certo por mercado
 # ============================================================

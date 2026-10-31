@@ -954,6 +954,7 @@ if rota == ("analises", "empresas"):
                         <th class="cinza" title="Lucro liquido dividido pela receita liquida - quanto sobra de cada R$ 1 vendido, ja descontado tudo">MARGEM LÍQUIDA</th>
                         <th class="cinza" title="Lucro operacional dividido pela receita liquida - rentabilidade da operacao, antes de juros e impostos">MARGEM OPERACIONAL</th>
                         <th class="cinza" title="EBITDA dividido pela receita liquida - geracao de caixa operacional antes de juros, impostos, depreciacao e amortizacao. Nao se aplica a bancos/seguradoras (sem EBITDA tradicional)">MARGEM EBITDA</th>
+                        <th class="cinza" title="Caixa gerado pela operacao menos investimentos em capital (capex) nos ultimos 12 meses - o que sobra de verdade pra pagar divida, dividendo ou recomprar acao. Negativo e' comum em empresa em fase de expansao, nao e' erro">FLUXO DE CAIXA LIVRE</th>
                         <th class="cinza" title="Divida total menos caixa disponivel. Entre parenteses: quantos anos de EBITDA seriam necessarios pra quitar a divida liquida (quanto menor, melhor)">DÍVIDA LÍQUIDA</th>
                     </tr></thead>
                     <tbody><tr>
@@ -961,6 +962,7 @@ if rota == ("analises", "empresas"):
                         <td class="neutro">{config.formatar_numero(ind['margem_liquida'], 2, fmt) + '%' if ind['margem_liquida'] is not None else '—'}</td>
                         <td class="neutro">{config.formatar_numero(ind['margem_operacional'], 2, fmt) + '%' if ind['margem_operacional'] is not None else '—'}</td>
                         <td class="neutro">{config.formatar_numero(ind['margem_ebitda'], 2, fmt) + '%' if ind['margem_ebitda'] is not None else '—'}</td>
+                        <td class="neutro">{config.formatar_valor_mercado(ind['fluxo_caixa_livre'], fmt)}</td>
                         <td class="neutro">{config.formatar_valor_mercado(ind['divida_liquida'], fmt)}{f" ({config.formatar_numero(ind['divida_liquida_ebitda'], 1, fmt)}x EBITDA)" if ind['divida_liquida_ebitda'] is not None else ""}</td>
                     </tr></tbody>
                     </table>
