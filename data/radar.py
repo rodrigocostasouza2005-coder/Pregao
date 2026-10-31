@@ -265,6 +265,16 @@ def _indicadores_desatualizados(indicadores: dict) -> bool:
     return (datetime.now(_TZ_SP) - dt) > timedelta(hours=24)
 
 
+def _ev_ebitda(valor_mercado, divida_liquida, ebitda):
+    """EV/EBITDA = (valor de mercado + dívida líquida) / EBITDA - CÁLCULO INTERNO do PREGÃO
+    (nenhuma fonte reporta esse múltiplo pronto), nunca TIPO_FATO. None se faltar qualquer uma
+    das três entradas ou se EBITDA for <= 0 (múltiplo não é comparável com EBITDA negativo,
+    mesmo princípio já aplicado a P/L negativo em _alertas_qualidade)."""
+    if valor_mercado is None or divida_liquida is None or not ebitda or ebitda <= 0:
+        return None
+    return (valor_mercado + divida_liquida) / ebitda
+
+
 @st.cache_data(ttl=90, show_spinner=False)
 def linha_valuation(ticker: str) -> dict:
     """1 linha da tabela de Valuation Radar - só dados rastreáveis
@@ -291,6 +301,13 @@ def linha_valuation(ticker: str) -> dict:
         "margem_liquida": ind.get("margem_liquida"),
         "divida_liquida_ebitda": ind.get("divida_liquida_ebitda"),
         "valor_mercado": ind.get("valor_mercado"),
+        "ebitda": ind.get("ebitda"),
+        "ev_ebitda": _ev_ebitda(ind.get("valor_mercado"), ind.get("divida_liquida"), ind.get("ebitda")),
+        # ponto atual (yfinance), sem serie historica - habilita o DCF da
+        # Conclusao de Investimento (ui/analises_tab.py:_dcf_calculo) so'
+        # quando o usuario tambem informar taxa de crescimento/desconto;
+        # nunca usado como premissa por si so'.
+        "fluxo_caixa_livre": ind.get("fluxo_caixa_livre"),
         "desatualizado": _indicadores_desatualizados(ind),
         "alerta_qualidade": _alertas_qualidade(ind),
     }
