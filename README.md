@@ -45,6 +45,7 @@ Tabelas usadas (rodar os `.sql` correspondentes uma vez no SQL Editor do Supabas
 | `sql/calendario_snapshot.sql` | `calendario_snapshot` | snapshot do calendário (lido pela UI, escrito pelo coletor) |
 | `sql/ia_cache.sql` | `resumos_ia_cache` | cache global de resumos de IA |
 | `sql/coordenador.sql` | `coordenador_execucoes` | histórico de rodadas do job `jobs/coordenador.py` (backoffice/síntese/radar_x) |
+| `sql/coletor_checkpoints.sql` | `coletor_checkpoints` | rotação do CALENDÁRIO (RI/NEWS por ticker) avança pelo trabalho real feito, não mais +1 fixo por execução — ver `coletor_local.py:_ler_checkpoint_calendario` |
 | `sql/x_radar.sql` | `x_sinais`, `x_sinais_historico`, `x_radar_consumo` | RADAR X — sinais do X classificados, histórico de reclassificação, controle de consumo da API |
 
 (`sql/cvm.sql` é só histórico — a fase CVM acabou reaproveitando `research_itens`, não precisa ser rodado.)
