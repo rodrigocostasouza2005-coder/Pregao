@@ -20,7 +20,6 @@ reaproveitadas diretamente (mesmo cache, sem nenhuma consulta nova)."""
 import html
 from datetime import datetime, timezone
 
-import plotly.graph_objects as go
 import streamlit as st
 
 import config
@@ -32,16 +31,14 @@ from data.mercado import (
     obter_mercados_globais,
 )
 from data.news import obter_top_mercado_tudo
-from data.prices import (
-    obter_cotacao, obter_cotacao_indice, obter_historico, obter_historico_intraday, rotulo_cotacao_em_cache,
-)
+from data.prices import obter_cotacao, obter_cotacao_indice, rotulo_cotacao_em_cache
 from data.research import preparar_leitura
 from data.sintese_mercado import obter_sintese_mercado
 from ui import graficos
 from ui.calendario_tab import _painel_proximos_watchlist
 from ui.mercado_tab import _painel_globais
 from ui.news_tab import (
-    _CLASSE_SELO, _fmt_hora, _injetar_css, _plural_fontes, _texto_tag, _tooltip_regras, _truncar,
+    _abrir_card, _CLASSE_SELO, _fmt_hora, _injetar_css, _plural_fontes, _texto_tag, _tooltip_regras, _truncar,
 )
 from ui.research_tab import _casas_ativas
 
@@ -315,75 +312,37 @@ def _painel_para_investigar(prefs):
     )
 
 
-def _painel_ibov_grafico(prefs):
-    st.markdown('<div class="painel-titulo">IBOVESPA</div>', unsafe_allow_html=True)
+def _painel_grafico_principal(prefs):
+    """Gráfico principal da VISÃO GERAL - seleção de ativo funcional
+    (IBOVESPA + watchlist), candle/linha/área conforme CONFIG e volume
+    integrado, reaproveitando o mesmo componente da aba ANÁLISES >
+    Empresas (ui.graficos.renderizar_grafico_preco, extraído de lá em
+    2026-10-30) - zero lógica de gráfico duplicada entre as duas telas.
+    Antes deste redesign o gráfico era fixo no Ibovespa, só linha, sem
+    volume - essa seleção resolve isso."""
     tema = _tema_atual(prefs)
+    watchlist = list(prefs.get("watchlist") or [])
+    opcoes = ["IBOVESPA"] + [t for t in watchlist if t != "IBOVESPA"]
 
-    padrao = st.session_state.get("vg_periodo_ibov_valido", "6M")
-    if padrao not in _PERIODOS_IBOV:
-        padrao = "6M"
-    sel = st.segmented_control(
-        "Período", _PERIODOS_IBOV, default=padrao, label_visibility="collapsed", key="vg_periodo_ibov",
-    )
-    periodo = sel or padrao
-    st.session_state["vg_periodo_ibov_valido"] = periodo
+    padrao = st.session_state.get("vg_ticker_grafico_valido", "IBOVESPA")
+    if padrao not in opcoes:
+        padrao = "IBOVESPA"
 
-    # causa raiz real (2026-10-08): _PERIODOS_IBOV inclui "1D"/"1S", mas so'
-    # PERIODOS_GRAFICO (periodos diarios/semanais) tem esses rotulos - os
-    # intradiarios sao' outra tabela (PERIODOS_INTRADIARIOS / obter_historico_
-    # intraday), igual ja' tratado no grafico de MERCADO (app.py). Sem esse
-    # branch, selecionar "1D"/"1S" aqui ia pra obter_historico() e estourava
-    # KeyError em PERIODOS_GRAFICO[periodo_label] (data/prices.py).
-    if periodo in config.PERIODOS_INTRADIARIOS:
-        df = obter_historico_intraday(config.SIMBOLO_IBOVESPA, periodo)
-    else:
-        df = obter_historico(config.SIMBOLO_IBOVESPA, periodo)
-    if df is None or df.empty:
-        st.warning("Não foi possível obter o histórico do Ibovespa.")
-        return
-
-    fig = go.Figure(go.Scatter(
-        x=df["Data"], y=df["Close"], mode="lines",
-        line=dict(color=tema["destaque"], width=1.8), fill="tozeroy",
-        fillcolor=tema["destaque"] + "18",
-    ))
-    fig.update_layout(
-        template="plotly_dark", paper_bgcolor=tema["fundo"], plot_bgcolor=tema["fundo"],
-        font=dict(color=tema["cinza"], family="IBM Plex Mono", size=11),
-        height=300, margin=dict(l=10, r=10, t=10, b=10), showlegend=False,
-    )
-    # tema["borda"] (nao "#1A1A1A" fixo, achado da auditoria visual
-    # 2026-10-16): acompanha o tema CLARO tambem, nao so' os temas escuros.
-    fig.update_xaxes(gridcolor=tema["borda"])
-    fig.update_yaxes(gridcolor=tema["borda"])
-    chave = graficos.zoom_key("vg_ibov", periodo)
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave)
-
-    # estatisticas do periodo (NOVO, redesign terminal): reaproveita o
-    # MESMO df ja' buscado pro grafico acima - zero consulta nova.
-    if not df.empty:
-        abertura = float(df["Close"].iloc[0])
-        maxima = float(df["Close"].max())
-        minima = float(df["Close"].min())
-        var_periodo = (float(df["Close"].iloc[-1]) - abertura) / abertura * 100 if abertura else None
-        cls_var = "alta" if (var_periodo or 0) >= 0 else "baixa"
-        stats = [
-            ("INÍCIO DO PERÍODO", config.formatar_numero(abertura, 0, prefs["formato_numerico"]), "neutro"),
-            ("MÁXIMA", config.formatar_numero(maxima, 0, prefs["formato_numerico"]), "neutro"),
-            ("MÍNIMA", config.formatar_numero(minima, 0, prefs["formato_numerico"]), "neutro"),
-        ]
-        if var_periodo is not None:
-            stats.append(("VARIAÇÃO NO PERÍODO", _fmt_pct(var_periodo, prefs), cls_var))
-        blocos = [
-            f"<div style='margin-right:1.3rem;'><div class='cinza' style='font-size:0.6rem;'>{rot}</div>"
-            f"<div class='{cls}' style='font-size:0.76rem; font-weight:700; margin-top:0.1rem;'>{val}</div></div>"
-            for rot, val, cls in stats
-        ]
-        st.markdown(
-            f"<div style='display:flex; flex-wrap:wrap; margin-top:0.5rem; padding-top:0.5rem; "
-            f"border-top:1px solid var(--borda);'>{''.join(blocos)}</div>",
-            unsafe_allow_html=True,
+    col_titulo, col_sel = st.columns([0.5, 0.5])
+    with col_titulo:
+        st.markdown('<div class="painel-titulo">GRÁFICO</div>', unsafe_allow_html=True)
+    with col_sel:
+        ticker = st.selectbox(
+            "Ativo", opcoes, index=opcoes.index(padrao), label_visibility="collapsed", key="vg_ticker_grafico",
         )
+    st.session_state["vg_ticker_grafico_valido"] = ticker
+    simbolo = config.SIMBOLO_IBOVESPA if ticker == "IBOVESPA" else ticker
+
+    graficos.renderizar_grafico_preco(
+        simbolo, prefs, tema, key_prefix="vg_grafico",
+        periodos=_PERIODOS_IBOV, periodo_padrao="6M", altura=320,
+        permitir_comparar_ibov=False, permitir_mm=False, mostrar_stats_periodo=True,
+    )
 
 
 # ===================== grade de exploração =====================
@@ -408,10 +367,11 @@ def _painel_altas_baixas_resumo(prefs):
         linhas = []
         for p in papeis:
             largura = max(8, round(abs(p["variacao_pct"]) / maior * 100))
+            link_ticker = html.escape(p["ticker"], quote=True)
             linhas.append(
                 f"<div style='padding:0.16rem 0; white-space:nowrap;'>"
                 f"{_badge_ticker(p['ticker'], tema, '1.3rem')}"
-                f"<span style='font-weight:600; font-size:0.72rem;'>{p['ticker']}</span>"
+                f"<a href='?ticker={link_ticker}' class='vg-ticker-link' style='font-size:0.72rem;'>{p['ticker']}</a>"
                 f"<span class='{cls}' style='float:right; font-size:0.72rem;'>{_fmt_pct(p['variacao_pct'], prefs)}</span>"
                 f"<div style='height:2px; background:var(--borda); margin-top:0.2rem;'>"
                 f"<div style='height:100%; width:{largura}%; background:{cor};'></div></div></div>"
@@ -435,7 +395,15 @@ def _painel_noticias_resumo(prefs):
     início da manchete - texto ilegível. Esta versão é 1 bloco HTML
     empilhado por item (sem múltiplas colunas), mesma função de dado
     (obter_top_mercado_tudo) e mesmos campos/selo já usados lá - zero
-    dado novo, só layout diferente pra caber estreito."""
+    dado novo, só layout diferente pra caber estreito.
+
+    Achado real (2026-10-30): a manchete era um <a href target=_blank>
+    puro - abria a fonte direto, sem passar pelo card de resumo por IA
+    que o resto do projeto usa (NEWS/TOP MERCADO/EQUITY, via
+    ui.news_tab._abrir_card, @st.dialog). Trocado por st.button (mesmo
+    mecanismo de clique-abre-card de _linha_noticia) - o link direto pra
+    fonte continua disponível, só que agora como ícone separado (↗),
+    igual já é lá."""
     _injetar_css()
     st.markdown('<div class="painel-titulo">DESTAQUES DO DIA <span class="cinza" style="font-size:0.68rem;font-weight:400;">ÚLTIMAS 4</span></div>', unsafe_allow_html=True)
     itens = obter_top_mercado_tudo("TODOS")
@@ -444,22 +412,33 @@ def _painel_noticias_resumo(prefs):
         return
     # A visão geral é um resumo executivo, não o feed completo: quatro manchetes
     # no máximo, sem texto longo nem contexto extra. O feed completo fica em NEWS.
-    blocos = []
-    for n in itens[:_QTD_NOTICIAS]:
+    watchlist = prefs.get("watchlist") or []
+    for idx, n in enumerate(itens[:_QTD_NOTICIAS]):
         classe_selo = _CLASSE_SELO.get(n["selo"], "selo-naoconfirmada")
         tooltip = html.escape(_tooltip_regras(n))
-        titulo = html.escape(_truncar(n["titulo"], 68))
-        blocos.append(
-            f"<div style='padding:0.4rem 0; border-bottom:1px solid var(--borda);'>"
+        titulo = _truncar(n["titulo"], 68)
+        st.markdown(
+            f"<div style='margin:0.6rem 0 0.4rem 0; line-height:1;'>"
             f"<span class='selo-tag {classe_selo}' title='{tooltip}' style='font-size:0.58rem;'>"
-            f"{_texto_tag(n)}</span>"
-            f"<a href='{n['link']}' target='_blank' style='display:block; margin-top:0.25rem; "
-            f"font-size:0.76rem; font-weight:600; color:var(--neutro); text-decoration:none; "
-            f"line-height:1.3;'>{titulo}</a>"
-            f"<div class='cinza' style='font-size:0.64rem; margin-top:0.15rem;'>"
-            f"{_fmt_hora(n['data'])} · {_plural_fontes(n['fontes_count'])}</div></div>"
+            f"{_texto_tag(n)}</span></div>",
+            unsafe_allow_html=True,
         )
-    st.markdown("".join(blocos), unsafe_allow_html=True)
+        col_manchete, col_abrir = st.columns([0.88, 0.12], gap="small")
+        with col_manchete:
+            chave_botao = f"vg-manchete-{idx}-{abs(hash(n['link']))}"
+            if st.button(titulo, key=chave_botao, width="stretch"):
+                _abrir_card(n, watchlist)
+        with col_abrir:
+            st.markdown(
+                f"<a class='w-abrir-link' href='{html.escape(n['link'])}' target='_blank' "
+                f"rel='noopener' title='Abrir matéria na fonte'>↗</a>",
+                unsafe_allow_html=True,
+            )
+        st.markdown(
+            f"<div class='cinza' style='font-size:0.64rem; margin-top:0.15rem; padding-bottom:0.25rem; "
+            f"border-bottom:1px solid var(--borda);'>{_fmt_hora(n['data'])} · {_plural_fontes(n['fontes_count'])}</div>",
+            unsafe_allow_html=True,
+        )
 
 
 def _painel_mapa_setorial_compacto(prefs):
@@ -506,12 +485,16 @@ def _painel_mapa_setorial_compacto(prefs):
 # ===================== desempenho + agenda/teses =====================
 
 def _painel_desempenho_tabela(prefs):
-    """"Desempenho do Ibovespa" - tabela com Ativo/Setor/Preço/Var.%/
-    Volume pros papéis mais negociados do dia. Mesma função de dado de
-    MERCADO › PAINEL (obter_mais_negociados) - Empresa vem de mapa
-    estático já existente (config.TICKER_NOME), setor já vem no próprio
-    dict - nenhum dado novo, nenhuma consulta nova."""
-    st.markdown('<div class="painel-titulo">DESEMPENHO DO IBOVESPA</div>', unsafe_allow_html=True)
+    """3º ranking (ao lado de altas/baixas em _painel_altas_baixas_resumo):
+    maior volume financeiro real do dia, não contagem de negócios - mesma
+    função de dado de MERCADO › PAINEL (obter_mais_negociados), já
+    ordenada por volume financeiro na origem. Renomeado de "Desempenho do
+    Ibovespa" pra "Mais Negociados (Volume)" em 2026-10-30 - o rótulo
+    antigo não deixava claro que isto é o ranking de volume pedido no
+    spec de redesign, não uma visão geral genérica do índice. Empresa vem
+    de mapa estático já existente (config.TICKER_NOME), setor já vem no
+    próprio dict - nenhum dado novo, nenhuma consulta nova."""
+    st.markdown('<div class="painel-titulo">MAIS NEGOCIADOS (VOLUME)</div>', unsafe_allow_html=True)
     tema = _tema_atual(prefs)
     papeis = obter_mais_negociados(6)
     if not papeis:
@@ -528,10 +511,12 @@ def _painel_desempenho_tabela(prefs):
     for p in papeis:
         cls = "alta" if p["variacao_pct"] >= 0 else "baixa"
         nome = config.TICKER_NOME.get(p["ticker"], p["ticker"])
+        link_ticker = html.escape(p["ticker"], quote=True)
         linhas.append(
             f"<tr style='font-size:0.76rem;'>"
             f"<td style='padding:0.2rem 0.3rem 0.2rem 0; white-space:nowrap;'>"
-            f"{_badge_ticker(p['ticker'], tema)}<b>{p['ticker']}</b> "
+            f"{_badge_ticker(p['ticker'], tema)}"
+            f"<a href='?ticker={link_ticker}' class='vg-ticker-link'>{p['ticker']}</a> "
             f"<span class='cinza' style='font-size:0.64rem;'>{html.escape(nome)}</span></td>"
             f"<td style='padding:0.2rem 0.3rem;' class='cinza'>{html.escape(p['setor'])}</td>"
             f"<td style='padding:0.2rem 0.3rem; text-align:right;' class='neutro'>"
@@ -610,7 +595,13 @@ def _painel_watchlist_compacta(prefs):
     if not watchlist:
         st.markdown("<div class='cinza' style='font-size:0.78rem;'>Adicione tickers na barra lateral.</div>", unsafe_allow_html=True)
         return
-    linhas = []
+    linhas = [
+        "<tr style='font-size:0.6rem; color:var(--cinza);'>"
+        "<td style='padding:0 0.4rem 0.25rem 0;'>ATIVO</td>"
+        "<td style='padding:0 0.4rem 0.25rem; text-align:right;'>PREÇO</td>"
+        "<td style='padding:0 0.4rem 0.25rem; text-align:right;'>VAR. %</td>"
+        "<td style='padding:0 0 0.25rem 0.4rem; text-align:right;'>VOL. (R$ MI)</td></tr>"
+    ]
     # obter_cotacoes_lote (N+1 real corrigido, 2026-10-08): 1 UNICA
     # requisicao em lote pra watchlist inteira, em vez de 1
     # yf.Ticker().fast_info POR TICKER (obter_cotacao) - com watchlist
@@ -619,14 +610,23 @@ def _painel_watchlist_compacta(prefs):
     cotacoes = obter_cotacoes_lote(tuple(watchlist))
     for t in watchlist:
         cot = cotacoes.get(t, {"erro": "sem dado"})
+        link_ticker = html.escape(t, quote=True)
         if cot.get("erro"):
-            linhas.append(f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>{t}</td><td colspan='2' class='cinza'>—</td></tr>")
+            linhas.append(
+                f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>"
+                f"<a href='?ticker={link_ticker}' class='vg-ticker-link'>{html.escape(t)}</a></td>"
+                f"<td colspan='3' class='cinza'>—</td></tr>"
+            )
             continue
         cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
+        vol_mi = cot.get("volume_financeiro")
+        vol_fmt = config.formatar_numero(vol_mi / 1_000_000, 1, prefs["formato_numerico"]) if vol_mi else "—"
         linhas.append(
-            f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'><span style='color:var(--destaque); font-weight:600;'>{t}</span></td>"
+            f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>"
+            f"<a href='?ticker={link_ticker}' class='vg-ticker-link'>{html.escape(t)}</a></td>"
             f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>R$ {config.formatar_numero(cot['preco'], 2, prefs['formato_numerico'])}</td>"
-            f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='{cls}'>{_fmt_pct(cot['variacao_pct'], prefs)}</td></tr>"
+            f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='{cls}'>{_fmt_pct(cot['variacao_pct'], prefs)}</td>"
+            f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='neutro'>{vol_fmt}</td></tr>"
         )
     st.markdown(f"<table style='width:100%; font-size:0.8rem; border-collapse:collapse;'>{''.join(linhas)}</table>", unsafe_allow_html=True)
 
@@ -657,7 +657,7 @@ def render_visao_geral(prefs: dict, persistir_fn=None):
         col_grafico, col_investigar = st.columns([0.7, 0.3], gap="small")
         with col_grafico:
             with st.container(border=True):
-                _painel_ibov_grafico(prefs)
+                _painel_grafico_principal(prefs)
         with col_investigar:
             with st.container(border=True):
                 _painel_para_investigar(prefs)

@@ -365,6 +365,19 @@ GROQ_MODELO_PADRAO = "openai/gpt-oss-20b"
 # do modelo principal.
 GROQ_MODELO_FALLBACK = "openai/gpt-oss-120b"
 GROQ_REASONING_EFFORT = "low"
+# --- Gemini: usado SO pra embeddings da busca semantica da MEMORIA DE
+# RESEARCH (RAG, Fase C do Equity Research Library, 2026-10-30) - ver
+# data/research/embeddings.py e obter_credenciais_gemini() abaixo. REST
+# puro (so' `requests`, ja' dependencia do projeto - zero SDK novo),
+# endpoint confirmado na doc oficial (ai.google.dev/api/embeddings):
+# https://generativelanguage.googleapis.com/v1beta/models/{modelo}:embedContent,
+# header de autenticacao `x-goog-api-key`. Dimensao fixa 768
+# (`output_dimensionality` no payload) - precisa bater com o `vector(768)`
+# de sql/research_embeddings.sql; mudar aqui sem migrar a coluna quebra a
+# gravacao silenciosamente (payload com tamanho de vetor diferente da
+# coluna). Sobrescrevivel via st.secrets["gemini"]["modelo"].
+GEMINI_MODELO_EMBEDDING_PADRAO = "gemini-embedding-001"
+GEMINI_EMBEDDING_DIMENSAO = 768
 # 900, nao 400: o resumo do research virou um briefing de varias secoes
 # (CONTEXTO/MERCADO/DRIVERS/IMPACTOS/ATENCAO, ate ~250 palavras no caso de
 # Morning Call/research completo - ver data/research/resumir.py), nao
@@ -386,6 +399,33 @@ def obter_modelo_groq_fallback() -> str:
         return st.secrets.get("groq", {}).get("modelo_fallback") or GROQ_MODELO_FALLBACK
     except Exception:
         return GROQ_MODELO_FALLBACK
+
+
+def obter_credenciais_gemini() -> tuple:
+    """(api_key, modelo) do Google Gemini, lidos num lugar so' - usado por
+    data/research/embeddings.py pra gerar embeddings da busca semantica da
+    MEMORIA DE RESEARCH (RAG, Fase C do Equity Research Library,
+    2026-10-30). Groq (unico provedor de IA ja usado no projeto) NAO tem
+    endpoint de embeddings - confirmado na documentacao oficial - por isso
+    esta e' uma credencial NOVA, separada de obter_credenciais_groq().
+
+    Mesmo padrao exato de obter_credenciais_groq(): api_key vem primeiro
+    da variavel de ambiente GEMINI_API_KEY (tarefas externas sem
+    Streamlit), com fallback pra st.secrets["gemini"]["api_key"]
+    (configuracao do app Streamlit); nunca lanca excecao. api_key vem
+    None se nao configurada em lugar nenhum - quem chama (gerar_embedding)
+    trata isso como "busca semantica indisponivel", nunca quebra o app;
+    a MEMORIA DE RESEARCH degrada pra busca so' lexical/estrutural."""
+    api_key = os.getenv("GEMINI_API_KEY", "").strip() or None
+    modelo = None
+    try:
+        import streamlit as st
+        secao_gemini = st.secrets.get("gemini", {})
+        api_key = api_key or secao_gemini.get("api_key")
+        modelo = secao_gemini.get("modelo")
+    except Exception:
+        pass
+    return api_key, (modelo or GEMINI_MODELO_EMBEDDING_PADRAO)
 
 
 def obter_credenciais_groq() -> tuple:
@@ -418,6 +458,29 @@ def obter_credenciais_groq() -> tuple:
     except Exception:
         pass
     return api_key, (modelo or GROQ_MODELO_PADRAO)
+
+
+def obter_credencial_x() -> str | None:
+    """Bearer token da API do X (data/x_signals.py), lido num lugar so -
+    mesmo padrao de obter_credenciais_groq() acima. Variavel de ambiente
+    X_BEARER_TOKEN primeiro (tarefas externas sem Streamlit, ex: GitHub
+    Actions), com fallback pra st.secrets["x"]["bearer_token"] ou
+    st.secrets["X_BEARER_TOKEN"] na raiz. None se nao configurada em
+    lugar nenhum - NUNCA retorna string vazia (quem chama trata None
+    como "sem credencial", nunca tenta usar "" como token real).
+
+    2026-10-30: nenhuma credencial configurada ainda neste projeto (ver
+    data/x_signals.py:MOTIVO_INDISPONIVEL) - funcao existe pronta pra
+    quando o Rodrigo aprovar orcamento/credencial nova, sem exigir
+    nenhuma mudanca de codigo alem de configurar o secret."""
+    token = os.getenv("X_BEARER_TOKEN", "").strip() or None
+    try:
+        import streamlit as st
+        secao_x = st.secrets.get("x", {})
+        token = token or secao_x.get("bearer_token") or st.secrets.get("X_BEARER_TOKEN")
+    except Exception:
+        pass
+    return token or None
 
 # --- Preferencias padrao (usuario novo ou banco fora do ar) -------------
 PREFS_PADRAO = {
@@ -520,13 +583,20 @@ def formatar_valor_mercado(valor, formato: str = "BR", moeda: str = "BRL") -> st
     prefixo = PREFIXO_MOEDA.get(moeda, moeda)
     if valor is None:
         return "—"
-    if valor >= 1_000_000_000_000:
-        return f"{prefixo} {formatar_numero(valor / 1_000_000_000_000, 1, formato)} tri"
-    if valor >= 1_000_000_000:
-        return f"{prefixo} {formatar_numero(valor / 1_000_000_000, 1, formato)} bi"
-    if valor >= 1_000_000:
-        return f"{prefixo} {formatar_numero(valor / 1_000_000, 1, formato)} mi"
-    return f"{prefixo} {formatar_numero(valor, 0, formato)}"
+    # abs() na comparacao de faixa (achado real, 2026-10-30, ao adicionar
+    # fluxo de caixa livre em ANALISES - campo que negativo e' comum,
+    # diferente de valor_mercado que so' e' negativo por erro): um valor
+    # negativo nunca batia >= 1_000_000 (ex: -2bi < 1mi) e caia no ultimo
+    # branch sem compactar, saindo "R$ -2000000000" em vez de "-R$ 2,0 bi".
+    magnitude = abs(valor)
+    sinal = "-" if valor < 0 else ""
+    if magnitude >= 1_000_000_000_000:
+        return f"{sinal}{prefixo} {formatar_numero(magnitude / 1_000_000_000_000, 1, formato)} tri"
+    if magnitude >= 1_000_000_000:
+        return f"{sinal}{prefixo} {formatar_numero(magnitude / 1_000_000_000, 1, formato)} bi"
+    if magnitude >= 1_000_000:
+        return f"{sinal}{prefixo} {formatar_numero(magnitude / 1_000_000, 1, formato)} mi"
+    return f"{sinal}{prefixo} {formatar_numero(magnitude, 0, formato)}"
 
 
 def formatar_multiplo(valor, casas: int = 2, formato: str = "BR") -> str:

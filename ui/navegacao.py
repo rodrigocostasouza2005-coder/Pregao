@@ -80,11 +80,24 @@ AREAS = (
     Area("research", "RESEARCH", ":material/menu_book:", (
         Subaba("feed", "Feed", ("RESEARCH",)),
         Subaba("casas", "Casas de Análise"),  # conteudo novo, sem aba antiga - sempre visivel
+        # RADAR X - INTELIGENCIA SOCIAL (2026-10-30): conteudo novo, sem
+        # aba antiga - sempre visivel (mesmo padrao de "casas" acima).
+        # Conector fica desligado sem X_BEARER_TOKEN, mas a secao sempre
+        # mostra a saude real disso - nunca esconde a subaba por causa
+        # de credencial ausente.
+        Subaba("radar-x", "Radar X"),
         # mesmo legado duplo de antes ("Teses" dependia de RADAR OU
         # RESEARCH ja' visivel) - o conteudo (evidencias/copiloto vem de
         # data/radar.py, tese propria vem de data/research/tese.py) nao
         # mudou, so' a area que a hospeda.
         Subaba("teses", "Minha Tese", ("RADAR", "RESEARCH")),
+        # Memoria de Research (Equity Research Library, Fase C - RAG,
+        # 2026-10-30): busca em linguagem natural + filtros sobre a
+        # biblioteca PERMANENTE de premissas/projecoes (research_premissas,
+        # ver sql/research_premissas.sql e data/research/embeddings.py) -
+        # conteudo novo, sem aba antiga, sempre visivel (mesmo padrao de
+        # "casas" acima).
+        Subaba("memoria", "Memória de Research"),
     )),
     Area("analises", "ANÁLISES", ":material/query_stats:", (
         Subaba("empresas", "Empresas", ("EQUITY",)),

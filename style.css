@@ -272,6 +272,13 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .ciano { color: var(--ciano); }
 .alerta { color: var(--destaque); }
 
+/* ticker clicavel (link direto "?ticker=X" pra ANALISES > Empresas, lido
+   via ui.navegacao.ticker_da_url) - mesmo tratamento visual que
+   ui/radar_tab.py ja usa (.rq-ticker), promovido pra global porque
+   VISAO GERAL (watchlist/rankings) tambem precisa dele. */
+.vg-ticker-link { color: var(--destaque); font-weight: 700; text-decoration: none; }
+.vg-ticker-link:hover { text-decoration: underline; }
+
 /* sidebar -------------------------------------------------------------------- */
 section[data-testid="stSidebar"] {
     background-color: var(--painel-bg);

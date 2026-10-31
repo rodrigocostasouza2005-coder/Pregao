@@ -10,6 +10,7 @@ aparecem com recomendação real salva, e render_visao_geral completo roda
 sem exceção com tudo mockado."""
 from unittest.mock import patch
 
+import ui.graficos as graficos_mod
 import ui.visao_geral as vg
 
 _PREFS = {"formato_numerico": "BR", "watchlist": [], "tema": "AMBAR"}
@@ -116,7 +117,8 @@ def test_render_visao_geral_completo_sem_excecao():
          patch.object(vg, "_teses_research_watchlist", return_value=[]), \
          patch.object(vg, "_proximo_evento_watchlist", return_value=None), \
          patch.object(vg, "obter_sintese_mercado", return_value={"ok": False, "motivo": "teste"}), \
-         patch.object(vg, "obter_historico", return_value=None), \
+         patch.object(graficos_mod, "obter_historico", return_value=None), \
+         patch.object(graficos_mod, "obter_historico_intraday", return_value=None), \
          patch.object(vg, "_painel_globais", return_value=None), \
          patch.object(vg, "obter_cotacoes_lote", return_value={}):
         vg.render_visao_geral(prefs, persistir_fn=None)

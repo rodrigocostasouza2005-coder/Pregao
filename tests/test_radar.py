@@ -198,6 +198,31 @@ def test_11_linha_valuation_nao_chama_peers():
     _checar("11c preco presente", linhas[0]["preco"] == 30.0)
 
 
+def test_11b_ev_ebitda_calculo_interno():
+    _checar("11b.1 calcula com as 3 entradas validas",
+            radar_mod._ev_ebitda(1000.0, 200.0, 100.0) == 12.0)
+    _checar("11b.2 None se faltar valor de mercado", radar_mod._ev_ebitda(None, 200.0, 100.0) is None)
+    _checar("11b.3 None se faltar divida liquida", radar_mod._ev_ebitda(1000.0, None, 100.0) is None)
+    _checar("11b.4 None se EBITDA ausente", radar_mod._ev_ebitda(1000.0, 200.0, None) is None)
+    _checar("11b.5 None se EBITDA <= 0 (nao comparavel)", radar_mod._ev_ebitda(1000.0, 200.0, -50.0) is None)
+
+
+def test_11c_linha_valuation_expoe_ebitda_ev_ebitda_e_fcf():
+    _limpar_caches()
+
+    def _fake_indicadores(ticker):
+        return {"pl": 10.0, "pvp": 1.5, "dividend_yield": 5.0, "roe": 15.0, "margem_liquida": 10.0,
+                "divida_liquida_ebitda": 1.0, "valor_mercado": 1_200.0, "divida_liquida": 200.0,
+                "ebitda": 100.0, "fluxo_caixa_livre": 55.0}
+
+    with patch.object(radar_mod, "obter_cotacao", return_value={"preco": 30.0, "erro": None}), \
+         patch.object(radar_mod, "obter_indicadores", side_effect=_fake_indicadores):
+        linha = radar_mod.linha_valuation("PETR4")
+    _checar("11c.1 ebitda exposto", linha["ebitda"] == 100.0)
+    _checar("11c.2 ev_ebitda calculado", linha["ev_ebitda"] == 14.0, str(linha["ev_ebitda"]))
+    _checar("11c.3 fluxo_caixa_livre exposto", linha["fluxo_caixa_livre"] == 55.0)
+
+
 def test_12_comparaveis_setor_insuficiente_e_mediana():
     _limpar_caches()
 

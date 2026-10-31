@@ -623,6 +623,12 @@ def obter_indicadores(ticker: str) -> dict:
         # buscado internamente só pra calcular divida_liquida_ebitda; expor a chave permite
         # EV/EBITDA em data/radar.py:linha_valuation sem nova chamada ao yfinance.
         "ebitda": ebitda,
+        # fluxo_caixa_livre (2026-10-30, gap do pedido de redesign "ANÁLISES >
+        # Fluxo de caixa" - antes nao existia NENHUM campo de caixa): ja vem no
+        # mesmo tk.info ja' buscado acima, zero requisicao nova. Validado contra
+        # PETR4 real neste sandbox (freeCashflow ~R$94,2bi, ordem de grandeza
+        # plausivel pra uma empresa desse porte) antes de confiar no campo.
+        "fluxo_caixa_livre": info.get("freeCashflow"),
     }
 
     cache_fallback = _ultimo_indicadores_valido()

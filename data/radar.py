@@ -303,6 +303,11 @@ def linha_valuation(ticker: str) -> dict:
         "valor_mercado": ind.get("valor_mercado"),
         "ebitda": ind.get("ebitda"),
         "ev_ebitda": _ev_ebitda(ind.get("valor_mercado"), ind.get("divida_liquida"), ind.get("ebitda")),
+        # ponto atual (yfinance), sem serie historica - habilita o DCF da
+        # Conclusao de Investimento (ui/analises_tab.py:_dcf_calculo) so'
+        # quando o usuario tambem informar taxa de crescimento/desconto;
+        # nunca usado como premissa por si so'.
+        "fluxo_caixa_livre": ind.get("fluxo_caixa_livre"),
         "desatualizado": _indicadores_desatualizados(ind),
         "alerta_qualidade": _alertas_qualidade(ind),
     }
