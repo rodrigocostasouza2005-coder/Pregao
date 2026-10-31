@@ -306,11 +306,14 @@ def test_4e_timeout_calendario_retorna_codigo_erro_ao_agendador():
 # CALENDARIO) e registro de SAUDE DOS DADOS.
 # ============================================================
 
-def test_5a_news_usa_checkpoint_proprio_nao_o_do_calendario():
-    """_universo_rotativo e' chamado 2x dentro de main() (CALENDARIO e
-    NEWS) - cada chamada precisa passar o arquivo de checkpoint certo,
-    nunca os dois com o mesmo (senao as 2 rotacoes andam acopladas sem
-    necessidade - ver docstring de _universo_rotativo)."""
+def test_5a_news_usa_checkpoint_proprio_em_arquivo_calendario_usa_checkpoint_supabase():
+    """Reforma 2026-10-31 (ver docstring de _ler_checkpoint_calendario em
+    coletor_local.py): _universo_rotativo (arquivo local/GITHUB_RUN_NUMBER)
+    continua em uso SO' pelo NEWS - o CALENDARIO passou a rotacionar via
+    checkpoint persistido no Supabase (_ler_checkpoint_calendario/
+    _avancar_checkpoint_calendario), que avanca pelo trabalho REAL feito
+    (nao mais +1 fixo por execucao, que levava ~18 dias uteis pra cobrir
+    o universo de 481 tickers de hoje)."""
     stats = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
               "tempo_esgotado": False, "tabela_disponivel": True}
     chamadas = []
@@ -323,6 +326,8 @@ def test_5a_news_usa_checkpoint_proprio_nao_o_do_calendario():
          patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
          patch.object(coletor_local, "_universo_rotativo", side_effect=_fake_rotativo), \
+         patch.object(coletor_local, "_ler_checkpoint_calendario", return_value=0) as mock_ler_cal, \
+         patch.object(coletor_local, "_avancar_checkpoint_calendario") as mock_avancar_cal, \
          patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
          patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
          patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO) as mock_pregen, \
@@ -330,15 +335,83 @@ def test_5a_news_usa_checkpoint_proprio_nao_o_do_calendario():
          patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
          patch.object(coletor_local, "registrar_tentativa"):
         coletor_local.main()
-    _checar("5a 2 chamadas de _universo_rotativo (CALENDARIO + NEWS)", len(chamadas) == 2, f"(chamadas={chamadas})")
-    _checar("5b uma delas usa o checkpoint do NEWS", coletor_local._ARQUIVO_CHECKPOINT_NEWS in chamadas,
+    _checar("5a _universo_rotativo e' chamado 1x (so' NEWS - CALENDARIO usa o checkpoint do Supabase)",
+            len(chamadas) == 1, f"(chamadas={chamadas})")
+    _checar("5b a chamada de NEWS usa o checkpoint proprio do NEWS", chamadas == [coletor_local._ARQUIVO_CHECKPOINT_NEWS],
             f"(chamadas={chamadas})")
-    _checar("5c a outra usa o checkpoint do CALENDARIO (ou o default None)",
-            any(c != coletor_local._ARQUIVO_CHECKPOINT_NEWS for c in chamadas), f"(chamadas={chamadas})")
+    _checar("5b2 o CALENDARIO le o checkpoint do Supabase (nao o arquivo local)", mock_ler_cal.called)
+    _checar("5b3 o CALENDARIO avanca o checkpoint do Supabase apos processar", mock_avancar_cal.called)
     _checar("5d pregerar_resumos_news foi chamado exatamente 1x", mock_pregen.call_count == 1)
     _checar("5e pregerar_resumos_news recebeu exatamente _QTD_TICKERS_NEWS_POR_EXECUCAO tickers (universo fake tem 30)",
             len(mock_pregen.call_args[0][0]) == coletor_local._QTD_TICKERS_NEWS_POR_EXECUCAO,
             f"(recebido={len(mock_pregen.call_args[0][0])})")
+
+
+def test_5a2_checkpoint_calendario_avanca_pelo_trabalho_real_processado():
+    """O nucleo do fix (2026-10-31): o offset gravado de volta e'
+    offset_lido + processados (mod tamanho do universo), nao offset+1 -
+    prova que a rotacao agora cobre o universo em ceil(N/K) execucoes em
+    vez de N (ver docstring do bloco em coletor_local.py)."""
+    universo_fake = [f"T{i}" for i in range(10)]
+    stats = {"processados": 4, "confirmados": 1, "estimados": 0, "mantidos_prazo_cvm": 3,
+              "tempo_esgotado": False, "tabela_disponivel": True}
+
+    with patch.object(coletor_local, "universo_calendario", return_value=universo_fake), \
+         patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO), \
+         patch.object(coletor_local, "_ler_checkpoint_calendario", return_value=3), \
+         patch.object(coletor_local, "_avancar_checkpoint_calendario") as mock_avancar, \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats) as mock_coletar, \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa"):
+        coletor_local.main()
+
+    _checar("5a2a universo passado a coletar_eventos_universo comeca no offset lido (3)",
+            mock_coletar.call_args[0][0][0] == "T3", f"(chamado com={mock_coletar.call_args[0][0]})")
+    _checar("5a2b checkpoint avancado = offset(3) + processados(4) = 7, nao 3+1=4",
+            mock_avancar.call_args[0][0] == 7, f"(avancado para={mock_avancar.call_args[0][0]})")
+
+
+def test_5a3_checkpoint_calendario_nunca_trava_girando_no_mesmo_lugar_se_processar_0():
+    """Se coletar_eventos_universo processar 0 (ex: tempo esgotado antes
+    do 1o ticker, caso raro), o avanco minimo e' 1 - nunca grava o MESMO
+    offset de volta (travaria a rotacao pra sempre no mesmo ponto)."""
+    universo_fake = [f"T{i}" for i in range(5)]
+    stats = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
+              "tempo_esgotado": True, "tabela_disponivel": True}
+
+    with patch.object(coletor_local, "universo_calendario", return_value=universo_fake), \
+         patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO), \
+         patch.object(coletor_local, "_ler_checkpoint_calendario", return_value=2), \
+         patch.object(coletor_local, "_avancar_checkpoint_calendario") as mock_avancar, \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa"):
+        coletor_local.main()
+    _checar("5a3 avanco minimo de 1 mesmo com processados=0", mock_avancar.call_args[0][0] == 3,
+            f"(avancado para={mock_avancar.call_args[0][0]})")
+
+
+def test_5a4_ler_checkpoint_calendario_sem_supabase_degrada_pro_offset_0():
+    with patch.object(coletor_local, "obter_cliente", return_value=None):
+        offset = coletor_local._ler_checkpoint_calendario()
+    _checar("5a4 sem Supabase -> offset 0, nunca lanca", offset == 0)
+
+
+def test_5a5_avancar_checkpoint_calendario_sem_supabase_nao_lanca():
+    with patch.object(coletor_local, "obter_cliente", return_value=None):
+        coletor_local._avancar_checkpoint_calendario(42)  # nao deve lancar
 
 
 def test_5f_registra_saude_dados_news_resumos():
