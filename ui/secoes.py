@@ -36,10 +36,14 @@ def render_mercados_globais(prefs: dict):
         st.caption("Índices e futuros internacionais — Yahoo Finance, com atraso típico de mercado.")
     with st.container(border=True):
         _painel_cenario_global(prefs)
+    # achado real (auditoria "missao master" 2026-10-31): sem margem
+    # superior, este texto colava direto na borda do container acima
+    # (cuja ultima linha interna e' outra legenda em cinza do mesmo
+    # tamanho) - as duas legendas visualmente se fundiam/sobrepunham.
     st.markdown(
-        "<div class='cinza' style='font-size:0.72rem;'>Relação com o Brasil: commodities (petróleo, minério) "
-        "pesam em PETR/VALE e no câmbio; Treasuries e VIX medem o apetite global por risco. Leitura geral, "
-        "não sinal de negociação.</div>",
+        "<div class='cinza' style='font-size:0.72rem; margin-top:0.6rem;'>Relação com o Brasil: commodities "
+        "(petróleo, minério) pesam em PETR/VALE e no câmbio; Treasuries e VIX medem o apetite global por risco. "
+        "Leitura geral, não sinal de negociação.</div>",
         unsafe_allow_html=True,
     )
     cols = st.columns(2)

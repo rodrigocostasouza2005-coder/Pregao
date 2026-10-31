@@ -81,12 +81,16 @@ def test_cobertura_com_banco_indisponivel_nunca_aparece_como_sem_pesquisa():
     assert "Nenhuma casa monitorada publicou research recente" not in html_render
 
 
-def test_fundamentos_reais_preenchem_metric_e_mostram_alerta():
+def test_fundamentos_reais_preenchem_indicadores_e_mostram_alerta():
+    """Indicadores renderizam como HTML compacto (achado real, auditoria
+    "missao master" 2026-10-31: st.metric() tinha fonte bem maior que o
+    resto do app) - não mais st.metric(), ver ui/analises_tab.py:
+    _subtitulo/_lista_compacta."""
     fundamentos = {"pl": 28.5, "pvp": 9.1, "roe": 32.0, "divida_liquida_ebitda": 0.3,
                    "alerta_qualidade": ["P/L negativo"]}
     analise = _analise(fundamentos=fundamentos)
-    html_render, col_mock = _capturar_render(analise)
-    assert col_mock.metric.call_count == 4
+    html_render, _ = _capturar_render(analise)
+    assert "28,50" in html_render and "9,10" in html_render and "32,00%" in html_render and "0,3x" in html_render
     assert "P/L negativo" in html_render
 
 
