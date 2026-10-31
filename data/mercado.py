@@ -189,7 +189,10 @@ def obter_cotacoes_lote(tickers: tuple) -> dict:
         if linha is None:
             resultado[t] = {"erro": "sem dado"}
         else:
-            resultado[t] = {"preco": linha["preco"], "variacao_pct": linha["variacao_pct"], "erro": None}
+            resultado[t] = {
+                "preco": linha["preco"], "variacao_pct": linha["variacao_pct"],
+                "volume_financeiro": linha["volume_financeiro"], "erro": None,
+            }
     return resultado
 
 

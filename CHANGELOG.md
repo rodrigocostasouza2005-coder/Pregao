@@ -1,5 +1,37 @@
 # CHANGELOG — PREGÃO
 
+## 2026-10-30 — Reformulação visual institucional (Visão Geral, Research, Radar, Análises)
+
+Pedido explícito do Rodrigo para evoluir o terminal (identidade preta/grafite/âmbar já validada) sem virar dashboard genérico - auditoria de código concreta antes de cada mudança, gaps reais fechados (não cosmética solta). PR #200.
+
+- **VISÃO GERAL**: gráfico principal deixa de ser Ibovespa fixo só-linha -
+  ganha seleção de ativo (IBOVESPA + watchlist), candle real e volume,
+  via `ui/graficos.py:renderizar_grafico_preco` (extraído da lógica que só
+  existia, duplicada, em ANÁLISES › Empresas - agora componente único).
+  "Destaques do dia" volta a abrir o card de resumo por IA ao clicar na
+  manchete (achado reportado pelo Rodrigo testando o app - antes linkava
+  direto pra fonte). Watchlist/"Mais Negociados" ganham ticker clicável e
+  volume financeiro.
+- **RESEARCH**: watchlist + Research Radar, antes empilhados em largura
+  total, viram grade lado a lado. Tickers clicáveis.
+- **RADAR**: achado real - 4 das 5 seções (Valuation Radar, Catalisadores,
+  Risco da Carteira, Research com Evidências) abriam fechadas por padrão,
+  fazendo a aba parecer vazia no 1º carregamento. Passam a abrir
+  expandidas (leitura passiva); só Copiloto de Research (sob demanda)
+  continua fechado.
+- **ANÁLISES**: fluxo de caixa livre (gap real - não existia nenhum campo
+  de caixa no projeto) adicionado via `data/prices.py:obter_indicadores`
+  (mesmo `tk.info` já buscado, zero requisição nova; validado contra
+  PETR4 real). Bug real corrigido no processo:
+  `config.formatar_valor_mercado` não compactava valor negativo (comum
+  em fluxo de caixa de empresa em expansão).
+- **Auditoria (sem mudança)**: Macro, Setores, Notícias e Morning Call já
+  estavam consistentes com o padrão institucional - não mexidos.
+- **Testes**: validação visual real via Playwright (harness isolado, fora
+  de `app.py`/`auth.py`) em Visão Geral/Research/Radar - achou e corrigiu
+  1 bug real (badge de notícia sobrepondo botão da manchete), invisível a
+  teste automatizado. Suíte completa sem regressão.
+
 ## 2026-10-30 — RADAR X: inteligência social do X integrada (conector desligado, sem credencial)
 
 - **Novo**: subaba RESEARCH › Radar X (`ui/research_tab.py`,

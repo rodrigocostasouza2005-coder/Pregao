@@ -994,13 +994,21 @@ def render_radar(prefs: dict, sub: str):
 
     _secao_mudancas_tese(tickers_escopo, janela, prefs)
 
-    with st.expander("ONDE VALE INVESTIGAR — Valuation Radar", expanded=False):
+    # 4 das 5 secoes abaixo passam a abrir por padrao (achado da auditoria
+    # de redesign 2026-10-30): sao leitura passiva (tabela/lista), nao
+    # ferramenta sob demanda - fechadas por padrao, a aba inteira (cujo
+    # subtitulo promete "onde vale investigar · o que pode dar errado")
+    # parecia vazia no 1o carregamento, só a seção de MUDANÇAS DE TESE
+    # aparecia de verdade. Só COPILOTO DE RESEARCH continua fechado: é
+    # genuinamente sob demanda (pergunta sugerida -> resposta), não um
+    # dado que já existe pronto pra mostrar.
+    with st.expander("ONDE VALE INVESTIGAR — Valuation Radar", expanded=True):
         _secao_valuation(tickers_escopo, prefs)
-    with st.expander("ONDE VALE INVESTIGAR — Próximos catalisadores", expanded=False):
+    with st.expander("ONDE VALE INVESTIGAR — Próximos catalisadores", expanded=True):
         _secao_catalisadores(tickers_escopo)
-    with st.expander("O QUE PODE DAR ERRADO — Risco da carteira", expanded=False):
+    with st.expander("O QUE PODE DAR ERRADO — Risco da carteira", expanded=True):
         _secao_risco(prefs, sub)
-    with st.expander("RESEARCH COM EVIDÊNCIAS", expanded=False):
+    with st.expander("RESEARCH COM EVIDÊNCIAS", expanded=True):
         _secao_evidencias(tickers_escopo, watchlist)
     with st.expander("COPILOTO DE RESEARCH", expanded=False):
         _secao_copiloto(tickers_escopo)

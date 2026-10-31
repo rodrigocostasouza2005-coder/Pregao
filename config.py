@@ -583,13 +583,20 @@ def formatar_valor_mercado(valor, formato: str = "BR", moeda: str = "BRL") -> st
     prefixo = PREFIXO_MOEDA.get(moeda, moeda)
     if valor is None:
         return "—"
-    if valor >= 1_000_000_000_000:
-        return f"{prefixo} {formatar_numero(valor / 1_000_000_000_000, 1, formato)} tri"
-    if valor >= 1_000_000_000:
-        return f"{prefixo} {formatar_numero(valor / 1_000_000_000, 1, formato)} bi"
-    if valor >= 1_000_000:
-        return f"{prefixo} {formatar_numero(valor / 1_000_000, 1, formato)} mi"
-    return f"{prefixo} {formatar_numero(valor, 0, formato)}"
+    # abs() na comparacao de faixa (achado real, 2026-10-30, ao adicionar
+    # fluxo de caixa livre em ANALISES - campo que negativo e' comum,
+    # diferente de valor_mercado que so' e' negativo por erro): um valor
+    # negativo nunca batia >= 1_000_000 (ex: -2bi < 1mi) e caia no ultimo
+    # branch sem compactar, saindo "R$ -2000000000" em vez de "-R$ 2,0 bi".
+    magnitude = abs(valor)
+    sinal = "-" if valor < 0 else ""
+    if magnitude >= 1_000_000_000_000:
+        return f"{sinal}{prefixo} {formatar_numero(magnitude / 1_000_000_000_000, 1, formato)} tri"
+    if magnitude >= 1_000_000_000:
+        return f"{sinal}{prefixo} {formatar_numero(magnitude / 1_000_000_000, 1, formato)} bi"
+    if magnitude >= 1_000_000:
+        return f"{sinal}{prefixo} {formatar_numero(magnitude / 1_000_000, 1, formato)} mi"
+    return f"{sinal}{prefixo} {formatar_numero(magnitude, 0, formato)}"
 
 
 def formatar_multiplo(valor, casas: int = 2, formato: str = "BR") -> str:

@@ -459,8 +459,11 @@ def _painel_watchlist(prefs: dict, relatorios: list, recomendacoes: list, swing:
             continue
         mostrou_algo = True
 
+        link_ticker = html.escape(ticker, quote=True)
         st.markdown(
-            f"<div style='color:var(--destaque); font-weight:600; margin-top:0.6rem; font-size:0.85rem;'>{ticker}</div>",
+            f"<div style='margin-top:0.6rem;'><a href='?ticker={link_ticker}' "
+            f"style='color:var(--destaque); font-weight:600; font-size:0.85rem; text-decoration:none;'>"
+            f"{html.escape(ticker)}</a></div>",
             unsafe_allow_html=True,
         )
 
@@ -602,7 +605,8 @@ def _painel_radar(relatorios: list, mudancas_todas: list):
     # cor/peso próprios (destaque real, não coberto pela regra genérica).
     linhas_html = "".join(
         f"<tr><td>{l['casa']}</td>"
-        f"<td style='color:var(--destaque); font-weight:600;'>{l['ticker']}</td>"
+        f"<td><a href='?ticker={html.escape(l['ticker'], quote=True)}' "
+        f"style='color:var(--destaque); font-weight:600; text-decoration:none;'>{html.escape(l['ticker'])}</a></td>"
         f"<td>{l['tipo']}</td><td>{l['data']}</td><td>{l['status']}</td></tr>"
         for l in linhas[:30]
     )
@@ -670,11 +674,20 @@ def render_research(prefs: dict):
     vistos = {(m["ticker"], m["casa"]) for m in mudancas_vivas}
     mudancas_todas = mudancas_vivas + [m for m in mudancas_persistidas if (m["ticker"], m["casa"]) not in vistos]
 
-    with st.container(border=True):
-        _painel_watchlist(prefs, relatorios, recomendacoes, swing, mudancas_todas)
-
-    with st.container(border=True):
-        _painel_radar(relatorios, mudancas_todas)
+    # grade (achado da auditoria de redesign 2026-10-30): watchlist+radar
+    # empilhados em largura total desperdicavam espaco - radar e' uma
+    # tabela compacta (CASA/TICKER/TIPO/DATA/STATUS, ver _painel_radar),
+    # nao precisa da largura inteira. Mesmo padrao de grade ja' validado
+    # em VISAO GERAL (grafico+"para investigar"), sem mudar nenhum dado/
+    # logica dos dois paineis.
+    with st.container(key="research_grid_watchlist_radar"):
+        col_watchlist, col_radar = st.columns([0.62, 0.38], gap="small")
+        with col_watchlist:
+            with st.container(border=True):
+                _painel_watchlist(prefs, relatorios, recomendacoes, swing, mudancas_todas)
+        with col_radar:
+            with st.container(border=True):
+                _painel_radar(relatorios, mudancas_todas)
 
     with st.container(border=True):
         _painel_feed(prefs, relatorios, falhas)
