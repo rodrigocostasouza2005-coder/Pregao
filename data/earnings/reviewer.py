@@ -26,6 +26,7 @@ nem apaga o registro anterior."""
 
 from datetime import date, datetime, timezone
 
+import config
 from data.coletores_status import registrar_tentativa
 from data.earnings import cvm_dre, sec_xbrl
 from data.supabase_client import obter_cliente
@@ -33,6 +34,20 @@ from data.supabase_client import obter_cliente
 _NOME_COLETOR = "EARNINGS REVIEWER (persistencia)"
 
 _TABELA = "earnings_reviews"
+
+# Instituições financeiras/seguradoras usam plano de contas regulatório
+# proprio (COSIF), nao o plano industrial/comercial que CONTAS_DRE
+# (data/earnings/cvm_dre.py) assume - o MESMO codigo (ex: "3.01") tem
+# outro significado nesse setor (vira "Receitas de Intermediacao
+# Financeira", nao "receita liquida de vendas"). Antes desta checagem
+# (2026-10-30), montar_nota_br calculava e devolvia disponivel=True com
+# numeros REAIS mas com ROTULO ERRADO pra qualquer banco/seguradora - a
+# docstring de cvm_dre.py ja dizia "ver reviewer.py, que sinaliza isso
+# como limitacao explicita", mas esse guard nunca tinha sido implementado
+# de verdade (achado durante a validacao com ITUB4 na evolucao da
+# Conclusao de Investimento). Usa a classificacao setorial que o projeto
+# ja mantem (config.IBOVESPA_SETORES) - nenhuma fonte nova.
+SETORES_PLANO_CONTAS_INCOMPATIVEL = {"Bancos", "Bancos e Serviços Financeiros", "Seguros"}
 
 LIMITACOES_PADRAO = (
     "Sem acesso a consenso de mercado, guidance da empresa ou relatorios "
@@ -127,7 +142,19 @@ def _montar_metricas_br(contas: dict) -> dict:
 def montar_nota_br(ticker: str, ano: int, trimestre: int) -> dict:
     """Nota de UMA empresa brasileira pro trimestre pedido. `disponivel`
     e' False (com `motivo`) quando cvm_dre nao devolveu nada pra esse
-    ticker/periodo - nunca gera nota com numero inventado nesse caso."""
+    ticker/periodo, OU quando o ticker e' de instituicao financeira/
+    seguradora (ver SETORES_PLANO_CONTAS_INCOMPATIVEL acima) - nunca gera
+    nota com numero inventado ou com rotulo semanticamente errado."""
+    setor = config.IBOVESPA_SETORES.get(ticker.upper())
+    if setor in SETORES_PLANO_CONTAS_INCOMPATIVEL:
+        return {
+            "ticker": ticker.upper(), "pais": "BR", "disponivel": False,
+            "motivo": f"instituição financeira/seguradora ({setor}) usa plano de contas "
+                      "regulatório próprio (COSIF) - os códigos do plano industrial/comercial "
+                      "usados nesta integração (CONTAS_DRE) têm outro significado nesse setor "
+                      "(ex: '3.01' não é receita líquida de vendas) - dado não calculado para "
+                      "evitar rótulo incorreto.",
+        }
     atual = cvm_dre.obter_dre_trimestral(ticker, ano, trimestre)
     if atual is None:
         return {
@@ -373,3 +400,126 @@ def obter_ultima_versao(ticker: str, pais: str, excluir_periodo: str | None = No
         if excluir_periodo is None or linha.get("periodo_label") != excluir_periodo:
             return linha.get("conteudo")
     return None
+
+
+# ---------------------------------------------------------------------
+# SÉRIE HISTÓRICA + TENDÊNCIA (2026-10-30, evolução da Conclusão de
+# Investimento) - movido de ui/analises_tab.py (onde só servia pro
+# seletor de trimestre da Revisão de Resultados) pra virar reutilizável
+# por data/market_researcher.py também, sem a UI precisar saber nada de
+# CVM/trimestre civil. ui/analises_tab.py importa estes mesmos nomes
+# (com alias _trimestres_candidatos_br/_ultimo_trimestre_civil) em vez
+# de redefinir - compatibilidade preservada pros testes existentes que
+# chamam esses nomes direto no módulo da UI.
+# ---------------------------------------------------------------------
+FIM_TRIMESTRE_CIVIL = {1: (3, 31), 2: (6, 30), 3: (9, 30)}
+INICIO_TRIMESTRE_CIVIL = {1: 1, 2: 4, 3: 7}
+
+
+def trimestres_candidatos_br(hoje: date, n: int = 6) -> list:
+    """Últimos `n` trimestres CIVIS (1-3, nunca o 4º - cvm_dre.py não
+    calcula Q4 isolado, ver docstring do módulo) com data-fim <= hoje,
+    do mais recente pro mais antigo. Só diz que o trimestre já FECHOU
+    no calendário - quem diz se o número já foi PUBLICADO pela CVM é
+    montar_nota_br (disponivel/motivo), nunca esta função."""
+    candidatos = []
+    ano = hoje.year
+    limite = hoje.year - 6
+    while len(candidatos) < n and ano > limite:
+        for tri in (3, 2, 1):
+            mes, dia = FIM_TRIMESTRE_CIVIL[tri]
+            if date(ano, mes, dia) <= hoje:
+                candidatos.append((ano, tri))
+        ano -= 1
+    return candidatos[:n]
+
+
+def ultimo_trimestre_civil(hoje: date) -> tuple:
+    """(início, fim) do trimestre civil mais recente já encerrado - só
+    um PONTO DE PARTIDA editável pro seletor de empresas internacionais
+    (o calendário fiscal real da empresa pode ser diferente do civil;
+    montar_nota_internacional já documenta que detectar o calendário
+    fiscal automaticamente está fora do escopo desta versão - por isso a
+    UI pede confirmação em vez de assumir)."""
+    ano, tri = trimestres_candidatos_br(hoje, n=1)[0]
+    mes_fim, dia_fim = FIM_TRIMESTRE_CIVIL[tri]
+    fim = date(ano, mes_fim, dia_fim)
+    inicio = date(ano, INICIO_TRIMESTRE_CIVIL[tri], 1)
+    return inicio, fim
+
+
+_LIMIAR_TENDENCIA_PP = 3.0
+
+
+def _tendencia(pontos: list) -> str | None:
+    """pontos: valores em ordem CRESCENTE de tempo (mais antigo -> mais
+    recente), já sem None. Regra explícita e auditável - nunca regressão
+    nem média móvel: compara só o PRIMEIRO e o ÚLTIMO ponto da janela
+    observada. Diferença >= _LIMIAR_TENDENCIA_PP p.p. de melhora vira
+    'RECUPERACAO'; <= -_LIMIAR_TENDENCIA_PP vira 'DETERIORACAO'; dentro
+    da banda vira 'ESTABILIDADE'. None com menos de 2 pontos válidos -
+    não dá pra falar de tendência com 1 ponto só."""
+    if len(pontos) < 2:
+        return None
+    delta = pontos[-1] - pontos[0]
+    if delta >= _LIMIAR_TENDENCIA_PP:
+        return "RECUPERACAO"
+    if delta <= -_LIMIAR_TENDENCIA_PP:
+        return "DETERIORACAO"
+    return "ESTABILIDADE"
+
+
+def serie_historica_br(ticker: str, n_trimestres: int = 4) -> dict:
+    """Série REAL dos últimos `n_trimestres` civis já encerrados (via
+    montar_nota_br, mesma fonte/mesmas regras da nota trimestral isolada
+    - pula silenciosamente um trimestre sem DRE disponível, NUNCA
+    interpola) + tendência explícita (ver _tendencia) de receita líquida,
+    EBIT e lucro líquido consolidado (variação YoY) e de margem bruta
+    (nível, em p.p.). `disponivel`=False com `motivo` quando: a
+    instituição é financeira/seguradora (plano de contas incompatível,
+    ver montar_nota_br), ou nenhum trimestre tiver DRE disponível na CVM
+    nesta janela. Só Brasil nesta versão - empresa internacional não tem
+    calendário fiscal detectado automaticamente, não dá pra montar uma
+    janela de trimestres civis confiável aqui (ver montar_nota_internacional)."""
+    candidatos = trimestres_candidatos_br(date.today(), n=n_trimestres)
+    notas = []
+    bloqueio_setor = None
+    for ano, tri in reversed(candidatos):  # mais antigo primeiro
+        try:
+            nota = montar_nota_br(ticker, ano, tri)
+        except Exception:
+            continue
+        if nota.get("disponivel"):
+            notas.append(nota)
+        elif "plano de contas" in (nota.get("motivo") or ""):
+            bloqueio_setor = nota["motivo"]
+            break  # mesmo motivo bloquearia todos os trimestres - não repete a consulta
+
+    if bloqueio_setor:
+        return {"disponivel": False, "motivo": bloqueio_setor, "periodos": []}
+    if not notas:
+        return {
+            "disponivel": False,
+            "motivo": "nenhum trimestre com DRE disponível na CVM para este ticker nos "
+                      "períodos civis verificados (empresa pode não ter CNPJ mapeado, ou a "
+                      "fonte CVM não tem registro desse período).",
+            "periodos": [],
+        }
+
+    def _serie(extrator):
+        return [v for v in (extrator(n) for n in notas) if v is not None]
+
+    receita_yoy = _serie(lambda n: n["metricas"].get("receita_liquida", {}).get("yoy_variacao_pct"))
+    ebit_yoy = _serie(lambda n: n["metricas"].get("ebit", {}).get("yoy_variacao_pct"))
+    lucro_yoy = _serie(lambda n: n["metricas"].get("lucro_liquido_consolidado", {}).get("yoy_variacao_pct"))
+    margem_bruta_niveis = _serie(lambda n: n.get("margem_bruta_pct"))
+
+    return {
+        "disponivel": True,
+        "periodos": [n["periodo_label"] for n in notas],
+        "receita_liquida": {"yoy_pct_serie": receita_yoy, "tendencia": _tendencia(receita_yoy)},
+        "ebit": {"yoy_pct_serie": ebit_yoy, "tendencia": _tendencia(ebit_yoy)},
+        "lucro_liquido_consolidado": {"yoy_pct_serie": lucro_yoy, "tendencia": _tendencia(lucro_yoy)},
+        "margem_bruta_pct": {"serie": margem_bruta_niveis, "tendencia": _tendencia(margem_bruta_niveis)},
+        "ultima_nota": notas[-1],
+    }

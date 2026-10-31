@@ -296,3 +296,125 @@ def test_educacao_financeira_receita_crescendo_mais_que_lucro():
     notas = reviewer._nota_educativa_receita_vs_lucro(metricas)
     assert len(notas) == 1
     assert "receita líquida cresceu mais rápido" in notas[0]
+
+
+# ---------------------------------------------------------------------
+# GUARD DE INSTITUIÇÃO FINANCEIRA/SEGURADORA (2026-10-30) - achado real
+# na validação com ITUB4: antes desta checagem, montar_nota_br calculava
+# e devolvia disponivel=True com números REAIS mas rótulo semanticamente
+# errado (plano de contas COSIF, não industrial/comercial). Zero chamada
+# à CVM precisa ser mockada aqui - o guard dispara antes do download.
+# ---------------------------------------------------------------------
+
+def test_montar_nota_br_banco_nunca_calcula_dre_com_plano_de_contas_errado():
+    nota = reviewer.montar_nota_br("ITUB4", 2026, 2)
+    assert nota["disponivel"] is False
+    assert "plano de contas" in nota["motivo"]
+    assert "COSIF" in nota["motivo"]
+
+
+def test_montar_nota_br_seguradora_tambem_bloqueada():
+    nota = reviewer.montar_nota_br("BBSE3", 2026, 2)
+    assert nota["disponivel"] is False
+    assert "plano de contas" in nota["motivo"]
+
+
+def test_montar_nota_br_empresa_industrial_nao_e_bloqueada_pelo_guard():
+    # ticker fora de config.IBOVESPA_SETORES (ou com setor não-financeiro)
+    # segue o fluxo normal - aqui só confirmamos que o guard não dispara
+    # pra WEGE3 (Bens de Capital e Industrial), deixando a consulta real
+    # seguir (que então falha por falta de mock de CNPJ, não pelo guard).
+    nota = reviewer.montar_nota_br("WEGE3", 2026, 2)
+    assert "plano de contas" not in (nota.get("motivo") or "")
+
+
+# ---------------------------------------------------------------------
+# SÉRIE HISTÓRICA + TENDÊNCIA (serie_historica_br / _tendencia)
+# ---------------------------------------------------------------------
+
+def test_tendencia_recuperacao_quando_delta_passa_do_limiar():
+    assert reviewer._tendencia([-5.0, -1.0, 2.0]) == "RECUPERACAO"
+
+
+def test_tendencia_deterioracao_quando_delta_negativo_passa_do_limiar():
+    assert reviewer._tendencia([8.0, 3.0, 1.0]) == "DETERIORACAO"
+
+
+def test_tendencia_estabilidade_dentro_da_banda():
+    assert reviewer._tendencia([5.0, 6.0, 6.5]) == "ESTABILIDADE"
+
+
+def test_tendencia_none_com_menos_de_2_pontos():
+    assert reviewer._tendencia([]) is None
+    assert reviewer._tendencia([5.0]) is None
+
+
+def _nota_disponivel(periodo_label, receita_yoy, ebit_yoy, lucro_yoy, margem_bruta_pct):
+    return {
+        "disponivel": True, "periodo_label": periodo_label,
+        "metricas": {
+            "receita_liquida": {"yoy_variacao_pct": receita_yoy},
+            "ebit": {"yoy_variacao_pct": ebit_yoy},
+            "lucro_liquido_consolidado": {"yoy_variacao_pct": lucro_yoy},
+        },
+        "margem_bruta_pct": margem_bruta_pct,
+        "fontes": [{"nome": "CVM - dados.cvm.gov.br (ITR, DRE consolidada)"}],
+    }
+
+
+def test_serie_historica_br_calcula_tendencia_a_partir_de_notas_reais_disponiveis():
+    notas_por_periodo = {
+        (2026, 1): _nota_disponivel("1T2026", -4.0, -3.0, -2.0, 30.0),
+        (2026, 2): _nota_disponivel("2T2026", 0.0, 0.0, 0.0, 31.0),
+        (2026, 3): _nota_disponivel("3T2026", 5.0, 4.0, 3.0, 33.5),
+    }
+    with patch.object(reviewer, "trimestres_candidatos_br", return_value=[(2026, 3), (2026, 2), (2026, 1)]), \
+         patch.object(reviewer, "montar_nota_br", side_effect=lambda t, a, tri: notas_por_periodo[(a, tri)]):
+        serie = reviewer.serie_historica_br("WEGE3", n_trimestres=3)
+
+    assert serie["disponivel"] is True
+    assert serie["periodos"] == ["1T2026", "2T2026", "3T2026"]
+    assert serie["receita_liquida"]["tendencia"] == "RECUPERACAO"
+    assert serie["margem_bruta_pct"]["tendencia"] == "RECUPERACAO"
+
+
+def test_serie_historica_br_pula_trimestre_sem_dado_sem_interpolar():
+    notas_por_periodo = {
+        (2026, 1): {"disponivel": False, "motivo": "DRE indisponivel"},
+        (2026, 2): _nota_disponivel("2T2026", 1.0, 1.0, 1.0, 30.0),
+        (2026, 3): _nota_disponivel("3T2026", 6.0, 5.0, 4.0, 34.0),
+    }
+    with patch.object(reviewer, "trimestres_candidatos_br", return_value=[(2026, 3), (2026, 2), (2026, 1)]), \
+         patch.object(reviewer, "montar_nota_br", side_effect=lambda t, a, tri: notas_por_periodo[(a, tri)]):
+        serie = reviewer.serie_historica_br("WEGE3", n_trimestres=3)
+
+    assert serie["disponivel"] is True
+    assert serie["periodos"] == ["2T2026", "3T2026"]  # 1T2026 pulado, nunca interpolado
+    assert serie["receita_liquida"]["yoy_pct_serie"] == [1.0, 6.0]
+
+
+def test_serie_historica_br_sem_nenhum_trimestre_disponivel():
+    with patch.object(reviewer, "trimestres_candidatos_br", return_value=[(2026, 3), (2026, 2), (2026, 1)]), \
+         patch.object(reviewer, "montar_nota_br",
+                      return_value={"disponivel": False, "motivo": "DRE indisponivel"}):
+        serie = reviewer.serie_historica_br("XPTO3", n_trimestres=3)
+
+    assert serie["disponivel"] is False
+    assert "DRE" in serie["motivo"] or "disponível" in serie["motivo"]
+
+
+def test_serie_historica_br_bloqueada_para_banco_sem_tentar_outros_trimestres():
+    chamadas = []
+
+    def _fake_montar(t, a, tri):
+        chamadas.append((a, tri))
+        return {"disponivel": False, "motivo": "instituição financeira/seguradora (Bancos) usa plano "
+                                                "de contas regulatório próprio (COSIF) - x"}
+
+    with patch.object(reviewer, "trimestres_candidatos_br", return_value=[(2026, 3), (2026, 2), (2026, 1)]), \
+         patch.object(reviewer, "montar_nota_br", side_effect=_fake_montar):
+        serie = reviewer.serie_historica_br("ITUB4", n_trimestres=3)
+
+    assert serie["disponivel"] is False
+    assert "COSIF" in serie["motivo"]
+    assert len(chamadas) == 1  # não repete a consulta pros outros trimestres - mesmo motivo bloquearia todos
