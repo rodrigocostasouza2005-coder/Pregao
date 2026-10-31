@@ -35,7 +35,7 @@ from ui.macro_tab import render_macro
 from ui.mercado_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MERCADO
 from ui.mercado_tab import render_mercado
 from ui.news_tab import injetar_fallback_imagem, render_news, render_news_ticker
-from ui.research_tab import render_casas_analise, render_radar_x, render_research
+from ui.research_tab import render_casas_analise, render_memoria_research, render_radar_x, render_research
 from ui.saude_dados_tab import render_saude_dados
 from ui.sistema_tab import render_sistema
 from ui.top_mercado_tab import render_top_mercado
@@ -661,6 +661,9 @@ if rota == ("research", "radar-x"):
 if rota == ("research", "teses"):
     # antes ANALISES > Teses - movida pra junto do resto de RESEARCH.
     radar_tab.render_teses(prefs, usuario)
+if rota == ("research", "memoria"):
+    with st.container():
+        render_memoria_research(prefs)
 
 # --- ANÁLISES › Fundamentos/Valuation ------------------------------------------
 if rota == ("analises", "fundamentos"):

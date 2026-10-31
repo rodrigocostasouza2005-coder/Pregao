@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Interface da aba RESEARCH: chamada de render_research(prefs) pelo app.py."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import html
@@ -11,6 +11,7 @@ import streamlit as st
 import config
 from data.news import obter_noticias
 from data.research import CASAS, coletar_pendentes, preparar_leitura, ultimas_coletas_formatadas
+from data.research import embeddings, store
 from data.research.base import TTL_COLETA
 from data.research.casas_status import obter_status_casas
 from data.research.genial import obter_recomendacoes, obter_swing_trade
@@ -1108,6 +1109,224 @@ def render_casas_analise(prefs: dict):
 
 
 # ============================================================
+# MEMÓRIA DE RESEARCH (Fase C - RAG, 2026-10-30, pedido do Rodrigo):
+# busca em linguagem natural + filtros estruturais sobre a biblioteca
+# PERMANENTE de premissas/projeções (research_premissas, ver
+# sql/research_premissas.sql) - toda a lógica de busca/combinação
+# (estrutural + semântica + lexical) vive em data/research/embeddings.py
+# e já retorna 100% ESTRUTURADO/determinístico; esta seção SÓ renderiza
+# os campos recebidos (link/casa/título/data/tickers/premissas/projeções/
+# recomendação/preço-alvo/origem_match), nunca sintetiza uma frase nova
+# "inventada" a partir do resultado.
+# ============================================================
+
+_TIPO_DOCUMENTO_LABEL = {
+    "INICIACAO_COBERTURA": "Iniciação de Cobertura",
+    "ATUALIZACAO_COBERTURA": "Atualização de Cobertura",
+    "ATUALIZACAO_RESULTADOS": "Atualização de Resultados",
+    "RELATORIO_SETORIAL": "Relatório Setorial",
+    "ESTRATEGIA_INVESTIMENTOS": "Estratégia de Investimentos",
+    "CARTEIRA_RECOMENDADA": "Carteira Recomendada",
+    "REVISAO_PRECO_ALVO": "Revisão de Preço-Alvo",
+    "MUDANCA_RECOMENDACAO": "Mudança de Recomendação",
+    "VALUATION": "Valuation",
+    "COMENTARIO_RESULTADO_TRIMESTRAL": "Comentário de Resultado Trimestral",
+}
+
+_ORIGEM_MATCH_LABEL = {
+    "semantico": "busca semântica", "lexical": "palavra-chave",
+    "ambos": "semântica + palavra-chave", "estrutural": "filtro estrutural",
+}
+
+# badges de confiança reaproveitam a classe base '.casas-badge' (já
+# definida em _CSS_CASAS, injetado por render_casas_analise) - esta
+# subaba roda isolada (so' a subaba ativa é renderizada, ver
+# ui/navegacao.py), então injeta o MESMO bloco de novo aqui (harmless,
+# so' reafirma as mesmas regras) mais as 4 variações de cor por nível de
+# confiança.
+_CSS_MEMORIA = _CSS_CASAS + """
+.memoria-badge-alta { border-color: var(--alta); color: var(--alta); }
+.memoria-badge-media { border-color: var(--destaque); color: var(--destaque); }
+.memoria-badge-baixa { border-color: var(--cinza); color: var(--cinza); }
+.memoria-badge-sem { border-color: var(--baixa); color: var(--baixa); }
+"""
+
+_BADGE_CONFIANCA = {
+    "ALTA": ("memoria-badge-alta", "CONFIANÇA ALTA"),
+    "MEDIA": ("memoria-badge-media", "CONFIANÇA MÉDIA"),
+    "BAIXA": ("memoria-badge-baixa", "CONFIANÇA BAIXA"),
+    "SEM_EVIDENCIA": ("memoria-badge-sem", "SEM EVIDÊNCIA"),
+}
+
+_AVISO_MEMORIA_SEM_CREDENCIAL = (
+    "Busca semântica (linguagem natural) não configurada neste ambiente — "
+    "GEMINI_API_KEY ausente. A busca por ticker/casa/tipo/palavra-chave "
+    "continua funcionando normalmente."
+)
+
+
+# --- núcleo puro (sem Streamlit, testável direto) --------------------------
+
+def _opcoes_filtro_memoria(premissas: list) -> dict:
+    """{'casas':[...], 'tipos':[...], 'tickers':[...]} a partir do que já
+    está carregado em memória - pura, sem rede/Streamlit, testável
+    direto. Listas ordenadas e sem duplicata/None."""
+    casas = sorted({p.get("casa") for p in premissas if p.get("casa")})
+    tipos = sorted({p.get("tipo_documento") for p in premissas if p.get("tipo_documento")})
+    tickers = sorted({t for p in premissas for t in (p.get("tickers") or [])})
+    return {"casas": casas, "tipos": tipos, "tickers": tickers}
+
+
+def _badge_confianca_html(confianca: str) -> str:
+    classe, rotulo = _BADGE_CONFIANCA.get(confianca, ("memoria-badge-sem", confianca or "—"))
+    return f"<span class='casas-badge {classe}'>{rotulo}</span>"
+
+
+def _card_resultado_memoria(item: dict, fmt: str) -> str:
+    """HTML de 1 resultado de embeddings.buscar() - renderiza SÓ os
+    campos já estruturados que vieram no dict (link/casa/titulo/data/
+    tickers/tipo_documento/premissas/projecoes/recomendacao/preco_alvo/
+    origem_match); nunca sintetiza uma frase nova. link/casa/data sempre
+    citados explicitamente (rastreabilidade até a publicação original)."""
+    tickers_html = " ".join(
+        f"<span style='color:var(--destaque);'>{html.escape(t)}</span>" for t in (item.get("tickers") or [])
+    )
+    tipo_doc = item.get("tipo_documento")
+    tipo_label = _TIPO_DOCUMENTO_LABEL.get(tipo_doc, tipo_doc) if tipo_doc else None
+    origem_label = _ORIGEM_MATCH_LABEL.get(item.get("origem_match"), item.get("origem_match"))
+    meta = " · ".join(filter(None, [
+        html.escape(item.get("casa") or ""), _fmt_data(item.get("data_publicacao")),
+        tipo_label, tickers_html or "",
+        f"origem: {origem_label}" if origem_label else "",
+    ]))
+
+    premissas_html = ""
+    if item.get("premissas"):
+        itens_html = "".join(
+            f"<li class='cinza' style='font-size:0.74rem;'>{html.escape(p)}</li>" for p in item["premissas"]
+        )
+        premissas_html = f"<ul style='margin:0.2rem 0 0.3rem 1rem; padding:0;'>{itens_html}</ul>"
+
+    projecoes_html = ""
+    if item.get("projecoes"):
+        partes = "; ".join(f"{html.escape(str(k))}: {html.escape(str(v))}" for k, v in item["projecoes"].items())
+        projecoes_html = f"<div class='cinza' style='font-size:0.72rem;'>Projeções: {partes}</div>"
+
+    recomendacao = item.get("recomendacao")
+    preco_alvo = item.get("preco_alvo")
+    rec_html = ""
+    if recomendacao or preco_alvo is not None:
+        rec_txt = html.escape(str(recomendacao)) if recomendacao else "não identificada"
+        preco_txt = f"R$ {config.formatar_numero(preco_alvo, 2, fmt)}" if preco_alvo is not None else "não informado"
+        rec_html = f"<div class='casas-rec'>Recomendação: <b>{rec_txt}</b> · Preço-alvo: <b>{preco_txt}</b></div>"
+
+    link = item.get("link")
+    titulo = html.escape(item.get("titulo") or "(sem título)")
+    link_html = (
+        f"<a href='{html.escape(link, quote=True)}' target='_blank' rel='noopener' "
+        f"style='color:var(--neutro); font-weight:600; text-decoration:none; font-size:0.85rem;'>{titulo}</a>"
+        if link else f"<span style='font-weight:600; font-size:0.85rem;'>{titulo}</span>"
+    )
+
+    return (
+        "<div style='padding:0.35rem 0; border-bottom:1px solid var(--borda);'>"
+        f"{link_html}"
+        f"<div class='cinza' style='font-size:0.68rem; margin-top:0.15rem;'>{meta}</div>"
+        f"{premissas_html}{projecoes_html}{rec_html}"
+        "</div>"
+    )
+
+
+# --- leitura cacheada (so' pra montar as opcoes de filtro) ------------------
+
+@st.cache_data(ttl=TTL_COLETA, show_spinner=False)
+def _premissas_para_opcoes_cacheado() -> list:
+    """Cache curto (TTL_COLETA, mesmo padrão de _ultimo_snapshot_cacheado
+    no topo deste arquivo) só pra montar as OPÇÕES de filtro (casa/tipo/
+    ticker) - evita reconsultar o Supabase a cada rerun da aba só pra
+    isso. A busca de verdade (embeddings.buscar, chamada abaixo) sempre
+    lê o dado mais recente, sem cache."""
+    return store.listar_premissas() or []
+
+
+@st.fragment
+def render_memoria_research(prefs: dict):
+    """Ponto de entrada da subaba RESEARCH › Memória de Research
+    (chamado por app.py): busca em linguagem natural + filtros sobre a
+    biblioteca permanente de premissas/projeções (RAG, Fase C).
+
+    Controles inline (sem formulário/botão separado - pills/selectbox já
+    disparam rerun no próprio clique, texto dispara no Enter/blur, mesmo
+    padrão do resto do app): mudar um filtro ou a pergunta já refaz a
+    busca na hora. embeddings.buscar() só gera embedding (chamada de
+    rede ao Gemini) quando `pergunta` não está vazia - filtrar só por
+    ticker/casa/tipo/período nunca bate na API de IA.
+
+    Se GEMINI_API_KEY não estiver configurada, mostra aviso claro e a
+    busca cai pra lexical/estrutural (embeddings.buscar já trata isso
+    internamente - aqui só repassamos pra tela)."""
+    st.markdown(f"<style>{_CSS_MEMORIA}</style>", unsafe_allow_html=True)
+    st.markdown('<div class="painel-titulo">MEMÓRIA DE RESEARCH</div>', unsafe_allow_html=True)
+    st.markdown(
+        "<div class='casas-nota'>Busca em linguagem natural + filtros sobre tudo que já foi extraído das "
+        "publicações das casas de research (biblioteca permanente, nunca apaga) — toda citação traz "
+        "fonte/data/casa, nunca sintetiza uma conclusão nova.</div>",
+        unsafe_allow_html=True,
+    )
+
+    api_key, _ = config.obter_credenciais_gemini()
+    if not api_key:
+        st.warning(_AVISO_MEMORIA_SEM_CREDENCIAL)
+
+    premissas_todas = _premissas_para_opcoes_cacheado()
+    opcoes = _opcoes_filtro_memoria(premissas_todas)
+
+    with st.container(key="memoria_filtros"):
+        pergunta = st.text_input(
+            "Pergunta em linguagem natural (opcional)", key="memoria_pergunta",
+            placeholder="ex: qual a tese da Genial pra WEGE3?",
+        )
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            filtro_ticker = st.selectbox("Ticker", ["Todos"] + opcoes["tickers"], key="memoria_filtro_ticker")
+        with col2:
+            filtro_casa = st.selectbox("Casa", ["Todas"] + opcoes["casas"], key="memoria_filtro_casa")
+        with col3:
+            filtro_tipo = st.selectbox(
+                "Tipo de documento", ["Todos"] + opcoes["tipos"], key="memoria_filtro_tipo",
+                format_func=lambda t: _TIPO_DOCUMENTO_LABEL.get(t, t),
+            )
+        periodo_label = st.pills(
+            "Período", ["7 dias", "30 dias", "90 dias", "Tudo"], default="Tudo",
+            selection_mode="single", key="memoria_filtro_periodo",
+        ) or "Tudo"
+
+    dias = {"7 dias": 7, "30 dias": 30, "90 dias": 90, "Tudo": None}[periodo_label]
+    data_inicio = None
+    if dias is not None:
+        data_inicio = (datetime.now(ZoneInfo("America/Sao_Paulo")) - timedelta(days=dias)).strftime("%Y-%m-%d")
+
+    resultado = embeddings.buscar(
+        pergunta=pergunta or None,
+        ticker=None if filtro_ticker == "Todos" else filtro_ticker,
+        casa=None if filtro_casa == "Todas" else filtro_casa,
+        tipo_documento=None if filtro_tipo == "Todos" else filtro_tipo,
+        data_inicio=data_inicio,
+        top_k=10,
+    )
+
+    if resultado.get("aviso"):
+        st.warning(resultado["aviso"])
+
+    st.markdown(_badge_confianca_html(resultado["confianca"]), unsafe_allow_html=True)
+
+    if not resultado["resultados"]:
+        st.info("Nenhuma evidência encontrada para essa busca/filtros.")
+        return
+
+    fmt = prefs.get("formato_numerico", "BR")
+    for item in resultado["resultados"]:
+        st.markdown(_card_resultado_memoria(item, fmt), unsafe_allow_html=True)
 # RADAR X — INTELIGÊNCIA SOCIAL (2026-10-30, pedido explícito do
 # Rodrigo) - leitura pura de data/x_radar/store.py. Conector
 # (data/x_signals.py) permanece desligado sem X_BEARER_TOKEN (ver
