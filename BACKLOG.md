@@ -369,10 +369,18 @@ reinventados do zero:
   juntos, o painel comparativo pode mostrar os dois sem indicar a
   moeda de cada um (`formatar_valor_mercado` já aceita `moeda=`, mas
   nenhum caller do comparativo passa isso ainda).
-- **FASE 4 (X)** — `data/x_signals.py` isolado/desligado, pronto pra
-  integração futura. Decisão de custo (ver PROGRESSO.md FASE 7) fica
-  com o Rodrigo; não reabrir sem aprovação explícita de orçamento/
-  credencial nova.
+- **FASE 4 (X) — LIGADA EM 2026-10-30** (pedido explícito do Rodrigo,
+  "RADAR X - INTELIGÊNCIA SOCIAL"): `data/x_signals.py` ganhou conector
+  real (paginação/dedup/rate-limit) + `data/x_radar/` (classificação/
+  relevância/credibilidade/cruzamento/persistência), integrado em
+  `jobs/coordenador.py` e `ui/research_tab.py` (subaba Radar X). O
+  CONECTOR continua desligado (`DISPONIVEL=False`, sem
+  `X_BEARER_TOKEN`) - decisão de custo (US$200/mês pay-per-use sem
+  busca confirmada, ou Enterprise US$42k+/mês) ainda não tomada, ver
+  `docs/x-radar-inteligencia-social-20261030.md`. Diferente da FASE 4
+  original: a ARQUITETURA de integração está pronta e ligada, só falta
+  a credencial - não é mais "aguardando decisão de reabrir", é
+  "aguardando credencial".
 - **Confirmação em produção real** de todas as instrumentações desta
   sessão (SAÚDE DOS DADOS) — não verificável deste sandbox (sem acesso
   a Supabase/rede de produção reais). A tabela `coletores_status` só
