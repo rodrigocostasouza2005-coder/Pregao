@@ -38,12 +38,12 @@ from ui import graficos
 from ui.calendario_tab import _painel_proximos_watchlist
 from ui.mercado_tab import _item_ticker_html, _painel_globais
 from ui.news_tab import (
-    _abrir_card, _CLASSE_SELO, _fmt_hora, _injetar_css, _plural_fontes, _texto_tag, _tooltip_regras, _truncar,
+    _abrir_card, _CLASSE_SELO, _fmt_hora, _fmt_hora_curta, _injetar_css, _plural_fontes, _texto_tag, _tooltip_regras, _truncar,
 )
 from ui.research_tab import _casas_ativas
 
 _PERIODOS_IBOV = ["1D", "1S", "1M", "3M", "6M", "1A", "5A"]
-_QTD_NOTICIAS = 4
+_QTD_NOTICIAS = 8
 
 
 def _tema_atual(prefs):
@@ -381,40 +381,41 @@ def _painel_noticias_resumo(prefs):
     fonte continua disponível, só que agora como ícone separado (↗),
     igual já é lá."""
     _injetar_css()
-    st.markdown('<div class="painel-titulo">DESTAQUES DO DIA <span class="cinza" style="font-size:0.68rem;font-weight:400;">ÚLTIMAS 4</span></div>', unsafe_allow_html=True)
     itens = obter_top_mercado_tudo("TODOS")
+    mostrados = (itens or [])[:_QTD_NOTICIAS]
+    st.markdown(
+        f'<div class="painel-titulo">DESTAQUES DO DIA <span class="cinza" style="font-size:0.68rem;font-weight:400;">'
+        f'ÚLTIMAS {len(mostrados) or ""}</span></div>',
+        unsafe_allow_html=True,
+    )
     if not itens:
         st.markdown("<div class='cinza' style='font-size:0.78rem;'>Sem notícias disponíveis.</div>", unsafe_allow_html=True)
         return
-    # A visão geral é um resumo executivo, não o feed completo: quatro manchetes
-    # no máximo, sem texto longo nem contexto extra. O feed completo fica em NEWS.
+    # Feed estilo terminal (redesign 2026-11-01, pedido do Rodrigo: "parecido
+    # com a Bloomberg"): hora em ambar + manchete em ate 2 linhas + veiculos
+    # em caixa alta, uma linha fina entre itens. A Visao Geral continua sendo
+    # um resumo (8 manchetes); o feed completo fica em NOTICIAS.
     watchlist = prefs.get("watchlist") or []
-    for idx, n in enumerate(itens[:_QTD_NOTICIAS]):
+    for idx, n in enumerate(mostrados):
         classe_selo = _CLASSE_SELO.get(n["selo"], "selo-naoconfirmada")
         tooltip = html.escape(_tooltip_regras(n))
-        titulo = _truncar(n["titulo"], 68)
-        st.markdown(
-            f"<div style='margin:0.6rem 0 0.4rem 0; line-height:1;'>"
-            f"<span class='selo-tag {classe_selo}' title='{tooltip}' style='font-size:0.58rem;'>"
-            f"{_texto_tag(n)}</span></div>",
-            unsafe_allow_html=True,
+        veiculos = [v for v in (n.get("veiculos") or []) if v]
+        fontes = " · ".join(html.escape(v) for v in veiculos[:2]) + (f" +{len(veiculos) - 2}" if len(veiculos) > 2 else "")
+        meta = (
+            f"<div class='bb-meta'>{fontes or _plural_fontes(n['fontes_count'])}"
+            f"<span class='selo-tag {classe_selo}' title='{tooltip}'>{_texto_tag(n)}</span>"
+            f"<a class='w-abrir-link' href='{html.escape(n['link'])}' target='_blank' rel='noopener' "
+            f"title='Abrir matéria na fonte'>↗</a></div>"
         )
-        col_manchete, col_abrir = st.columns([0.88, 0.12], gap="small")
-        with col_manchete:
-            chave_botao = f"vg-manchete-{idx}-{abs(hash(n['link']))}"
-            if st.button(titulo, key=chave_botao, width="stretch"):
-                _abrir_card(n, watchlist)
-        with col_abrir:
-            st.markdown(
-                f"<a class='w-abrir-link' href='{html.escape(n['link'])}' target='_blank' "
-                f"rel='noopener' title='Abrir matéria na fonte'>↗</a>",
-                unsafe_allow_html=True,
-            )
-        st.markdown(
-            f"<div class='cinza' style='font-size:0.64rem; margin-top:0.15rem; padding-bottom:0.25rem; "
-            f"border-bottom:1px solid var(--borda);'>{_fmt_hora(n['data'])} · {_plural_fontes(n['fontes_count'])}</div>",
-            unsafe_allow_html=True,
-        )
+        with st.container(key=f"bbnews-{idx}"):
+            col_hora, col_corpo = st.columns([0.11, 0.89], gap="small", vertical_alignment="top")
+            with col_hora:
+                st.markdown(f"<div class='bb-hora'>{_fmt_hora_curta(n['data'])}</div>", unsafe_allow_html=True)
+            with col_corpo:
+                chave_botao = f"vg-manchete-{idx}-{abs(hash(n['link']))}"
+                if st.button(_truncar(n["titulo"], 150), key=chave_botao, width="stretch"):
+                    _abrir_card(n, watchlist)
+                st.markdown(meta, unsafe_allow_html=True)
 
 
 def _painel_mapa_setorial_compacto(prefs):
@@ -639,7 +640,7 @@ def render_visao_geral(prefs: dict, persistir_fn=None):
                 _painel_para_investigar(prefs)
 
     with st.container(key="vg_grid_exploracao"):
-        col_ab, col_news, col_setor = st.columns([0.36, 0.36, 0.28], gap="small")
+        col_ab, col_news, col_setor = st.columns([0.28, 0.46, 0.26], gap="small")
         with col_ab:
             with st.container(border=True):
                 _painel_altas_baixas_resumo(prefs)

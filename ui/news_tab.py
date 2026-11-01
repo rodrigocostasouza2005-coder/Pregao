@@ -108,6 +108,33 @@ div[class*="st-key-wire-cab-"] [data-testid="stColumn"] { min-height:16px; }
 /* no celular as colunas empilham: o cabecalho de colunas perde o sentido */
 @media (max-width: 640px) { div[class*="st-key-wire-cab-"] { display:none; } }
 /* linha wire: o st.markdown de cada celula nao pode empurrar a altura da linha */
+
+/* ---- feed estilo terminal (Visao Geral > Destaques do dia) ------------
+   Horario em ambar a esquerda, manchete clara em ate 2 linhas, veiculos em
+   caixa alta pequena embaixo e um filete fino entre itens - sem caixa em
+   volta de cada manchete (o botao padrao virava um retangulo com a
+   manchete cortada em "..."). */
+.bb-hora { color:var(--destaque); font-size:11.5px; line-height:18px; font-weight:600; white-space:nowrap; }
+.bb-meta { color:var(--cinza); font-size:10px; line-height:15px; letter-spacing:0.03em; text-transform:uppercase; margin-top:1px; }
+.bb-meta .selo-tag { font-size:9px; line-height:12px; padding:0 0.25rem; margin-left:0.2rem; vertical-align:baseline; }
+.bb-meta .w-abrir-link { display:inline; margin-left:0.25rem; font-size:11px; }
+div[class*="st-key-bbnews-"] { border-bottom:1px solid var(--borda); padding:0.3rem 0 0.32rem 0; }
+div[class*="st-key-vg-manchete-"] button {
+    background:transparent !important; border:none !important; box-shadow:none !important;
+    color:var(--neutro) !important; text-align:left !important; justify-content:flex-start !important;
+    padding:0 !important; margin:0 !important; min-height:auto !important; height:auto !important;
+    font-family:'IBM Plex Mono', monospace !important; font-size:12.5px !important; font-weight:500 !important;
+    line-height:17px !important; width:100% !important; display:block !important; white-space:normal !important;
+}
+div[class*="st-key-vg-manchete-"] button:hover { color:var(--destaque) !important; background:transparent !important; }
+div[class*="st-key-vg-manchete-"] button p {
+    color:inherit !important; font-size:inherit !important; text-align:left !important; white-space:normal !important;
+    display:-webkit-box !important; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden !important;
+}
+div[class*="st-key-bbnews-"] [data-testid="stColumn"] { min-height:18px; }
+/* o elemento de markdown colapsa a ~1 linha e nao empurra o que vem abaixo (a linha
+   de veiculos caia depois do filete); altura minima explicita resolve */
+div[class*="st-key-bbnews-"] [data-testid="stElementContainer"]:has(.bb-meta) { min-height:16px; }
 /* celulas do wire alinhadas ao topo, mesma altura de linha (18px) */
 .selo-tag { line-height:16px; vertical-align:top; margin-top:1px; }
 .w-abrir-link { line-height:18px; }
@@ -224,7 +251,9 @@ div[class*="st-key-top-manchete-"] button p {
    nos filhos flex, o texto com white-space:nowrap dentro de uma coluna
    recusa a encolher e forca rolagem horizontal na pagina inteira (voltou
    a cortar "ranking"/"top 20" pela esquerda - ver PROGRESSO.md) */
-[data-testid="stHorizontalBlock"] { overflow-x: hidden; }
+/* clip (nao hidden): "hidden" num eixo forca o outro a virar auto e cortava
+   a linha de fontes que passa da altura calculada da coluna */
+[data-testid="stHorizontalBlock"] { overflow-x: clip; }
 [data-testid="stHorizontalBlock"] > div { min-width: 0 !important; }
 
 /* ---- feed editorial (fase 3) ----------------------------------------
