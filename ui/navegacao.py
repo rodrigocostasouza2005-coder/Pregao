@@ -104,6 +104,18 @@ AREAS = (
         Subaba("fundamentos", "Fundamentos", ("EQUITY",)),
         Subaba("valuation", "Valuation", ("RADAR",)),
     )),
+    # COORDENADOR CENTRAL (Fase E, pedido do Rodrigo, 2026-10-31): orquestra
+    # especialistas (inteligências Python já existentes, ver data/
+    # coordenador_central/registro.py) com execução paralela/isolada,
+    # consolidação e persistência - conteúdo novo, sem aba antiga, sempre
+    # visível (mesmo padrão de "casas"/"radar-x" em RESEARCH acima).
+    Area("coordenador", "COORDENADOR", ":material/hub:", (
+        Subaba("visao-geral", "Visão Geral"),
+        Subaba("especialistas", "Especialistas"),
+        Subaba("execucoes", "Execuções"),
+        Subaba("historico", "Histórico"),
+        Subaba("analisar", "Analisar"),
+    )),
     Area("macro", "MACRO", ":material/public:", (
         Subaba("indicadores", "Indicadores", ("MACRO",)),
         Subaba("juros", "Juros", ("MACRO",)),

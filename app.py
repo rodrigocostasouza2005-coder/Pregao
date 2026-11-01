@@ -29,6 +29,7 @@ from ui import (
     analises_tab, busca, graficos, macro_tab, morning_call_tab, navegacao, paineis,
     radar_tab, secoes, setores_tab,
 )
+from ui import coordenador_tab
 from ui.cvm_tab import render_cvm, render_cvm_ticker
 from ui.macro_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MACRO
 from ui.macro_tab import render_macro
@@ -670,6 +671,23 @@ if rota == ("analises", "fundamentos"):
     analises_tab.render_fundamentos(prefs)
 if rota == ("analises", "valuation"):
     radar_tab.render_valuation(prefs)
+
+# --- COORDENADOR CENTRAL (ver ui/coordenador_tab.py) - Fase E, 2026-10-31 -----
+if rota == ("coordenador", "visao-geral"):
+    with st.container():
+        coordenador_tab.render_visao_geral(prefs)
+if rota == ("coordenador", "especialistas"):
+    with st.container():
+        coordenador_tab.render_especialistas(prefs)
+if rota == ("coordenador", "execucoes"):
+    with st.container():
+        coordenador_tab.render_execucoes(prefs)
+if rota == ("coordenador", "historico"):
+    with st.container():
+        coordenador_tab.render_historico(prefs)
+if rota == ("coordenador", "analisar"):
+    with st.container():
+        coordenador_tab.render_analisar(prefs)
 
 # --- MACRO (Indicadores = workspace completo da antiga aba MACRO) -------------
 if rota == ("macro", "indicadores"):
