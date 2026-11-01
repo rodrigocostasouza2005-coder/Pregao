@@ -244,7 +244,9 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     border: 1px solid var(--borda) !important;
     border-radius: 0 !important;
     background-color: var(--painel-bg) !important;
-    padding: var(--padding-painel) !important;
+    /* NAO mexer no padding: reduzir para --padding-painel desajusta as
+       margens negativas do .painel-titulo e o conteudo vaza ~9px da caixa
+       (medido: todos os paineis, baseline sem a regra = 0) */
 }
 
 .painel-titulo {
@@ -1166,4 +1168,22 @@ button[data-testid^="stBaseButton"] {
         min-width: calc(33.333% - 0.35rem) !important;
         width: calc(33.333% - 0.35rem) !important;
     }
+}
+
+/* PAINEL COM BORDA no Streamlit 1.64.0 (versao PINADA em requirements.txt) ----
+   A regra de `div[data-testid="stVerticalBlockBorderWrapper"]` (mais acima)
+   nunca mais casa: nesta versao o st.container(border=True) e' um
+   stVerticalBlock comum com uma classe emotion gerada (medido no DOM real
+   com Playwright, 2026-11-01) - por isso os paineis apareciam com cantos
+   arredondados de 8px e borda clara padrao, em vez do visual de terminal
+   (cantos retos, fundo de painel) que o resto do CSS pressupoe.
+   Se um upgrade do Streamlit mudar o hash da classe, a regra deixa de
+   casar e os paineis voltam ao visual padrao, sem quebrar nada.
+   NAO sobrescrever o padding aqui: reduzir para --padding-painel desajusta
+   as margens negativas do .painel-titulo e o conteudo vaza ~9px da caixa
+   (medido em todos os paineis; sem a regra o vazamento e' zero). */
+div[data-testid="stVerticalBlock"].st-emotion-cache-1t2xbk4 {
+    border-radius: 0 !important;
+    border-color: var(--borda) !important;
+    background-color: var(--painel-bg) !important;
 }

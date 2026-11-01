@@ -69,7 +69,7 @@ def marcar_ultimo(fig, valor: float, texto: str, cor: str, fundo: str, linha: in
     fig.add_hline(y=valor, line_dash="dot", line_width=1, line_color=_rgba(cor, 0.6), row=linha, col=1)
     fig.add_annotation(
         x=1, xref="x domain" if linha == 1 else "paper", y=valor, yref="y" if linha == 1 else "y",
-        text=f"<b>{texto}</b>", showarrow=False, xanchor="left", xshift=3, align="left",
+        text=f"<b>{texto}\u00a0</b>", showarrow=False, xanchor="left", xshift=3, align="left",
         font=dict(color=fundo, size=10, family="IBM Plex Mono"), bgcolor=cor, borderpad=2,
         row=linha, col=1,
     )
@@ -181,7 +181,7 @@ def renderizar_grafico_preco(
 
     tem_volume = "Volume" in df.columns and df["Volume"].notna().any()
     if tem_volume:
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.06)
     else:
         fig = make_subplots(rows=1, cols=1)
 
