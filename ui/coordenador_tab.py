@@ -20,6 +20,7 @@ import streamlit as st
 
 from data.coordenador_central import fluxos, persistencia
 from data.coordenador_central.registro import listar_especialistas
+from ui.design_system import lista_compacta, subtitulo
 
 _CSS_COORDENADOR = """
 .coord-nota { color: var(--cinza); font-size: 0.7rem; margin: 0.1rem 0 0.8rem 0; line-height: 1.5; }
@@ -258,7 +259,15 @@ def render_execucoes(prefs: dict = None):
 # ============================================================
 
 def _render_consolidado(consolidado: dict):
-    st.markdown(f"**Resumo executivo:** {consolidado.get('resumo_executivo')}")
+    # subtitulo/lista_compacta (achado real, auditoria "missao master"
+    # 2026-10-31): mesmo padrao de st.markdown("**Texto**")/"- item" cru
+    # ja corrigido em ui/analises_tab.py - renderizava no tamanho de
+    # fonte PADRAO do Streamlit, maior que o resto do app.
+    subtitulo("Resumo executivo")
+    st.markdown(
+        f"<div style='font-size:0.78rem;'>{html.escape(str(consolidado.get('resumo_executivo') or ''))}</div>",
+        unsafe_allow_html=True,
+    )
 
     confianca = consolidado.get("confianca") or {}
     st.markdown(
@@ -267,31 +276,43 @@ def _render_consolidado(consolidado: dict):
         unsafe_allow_html=True,
     )
 
-    st.markdown("**Visão por especialista:**")
-    for especialista_id, r in (consolidado.get("visao_especialistas") or {}).items():
-        disp = "disponível" if r.get("disponivel") else f"indisponível ({r.get('motivo_indisponivel')})"
-        st.markdown(f"- `{especialista_id}` — {disp}: {r.get('resumo') or '—'}")
+    def _linha_especialista(especialista_id, r):
+        if r.get("disponivel"):
+            disp = "disponível"
+        else:
+            motivo = html.escape(str(r.get("motivo_indisponivel")))
+            disp = f"indisponível ({motivo})"
+        return (
+            f"<code>{html.escape(especialista_id)}</code> — {disp}: "
+            f"{html.escape(r.get('resumo') or '—')}"
+        )
+
+    subtitulo("Visão por especialista")
+    lista_compacta(
+        _linha_especialista(especialista_id, r)
+        for especialista_id, r in (consolidado.get("visao_especialistas") or {}).items()
+    )
 
     conclusao = consolidado.get("conclusao") or []
     if conclusao:
-        st.markdown("**Conclusão:**")
+        subtitulo("Conclusão")
         for linha in conclusao:
             st.markdown(f"<div class='coord-conclusao-linha'>{html.escape(linha)}</div>", unsafe_allow_html=True)
 
     pontos_atencao = consolidado.get("pontos_atencao") or []
     if pontos_atencao:
         with st.expander(f"Pontos de atenção ({len(pontos_atencao)})"):
-            for p in pontos_atencao:
-                st.markdown(f"- {p}")
+            lista_compacta(html.escape(str(p)) for p in pontos_atencao)
 
     divergencias = (consolidado.get("divergencias") or {}).get("cross_comparador_memoria")
     if divergencias and divergencias.get("divergencias"):
         with st.expander(f"Divergências identificadas ({len(divergencias['divergencias'])})"):
-            for d in divergencias["divergencias"]:
-                st.markdown(
-                    f"- **{d['casa']}** ({d['tipo']}, {d['campo']}): comparador=`{d['comparador']}` "
-                    f"vs memória de research=`{d['memoria_research']}`"
-                )
+            lista_compacta(
+                f"<b>{html.escape(d['casa'])}</b> ({html.escape(str(d['tipo']))}, {html.escape(str(d['campo']))}): "
+                f"comparador=<code>{html.escape(str(d['comparador']))}</code> "
+                f"vs memória de research=<code>{html.escape(str(d['memoria_research']))}</code>"
+                for d in divergencias["divergencias"]
+            )
 
     evidencias = consolidado.get("evidencias") or []
     if evidencias:
@@ -378,7 +399,7 @@ def render_analisar(prefs: dict = None):
 
     acionar = st.button("Acionar especialistas", key="coord_analisar_botao", disabled=not ticker)
 
-    st.markdown("**Sugestões:**")
+    subtitulo("Sugestões")
     cols = st.columns(len(_SUGESTOES))
     sugestao_clicada = None
     for col, (rotulo, fluxo_id, ticker_sugerido) in zip(cols, _SUGESTOES):
