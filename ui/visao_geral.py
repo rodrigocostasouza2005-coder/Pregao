@@ -36,7 +36,7 @@ from data.research import preparar_leitura
 from data.sintese_mercado import obter_sintese_mercado
 from ui import graficos
 from ui.calendario_tab import _painel_proximos_watchlist
-from ui.mercado_tab import _painel_globais
+from ui.mercado_tab import _item_ticker_html, _painel_globais
 from ui.news_tab import (
     _abrir_card, _CLASSE_SELO, _fmt_hora, _injetar_css, _plural_fontes, _texto_tag, _tooltip_regras, _truncar,
 )
@@ -97,30 +97,6 @@ def _badge_ticker(ticker: str, tema: dict, tamanho: str = "1.5rem") -> str:
 
 
 # ===================== indicadores essenciais (faixa densa) =====================
-
-def _item_ticker_html(rotulo: str, preco, variacao_pct, casas: int, prefs, status: str | None = None) -> str:
-    if preco is None or variacao_pct is None:
-        return (
-            f"<div style='padding:0.5rem 0.8rem; border-right:1px solid var(--borda); flex:1 1 0; min-width:7rem;'>"
-            f"<div class='cinza' style='font-size:0.6rem; letter-spacing:0.04em;'>{rotulo}</div>"
-            f"<div class='cinza' style='font-size:0.88rem; font-weight:700; margin-top:0.1rem;'>—</div>"
-            f"<div class='cinza' style='font-size:0.64rem; margin-top:0.1rem;'>SEM DADO</div></div>"
-        )
-    cls = "alta" if variacao_pct >= 0 else "baixa"
-    seta = "▲" if variacao_pct >= 0 else "▼"
-    status_html = (
-        f"<div class='cinza' style='font-size:0.54rem; margin-top:0.1rem;'>{html.escape(status)}</div>"
-        if status else ""
-    )
-    return (
-        f"<div style='padding:0.5rem 0.8rem; border-right:1px solid var(--borda); flex:1 1 0; min-width:7rem;'>"
-        f"<div class='cinza' style='font-size:0.6rem; letter-spacing:0.04em;'>{rotulo}</div>"
-        f"<div class='neutro' style='font-size:0.88rem; font-weight:700; margin-top:0.1rem;'>"
-        f"{config.formatar_numero(preco, casas, prefs['formato_numerico'])}</div>"
-        f"<div class='{cls}' style='font-size:0.66rem; font-weight:600; margin-top:0.1rem;'>{seta} {_fmt_pct(variacao_pct, prefs)}</div>"
-        f"{status_html}</div>"
-    )
-
 
 def _painel_indicadores(prefs):
     """Faixa densa de indicadores essenciais (estilo terminal - rótulo/

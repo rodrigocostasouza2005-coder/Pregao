@@ -733,18 +733,6 @@ table tr:last-child td { border-bottom: none; }
         flex: 1 1 100% !important;
         min-width: 100% !important;
     }
-
-    /* VISAO GERAL - "MERCADO AGORA" (bug real confirmado por screenshot,
-       2026-10-10): mesma causa-raiz de novo (st.columns(7) so' encolhe,
-       nunca empilha) - cada uma das 7 colunas sobrava uns 45px numa tela
-       de celular, pouco ate' pro NUMERO ("101"), que quebrava digito por
-       digito. Deixa cada card quebrar linha com largura minima real (~3
-       por linha em vez de 7 espremidos ou 1 por linha desperdicando
-       espaco - sao cards curtos, cabem varios lado a lado). */
-    .st-key-visao_geral_mercado_agora_cols div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-        flex: 1 1 30% !important;
-        min-width: 7rem !important;
-    }
 }
 
 
@@ -817,91 +805,13 @@ button[data-testid^="stBaseButton"] {
     background: var(--destaque);
 }
 
-
-/* VISAO GERAL: cards de mercado com hierarquia forte e leitura rapida. */
-/* O bloco de colunas precisa de respiro próprio: o workspace usa
-   overflow:auto e o conteúdo Streamlit pode encostar no limite superior
-   do painel, cortando justamente a primeira linha dos cards. */
-div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBlock"] {
-    padding-top: 0.3rem;
-    padding-bottom: 0.1rem;
-    box-sizing: border-box;
-}
-.card-mercado-agora {
-    min-width: 0;
-    /* Altura intrínseca suficiente para rótulo, preço e variação.
-       Não usar height:100%: as colunas Streamlit podem ter alturas
-       diferentes e o painel do workspace tem altura controlada pelo usuário. */
-    min-height: 3.55rem;
-    height: auto;
-    box-sizing: border-box;
-    padding: 0.32rem 0.45rem 0.38rem;
-    border: 1px solid var(--borda);
-    border-top: 2px solid var(--destaque);
-    /* fundo chapado, nao mais gradiente decorativo (achado da auditoria
-       visual 2026-10-16: o terminal de referencia nao usa gradiente em
-       nenhum card/painel - a borda superior ambar ja' basta pra marcar
-       "isto e' um indicador de destaque", sem precisar de um degrade
-       atras do texto). */
-    background: var(--painel-bg);
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    gap: 0.16rem;
-    overflow: visible;
-    transition: border-color 140ms ease, background-color 140ms ease;
-}
-/* Os wrappers markdown do Streamlit não devem cortar o card nem seu topo. */
-.st-key-visao_geral_mercado_agora_cols [data-testid="stMarkdown"],
-.st-key-visao_geral_mercado_agora_cols [data-testid="stMarkdownContainer"] {
-    min-width: 0;
-    overflow: visible;
-}
-.card-mercado-agora:hover {
-    border-color: var(--destaque);
-    background: color-mix(in srgb, var(--painel-bg) 90%, var(--destaque));
-}
-.card-mercado-rotulo {
-    color: var(--cinza);
-    font-size: 0.65rem;
-    line-height: 1.25;
-    letter-spacing: 0.045em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.card-mercado-valor {
-    color: var(--neutro);
-    font-size: clamp(0.78rem, 1vw, 1rem);
-    font-weight: 600;
-    line-height: 1.25;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.card-mercado-variacao {
-    font-size: 0.72rem;
-    line-height: 1.2;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-}
-.card-mercado-status {
-    color: var(--cinza);
-    font-size: 0.55rem;
-    line-height: 1.2;
-    letter-spacing: 0.025em;
-    overflow-wrap: anywhere;
-}
-.card-mercado-valor.indisponivel { color: var(--cinza); }
-@media (max-width: 900px) {
-    .card-mercado-agora {
-        min-height: 3.4rem;
-        padding: 0.28rem 0.35rem 0.34rem;
-    }
-}
-
+/* .card-mercado-* removido (2026-10-31, auditoria "missao master"): CSS
+   orfao - sobrevivia de uma versao anterior de VISAO GERAL
+   (_painel_mercado_agora/.st-key-visao_geral_mercado_agora_cols), ja
+   substituida pela faixa densa atual (_painel_indicadores em
+   ui/mercado_tab.py:_item_ticker_html, compartilhada com MERCADO >
+   Painel). Zero referencia a essas classes/chave em nenhum .py do
+   projeto no momento da remocao (confirmado por busca). */
 
 /* RESPONSIVIDADE MOBILE — melhoria de leitura e toque (2026-10-14).
    Prioriza conteúdo legível em celulares: colunas analíticas viram blocos
@@ -936,50 +846,6 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
         flex: 1 1 100% !important;
         min-width: 100% !important;
         width: 100% !important;
-    }
-
-    /* Mantém os sete indicadores curtos da Visão Geral em uma grade fluida,
-       sem comprimir os números dígito por dígito. */
-    .st-key-visao_geral_mercado_agora_cols div[data-testid="stHorizontalBlock"] {
-        column-gap: 0.4rem !important;
-        row-gap: 0.45rem !important;
-    }
-    .st-key-visao_geral_mercado_agora_cols div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-        flex: 1 1 30% !important;
-        min-width: 6.3rem !important;
-        width: auto !important;
-    }
-
-    /* Os 4 indicadores de topo da aba MERCADO (IBOVESPA/DÓLAR/DI/S&P 500,
-       painel novo - auditoria visual vs. protótipo, 2026-10-27) viram
-       grade 2x2 no mobile, mesma hierarquia do protótipo
-       (.metrics{grid-template-columns:repeat(2,...)} em <650px). */
-    .st-key-mercado_metricas_cols div[data-testid="stHorizontalBlock"] {
-        column-gap: 0.4rem !important;
-        row-gap: 0.45rem !important;
-    }
-    .st-key-mercado_metricas_cols div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-        flex: 1 1 45% !important;
-        min-width: 7rem !important;
-        width: auto !important;
-    }
-    .card-mercado-agora {
-        min-height: 4rem;
-        padding: 0.4rem 0.45rem;
-    }
-    .card-mercado-rotulo {
-        white-space: normal;
-        overflow-wrap: anywhere;
-        font-size: 0.62rem;
-    }
-    .card-mercado-valor {
-        font-size: clamp(0.8rem, 3.8vw, 1rem);
-        white-space: normal;
-        overflow-wrap: anywhere;
-    }
-    .card-mercado-variacao {
-        font-size: 0.72rem;
-        overflow-wrap: anywhere;
     }
 
     /* Header: busca e ações sem esmagar logo, botões ou texto do usuário. */
@@ -1168,8 +1034,7 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
 /* Mobile: a regra generica de mobile (acima) empilha QUALQUER
    st.columns em 100% de largura - pro ranking isso destruiria a barra
    (ficaria uma faixa cheia embaixo do texto, sem leitura nenhuma).
-   Mesma tecnica de escape ja usada em .st-key-visao_geral_mercado_agora_cols:
-   mantem as 4 colunas (numero/ticker/nome+valor/barra) lado a lado,
+   Mantem as 4 colunas (numero/ticker/nome+valor/barra) lado a lado,
    so' encolhe gap/fonte. */
 @media (max-width: 640px) {
     .st-key-mercado_ranking_lista div[data-testid="stHorizontalBlock"] {
@@ -1195,13 +1060,6 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
     .block-container {
         padding-left: 0.3rem;
         padding-right: 0.3rem;
-    }
-    .st-key-visao_geral_mercado_agora_cols div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-        min-width: 5.8rem !important;
-    }
-    .card-mercado-agora {
-        padding-left: 0.32rem;
-        padding-right: 0.32rem;
     }
     .st-key-nav_secao [data-testid="stButtonGroup"] button {
         padding-left: 0.58rem !important;
