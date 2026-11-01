@@ -22,6 +22,59 @@ import config
 from data.prices import dias_sem_pregao, obter_historico, obter_historico_intraday
 
 
+def _rgba(cor_hex: str, alfa: float) -> str:
+    """'#RRGGBB' -> 'rgba(r,g,b,alfa)' (grade/etiquetas translucidas que
+    acompanham o tema escolhido, sem cor fixa)."""
+    c = cor_hex.lstrip("#")
+    if len(c) != 6:
+        return cor_hex
+    return f"rgba({int(c[0:2], 16)},{int(c[2:4], 16)},{int(c[4:6], 16)},{alfa})"
+
+
+def estilo_terminal(fig, tema: dict, altura: int, legenda: bool = True, serie_temporal: bool = True) -> None:
+    """Estilo unico dos graficos Plotly do app (terminal financeiro):
+    grade pontilhada quase invisivel, sem linhas de eixo pesadas, eixo de
+    preco a DIREITA (como nos terminais), mira (crosshair) com hover
+    unificado e tipografia mono pequena. `serie_temporal=False` (barras
+    horizontais com nomes no eixo Y): mantem o eixo a esquerda, sem mira. Antes eram 3 copias de
+    _layout_grafico_escuro (preco, macro, mercado) com o tema padrao do
+    plotly_dark - grade cheia, eixo a esquerda, sem mira. Acompanha o tema
+    escolhido (cores vem de `tema`)."""
+    grade = _rgba(tema["borda"], 0.55)
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor=tema["fundo"], plot_bgcolor=tema["fundo"],
+        font=dict(color=tema["cinza"], family="IBM Plex Mono", size=10), height=altura,
+        xaxis_rangeslider_visible=False,
+        margin=dict(l=6, r=6, t=8, b=6), hovermode="x unified" if serie_temporal else "closest", showlegend=legenda,
+        hoverlabel=dict(bgcolor=tema["painel"], bordercolor=tema["borda"],
+                        font=dict(family="IBM Plex Mono", size=11, color=tema["neutro"])),
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0, font=dict(size=10)),
+    )
+    fig.update_xaxes(
+        showgrid=False, showline=True, linecolor=tema["borda"], ticks="outside", tickcolor=tema["borda"],
+        ticklen=3, showspikes=serie_temporal, spikemode="across", spikethickness=1, spikecolor=tema["cinza"],
+        spikedash="dot", spikesnap="cursor",
+    )
+    fig.update_yaxes(
+        showgrid=True, gridcolor=grade, griddash="dot", gridwidth=1, zeroline=False, showline=False,
+        side="right" if serie_temporal else "left", showspikes=serie_temporal, spikemode="across",
+        spikethickness=1, spikecolor=tema["cinza"], spikedash="dot", spikesnap="cursor",
+    )
+
+
+def marcar_ultimo(fig, valor: float, texto: str, cor: str, fundo: str, linha: int = 1) -> None:
+    """Etiqueta do ultimo valor presa ao eixo direito + linha pontilhada
+    (padrao de terminal): o numero que importa fica sempre visivel, sem
+    precisar passar o mouse."""
+    fig.add_hline(y=valor, line_dash="dot", line_width=1, line_color=_rgba(cor, 0.6), row=linha, col=1)
+    fig.add_annotation(
+        x=1, xref="x domain" if linha == 1 else "paper", y=valor, yref="y" if linha == 1 else "y",
+        text=f"<b>{texto}</b>", showarrow=False, xanchor="left", xshift=3, align="left",
+        font=dict(color=fundo, size=10, family="IBM Plex Mono"), bgcolor=cor, borderpad=2,
+        row=linha, col=1,
+    )
+
+
 def zoom_key(chave_base: str, *partes_estado) -> str:
     """Renderiza um botão pequeno "↺" alinhado à direita (chamar logo
     ANTES do st.plotly_chart correspondente) e retorna a `key=` pra
@@ -87,15 +140,8 @@ def renderizar_grafico_preco(
         df = obter_historico(ticker, periodo)
 
     def _layout_grafico_escuro(fig):
-        fig.update_layout(
-            template="plotly_dark", paper_bgcolor=tema["fundo"], plot_bgcolor=tema["fundo"],
-            font=dict(color=tema["cinza"], family="IBM Plex Mono", size=11),
-            xaxis_rangeslider_visible=False, height=altura,
-            margin=dict(l=10, r=10, t=10, b=10),
-            legend=dict(orientation="h", yanchor="bottom", y=1.01, font=dict(size=10)),
-        )
-        fig.update_xaxes(gridcolor=tema["borda"])
-        fig.update_yaxes(gridcolor=tema["borda"])
+        # legenda so' quando ha mais de uma serie que o usuario escolhe ver (MMs)
+        estilo_terminal(fig, tema, altura, legenda=permitir_mm)
 
     if df is None or df.empty:
         if eh_intraday:
@@ -185,6 +231,15 @@ def renderizar_grafico_preco(
         )
 
     _layout_grafico_escuro(fig)
+    ultimo_preco = float(df["Close"].iloc[-1])
+    primeiro_preco = float(df["Close"].iloc[0])
+    marcar_ultimo(
+        fig, ultimo_preco,
+        # sem centavos acima de mil (mesmo critério do eixo): etiqueta curta nunca corta
+        config.formatar_numero(ultimo_preco, 0 if abs(ultimo_preco) >= 1000 else 2, prefs.get("formato_numerico")),
+        tema["alta"] if ultimo_preco >= primeiro_preco else tema["baixa"], tema["fundo"],
+    )
+    fig.update_layout(margin=dict(l=6, r=84, t=8, b=6))
 
     if eh_intraday:
         fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"]), dict(bounds=[17, 10], pattern="hour")])

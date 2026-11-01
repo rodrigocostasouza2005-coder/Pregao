@@ -160,19 +160,7 @@ def _seletor_janela(chave_widget: str) -> str:
 
 
 def _layout_grafico_escuro(fig, tema, altura=340):
-    fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor=tema["fundo"],
-        plot_bgcolor=tema["fundo"],
-        font=dict(color=tema["cinza"], family="IBM Plex Mono", size=11),
-        height=altura,
-        margin=dict(l=10, r=10, t=10, b=10),
-        showlegend=False,
-    )
-    # tema["borda"] (nao "#1A1A1A" fixo, achado da auditoria visual
-    # 2026-10-16): acompanha o tema CLARO tambem, nao so' os temas escuros.
-    fig.update_xaxes(gridcolor=tema["borda"])
-    fig.update_yaxes(gridcolor=tema["borda"])
+    graficos.estilo_terminal(fig, tema, altura, legenda=False, serie_temporal=False)
 
 
 # --- painéis novos (auditoria visual vs. protótipo pregao_mercado_
