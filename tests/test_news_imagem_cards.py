@@ -392,10 +392,10 @@ def test_6b_noticia_sem_resumo_cacheado_usa_fallback_nunca_imagem_de_outra():
          patch.object(news_tab_mod.st, "button", return_value=False):
         news_tab_mod._renderizar_feed_editorial.__wrapped__(itens_feed, [], resumos_prontos, "teste")
     thumbs = [b for b in blocos if "news-item-thumb-wrap" in b]
-    _checar("6b-1 noticia sem resumo cacheado mostra fallback (iniciais), nunca <img>",
-            "<img" not in thumbs[1] and "news-item-thumb-fallback" in thumbs[1], f"(thumb={thumbs[1]!r})")
+    _checar("6b-1 so' a noticia COM foto ganha miniatura (sem quadrado de iniciais na outra)",
+            len(thumbs) == 1 and "img-a.jpg" in thumbs[0], f"(thumbs={thumbs!r})")
     _checar("6b-2 a noticia SEM foto nunca herda a imagem da outra",
-            "img-a.jpg" not in thumbs[1])
+            sum("img-a.jpg" in b for b in blocos) == 1)
 
 
 if __name__ == "__main__":

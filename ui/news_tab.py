@@ -76,8 +76,9 @@ _TRUNCA_MANCHETE = 92
 # dentro do texto da manchete, so' quando existe (ver _texto_manchete) -
 # tirar essa coluna elimina a coluna vazia "—" de quando nao ha ticker e
 # devolve a largura pra manchete. "N fontes" virou "NF" compacto.
-_COLS_PADRAO = [70, 60, 440, 45, 35]  # HORA, SELO, MANCHETE, FONTES, ABRIR(↗)
-_COLS_RANK = [60, 70, 60, 380, 45, 35]  # RANK+BR/INT, HORA, SELO, MANCHETE, FONTES, ABRIR(↗)
+_COLS_PADRAO = [80, 62, 600, 46, 28]  # HORA, SELO, MANCHETE, FONTES, ABRIR(↗)
+_COLS_RANK = [58, 80, 62, 560, 46, 28]  # RANK+BR/INT, HORA, SELO, MANCHETE, FONTES, ABRIR(↗)
+_TRUNCA_MANCHETE_WIRE = 170  # a manchete do wire quebra em ate 2 linhas (CSS), nao corta em ~90 caracteres
 _PESO_COL_THUMB = 36  # miniatura opcional (TOP MERCADO / VISÃO GERAL), antes das demais
 
 # CSS proprio do layout wire, injetado via st.markdown (nao mexe em
@@ -96,7 +97,21 @@ _PESO_COL_THUMB = 36  # miniatura opcional (TOP MERCADO / VISÃO GERAL), antes d
 # em style.css. Selector com [class*=] pega qualquer key que comece com
 # esse prefixo, mesmo com o sufixo variando por linha/hash.
 _CSS_WIRE = """
-.w-hora, .w-fontes { color:var(--cinza); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.w-hora, .w-fontes { color:var(--cinza); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11.5px; line-height:18px; }
+.w-fontes { text-align:right; }
+/* cabecalho da lista wire (rotulos das colunas) */
+.w-cab { color:var(--cinza); font-size:0.58rem; letter-spacing:0.1em; text-transform:uppercase; border-bottom:1px solid var(--borda); padding:0 0 0.2rem 0; white-space:nowrap; }
+.w-cab-dir { text-align:right; }
+/* colunas so' com texto colapsam a 0px e o stHorizontalBlock corta o excesso
+   (overflow-x:hidden implica overflow-y) - altura minima garante o cabecalho */
+div[class*="st-key-wire-cab-"] [data-testid="stColumn"] { min-height:16px; }
+/* no celular as colunas empilham: o cabecalho de colunas perde o sentido */
+@media (max-width: 640px) { div[class*="st-key-wire-cab-"] { display:none; } }
+/* linha wire: o st.markdown de cada celula nao pode empurrar a altura da linha */
+/* celulas do wire alinhadas ao topo, mesma altura de linha (18px) */
+.selo-tag { line-height:16px; vertical-align:top; margin-top:1px; }
+.w-abrir-link { line-height:18px; }
+.w-regiao-tag { vertical-align:top; line-height:12px; margin-top:3px; display:inline-block; }
 .selo-tag {
     display:inline-block;
     padding:0.04rem 0.32rem;
@@ -131,9 +146,8 @@ div[class*="st-key-top-manchete-"] button {
     font-size:12.5px !important;
     font-weight:400 !important;
     letter-spacing:0 !important;
-    white-space:nowrap !important;
-    overflow:hidden !important;
-    text-overflow:ellipsis !important;
+    line-height:18px !important;
+    white-space:normal !important;
     width:100% !important;
     display:block !important;
 }
@@ -147,9 +161,11 @@ div[class*="st-key-top-manchete-"] button p {
     color:inherit !important;
     font-size:inherit !important;
     text-align:left !important;
-    white-space:nowrap !important;
+    white-space:normal !important;
+    display:-webkit-box !important;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
     overflow:hidden !important;
-    text-overflow:ellipsis !important;
 }
 
 .w-divider { border-bottom:1px solid var(--borda); margin:0.1rem 0 0.25rem 0; }
@@ -725,6 +741,18 @@ def _fmt_hora(data_iso: str) -> str:
         return data_iso
 
 
+def _fmt_hora_curta(data_iso: str) -> str:
+    """Hora da lista wire: so' HH:MM quando e' de hoje (a data repetida em
+    toda linha era ruido); com a data (dd/mm HH:MM) nos demais dias."""
+    try:
+        dt = datetime.fromisoformat(data_iso).astimezone(_TZ_SP)
+    except Exception:
+        return data_iso
+    if dt.date() == datetime.now(_TZ_SP).date():
+        return dt.strftime("%H:%M")
+    return dt.strftime("%d/%m %H:%M")
+
+
 def _dentro_de_horas(data_iso: str, horas: int) -> bool:
     try:
         dt = datetime.fromisoformat(data_iso)
@@ -775,7 +803,7 @@ def _plural_fontes(qtd: int) -> str:
 
 
 def _bloco_hora_coluna(n: dict) -> str:
-    return f"<div class='w-hora'>{_fmt_hora(n['data'])}</div>"
+    return f"<div class='w-hora'>{_fmt_hora_curta(n['data'])}</div>"
 
 
 def _bloco_rank_coluna(n: dict, idx: int) -> str:
@@ -1309,10 +1337,12 @@ def _linha_noticia(n: dict, idx: int, mostrar_ticker: bool, prefixo: str, watchl
                    resumos_prontos: dict | None = None):
     eh_ranking = "importancia" in n
     cols_pesos = _COLS_RANK if eh_ranking else _COLS_PADRAO
-    com_thumb = resumos_prontos is not None
+    # miniatura removida da lista wire (quadrado vazio em quase toda linha
+    # era so' ruido); o card (clique na manchete) continua mostrando a foto
+    com_thumb = False
     if com_thumb:
         cols_pesos = [_PESO_COL_THUMB] + cols_pesos
-    colunas = st.columns(cols_pesos, gap="xsmall", vertical_alignment="center")
+    colunas = st.columns(cols_pesos, gap="xsmall", vertical_alignment="top")
     i = 0
 
     if com_thumb:
@@ -1341,7 +1371,7 @@ def _linha_noticia(n: dict, idx: int, mostrar_ticker: bool, prefixo: str, watchl
 
     with colunas[i]:
         prefixo_ticker = _prefixo_tickers(n) if mostrar_ticker else ""
-        texto_manchete = _truncar(prefixo_ticker + n["titulo"])
+        texto_manchete = _truncar(prefixo_ticker + n["titulo"], _TRUNCA_MANCHETE_WIRE)
         chave_botao = f"news-manchete-{prefixo}-{idx}-{abs(hash(n['link']))}"
         if st.button(texto_manchete, key=chave_botao):
             _abrir_card(n, watchlist)
@@ -1368,6 +1398,12 @@ def _renderizar_lista(itens: list, mostrar_ticker: bool, prefixo: str, watchlist
     inteira - antes, cada clique refazia render_news/render_top_mercado
     do zero (embora os DADOS ja viessem de cache, reconstruir todos os
     widgets da lista inteira a cada clique era a lentidao real)."""
+    if itens:
+        eh_ranking = "importancia" in itens[0]
+        rotulos = (["#"] if eh_ranking else []) + ["Hora", "Selo", "Manchete", "Fontes", ""]
+        with st.container(key=f"wire-cab-{prefixo}"):
+            for coluna, rotulo in zip(st.columns(_COLS_RANK if eh_ranking else _COLS_PADRAO, gap="xsmall"), rotulos):
+                coluna.markdown(f"<div class='w-cab{' w-cab-dir' if rotulo == 'Fontes' else ''}'>{rotulo}</div>", unsafe_allow_html=True)
     for idx, n in enumerate(itens):
         _linha_noticia(n, idx, mostrar_ticker, prefixo, watchlist, resumos_prontos)
 
@@ -1510,12 +1546,18 @@ def _cartao_noticia(n: dict, idx: int, mostrar_ticker: bool, prefixo: str, watch
     nunca gera nada aqui. Clique no titulo abre o dialog completo
     (_abrir_card, inalterado), que ai' sim gera o resumo sob demanda se
     ainda nao existir."""
-    cols = st.columns([1, 9], gap="small", vertical_alignment="top")
-    with cols[0]:
-        imagem = (resultado or {}).get("imagem")
+    imagem = (resultado or {}).get("imagem")
+    if imagem:
+        cols = st.columns([1, 9], gap="small", vertical_alignment="top")
         iniciais = (n.get("veiculos") or [n["titulo"]])[0]
-        st.markdown(_thumb_html(imagem, iniciais), unsafe_allow_html=True)
-    with cols[1]:
+        with cols[0]:
+            st.markdown(_thumb_html(imagem, iniciais), unsafe_allow_html=True)
+        corpo = cols[1]
+    else:
+        # sem foto confiavel: sem quadrado de iniciais (era so' ruido visual
+        # em quase todo item) - o texto ocupa a largura toda
+        corpo = st.container()
+    with corpo:
         prefixo_ticker = _prefixo_tickers(n) if mostrar_ticker else ""
         chave_botao = f"news-card-titulo-{prefixo}-{idx}-{abs(hash(n['link']))}"
         if st.button(prefixo_ticker + n["titulo"], key=chave_botao):
@@ -1684,9 +1726,8 @@ def render_news(prefs: dict):
             return
 
         st.caption(
-            f"Mostrando itens das últimas {_JANELA_PADRAO_HORAS}h por padrão (clique em VER MAIS pra ver até "
-            f"5 dias) — selo de confiabilidade calculado por regras simples (fonte, nº de veículos, linguagem), "
-            f"não é uma verificação factual definitiva. Clique num item para ver os detalhes."
+            f"Últimas {_JANELA_PADRAO_HORAS}h (VER MAIS amplia até 5 dias). O selo é calculado por regras "
+            f"(fonte, nº de veículos, linguagem) — não é verificação factual."
         )
 
         # so' tickers da watchlist do usuario - _tickers_do_item(n) ja deveria
@@ -1699,12 +1740,15 @@ def render_news(prefs: dict):
         tickers_no_feed = ["TODOS"] + sorted({t for n in noticias for t in _tickers_do_item(n) if t in watchlist_set})
         selos_no_feed = ["TODOS"] + [s for s in _ORDEM_SELOS if s in {n["selo"] for n in noticias}]
 
-        filtro_ticker = st.pills(
-            "Ticker", tickers_no_feed, default="TODOS", selection_mode="single", key="news_pill_ticker",
-        ) or "TODOS"
-        filtro_selo = st.pills(
-            "Selo", selos_no_feed, default="TODOS", selection_mode="single", key="news_pill_selo",
-        ) or "TODOS"
+        c_ticker, c_selo = st.columns(2, gap="small")
+        with c_ticker:
+            filtro_ticker = st.pills(
+                "Ticker", tickers_no_feed, default="TODOS", selection_mode="single", key="news_pill_ticker",
+            ) or "TODOS"
+        with c_selo:
+            filtro_selo = st.pills(
+                "Selo", selos_no_feed, default="TODOS", selection_mode="single", key="news_pill_selo",
+            ) or "TODOS"
 
         # filtro de ticker/selo so' se aplica a NOTICIA (LIVE nao tem selo
         # nem ticker unico) - com algum filtro ativo, os lives somem do

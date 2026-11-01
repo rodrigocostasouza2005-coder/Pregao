@@ -108,13 +108,17 @@ def test_2b_resultado_none_nao_quebra():
     html_render = _renderizar(_ITEM_BASE, None)
     assert "news-ia-chip" not in html_render
     assert "news-item-resumo" not in html_render
-    # a manchete e a miniatura continuam aparecendo mesmo sem resumo nenhum
-    assert "news-item-thumb-wrap" in html_render
+    # sem foto cacheada nao ha miniatura (nem quadrado de iniciais): o
+    # texto ocupa a largura toda; a manchete continua sendo renderizada
+    assert "news-item-thumb-wrap" not in html_render
 
 
-def test_3a_sem_imagem_cai_no_fallback_de_iniciais():
+def test_3a_sem_imagem_nao_renderiza_miniatura():
+    """Redesign 2026-11-01: o quadrado de iniciais do veiculo ("MO", "IN")
+    em todo item sem foto era so' ruido visual - sem foto, sem miniatura."""
     html_render = _renderizar(_ITEM_BASE, {"resumo": None})
-    assert "news-item-thumb-fallback" in html_render
+    assert "news-item-thumb-wrap" not in html_render
+    assert "news-item-thumb-fallback" not in html_render
     assert "<img" not in html_render
 
 
