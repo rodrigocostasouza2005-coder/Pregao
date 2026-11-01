@@ -244,7 +244,9 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     border: 1px solid var(--borda) !important;
     border-radius: 0 !important;
     background-color: var(--painel-bg) !important;
-    padding: var(--padding-painel) !important;
+    /* NAO mexer no padding: reduzir para --padding-painel desajusta as
+       margens negativas do .painel-titulo e o conteudo vaza ~9px da caixa
+       (medido: todos os paineis, baseline sem a regra = 0) */
 }
 
 .painel-titulo {
@@ -1089,4 +1091,99 @@ button[data-testid^="stBaseButton"] {
         padding: 0.15rem 0.4rem !important;
         font-size: 0.72rem !important;
     }
+}
+
+/* TABLET E TELAS BAIXAS (iPad em pe ~810px, janelas estreitas, Safari com
+   barra de endereco ocupando altura) -----------------------------------
+   Achado em gravacao de tela do iPad (2026-11-01, Playwright reproduziu
+   a 810x1080): 810px passa do breakpoint de 640px do "modo celular", entao
+   o tablet recebia o layout de DESKTOP - header de 3 camadas (logo+busca,
+   ticker, navegacao) position:fixed ocupando ~250px, perto de metade da
+   area visivel do Safari, e os grids de 2/3 colunas das abas ficavam
+   espremidos (tabelas cortadas, titulos de painel colados).
+   Aqui o tablet passa a se comportar como o celular ja se comporta (ver
+   bloco max-width:640px acima): o header vira fluxo normal e rola junto
+   com a pagina (o comentario do app.py ja registra que, em tela pequena,
+   uma faixa fixa sobra pouco pro conteudo), e as colunas dos paineis
+   empilham. Desktop (>1100px de largura E >720px de altura) nao muda.
+   Os dois seletores do header repetem de proposito o :has() da regra
+   desktop da sidebar (mesma especificidade, esta vem depois e vence). */
+@media (max-width: 1100px), (max-height: 720px) {
+    .st-key-header_fixo,
+    div[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="true"]) .st-key-header_fixo {
+        position: static;
+        top: auto;
+        left: auto;
+        width: 100%;
+        max-width: 100%;
+    }
+    .block-container { padding-top: 3.2rem; }
+}
+
+/* colunas dos grids de paineis viram uma coluna so: abaixo de 900px de
+   viewport, ou ate 1200px com a sidebar aberta (ela tira ~300px do
+   conteudo). Alvo: so' o st.columns de nivel superior de cada grid com
+   chave (Visao Geral, Mercado > Painel, Research) - colunas aninhadas
+   dentro de um painel e as do header ficam como estao. (O seletor por
+   borda nao serve: no Streamlit 1.64 o container com borda nao expoe mais
+   data-testid="stVerticalBlockBorderWrapper", medido no DOM real.) */
+@media (max-width: 900px) {
+    :is([class*="st-key-vg_grid_"], .st-key-painel_grid_linha1, .st-key-painel_grid_linha2, .st-key-research_grid_watchlist_radar)
+        [data-testid="stHorizontalBlock"]:not([data-testid="stHorizontalBlock"] [data-testid="stHorizontalBlock"]) {
+        flex-wrap: wrap !important;
+    }
+    :is([class*="st-key-vg_grid_"], .st-key-painel_grid_linha1, .st-key-painel_grid_linha2, .st-key-research_grid_watchlist_radar)
+        [data-testid="stHorizontalBlock"]:not([data-testid="stHorizontalBlock"] [data-testid="stHorizontalBlock"]) > [data-testid="stColumn"] {
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+        width: 100% !important;
+    }
+}
+@media (max-width: 1200px) {
+    div[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="true"])
+        :is([class*="st-key-vg_grid_"], .st-key-painel_grid_linha1, .st-key-painel_grid_linha2, .st-key-research_grid_watchlist_radar)
+        [data-testid="stHorizontalBlock"]:not([data-testid="stHorizontalBlock"] [data-testid="stHorizontalBlock"]) {
+        flex-wrap: wrap !important;
+    }
+    div[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="true"])
+        :is([class*="st-key-vg_grid_"], .st-key-painel_grid_linha1, .st-key-painel_grid_linha2, .st-key-research_grid_watchlist_radar)
+        [data-testid="stHorizontalBlock"]:not([data-testid="stHorizontalBlock"] [data-testid="stHorizontalBlock"]) > [data-testid="stColumn"] {
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+        width: 100% !important;
+    }
+}
+
+/* atalhos/vinculos em tablet (641-900px): 3 por linha em vez de 5
+   espremidos com rotulo cortado ("Alertas do R...", "Noticias em ...") */
+@media (min-width: 641px) and (max-width: 900px) {
+    .st-key-empresa_contexto [data-testid="stHorizontalBlock"],
+    .st-key-vg_atalhos [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+        gap: 0.35rem !important;
+    }
+    .st-key-empresa_contexto div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+    .st-key-vg_atalhos div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        flex: 1 1 calc(33.333% - 0.35rem) !important;
+        min-width: calc(33.333% - 0.35rem) !important;
+        width: calc(33.333% - 0.35rem) !important;
+    }
+}
+
+/* PAINEL COM BORDA no Streamlit 1.64.0 (versao PINADA em requirements.txt) ----
+   A regra de `div[data-testid="stVerticalBlockBorderWrapper"]` (mais acima)
+   nunca mais casa: nesta versao o st.container(border=True) e' um
+   stVerticalBlock comum com uma classe emotion gerada (medido no DOM real
+   com Playwright, 2026-11-01) - por isso os paineis apareciam com cantos
+   arredondados de 8px e borda clara padrao, em vez do visual de terminal
+   (cantos retos, fundo de painel) que o resto do CSS pressupoe.
+   Se um upgrade do Streamlit mudar o hash da classe, a regra deixa de
+   casar e os paineis voltam ao visual padrao, sem quebrar nada.
+   NAO sobrescrever o padding aqui: reduzir para --padding-painel desajusta
+   as margens negativas do .painel-titulo e o conteudo vaza ~9px da caixa
+   (medido em todos os paineis; sem a regra o vazamento e' zero). */
+div[data-testid="stVerticalBlock"].st-emotion-cache-1t2xbk4 {
+    border-radius: 0 !important;
+    border-color: var(--borda) !important;
+    background-color: var(--painel-bg) !important;
 }
