@@ -227,7 +227,7 @@ def _painel_leitura_pregao(prefs):
     else:
         meta = f"síntese por IA indisponível no momento ({resultado.get('motivo') or 'sem detalhe'}) - fatos abaixo vêm direto dos dados"
 
-    st.markdown(f"<div class='cinza' style='font-size:0.62rem; margin-bottom:0.3rem;'>{meta}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='cinza' style='font-size:0.62rem; line-height:1.5; margin-bottom:0.45rem;'>{meta}</div>", unsafe_allow_html=True)
     if headline:
         st.markdown(
             f"<div style='font-size:0.86rem; font-weight:600; margin-bottom:0.5rem; line-height:1.4; max-width:92ch;'>{headline}</div>",
