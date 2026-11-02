@@ -833,7 +833,7 @@ def _calcular_confianca(blocos_avaliados: list, *, historico: dict | None = None
     ALTA se a demonstração financeira oficial (historico.disponivel)
     estiver indisponível - regra aplicada DEPOIS do score, independente
     dele (ver teste de regressão do caso real BEEF3/Minerva)."""
-    dre_indisponivel = not bool((historico or {}).get("disponivel"))
+    # Só marcar DRE como indisponível quando o pipeline BR informou isso\n    # explicitamente. `historico=None` também é o estado normal para ativos\n    # internacionais/BDRs nesta versão (série histórica internacional ainda\n    # não integrada); ausência de série não prova falha da DRE/CVM.\n    dre_indisponivel = isinstance(historico, dict) and historico.get("disponivel") is False
 
     if not blocos_avaliados:
         return {"nivel": "BAIXA", "score": 0, "motivo": "nenhuma seção avaliável.",
