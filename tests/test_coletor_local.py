@@ -30,15 +30,12 @@ def mock_pregerar_imagens():
 
 @pytest.fixture(autouse=True)
 def mock_universo_calendario():
-    """Reforma estrutural do CALENDARIO (2026-10-24): main() agora chama
-    data.eventos.universo_calendario() (CVM/FCA + BDRs + watchlists
-    reais) ANTES de coletar_eventos_universo/salvar_snapshot_calendario.
-    Nenhum teste deste arquivo pode disparar a chamada REAL (rede pra
-    CVM + leitura paginada do Supabase) - fixa um universo pequeno e
-    deterministico, consistente com os testes que ja existiam antes
-    desta reforma (eles nao testam o CONTEUDO do universo, so' a
-    orquestracao de main())."""
-    with patch.object(coletor_local, "universo_calendario", return_value=["PETR4", "VALE3"]) as m:
+    """Universo determinístico: watchlist separada do restante.
+    Também isola o checkpoint Supabase para nenhum teste fazer I/O real."""
+    with patch.object(coletor_local, "universo_calendario_priorizado",
+                      return_value=(["PETR4"], ["VALE3"])) as m, \
+         patch.object(coletor_local, "_ler_checkpoint_calendario", return_value=0), \
+         patch.object(coletor_local, "_avancar_checkpoint_calendario"):
         yield m
 
 _FALHAS = []
@@ -210,6 +207,34 @@ def test_4a2_calendario_universo_calculado_1x_e_reaproveitado_no_snapshot(mock_u
             mock_universo_calendario.call_count == 1, f"(call_count={mock_universo_calendario.call_count})")
 
 
+def test_4a3_watchlist_primeiro_e_checkpoint_avanca_so_pelo_resto(mock_universo_calendario):
+    """A watchlist entra em toda execução, antes do restante rotativo.
+    O checkpoint conta apenas tickers processados do restante, nunca os
+    prioritários repetidos a cada rodada."""
+    mock_universo_calendario.return_value = (["WATCH1", "WATCH2"], ["RESTO1", "RESTO2", "RESTO3"])
+    stats = {"processados": 4, "confirmados": 1, "estimados": 0, "mantidos_prazo_cvm": 3,
+             "tempo_esgotado": False, "tabela_disponivel": True}
+    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
+         patch.object(coletor_local, "_ler_checkpoint_calendario", return_value=1), \
+         patch.object(coletor_local, "_avancar_checkpoint_calendario") as mock_avancar, \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats) as mock_coletar, \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True) as mock_snapshot, \
+         patch.object(coletor_local, "registrar_tentativa"):
+        coletor_local.main()
+
+    recebidos = mock_coletar.call_args[0][0]
+    assert recebidos == ["WATCH1", "WATCH2", "RESTO2", "RESTO3", "RESTO1"]
+    assert mock_snapshot.call_args[0][0] == ["WATCH1", "WATCH2", "RESTO1", "RESTO2", "RESTO3"]
+    # 4 processados - 2 watchlists = 2 do restante; offset 1 + 2 = 0 mod 3.
+    assert mock_avancar.call_args[0][0] == 0
+
+
 def test_4a3_documentos_cvm_rodam_pro_universo_inteiro_sem_rotacao(mock_universo_calendario):
     """Achado real (auditoria 2026-10-30): obter_documentos_watchlist so'
     era chamada pelo app Streamlit ao vivo (ui/cvm_tab.py), nunca por um
@@ -314,7 +339,7 @@ def test_5a_news_usa_checkpoint_proprio_em_arquivo_calendario_usa_checkpoint_sup
     _avancar_checkpoint_calendario), que avanca pelo trabalho REAL feito
     (nao mais +1 fixo por execucao, que levava ~18 dias uteis pra cobrir
     o universo de 481 tickers de hoje)."""
-    stats = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
+    stats = {"processados": 2, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
               "tempo_esgotado": False, "tabela_disponivel": True}
     chamadas = []
 
@@ -347,16 +372,14 @@ def test_5a_news_usa_checkpoint_proprio_em_arquivo_calendario_usa_checkpoint_sup
             f"(recebido={len(mock_pregen.call_args[0][0])})")
 
 
-def test_5a2_checkpoint_calendario_avanca_pelo_trabalho_real_processado():
-    """O nucleo do fix (2026-10-31): o offset gravado de volta e'
-    offset_lido + processados (mod tamanho do universo), nao offset+1 -
-    prova que a rotacao agora cobre o universo em ceil(N/K) execucoes em
-    vez de N (ver docstring do bloco em coletor_local.py)."""
-    universo_fake = [f"T{i}" for i in range(10)]
+def test_5a2_checkpoint_calendario_avanca_pelo_trabalho_real_do_resto():
+    """A watchlist é processada primeiro e não deve ser contada no avanço
+    do checkpoint; só o trabalho no restante muda o offset."""
+    watchlist = ["WATCH"]
+    resto = [f"T{i}" for i in range(10)]
     stats = {"processados": 4, "confirmados": 1, "estimados": 0, "mantidos_prazo_cvm": 3,
-              "tempo_esgotado": False, "tabela_disponivel": True}
-
-    with patch.object(coletor_local, "universo_calendario", return_value=universo_fake), \
+             "tempo_esgotado": False, "tabela_disponivel": True}
+    with patch.object(coletor_local, "universo_calendario_priorizado", return_value=(watchlist, resto)), \
          patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
          patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
@@ -370,22 +393,21 @@ def test_5a2_checkpoint_calendario_avanca_pelo_trabalho_real_processado():
          patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
          patch.object(coletor_local, "registrar_tentativa"):
         coletor_local.main()
+    recebidos = mock_coletar.call_args[0][0]
+    assert recebidos[0] == "WATCH"
+    assert recebidos[1] == "T3"
+    # 4 processados - 1 watchlist = 3 tickers do restante; offset 3 + 3 = 6.
+    assert mock_avancar.call_args[0][0] == 6
 
-    _checar("5a2a universo passado a coletar_eventos_universo comeca no offset lido (3)",
-            mock_coletar.call_args[0][0][0] == "T3", f"(chamado com={mock_coletar.call_args[0][0]})")
-    _checar("5a2b checkpoint avancado = offset(3) + processados(4) = 7, nao 3+1=4",
-            mock_avancar.call_args[0][0] == 7, f"(avancado para={mock_avancar.call_args[0][0]})")
 
-
-def test_5a3_checkpoint_calendario_nunca_trava_girando_no_mesmo_lugar_se_processar_0():
-    """Se coletar_eventos_universo processar 0 (ex: tempo esgotado antes
-    do 1o ticker, caso raro), o avanco minimo e' 1 - nunca grava o MESMO
-    offset de volta (travaria a rotacao pra sempre no mesmo ponto)."""
-    universo_fake = [f"T{i}" for i in range(5)]
-    stats = {"processados": 0, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 0,
-              "tempo_esgotado": True, "tabela_disponivel": True}
-
-    with patch.object(coletor_local, "universo_calendario", return_value=universo_fake), \
+def test_5a3_checkpoint_nao_avanca_quando_so_processa_watchlist():
+    """Se o orçamento terminar após a watchlist, o checkpoint do restante
+    não pode avançar: nenhum ticker do restante foi processado."""
+    watchlist = ["WATCH"]
+    resto = [f"T{i}" for i in range(5)]
+    stats = {"processados": 1, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 1,
+             "tempo_esgotado": True, "tabela_disponivel": True}
+    with patch.object(coletor_local, "universo_calendario_priorizado", return_value=(watchlist, resto)), \
          patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
          patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
@@ -399,8 +421,7 @@ def test_5a3_checkpoint_calendario_nunca_trava_girando_no_mesmo_lugar_se_process
          patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
          patch.object(coletor_local, "registrar_tentativa"):
         coletor_local.main()
-    _checar("5a3 avanco minimo de 1 mesmo com processados=0", mock_avancar.call_args[0][0] == 3,
-            f"(avancado para={mock_avancar.call_args[0][0]})")
+    mock_avancar.assert_not_called()
 
 
 def test_5a4_ler_checkpoint_calendario_sem_supabase_degrada_pro_offset_0():
