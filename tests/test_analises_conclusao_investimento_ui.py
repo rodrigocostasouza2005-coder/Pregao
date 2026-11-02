@@ -333,7 +333,22 @@ _ANALISE_BEEF3_SIMULADA = {
 }
 
 
-def test_historico_ausente_nao_aplica_piso_cvm_a_ativos_sem_serie_br():\n    """Historico=None e ausencia normal da serie internacional nesta versao;\n    nao pode ser confundido com DRE/CVM explicitamente indisponivel para\n    uma empresa brasileira."""\n    secoes = [\n        {"pergunta": nome, "tipo_evidencia": at_mod.TIPO_FATO}\n        for nome in at_mod._PESO_CONFIANCA_POR_SECAO\n    ]\n    confianca = at_mod._calcular_confianca(\n        secoes, historico=None, fundamentos={"desatualizado": False},\n    )\n    assert confianca["dre_indisponivel"] is False\n    assert confianca["nivel"] == "ALTA"\n\n\ndef test_beef3_minerva_dre_indisponivel_nunca_classifica_confianca_como_alta():
+def test_historico_ausente_nao_aplica_piso_cvm_a_ativos_sem_serie_br():
+    """Historico=None e ausencia normal da serie internacional nesta versao;
+    nao pode ser confundido com DRE/CVM explicitamente indisponivel para
+    uma empresa brasileira."""
+    secoes = [
+        {"pergunta": nome, "tipo_evidencia": at_mod.TIPO_FATO}
+        for nome in at_mod._PESO_CONFIANCA_POR_SECAO
+    ]
+    confianca = at_mod._calcular_confianca(
+        secoes, historico=None, fundamentos={"desatualizado": False},
+    )
+    assert confianca["dre_indisponivel"] is False
+    assert confianca["nivel"] == "ALTA"
+
+
+def test_beef3_minerva_dre_indisponivel_nunca_classifica_confianca_como_alta():
     """Regressão do bug real diagnosticado (caso BEEF3/Minerva S.A.
     citado na investigação original). Com a metodologia ANTIGA (média
     aritmética simples, 11 seções com peso igual), este cenário
