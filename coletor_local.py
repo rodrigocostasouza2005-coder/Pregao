@@ -84,7 +84,7 @@ from pathlib import Path
 import config
 from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
 from data.cvm import obter_documentos_watchlist
-from data.eventos import salvar_snapshot_calendario, universo_calendario
+from data.eventos import salvar_snapshot_calendario, universo_calendario_priorizado
 from data.eventos_coleta import coletar_eventos_universo
 from data.news import pregerar_imagens_news, pregerar_resumos_news
 from data.research import coletar_todas_disponiveis
@@ -418,10 +418,12 @@ def main() -> int:
     # modulo) - calculado 1x e reaproveitado nos 2 passos abaixo (coleta
     # de eventos + snapshot), pro log/painel de saude refletirem o MESMO
     # universo que foi de fato usado nesta execucao.
-    universo = universo_calendario()
+    watchlist_universo, resto_universo = universo_calendario_priorizado()
+    universo = watchlist_universo + resto_universo
     logger.info(
         f"  universo do calendario: {len(universo)} ticker(s) "
-        "(CVM/FCA + BDRs curados + watchlists reais de todos os usuarios)"
+        f"({len(watchlist_universo)} de watchlists reais, sempre processados primeiro; "
+        f"{len(resto_universo)} do restante CVM/FCA + BDRs curados, em rotacao)"
     )
 
     # documentos CVM (fatos relevantes/comunicados) pro universo INTEIRO
@@ -457,12 +459,20 @@ def main() -> int:
     # _ler_checkpoint_calendario acima) - avanca pelo TRABALHO REAL feito
     # nesta execucao, nao um contador fixo de +1 (que levava ~18 dias
     # uteis pra cobrir os 481 tickers do universo atual).
-    _tamanho_universo = max(len(universo), 1)
-    _offset_calendario = _ler_checkpoint_calendario() % _tamanho_universo
-    universo_rotacionado = universo[_offset_calendario:] + universo[:_offset_calendario]
-    stats_eventos = coletar_eventos_universo(universo_rotacionado)
-    _avanco = max(stats_eventos["processados"], 1)  # nunca trava girando no mesmo ponto se processar 0
-    _avancar_checkpoint_calendario((_offset_calendario + _avanco) % _tamanho_universo)
+    _tamanho_resto = max(len(resto_universo), 1)
+    _offset_calendario = _ler_checkpoint_calendario() % _tamanho_resto
+    resto_rotacionado = resto_universo[_offset_calendario:] + resto_universo[:_offset_calendario]
+    # Watchlists entram inteiras e primeiro; o checkpoint avança só pelo
+    # trabalho feito no RESTO, descontando os tickers prioritários.
+    universo_eventos = watchlist_universo + resto_rotacionado
+    stats_eventos = coletar_eventos_universo(universo_eventos)
+    _processados_resto = max(stats_eventos["processados"] - len(watchlist_universo), 0)
+    # Preserva a proteção antiga contra travamento quando não há watchlist
+    # e o coletor processa zero tickers (ex.: timeout antes do primeiro).
+    # Com watchlist, zero processado no restante não pode avançar o offset.
+    _avanco = _processados_resto if _processados_resto else (1 if not watchlist_universo else 0)
+    if _avanco:
+        _avancar_checkpoint_calendario((_offset_calendario + _avanco) % _tamanho_resto)
     if stats_eventos["tabela_disponivel"] is False:
         logger.warning(
             "  eventos de resultado: tabela 'eventos_resultados' nao encontrada/inacessivel no "
