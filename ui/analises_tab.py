@@ -68,7 +68,7 @@ def barra_contexto_empresa(ticker: str, prefs: dict):
                 st.button(rotulo, key=f"empresa_ctx_{i}_{ticker}", on_click=fn, args=args, help=ajuda,
                           width="stretch")
     if not setores:
-        st.caption("Setor: não classificado (ticker fora das listas curadas de data/news_setores.py).")
+        st.caption("Setor não classificado para este ativo.")
 
 
 @st.cache_data(ttl=90, show_spinner=False)
@@ -717,32 +717,170 @@ def _montar_cenarios(historico: dict | None, catalisadores, riscos, cobertura: d
             "tipo_evidencia": TIPO_HIPOTESE}
 
 
+# ============================================================
+# CONFIANÇA DA ANÁLISE - metodologia v2 (2026-11-02, Fase 1 da
+# reformulação de ANÁLISES - correção de causa raiz, não cosmética).
+#
+# BUG REAL CORRIGIDO (caso BEEF3/Minerva S.A., diagnosticado antes desta
+# versão): a v1 fazia média ARITMÉTICA SIMPLES do peso de evidência das
+# 11 seções analíticas abaixo, todas com peso IGUAL entre si. A DRE
+# oficial da CVM é insumo EXCLUSIVO de "Qualidade do negócio" - se ela
+# falha, só essa seção virava DADO_INSUFICIENTE (peso 0). A seção
+# vizinha "Crescimento e rentabilidade" também recebe a DRE, mas tem
+# FALLBACK pro ROE do yfinance (que não depende de CNPJ/CVM nenhum) -
+# com esse fallback disponível, ela continuava CALCULO_INTERNO mesmo
+# com a DRE 100% indisponível. Resultado: um ticker com a demonstração
+# financeira oficial completamente indisponível podia chegar a 70-80/100
+# (ALTA), porque a média simples deixava as outras ~9 seções comuns
+# COMPENSAREM matematicamente a perda de 1 seção crítica - a fórmula não
+# distinguia "faltou uma seção crítica" de "faltou uma seção qualquer".
+#
+# v2 tem DUAS mudanças independentes (zero chamada de IA - cálculo
+# determinístico sobre dado já estruturado, mesmo princípio do resto do
+# projeto):
+#
+# 1. PESO DIFERENCIADO POR CRITICIDADE DA SEÇÃO (_PESO_CONFIANCA_POR_SECAO
+#    abaixo) - seções que dependem da demonstração financeira oficial
+#    (Qualidade do negócio, Crescimento e rentabilidade) ou que carregam
+#    o núcleo da decisão de investimento (Estrutura de capital, Geração
+#    de caixa, Valuation) pesam MAIS que seções acessórias (Catalisadores
+#    e Cenários - calendário/síntese qualitativa, nunca fundamento). Essa
+#    mudança sozinha JÁ reduz o score quando uma seção crítica falha, mas
+#    sozinha NÃO basta - outras seções fortes ainda podem empurrar o
+#    score ponderado de volta pra cima de 70 (ver teste de regressão do
+#    BEEF3, que prova isso: o score ponderado bruto do cenário simulado
+#    ainda fecha >=70). Por isso a regra 2, independente:
+#
+# 2. PISO EXPLÍCITO (CAP), NÃO COMPENSÁVEL: se a demonstração financeira
+#    oficial está indisponível (fundamentos_historicos.disponivel=False -
+#    não "uma seção qualquer", especificamente a DRE/CVM), o nível NUNCA
+#    pode ser classificado como ALTA, mesmo que o score ponderado dê
+#    90/100. Implementado como regra explícita (if/then) DEPOIS do
+#    cálculo do score - nunca como mais um peso dentro da média, que
+#    outras seções poderiam compensar. É precisamente o que faltava pro
+#    bug do BEEF3 não se repetir.
+#
+# Fatores adicionais pedidos (cobertura/atualidade/qualidade de fonte/
+# consistência entre fontes/completude histórica/qualidade do modelo/
+# divergências) - nesta v2 só "atualidade" tem sinal determinístico já
+# existente no projeto pra reaproveitar sem inventar nada novo:
+# data/radar.py:_indicadores_desatualizados, já exposto em
+# fundamentos["desatualizado"] (mesmo campo que _secao_valuation acima
+# já usa pro aviso "múltiplos desatualizados"). Quando os fundamentos
+# vêm do fallback/cache (>24h sem coleta nova), aplica um DESCONTO FIXO
+# no score (nunca um cap - dado desatualizado é pior, não um buraco
+# crítico equivalente à ausência da DRE). Os demais fatores (qualidade
+# de fonte, consistência entre fontes, completude histórica, qualidade
+# do modelo financeiro) não têm hoje um sinal estruturado equivalente no
+# projeto pra reaproveitar sem estimar o que não existe - ficam de fora
+# desta v2 como LACUNA EXPLÍCITA (documentada, não esquecida), mesmo
+# princípio de honestidade do resto do projeto.
+#
+# Esta função NUNCA calcula nem expõe "risco da tese" (não é a mesma
+# coisa que confiança da análise - ver o texto fixo acrescentado em
+# bloco_confianca, abaixo em _montar_conclusao, que diferencia os dois
+# conceitos explicitamente pro usuário). Risco da tese dependeria de
+# valuation justo real com banda de erro (DCF completo/comparáveis) -
+# isso é Fase 2 desta reformulação, ainda não implementada; nenhum
+# número de risco é inventado aqui enquanto essa fonte não existir.
+#
+# DECISÃO DE ONDE ESTA FUNÇÃO MORA: fica em ui/analises_tab.py (não
+# extraída pra um módulo data/radar_confianca.py) porque hoje só tem 1
+# consumidor (_montar_conclusao, abaixo). É função PURA (zero Streamlit,
+# zero I/O) de propósito, então pode ser movida verbatim pra data/ no
+# futuro se outro consumidor aparecer - o Coordenador Central
+# (data/coordenador_central/consolidacao.py, que já tem sua própria
+# CONFIANCA_INSUFICIENTE/categoria) está deliberadamente fora do escopo
+# desta fase e não foi tocado.
+# ============================================================
+
 _PESO_CONFIANCA_POR_TIPO = {
     TIPO_FATO: 1.0, TIPO_CALCULO: 0.9, TIPO_ESTIMATIVA_TERCEIRO: 0.7,
     TIPO_HIPOTESE: 0.4, TIPO_INSUFICIENTE: 0.0,
 }
 
+# Peso de CRITICIDADE por seção (independente do peso por tipo de
+# evidência acima) - escala 0,5 (acessória) a 1,5 (crítica/depende da
+# demonstração financeira oficial). A soma dos pesos (10,8) só serve pra
+# normalizar o score final em 0-100; não tem significado isolado.
+_PESO_CONFIANCA_POR_SECAO = {
+    "Qualidade do negócio": 1.5,                      # só existe com a DRE oficial (CVM) - sem fallback
+    "Crescimento e rentabilidade": 1.5,                # idealmente DRE; tem fallback de ROE (yfinance) - risco mitigado pelo CAP, não pelo peso
+    "Estrutura de capital": 1.2,                        # risco de solvência - núcleo da decisão de investimento
+    "Geração de caixa": 1.2,                            # sustentabilidade do negócio - núcleo da decisão
+    "Valuation": 1.2,                                   # múltiplos/preço - núcleo da decisão
+    "Riscos e invalidação da tese": 1.0,                # qualitativo, mas estrutural pra qualquer tese
+    "Tese negativa": 0.8,
+    "Consenso de Research": 0.8,
+    "Tese positiva": 0.6,                               # sinal de sentimento de terceiros, não fundamento
+    "Catalisadores": 0.5,                               # calendário - acessório
+    "Cenários (otimista, base e pessimista)": 0.5,      # síntese qualitativa, já HIPOTESE por natureza
+}
 
-def _calcular_confianca(blocos_avaliados: list) -> dict:
-    """Score 0-100 = média dos pesos de evidência das seções analíticas
-    (2 a 12, nunca a própria seção de confiança/lacunas nem o resumo
-    executivo) × 100. Pesos fixos e documentados - não é uma
-    probabilidade estatística calibrada, é uma régua simples e auditável:
-    FATO=1,0 · CÁLCULO INTERNO=0,9 · ESTIMATIVA DE TERCEIRO=0,7 ·
-    HIPÓTESE DO ANALISTA=0,4 · DADO INSUFICIENTE=0,0. >=70 ALTA, >=40
-    MÉDIA, caso contrário BAIXA."""
+_PENALIDADE_DESATUALIZADO_PTS = 10  # desconto fixo (não-cap) quando fundamentos vêm do fallback/cache (>24h)
+
+
+def _calcular_confianca(blocos_avaliados: list, *, historico: dict | None = None,
+                         fundamentos: dict | None = None) -> dict:
+    """Confiança da ANÁLISE (qualidade/cobertura dos dados usados neste
+    levantamento) - NUNCA confiança da TESE nem probabilidade de a ação
+    subir (ver bloco de comentários acima pra metodologia completa e
+    justificativa de cada peso). Score 0-100 = média PONDERADA (peso de
+    criticidade da seção × peso do tipo de evidência) das seções
+    analíticas avaliadas, com desconto fixo se os fundamentos vierem de
+    fallback/cache desatualizado; nível ALTA (score>=70) / MÉDIA
+    (score>=40) / BAIXA. PISO EXPLÍCITO, não compensável: nível nunca é
+    ALTA se a demonstração financeira oficial (historico.disponivel)
+    estiver indisponível - regra aplicada DEPOIS do score, independente
+    dele (ver teste de regressão do caso real BEEF3/Minerva)."""
+    # Só marcar DRE como indisponível quando o pipeline BR informou isso
+    # explicitamente. `historico=None` também é o estado normal para ativos
+    # internacionais/BDRs nesta versão (série histórica internacional ainda
+    # não integrada); ausência de série não prova falha da DRE/CVM.
+    dre_indisponivel = isinstance(historico, dict) and historico.get("disponivel") is False
+
     if not blocos_avaliados:
-        return {"nivel": "BAIXA", "score": 0, "motivo": "nenhuma seção avaliável."}
-    pesos = [_PESO_CONFIANCA_POR_TIPO.get(b["tipo_evidencia"], 0.0) for b in blocos_avaliados]
-    score = round(sum(pesos) / len(pesos) * 100)
+        return {"nivel": "BAIXA", "score": 0, "motivo": "nenhuma seção avaliável.",
+                "penalidades_aplicadas": [], "dre_indisponivel": dre_indisponivel}
+
+    pesos_secao = [_PESO_CONFIANCA_POR_SECAO.get(b["pergunta"], 1.0) for b in blocos_avaliados]
+    pesos_tipo = [_PESO_CONFIANCA_POR_TIPO.get(b["tipo_evidencia"], 0.0) for b in blocos_avaliados]
+    soma_pesos_secao = sum(pesos_secao) or 1.0
+    score_bruto = sum(pt * ps for pt, ps in zip(pesos_tipo, pesos_secao)) / soma_pesos_secao * 100
+
+    penalidades: list = []
+    desatualizado = bool((fundamentos or {}).get("desatualizado"))
+    score_float = score_bruto
+    if desatualizado:
+        score_float = max(0.0, score_float - _PENALIDADE_DESATUALIZADO_PTS)
+        penalidades.append(
+            f"-{_PENALIDADE_DESATUALIZADO_PTS} pontos: fundamentos (múltiplos/indicadores) vieram do "
+            "fallback/cache (mais de 24h sem nova coleta) - dado menos atual que o normal."
+        )
+
+    score = round(score_float)
     nivel = "ALTA" if score >= 70 else ("MÉDIA" if score >= 40 else "BAIXA")
+
+    if dre_indisponivel and nivel == "ALTA":
+        nivel = "MÉDIA"
+        penalidades.append(
+            "Nível travado em MÉDIA (nunca ALTA): demonstração financeira oficial (DRE/CVM) indisponível "
+            "nesta checagem - nenhuma outra seção compensa a ausência desta fonte crítica."
+        )
+
     contagem = Counter(b["tipo_evidencia"] for b in blocos_avaliados)
     _rotulos_contagem = {**{k: v[0] for k, v in _ROTULO_EVIDENCIA.items()}, TIPO_INSUFICIENTE: "DADO INSUFICIENTE"}
     detalhe = ", ".join(f"{_rotulos_contagem.get(k, k)}: {v}" for k, v in contagem.items())
-    motivo = (f"{len(blocos_avaliados)} seção(ões) avaliadas - {detalhe}. Score = média dos pesos de "
-              "evidência (FATO=1,0 · CÁLCULO INTERNO=0,9 · ESTIMATIVA DE TERCEIRO=0,7 · HIPÓTESE DO "
-              "ANALISTA=0,4 · DADO INSUFICIENTE=0,0) × 100.")
-    return {"nivel": nivel, "score": score, "motivo": motivo}
+    motivo = (f"{len(blocos_avaliados)} seção(ões) avaliadas - {detalhe}. Score = média ponderada (peso de "
+              "criticidade da seção × peso do tipo de evidência: FATO=1,0 · CÁLCULO INTERNO=0,9 · "
+              "ESTIMATIVA DE TERCEIRO=0,7 · HIPÓTESE DO ANALISTA=0,4 · DADO INSUFICIENTE=0,0) × 100.")
+    if penalidades:
+        motivo += " " + " ".join(penalidades)
+
+    return {
+        "nivel": nivel, "score": score, "motivo": motivo,
+        "penalidades_aplicadas": penalidades, "dre_indisponivel": dre_indisponivel,
+    }
 
 
 def _montar_conclusao(analise: dict, tese: dict | None) -> list:
@@ -779,10 +917,14 @@ def _montar_conclusao(analise: dict, tese: dict | None) -> list:
         _montar_cenarios(historico, catalisadores, riscos, cobertura),
     ]
 
-    confianca = _calcular_confianca(secoes_analiticas)
+    confianca = _calcular_confianca(secoes_analiticas, historico=historico, fundamentos=fundamentos)
     bloco_confianca = {
         "pergunta": "Confiança da análise",
-        "resposta": f"{confianca['nivel']} ({confianca['score']}/100). {confianca['motivo']}",
+        "resposta": (f"{confianca['nivel']} ({confianca['score']}/100). {confianca['motivo']} "
+                     "Esta confiança mede a QUALIDADE/COBERTURA dos dados usados nesta análise - não é a "
+                     "probabilidade de a ação subir, nem o risco da tese (valuation justo com banda de "
+                     "erro) - esse segundo conceito depende de uma fase futura ainda não implementada e "
+                     "não é estimado aqui."),
         "tipo_evidencia": TIPO_CALCULO,
     }
 
@@ -1127,9 +1269,9 @@ def render_comparativo_casas(ticker: str, prefs: dict):
                                 f"[{pub.get('titulo') or 'ver relatório'}]({pub.get('link')})"
                             )
                 if not dados.get("historico_estruturado_disponivel"):
-                    st.caption(f"{casa}: sem histórico estruturado de mudança de recomendação persistido "
-                               "(ver data/research/historico.py) — não é erro, só ausência real dessa fonte "
-                               "específica pra esta casa hoje.")
+                    st.caption(f"{casa}: sem histórico de mudança de recomendação registrado para este "
+                               "ativo — não é um erro, essa informação específica ainda não existe para "
+                               "esta casa.")
 
         _render_riscos_e_indicadores(relatorio, fmt)
 

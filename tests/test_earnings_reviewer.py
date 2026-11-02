@@ -74,6 +74,38 @@ def test_nota_br_ticker_sem_dado_fica_indisponivel_com_motivo():
 
 
 # ---------------------------------------------------------------------
+# DIAGNÓSTICO ESPECÍFICO PROPAGADO (Fase 1, 2026-11-02) - montar_nota_br
+# tem que propagar o motivo ESPECÍFICO que cvm_dre.obter_dre_trimestral
+# devolveu, nunca reescrever pra uma frase genérica com "ou" (bug real
+# corrigido - ver data/earnings/cvm_dre.py e o caso real BEEF3/Minerva
+# S.A. usado na investigação original).
+# ---------------------------------------------------------------------
+
+def test_montar_nota_br_propaga_motivo_especifico_sem_cnpj():
+    with patch.object(cvm_dre, "obter_cnpj", return_value=None):
+        nota = reviewer.montar_nota_br("ZZZZ3", 2026, 2)
+    assert nota["disponivel"] is False
+    assert nota["motivo"] == cvm_dre.MOTIVO_SEM_CNPJ
+
+
+def test_beef3_minerva_motivo_especifico_propagado_nunca_mensagem_generica_com_ou():
+    """Caso real citado na investigação original: BEEF3 (Minerva S.A.)
+    teve a DRE indisponível numa checagem e a mensagem antiga era
+    genérica demais ("ticker sem CNPJ mapeado, fonte fora do ar, ou sem
+    registro desse trimestre") pro usuário saber qual causa ocorreu.
+    Aqui simulamos a causa "fonte CVM fora do ar" (CNPJ sintético,
+    nunca inventamos o CNPJ real da empresa) e confirmamos que o motivo
+    que chega até a nota final é o específico, propagado sem reescrita."""
+    with patch.object(cvm_dre, "obter_cnpj", return_value="99.999.999/0001-99"), \
+         patch.object(cvm_dre, "_baixar_csv_do_zip", return_value=None):
+        nota = reviewer.montar_nota_br("BEEF3", 2026, 2)
+    assert nota["disponivel"] is False
+    assert nota["motivo"] == cvm_dre.MOTIVO_FONTE_INDISPONIVEL
+    assert " ou " not in nota["motivo"]
+    assert "sem CNPJ mapeado na CVM, fonte fora do ar, ou sem registro" not in nota["motivo"]
+
+
+# ---------------------------------------------------------------------
 # PILOTO INTERNACIONAL (Apple) - ponta a ponta, so' YoY (QoQ fora de
 # escopo desta chamada - ver docstring de montar_nota_internacional)
 # ---------------------------------------------------------------------
