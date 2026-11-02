@@ -328,6 +328,7 @@ def processar_monitoramento():
     tickers = sorted({normalizar_ticker(r.get("ticker")) for r in recomendacoes} - {""})
     novos = []
     falhas_cotacao = 0
+    falhas_persistencia_alertas = 0
     for ticker in tickers:
         cotacao = obter_cotacao(ticker)
         if isinstance(cotacao, dict) and not cotacao.get("erro"):
@@ -350,6 +351,20 @@ def processar_monitoramento():
             if ok and alerta_id is not None:
                 alerta["id"] = alerta_id
                 novos.append(alerta)
+            elif not ok:
+                # Achado real (auditoria 2026-10-30): registrar_alerta()
+                # nunca lança excecao (degrada pra False, None), mas até
+                # aqui essa falha (insert rejeitado - conflito, schema,
+                # RLS, timeout) era descartada em silêncio - uma queda
+                # real detectada podia nunca ser persistida nem aparecer
+                # pro usuário, sem NENHUM sinal no painel SAÚDE DOS
+                # DADOS (coleta_ok continuava True, erro continuava
+                # None). Ver jobs/radar_quedas.py:executar(), que agora
+                # usa este contador pra decidir persistencia_ok do
+                # registro "RADAR DE QUEDAS" - não mais o resultado do
+                # ENVIO de e-mail, que é um problema completamente
+                # diferente (dado já tinha sido persistido com sucesso).
+                falhas_persistencia_alertas += 1
     mensagens = []
     if any(not status.startswith("ok") for status in status_fontes.values()):
         mensagens.append(f"Execução parcial: {resumo_fontes}")
@@ -358,9 +373,15 @@ def processar_monitoramento():
             f"Cotação indisponível para {falhas_cotacao}/{len(tickers)} ticker(s) monitorado(s) "
             "(provedor de cotação - ver data/prices.py:obter_cotacao)"
         )
+    if falhas_persistencia_alertas:
+        mensagens.append(
+            f"Falha ao persistir {falhas_persistencia_alertas} alerta(s) de queda detectado(s) "
+            "(ver data/radar_quedas.py:registrar_alerta)"
+        )
     return {
         "coleta_ok": True, "alertas_novos": novos, "total_tickers": len(tickers),
         "fontes": status_fontes, "cotacoes_falhas": falhas_cotacao,
+        "alertas_falha_persistencia": falhas_persistencia_alertas,
         "erro": ("; ".join(mensagens) if mensagens else None),
     }
 
