@@ -85,7 +85,7 @@ def test_fonte_desatualizada_e_distinguida_de_atualizada_e_de_indisponivel():
     html_render = _capturar_render(resumo)
     assert "rq-estado-DESATUALIZADA" in _linha_da_casa(html_render, "Safra Corretora")
     assert "rq-estado-ATUALIZADA" in _linha_da_casa(html_render, "Genial Analisa")
-    assert "rq-estado-INDISPONIVEL" not in html_render
+    assert "rq-estado-INDISPONIVEL" in _linha_da_casa(html_render, "Itaú Investimentos")
     assert "2 de 3 casas com carteira vigente" in html_render
 
 
