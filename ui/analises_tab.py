@@ -284,21 +284,24 @@ _ROTULO_TENDENCIA = {
 }
 
 _TEXTOS_LACUNA = {
-    "roic": "ROIC: não calculado nesta versão - yfinance não reporta o indicador e calcular à mão "
-            "viraria estimativa, não dado reportado; exigiria extrair o Balanço Patrimonial da CVM "
-            "(capital investido), fora do escopo desta fase.",
-    "divida_historica": "Dívida líquida em série histórica: só o ponto atual existe (yfinance) - série "
-            "temporal exigiria Balanço Patrimonial histórico da CVM, fora do escopo desta fase.",
-    "geracao_caixa": "Fluxo de caixa operacional isolado, CAPEX e dividendos pagos, e a série histórica "
-            "do próprio fluxo de caixa livre: sem fonte integrada nesta versão (exigiria Demonstração de "
-            "Fluxo de Caixa da CVM) - só o ponto atual de fluxo de caixa livre existe (yfinance), nenhum "
-            "desses outros valores é estimado como substituto.",
+    "roic": "ROIC: não disponível nesta checagem para este ticker - exige alíquota efetiva real (imposto "
+            "de renda/CSLL isolado do trimestre) e balanço patrimonial (patrimônio líquido/dívida/caixa) "
+            "simultaneamente; quando algum desses não é reportado isoladamente pela empresa, não "
+            "aproximamos com alíquota-padrão nem com valor de outro período.",
+    "divida_historica": "Dívida líquida em série histórica: balanço patrimonial (CVM) indisponível para "
+            "este ticker nos trimestres verificados nesta checagem.",
+    "geracao_caixa": "Fluxo de caixa operacional, CAPEX, fluxo de caixa livre e/ou dividendos pagos "
+            "(acumulados no ano, CVM): um ou mais desses itens não foi identificado no Fluxo de Caixa "
+            "desta empresa nos trimestres verificados - CAPEX/dividendos são identificados por "
+            "palavra-chave na demonstração; quando a empresa não usa um rótulo reconhecido, o campo "
+            "fica indisponível em vez de aproximado.",
     "ev_ebit": "EV/EBIT: EBIT trimestral isolado da CVM não cobre o 4º trimestre e não há EBIT anual "
             "consolidado ponto a ponto integrado nesta versão - aproximar via margem operacional "
             "seria estimativa, não dado reportado, por isso não foi calculado.",
     "dcf": "Valuation por fluxo de caixa descontado (DCF): bloqueado por falta de fluxo de caixa livre "
-            "atual (ver lacuna de Geração de caixa) - quando o ponto existe, o DCF ainda depende de você "
-            "informar taxa de crescimento e taxa de desconto no painel (nunca um padrão interno).",
+            "(nem o ponto atual do yfinance, nem a série acumulada no ano da CVM estão disponíveis "
+            "nesta checagem) - quando o ponto existe, o DCF ainda depende de você informar taxa de "
+            "crescimento e taxa de desconto no painel (nunca um padrão interno).",
     "historico_internacional": "Série histórica trimestral para empresas internacionais: calendário "
             "fiscal não é detectado automaticamente nesta versão - só empresas brasileiras (CVM) têm "
             "série histórica confiável hoje.",
@@ -389,56 +392,122 @@ def _secao_qualidade_negocio(historico: dict, lacunas_ativas: set) -> dict:
     return {"pergunta": "Qualidade do negócio", "resposta": resposta, "tipo_evidencia": tipo}
 
 
+def _ultimo_bfc(historico: dict) -> dict:
+    """balanco_fluxo_caixa da nota mais recente da série, ou {} se a
+    série não está disponível - helper pra não repetir esse acesso
+    aninhado nas 3 seções que usam esse bloco."""
+    if not (historico or {}).get("disponivel"):
+        return {}
+    return (historico.get("ultima_nota") or {}).get("balanco_fluxo_caixa") or {}
+
+
 def _secao_crescimento_rentabilidade(fundamentos: dict, historico: dict, lacunas_ativas: set) -> dict:
-    lacunas_ativas.add("roic")
     partes = []
+    tem_calculo = False  # qualquer tendência/ROIC é derivado (CÁLCULO), não FATO bruto
     if (historico or {}).get("disponivel"):
         lucro_t = historico.get("lucro_liquido_consolidado", {}).get("tendencia")
         ebit_t = historico.get("ebit", {}).get("tendencia")
         if lucro_t:
             partes.append(f"lucro líquido em {_ROTULO_TENDENCIA[lucro_t]} (YoY)")
+            tem_calculo = True
         if ebit_t:
             partes.append(f"EBIT em {_ROTULO_TENDENCIA[ebit_t]} (YoY)")
+            tem_calculo = True
     roe = (fundamentos or {}).get("roe")
     if roe is not None:
         partes.append(f"ROE atual (ponto, yfinance): {roe:.1f}%")
-    if partes:
-        resposta = "; ".join(partes) + ". ROIC não calculado nesta versão (ver Lacunas)."
-        tipo = TIPO_CALCULO
+
+    bfc = _ultimo_bfc(historico)
+    roic = bfc.get("roic_pct")
+    roic_tendencia = (historico or {}).get("roic_pct", {}).get("tendencia")
+    if roic is not None:
+        aliquota = bfc.get("aliquota_efetiva_pct")
+        texto_roic = f"ROIC do trimestre mais recente (cálculo interno, não anualizado): {roic:.1f}%"
+        if aliquota is not None:
+            texto_roic += f" (alíquota efetiva real {aliquota:.1f}%)"
+        if roic_tendencia:
+            texto_roic += f" - {_ROTULO_TENDENCIA[roic_tendencia]} nos trimestres observados"
+        partes.append(texto_roic)
+        tem_calculo = True
     else:
-        resposta = "Dado insuficiente: sem histórico de lucro/EBIT nem ROE disponíveis agora (ver Lacunas)."
+        lacunas_ativas.add("roic")
+
+    if partes:
+        resposta = "; ".join(partes) + "."
+        # qualquer tendência/ROIC no texto é CÁLCULO INTERNO (derivado);
+        # resposta mista (ex: tendência + ROE bruto) nunca é rotulada
+        # FATO puro - só quando o ÚNICO conteúdo é um valor reportado
+        # cru (ROE sem nenhuma tendência/ROIC) o rótulo é FATO.
+        tipo = TIPO_CALCULO if tem_calculo else TIPO_FATO
+    else:
+        resposta = "Dado insuficiente: sem histórico de lucro/EBIT, ROE nem ROIC disponíveis agora (ver Lacunas)."
         tipo = TIPO_INSUFICIENTE
     return {"pergunta": "Crescimento e rentabilidade", "resposta": resposta, "tipo_evidencia": tipo}
 
 
-def _secao_estrutura_capital(fundamentos: dict, lacunas_ativas: set) -> dict:
-    lacunas_ativas.add("divida_historica")
+def _secao_estrutura_capital(fundamentos: dict, historico: dict, lacunas_ativas: set) -> dict:
     dl_ebitda = (fundamentos or {}).get("divida_liquida_ebitda")
-    if dl_ebitda is None:
+    partes = []
+    tipo = TIPO_INSUFICIENTE
+    if dl_ebitda is not None:
+        leitura = "elevada" if dl_ebitda > 4 else ("moderada" if dl_ebitda > 2 else "baixa")
+        partes.append(f"Dívida líquida/EBITDA atual (ponto, yfinance): {dl_ebitda:.1f}x ({leitura})")
+        tipo = TIPO_FATO
+
+    bfc = _ultimo_bfc(historico)
+    dl_atual = bfc.get("divida_liquida_atual")
+    dl_tendencia = (historico or {}).get("divida_liquida", {}).get("tendencia")
+    if dl_atual is not None:
+        texto_dl = f"dívida líquida (CVM, fim do trimestre mais recente): {_fmt_reais(dl_atual, 'BR')}"
+        if dl_tendencia:
+            texto_dl += f" - {_ROTULO_TENDENCIA[dl_tendencia]} na série observada (YoY)"
+        partes.append(texto_dl)
+        tipo = TIPO_CALCULO
+    else:
+        lacunas_ativas.add("divida_historica")
+
+    if not partes:
         return {"pergunta": "Estrutura de capital",
-                "resposta": "Dado insuficiente: dívida líquida/EBITDA indisponível agora (ver Lacunas).",
+                "resposta": "Dado insuficiente: dívida líquida (ponto ou série histórica) indisponível agora (ver Lacunas).",
                 "tipo_evidencia": TIPO_INSUFICIENTE}
-    leitura = "elevada" if dl_ebitda > 4 else ("moderada" if dl_ebitda > 2 else "baixa")
-    return {"pergunta": "Estrutura de capital",
-            "resposta": f"Dívida líquida/EBITDA atual (ponto, yfinance): {dl_ebitda:.1f}x ({leitura}). "
-                        "Série histórica não disponível (ver Lacunas).",
-            "tipo_evidencia": TIPO_FATO}
+    return {"pergunta": "Estrutura de capital", "resposta": "; ".join(partes) + ".", "tipo_evidencia": tipo}
 
 
-def _secao_geracao_caixa(fundamentos: dict, lacunas_ativas: set) -> dict:
-    lacunas_ativas.add("geracao_caixa")
-    fcf = (fundamentos or {}).get("fluxo_caixa_livre")
-    if fcf is None:
+def _secao_geracao_caixa(fundamentos: dict, historico: dict, lacunas_ativas: set) -> dict:
+    fcf_ponto = (fundamentos or {}).get("fluxo_caixa_livre")
+    partes = []
+    if fcf_ponto is not None:
+        partes.append(f"fluxo de caixa livre atual (ponto, yfinance): {_fmt_reais(fcf_ponto, 'BR')}")
+
+    bfc = _ultimo_bfc(historico)
+    fco, capex, fcf_ytd, dividendos = (bfc.get("fco_ytd"), bfc.get("capex_ytd"),
+                                        bfc.get("fcf_ytd"), bfc.get("dividendos_pagos_ytd"))
+    algum_ytd = any(v is not None for v in (fco, capex, fcf_ytd, dividendos))
+    if algum_ytd:
+        sub_partes = []
+        if fco is not None:
+            t = (historico or {}).get("fco_ytd", {}).get("tendencia")
+            sub_partes.append(f"FCO {_fmt_reais(fco, 'BR')}" + (f" ({_ROTULO_TENDENCIA[t]} YoY)" if t else ""))
+        if capex is not None:
+            t = (historico or {}).get("capex_ytd", {}).get("tendencia")
+            sub_partes.append(f"CAPEX {_fmt_reais(capex, 'BR')}" + (f" ({_ROTULO_TENDENCIA[t]} YoY)" if t else ""))
+        if fcf_ytd is not None:
+            t = (historico or {}).get("fcf_ytd", {}).get("tendencia")
+            sub_partes.append(f"FCF {_fmt_reais(fcf_ytd, 'BR')}" + (f" ({_ROTULO_TENDENCIA[t]} YoY)" if t else ""))
+        if dividendos is not None:
+            t = (historico or {}).get("dividendos_pagos_ytd", {}).get("tendencia")
+            sub_partes.append(f"dividendos pagos {_fmt_reais(dividendos, 'BR')}" + (f" ({_ROTULO_TENDENCIA[t]} YoY)" if t else ""))
+        partes.append("acumulado no ano até o trimestre mais recente (CVM, fonte: Demonstração de Fluxo de "
+                       "Caixa): " + ", ".join(sub_partes))
+    if any(v is None for v in (fco, capex, fcf_ytd, dividendos)):
+        lacunas_ativas.add("geracao_caixa")
+
+    if not partes:
         return {"pergunta": "Geração de caixa",
-                "resposta": "Dado insuficiente: fluxo de caixa livre indisponível agora; fluxo de caixa "
-                            "operacional, CAPEX e dividendos pagos não têm fonte integrada nesta versão "
-                            "(ver Lacunas).",
+                "resposta": "Dado insuficiente: nenhuma fonte de fluxo de caixa disponível agora (ver Lacunas).",
                 "tipo_evidencia": TIPO_INSUFICIENTE}
-    return {"pergunta": "Geração de caixa",
-            "resposta": f"Fluxo de caixa livre atual (ponto, yfinance): {_fmt_reais(fcf, 'BR')}. Fluxo de "
-                        "caixa operacional isolado, CAPEX e dividendos pagos, e a série histórica deste "
-                        "próprio fluxo de caixa livre, ainda não têm fonte integrada (ver Lacunas).",
-            "tipo_evidencia": TIPO_FATO}
+    tipo = TIPO_CALCULO if algum_ytd else TIPO_FATO
+    return {"pergunta": "Geração de caixa", "resposta": "; ".join(partes) + ".", "tipo_evidencia": tipo}
 
 
 def _secao_tese_positiva(cobertura_lista: list) -> dict:
@@ -474,9 +543,25 @@ def _secao_tese_negativa(fundamentos: dict, divergencia, sem_cobertura: list) ->
             "tipo_evidencia": TIPO_CALCULO if fundamentos else TIPO_INSUFICIENTE}
 
 
-def _secao_valuation(fundamentos: dict, setorial: dict | None, lacunas_ativas: set) -> dict:
+def _fcf_para_dcf(fundamentos: dict | None, historico: dict | None) -> tuple:
+    """(valor, rotulo_fonte) do FCF a usar no DCF - prefere o ponto atual
+    do yfinance (TTM, qualquer mercado) quando disponível; cai pro
+    acumulado no ano (YTD) da CVM (só Brasil) quando o yfinance não
+    reportar - nunca mistura os dois nem finge que são a mesma base de
+    tempo (o rótulo sempre diz qual foi usado e a base, TTM ou YTD)."""
+    fcf_ponto = (fundamentos or {}).get("fluxo_caixa_livre")
+    if fcf_ponto is not None:
+        return fcf_ponto, "fluxo de caixa livre atual (yfinance, TTM)"
+    fcf_ytd = _ultimo_bfc(historico).get("fcf_ytd")
+    if fcf_ytd is not None:
+        return fcf_ytd, "fluxo de caixa livre acumulado no ano (CVM, YTD até o trimestre mais recente)"
+    return None, None
+
+
+def _secao_valuation(fundamentos: dict, historico: dict, setorial: dict | None, lacunas_ativas: set) -> dict:
     lacunas_ativas.add("ev_ebit")
-    if (fundamentos or {}).get("fluxo_caixa_livre") is None:
+    fcf_dcf, _ = _fcf_para_dcf(fundamentos, historico)
+    if fcf_dcf is None:
         lacunas_ativas.add("dcf")
     if not fundamentos or fundamentos.get("preco") is None:
         return {"pergunta": "Valuation",
@@ -513,8 +598,8 @@ def _secao_valuation(fundamentos: dict, setorial: dict | None, lacunas_ativas: s
         texto_setorial = f" Comparação setorial indisponível ({setorial.get('motivo', 'sem pares suficientes')})."
 
     desatualizado = " Múltiplos desatualizados (mais de 24h sem coleta nova)." if fundamentos.get("desatualizado") else ""
-    if fundamentos.get("fluxo_caixa_livre") is not None:
-        texto_dcf = (" DCF: fluxo de caixa livre atual disponível - informe taxa de crescimento e taxa "
+    if fcf_dcf is not None:
+        texto_dcf = (" DCF: fluxo de caixa livre disponível - informe taxa de crescimento e taxa "
                      "de desconto no painel abaixo para calcular (nenhuma das duas é assumida por padrão).")
     else:
         texto_dcf = " Valuation por fluxo de caixa descontado (DCF) não calculado nesta checagem (ver Lacunas)."
@@ -817,11 +902,11 @@ def _montar_conclusao(analise: dict, tese: dict | None) -> list:
     secoes_analiticas = [
         _secao_qualidade_negocio(historico, lacunas_ativas),
         _secao_crescimento_rentabilidade(fundamentos, historico, lacunas_ativas),
-        _secao_estrutura_capital(fundamentos, lacunas_ativas),
-        _secao_geracao_caixa(fundamentos, lacunas_ativas),
+        _secao_estrutura_capital(fundamentos, historico, lacunas_ativas),
+        _secao_geracao_caixa(fundamentos, historico, lacunas_ativas),
         _secao_tese_positiva(cobertura_lista),
         _secao_tese_negativa(fundamentos, divergencia, sem_cobertura),
-        _secao_valuation(fundamentos, setorial, lacunas_ativas),
+        _secao_valuation(fundamentos, historico, setorial, lacunas_ativas),
         _secao_catalisadores(catalisadores),
         _secao_riscos_invalidacao(riscos, tese),
         _secao_consenso_research(cobertura if analise.get("cobertura_research") is not None else None),
@@ -883,14 +968,15 @@ _ROTULO_EVIDENCIA = {
 }
 
 
-def _controle_dcf_inline(ticker: str, fundamentos: dict | None):
+def _controle_dcf_inline(ticker: str, fundamentos: dict | None, historico: dict | None):
     """Controle INLINE (efeito imediato, no próprio painel - nunca um
     formulário separado) pra calcular o DCF só quando o usuário informar
     as duas premissas - o PREGÃO nunca assume taxa de crescimento nem
     taxa de desconto por padrão (number_input sem `value` fixo, começa
-    vazio/None). Só aparece quando há fluxo de caixa livre atual pra
-    descontar (ver _secao_valuation/_TEXTOS_LACUNA['dcf'])."""
-    fcf = (fundamentos or {}).get("fluxo_caixa_livre")
+    vazio/None). Só aparece quando há fluxo de caixa livre pra descontar
+    - ponto atual (yfinance) ou, na ausência dele, acumulado no ano
+    (CVM) - ver _fcf_para_dcf/_secao_valuation/_TEXTOS_LACUNA['dcf']."""
+    fcf, fonte_fcf = _fcf_para_dcf(fundamentos, historico)
     if fcf is None:
         return
     with st.container(key=f"dcf_inline_{ticker}"):
@@ -919,7 +1005,7 @@ def _controle_dcf_inline(ticker: str, fundamentos: dict | None):
             unsafe_allow_html=True,
         )
         st.caption(
-            f"Premissas: fluxo de caixa livre atual {_fmt_reais(fcf, 'BR')} (yfinance, ponto atual) · "
+            f"Premissas: {fonte_fcf} = {_fmt_reais(fcf, 'BR')} · "
             f"crescimento {crescimento:.1f}% a.a. e desconto {desconto:.1f}% a.a. informados por você · "
             "projeção simplificada de 5 anos + perpetuidade de Gordon. Não é recomendação de compra ou venda."
         )
@@ -961,7 +1047,7 @@ def render_conclusao_investimento(ticker: str, prefs: dict, usuario: dict):
                     unsafe_allow_html=True,
                 )
             if bloco["pergunta"] == "Valuation":
-                _controle_dcf_inline(ticker, analise.get("fundamentos"))
+                _controle_dcf_inline(ticker, analise.get("fundamentos"), analise.get("fundamentos_historicos"))
         if tese:
             st.caption(
                 f"Você já registrou uma Tese própria para {ticker} em {str(tese['registrado_em'])[:10]} "
