@@ -69,6 +69,25 @@ CONTAS_DRE = {
     "3.11.01": "lucro_liquido_controladora",
 }
 
+# ---------------------------------------------------------------------
+# DIAGNÓSTICO ESPECÍFICO DE FALHA (Fase 1, 2026-11-02 - correção de
+# causa raiz, caso real BEEF3/Minerva S.A. usado como referência na
+# investigação original) - antes desta versão, obter_dre_trimestral
+# devolvia só `None` pras 3 causas de falha abaixo, e
+# data/earnings/reviewer.py:montar_nota_br colapsava isso numa mensagem
+# genérica com "ou" ("ticker sem CNPJ mapeado, fonte fora do ar, ou sem
+# registro desse trimestre") - o usuário nunca sabia qual das 3
+# realmente ocorreu. Cada causa agora tem um texto PRÓPRIO, propagado
+# até a UI (ui/analises_tab.py:render_revisao_resultados) via
+# reviewer.py sem reescrita no meio do caminho.
+# ---------------------------------------------------------------------
+MOTIVO_SEM_CNPJ = "ticker sem CNPJ mapeado na CVM (FCA não lista este código de negociação)"
+MOTIVO_FONTE_INDISPONIVEL = "fonte CVM (ITR) indisponível no momento"
+MOTIVO_SEM_REGISTRO_TRIMESTRE = "empresa não publicou DRE deste trimestre especificamente na CVM"
+MOTIVO_TRIMESTRE_NAO_SUPORTADO = ("4º trimestre (Q4) não é calculado isoladamente nesta integração - "
+                                  "exigiria subtrair o acumulado anual (DFP) do 3º trimestre (ITR), "
+                                  "fora do escopo desta versão.")
+
 
 def _baixar_csv_do_zip(url: str, nome_no_zip: str):
     """Mesmo padrao de data/cvm.py:_baixar_csv_do_zip (duplicado aqui de
@@ -128,31 +147,37 @@ def _valor_trimestre_isolado(m: pd.DataFrame, codigo: str, ordem_exerc: str):
     return float(linha["VL_CONTA"]) if linha is not None else None
 
 
-def obter_dre_trimestral(ticker: str, ano: int, trimestre: int) -> dict | None:
+def obter_dre_trimestral(ticker: str, ano: int, trimestre: int) -> tuple[dict | None, str | None]:
     """DRE consolidada de UM trimestre isolado (1, 2 ou 3 - ver docstring
     do modulo pelo porque Q4 nao e' suportado aqui) + a MESMA conta do
     MESMO trimestre no ano anterior (comparacao YoY, ja' vem no proprio
     arquivo da CVM via ORDEM_EXERC='PENÚLTIMO' - nenhuma chamada extra).
 
-    None se: ticker sem CNPJ mapeado (data/cvm.py:obter_cnpj), fonte CVM
-    indisponivel, trimestre fora de 1-3, ou CNPJ sem nenhum registro no
-    ano pedido. Nunca inventa numero - conta sem linha isolada reportada
-    fica com valor None nos dois lados (atual/ano_anterior).
+    Retorna SEMPRE uma tupla (resultado, motivo):
+    - sucesso: (dict, None) - ver forma do dict abaixo.
+    - falha: (None, motivo) - `motivo` e' UM dos 4 textos especificos
+      (MOTIVO_SEM_CNPJ, MOTIVO_FONTE_INDISPONIVEL,
+      MOTIVO_SEM_REGISTRO_TRIMESTRE, MOTIVO_TRIMESTRE_NAO_SUPORTADO),
+      nunca um `None` cru nem uma mensagem generica com "ou" escondendo
+      qual causa ocorreu (bug real corrigido 2026-11-02 - ver caso
+      BEEF3/Minerva na investigacao original). Nunca inventa numero -
+      conta sem linha isolada reportada fica com valor None nos dois
+      lados (atual/ano_anterior), mesmo em caso de sucesso.
 
-    Retorna {"ticker", "cnpj", "empresa", "ano", "trimestre",
+    Dict de sucesso: {"ticker", "cnpj", "empresa", "ano", "trimestre",
     "dt_referencia", "moeda", "escala_moeda", "contas": {rotulo: {"atual":
     float|None, "ano_anterior": float|None}}, "fonte_url", "fonte_nome"}."""
     if trimestre not in (1, 2, 3):
-        return None
+        return None, MOTIVO_TRIMESTRE_NAO_SUPORTADO
     cnpj = obter_cnpj(ticker)
     if not cnpj:
-        return None
+        return None, MOTIVO_SEM_CNPJ
     df = _dre_itr_ano(ano)
     if df is None:
-        return None
+        return None, MOTIVO_FONTE_INDISPONIVEL
     m = df[df["CNPJ_CIA"] == cnpj]
     if m.empty:
-        return None
+        return None, MOTIVO_SEM_REGISTRO_TRIMESTRE
 
     # DT_REFER = data-fim do trimestre pedido, nunca "a mais recente do
     # arquivo" - bug real corrigido aqui (2026-10-22): sem este filtro,
@@ -164,7 +189,7 @@ def obter_dre_trimestral(ticker: str, ano: int, trimestre: int) -> dict | None:
     dt_refer = f"{ano:04d}-{mes_dia_fim}"
     m = m[m["DT_REFER"].astype(str) == dt_refer]
     if m.empty:
-        return None
+        return None, MOTIVO_SEM_REGISTRO_TRIMESTRE
     if "VERSAO" in m.columns:
         m = m[m["VERSAO"] == m["VERSAO"].max()]
 
@@ -176,7 +201,7 @@ def obter_dre_trimestral(ticker: str, ano: int, trimestre: int) -> dict | None:
         for codigo, rotulo in CONTAS_DRE.items()
     }
     primeira = m.iloc[0]
-    return {
+    resultado = {
         "ticker": ticker.upper(), "cnpj": cnpj, "empresa": str(primeira.get("DENOM_CIA") or ""),
         "ano": ano, "trimestre": trimestre, "dt_referencia": str(dt_refer),
         "moeda": str(primeira.get("MOEDA") or ""), "escala_moeda": str(primeira.get("ESCALA_MOEDA") or ""),
@@ -184,3 +209,4 @@ def obter_dre_trimestral(ticker: str, ano: int, trimestre: int) -> dict | None:
         "fonte_url": _URL_ITR.format(ano=ano),
         "fonte_nome": "CVM - dados.cvm.gov.br (ITR, DRE consolidada)",
     }
+    return resultado, None
