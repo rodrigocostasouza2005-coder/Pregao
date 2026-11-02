@@ -677,7 +677,7 @@ def test_monitoramento_falha_ao_persistir_alerta_fica_visivel_e_nao_e_novidade()
     cotacao_com_queda = {"preco": 90.0, "fechamento_anterior": 100.0, "cotacao_em": "2026-10-30T10:00:00-03:00"}
     with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
          patch.object(radar, "coletar_carteiras_safra", return_value=[item]), \
-         patch.object(radar, "salvar_carteiras", return_value=(True, None)), \
+         patch.object(radar, "salvar_carteiras", return_value=(True, None, None)), \
          patch.object(radar, "listar_carteiras", return_value=[item]), \
          patch.object(radar, "obter_cotacao", return_value=cotacao_com_queda), \
          patch.object(radar, "registrar_alerta", return_value=(False, None)):
@@ -697,7 +697,7 @@ def test_monitoramento_alerta_persistido_com_sucesso_nao_conta_falha():
     cotacao_com_queda = {"preco": 90.0, "fechamento_anterior": 100.0, "cotacao_em": "2026-10-30T10:00:00-03:00"}
     with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
          patch.object(radar, "coletar_carteiras_safra", return_value=[item]), \
-         patch.object(radar, "salvar_carteiras", return_value=(True, None)), \
+         patch.object(radar, "salvar_carteiras", return_value=(True, None, None)), \
          patch.object(radar, "listar_carteiras", return_value=[item]), \
          patch.object(radar, "obter_cotacao", return_value=cotacao_com_queda), \
          patch.object(radar, "registrar_alerta", return_value=(True, 123)):
