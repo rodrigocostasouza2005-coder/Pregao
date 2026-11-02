@@ -43,17 +43,26 @@ def render_top_mercado(prefs: dict, regiao_fixa: str | None = None, setor_fixo: 
     with st.container(border=True):
         st.markdown(f'<div class="painel-titulo">{titulo}</div>', unsafe_allow_html=True)
 
-        regiao = regiao_fixa or st.pills(
-            "Região", _REGIOES, default="BRASIL", selection_mode="single", key="top_pill_regiao",
-        ) or "BRASIL"
-        setor = setor_fixo or st.pills(
-            "Setor", _SETORES, default="TODOS", selection_mode="single", key="top_pill_setor",
-        ) or "TODOS"
+        # regiao (pills curtas) e setor (select compacto) na MESMA linha: os
+        # 13 pills de setor ocupavam ~5 linhas antes da primeira manchete
+        if regiao_fixa and setor_fixo:
+            regiao, setor = regiao_fixa, setor_fixo
+        else:
+            if regiao_fixa:
+                regiao = regiao_fixa
+                c_setor, _vazio = st.columns([0.3, 0.7], gap="small")
+            else:
+                c_regiao, c_setor = st.columns([0.55, 0.45], gap="small", vertical_alignment="bottom")
+                with c_regiao:
+                    regiao = st.pills(
+                        "Região", _REGIOES, default="BRASIL", selection_mode="single", key="top_pill_regiao",
+                    ) or "BRASIL"
+            with c_setor:
+                setor = setor_fixo or st.selectbox("Setor", _SETORES, index=0, key="top_select_setor")
 
         st.caption(
-            "Ranking por estimativa de relevância (nº de fontes cobrindo o fato, recência, "
-            "veículos confiáveis, temas de mercado) — não existe fonte pública de \"mais lida\", "
-            "isso não é medição real de audiência. Clique numa manchete para ver os detalhes."
+            "Ranking estimado por regras (nº de fontes, recência, veículos confiáveis, temas) — "
+            "não é medição de audiência. Clique na manchete para ver os detalhes."
         )
 
         itens = _BUSCADORES[regiao](setor)
@@ -66,12 +75,10 @@ def render_top_mercado(prefs: dict, regiao_fixa: str | None = None, setor_fixo: 
             return
 
         st.markdown(
-            f"<div class='cinza' style='font-size:0.68rem; margin:0.3rem 0 0.4rem 0;'>top {len(itens)} do momento</div>",
+            f"<div class='cinza' style='font-size:0.68rem; margin:0.4rem 0 0.5rem 0;'>{len(itens)} do momento</div>",
             unsafe_allow_html=True,
         )
 
         # fotos já validadas pelo coletor: 1 leitura em lote pra lista
         # inteira, nunca rede/IA por linha; falha do cache = lista sem foto
-        prontos = _prontos_para_lista(itens)
-        _renderizar_lista(itens, mostrar_ticker=True, prefixo="top", watchlist=prefs.get("watchlist") or [],
-                          resumos_prontos=prontos)
+        _renderizar_lista(itens, mostrar_ticker=True, prefixo="top", watchlist=prefs.get("watchlist") or [])
