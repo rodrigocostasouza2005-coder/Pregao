@@ -660,10 +660,11 @@ def test_monitoramento_sem_falha_de_cotacao_nao_gera_erro_espurio():
     acaso quando nada deu errado."""
     import data.radar_quedas as radar
     item = {"ticker": "PETR4", "casa": "Safra Corretora", "carteira": "Top 10 Ações"}
+    item_itau = {"ticker": "VALE3", "casa": "Itaú Investimentos", "carteira": "Top 5"}
     cotacao_ok = {"preco": 99.0, "fechamento_anterior": 100.0, "cotacao_em": "2026-10-19T10:00:00-03:00"}
     with patch.object(radar, "coletar_carteiras_genial", return_value=[item]), \
          patch.object(radar, "coletar_carteiras_safra", return_value=[item]), \
-         patch.object(radar, "coletar_carteiras_itau", return_value=None), \
+         patch.object(radar, "coletar_carteiras_itau", return_value=[item_itau]), \
          patch.object(radar, "salvar_carteiras", return_value=(True, None, None)), \
          patch.object(radar, "listar_carteiras", return_value=[item]), \
          patch.object(radar, "obter_cotacao", return_value=cotacao_ok):
