@@ -1,0 +1,385 @@
+CNPJ_CIA;DT_REFER;VERSAO;DENOM_CIA;CD_CVM;GRUPO_DFP;MOEDA;ESCALA_MOEDA;ORDEM_EXERC;DT_FIM_EXERC;CD_CONTA;DS_CONTA;VL_CONTA;ST_CONTA_FIXA
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1;Ativo Total;476094000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1;Ativo Total;457173000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01;Ativo Circulante;100645000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01;Ativo Circulante;87427000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.01;Caixa e Equivalentes de Caixa;40563000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.01;Caixa e Equivalentes de Caixa;26540000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02;Aplicações Financeiras;1066000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.02;Aplicações Financeiras;1012000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.01;Aplicações Financeiras Avaliadas a Valor Justo através do Resultado;1066000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.02.01;Aplicações Financeiras Avaliadas a Valor Justo através do Resultado;1012000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.01.01;Títulos para Negociação;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.02.01.01;Títulos para Negociação;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.01.02;Títulos Designados a Valor Justo;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.02.01.02;Títulos Designados a Valor Justo;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.01.03;Aplicações financeiras de curto prazo;1066000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.02.01.03;Aplicações financeiras de curto prazo;1012000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.02;Aplicações Financeiras Avaliadas a Valor Justo através de Outros Resultados Abrangentes;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.02.02;Aplicações Financeiras Avaliadas a Valor Justo através de Outros Resultados Abrangentes;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.03;Aplicações Financeiras Avaliadas ao Custo Amortizado;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.02.03;Aplicações Financeiras Avaliadas ao Custo Amortizado;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.03;Contas a Receber;12639000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.03;Contas a Receber;12533000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.03.01;Clientes;12639000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.03.01;Clientes;12533000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.03.02;Outras Contas a Receber;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.03.02;Outras Contas a Receber;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.04;Estoques;32666000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.04;Estoques;32020000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.05;Ativos Biológicos;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.05;Ativos Biológicos;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.06;Tributos a Recuperar;8280000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.06;Tributos a Recuperar;6849000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.06.01;Tributos Correntes a Recuperar;8280000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.06.01;Tributos Correntes a Recuperar;6849000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.07;Despesas Antecipadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.07;Despesas Antecipadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08;Outros Ativos Circulantes;5431000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.08;Outros Ativos Circulantes;8473000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.01;Ativos Não-Correntes a Venda;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.08.01;Ativos Não-Correntes a Venda;138000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.02;Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.08.02;Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.03;Outros;5431000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.08.03;Outros;8335000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.03.01;Instrumentos financeiros derivativos;2278000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.08.03.01;Instrumentos financeiros derivativos;4599000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.03.02;Outros;3153000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.08.03.02;Outros;3736000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.03.03;Depósitos judiciais;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.01.08.03.03;Depósitos judiciais;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02;Ativo Não Circulante;375449000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02;Ativo Não Circulante;369746000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01;Ativo Realizável a Longo Prazo;58474000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01;Ativo Realizável a Longo Prazo;55642000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.01;Aplicações Financeiras Avaliadas a Valor Justo através do Resultado;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.01;Aplicações Financeiras Avaliadas a Valor Justo através do Resultado;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.01.01;Títulos Designados a Valor Justo;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.01.01;Títulos Designados a Valor Justo;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.02;Aplicações Financeiras Avaliadas a Valor Justo através de Outros Resultados Abrangentes;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.02;Aplicações Financeiras Avaliadas a Valor Justo através de Outros Resultados Abrangentes;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.03;Aplicações Financeiras Avaliadas ao Custo Amortizado;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.03;Aplicações Financeiras Avaliadas ao Custo Amortizado;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.04;Contas a Receber;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.04;Contas a Receber;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.04.01;Clientes;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.04.01;Clientes;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.04.02;Outras Contas a Receber;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.04.02;Outras Contas a Receber;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.05;Estoques;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.05;Estoques;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.06;Ativos Biológicos;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.06;Ativos Biológicos;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.07;Tributos Diferidos;44529000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.07;Tributos Diferidos;41577000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.07.01;Imposto de Renda e Contribuição Social Diferidos;34761000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.07.01;Imposto de Renda e Contribuição Social Diferidos;31415000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.07.02;Tributos a Recuperar;9768000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.07.02;Tributos a Recuperar;10162000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.08;Despesas Antecipadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.08;Despesas Antecipadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.09;Créditos com Partes Relacionadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.09;Créditos com Partes Relacionadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.09.01;Créditos com Coligadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.09.01;Créditos com Coligadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.09.03;Créditos com Controladores;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.09.03;Créditos com Controladores;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.09.04;Créditos com Outras Partes Relacionadas;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.09.04;Créditos com Outras Partes Relacionadas;0.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10;Outros Ativos Não Circulantes;13945000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.10;Outros Ativos Não Circulantes;14065000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.01;Ativos Não-Correntes a Venda;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.10.01;Ativos Não-Correntes a Venda;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.02;Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.10.02;Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.03;Instrumentos financeiros derivativos;1115000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.10.03;Instrumentos financeiros derivativos;1965000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.04;Outros;9250000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.10.04;Outros;8986000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.05;Depósito judicial;3580000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.01.10.05;Depósito judicial;3114000.0;N
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02;Investimentos;27674000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.02;Investimentos;26884000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.01;Participações Societárias;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.02.01;Participações Societárias;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.01.01;Participações em Coligadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.02.01.01;Participações em Coligadas;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.01.04;Participações em Controladas em Conjunto;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.02.01.04;Participações em Controladas em Conjunto;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.01.05;Outros Investimentos;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.02.01.05;Outros Investimentos;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.02;Propriedades para Investimento;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.02.02;Propriedades para Investimento;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.03;Imobilizado;240040000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.03;Imobilizado;238351000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.03.01;Imobilizado em Operação;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.03.01;Imobilizado em Operação;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.03.02;Direito de Uso em Arrendamento;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.03.02;Direito de Uso em Arrendamento;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.03.03;Imobilizado em Andamento;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.03.03;Imobilizado em Andamento;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.04;Intangível;49261000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.04;Intangível;48869000.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.04.01;Intangíveis;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.04.01;Intangíveis;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.04.01.01;Contrato de Concessão;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.04.01.01;Contrato de Concessão;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.04.02;Goodwill;0.0;S
+33.592.510/0001-54;2026-03-31;1;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-03-31;1.02.04.02;Goodwill;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1;Ativo Total;476094000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1;Ativo Total;462161000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01;Ativo Circulante;100645000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01;Ativo Circulante;91411000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.01;Caixa e Equivalentes de Caixa;40563000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.01;Caixa e Equivalentes de Caixa;28871000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02;Aplicações Financeiras;1066000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.02;Aplicações Financeiras;971000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.01;Aplicações Financeiras Avaliadas a Valor Justo através do Resultado;1066000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.02.01;Aplicações Financeiras Avaliadas a Valor Justo através do Resultado;971000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.01.01;Títulos para Negociação;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.02.01.01;Títulos para Negociação;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.01.02;Títulos Designados a Valor Justo;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.02.01.02;Títulos Designados a Valor Justo;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.01.03;Aplicações financeiras de curto prazo;1066000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.02.01.03;Aplicações financeiras de curto prazo;971000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.02;Aplicações Financeiras Avaliadas a Valor Justo através de Outros Resultados Abrangentes;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.02.02;Aplicações Financeiras Avaliadas a Valor Justo através de Outros Resultados Abrangentes;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.03;Aplicações Financeiras Avaliadas ao Custo Amortizado;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.02.03;Aplicações Financeiras Avaliadas ao Custo Amortizado;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.03;Contas a Receber;12639000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.03;Contas a Receber;13534000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.03.01;Clientes;12639000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.03.01;Clientes;13534000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.03.02;Outras Contas a Receber;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.03.02;Outras Contas a Receber;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.04;Estoques;32666000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.04;Estoques;32424000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.05;Ativos Biológicos;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.05;Ativos Biológicos;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.06;Tributos a Recuperar;8280000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.06;Tributos a Recuperar;8889000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.06.01;Tributos Correntes a Recuperar;8280000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.06.01;Tributos Correntes a Recuperar;8889000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.07;Despesas Antecipadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.07;Despesas Antecipadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08;Outros Ativos Circulantes;5431000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.08;Outros Ativos Circulantes;6722000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.01;Ativos Não-Correntes a Venda;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.08.01;Ativos Não-Correntes a Venda;138000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.02;Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.08.02;Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.03;Outros;5431000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.08.03;Outros;6584000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.03.01;Instrumentos financeiros derivativos;2278000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.08.03.01;Instrumentos financeiros derivativos;2960000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.03.02;Outros;3153000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.08.03.02;Outros;3624000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.03.03;Depósitos judiciais;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.01.08.03.03;Depósitos judiciais;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02;Ativo Não Circulante;375449000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02;Ativo Não Circulante;370750000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01;Ativo Realizável a Longo Prazo;58474000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01;Ativo Realizável a Longo Prazo;54539000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.01;Aplicações Financeiras Avaliadas a Valor Justo através do Resultado;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.01;Aplicações Financeiras Avaliadas a Valor Justo através do Resultado;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.01.01;Títulos Designados a Valor Justo;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.01.01;Títulos Designados a Valor Justo;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.02;Aplicações Financeiras Avaliadas a Valor Justo através de Outros Resultados Abrangentes;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.02;Aplicações Financeiras Avaliadas a Valor Justo através de Outros Resultados Abrangentes;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.03;Aplicações Financeiras Avaliadas ao Custo Amortizado;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.03;Aplicações Financeiras Avaliadas ao Custo Amortizado;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.04;Contas a Receber;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.04;Contas a Receber;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.04.01;Clientes;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.04.01;Clientes;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.04.02;Outras Contas a Receber;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.04.02;Outras Contas a Receber;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.05;Estoques;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.05;Estoques;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.06;Ativos Biológicos;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.06;Ativos Biológicos;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.07;Tributos Diferidos;44529000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.07;Tributos Diferidos;40168000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.07.01;Imposto de Renda e Contribuição Social Diferidos;34761000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.07.01;Imposto de Renda e Contribuição Social Diferidos;31143000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.07.02;Tributos a Recuperar;9768000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.07.02;Tributos a Recuperar;9025000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.08;Despesas Antecipadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.08;Despesas Antecipadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.09;Créditos com Partes Relacionadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.09;Créditos com Partes Relacionadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.09.01;Créditos com Coligadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.09.01;Créditos com Coligadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.09.03;Créditos com Controladores;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.09.03;Créditos com Controladores;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.09.04;Créditos com Outras Partes Relacionadas;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.09.04;Créditos com Outras Partes Relacionadas;0.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10;Outros Ativos Não Circulantes;13945000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.10;Outros Ativos Não Circulantes;14371000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.01;Ativos Não-Correntes a Venda;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.10.01;Ativos Não-Correntes a Venda;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.02;Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.10.02;Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.03;Instrumentos financeiros derivativos;1115000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.10.03;Instrumentos financeiros derivativos;2396000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.04;Outros;9250000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.10.04;Outros;8986000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.05;Depósito judicial;3580000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.01.10.05;Depósito judicial;2989000.0;N
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02;Investimentos;27674000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.02;Investimentos;27248000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.01;Participações Societárias;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.02.01;Participações Societárias;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.01.01;Participações em Coligadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.02.01.01;Participações em Coligadas;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.01.04;Participações em Controladas em Conjunto;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.02.01.04;Participações em Controladas em Conjunto;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.01.05;Outros Investimentos;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.02.01.05;Outros Investimentos;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.02;Propriedades para Investimento;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.02.02;Propriedades para Investimento;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.03;Imobilizado;240040000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.03;Imobilizado;240188000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.03.01;Imobilizado em Operação;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.03.01;Imobilizado em Operação;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.03.02;Direito de Uso em Arrendamento;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.03.02;Direito de Uso em Arrendamento;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.03.03;Imobilizado em Andamento;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.03.03;Imobilizado em Andamento;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.04;Intangível;49261000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.04;Intangível;48775000.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.04.01;Intangíveis;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.04.01;Intangíveis;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.04.01.01;Contrato de Concessão;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.04.01.01;Contrato de Concessão;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.04.02;Goodwill;0.0;S
+33.592.510/0001-54;2026-06-30;3;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-06-30;1.02.04.02;Goodwill;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1;Ativo Total;476094000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1;Ativo Total;458197000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01;Ativo Circulante;100645000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01;Ativo Circulante;87794000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.01;Caixa e Equivalentes de Caixa;40563000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.01;Caixa e Equivalentes de Caixa;25082000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02;Aplicações Financeiras;1066000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.02;Aplicações Financeiras;1012000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.01;Aplicações Financeiras Avaliadas a Valor Justo através do Resultado;1066000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.02.01;Aplicações Financeiras Avaliadas a Valor Justo através do Resultado;1012000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.01.01;Títulos para Negociação;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.02.01.01;Títulos para Negociação;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.01.02;Títulos Designados a Valor Justo;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.02.01.02;Títulos Designados a Valor Justo;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.01.03;Aplicações financeiras de curto prazo;1066000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.02.01.03;Aplicações financeiras de curto prazo;1012000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.02;Aplicações Financeiras Avaliadas a Valor Justo através de Outros Resultados Abrangentes;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.02.02;Aplicações Financeiras Avaliadas a Valor Justo através de Outros Resultados Abrangentes;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.02.03;Aplicações Financeiras Avaliadas ao Custo Amortizado;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.02.03;Aplicações Financeiras Avaliadas ao Custo Amortizado;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.03;Contas a Receber;12639000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.03;Contas a Receber;15307000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.03.01;Clientes;12639000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.03.01;Clientes;15307000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.03.02;Outras Contas a Receber;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.03.02;Outras Contas a Receber;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.04;Estoques;32666000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.04;Estoques;31388000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.05;Ativos Biológicos;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.05;Ativos Biológicos;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.06;Tributos a Recuperar;8280000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.06;Tributos a Recuperar;7817000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.06.01;Tributos Correntes a Recuperar;8280000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.06.01;Tributos Correntes a Recuperar;7817000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.07;Despesas Antecipadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.07;Despesas Antecipadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08;Outros Ativos Circulantes;5431000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.08;Outros Ativos Circulantes;7188000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.01;Ativos Não-Correntes a Venda;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.08.01;Ativos Não-Correntes a Venda;129000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.02;Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.08.02;Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.03;Outros;5431000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.08.03;Outros;7059000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.03.01;Instrumentos financeiros derivativos;2278000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.08.03.01;Instrumentos financeiros derivativos;4115000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.03.02;Outros;3153000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.08.03.02;Outros;2944000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.01.08.03.03;Depósitos judiciais;0.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.01.08.03.03;Depósitos judiciais;0.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02;Ativo Não Circulante;375449000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02;Ativo Não Circulante;370403000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01;Ativo Realizável a Longo Prazo;58474000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01;Ativo Realizável a Longo Prazo;52013000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.01;Aplicações Financeiras Avaliadas a Valor Justo através do Resultado;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.01;Aplicações Financeiras Avaliadas a Valor Justo através do Resultado;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.01.01;Títulos Designados a Valor Justo;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.01.01;Títulos Designados a Valor Justo;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.02;Aplicações Financeiras Avaliadas a Valor Justo através de Outros Resultados Abrangentes;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.02;Aplicações Financeiras Avaliadas a Valor Justo através de Outros Resultados Abrangentes;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.03;Aplicações Financeiras Avaliadas ao Custo Amortizado;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.03;Aplicações Financeiras Avaliadas ao Custo Amortizado;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.04;Contas a Receber;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.04;Contas a Receber;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.04.01;Clientes;0.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.04.01;Clientes;0.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.04.02;Outras Contas a Receber;0.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.04.02;Outras Contas a Receber;0.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.05;Estoques;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.05;Estoques;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.06;Ativos Biológicos;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.06;Ativos Biológicos;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.07;Tributos Diferidos;44529000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.07;Tributos Diferidos;40237000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.07.01;Imposto de Renda e Contribuição Social Diferidos;34761000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.07.01;Imposto de Renda e Contribuição Social Diferidos;31136000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.07.02;Tributos a Recuperar;9768000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.07.02;Tributos a Recuperar;9101000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.08;Despesas Antecipadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.08;Despesas Antecipadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.09;Créditos com Partes Relacionadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.09;Créditos com Partes Relacionadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.09.01;Créditos com Coligadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.09.01;Créditos com Coligadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.09.03;Créditos com Controladores;0.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.09.03;Créditos com Controladores;0.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.09.04;Créditos com Outras Partes Relacionadas;0.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.09.04;Créditos com Outras Partes Relacionadas;0.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10;Outros Ativos Não Circulantes;13945000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.10;Outros Ativos Não Circulantes;11776000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.01;Ativos Não-Correntes a Venda;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.10.01;Ativos Não-Correntes a Venda;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.02;Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.10.02;Ativos de Operações Descontinuadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.03;Instrumentos financeiros derivativos;1115000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.10.03;Instrumentos financeiros derivativos;4161000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.04;Outros;9250000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.10.04;Outros;4647000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.01.10.05;Depósito judicial;3580000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.01.10.05;Depósito judicial;2968000.0;N
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02;Investimentos;27674000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.02;Investimentos;27736000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.01;Participações Societárias;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.02.01;Participações Societárias;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.01.01;Participações em Coligadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.02.01.01;Participações em Coligadas;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.01.04;Participações em Controladas em Conjunto;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.02.01.04;Participações em Controladas em Conjunto;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.01.05;Outros Investimentos;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.02.01.05;Outros Investimentos;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.02.02;Propriedades para Investimento;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.02.02;Propriedades para Investimento;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.03;Imobilizado;240040000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.03;Imobilizado;241916000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.03.01;Imobilizado em Operação;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.03.01;Imobilizado em Operação;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.03.02;Direito de Uso em Arrendamento;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.03.02;Direito de Uso em Arrendamento;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.03.03;Imobilizado em Andamento;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.03.03;Imobilizado em Andamento;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.04;Intangível;49261000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.04;Intangível;48738000.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.04.01;Intangíveis;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.04.01;Intangíveis;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.04.01.01;Contrato de Concessão;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.04.01.01;Contrato de Concessão;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;PENÚLTIMO;2025-12-31;1.02.04.02;Goodwill;0.0;S
+33.592.510/0001-54;2026-09-30;2;VALE S.A.;4170;DF Consolidado - Balanço Patrimonial Ativo;REAL;MIL;ÚLTIMO;2026-09-30;1.02.04.02;Goodwill;0.0;S
