@@ -162,8 +162,17 @@ header[data-testid="stHeader"] {
    (medida real, nao estimada) - Streamlit nao expoe a largura
    arrastada pelo usuario via CSS; se o usuario arrastar pra mais larga,
    o alinhamento pode ficar levemente impreciso de novo, mas e' um caso
-   bem mais raro que o logo inteiro sumido no estado padrao. */
-@media (min-width: 641px) {
+   bem mais raro que o logo inteiro sumido no estado padrao.
+
+   BUG REAL confirmado (auditoria touch/responsividade, 2026-11-01,
+   Playwright com emulacao de iPad real) - ver comentario completo no
+   bloco irmao abaixo (section[data-testid="stSidebar"]): ">640px" sozinho
+   inclui QUALQUER iPad (768-1366px, retrato ou paisagem), nao so'
+   desktop de verdade. Os dois blocos precisam da MESMA condicao (header
+   e sidebar tem que concordar sobre quando a sidebar esta' "fixa" vs
+   "overlay"), por isso o mesmo (hover:hover) and (pointer:fine) foi
+   adicionado aqui tambem. */
+@media (min-width: 641px) and (hover: hover) and (pointer: fine) {
     div[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="true"]) .st-key-header_fixo {
         left: 300px;
         width: calc(100vw - 300px);
@@ -308,14 +317,107 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
    sidebar volta a se comportar como o Streamlit nativo decide (overlay),
    e o motivo original (nao deixar o header_fixo cobrir o topo da sidebar
    aberta) so' importa quando as duas coisas coexistem lado a lado, que e'
-   so' o caso desktop. */
-@media (min-width: 641px) {
+   so' o caso desktop.
+
+   BUG REAL confirmado (auditoria touch/responsividade, 2026-11-01,
+   Playwright com emulacao de iPad real - "iPad (gen 7)" 810x1080 e
+   variantes paisagem/outros modelos ate' 1366px): ">640px" sozinho
+   trata QUALQUER iPad como desktop - a sidebar virava fixa (300px
+   permanentemente reservados) numa tela de 810px, deixando so' ~500px
+   pro header+conteudo principal; screenshot real mostrou o cabecalho
+   cortado (logo/busca/ticker truncados) e icones de acao colapsados a
+   largura zero - mesma classe do bug original (mobile 390px), so' que
+   reaberta numa faixa de largura mais alta que a correcao original
+   (641px) nao cobria.
+
+   Fix: decisao por CAPACIDADE DE INPUT, nao so' largura. (hover:hover)
+   and (pointer:fine) so' e' verdadeiro com um mouse/trackpad real
+   conectado - Chromium emula (hover:none)/(pointer:coarse)
+   automaticamente em qualquer contexto com touch habilitado (confirmado
+   testando com Playwright, has_touch:true). iPad sem mouse (o caso
+   normal) cai no MESMO overlay/gaveta nativo que o celular ja usava -
+   nunca ocupa espaco fixo de layout, abre por cima quando o usuario
+   toca o botao, fecha tocando fora. iPad COM mouse Bluetooth conectado
+   passa a contar como desktop de verdade (comportamento correto - nesse
+   caso ha' espaco de sobra e um ponteiro preciso pra usar a sidebar fixa
+   confortavelmente).
+
+   CORRECAO DO DIAGNOSTICO ACIMA (mesma investigacao, 2026-11-01): a
+   causa raiz NAO e' esta regra - e' o proprio Streamlit. Inspecionado
+   via computed style/Playwright: o Streamlit decide sozinho, por um
+   breakpoint INTERNO proprio (fora do nosso controle, provavelmente
+   ~768px), se a sidebar expandida "empurra" o conteudo (flex sibling
+   de largura real, caso do iPad 810px - stMain media so' 510px, a
+   sidebar consumindo 300px reais do flex) ou "sobrepoe" sem empurrar
+   (caso real confirmado em 390px: sidebar com width:300px x:0 E stMain
+   com width:390px x:0 ao MESMO TEMPO - os dois ocupam o mesmo espaco,
+   a sidebar literalmente por cima, stMain nunca encolhe). O bloco
+   (hover:hover)/(pointer:fine) acima continua correto e necessario
+   (cobre o alinhamento do header_fixo), mas sozinho nao resolve o
+   aperto do conteudo - por isso o bloco abaixo, que forca a MESMA
+   mecanica de sobreposicao do celular em QUALQUER largura quando nao
+   ha' mouse. */
+@media (min-width: 641px) and (hover: hover) and (pointer: fine) {
     section[data-testid="stSidebar"] {
         /* fica ACIMA da faixa fixa do topo (.st-key-header_fixo, z-index 56):
            como essa faixa e' fixed de ponta a ponta da tela, sem isso ela
            cobriria o topo da sidebar aberta em vez de ficar atras dela */
         position: relative;
         z-index: 1100;
+    }
+}
+/* Fix de verdade pro aperto em tablet (2026-11-01): position:fixed tira a
+   sidebar do fluxo flex de stAppViewContainer por completo, qualquer que
+   seja a largura - stMain (flex sibling) deixa de ter 300px descontados
+   do seu flex-basis e volta a ocupar a largura inteira disponivel,
+   exatamente como ja acontece nativamente no celular (confirmado acima).
+   top:0/height:100vh mantem a sidebar cobrindo a tela inteira verticalmente
+   (sem isso, position:fixed sem top/height herdaria uma altura de
+   conteudo, nao da viewport). z-index nao precisa ser repetido - o
+   proprio Streamlit ja aplica 999991 inline neste elemento (maior que
+   qualquer z-index deste arquivo), confirmado por computed style. */
+@media (hover: none), (pointer: coarse) {
+    section[data-testid="stSidebar"] {
+        position: fixed !important;
+        top: 0 !important;
+        height: 100vh !important;
+    }
+    /* BUG REAL confirmado (Playwright, 2026-11-01): o botao nativo do
+       Streamlit que fecha a sidebar (data-testid="stSidebarCollapseButton")
+       fica visibility:hidden ate' o mouse passar por cima do cabecalho da
+       sidebar (:hover, CSS do proprio Streamlit) - pra SEMPRE revelar um
+       botao oculto por hover, nao so' um efeito cosmetico. Confirmado
+       tentando clicar via Playwright: "element is not visible", mesmo
+       com bounding box valida - em touch, hover nunca acontece antes do
+       toque, entao o botao existia mas era IMPOSSIVEL de tocar (o
+       usuario abria a sidebar e nao tinha como fecha-la sem tocar fora
+       dela, que so funciona com a sidebar em overlay - funcionalidade
+       essencial dependendo de hover, exatamente o que a auditoria pediu
+       pra eliminar). */
+    [data-testid="stSidebarCollapseButton"] button {
+        visibility: visible !important;
+    }
+    /* Area de toque de checkbox/toggle (achado real, auditoria
+       touch/responsividade 2026-11-01): medido via Playwright no toggle
+       "RECEBER ALERTAS DO RADAR POR E-MAIL" (RADAR > Preferencias) - a
+       area clicavel real (label inteiro, nao so' o quadrado/trilho
+       visual) e' 330x24px. O toque FUNCIONA (confirmado, 24px de altura
+       ainda e' maior que zero), mas fica abaixo dos 44px recomendados
+       pra um dedo real - alvo fino demais em qualquer tela menor/
+       mais densa que o iPad usado no teste. Mesmo widget usado em
+       ui/radar_tab.py (Preferencias, filtros), ui/morning_call_tab.py
+       (Preferencias), ui/graficos.py e ui/paineis.py - sistemico, nao
+       um caso isolado. flex+align-items:center preserva o texto/trilho
+       no tamanho visual de sempre (nao aumenta a fonte nem o switch em
+       si), so' estica a area INVISIVEL de toque ao redor - zero mudanca
+       de densidade visual, só de alvo de toque. Escopado a touch
+       (mesma condicao do bloco acima) pra nao alterar a densidade
+       compacta em desktop com mouse, onde 24px com ponteiro preciso
+       nunca foi um problema real. */
+    [data-testid="stCheckbox"] {
+        min-height: 44px !important;
+        display: flex !important;
+        align-items: center !important;
     }
 }
 
@@ -1206,6 +1308,76 @@ div[class*="st-key-visao_geral_mercado_agora_cols"] [data-testid="stHorizontalBl
     .st-key-nav_secao [data-testid="stButtonGroup"] button {
         padding-left: 0.58rem !important;
         padding-right: 0.58rem !important;
+    }
+}
+
+/* Area de toque de botoes em touch (achado real, auditoria touch/
+   responsividade 2026-11-01): auditoria sistematica via Playwright
+   (RADAR > Carteiras Recomendadas, tela real, iPad emulado) listou
+   TODOS os 31 elementos interativos visiveis - 19 com altura abaixo de
+   44px: botoes do header (↗/▣/+/SAIR, ~29px), botoes "x" de remover da
+   watchlist (~29px), abas/subabas via st.segmented_control
+   (stButtonGroup, ~34px - MERCADO/RADAR/RESEARCH no topo e Alertas/
+   Carteiras/Oportunidades/etc na subnav). Precisa ficar DEPOIS das
+   declaracoes genericas de botao (".stButton button {min-height:28px}"
+   etc, mais acima no arquivo) - mesma especificidade + !important dos
+   dois lados, quem vem DEPOIS no arquivo vence; colocado aqui, perto do
+   fim, de proposito. Tambem precisa ficar ANTES do bloco de celular
+   logo abaixo (.st-key-empresa_contexto/.st-key-vg_atalhos), que define
+   compacto=2rem(32px) de proposito pra' caber grade 2-por-linha em tela
+   estreita - aquele bloco e' MAIS ESPECIFICO (seletor de key, nao
+   generico) e continua vencendo pra' esses 2 casos especificos mesmo
+   com este aqui aplicado antes, preservando a excecao deliberada.
+
+   Min-height (nao largura) porque esses botoes aparecem em TODO lugar
+   do app - mesmo .stButton/.stBaseButton/.stButtonGroup ja estilizados
+   globalmente, so' reescopados pra touch. Largura deliberadamente NAO
+   alterada: botoes icon-only ficam dentro de colunas Streamlit
+   estreitas e fixas (ex: col_remover = 1/5 da sidebar, ~propositalmente
+   justo pra' caber "x" + ticker na mesma linha) - forcar
+   min-width:44px quebraria esse layout (overflow/quebra de linha), um
+   risco pior que o alvo de toque atual (ja' funcional, so' apertado).
+   Documentado como item de acompanhamento, nao resolvido nesta rodada. */
+@media (hover: none), (pointer: coarse) {
+    .stButton button, .stFormSubmitButton button, button[data-testid^="stBaseButton"],
+    [data-testid="stButtonGroup"] button {
+        min-height: 44px !important;
+    }
+    /* .st-key-nav_sub (subnav - Alertas/Carteiras Recomendadas/etc) tem
+       34px DELIBERADO (".../ui/navegacao.py:render_subnav", comentario
+       acima: "um degrau menor" - hierarquia visual vs a nav principal,
+       que ja' e' 46px) - precisa de selector igualmente especifico
+       (.st-key-nav_sub [data-testid="stButtonGroup"] button) pra'
+       vencer o 34px por especificidade, nao so' por ordem (a regra
+       generica acima, so' [data-testid="stButtonGroup"] button, tem
+       especificidade MENOR que ".st-key-nav_sub [...] button" e
+       perderia mesmo vindo depois no arquivo - confirmado testando: sem
+       este seletor explicito, o toque na subnav continuava medindo 34px
+       computado mesmo com a regra generica presente). */
+    .st-key-nav_sub [data-testid="stButtonGroup"] button {
+        min-height: 44px !important;
+    }
+    /* Botao de fechar do modal nativo (st.dialog, ui/news_tab.py:
+       @st.dialog("NOTICIA")) - achado real (Playwright, 2026-11-01):
+       18x18px, no canto superior direito do modal. O TOQUE FUNCIONA
+       (confirmado - abre o card de noticia, toca Close, dialog fecha),
+       mas 18px e' bem abaixo de um alvo confortavel pra dedo, isolado
+       no canto sem nada por perto pra "errar pro lado certo". Sem
+       data-testid estavel (so' um hash st-emotion-cache-* gerado a cada
+       build, ja documentado neste arquivo como instavel - ver comentario
+       do selectbox/combobox acima) - aria-label="Close" e' o unico
+       seletor estavel disponivel (atributo ARIA semantico do proprio
+       componente nativo do Streamlit, nao CSS gerado). Padding (nao
+       tamanho do icone/fonte) aumenta so' a AREA DE TOQUE ao redor,
+       preserva o visual exato do X. Existe tambem um botao "Descartar"
+       (dismiss) native do React Aria dentro do mesmo dialog,
+       propositalmente de ~16x6px - isso e' um alvo so' pra leitor de
+       tela (padrao de acessibilidade "sr-only": existe no DOM,
+       funcionalmente invisivel/não-clicavel de proposito), NAO um bug -
+       não tocado aqui. */
+    [data-testid="stDialog"] button[aria-label="Close"] {
+        padding: 16px !important;
+        box-sizing: content-box !important;
     }
 }
 
