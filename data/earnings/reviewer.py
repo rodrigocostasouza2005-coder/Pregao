@@ -173,7 +173,7 @@ def _ebit_acumulado_no_ano(ticker: str, ano: int, trimestre: int):
     nunca soma parcial disfarçada de total."""
     total = 0.0
     for tri in range(1, trimestre + 1):
-        nota_tri = cvm_dre.obter_dre_trimestral(ticker, ano, tri)
+        nota_tri, _motivo = cvm_dre.obter_dre_trimestral(ticker, ano, tri)
         if nota_tri is None:
             return None
         ebit_tri = nota_tri["contas"].get("ebit", {}).get("atual")
@@ -258,7 +258,7 @@ def _ebit_acumulado_no_ano_absoluto(ticker: str, ano: int, trimestre: int):
     em escalas potencialmente diferentes entre trimestres/reapresentações."""
     total = 0.0
     for tri in range(1, trimestre + 1):
-        nota_tri = cvm_dre.obter_dre_trimestral(ticker, ano, tri)
+        nota_tri, _motivo = cvm_dre.obter_dre_trimestral(ticker, ano, tri)
         if nota_tri is None:
             return None
         ebit_tri = nota_tri["contas"].get("ebit", {}).get("atual")
