@@ -178,6 +178,23 @@ def test_nota_indisponivel_mostra_motivo_explicito():
     assert "DRE indisponível" in html_render
 
 
+def test_beef3_minerva_motivo_especifico_aparece_na_tela_nunca_generico():
+    """Caso real diagnosticado (BEEF3/Minerva S.A., referência da
+    investigação original): antes da correção de causa raiz (Fase 1,
+    2026-11-02), qualquer causa de falha da DRE virava a MESMA mensagem
+    genérica com "ou" - o usuário nunca sabia qual das 3 ocorreu. Esta
+    nota já chega com o motivo ESPECÍFICO (produzido por
+    data/earnings/reviewer.py a partir de data/earnings/cvm_dre.py) e a
+    tela precisa mostrar ESSE texto, nunca reescrever para o genérico."""
+    nota_indisponivel = {
+        "ticker": "BEEF3", "pais": "BR", "disponivel": False,
+        "motivo": "fonte CVM (ITR) indisponível no momento",
+    }
+    html_render, _ = _capturar_render(ticker="BEEF3", nota=nota_indisponivel)
+    assert "fonte CVM (ITR) indisponível no momento" in html_render
+    assert "ticker sem CNPJ mapeado na CVM, fonte fora do ar, ou sem registro desse trimestre" not in html_render
+
+
 # ---------------------------------------------------------------------
 # ISOLAMENTO DE FALHA - 1 empresa falhando nunca afeta outra
 # ---------------------------------------------------------------------
