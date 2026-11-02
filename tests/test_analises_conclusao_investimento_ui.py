@@ -86,6 +86,26 @@ _PERGUNTAS_ESPERADAS = (
 )
 
 
+# ---------------------------------------------------------------------
+# VAZAMENTO DE TEXTO TÉCNICO CORRIGIDO (Fase 1, 2026-11-02) -
+# barra_contexto_empresa nunca pode mencionar nome de arquivo .py pro
+# usuário final quando o ticker não tem setor classificado.
+# ---------------------------------------------------------------------
+
+def test_barra_contexto_empresa_setor_nao_classificado_nunca_menciona_py():
+    capturado = []
+    col_mock = MagicMock()
+    with patch.object(at_mod, "setores_do_ticker", return_value=[]), \
+         patch.object(at_mod.st, "columns", return_value=[col_mock, col_mock, col_mock, col_mock]), \
+         patch.object(at_mod.st, "button"), \
+         patch.object(at_mod.st, "container"), \
+         patch.object(at_mod.st, "caption", side_effect=lambda t, **k: capturado.append(str(t))):
+        at_mod.barra_contexto_empresa("XPTO3", {"watchlist": []})
+    texto = "\n".join(capturado)
+    assert "Setor não classificado" in texto
+    assert ".py" not in texto
+
+
 # --- _montar_conclusao (pura, sem Streamlit) --------------------------------
 
 def test_conclusao_tem_as_14_secoes_na_ordem_certa():
@@ -193,6 +213,228 @@ def test_confianca_baixa_quando_tudo_insuficiente():
     blocos = at_mod._montar_conclusao(_ANALISE_VAZIA, tese=None)
     confianca = next(b for b in blocos if b["pergunta"] == "Confiança da análise")
     assert "BAIXA" in confianca["resposta"]
+
+
+# ---------------------------------------------------------------------
+# METODOLOGIA v2 DE CONFIANÇA DA ANÁLISE (Fase 1, 2026-11-02) - correção
+# de causa raiz, não cosmética. Bug real diagnosticado (caso BEEF3/
+# Minerva S.A.): a v1 fazia média aritmética SIMPLES (peso igual pras
+# 11 seções) - um ticker com a DRE oficial 100% indisponível podia
+# chegar a 70-80/100 (ALTA) porque "Crescimento e rentabilidade" tem
+# fallback de ROE (yfinance) que não depende da DRE/CVM, mascarando a
+# ausência da fonte crítica. v2 pondera por criticidade da seção E
+# trava um piso explícito (nunca ALTA com DRE indisponível) que não é
+# compensável por outras seções fortes - ver _calcular_confianca em
+# ui/analises_tab.py pra tabela de pesos e justificativa completa.
+# ---------------------------------------------------------------------
+
+_FUNDAMENTOS_SAUDAVEL = {
+    "preco": 40.0, "pl": 12.0, "pvp": 1.8, "dividend_yield": 6.0,
+    "roe": 18.0, "margem_liquida": 12.0, "divida_liquida_ebitda": 1.2,
+    "valor_mercado": 80_000_000_000, "ebitda": 20_000_000_000, "ev_ebitda": 5.5,
+    "fluxo_caixa_livre": 8_000_000_000, "desatualizado": False, "alerta_qualidade": [],
+}
+
+_CATALISADOR_SAUDAVEL = {
+    "categoria": "Resultado trimestral", "data": _HOJE + timedelta(days=12),
+    "status_label": "CONFIRMADO", "confirmado": True, "fonte_label": "RI", "fonte_url": "https://ri.exemplo.com.br",
+}
+
+_COBERTURA_SAUDAVEL = {
+    "janela_dias": 30,
+    "cobertura": [{"casa": "Genial Analisa", "data": "2026-10-20", "titulo": "mantemos COMPRA",
+                   "link": "https://x", "recomendacao": "COMPRA", "preco_alvo": 48.0}],
+    "sem_cobertura": [], "divergencia": None,
+}
+
+_HISTORICO_SAUDAVEL = {
+    "disponivel": True, "periodos": ["1T26", "2T26", "3T26"],
+    "receita_liquida": {"yoy_pct_serie": [2.0, 6.0, 10.0], "tendencia": "RECUPERACAO"},
+    "ebit": {"yoy_pct_serie": [1.0, 4.0, 7.0], "tendencia": "RECUPERACAO"},
+    "lucro_liquido_consolidado": {"yoy_pct_serie": [1.0, 2.0, 2.5], "tendencia": "ESTABILIDADE"},
+    "margem_bruta_pct": {"serie": [30.0, 30.5, 31.0], "tendencia": "ESTABILIDADE"},
+    "ultima_nota": {"periodo_label": "3T26", "fontes": [{"nome": "CVM - dados.cvm.gov.br (ITR)"}]},
+}
+
+
+def _analise_saudavel(ticker: str) -> dict:
+    """Cenário de dados COMPLETOS (DRE disponível, fundamentos sãos,
+    cobertura/catalisador/risco presentes) - usado pelos testes
+    PETR4/VALE3/ITUB4 abaixo pra confirmar que a nova metodologia NÃO
+    penaliza indevidamente um ticker com dado bom."""
+    return {
+        "ticker": ticker, "gerado_em": None, "fundamentos": dict(_FUNDAMENTOS_SAUDAVEL, ticker=ticker),
+        "catalisadores": [dict(_CATALISADOR_SAUDAVEL, ticker=ticker)], "mudancas_tese": [],
+        "riscos_indicadores": ["Exposição a preços de commodity/câmbio relevante pro resultado"],
+        "cobertura_research": dict(_COBERTURA_SAUDAVEL, ticker=ticker),
+        "fundamentos_historicos": _HISTORICO_SAUDAVEL,
+        "comparativo_setorial": _SETORIAL_DISPONIVEL, "fontes_indisponiveis": [],
+    }
+
+
+def test_petr4_dados_completos_nao_e_penalizado_indevidamente():
+    blocos = at_mod._montar_conclusao(_analise_saudavel("PETR4"), tese=None)
+    confianca = next(b for b in blocos if b["pergunta"] == "Confiança da análise")
+    assert "ALTA" in confianca["resposta"]
+
+
+def test_vale3_dados_completos_nao_e_penalizado_indevidamente():
+    blocos = at_mod._montar_conclusao(_analise_saudavel("VALE3"), tese=None)
+    confianca = next(b for b in blocos if b["pergunta"] == "Confiança da análise")
+    assert "ALTA" in confianca["resposta"]
+
+
+def test_itub4_dados_completos_nao_e_penalizado_indevidamente():
+    blocos = at_mod._montar_conclusao(_analise_saudavel("ITUB4"), tese=None)
+    confianca = next(b for b in blocos if b["pergunta"] == "Confiança da análise")
+    assert "ALTA" in confianca["resposta"]
+
+
+# --- BEEF3/Minerva (DRE indisponível) - teste CENTRAL do bug ---------------
+
+_FUNDAMENTOS_BEEF3_SIMULADO = {
+    "preco": 8.0, "pl": 12.0, "pvp": 1.1, "dividend_yield": 3.0,
+    "roe": 15.0, "margem_liquida": 2.0, "divida_liquida_ebitda": 3.5,
+    "valor_mercado": 4_000_000_000, "ebitda": 1_500_000_000, "ev_ebitda": 6.2,
+    "fluxo_caixa_livre": 300_000_000, "desatualizado": False, "alerta_qualidade": [],
+}
+
+_CATALISADOR_BEEF3 = {
+    "categoria": "Resultado do 3T26", "data": _HOJE + timedelta(days=15),
+    "status_label": "CONFIRMADO", "confirmado": True, "fonte_label": "RI Minerva",
+    "fonte_url": "https://ri.minervafoods.com",
+}
+
+_COBERTURA_BEEF3 = {
+    "janela_dias": 30,
+    "cobertura": [{"casa": "Genial Analisa", "data": "2026-10-15", "titulo": "mantemos COMPRA",
+                   "link": "https://x", "recomendacao": "COMPRA", "preco_alvo": 10.0}],
+    "sem_cobertura": [], "divergencia": None,
+}
+
+# DRE oficial (CVM) indisponível - mesma forma que
+# data/earnings/reviewer.py:serie_historica_br devolve quando nenhum
+# trimestre teve DRE publicada na CVM pra este ticker (qualquer uma das
+# 3 causas específicas de data/earnings/cvm_dre.py resulta nisso aqui).
+_HISTORICO_INDISPONIVEL_BEEF3 = {
+    "disponivel": False,
+    "motivo": "nenhum trimestre com DRE disponível na CVM para este ticker nos períodos civis "
+              "verificados (empresa pode não ter CNPJ mapeado, ou a fonte CVM não tem registro "
+              "desse período).",
+    "periodos": [],
+}
+
+_ANALISE_BEEF3_SIMULADA = {
+    "ticker": "BEEF3", "gerado_em": None, "fundamentos": _FUNDAMENTOS_BEEF3_SIMULADO,
+    "catalisadores": [_CATALISADOR_BEEF3], "mudancas_tese": [],
+    "riscos_indicadores": ["Exposição cambial relevante em dívida denominada em dólar"],
+    "cobertura_research": _COBERTURA_BEEF3, "fundamentos_historicos": _HISTORICO_INDISPONIVEL_BEEF3,
+    "comparativo_setorial": None, "fontes_indisponiveis": [],
+}
+
+
+def test_historico_ausente_nao_aplica_piso_cvm_a_ativos_sem_serie_br():
+    """Historico=None e ausencia normal da serie internacional nesta versao;
+    nao pode ser confundido com DRE/CVM explicitamente indisponivel para
+    uma empresa brasileira."""
+    secoes = [
+        {"pergunta": nome, "tipo_evidencia": at_mod.TIPO_FATO}
+        for nome in at_mod._PESO_CONFIANCA_POR_SECAO
+    ]
+    confianca = at_mod._calcular_confianca(
+        secoes, historico=None, fundamentos={"desatualizado": False},
+    )
+    assert confianca["dre_indisponivel"] is False
+    assert confianca["nivel"] == "ALTA"
+
+
+def test_beef3_minerva_dre_indisponivel_nunca_classifica_confianca_como_alta():
+    """Regressão do bug real diagnosticado (caso BEEF3/Minerva S.A.
+    citado na investigação original). Com a metodologia ANTIGA (média
+    aritmética simples, 11 seções com peso igual), este cenário
+    classificava ALTA (70-80/100) - o ROE do yfinance (fallback de
+    "Crescimento e rentabilidade") mascarava a ausência total da DRE
+    oficial da CVM, e nenhuma outra seção "sabia" que a fonte crítica
+    estava faltando. Este teste TERIA FALHADO com o código antigo
+    (confianca['nivel'] teria sido "ALTA") e tem que passar agora: o
+    score PONDERADO bruto ainda fecha >=70 (prova de que o peso por
+    criticidade, sozinho, não bastaria - ver comentário em
+    ui/analises_tab.py), mas o piso explícito trava o nível em MÉDIA."""
+    secoes = [b for b in at_mod._montar_conclusao(_ANALISE_BEEF3_SIMULADA, tese=None)
+              if b["pergunta"] not in ("Resumo executivo", "Confiança da análise", "Lacunas de informação")]
+    confianca = at_mod._calcular_confianca(
+        secoes, historico=_HISTORICO_INDISPONIVEL_BEEF3, fundamentos=_FUNDAMENTOS_BEEF3_SIMULADO,
+    )
+    assert confianca["dre_indisponivel"] is True
+    assert confianca["score"] >= 70  # prova que a regra antiga (score>=70 -> ALTA) teria classificado ALTA
+    assert confianca["nivel"] == "MÉDIA"  # piso explícito: nunca ALTA com DRE indisponível
+    assert any("DRE/CVM" in p or "demonstração financeira oficial" in p
+               for p in confianca["penalidades_aplicadas"])
+
+    blocos = at_mod._montar_conclusao(_ANALISE_BEEF3_SIMULADA, tese=None)
+    bloco_confianca = next(b for b in blocos if b["pergunta"] == "Confiança da análise")
+    assert "MÉDIA" in bloco_confianca["resposta"]
+    assert "risco da tese" in bloco_confianca["resposta"]  # distingue os 2 conceitos explicitamente
+
+
+def test_beef3_render_conclusao_investimento_nunca_lanca_excecao():
+    """Garante que a UI inteira (não só a função pura) nunca lança
+    excecao com DRE indisponível + demais dados completos."""
+    html_render = _capturar_render(_ANALISE_BEEF3_SIMULADA, tese=None)
+    assert "CONCLUSÃO DE INVESTIMENTO" in html_render
+    assert "MÉDIA" in html_render
+
+
+# --- múltiplas lacunas (nível mais baixo, mesmo sem envolver a DRE) --------
+
+def test_confianca_multiplas_lacunas_fica_baixa_mesmo_com_dre_disponivel():
+    """Lacunas estruturais (não só a DRE) também têm que arrastar o
+    score pra baixo - prova que o piso explícito não é a ÚNICA defesa
+    da metodologia, os pesos por criticidade também respondem a dado
+    ausente em seções centrais (Estrutura de capital/Geração de caixa/
+    Valuation)."""
+    analise = dict(_analise_saudavel("XPTO3"))
+    fundamentos_pobres = {"preco": None, "desatualizado": False, "alerta_qualidade": []}
+    analise["fundamentos"] = fundamentos_pobres
+    analise["catalisadores"] = None
+    analise["riscos_indicadores"] = []
+    analise["cobertura_research"] = {"cobertura": [], "sem_cobertura": [], "divergencia": None}
+    analise["comparativo_setorial"] = None
+    blocos = at_mod._montar_conclusao(analise, tese=None)
+    confianca = next(b for b in blocos if b["pergunta"] == "Confiança da análise")
+    assert "BAIXA" in confianca["resposta"]
+
+
+# --- dados desatualizados (fallback/cache) - penalidade visível ------------
+
+def test_confianca_dados_desatualizados_aplica_penalidade_visivel():
+    analise_atual = _analise_saudavel("PETR4")
+    analise_desatualizada = dict(analise_atual, fundamentos=dict(analise_atual["fundamentos"], desatualizado=True))
+
+    secoes_atual = [b for b in at_mod._montar_conclusao(analise_atual, tese=None)
+                    if b["pergunta"] not in ("Resumo executivo", "Confiança da análise", "Lacunas de informação")]
+    secoes_desatualizada = [b for b in at_mod._montar_conclusao(analise_desatualizada, tese=None)
+                            if b["pergunta"] not in ("Resumo executivo", "Confiança da análise", "Lacunas de informação")]
+
+    confianca_atual = at_mod._calcular_confianca(
+        secoes_atual, historico=_HISTORICO_SAUDAVEL, fundamentos=analise_atual["fundamentos"])
+    confianca_desatualizada = at_mod._calcular_confianca(
+        secoes_desatualizada, historico=_HISTORICO_SAUDAVEL, fundamentos=analise_desatualizada["fundamentos"])
+
+    assert confianca_desatualizada["score"] < confianca_atual["score"]
+    assert confianca_desatualizada["penalidades_aplicadas"]
+    assert "fallback/cache" in confianca_desatualizada["motivo"]
+
+    blocos = at_mod._montar_conclusao(analise_desatualizada, tese=None)
+    bloco_confianca = next(b for b in blocos if b["pergunta"] == "Confiança da análise")
+    assert "fallback/cache" in bloco_confianca["resposta"]
+
+
+def test_confianca_dados_desatualizados_render_nunca_lanca_excecao():
+    analise_atual = _analise_saudavel("VALE3")
+    analise_desatualizada = dict(analise_atual, fundamentos=dict(analise_atual["fundamentos"], desatualizado=True))
+    html_render = _capturar_render(analise_desatualizada, tese=None)
+    assert "CONCLUSÃO DE INVESTIMENTO" in html_render
 
 
 def test_cenarios_hipotese_do_analista_quando_ha_insumo():
