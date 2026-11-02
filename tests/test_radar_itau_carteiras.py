@@ -10,7 +10,7 @@ def test_seleciona_publicacao_mais_recente_ja_disponivel():
     html = """
     <a href="/investimentos/carteiras-recomendadas/carteira-top-5-setembro-2026/">Setembro</a>
     <a href="/investimentos/carteiras-recomendadas/carteira-top-5-outubro-2026/">Outubro</a>
-    <a href="/investimentos/carteiras-recomendadas/carteira-top-5-novembro-2026/">Novembro (futuro)</a>
+    <a href="/investimentos/carteiras-recomendadas/carteira-top-5-dezembro-2026/">Dezembro (futuro)</a>
     <a href="/investimentos/carteiras-recomendadas/carteira-top-5-outubro-2025/">Outubro ano anterior</a>
     """
     artigos = _artigos_disponiveis(
@@ -43,6 +43,6 @@ def test_parser_aceita_composicao_top5_e_preserva_data_publicacao():
 
 
 def test_parser_rejeita_publicacao_futura_ou_composicao_incompleta():
-    url = "https://hub-conteudo.cloud.itau.com.br/carteira-top-5-novembro-2026/"
+    url = "https://hub-conteudo.cloud.itau.com.br/carteira-top-5-dezembro-2026/"
     html = "<h1>Carteira Top 5 Novembro 2026</h1>"
     assert parsear_artigo(html, url, date(2026, 10, 31)) is None
