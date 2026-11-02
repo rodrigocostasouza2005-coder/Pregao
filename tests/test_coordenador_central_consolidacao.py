@@ -141,6 +141,19 @@ def test_sem_divergencia_quando_dados_concordam():
     assert cross["divergencias"] == []
 
 
+def test_conclusao_usa_rotulo_de_exibicao_nunca_a_constante_crua():
+    """Achado real na validação visual (2026-11-01): a conclusão mostrava
+    "[CALCULO_INTERNO]" cru (constante interna de data/radar.py) em vez
+    de "CÁLCULO INTERNO" (mesmo rótulo já usado em ui/analises_tab.py) -
+    nenhuma constante TIPO_* (com underscore) pode vazar pro texto final."""
+    resultados = {"noticias": _resultado("noticias", disponivel=True, evidencias=[{"fonte": "x"}])}
+    consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
+    texto_conclusao = " ".join(consolidado["conclusao"])
+    assert "CALCULO_INTERNO" not in texto_conclusao
+    assert "DADO_INSUFICIENTE" not in texto_conclusao
+    assert "CÁLCULO INTERNO" in texto_conclusao or "FATO" in texto_conclusao
+
+
 def test_divergencia_none_quando_falta_um_dos_dois_especialistas():
     resultados = {"comparador": _resultado("comparador", dados={"tabela_comparativa": _TABELA_COMPARADOR})}
     consolidado = consolidacao.consolidar(resultados)

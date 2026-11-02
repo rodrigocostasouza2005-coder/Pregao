@@ -172,43 +172,61 @@ def apagar_itens_antigos(dias: int = RETENCAO_DIAS) -> int:
 def salvar_premissas(
     link: str, casa: str, titulo: str, tickers: list, data_publicacao,
     tipo_documento, premissas: list, projecoes: dict,
-    recomendacao, preco_alvo, modelo,
+    recomendacao, preco_alvo, modelo, riscos: list = None,
 ) -> bool:
     """Upsert por link na tabela PERMANENTE research_premissas (ver
     sql/research_premissas.sql) - diferente de salvar_resumo (research_itens,
     apagada em 5 dias por apagar_itens_antigos), esta tabela nunca e'
     limpa: guarda so' a ESTRUTURA extraida por IA (tipo de documento,
-    premissas da tese, projecoes citadas) + metadado minimo (casa/titulo/
-    tickers/data) pra o documento continuar identificavel mesmo depois
-    que a linha original de research_itens tiver sido apagada. Nunca o
-    texto completo do relatorio. True se salvou, False se o banco estiver
-    fora do ar ou a escrita falhar."""
+    premissas da tese, projecoes citadas, riscos apontados) + metadado
+    minimo (casa/titulo/tickers/data) pra o documento continuar
+    identificavel mesmo depois que a linha original de research_itens
+    tiver sido apagada. Nunca o texto completo do relatorio. True se
+    salvou, False se o banco estiver fora do ar ou a escrita falhar.
+
+    'riscos' (coluna aditiva nova, ver sql/research_premissas_riscos.sql)
+    so' vai no payload quando informado - e se o UPSERT falhar por causa
+    dela (Supabase do usuario ainda sem rodar essa migracao), tenta de
+    novo SEM essa coluna antes de desistir: mesmo padrao ja usado em
+    salvar_itens pra 'publicado_em' - nunca quebra premissas/projecoes/
+    recomendacao so' porque uma coluna nova ainda nao existe no banco de
+    quem esta rodando."""
     cliente = obter_cliente()
     if cliente is None:
         return False
+    linha = {
+        "link": link, "casa": casa, "titulo": titulo,
+        "tickers": tickers or [], "data_publicacao": data_publicacao or None,
+        "tipo_documento": tipo_documento, "premissas": premissas or [],
+        "projecoes": projecoes or {}, "recomendacao": recomendacao,
+        "preco_alvo": preco_alvo, "modelo_extracao": modelo,
+    }
+    if riscos is not None:
+        linha["riscos"] = riscos
     try:
-        cliente.table("research_premissas").upsert(
-            {
-                "link": link, "casa": casa, "titulo": titulo,
-                "tickers": tickers or [], "data_publicacao": data_publicacao or None,
-                "tipo_documento": tipo_documento, "premissas": premissas or [],
-                "projecoes": projecoes or {}, "recomendacao": recomendacao,
-                "preco_alvo": preco_alvo, "modelo_extracao": modelo,
-            },
-            on_conflict="link",
-        ).execute()
+        cliente.table("research_premissas").upsert(linha, on_conflict="link").execute()
         return True
     except Exception:
-        return False
+        if riscos is None:
+            return False
+        try:
+            cliente.table("research_premissas").upsert(
+                {k: v for k, v in linha.items() if k != "riscos"}, on_conflict="link",
+            ).execute()
+            return True
+        except Exception:
+            return False
 
 
-def listar_premissas(tickers: list = None, casa: str = None) -> list | None:
+def listar_premissas(tickers: list = None, casa=None) -> list | None:
     """Le a biblioteca PERMANENTE de premissas/projecoes (research_premissas)
     - diferente de listar_itens, nunca filtra por data/retencao (essa
     tabela nao perece). tickers filtra por qualquer overlap com a coluna
-    tickers (array); casa filtra por casa exata; os dois None lista tudo.
-    Mais recente primeiro (extraido_em). None se o banco estiver fora do
-    ar - mesma convencao de listar_itens (distinguir de lista vazia)."""
+    tickers (array); casa filtra por casa - aceita `str` (1 casa exata,
+    comportamento original, retrocompativel) OU `list[str]` (qualquer
+    uma das casas da lista, via IN) OU None (todas). Mais recente
+    primeiro (extraido_em). None se o banco estiver fora do ar - mesma
+    convencao de listar_itens (distinguir de lista vazia)."""
     cliente = obter_cliente()
     if cliente is None:
         return None
@@ -216,7 +234,10 @@ def listar_premissas(tickers: list = None, casa: str = None) -> list | None:
         consulta = cliente.table("research_premissas").select("*")
         if tickers:
             consulta = consulta.overlaps("tickers", tickers)
-        if casa:
+        if isinstance(casa, (list, tuple, set)):
+            if casa:
+                consulta = consulta.in_("casa", list(casa))
+        elif casa:
             consulta = consulta.eq("casa", casa)
         resp = consulta.order("extraido_em", desc=True).execute()
         return resp.data

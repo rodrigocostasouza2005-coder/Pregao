@@ -455,6 +455,86 @@ def test_buscar_sem_evidencia_quando_nem_semantico_nem_lexical_acham_nada():
     assert resultado == {"resultados": [], "confianca": "SEM_EVIDENCIA", "aviso": None}
 
 
+# ============================================================
+# 5. Filtro multi-casa (2026-11-01, pedido do Rodrigo) - buscar() aceita
+# casa=None (todas), casa=str (1 exata, retrocompativel) ou casa=list
+# (varias) - repassado direto pra store.listar_premissas, sem logica
+# duplicada aqui.
+# ============================================================
+
+def test_buscar_casa_string_unica_repassa_para_listar_premissas_sem_mudar_comportamento():
+    base = [_item("a", casa="Genial Analisa", tickers=["WEGE3"])]
+    with patch.object(emb.store, "listar_premissas", return_value=base) as mock_listar:
+        resultado = emb.buscar(ticker="WEGE3", casa="Genial Analisa")
+    mock_listar.assert_called_once_with(tickers=["WEGE3"], casa="Genial Analisa")
+    assert [r["link"] for r in resultado["resultados"]] == ["a"]
+
+
+def test_buscar_lista_de_casas_repassa_lista_inteira_para_listar_premissas():
+    base = [
+        _item("a", casa="Genial Analisa", tickers=["WEGE3"], data_publicacao="2026-10-20"),
+        _item("b", casa="XP Investimentos", tickers=["WEGE3"], data_publicacao="2026-10-15"),
+    ]
+    with patch.object(emb.store, "listar_premissas", return_value=base) as mock_listar:
+        resultado = emb.buscar(ticker="WEGE3", casa=["Genial Analisa", "XP Investimentos"])
+    mock_listar.assert_called_once_with(tickers=["WEGE3"], casa=["Genial Analisa", "XP Investimentos"])
+    assert {r["link"] for r in resultado["resultados"]} == {"a", "b"}
+
+
+def test_buscar_resultado_multi_casa_identifica_a_casa_de_cada_item():
+    """Cada resultado traz a SUA PROPRIA casa de origem, mesmo com varias
+    casas no filtro - nunca uma resposta combinada sem fonte clara por
+    item (rastreabilidade individual)."""
+    base = [
+        _item("a", casa="Genial Analisa", tickers=["WEGE3"], data_publicacao="2026-10-20"),
+        _item("b", casa="BTG Pactual Research", tickers=["WEGE3"], data_publicacao="2026-10-18"),
+        _item("c", casa="Nord Research", tickers=["WEGE3"], data_publicacao="2026-10-10"),
+    ]
+    with patch.object(emb.store, "listar_premissas", return_value=base):
+        resultado = emb.buscar(ticker="WEGE3", casa=["Genial Analisa", "BTG Pactual Research", "Nord Research"])
+    por_link = {r["link"]: r["casa"] for r in resultado["resultados"]}
+    assert por_link == {"a": "Genial Analisa", "b": "BTG Pactual Research", "c": "Nord Research"}
+
+
+def test_buscar_lista_de_casas_sem_nenhuma_publicacao_e_sem_evidencia_nunca_inventa():
+    with patch.object(emb.store, "listar_premissas", return_value=[]) as mock_listar:
+        resultado = emb.buscar(ticker="ZZZZ99", casa=["Genial Analisa", "XP Investimentos", "BTG Pactual Research"])
+    mock_listar.assert_called_once_with(tickers=["ZZZZ99"], casa=["Genial Analisa", "XP Investimentos", "BTG Pactual Research"])
+    assert resultado == {"resultados": [], "confianca": "SEM_EVIDENCIA", "aviso": None}
+
+
+def test_buscar_casa_none_continua_sem_filtro_nenhum_todas_as_casas():
+    base = [_item("a", casa="Genial Analisa", tickers=["WEGE3"]), _item("b", casa="XP Investimentos", tickers=["WEGE3"])]
+    with patch.object(emb.store, "listar_premissas", return_value=base) as mock_listar:
+        resultado = emb.buscar(ticker="WEGE3")
+    mock_listar.assert_called_once_with(tickers=["WEGE3"], casa=None)
+    assert len(resultado["resultados"]) == 2
+
+
+def test_buscar_multi_casa_combinado_com_pergunta_e_periodo_filtros_combinados():
+    """Filtros combinados: lista de casas + pergunta (semantico+lexical) +
+    periodo - cada camada de filtro continua funcionando junto, sem uma
+    sobrepor a outra."""
+    base = [
+        _item("a", casa="Genial Analisa", tickers=["WEGE3"], titulo="WEGE3 revisão de preço-alvo",
+              premissas=["revisão de preço-alvo"], data_publicacao="2026-10-20"),
+        _item("b", casa="XP Investimentos", tickers=["WEGE3"], titulo="Outro assunto qualquer",
+              data_publicacao="2026-10-18"),
+        _item("c", casa="Genial Analisa", tickers=["WEGE3"], titulo="Publicacao fora do periodo",
+              data_publicacao="2026-09-01"),
+    ]
+    with patch.object(emb.store, "listar_premissas", return_value=base), \
+         patch.object(emb.config, "obter_credenciais_gemini", return_value=(None, "modelo")):
+        resultado = emb.buscar(
+            pergunta="preço-alvo", ticker="WEGE3", casa=["Genial Analisa", "XP Investimentos"],
+            data_inicio="2026-10-01",
+        )
+    # 'c' fica fora por periodo (antes de data_inicio), mesmo sendo Genial
+    # Analisa; 'b' nao bate a busca lexical (sem credencial Gemini, so'
+    # lexical roda); so' 'a' sobrevive aos 3 filtros combinados.
+    assert [r["link"] for r in resultado["resultados"]] == ["a"]
+
+
 def test_buscar_restringe_busca_semantica_aos_links_do_filtro_estrutural():
     base = [_item("a", casa="Genial Analisa", tickers=["WEGE3"], data_publicacao="2026-10-01")]
     with patch.object(emb.store, "listar_premissas", return_value=base), \

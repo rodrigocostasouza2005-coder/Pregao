@@ -27,14 +27,24 @@ importar fora deste modulo):
     tudo mais abaixo.
 ============================================================
 
-GAPS HONESTOS (reportados, nunca inventados/estimados):
-- "riscos": research_premissas NAO tem campo de riscos estruturado -
-  a extracao atual (data/research/resumir.py) nunca populou isso.
-  Reportado em todo retorno como disponivel=False + motivo.
-- ROE/ROIC/outros indicadores de rentabilidade: tambem nao sao
-  extraidos por nenhuma pipeline hoje (projecoes so' tem as chaves
-  receita/ebitda_margem/lucro, quando explicitas no texto original).
-  Mesmo tratamento: disponivel=False + motivo, nunca um valor chutado.
+GAPS FECHADOS (2026-11-01, pedido do Rodrigo) - ver _riscos_por_casa/
+_indicadores_fundamentalistas:
+- "riscos" (POR CASA): research_premissas.riscos (coluna aditiva, ver
+  sql/research_premissas_riscos.sql) - extraido pela mesma pipeline de
+  premissas/projecoes (data/research/resumir.py:
+  _extrair_premissas_projecoes), nunca o texto do relatorio inteiro.
+  disponivel=False so' quando NENHUMA casa monitorada tem risco extraido
+  na publicacao mais recente (ou a coluna ainda nao existe no banco do
+  usuario) - nunca confundido com "a tese nao tem risco".
+- ROE: FATO real da empresa (yfinance, mesma fonte/cache do resto do
+  app - data/radar.py:linha_valuation), nao e' uma projecao de casa.
+- ROIC: continua honestamente indisponivel - decisao ja tomada e
+  documentada em data/prices.py:obter_indicadores (yfinance nao reporta,
+  calcular seria estimativa) - nunca recalculado aqui.
+- riscos_mercado: alertas deterministicos (P/L negativo, margem
+  negativa, divida/EBITDA alta) da EMPRESA, zero IA, mesmo mecanismo ja
+  usado no Valuation Radar/Market Makers - complementa (nunca substitui)
+  os riscos por casa acima.
 
 PREMISSA DE MOEDA (documentada aqui, nunca implicita): todo `preco_alvo`
 usado por este modulo e tratado como BRL - o universo de tickers do
@@ -50,6 +60,7 @@ import statistics
 from datetime import datetime
 
 from data.market_researcher import cobertura_cruzada_casas
+from data.radar import linha_valuation
 from data.research import historico
 from data.research.store import listar_premissas
 
@@ -412,6 +423,7 @@ def _evolucao_historica(ticker: str, agrupado: dict) -> dict:
                     "link": pub.get("link"),
                     "recomendacao": pub.get(CAMPO_RECOMENDACAO),
                     "preco_alvo": pub.get(CAMPO_PRECO_ALVO),
+                    "riscos": pub.get("riscos") or [],
                 }
                 for pub in anteriores
             ],
@@ -427,6 +439,88 @@ def _evolucao_historica(ticker: str, agrupado: dict) -> dict:
             "mudou_recomendacao_ou_alvo_hoje": mudou_hoje,
         }
     return evolucao
+
+
+# ============================================================
+# Riscos (POR CASA, coluna aditiva research_premissas.riscos - ver
+# sql/research_premissas_riscos.sql e data/research/resumir.py:
+# _extrair_premissas_projecoes) + indicadores fundamentalistas da
+# EMPRESA (ROE real/ROIC honestamente indisponivel/riscos de mercado
+# deterministicos - fechamento do gap, 2026-11-01, pedido do Rodrigo).
+# ============================================================
+
+_MOTIVO_ROIC_INDISPONIVEL = (
+    "ROIC nao e reportado pelo yfinance (so' ROE/ROA no tk.info) - calcular "
+    "exigiria montar capital investido + taxa efetiva de imposto a partir "
+    "do Balanco Patrimonial/DRE da CVM, o que viraria estimativa, nao dado "
+    "reportado - decisao ja tomada e documentada em data/prices.py:"
+    "obter_indicadores (testado contra PETR4/VALE3/ITUB4/MELI34 antes de "
+    "decidir), nunca recalculado aqui, so' o mesmo motivo repetido."
+)
+
+
+def _indicadores_fundamentalistas(ticker: str) -> dict:
+    """Indicadores da EMPRESA (nao de uma casa especifica - diferente de
+    `projecoes` por casa, que vem do relatorio de cada uma). ROE e' FATO
+    real (yfinance, mesma fonte/cache ja usado no resto do app - ver
+    data/radar.py:linha_valuation), riscos_mercado sao alertas
+    deterministicos de qualidade (P/L negativo, margem negativa, divida/
+    EBITDA alta - zero IA, mesmo mecanismo do Valuation Radar/Market
+    Makers). ROIC fica honestamente indisponivel (ver
+    _MOTIVO_ROIC_INDISPONIVEL) - nunca estimado. Nunca lanca excecao: se
+    a consulta real falhar, volta tudo vazio com disponivel=False."""
+    try:
+        linha = linha_valuation(ticker)
+    except Exception as exc:
+        return {
+            "disponivel": False, "motivo": f"consulta de indicadores fundamentalistas falhou: {exc!r}",
+            "roe": None, "roic": None, "roic_disponivel": False, "roic_motivo": _MOTIVO_ROIC_INDISPONIVEL,
+            "riscos_mercado": [], "fonte": None, "consultado_em": None,
+        }
+    return {
+        "disponivel": True,
+        "roe": linha.get("roe"),
+        "roic": None,
+        "roic_disponivel": False,
+        "roic_motivo": _MOTIVO_ROIC_INDISPONIVEL,
+        "riscos_mercado": linha.get("alerta_qualidade") or [],
+        "fonte": "yfinance (mesmo indicador ja usado em MERCADO/ANALISES - data/prices.py:obter_indicadores)",
+        "consultado_em": linha.get("consultado_em"),
+    }
+
+
+def _riscos_por_casa(agrupado: dict) -> dict:
+    """Riscos extraidos POR CASA, a partir da publicacao mais recente de
+    cada uma (mesmo "estado atual" das demais secoes). NUNCA inventa:
+    ausencia de riscos numa casa so' significa que o relatorio mais
+    recente dela nao tinha risco explicito identificavel pela extracao -
+    nunca que a tese nao tenha risco nenhum. `.get("riscos")` (nao acesso
+    direto) tambem cobre o caso do banco do usuario ainda nao ter a
+    coluna (migration sql/research_premissas_riscos.sql pendente) -
+    listar_premissas so' nao traz a chave, nunca quebra."""
+    por_casa = {}
+    for casa, info in agrupado.items():
+        atual = info["atual"]
+        riscos = atual.get("riscos") or []
+        if riscos:
+            por_casa[casa] = {
+                "riscos": riscos,
+                "data_publicacao": atual.get(CAMPO_DATA_PUBLICACAO),
+                "link": atual.get("link"),
+            }
+    n_total = len(agrupado)
+    n_com_riscos = len(por_casa)
+    return {
+        "disponivel": n_com_riscos > 0,
+        "n_casas_total": n_total,
+        "n_casas_com_riscos_extraidos": n_com_riscos,
+        "por_casa": por_casa,
+        "motivo": None if n_com_riscos > 0 else (
+            "nenhuma publicacao mais recente monitorada cita risco explicito extraido - pode ser que "
+            "o relatorio original nao detalhe riscos, ou que a coluna 'riscos' ainda nao exista no "
+            "banco (migration sql/research_premissas_riscos.sql pendente) - nunca inventado."
+        ),
+    }
 
 
 # ============================================================
@@ -458,21 +552,11 @@ def comparar_ticker(ticker: str) -> dict:
         return {
             "disponivel": True, "ticker": ticker, "casas": [],
             "motivo": "sem publicacoes estruturadas para este ticker na biblioteca permanente de research",
-            # mesmas chaves honestas do retorno completo abaixo (ver comentario
-            # la') - sem isso, montar_relatorio_comparativo quebrava com
-            # KeyError ao tentar acessar comparacao["riscos"] pra um ticker
-            # sem nenhuma publicacao (achado real na auditoria, 2026-10-30).
-            "riscos": {
-                "disponivel": False,
-                "motivo": "pipeline de extracao atual (research_premissas) nao captura riscos estruturalmente - "
-                          "gap conhecido, fora do escopo desta implementacao",
-            },
-            "indicadores_adicionais": {
-                "disponivel": False,
-                "motivo": "ROE/ROIC e outros indicadores de rentabilidade nao sao extraidos por nenhuma pipeline "
-                          "hoje (projecoes so' tem as chaves receita/ebitda_margem/lucro, quando explicitas no "
-                          "texto original) - gap conhecido, fora do escopo desta implementacao",
-            },
+            # indicadores_fundamentalistas e' da EMPRESA (yfinance), nao
+            # depende de nenhuma casa cobrir o ticker - sempre tentado.
+            # riscos (por casa) fica honestamente vazio sem publicacao.
+            "riscos": _riscos_por_casa({}),
+            "indicadores_adicionais": _indicadores_fundamentalistas(ticker),
         }
 
     agrupado = _agrupar_por_casa(publicacoes)
@@ -508,17 +592,8 @@ def comparar_ticker(ticker: str) -> dict:
         "divergencia_premissas": divergencia_premissas,
         "evolucao_historica": evolucao_historica,
         "cobertura_cruzada": cobertura_cruzada,
-        "riscos": {
-            "disponivel": False,
-            "motivo": "pipeline de extracao atual (research_premissas) nao captura riscos estruturalmente - "
-                      "gap conhecido, fora do escopo desta implementacao",
-        },
-        "indicadores_adicionais": {
-            "disponivel": False,
-            "motivo": "ROE/ROIC e outros indicadores de rentabilidade nao sao extraidos por nenhuma pipeline "
-                      "hoje (projecoes so' tem as chaves receita/ebitda_margem/lucro, quando explicitas no "
-                      "texto original) - gap conhecido, fora do escopo desta implementacao",
-        },
+        "riscos": _riscos_por_casa(agrupado),
+        "indicadores_adicionais": _indicadores_fundamentalistas(ticker),
     }
 
 

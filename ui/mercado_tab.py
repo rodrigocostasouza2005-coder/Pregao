@@ -183,41 +183,43 @@ def _layout_grafico_escuro(fig, tema, altura=340):
 # abaixo vem das MESMAS funções de data/mercado.py, data/prices.py,
 # data/macro.py e data/news.py já usadas no resto desta aba/em
 # ui/visao_geral.py, reaproveitadas (nunca uma consulta de rede nova).
-def _card_metrica(rotulo: str, preco, variacao, prefs, casas_preco: int, status: str | None,
-                   rodape: str, unidade_variacao: str = "%"):
-    """Card do topo (reaproveita .card-mercado-agora, já usado em
-    ui/visao_geral.py - borda superior âmbar, mesmo visual do protótipo) -
-    `unidade_variacao` troca "%" por "p.p." pro card de DI (a variação do
-    CDI anualizado é em pontos percentuais, não percentual relativo)."""
-    status_html = f"<div class='card-mercado-status'>{status}</div>" if status else ""
-    if preco is None or variacao is None:
-        st.markdown(
-            f"<div class='card-mercado-agora'>"
-            f"<div class='card-mercado-rotulo'>{rotulo}</div>"
-            f"<div class='card-mercado-valor indisponivel'>—</div>"
-            f"<div class='card-mercado-variacao cinza'>SEM DADO</div>{status_html}</div>",
-            unsafe_allow_html=True,
+def _item_ticker_html(rotulo: str, preco, variacao_pct, casas: int, prefs, status: str | None = None) -> str:
+    """Faixa densa de indicador (rótulo/valor/variação empilhados, sem
+    card grande) - extraído de ui/visao_geral.py em 2026-10-31 (achado
+    real, auditoria "missao master": MERCADO > Painel mostrava os MESMOS
+    indicadores - IBOVESPA/DÓLAR/DI/S&P - num estilo de card bem mais
+    pesado que VISÃO GERAL, com borda própria e padding generoso -
+    mesma informação, dois tratamentos visuais diferentes no mesmo app).
+    Função pura (sem st.*), compartilhada pelas duas telas."""
+    if preco is None or variacao_pct is None:
+        return (
+            f"<div style='padding:0.5rem 0.8rem; border-right:1px solid var(--borda); flex:1 1 0; min-width:7rem;'>"
+            f"<div class='cinza' style='font-size:0.6rem; letter-spacing:0.04em;'>{rotulo}</div>"
+            f"<div class='cinza' style='font-size:0.88rem; font-weight:700; margin-top:0.1rem;'>—</div>"
+            f"<div class='cinza' style='font-size:0.64rem; margin-top:0.1rem;'>SEM DADO</div></div>"
         )
-        return
-    cls = "alta" if variacao >= 0 else "baixa"
-    seta = "▲" if variacao >= 0 else "▼"
-    sinal = "+" if variacao >= 0 else ""
-    valor_variacao = f"{sinal}{config.formatar_numero(variacao, 2, prefs['formato_numerico'])}{unidade_variacao}"
-    st.markdown(
-        f"<div class='card-mercado-agora'>"
-        f"<div class='card-mercado-rotulo'>{rotulo}</div>"
-        f"<div class='card-mercado-valor'>{config.formatar_numero(preco, casas_preco, prefs['formato_numerico'])}</div>"
-        f"<div class='card-mercado-variacao {cls}'>{seta} {valor_variacao}</div>"
-        f"<div class='cinza' style='font-size:0.6rem;'>{rodape}</div>{status_html}</div>",
-        unsafe_allow_html=True,
+    cls = "alta" if variacao_pct >= 0 else "baixa"
+    seta = "▲" if variacao_pct >= 0 else "▼"
+    status_html = (
+        f"<div class='cinza' style='font-size:0.54rem; margin-top:0.1rem;'>{html.escape(status)}</div>"
+        if status else ""
+    )
+    return (
+        f"<div style='padding:0.5rem 0.8rem; border-right:1px solid var(--borda); flex:1 1 0; min-width:7rem;'>"
+        f"<div class='cinza' style='font-size:0.6rem; letter-spacing:0.04em;'>{rotulo}</div>"
+        f"<div class='neutro' style='font-size:0.88rem; font-weight:700; margin-top:0.1rem;'>"
+        f"{config.formatar_numero(preco, casas, prefs['formato_numerico'])}</div>"
+        f"<div class='{cls}' style='font-size:0.66rem; font-weight:600; margin-top:0.1rem;'>{seta} {_fmt_pct(variacao_pct, prefs)}</div>"
+        f"{status_html}</div>"
     )
 
 
 def _painel_metricas_principais(prefs):
-    """(novo) 4 cards de topo - IBOVESPA/DÓLAR/DI/S&P 500 - mesma
-    hierarquia "VISÃO GERAL DO MERCADO" do protótipo. Reaproveita
+    """4 indicadores de topo - IBOVESPA/DÓLAR/DI/S&P 500 - mesmo
+    componente compacto de VISÃO GERAL (_item_ticker_html, ver docstring
+    acima) em vez do card grande que existia antes aqui. Reaproveita
     exatamente as mesmas fontes já usadas em ui/visao_geral.py:
-    _painel_mercado_agora (obter_cotacao_indice, data/macro.py:obter_cdi,
+    _painel_indicadores (obter_cotacao_indice, data/macro.py:obter_cdi,
     obter_mercados_globais) - nenhuma chamada nova."""
     st.markdown('<div class="painel-titulo">VISÃO GERAL DO MERCADO</div>', unsafe_allow_html=True)
     ibov = obter_cotacao_indice("IBOVESPA", config.SIMBOLO_IBOVESPA)
@@ -226,8 +228,8 @@ def _painel_metricas_principais(prefs):
     cdi_df = obter_cdi(dias_historico=5)
     cdi_atual = float(cdi_df["cdi_anualizado_pct"].iloc[-1]) if cdi_df is not None and not cdi_df.empty else None
     # None (nunca 0.0) com so' 1 leitura disponivel - sem dado suficiente
-    # pra comparar, o card mostra "SEM DADO" (ver _card_metrica), nunca
-    # uma variacao inventada (mesmo criterio de ui/visao_geral.py).
+    # pra comparar, o item mostra "SEM DADO" (ver _item_ticker_html),
+    # nunca uma variacao inventada (mesmo criterio de ui/visao_geral.py).
     cdi_variacao = None
     if cdi_df is not None and len(cdi_df) >= 2:
         anterior = float(cdi_df["cdi_anualizado_pct"].iloc[-2])
@@ -236,28 +238,21 @@ def _painel_metricas_principais(prefs):
     globais = {g["nome"]: g for g in obter_mercados_globais()}
     sp500 = globais.get("S&P 500")
 
-    with st.container(key="mercado_metricas_cols"):
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            _card_metrica(
-                "IBOVESPA", None if ibov.get("erro") else ibov["preco"],
-                None if ibov.get("erro") else ibov["variacao_pct"], prefs, 0,
-                rotulo_cotacao_em_cache(ibov), "Índice · pontos",
-            )
-        with c2:
-            _card_metrica(
-                "DÓLAR / BRL", None if dolar.get("erro") else dolar["preco"],
-                None if dolar.get("erro") else dolar["variacao_pct"], prefs, 2,
-                rotulo_cotacao_em_cache(dolar), "Câmbio · R$",
-            )
-        with c3:
-            _card_metrica("DI (CDI anual.)", cdi_atual, cdi_variacao, prefs, 2, None,
-                          "Taxa indicativa", unidade_variacao=" p.p.")
-        with c4:
-            _card_metrica(
-                "S&P 500", sp500["preco"] if sp500 else None,
-                sp500["variacao_pct"] if sp500 else None, prefs, 0, None, "Mercado global",
-            )
+    blocos = [
+        _item_ticker_html(
+            "IBOVESPA", None if ibov.get("erro") else ibov["preco"],
+            None if ibov.get("erro") else ibov["variacao_pct"], 0, prefs, rotulo_cotacao_em_cache(ibov),
+        ),
+        _item_ticker_html(
+            "DÓLAR / BRL", None if dolar.get("erro") else dolar["preco"],
+            None if dolar.get("erro") else dolar["variacao_pct"], 2, prefs, rotulo_cotacao_em_cache(dolar),
+        ),
+        _item_ticker_html("DI (CDI ANUAL.)", cdi_atual, cdi_variacao, 2, prefs),
+        _item_ticker_html(
+            "S&P 500", sp500["preco"] if sp500 else None, sp500["variacao_pct"] if sp500 else None, 0, prefs,
+        ),
+    ]
+    st.markdown(f"<div style='display:flex; flex-wrap:wrap;'>{''.join(blocos)}</div>", unsafe_allow_html=True)
 
 
 def _painel_leitura_rapida(prefs):
@@ -386,7 +381,14 @@ def _painel_destaques(prefs):
     estrutural (o mesmo ticker aparece nas duas fontes), nunca uma causa
     inventada pro movimento - por isso o texto é sempre "menção, não
     causa comprovada", nunca "por causa de"."""
-    st.markdown('<div class="painel-titulo">DESTAQUES</div>', unsafe_allow_html=True)
+    # renomeado de "DESTAQUES" (achado real, auditoria "missao master"
+    # 2026-10-31): o mesmo rotulo bare aparecia com 3 significados
+    # diferentes no app (aqui: maior alta/volume/setor do dia; VISAO
+    # GERAL: "DESTAQUES DO DIA" sao manchetes de noticia; NOTICIAS: a
+    # subaba inteira se chama "Destaques") - nome mais especifico
+    # distingue este painel (movimentos de preco/volume) do feed de
+    # noticias, sem mudar nenhum dado/logica.
+    st.markdown('<div class="painel-titulo">MOVIMENTOS EM DESTAQUE</div>', unsafe_allow_html=True)
     tema = _tema_atual(prefs)
 
     noticias = obter_top_mercado_tudo("TODOS") or []

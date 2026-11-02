@@ -67,10 +67,10 @@ def analisar_ticker(ticker: str) -> dict:
 def comparar_casas(ticker: str, casas: list = None) -> dict:
     """Fluxo B: comparador primeiro; memoria_research só é acionado se o
     comparador encontrou cobertura real (ver docstring do módulo -
-    encadeamento). `casas` filtra memoria_research quando é EXATAMENTE
-    1 casa (embeddings.buscar só aceita 1 casa por chamada hoje) - mais
-    de 1 casa fica sem filtro de casa (gap documentado, não resolvido
-    nesta integração)."""
+    encadeamento). `casas` filtra memoria_research por 1, várias ou
+    nenhuma casa (2026-11-01: embeddings.buscar/store.listar_premissas
+    agora aceitam lista - gap antigo "só filtra com exatamente 1 casa"
+    fechado, repassa `casas` inteira direto)."""
     ticker = (ticker or "").strip().upper()
     analise_id = persistencia.iniciar_analise(f"Comparar casas sobre {ticker}", "comparar_casas", ticker)
     inicio = time.monotonic()
@@ -80,7 +80,7 @@ def comparar_casas(ticker: str, casas: list = None) -> dict:
 
         casas_encontradas = (resultado_comparador.get("dados") or {}).get("casas") or []
         if casas_encontradas:
-            casa_filtro = casas[0] if (casas and len(casas) == 1) else None
+            casa_filtro = list(casas) if casas else None
             resultados["memoria_research"] = executor.executar_especialista(
                 "memoria_research", ticker=ticker, casa=casa_filtro,
             )

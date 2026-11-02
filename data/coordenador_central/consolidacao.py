@@ -21,6 +21,24 @@ CONFIANCA_MEDIA = "MEDIA"
 CONFIANCA_BAIXA = "BAIXA"
 CONFIANCA_INSUFICIENTE = "INSUFICIENTE"
 
+# Rótulo de EXIBIÇÃO pro usuário final - os TIPO_* importados acima são
+# constantes internas em CAIXA_COM_UNDERSCORE (ex: "CALCULO_INTERNO"),
+# nunca pensadas pra aparecer cruas na tela. Mesmo texto já usado em
+# ui/analises_tab.py:_ROTULO_EVIDENCIA (não importado de lá de propósito -
+# data/ não deve depender de ui/; mantido em sincronia manualmente, são só
+# 3 strings). Achado real na validação visual (2026-11-01): a conclusão
+# do Coordenador mostrava "[CALCULO_INTERNO]" cru em vez de "[CÁLCULO
+# INTERNO]" - inconsistente com o resto do app.
+_ROTULO_EXIBICAO = {
+    TIPO_FATO: "FATO",
+    TIPO_CALCULO: "CÁLCULO INTERNO",
+    TIPO_INSUFICIENTE: "DADO INSUFICIENTE",
+}
+
+
+def _rotulo(tipo: str) -> str:
+    return _ROTULO_EXIBICAO.get(tipo, tipo)
+
 
 # ============================================================
 # 1. Resumo executivo
@@ -152,22 +170,22 @@ def _conclusao(resultados: dict, divergencia_cross: dict | None, confianca: dict
     n_disponiveis = sum(1 for r in resultados.values() if r.get("disponivel"))
 
     if n_disponiveis == 0:
-        return [f"[{TIPO_INSUFICIENTE}] Nenhum especialista acionado retornou dado disponível - não há base para qualquer conclusão."]
+        return [f"[{_rotulo(TIPO_INSUFICIENTE)}] Nenhum especialista acionado retornou dado disponível - não há base para qualquer conclusão."]
 
-    linhas = [f"[{TIPO_FATO}] {n_disponiveis} de {n_total} especialista(s) acionado(s) retornaram dado disponível."]
+    linhas = [f"[{_rotulo(TIPO_FATO)}] {n_disponiveis} de {n_total} especialista(s) acionado(s) retornaram dado disponível."]
 
     if divergencia_cross and divergencia_cross.get("divergencias"):
         linhas.append(
-            f"[{TIPO_FATO}] Divergência identificada entre o comparador de casas e a memória de research em "
+            f"[{_rotulo(TIPO_FATO)}] Divergência identificada entre o comparador de casas e a memória de research em "
             f"{len(divergencia_cross['divergencias'])} ponto(s) (ver seção 'divergencias') - este módulo não "
             "infere qual fonte está correta."
         )
 
     if confianca["categoria"] == CONFIANCA_INSUFICIENTE:
-        linhas.append(f"[{TIPO_INSUFICIENTE}] Evidência insuficiente para uma conclusão de investimento - ver 'pontos_atencao'.")
+        linhas.append(f"[{_rotulo(TIPO_INSUFICIENTE)}] Evidência insuficiente para uma conclusão de investimento - ver 'pontos_atencao'.")
     else:
         linhas.append(
-            f"[{TIPO_CALCULO}] Confiança da consolidação classificada como {confianca['categoria']} com base na "
+            f"[{_rotulo(TIPO_CALCULO)}] Confiança da consolidação classificada como {confianca['categoria']} com base na "
             "proporção de especialistas acionados que trouxeram evidência real (ver 'confianca')."
         )
     return linhas

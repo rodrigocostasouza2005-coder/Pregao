@@ -10,20 +10,38 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import data.research.comparador as comp_mod
 
 
 def _pub(casa, link, data_publicacao=None, extraido_em=None, recomendacao=None,
-          preco_alvo=None, premissas=None, projecoes=None, tipo_documento=None, titulo="relatorio"):
+          preco_alvo=None, premissas=None, projecoes=None, tipo_documento=None, titulo="relatorio",
+          riscos=None):
     return {
         "link": link, "casa": casa, "titulo": titulo, "tickers": ["WEGE3"],
         "data_publicacao": data_publicacao, "extraido_em": extraido_em,
         "tipo_documento": tipo_documento, "premissas": premissas or [],
         "projecoes": projecoes or {}, "recomendacao": recomendacao,
         "preco_alvo": preco_alvo, "modelo_extracao": "modelo-teste",
+        "riscos": riscos or [],
     }
+
+
+@pytest.fixture(autouse=True)
+def _mock_linha_valuation_padrao():
+    """Autouse: NENHUM teste deste arquivo pode bater yfinance/rede real
+    via data/research/comparador.py:_indicadores_fundamentalistas (usa
+    data.radar.linha_valuation). Default "sem dado" - testes que querem
+    verificar o caminho com ROE/riscos_mercado reais sobrescrevem com seu
+    proprio `with patch.object(comp_mod, "linha_valuation", ...)` dentro
+    do corpo do teste (mock aninhado, vale só ali)."""
+    with patch.object(comp_mod, "linha_valuation", return_value={
+        "roe": None, "alerta_qualidade": [], "consultado_em": None,
+    }):
+        yield
 
 
 def _mock_historico_vazio():
@@ -127,25 +145,106 @@ def test_relatorio_sem_publicacoes_tem_todas_as_9_secoes_com_estado_honesto():
     assert relatorio["dispersao_precos_alvo"]["amostra_insuficiente"] is True
     assert relatorio["divergencias_premissas"]["recomendacao"]["casa_mais_otimista"] is None
     assert relatorio["riscos"]["disponivel"] is False
-    assert relatorio["indicadores_adicionais"]["disponivel"] is False
+    assert relatorio["riscos"]["n_casas_total"] == 0
+    assert relatorio["indicadores_adicionais"]["disponivel"] is True  # consulta funcionou, so' nao tinha ROE no mock padrao
+    assert relatorio["indicadores_adicionais"]["roic_disponivel"] is False
 
 
 # ============================================================
-# 4. Riscos / ROE-ROIC: sempre disponivel=False, nunca inventado
+# 4. Riscos por casa / ROE-ROIC: nunca inventado, fontes rastreaveis
 # ============================================================
 
-def test_riscos_e_indicadores_adicionais_sempre_disponivel_false():
+def test_riscos_por_casa_ausente_quando_nenhuma_publicacao_tem_risco_extraido():
     publicacoes = [_pub("Genial Analisa", "l1", data_publicacao="2026-10-01", recomendacao="COMPRA", preco_alvo=50.0)]
     with patch.object(comp_mod, "listar_premissas", return_value=publicacoes), \
          _mock_historico_vazio(), _mock_cobertura_vazia():
         resultado = comp_mod.comparar_ticker("WEGE3")
-    assert resultado["riscos"] == {
-        "disponivel": False,
-        "motivo": "pipeline de extracao atual (research_premissas) nao captura riscos estruturalmente - "
-                  "gap conhecido, fora do escopo desta implementacao",
-    }
-    assert resultado["indicadores_adicionais"]["disponivel"] is False
-    assert "ROE/ROIC" in resultado["indicadores_adicionais"]["motivo"]
+    assert resultado["riscos"]["disponivel"] is False
+    assert resultado["riscos"]["n_casas_total"] == 1
+    assert resultado["riscos"]["n_casas_com_riscos_extraidos"] == 0
+    assert resultado["riscos"]["por_casa"] == {}
+    assert "nunca inventado" in resultado["riscos"]["motivo"]
+
+
+def test_riscos_por_casa_presente_com_fonte_rastreavel():
+    publicacoes = [
+        _pub("Genial Analisa", "l1", data_publicacao="2026-10-01", recomendacao="COMPRA", preco_alvo=50.0,
+             riscos=["alta de insumos pode comprimir margem", "atraso regulatorio na licenca"]),
+        _pub("XP Investimentos", "l2", data_publicacao="2026-10-02", recomendacao="MANTER"),
+    ]
+    with patch.object(comp_mod, "listar_premissas", return_value=publicacoes), \
+         _mock_historico_vazio(), _mock_cobertura_vazia():
+        resultado = comp_mod.comparar_ticker("WEGE3")
+    riscos = resultado["riscos"]
+    assert riscos["disponivel"] is True
+    assert riscos["n_casas_total"] == 2
+    assert riscos["n_casas_com_riscos_extraidos"] == 1
+    assert riscos["por_casa"]["Genial Analisa"]["riscos"] == [
+        "alta de insumos pode comprimir margem", "atraso regulatorio na licenca",
+    ]
+    assert riscos["por_casa"]["Genial Analisa"]["link"] == "l1"
+    assert riscos["por_casa"]["Genial Analisa"]["data_publicacao"] == "2026-10-01"
+    assert "XP Investimentos" not in riscos["por_casa"]  # nao tinha risco extraido - nunca inventado
+
+
+def test_riscos_por_casa_evolucao_historica_preserva_riscos_de_publicacoes_antigas():
+    publicacoes = [
+        _pub("Genial Analisa", "l1", data_publicacao="2026-10-01", recomendacao="COMPRA",
+             riscos=["risco antigo identificado"]),
+        _pub("Genial Analisa", "l2", data_publicacao="2026-10-15", recomendacao="COMPRA",
+             riscos=["risco novo identificado"]),
+    ]
+    with patch.object(comp_mod, "listar_premissas", return_value=publicacoes), \
+         _mock_historico_vazio(), _mock_cobertura_vazia():
+        resultado = comp_mod.comparar_ticker("WEGE3")
+    evolucao = resultado["evolucao_historica"]["Genial Analisa"]
+    # estado atual = publicacao mais recente (l2)
+    assert resultado["riscos"]["por_casa"]["Genial Analisa"]["riscos"] == ["risco novo identificado"]
+    # historico preserva o risco da publicacao MAIS ANTIGA (l1), nunca confundido com o atual
+    assert evolucao["publicacoes_historicas"][0]["link"] == "l1"
+    assert evolucao["publicacoes_historicas"][0]["riscos"] == ["risco antigo identificado"]
+
+
+def test_roe_real_flui_do_yfinance_via_linha_valuation():
+    """roe vem de linha_valuation ja em PONTOS PERCENTUAIS (ex: 18.3 =
+    18,3%, ver data/prices.py:_pct_ou_none) - nunca fracao 0-1."""
+    publicacoes = [_pub("Genial Analisa", "l1", data_publicacao="2026-10-01", recomendacao="COMPRA", preco_alvo=50.0)]
+    with patch.object(comp_mod, "listar_premissas", return_value=publicacoes), \
+         patch.object(comp_mod, "linha_valuation", return_value={
+             "roe": 18.3, "alerta_qualidade": ["P/L negativo nos ultimos 12 meses"], "consultado_em": "2026-11-01T10:00:00",
+         }), \
+         _mock_historico_vazio(), _mock_cobertura_vazia():
+        resultado = comp_mod.comparar_ticker("WEGE3")
+    ind = resultado["indicadores_adicionais"]
+    assert ind["disponivel"] is True
+    assert ind["roe"] == 18.3
+    assert ind["riscos_mercado"] == ["P/L negativo nos ultimos 12 meses"]
+    assert ind["consultado_em"] == "2026-11-01T10:00:00"
+
+
+def test_roic_sempre_indisponivel_com_motivo_mesmo_com_roe_real():
+    publicacoes = [_pub("Genial Analisa", "l1", data_publicacao="2026-10-01", recomendacao="COMPRA")]
+    with patch.object(comp_mod, "listar_premissas", return_value=publicacoes), \
+         patch.object(comp_mod, "linha_valuation", return_value={"roe": 20.0, "alerta_qualidade": [], "consultado_em": None}), \
+         _mock_historico_vazio(), _mock_cobertura_vazia():
+        resultado = comp_mod.comparar_ticker("WEGE3")
+    ind = resultado["indicadores_adicionais"]
+    assert ind["roic"] is None
+    assert ind["roic_disponivel"] is False
+    assert "yfinance" in ind["roic_motivo"]
+    assert "balanco" in ind["roic_motivo"].lower() or "balanço" in ind["roic_motivo"].lower()
+
+
+def test_indicadores_fundamentalistas_falha_de_consulta_nunca_propaga():
+    publicacoes = [_pub("Genial Analisa", "l1", data_publicacao="2026-10-01", recomendacao="COMPRA")]
+    with patch.object(comp_mod, "listar_premissas", return_value=publicacoes), \
+         patch.object(comp_mod, "linha_valuation", side_effect=RuntimeError("yfinance fora do ar")), \
+         _mock_historico_vazio(), _mock_cobertura_vazia():
+        resultado = comp_mod.comparar_ticker("WEGE3")  # nunca lanca excecao
+    ind = resultado["indicadores_adicionais"]
+    assert ind["disponivel"] is False
+    assert ind["roe"] is None
+    assert ind["roic_disponivel"] is False
 
 
 # ============================================================
