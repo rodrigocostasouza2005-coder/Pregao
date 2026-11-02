@@ -29,8 +29,8 @@ MESES = {
     "setembro": 9, "outubro": 10, "novembro": 11, "dezembro": 12,
 }
 MESES_POR_NUMERO = {v: k for k, v in MESES.items()}
-TICKER_RE = re.compile(r"\\b([A-Z]{4}\\d{1,2})\\b")
-EMPRESA_TICKER_RE = re.compile(r"^\\s*(.+?)\\s*\\(([A-Z]{4}\\d{1,2})\\)")
+TICKER_RE = re.compile(r"\b([A-Z]{4}\d{1,2})\b")
+EMPRESA_TICKER_RE = re.compile(r"^\s*(.+?)\s*\(([A-Z]{4}\d{1,2})\)")
 MIN_TICKERS = 5
 
 
@@ -59,7 +59,7 @@ def _data_publicacao(url, hoje=None, titulo=""):
     hoje = hoje or date.today()
     texto = _normalizar(url) + " " + _normalizar(titulo)
     for nome_mes, numero in MESES.items():
-        for ano_txt in re.findall(r"20\\d{2}", texto):
+        for ano_txt in re.findall(r"20\d{2}", texto):
             ano = int(ano_txt)
             if re.search(rf"{nome_mes}[-_/ ]*{ano}", texto) or re.search(rf"{ano}[-_/ ]*{nome_mes}", texto):
                 data = date(ano, numero, 1)
@@ -125,7 +125,7 @@ def parsear_artigo(html, url, hoje=None):
             itens.append((ticker, empresa, preco_alvo))
 
     if len({item[0] for item in itens}) < MIN_TICKERS:
-        for linha in soup.get_text("\\n", strip=True).splitlines():
+        for linha in soup.get_text("\n", strip=True).splitlines():
             match = EMPRESA_TICKER_RE.match(linha)
             if match:
                 itens.append((match.group(2), match.group(1).strip(), None))
