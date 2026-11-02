@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Revisão do PR de auditoria do Radar de Carteiras Recomendadas: a aba
 RADAR agora mostra, dentro do expander "RADAR DE QUEDAS", o estado por
-casa (Genial Analisa/Safra Corretora) usando
+casa (Itaú Investimentos/Genial Analisa/Safra Corretora) usando
 data.radar_quedas.resumo_fontes_vigentes() - este arquivo confirma que
 a UI:
 
@@ -44,7 +44,8 @@ def _capturar_render(resumo_fontes, alertas=None, monitorados=None):
          patch.object(radar_quedas_mod, "painel_monitorados", return_value=monitorados if monitorados is not None else []), \
          patch.object(radar_quedas_mod, "alertas_periodo", return_value=alertas if alertas is not None else []), \
          patch.object(radar_quedas_mod, "coletar_carteiras_genial", side_effect=_coletor_nao_deveria_ser_chamado), \
-         patch.object(radar_quedas_mod, "coletar_carteiras_safra", side_effect=_coletor_nao_deveria_ser_chamado), \
+         patch.object(radar_quedas_mod, "coletar_carteiras_safra", side_effect=_coletor_nao_deveria_ser_chamado), \\
+         patch.object(radar_quedas_mod, "coletar_carteiras_itau", side_effect=_coletor_nao_deveria_ser_chamado), \
          patch.object(radar_tab_mod.st, "markdown", side_effect=lambda texto, **_k: blocos.append(texto)):
         # render_radar e' decorado com @st.fragment, que em bare mode (sem
         # ScriptRunContext real) NUNCA executa o corpo da funcao - chamar
@@ -70,7 +71,7 @@ def test_fonte_atualizada_e_fonte_indisponivel_sao_distinguidas():
     html_render = _capturar_render(resumo)
     assert "rq-estado-ATUALIZADA" in _linha_da_casa(html_render, "Safra Corretora")
     assert "rq-estado-INDISPONIVEL" in _linha_da_casa(html_render, "Genial Analisa")
-    assert "1 de 2 casas com carteira vigente" in html_render
+    assert "1 de 3 casas com carteira vigente" in html_render
     assert "rq-estado-DESATUALIZADA" not in html_render
 
 
@@ -85,7 +86,7 @@ def test_fonte_desatualizada_e_distinguida_de_atualizada_e_de_indisponivel():
     assert "rq-estado-DESATUALIZADA" in _linha_da_casa(html_render, "Safra Corretora")
     assert "rq-estado-ATUALIZADA" in _linha_da_casa(html_render, "Genial Analisa")
     assert "rq-estado-INDISPONIVEL" not in html_render
-    assert "2 de 2 casas com carteira vigente" in html_render
+    assert "2 de 3 casas com carteira vigente" in html_render
 
 
 def test_supabase_indisponivel_avisa_e_nao_quebra():
