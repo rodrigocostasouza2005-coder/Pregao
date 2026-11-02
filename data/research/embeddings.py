@@ -374,7 +374,7 @@ def _campos_resultado(item: dict, origem_match: str) -> dict:
 def buscar(
     pergunta: str = None,
     ticker: str = None,
-    casa: str = None,
+    casa=None,
     tipo_documento: str = None,
     data_inicio: str = None,
     data_fim: str = None,
@@ -389,12 +389,22 @@ def buscar(
         {'resultados': [...], 'confianca': 'ALTA'|'MEDIA'|'BAIXA'|
          'SEM_EVIDENCIA', 'aviso': str|None}
 
+    `casa` aceita 3 formas (2026-11-01, expansao multi-casa - pedido do
+    Rodrigo): `None` (todas as casas, comportamento padrao), `str` (1
+    casa exata, EXATAMENTE o comportamento original - retrocompativel
+    com qualquer chamador existente), ou `list[str]`/`tuple[str]` (filtra
+    por qualquer uma das casas da lista, via `store.listar_premissas`).
+    Repassado direto pra store.listar_premissas, que faz a distincao de
+    tipo - este modulo nao duplica essa logica.
+
     Cada item de resultados traz link/casa/titulo/data_publicacao/
     tickers/tipo_documento/premissas/projecoes/recomendacao/preco_alvo/
     origem_match - link+casa+data_publicacao SEMPRE presentes (chave da
     rastreabilidade: toda citacao da MEMORIA DE RESEARCH na UI precisa
     apontar pra uma publicacao real e identificavel, nunca uma sintese
-    sem fonte).
+    sem fonte). Com `casa` sendo uma lista, cada resultado continua
+    identificando a SUA PROPRIA casa de origem (campo `casa` do item) -
+    nunca uma resposta "combinada" sem fonte clara por item.
 
     Passos:
       1. Filtro ESTRUTURAL primeiro (store.listar_premissas por

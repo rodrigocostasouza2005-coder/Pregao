@@ -186,7 +186,7 @@ _TIPOS_DOCUMENTO_VALIDOS = {
 
 _PROMPT_PREMISSAS_PROJECOES = (
     "Leia o texto do relatorio e responda EXATAMENTE neste formato, "
-    "5 linhas, nada mais, sem nenhum comentario antes ou depois:\n"
+    "6 linhas, nada mais, sem nenhum comentario antes ou depois:\n"
     "TIPO_DOCUMENTO: <um destes: INICIACAO_COBERTURA, ATUALIZACAO_COBERTURA, "
     "ATUALIZACAO_RESULTADOS, RELATORIO_SETORIAL, ESTRATEGIA_INVESTIMENTOS, "
     "CARTEIRA_RECOMENDADA, REVISAO_PRECO_ALVO, MUDANCA_RECOMENDACAO, "
@@ -199,7 +199,10 @@ _PROMPT_PREMISSAS_PROJECOES = (
     "PROJECAO_EBITDA_MARGEM: <o que o texto diz sobre projecao/estimativa "
     "de EBITDA ou margem> ou NAO_IDENTIFICADO\n"
     "PROJECAO_LUCRO: <o que o texto diz sobre projecao/estimativa de "
-    "lucro> ou NAO_IDENTIFICADO\n\n"
+    "lucro> ou NAO_IDENTIFICADO\n"
+    "RISCOS: <riscos/fatores que poderiam invalidar a tese do analista, "
+    "SEGUNDO O PROPRIO TEXTO (nunca sua propria opiniao), separados por "
+    "' | ', cada um com no maximo 1 frase curta> ou NAO_IDENTIFICADO\n\n"
     "Regras obrigatorias, sem excecao:\n"
     "- cada campo SO conta se estiver EXPLICITO no texto - nunca estime, "
     "calcule, deduza ou complete um numero/classificacao que nao esteja "
@@ -208,6 +211,10 @@ _PROMPT_PREMISSAS_PROJECOES = (
     "'expansao de capacidade conclui em 2027', 'ganho de market share em "
     "equipamentos industriais'), nunca uma frase generica sem conteudo "
     "real;\n"
+    "- RISCOS sao fatores que o PROPRIO relatorio aponta como risco a tese "
+    "(ex: 'alta de insumos pode comprimir margem', 'dependencia de licenca "
+    "regulatoria ainda pendente'), nunca um risco generico de mercado que "
+    "voce mesmo imaginar sem base no texto;\n"
     "- na duvida entre identificar algo ou nao, SEMPRE prefira "
     "NAO_IDENTIFICADO a arriscar um valor inventado ou generico."
 )
@@ -261,18 +268,19 @@ def _extrair_premissas_projecoes(texto: str, titulo: str, chave: str, modelo: st
     narrativo - alimenta a biblioteca PERMANENTE (sql/research_premissas.sql,
     ver store.salvar_premissas), que sobrevive aos 5 dias de retencao de
     research_itens (ver apagar_itens_antigos). Retorna (tipo_documento:
-    str|None, premissas: list[str], projecoes: dict) - tudo vazio/None se
-    a chamada falhar ou nada for identificado (nunca inventa)."""
+    str|None, premissas: list[str], projecoes: dict, riscos: list[str]) -
+    tudo vazio/None se a chamada falhar ou nada for identificado (nunca
+    inventa)."""
     conteudo, motivo = _chamar_groq(
         chave, modelo,
         [
             {"role": "system", "content": _PROMPT_PREMISSAS_PROJECOES},
             {"role": "user", "content": f"Titulo: {titulo}\n\nTexto:\n{texto[:_LIMITE_TEXTO_DIRETO]}"},
         ],
-        max_tokens=250,
+        max_tokens=300,
     )
     if conteudo is None:
-        return None, [], {}
+        return None, [], {}, []
 
     def _campo(nome: str) -> str | None:
         m = re.search(rf"{nome}:\s*([^\n]+)", conteudo, re.IGNORECASE)
@@ -294,6 +302,9 @@ def _extrair_premissas_projecoes(texto: str, titulo: str, chave: str, modelo: st
     premissas_bruto = _campo("PREMISSAS")
     premissas = [p.strip() for p in premissas_bruto.split("|") if p.strip()] if premissas_bruto else []
 
+    riscos_bruto = _campo("RISCOS")
+    riscos = [r.strip() for r in riscos_bruto.split("|") if r.strip()] if riscos_bruto else []
+
     projecoes = {}
     for chave_projecao, rotulo in (
         ("receita", "PROJECAO_RECEITA"),
@@ -304,7 +315,7 @@ def _extrair_premissas_projecoes(texto: str, titulo: str, chave: str, modelo: st
         if valor:
             projecoes[chave_projecao] = valor
 
-    return tipo_documento, premissas, projecoes
+    return tipo_documento, premissas, projecoes, riscos
 
 
 _PROMPT_EXTRACAO_CHUNK = (
@@ -656,10 +667,11 @@ def resumir_com_groq(texto: str, titulo: str, casa: str = "", tipo: str = "") ->
         dados_estruturados["recomendacao"] = recomendacao
         # biblioteca permanente (ver _gerar_resumo/store.salvar_premissas) -
         # mesmo texto/escopo da chamada acima, so' mais uma chamada leve.
-        tipo_documento, premissas, projecoes = _extrair_premissas_projecoes(texto, titulo, chave, modelo)
+        tipo_documento, premissas, projecoes, riscos = _extrair_premissas_projecoes(texto, titulo, chave, modelo)
         dados_estruturados["tipo_documento"] = tipo_documento
         dados_estruturados["premissas"] = premissas
         dados_estruturados["projecoes"] = projecoes
+        dados_estruturados["riscos"] = riscos
 
     return _normalizar_formatacao(conteudo), None, dados_estruturados
 
@@ -713,11 +725,12 @@ def _gerar_resumo(
     tipo_documento = dados_estruturados.get("tipo_documento")
     premissas = dados_estruturados.get("premissas") or []
     projecoes = dados_estruturados.get("projecoes") or {}
-    if tipo_documento or premissas or projecoes or preco_alvo or recomendacao:
+    riscos = dados_estruturados.get("riscos") or []
+    if tipo_documento or premissas or projecoes or riscos or preco_alvo or recomendacao:
         store.salvar_premissas(
             link, casa=casa, titulo=titulo, tickers=tickers or [],
             data_publicacao=data_publicacao, tipo_documento=tipo_documento,
-            premissas=premissas, projecoes=projecoes,
+            premissas=premissas, projecoes=projecoes, riscos=riscos,
             recomendacao=recomendacao, preco_alvo=preco_alvo, modelo=modelo_usado,
         )
 

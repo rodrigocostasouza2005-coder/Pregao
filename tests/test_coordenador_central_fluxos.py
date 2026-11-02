@@ -89,6 +89,10 @@ def test_comparar_casas_encadeamento_aciona_memoria_quando_ha_cobertura(persiste
 
 
 def test_comparar_casas_filtra_memoria_por_casa_unica():
+    """casas=["Genial"] (1 casa) repassa como LISTA pra memoria_research -
+    embeddings.buscar/store.listar_premissas aceitam lista desde
+    2026-11-01 (gap antigo de "só filtra com exatamente 1 casa" fechado),
+    nunca mais desempacotado pra string solta."""
     with patch.object(fluxos.persistencia, "iniciar_analise", return_value="a"), \
          patch.object(fluxos.persistencia, "concluir_analise"), \
          patch.object(fluxos.persistencia, "registrar_execucao_especialista"), \
@@ -100,7 +104,41 @@ def test_comparar_casas_filtra_memoria_por_casa_unica():
         fluxos.comparar_casas("WEGE3", casas=["Genial"])
 
     chamada_memoria = [c for c in mock_individual.call_args_list if c.args[0] == "memoria_research"][0]
-    assert chamada_memoria.kwargs.get("casa") == "Genial"
+    assert chamada_memoria.kwargs.get("casa") == ["Genial"]
+
+
+def test_comparar_casas_filtra_memoria_por_varias_casas():
+    """Gap fechado (2026-11-01): mais de 1 casa agora filtra memoria_research
+    de verdade, em vez de cair pra None/sem filtro."""
+    with patch.object(fluxos.persistencia, "iniciar_analise", return_value="a"), \
+         patch.object(fluxos.persistencia, "concluir_analise"), \
+         patch.object(fluxos.persistencia, "registrar_execucao_especialista"), \
+         patch.object(fluxos.executor, "executar_especialista") as mock_individual:
+        mock_individual.side_effect = lambda especialista_id, **kw: (
+            _resultado("comparador", dados={"casas": ["Genial", "XP", "BTG"]}) if especialista_id == "comparador"
+            else _resultado("memoria_research", dados={"resultados": []})
+        )
+        fluxos.comparar_casas("WEGE3", casas=["Genial", "XP"])
+
+    chamada_memoria = [c for c in mock_individual.call_args_list if c.args[0] == "memoria_research"][0]
+    assert chamada_memoria.kwargs.get("casa") == ["Genial", "XP"]
+
+
+def test_comparar_casas_sem_filtro_de_casas_repassa_none():
+    """casas=None (padrao) - nenhum filtro de casa pro memoria_research,
+    comportamento original preservado."""
+    with patch.object(fluxos.persistencia, "iniciar_analise", return_value="a"), \
+         patch.object(fluxos.persistencia, "concluir_analise"), \
+         patch.object(fluxos.persistencia, "registrar_execucao_especialista"), \
+         patch.object(fluxos.executor, "executar_especialista") as mock_individual:
+        mock_individual.side_effect = lambda especialista_id, **kw: (
+            _resultado("comparador", dados={"casas": ["Genial"]}) if especialista_id == "comparador"
+            else _resultado("memoria_research", dados={"resultados": []})
+        )
+        fluxos.comparar_casas("WEGE3")
+
+    chamada_memoria = [c for c in mock_individual.call_args_list if c.args[0] == "memoria_research"][0]
+    assert chamada_memoria.kwargs.get("casa") is None
 
 
 def test_identificar_catalisadores_aciona_os_4_especialistas_em_paralelo(persistencia_mockada):

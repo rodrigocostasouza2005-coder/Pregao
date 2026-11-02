@@ -859,6 +859,43 @@ def _comparativo_casas_cacheado(ticker: str) -> dict:
     return montar_relatorio_comparativo(ticker)
 
 
+def _render_riscos_e_indicadores(relatorio: dict, fmt: str):
+    """Riscos (POR CASA, extraidos do texto do relatorio - nunca
+    inventados) + Indicadores adicionais (ROE real do yfinance, ROIC
+    honestamente indisponivel, riscos_mercado deterministicos) -
+    fechamento do gap (2026-11-01, pedido do Rodrigo). Renderiza o DADO
+    REAL quando disponivel; cai pro motivo honesto quando nao."""
+    cols2 = st.columns(2)
+    with cols2[0]:
+        subtitulo("Riscos")
+        riscos = relatorio["riscos"]
+        if riscos.get("disponivel"):
+            st.caption(f"{riscos['n_casas_com_riscos_extraidos']} de {riscos['n_casas_total']} casa(s) "
+                       "com risco extraido do relatorio mais recente — nunca inventado.")
+            for casa, info in sorted(riscos["por_casa"].items()):
+                link = info.get("link")
+                rotulo = f"[{casa}]({link})" if link else casa
+                itens = "; ".join(info["riscos"])
+                st.markdown(f"- {rotulo} ({info.get('data_publicacao') or '—'}): {itens}", unsafe_allow_html=False)
+        else:
+            st.caption(riscos["motivo"])
+
+    with cols2[1]:
+        subtitulo("Indicadores adicionais (ROE/ROIC)")
+        ind = relatorio["indicadores_adicionais"]
+        if ind.get("disponivel"):
+            roe = ind.get("roe")
+            st.markdown(f"**ROE:** {config.formatar_numero(roe, 2, fmt) + '%' if roe is not None else '—'} "
+                        "<span class='cinza' style='font-size:0.68rem;'>(FATO, yfinance)</span>", unsafe_allow_html=True)
+            st.caption(f"ROIC: não disponível — {ind['roic_motivo']}")
+            if ind.get("riscos_mercado"):
+                st.markdown("**Riscos de mercado (determinístico, dados da empresa):**")
+                for alerta in ind["riscos_mercado"]:
+                    st.caption(f"- {alerta}")
+        else:
+            st.caption(ind.get("motivo") or "indicadores fundamentalistas indisponíveis agora.")
+
+
 def render_comparativo_casas(ticker: str, prefs: dict):
     """ANÁLISES › Empresas: comparativo estruturado entre casas de
     research pro ticker selecionado - estado atual por casa, consenso/
@@ -891,6 +928,12 @@ def render_comparativo_casas(ticker: str, prefs: dict):
         if not relatorio.get("tabela_comparativa"):
             st.caption("Nenhuma casa monitorada tem publicação estruturada sobre este ticker na biblioteca "
                        "permanente de research ainda.")
+            # indicadores_adicionais (ROE real, yfinance) nunca depende de
+            # cobertura de research - continua mostrado mesmo sem nenhuma
+            # casa (achado real na validação visual, 2026-11-01: ROE
+            # ficava escondido por este early-return, mesmo quando a
+            # consulta real ao yfinance tinha dado disponível).
+            _render_riscos_e_indicadores(relatorio, fmt)
             return
 
         subtitulo("Tabela comparativa (estado mais recente por casa)")
@@ -1002,13 +1045,7 @@ def render_comparativo_casas(ticker: str, prefs: dict):
                                "(ver data/research/historico.py) — não é erro, só ausência real dessa fonte "
                                "específica pra esta casa hoje.")
 
-        cols2 = st.columns(2)
-        with cols2[0]:
-            subtitulo("Riscos")
-            st.caption(relatorio["riscos"]["motivo"])
-        with cols2[1]:
-            subtitulo("Indicadores adicionais (ROE/ROIC)")
-            st.caption(relatorio["indicadores_adicionais"]["motivo"])
+        _render_riscos_e_indicadores(relatorio, fmt)
 
         if relatorio.get("pontos_atencao"):
             subtitulo("Pontos de atenção")
