@@ -467,8 +467,12 @@ def main() -> int:
     universo_eventos = watchlist_universo + resto_rotacionado
     stats_eventos = coletar_eventos_universo(universo_eventos)
     _processados_resto = max(stats_eventos["processados"] - len(watchlist_universo), 0)
-    if _processados_resto:
-        _avancar_checkpoint_calendario((_offset_calendario + _processados_resto) % _tamanho_resto)
+    # Preserva a proteção antiga contra travamento quando não há watchlist
+    # e o coletor processa zero tickers (ex.: timeout antes do primeiro).
+    # Com watchlist, zero processado no restante não pode avançar o offset.
+    _avanco = _processados_resto if _processados_resto else (1 if not watchlist_universo else 0)
+    if _avanco:
+        _avancar_checkpoint_calendario((_offset_calendario + _avanco) % _tamanho_resto)
     if stats_eventos["tabela_disponivel"] is False:
         logger.warning(
             "  eventos de resultado: tabela 'eventos_resultados' nao encontrada/inacessivel no "
