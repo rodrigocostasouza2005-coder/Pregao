@@ -60,6 +60,11 @@ CONTAS_DRE = {
     "3.03": "resultado_bruto",
     "3.05": "ebit",
     "3.07": "resultado_antes_tributos",
+    # confirmado contra dado real (PETR4/WEGE3, 2026-11-01) via DS_CONTA
+    # "Imposto de Renda e Contribuição Social sobre o Lucro" - usado pra
+    # calcular aliquota efetiva REAL (nunca uma aliquota-padrao fixa) no
+    # ROIC em reviewer.py. Valor vem negativo (despesa) no arquivo da CVM.
+    "3.08": "impostos_sobre_lucro",
     "3.11": "lucro_liquido_consolidado",
     "3.11.01": "lucro_liquido_controladora",
 }
