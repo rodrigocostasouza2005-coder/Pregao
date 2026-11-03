@@ -1,5 +1,25 @@
 # CHANGELOG — PREGÃO
 
+## 2026-11-02 — Responsividade touch real (iPad/celular): sidebar, botões, checkbox e modal
+
+- **Causa raiz**: o breakpoint da sidebar (`style.css`) usava só LARGURA
+  (`>640px`) pra decidir "empurra o conteúdo" vs "sobrepõe" - qualquer iPad
+  caía do lado desktop mesmo sem mouse, deixando o conteúdo principal
+  espremido. Trocado pro critério correto: capacidade de input
+  (`hover:hover`/`pointer:fine` = mouse real; `hover:none`/`pointer:coarse`
+  = touch, sempre overlay).
+- **Botão de fechar a sidebar** ficava `visibility:hidden` até hover do
+  mouse - impossível de tocar. Revelado sempre em touch.
+- **Alvos de toque**: botões, checkbox/toggle e subnav abaixo de 44px de
+  altura (auditoria sistemática via Playwright) corrigidos em touch, sem
+  alterar a densidade visual em desktop.
+- **Modal de notícia**: botão de fechar (`aria-label="Close"`, nativo do
+  `st.dialog`) aumentado de 18px pra 42px de área de toque.
+- Validado com touch real (Playwright, `has_touch=True`) em 7 combinações:
+  iPad retrato/paisagem, celular retrato/paisagem, desktop com mouse.
+  CSS-only, suíte completa 1961 passed, zero regressão. Ver `PROGRESSO.md`
+  pro relato completo.
+
 ## 2026-10-30 — Reformulação visual institucional (Visão Geral, Research, Radar, Análises)
 
 Pedido explícito do Rodrigo para evoluir o terminal (identidade preta/grafite/âmbar já validada) sem virar dashboard genérico - auditoria de código concreta antes de cada mudança, gaps reais fechados (não cosmética solta). PR #200.

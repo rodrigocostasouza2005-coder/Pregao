@@ -173,7 +173,7 @@ def _ebit_acumulado_no_ano(ticker: str, ano: int, trimestre: int):
     nunca soma parcial disfarçada de total."""
     total = 0.0
     for tri in range(1, trimestre + 1):
-        nota_tri = cvm_dre.obter_dre_trimestral(ticker, ano, tri)
+        nota_tri, _motivo = cvm_dre.obter_dre_trimestral(ticker, ano, tri)
         if nota_tri is None:
             return None
         ebit_tri = nota_tri["contas"].get("ebit", {}).get("atual")
@@ -258,7 +258,7 @@ def _ebit_acumulado_no_ano_absoluto(ticker: str, ano: int, trimestre: int):
     em escalas potencialmente diferentes entre trimestres/reapresentações."""
     total = 0.0
     for tri in range(1, trimestre + 1):
-        nota_tri = cvm_dre.obter_dre_trimestral(ticker, ano, tri)
+        nota_tri, _motivo = cvm_dre.obter_dre_trimestral(ticker, ano, tri)
         if nota_tri is None:
             return None
         ebit_tri = nota_tri["contas"].get("ebit", {}).get("atual")
@@ -398,8 +398,13 @@ def _montar_balanco_fluxo_caixa(ticker: str, ano: int, trimestre: int, metricas:
 
 def montar_nota_br(ticker: str, ano: int, trimestre: int) -> dict:
     """Nota de UMA empresa brasileira pro trimestre pedido. `disponivel`
-    e' False (com `motivo`) quando cvm_dre nao devolveu nada pra esse
-    ticker/periodo, OU quando o ticker e' de instituicao financeira/
+    e' False (com `motivo`) quando cvm_dre nao devolveu dado pra esse
+    ticker/periodo - `motivo`, nesse caso, e' a causa ESPECIFICA que
+    cvm_dre.obter_dre_trimestral devolveu (MOTIVO_SEM_CNPJ,
+    MOTIVO_FONTE_INDISPONIVEL, MOTIVO_SEM_REGISTRO_TRIMESTRE ou
+    MOTIVO_TRIMESTRE_NAO_SUPORTADO - nunca mais uma frase generica com
+    "ou" escondendo qual das causas ocorreu, bug real corrigido
+    2026-11-02), OU quando o ticker e' de instituicao financeira/
     seguradora (ver SETORES_PLANO_CONTAS_INCOMPATIVEL acima) - nunca gera
     nota com numero inventado ou com rotulo semanticamente errado."""
     setor = config.IBOVESPA_SETORES.get(ticker.upper())
@@ -412,18 +417,24 @@ def montar_nota_br(ticker: str, ano: int, trimestre: int) -> dict:
                       "(ex: '3.01' não é receita líquida de vendas) - dado não calculado para "
                       "evitar rótulo incorreto.",
         }
-    atual = cvm_dre.obter_dre_trimestral(ticker, ano, trimestre)
+    # Causa ESPECÍFICA da falha, propagada sem reescrita (bug real
+    # corrigido 2026-11-02 - caso BEEF3/Minerva usado na investigação
+    # original): antes desta correção, as 3 causas de
+    # cvm_dre.obter_dre_trimestral colapsavam na mesma mensagem genérica
+    # com "ou" - o usuário nunca sabia qual delas ocorreu de verdade.
+    atual, motivo_dre = cvm_dre.obter_dre_trimestral(ticker, ano, trimestre)
     if atual is None:
         return {
             "ticker": ticker.upper(), "pais": "BR", "disponivel": False,
-            "motivo": "DRE indisponivel (ticker sem CNPJ mapeado na CVM, "
-                      "fonte fora do ar, ou sem registro desse trimestre).",
+            "motivo": motivo_dre or "DRE indisponível nesta checagem.",
         }
 
     metricas = _montar_metricas_br(atual["contas"])
 
     qoq_trimestre = trimestre - 1
-    qoq = cvm_dre.obter_dre_trimestral(ticker, ano, qoq_trimestre) if qoq_trimestre >= 1 else None
+    qoq, _motivo_qoq = (
+        cvm_dre.obter_dre_trimestral(ticker, ano, qoq_trimestre) if qoq_trimestre >= 1 else (None, None)
+    )
     limitacoes = list(LIMITACOES_PADRAO)
     if qoq is not None:
         for rotulo in metricas:

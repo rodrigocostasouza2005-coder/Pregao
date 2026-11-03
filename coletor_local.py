@@ -77,18 +77,20 @@ if sys.stderr is None:
     sys.stderr = sys.stdout
 
 import logging
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import config
 from data.coletores_status import diagnosticar_persistencia, registrar_tentativa
 from data.cvm import obter_documentos_watchlist
-from data.eventos import salvar_snapshot_calendario, universo_calendario
+from data.eventos import salvar_snapshot_calendario, universo_calendario_priorizado
 from data.eventos_coleta import coletar_eventos_universo
 from data.news import pregerar_imagens_news, pregerar_resumos_news
 from data.research import coletar_todas_disponiveis
 from data.research.historico import coletar_snapshot_genial
 from data.research.store import apagar_itens_antigos
+from data.supabase_client import obter_cliente
 
 _LOG_PATH = Path(__file__).parent / "coletor_local.log"
 
@@ -220,6 +222,76 @@ def _universo_rotativo(tickers: list, offset: int = None, arquivo_checkpoint: Pa
     return tickers[offset:] + tickers[:offset]
 
 
+# ============================================================
+# Checkpoint do CALENDÁRIO em Supabase (2026-10-31) - substitui, SÓ pro
+# universo de eventos/resultados, o checkpoint em arquivo local +
+# fallback GITHUB_RUN_NUMBER de _universo_rotativo/_ler_e_avancar_checkpoint
+# acima (continuam em uso pelo NEWS, universo menor e estável - ver
+# pregerar_resumos_news). Os dois mecanismos acima avançam o offset em
+# exatamente +1 por execução: cobertura completa em N execuções, pra
+# QUALQUER N - bom o bastante pra N=84 (config.IBOVESPA_SETORES, ~3
+# dias úteis pra girar o universo inteiro), mas universo_calendario()
+# passou a ter 481 tickers em 2026-10-24 (CVM/FCA + watchlists reais,
+# ver data/eventos.py) sem essa rotação ser revisada - N=481 execuções
+# (~26/dia útil) levam ~18 dias úteis pra UMA rodada completa. Na
+# prática, a maioria das empresas ficava sem a tentativa de RI/NEWS (a
+# parte que acha a data REAL, não o prazo regulatório genérico) por
+# semanas - presa em PRAZO_CVM, que parece "sem data própria encontrada"
+# pro usuário mesmo quando a fonte real (RI, página institucional)
+# nunca chegou a ser tentada.
+#
+# Fix: o offset agora avança pelo TRABALHO REAL feito nesta execução
+# (`stats_eventos["processados"]`, não um contador fixo de +1) - cobre
+# o universo inteiro em ceil(N/K) execuções, K=tickers que o orçamento
+# de 5min (eventos_coleta._ORCAMENTO_TOTAL_S) realmente processa, muito
+# menor que N. Persistido no Supabase (tabela coletor_checkpoints, ver
+# sql/coletor_checkpoints.sql) em vez de arquivo local: sobrevive ao
+# filesystem efêmero do GitHub Actions sem precisar do hack de
+# GITHUB_RUN_NUMBER (que tinha o MESMO problema de +1 por execução).
+# ============================================================
+
+_NOME_CHECKPOINT_CALENDARIO = "calendario_eventos"
+
+
+def _ler_checkpoint_calendario() -> int:
+    """Offset atual persistido no Supabase - 0 se a tabela/credencial
+    nao estiver disponivel (nunca lanca; pior caso e' recomecar do
+    inicio do universo, mesmo comportamento de degradacao de
+    _ler_e_avancar_checkpoint com arquivo ausente)."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return 0
+    try:
+        resp = (
+            cliente.table("coletor_checkpoints")
+            .select("offset_atual")
+            .eq("nome", _NOME_CHECKPOINT_CALENDARIO)
+            .limit(1)
+            .execute()
+        )
+        return int(resp.data[0]["offset_atual"]) if resp.data else 0
+    except Exception as exc:
+        logger.warning(f"  checkpoint do calendario: leitura falhou ({exc!r}) - comecando do offset 0")
+        return 0
+
+
+def _avancar_checkpoint_calendario(novo_offset: int) -> None:
+    cliente = obter_cliente()
+    if cliente is None:
+        return
+    try:
+        cliente.table("coletor_checkpoints").upsert(
+            {
+                "nome": _NOME_CHECKPOINT_CALENDARIO,
+                "offset_atual": novo_offset,
+                "atualizado_em": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="nome",
+        ).execute()
+    except Exception as exc:
+        logger.warning(f"  checkpoint do calendario: gravacao falhou ({exc!r}) - proxima execucao reparte do mesmo ponto")
+
+
 def main() -> int:
     logger.info("iniciando coleta local...")
 
@@ -346,10 +418,12 @@ def main() -> int:
     # modulo) - calculado 1x e reaproveitado nos 2 passos abaixo (coleta
     # de eventos + snapshot), pro log/painel de saude refletirem o MESMO
     # universo que foi de fato usado nesta execucao.
-    universo = universo_calendario()
+    watchlist_universo, resto_universo = universo_calendario_priorizado()
+    universo = watchlist_universo + resto_universo
     logger.info(
         f"  universo do calendario: {len(universo)} ticker(s) "
-        "(CVM/FCA + BDRs curados + watchlists reais de todos os usuarios)"
+        f"({len(watchlist_universo)} de watchlists reais, sempre processados primeiro; "
+        f"{len(resto_universo)} do restante CVM/FCA + BDRs curados, em rotacao)"
     )
 
     # documentos CVM (fatos relevantes/comunicados) pro universo INTEIRO
@@ -381,7 +455,24 @@ def main() -> int:
     # datas reais de resultado (RI->NEWS->PRAZO_CVM, 2026-10-02) - ver
     # data/eventos_coleta.py. Orcamento proprio de tempo (5min), pode nao
     # cobrir o universo inteiro numa execucao so' (ver docstring do modulo).
-    stats_eventos = coletar_eventos_universo(_universo_rotativo(universo))
+    # Rotacao por checkpoint no Supabase (2026-10-31, ver docstring de
+    # _ler_checkpoint_calendario acima) - avanca pelo TRABALHO REAL feito
+    # nesta execucao, nao um contador fixo de +1 (que levava ~18 dias
+    # uteis pra cobrir os 481 tickers do universo atual).
+    _tamanho_resto = max(len(resto_universo), 1)
+    _offset_calendario = _ler_checkpoint_calendario() % _tamanho_resto
+    resto_rotacionado = resto_universo[_offset_calendario:] + resto_universo[:_offset_calendario]
+    # Watchlists entram inteiras e primeiro; o checkpoint avança só pelo
+    # trabalho feito no RESTO, descontando os tickers prioritários.
+    universo_eventos = watchlist_universo + resto_rotacionado
+    stats_eventos = coletar_eventos_universo(universo_eventos)
+    _processados_resto = max(stats_eventos["processados"] - len(watchlist_universo), 0)
+    # Preserva a proteção antiga contra travamento quando não há watchlist
+    # e o coletor processa zero tickers (ex.: timeout antes do primeiro).
+    # Com watchlist, zero processado no restante não pode avançar o offset.
+    _avanco = _processados_resto if _processados_resto else (1 if not watchlist_universo else 0)
+    if _avanco:
+        _avancar_checkpoint_calendario((_offset_calendario + _avanco) % _tamanho_resto)
     if stats_eventos["tabela_disponivel"] is False:
         logger.warning(
             "  eventos de resultado: tabela 'eventos_resultados' nao encontrada/inacessivel no "

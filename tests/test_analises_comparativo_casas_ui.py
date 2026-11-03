@@ -113,6 +113,22 @@ def test_riscos_disponivel_lista_por_casa_com_fonte_e_data():
     assert "Genial Analisa" in html_render
 
 
+def test_sem_historico_estruturado_nunca_menciona_py_para_o_usuario():
+    """Vazamento de texto técnico corrigido (Fase 1, 2026-11-02): a
+    mensagem antes citava literalmente 'data/research/historico.py' pro
+    usuário final - nunca deve aparecer nome de arquivo .py na tela."""
+    publicacoes = [_pub("Genial Analisa", "https://x/1", data_publicacao="2026-10-20", recomendacao="COMPRA")]
+    relatorio = _gerar_relatorio_real(publicacoes)
+    html_render = _capturar_render(relatorio)
+    trecho = "sem histórico de mudança de recomendação registrado"
+    assert trecho in html_render
+    # a frase inteira (não o render completo, que tem outras menções
+    # legítimas de módulo em "Lacunas" fora do escopo desta correção)
+    # nunca cita nome de arquivo .py
+    inicio = html_render.index(trecho)
+    assert ".py" not in html_render[inicio:inicio + len(trecho) + 120]
+
+
 def test_riscos_indisponivel_mostra_motivo_honesto_nunca_inventa():
     publicacoes = [_pub("Genial Analisa", "https://x/1", data_publicacao="2026-10-20", recomendacao="COMPRA")]
     relatorio = _gerar_relatorio_real(publicacoes)

@@ -34,8 +34,9 @@ def test_vale_q2_2026_receita_e_lucro_reais(_df_fixture):
     2025 (YoY, PENÚLTIMO) = R$49.807 milhoes."""
     with patch.object(cvm_dre, "obter_cnpj", return_value="33.592.510/0001-54"), \
          patch.object(cvm_dre, "_baixar_csv_do_zip", return_value=_df_fixture):
-        nota = cvm_dre.obter_dre_trimestral("VALE3", 2026, 2)
+        nota, motivo = cvm_dre.obter_dre_trimestral("VALE3", 2026, 2)
     assert nota is not None
+    assert motivo is None
     assert nota["empresa"] == "VALE S.A."
     assert nota["contas"]["receita_liquida"]["atual"] == pytest.approx(53012000.0)
     assert nota["contas"]["receita_liquida"]["ano_anterior"] == pytest.approx(49807000.0)
@@ -51,7 +52,7 @@ def test_vale_q2_2026_custo_ebit_e_resultado_antes_tributos_reais(_df_fixture):
     loop pra todas as contas)."""
     with patch.object(cvm_dre, "obter_cnpj", return_value="33.592.510/0001-54"), \
          patch.object(cvm_dre, "_baixar_csv_do_zip", return_value=_df_fixture):
-        nota = cvm_dre.obter_dre_trimestral("VALE3", 2026, 2)
+        nota, _motivo = cvm_dre.obter_dre_trimestral("VALE3", 2026, 2)
     assert nota["contas"]["custo_vendas"]["atual"] == pytest.approx(-36833000.0)
     assert nota["contas"]["ebit"]["atual"] == pytest.approx(11342000.0)
     assert nota["contas"]["resultado_antes_tributos"]["atual"] == pytest.approx(8894000.0)
@@ -63,31 +64,75 @@ def test_vale_q1_2026_so_tem_1_linha_por_conta_e_bate_com_q2(_df_fixture):
     valores conferidos no CSV)."""
     with patch.object(cvm_dre, "obter_cnpj", return_value="33.592.510/0001-54"), \
          patch.object(cvm_dre, "_baixar_csv_do_zip", return_value=_df_fixture):
-        nota_q1 = cvm_dre.obter_dre_trimestral("VALE3", 2026, 1)
+        nota_q1, _motivo = cvm_dre.obter_dre_trimestral("VALE3", 2026, 1)
     assert nota_q1["contas"]["receita_liquida"]["atual"] == pytest.approx(48680000.0)
     assert nota_q1["contas"]["lucro_liquido_controladora"]["atual"] == pytest.approx(9953000.0)
 
 
-def test_ticker_sem_cnpj_mapeado_devolve_none():
+# ---------------------------------------------------------------------
+# DIAGNÓSTICO ESPECÍFICO DE FALHA (Fase 1, 2026-11-02) - cada uma das 3
+# causas reais de falha tem que devolver um `motivo` DIFERENTE e
+# ESPECÍFICO, nunca a mensagem genérica antiga com "ou" ("ticker sem
+# CNPJ mapeado, fonte fora do ar, ou sem registro desse trimestre") que
+# escondia qual das 3 realmente ocorreu. Caso real usado como
+# referência na investigação original: BEEF3 (Minerva S.A.) teve a DRE
+# indisponível numa checagem e o motivo exibido ao usuário era genérico
+# demais pra ele saber qual causa foi.
+# ---------------------------------------------------------------------
+
+def test_ticker_sem_cnpj_mapeado_devolve_motivo_especifico():
     with patch.object(cvm_dre, "obter_cnpj", return_value=None):
-        assert cvm_dre.obter_dre_trimestral("XXXX3", 2026, 2) is None
+        nota, motivo = cvm_dre.obter_dre_trimestral("XXXX3", 2026, 2)
+    assert nota is None
+    assert motivo == cvm_dre.MOTIVO_SEM_CNPJ
+    assert " ou " not in motivo
 
 
-def test_fonte_cvm_indisponivel_devolve_none():
-    with patch.object(cvm_dre, "obter_cnpj", return_value="33.592.510/0001-54"), \
+def test_beef3_minerva_fonte_cvm_indisponivel_devolve_motivo_especifico():
+    """Caso real citado na investigação original (BEEF3/Minerva S.A.):
+    aqui simulamos especificamente a causa "fonte CVM fora do ar"
+    (download/parse do ZIP ITR falhou) - o CNPJ abaixo é sintético
+    (nunca inventamos o CNPJ real da empresa; só serve pra satisfazer o
+    guard de obter_cnpj neste teste isolado de rede)."""
+    with patch.object(cvm_dre, "obter_cnpj", return_value="99.999.999/0001-99"), \
          patch.object(cvm_dre, "_baixar_csv_do_zip", return_value=None):
-        assert cvm_dre.obter_dre_trimestral("VALE3", 2026, 2) is None
+        nota, motivo = cvm_dre.obter_dre_trimestral("BEEF3", 2026, 2)
+    assert nota is None
+    assert motivo == cvm_dre.MOTIVO_FONTE_INDISPONIVEL
+    assert " ou " not in motivo
+    # a mensagem genérica antiga não pode mais aparecer de forma alguma
+    assert "sem CNPJ mapeado na CVM, fonte fora do ar, ou sem registro" not in motivo
 
 
-def test_trimestre_4_nao_suportado_devolve_none():
+def test_trimestre_4_nao_suportado_devolve_motivo_especifico():
     with patch.object(cvm_dre, "obter_cnpj", return_value="33.592.510/0001-54"):
-        assert cvm_dre.obter_dre_trimestral("VALE3", 2026, 4) is None
+        nota, motivo = cvm_dre.obter_dre_trimestral("VALE3", 2026, 4)
+    assert nota is None
+    assert motivo == cvm_dre.MOTIVO_TRIMESTRE_NAO_SUPORTADO
 
 
-def test_ticker_sem_registro_no_ano_devolve_none(_df_fixture):
+def test_ticker_sem_registro_no_ano_devolve_motivo_especifico(_df_fixture):
     with patch.object(cvm_dre, "obter_cnpj", return_value="00.000.000/0000-00"), \
          patch.object(cvm_dre, "_baixar_csv_do_zip", return_value=_df_fixture):
-        assert cvm_dre.obter_dre_trimestral("NADA3", 2026, 2) is None
+        nota, motivo = cvm_dre.obter_dre_trimestral("NADA3", 2026, 2)
+    assert nota is None
+    assert motivo == cvm_dre.MOTIVO_SEM_REGISTRO_TRIMESTRE
+
+
+def test_as_3_causas_de_falha_geram_3_mensagens_diferentes():
+    """As 3 causas diagnosticadas nunca podem colapsar na mesma string -
+    esse colapso era exatamente o bug (mensagem genérica com "ou")."""
+    with patch.object(cvm_dre, "obter_cnpj", return_value=None):
+        _, motivo_sem_cnpj = cvm_dre.obter_dre_trimestral("XXXX3", 2026, 2)
+    cvm_dre._dre_itr_ano.clear()  # cada causa isolada - sem cache do _dre_itr_ano vazando entre os 3 blocos
+    with patch.object(cvm_dre, "obter_cnpj", return_value="33.592.510/0001-54"), \
+         patch.object(cvm_dre, "_baixar_csv_do_zip", return_value=None):
+        _, motivo_fonte = cvm_dre.obter_dre_trimestral("VALE3", 2026, 2)
+    cvm_dre._dre_itr_ano.clear()
+    with patch.object(cvm_dre, "obter_cnpj", return_value="00.000.000/0000-00"), \
+         patch.object(cvm_dre, "_baixar_csv_do_zip", return_value=pd.read_csv(_FIXTURE, sep=";", encoding="latin1")):
+        _, motivo_sem_registro = cvm_dre.obter_dre_trimestral("NADA3", 2026, 2)
+    assert len({motivo_sem_cnpj, motivo_fonte, motivo_sem_registro}) == 3
 
 
 def test_conta_so_com_linha_acumulada_fica_none_nunca_estimado():
@@ -101,7 +146,7 @@ def test_conta_so_com_linha_acumulada_fica_none_nunca_estimado():
     }])
     with patch.object(cvm_dre, "obter_cnpj", return_value="11.111.111/0001-11"), \
          patch.object(cvm_dre, "_baixar_csv_do_zip", return_value=df):
-        nota = cvm_dre.obter_dre_trimestral("TEST3", 2026, 2)
+        nota, _motivo = cvm_dre.obter_dre_trimestral("TEST3", 2026, 2)
     assert nota["contas"]["receita_liquida"]["atual"] is None
 
 

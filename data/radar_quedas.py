@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 """Radar persistente de quedas em carteiras recomendadas.
 
-Fontes estruturadas habilitadas: recomendações públicas da Genial Analisa
-e a carteira mensal pública "Top 10 Ações" da Safra Corretora (2026-10-16
-- ver data/research/safra_carteiras.py pra evidência real de que essa
-fonte é acessível, diferente de Genial/XP/BTG, bloqueadas na borda
-Akamai mesmo fora do sandbox). Cada casa é tratada de forma INDEPENDENTE
+Fontes estruturadas habilitadas: Itaú Investimentos (Top 5), Genial Analisa
+e Safra Corretora. Itaú Investimentos não é rotulado como Itaú BBA Research:
+são produtos editoriais distintos. Cada casa é tratada de forma INDEPENDENTE
 em processar_monitoramento(): uma fonte bloqueada nunca invalida nem
 desativa as recomendações vigentes de outra fonte que respondeu
 normalmente. Outras casas só entram quando houver coletor de carteiras
@@ -18,6 +16,7 @@ import streamlit as st
 
 from data.prices import obter_cotacao, obter_data_ultimo_pregao
 from data.research.genial_carteiras import coletar_carteiras as _coletar_genial
+from data.research.itau_carteiras import coletar_carteiras as _coletar_itau
 from data.research.safra_carteiras import coletar_carteiras as _coletar_safra
 from data.supabase_client import obter_cliente
 
@@ -42,10 +41,11 @@ IDADE_MAXIMA_CARTEIRA_DIAS = 40
 IDADE_FRESCA_HORAS = 72
 CASA_GENIAL = "Genial Analisa"
 CASA_SAFRA = "Safra Corretora"
+CASA_ITAU = "Itaú Investimentos"
 # Casas com coletor de carteira configurado (ordem de exibicao na UI). Uma
 # casa daqui sem carteira vigente aparece como INDISPONIVEL - nunca some
 # da tela, pra cobertura parcial nao parecer cobertura completa.
-CASAS_MONITORADAS = (CASA_SAFRA, CASA_GENIAL)
+CASAS_MONITORADAS = (CASA_ITAU, CASA_SAFRA, CASA_GENIAL)
 # So' pra UI destacar "chegando perto do gatilho" - nao gera alerta nem
 # e-mail (a regra de alerta continua LIMIAR_VARIACAO, estrita).
 LIMIAR_ATENCAO = -2.5
@@ -86,6 +86,11 @@ def coletar_carteiras_safra():
     return _coletar_safra()
 
 
+def coletar_carteiras_itau():
+    """Coleta a carteira pública Top 5 do Itaú Investimentos."""
+    return _coletar_itau()
+
+
 def salvar_carteiras(casa, itens):
     """Upsert ESCOPADO a uma única casa - uma falha ou ausência de outra
     casa nunca desativa as recomendações vigentes desta (ver
@@ -117,16 +122,29 @@ def salvar_carteiras(casa, itens):
     1 página do PDF da Safra). Mantém a ÚLTIMA ocorrência: sem informação
     adicional pra preferir uma sobre a outra.
 
-    Retorna (persistiu: bool, erro: str | None) - `erro` é o texto REAL da
-    exceção (quando houver), não um rótulo genérico, pra quem registra a
-    tentativa (jobs/radar_quedas.py) e o painel SAÚDE DOS DADOS conseguirem
-    mostrar a causa raiz de verdade (tabela, permissão, conflito de chave,
-    conexão) em vez de só "falha ao persistir"."""
+    Retorna (persistiu: bool, erro: str | None, aviso_desativacao: str | None):
+    `erro` é o texto REAL da exceção do UPSERT (quando houver), não um
+    rótulo genérico, pra quem registra a tentativa (jobs/radar_quedas.py)
+    e o painel SAÚDE DOS DADOS conseguirem mostrar a causa raiz de verdade
+    (tabela, permissão, conflito de chave, conexão) em vez de só "falha ao
+    persistir".
+
+    `aviso_desativacao` (achado real, revisão independente 2026-10-27):
+    antes, uma falha SÓ na etapa de desativação (ver try/except abaixo)
+    virava `return True, None` silencioso - os itens novos e válidos estão
+    persistidos de verdade, mas qualquer recomendação que SAIU da carteira
+    deste mês (ex: trocada por outra) continuaria `vigente=True` pra
+    sempre se essa desativação seguir falhando, sem NENHUM sinal no painel
+    (a tentativa aparecia como sucesso pleno). Agora `persistiu=True` com
+    `aviso_desativacao` preenchido deixa quem chama (processar_monitoramento)
+    reportar isso como execução PARCIAL, nunca como sucesso silencioso nem
+    como falha de persistência (os dados novos estão corretos - só a
+    limpeza do que ficou de fora que não foi confirmada)."""
     cliente = obter_cliente()
     if cliente is None:
-        return False, "Supabase indisponível (sem cliente)."
+        return False, "Supabase indisponível (sem cliente).", None
     if not itens:
-        return True, None
+        return True, None, None
 
     agora = datetime.now(timezone.utc).isoformat()
     por_chave = {}
@@ -144,18 +162,17 @@ def salvar_carteiras(casa, itens):
     except Exception as exc:
         erro = f"upsert de {len(itens_confirmados)} recomendação(ões): {exc!r}"
         print(f"[radar_quedas] falha ao persistir carteiras ({casa}): {erro}")
-        return False, erro
+        return False, erro, None
 
     try:
         cliente.table("radar_carteiras_recomendadas").update(
             {"vigente": False}
         ).eq("casa", casa).lt("verificado_em", agora).execute()
     except Exception as exc:
-        print(
-            f"[radar_quedas] carteiras ({casa}) persistidas, mas desativação "
-            f"de recomendações antigas falhou: {exc!r}"
-        )
-    return True, None
+        aviso = f"desativação de recomendações antigas falhou: {exc!r}"
+        print(f"[radar_quedas] carteiras ({casa}) persistidas, mas {aviso}")
+        return True, None, aviso
+    return True, None, None
 
 
 def _carteira_expirada(linha, agora=None):
@@ -170,9 +187,15 @@ def _carteira_expirada(linha, agora=None):
         return False
     try:
         quando = datetime.fromisoformat(str(verificado).replace("Z", "+00:00"))
-    except ValueError:
+        return (agora - quando) > timedelta(days=IDADE_MAXIMA_CARTEIRA_DIAS)
+    except (ValueError, TypeError):
+        # TypeError (achado varredura 2026-10-27): verificado_em sem
+        # timezone faz a subtracao acima levantar "can't subtract
+        # offset-naive and offset-aware datetimes" - antes ficava fora
+        # do try/except e propagava pra fora de listar_carteiras() (list
+        # comprehension chamando isto por linha), derrubando a listagem
+        # INTEIRA por 1 linha malformada. Mesmo fail-open do ValueError.
         return False
-    return (agora - quando) > timedelta(days=IDADE_MAXIMA_CARTEIRA_DIAS)
 
 
 def listar_carteiras():
@@ -296,7 +319,7 @@ def processar_monitoramento():
     configuradas falharem/forem rejeitadas nesta execução."""
     status_fontes = {}
     pelo_menos_uma_ok = False
-    for casa, coletor in ((CASA_GENIAL, coletar_carteiras_genial), (CASA_SAFRA, coletar_carteiras_safra)):
+    for casa, coletor in ((CASA_GENIAL, coletar_carteiras_genial), (CASA_SAFRA, coletar_carteiras_safra), (CASA_ITAU, coletar_carteiras_itau)):
         snapshot = coletor()
         if snapshot is None:
             status_fontes[casa] = "fonte indisponível"
@@ -308,11 +331,18 @@ def processar_monitoramento():
         if not snapshot:
             status_fontes[casa] = "snapshot vazio, rejeitado (carteira anterior preservada)"
             continue
-        persistiu, erro_persistencia = salvar_carteiras(casa, snapshot)
+        persistiu, erro_persistencia, aviso_desativacao = salvar_carteiras(casa, snapshot)
         if not persistiu:
             status_fontes[casa] = f"falha ao persistir ({erro_persistencia}; carteira anterior preservada)"
             continue
         status_fontes[casa] = f"ok ({len(snapshot)} recomendações)"
+        if aviso_desativacao:
+            # Os itens novos e válidos JÁ estão persistidos (ver
+            # salvar_carteiras) - isto é PARCIAL, nunca falha de
+            # persistência nem sucesso silencioso: só a limpeza do que
+            # saiu da carteira deste mês não foi confirmada ainda (ver
+            # jobs/radar_quedas.py:_registrar_tentativas_por_casa).
+            status_fontes[casa] += f"; aviso: {aviso_desativacao}"
         pelo_menos_uma_ok = True
 
     resumo_fontes = "; ".join(f"{casa}: {status}" for casa, status in status_fontes.items())
@@ -328,6 +358,7 @@ def processar_monitoramento():
     tickers = sorted({normalizar_ticker(r.get("ticker")) for r in recomendacoes} - {""})
     novos = []
     falhas_cotacao = 0
+    falhas_persistencia_alertas = 0
     for ticker in tickers:
         cotacao = obter_cotacao(ticker)
         if isinstance(cotacao, dict) and not cotacao.get("erro"):
@@ -350,6 +381,20 @@ def processar_monitoramento():
             if ok and alerta_id is not None:
                 alerta["id"] = alerta_id
                 novos.append(alerta)
+            elif not ok:
+                # Achado real (auditoria 2026-10-30): registrar_alerta()
+                # nunca lança excecao (degrada pra False, None), mas até
+                # aqui essa falha (insert rejeitado - conflito, schema,
+                # RLS, timeout) era descartada em silêncio - uma queda
+                # real detectada podia nunca ser persistida nem aparecer
+                # pro usuário, sem NENHUM sinal no painel SAÚDE DOS
+                # DADOS (coleta_ok continuava True, erro continuava
+                # None). Ver jobs/radar_quedas.py:executar(), que agora
+                # usa este contador pra decidir persistencia_ok do
+                # registro "RADAR DE QUEDAS" - não mais o resultado do
+                # ENVIO de e-mail, que é um problema completamente
+                # diferente (dado já tinha sido persistido com sucesso).
+                falhas_persistencia_alertas += 1
     mensagens = []
     if any(not status.startswith("ok") for status in status_fontes.values()):
         mensagens.append(f"Execução parcial: {resumo_fontes}")
@@ -358,9 +403,15 @@ def processar_monitoramento():
             f"Cotação indisponível para {falhas_cotacao}/{len(tickers)} ticker(s) monitorado(s) "
             "(provedor de cotação - ver data/prices.py:obter_cotacao)"
         )
+    if falhas_persistencia_alertas:
+        mensagens.append(
+            f"Falha ao persistir {falhas_persistencia_alertas} alerta(s) de queda detectado(s) "
+            "(ver data/radar_quedas.py:registrar_alerta)"
+        )
     return {
         "coleta_ok": True, "alertas_novos": novos, "total_tickers": len(tickers),
         "fontes": status_fontes, "cotacoes_falhas": falhas_cotacao,
+        "alertas_falha_persistencia": falhas_persistencia_alertas,
         "erro": ("; ".join(mensagens) if mensagens else None),
     }
 
@@ -460,9 +511,9 @@ def _desatualizada(verificado_em, agora=None):
         return False
     try:
         quando = datetime.fromisoformat(str(verificado_em).replace("Z", "+00:00"))
-    except ValueError:
+        return (agora - quando) > timedelta(hours=IDADE_FRESCA_HORAS)
+    except (ValueError, TypeError):
         return False
-    return (agora - quando) > timedelta(hours=IDADE_FRESCA_HORAS)
 
 
 def resumo_fontes_vigentes():
