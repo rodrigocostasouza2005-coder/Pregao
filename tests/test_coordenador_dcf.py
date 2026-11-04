@@ -151,3 +151,15 @@ def test_sensibilidade_dcf_bloqueia_premissas_invalidas_sem_inventar():
     resultado = calcular_sensibilidade_dcf(_premissas(wacc=0.02, g_terminal=0.03), preco_atual=20)
     assert resultado["disponivel"] is False
     assert resultado["linhas"] == []
+
+
+
+def test_dcf_preserva_origem_e_fonte_da_divida_para_auditoria():
+    premissas = _premissas(
+        origem_divida_liquida="CVM — balanço patrimonial consolidado",
+        fonte_divida_liquida="CVM ITR 2T2026",
+    )
+    resultado = calcular_dcf(premissas, preco_atual=20.0)
+    assert resultado["disponivel"] is True
+    assert resultado["premissas"]["origem_divida_liquida"] == "CVM — balanço patrimonial consolidado"
+    assert resultado["premissas"]["fonte_divida_liquida"] == "CVM ITR 2T2026"
