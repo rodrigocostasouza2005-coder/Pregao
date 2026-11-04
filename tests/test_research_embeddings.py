@@ -633,3 +633,19 @@ def test_buscar_por_similaridade_rpc_falhando_retorna_none_sem_excecao():
     cliente.rpc.return_value.execute.side_effect = Exception("funcao nao existe ainda")
     with patch.object(emb, "obter_cliente", return_value=cliente):
         assert emb._buscar_por_similaridade([0.1]) is None
+
+
+def test_indexar_pendentes_sem_credencial_preserva_fila_e_explicita_bloqueio():
+    """Sem Gemini e com documentos pendentes, nao tenta cada item nem
+    classifica a fila como vazia/concluida: devolve bloqueio explicito."""
+    premissas = [_premissa("link-1"), _premissa("link-2")]
+    with patch.object(emb.store, "listar_premissas", return_value=premissas), \
+         patch.object(emb, "_embeddings_existentes", return_value={}), \
+         patch.object(emb.config, "obter_credenciais_gemini", return_value=(None, "modelo")), \
+         patch.object(emb, "_gerar_embedding") as mock_gerar:
+        resultado = emb.indexar_pendentes(limite=30)
+    assert resultado["processados"] == 0
+    assert resultado["falhas"] == 0
+    assert resultado["pendentes_restantes"] == 2
+    assert resultado["bloqueio"] == "GEMINI_API_KEY nao configurada"
+    mock_gerar.assert_not_called()
