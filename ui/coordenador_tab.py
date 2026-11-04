@@ -610,17 +610,17 @@ def render_analisar(prefs: dict = None):
     if fluxo_escolhido == "analise_ticker":
         with st.expander("Premissas do DCF — opcional, sem valores padrão"):
             usar_dcf = st.checkbox("Calcular DCF com premissas informadas", key="coord_dcf_ativar")
-            st.caption("Informe taxas em %. O FCF, EBITDA, alavancagem, valor de mercado e cotação serão lidos dos fundamentos disponíveis; se faltar algum dado, o DCF não será calculado.")
+            st.caption("As cinco taxas abaixo são premissas do analista, não previsões automáticas do sistema. O Pregão coleta FCF, EBITDA, alavancagem, valor de mercado e cotação nos fundamentos disponíveis; se faltar algum dado-base ou houver incompatibilidade de moeda, o DCF será bloqueado.")
             if usar_dcf:
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    g_otimista = st.text_input("Crescimento FCF — otimista (%)", key="coord_dcf_g_otimista")
-                    g_base = st.text_input("Crescimento FCF — base (%)", key="coord_dcf_g_base")
+                    g_otimista = st.text_input("Crescimento FCF — otimista (%)", key="coord_dcf_g_otimista", help="Taxa anual de crescimento do fluxo de caixa livre no cenário otimista.")
+                    g_base = st.text_input("Crescimento FCF — base (%)", key="coord_dcf_g_base", help="Taxa anual de crescimento do fluxo de caixa livre no cenário central.")
                 with c2:
-                    g_pessimista = st.text_input("Crescimento FCF — pessimista (%)", key="coord_dcf_g_pessimista")
-                    wacc = st.text_input("WACC (%)", key="coord_dcf_wacc")
+                    g_pessimista = st.text_input("Crescimento FCF — pessimista (%)", key="coord_dcf_g_pessimista", help="Taxa anual de crescimento do fluxo de caixa livre no cenário pessimista.")
+                    wacc = st.text_input("WACC (%)", key="coord_dcf_wacc", help="Custo médio ponderado de capital usado para descontar os fluxos. Precisa ser maior que o crescimento perpétuo.")
                 with c3:
-                    g_terminal = st.text_input("Crescimento perpétuo (%)", key="coord_dcf_g_terminal")
+                    g_terminal = st.text_input("Crescimento perpétuo (%)", key="coord_dcf_g_terminal", help="Taxa de crescimento de longo prazo após o quinto ano.")
                 entradas = {
                     "crescimento_fcf_otimista": g_otimista,
                     "crescimento_fcf_base": g_base,
