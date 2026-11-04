@@ -58,7 +58,7 @@ export async function atualizarLinha(
       method: "PATCH",
       headers: {
         apikey: env.supabaseChave, Authorization: `Bearer ${env.supabaseChave}`,
-        "Content-Type": "application/json", Prefer: "return=minimal",
+        "Content-Type": "application/json", Prefer: "return=representation",
       },
       body: JSON.stringify(campos),
     });
