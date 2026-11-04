@@ -120,7 +120,7 @@ def _anexar_premissas_dcf(resultados: dict, premissas_usuario: dict | None) -> N
             ),
             "fonte_premissas": (
                 "FCF, valor de mercado, cotação e moeda: yfinance; "
-                f"dívida líquida: {fonte_divida or 'indisponível por falta de dado/moeda compatível'}; "
+                f"dívida líquida: {'estimativa — ' if origem_divida == 'Estimativa — EBITDA × dívida líquida/EBITDA' else ''}{fonte_divida or 'indisponível por falta de dado/moeda compatível'}; "
                 "taxas de crescimento e WACC: premissas manuais do usuário."
             ),
             "data_base": str(
