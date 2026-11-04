@@ -318,6 +318,37 @@ def _render_consolidado(consolidado: dict):
                     st.markdown("**Pontos contrários**")
                     lista_compacta(html.escape(str(x)) for x in contras) if contras else st.caption("Sem evidência contrária estruturada.")
 
+                dcf = analista.get("dcf") or {}
+                if dcf.get("disponivel"):
+                    subtitulo("DCF — cenários de valor justo")
+                    cenarios = dcf.get("cenarios") or {}
+                    linhas_dcf = ["<table class='coord-tabela'><thead><tr><th>Cenário</th><th>Preço-alvo</th><th>Potencial</th><th>Crescimento FCF</th><th>WACC</th><th>g terminal</th></tr></thead><tbody>"]
+                    for chave in ("otimista", "base", "pessimista"):
+                        c = cenarios.get(chave) or {}
+                        valor = c.get("preco_alvo")
+                        potencial = c.get("upside_pct")
+                        valor_txt = f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(valor, (int, float)) else "—"
+                        potencial_txt = f"{potencial:+.1f}%" if isinstance(potencial, (int, float)) else "—"
+                        crescimento_txt = f"{c.get('crescimento_fcf', 0) * 100:.1f}%"
+                        wacc_txt = f"{c.get('wacc', 0) * 100:.1f}%"
+                        terminal_txt = f"{c.get('g_terminal', 0) * 100:.1f}%"
+                        linhas_dcf.append(
+                            f"<tr><td>{html.escape(str(c.get('rotulo') or chave.upper()))}</td>"
+                            f"<td>{html.escape(valor_txt)}</td><td>{html.escape(potencial_txt)}</td>"
+                            f"<td>{html.escape(crescimento_txt)}</td><td>{html.escape(wacc_txt)}</td>"
+                            f"<td>{html.escape(terminal_txt)}</td></tr>"
+                        )
+                    linhas_dcf.append("</tbody></table>")
+                    st.markdown("".join(linhas_dcf), unsafe_allow_html=True)
+                    st.caption(
+                        f"Premissas: {dcf.get('fonte_premissas') or 'fonte não identificada'} · "
+                        f"Data-base: {dcf.get('data_base') or 'não informada'}. "
+                        "FCF e ações em milhões; preço por ação em R$. Confira as premissas antes de usar."
+                    )
+                else:
+                    motivo_dcf = dcf.get("motivo") or "Premissas DCF ainda não foram fornecidas pela análise."
+                    st.caption(f"DCF não calculado: {motivo_dcf}")
+
     casas = pareceres.get("casas_research") or []
     if casas:
         subtitulo("O que dizem as casas de research")
