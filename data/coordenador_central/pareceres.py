@@ -122,7 +122,7 @@ def _parecer_market(dados):
 
     recomendacao = {"POSITIVO": "COMPRA", "NEGATIVO": "VENDA", "MISTO": "NEUTRO"}.get(vies, "INSUFICIENTE")
     return {
-        "id": "market_researcher", "nome": "Analista de Empresas",
+        "id": "market_researcher", "nome": "Market Researcher — Analista de Empresas",
         "recomendacao": recomendacao,
         "especialidade": "Fundamentos, qualidade do negócio, crescimento e riscos",
         "vies": vies,
@@ -137,7 +137,7 @@ def _parecer_market(dados):
 def _parecer_earnings(nota):
     if not nota.get("disponivel"):
         return {
-            "id": "earnings_reviewer", "nome": "Analista de Resultados",
+            "id": "earnings_reviewer", "nome": "Earnings Reviewer — Analista de Resultados",
             "especialidade": "DRE, balanço, fluxo de caixa e evolução trimestral",
             "vies": "SEM BASE SUFICIENTE",
             "tese": nota.get("motivo") or "Nota de resultados indisponível.",
@@ -253,7 +253,7 @@ def _parecer_valuation(dados, comparador, research=None):
                     else "VENDA" if upside_proprio is not None and upside_proprio <= -10
                     else "NEUTRO" if upside_proprio is not None else "INSUFICIENTE")
     return {
-        "id": "valuation_reviewer", "nome": "Analista de Valuation",
+        "id": "valuation_reviewer", "nome": "Valuation Reviewer / Model Builder",
         "recomendacao": recomendacao,
         "especialidade": "Múltiplos, comparáveis e preço-alvo",
         "vies": vies, "tese": tese,
