@@ -333,7 +333,8 @@ def test_4e_timeout_calendario_retorna_codigo_erro_ao_agendador():
     o Agendador do Windows precisa sinalizar que o universo ficou incompleto."""
     stats = {"processados": 3, "confirmados": 0, "estimados": 0, "mantidos_prazo_cvm": 3,
              "falhas": 0, "tempo_esgotado": True, "tabela_disponivel": True}
-    with patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+    with patch.dict("os.environ", {"GITHUB_ACTIONS": ""}), \\
+         patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
          patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
          patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
          patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
