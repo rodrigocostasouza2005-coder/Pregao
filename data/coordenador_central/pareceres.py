@@ -10,6 +10,7 @@ dados permanece explícita.
 from statistics import median
 
 from data.research.sinal import calcular_sinal_comite
+from data.coordenador_central.dcf import calcular_dcf
 
 
 def _numero(valor):
@@ -222,8 +223,14 @@ def _parecer_valuation(dados, comparador, research=None):
     maximo = max(alvos_externos) if alvos_externos else None
     dispersao = {"n_casas_com_preco_alvo": len(alvos_externos)}
     preco = _numero(fundamentos.get("preco"))
+    moeda = fundamentos.get("moeda") or "R$"
     pl = _numero(fundamentos.get("pl"))
     pl_setor = _numero(setorial.get("pl_mediana"))
+    premissas_dcf = dados.get("premissas_dcf") or fundamentos.get("premissas_dcf")
+    dcf = calcular_dcf(premissas_dcf, preco_atual=preco)
+    dcf_base = ((dcf.get("cenarios") or {}).get("base") or {}) if dcf.get("disponivel") else {}
+    alvo_dcf = _numero(dcf_base.get("preco_alvo"))
+    upside_dcf = _numero(dcf_base.get("upside_pct"))
 
     # Estimativa relativa simples: mantém o lucro por ação implícito
     # constante e aplica a mediana setorial de P/L. Não é DCF nem target
@@ -259,23 +266,64 @@ def _parecer_valuation(dados, comparador, research=None):
     else:
         fatos = ["Faixa de preços-alvo externos indisponível."]
     tese = (
-        f"Preço atual R$ {preco:.2f}; P/L {pl:.1f}x versus mediana setorial {pl_setor:.1f}x. "
+        f"Preço atual {moeda} {preco:.2f}; P/L {pl:.1f}x versus mediana setorial {pl_setor:.1f}x. "
         if preco is not None and pl is not None and pl_setor is not None
         else "Múltiplos insuficientes para comparação setorial. "
     ) + " ".join(fatos)
-    recomendacao = ("COMPRA" if upside_proprio is not None and upside_proprio >= 10
-                    else "VENDA" if upside_proprio is not None and upside_proprio <= -10
-                    else "NEUTRO" if upside_proprio is not None else "INSUFICIENTE")
+    # Quando há premissas DCF completas, o cenário-base passa a ser o
+    # preço-alvo principal. O múltiplo setorial permanece como referência
+    # comparável, nunca misturado ao DCF.
+    alvo_principal = alvo_dcf if alvo_dcf is not None else alvo_proprio
+    upside_principal = upside_dcf if upside_dcf is not None else upside_proprio
+    if alvo_dcf is not None:
+        cenarios_dcf = dcf.get("cenarios") or {}
+        alvos_dcf = [
+            _numero((cenarios_dcf.get(chave) or {}).get("preco_alvo"))
+            for chave in ("pessimista", "base", "otimista")
+        ]
+        alvos_dcf = [valor for valor in alvos_dcf if valor is not None]
+        if alvos_dcf:
+            moeda_dcf = dcf.get("moeda") or "moeda da cotação"
+            tese += (
+                f" DCF de cinco anos: cenário-base {moeda_dcf} {alvo_dcf:.2f}; "
+                f"faixa de cenários {moeda_dcf} {min(alvos_dcf):.2f} a {moeda_dcf} {max(alvos_dcf):.2f} por ação."
+            )
+        if upside_dcf >= 10:
+            vies = "VALOR INTRÍNSECO ACIMA DO PREÇO"
+            pros.append(f"DCF no cenário-base indica potencial de {upside_dcf:+.1f}%.")
+        elif upside_dcf <= -10:
+            vies = "VALOR INTRÍNSECO ABAIXO DO PREÇO"
+            contras.append(f"DCF no cenário-base indica risco de queda de {upside_dcf:+.1f}%.")
+        else:
+            vies = "PRÓXIMO AO VALOR INTRÍNSECO"
+            pros.append("Preço próximo ao valor intrínseco estimado no cenário-base.")
+    recomendacao = ("COMPRA" if upside_principal is not None and upside_principal >= 10
+                    else "VENDA" if upside_principal is not None and upside_principal <= -10
+                    else "NEUTRO" if upside_principal is not None else "INSUFICIENTE")
+    metodo = (
+        "DCF de 5 anos + Gordon Growth; cenário-base como alvo principal. "
+        "WACC, crescimento, FCF, dívida e ações vêm das premissas identificadas."
+        if dcf.get("disponivel") else
+        "Preço atual × P/L mediano setorial ÷ P/L atual; DCF não calculado por falta de premissas explícitas."
+    )
     return {
         "id": "valuation_reviewer", "nome": "Valuation Reviewer / Model Builder",
         "recomendacao": recomendacao,
-        "especialidade": "Múltiplos, comparáveis e preço-alvo",
-        "metodo": "Preço atual × P/L mediano setorial ÷ P/L atual; sinal relativo usa limiar de ±10%.",
+        "especialidade": "DCF, múltiplos, comparáveis e preço-alvo",
+        "moeda": moeda,
+        "metodo": metodo,
         "vies": vies, "tese": tese,
         "pros": pros, "contras": contras,
-        "preco_alvo": alvo_proprio,
-        "preco_alvo_rotulo": "Estimativa mecânica: P/L atual da empresa substituído pela mediana setorial; não é DCF nem preço-alvo de research.",
-        "preco_atual": preco, "upside_pct": upside_proprio,
+        "preco_alvo": alvo_principal,
+        "preco_alvo_rotulo": (
+            "DCF: valor presente de 5 anos de FCF + valor terminal por Gordon Growth; ver cenários e premissas."
+            if alvo_dcf is not None else
+            "Estimativa mecânica por P/L setorial; DCF indisponível até receber premissas completas. Não é alvo de research."
+        ),
+        "preco_alvo_pl_setorial": alvo_proprio,
+        "upside_pl_setorial_pct": upside_proprio,
+        "preco_atual": preco, "upside_pct": upside_principal,
+        "dcf": dcf,
         "preco_alvo_consenso_research": mediana_research,
         "upside_consenso_research_pct": upside_research,
         "faixa_precos_alvo_research": {"minimo": minimo, "maximo": maximo},

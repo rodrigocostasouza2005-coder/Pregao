@@ -291,6 +291,7 @@ def linha_valuation(ticker: str) -> dict:
         "ticker": ticker,
         "setor": config.IBOVESPA_SETORES.get(ticker),
         "moeda": info["moeda"],
+        "moeda_fonte": ind.get("moeda_fonte"),
         "preco": None if cot.get("erro") else cot.get("preco"),
         "preco_erro": cot.get("erro"),
         "consultado_em": datetime.now(_TZ_SP),

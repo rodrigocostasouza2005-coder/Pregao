@@ -273,17 +273,20 @@ def _render_consolidado(consolidado: dict):
     if sinal:
         subtitulo("Sinal do Comitê")
         alvo_modelo = sinal.get("preco_alvo_modelo")
+        alvo_pl = sinal.get("preco_alvo_pl_setorial")
         alvo_consenso = sinal.get("preco_alvo_consenso")
         upside_modelo = sinal.get("upside_modelo_pct")
-        alvo_modelo_txt = f"R$ {alvo_modelo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_modelo, (int, float)) else "não calculado"
-        alvo_consenso_txt = f"R$ {alvo_consenso:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_consenso, (int, float)) else "não disponível"
+        moeda_modelo = sinal.get("moeda_preco_alvo_modelo") or "R$"
+        alvo_modelo_txt = f"{moeda_modelo} {alvo_modelo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_modelo, (int, float)) else "não calculado"
+        alvo_pl_txt = f"{moeda_modelo} {alvo_pl:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_pl, (int, float)) else "não calculado"
+        alvo_consenso_txt = f"{moeda_modelo} {alvo_consenso:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_consenso, (int, float)) else "não disponível"
         upside_modelo_txt = f"{upside_modelo:+.1f}%" if isinstance(upside_modelo, (int, float)) else "—"
         st.markdown(
             f"<div class='coord-metricas'><div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('sinal') or 'INSUFICIENTE'))}</div><div class='coord-metrica-rotulo'>Recomendação quantitativa</div></div>"
             f"<div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('score') if sinal.get('score') is not None else '—'))}</div><div class='coord-metrica-rotulo'>Score</div></div>"
             f"<div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('confianca') or '—'))}</div><div class='coord-metrica-rotulo'>Confiança</div></div></div>"
-            f"<div class='coord-nota'>Alvo por P/L setorial: {html.escape(alvo_modelo_txt)} · "
-            f"Potencial: {html.escape(upside_modelo_txt)} · "
+            f"<div class='coord-nota'>Alvo do Model Builder: {html.escape(alvo_modelo_txt)} · "
+            f"Potencial: {html.escape(upside_modelo_txt)} · P/L setorial: {html.escape(alvo_pl_txt)} · "
             f"Consenso das casas: {html.escape(alvo_consenso_txt)}</div>"
             f"<div class='coord-nota'>{html.escape(str(sinal.get('justificativa') or ''))}</div>",
             unsafe_allow_html=True,
@@ -300,7 +303,8 @@ def _render_consolidado(consolidado: dict):
             especialidade = html.escape(str(analista.get("especialidade") or ""))
             metodo_analista = html.escape(str(analista.get("metodo") or ""))
             alvo = analista.get("preco_alvo")
-            alvo_txt = f"R$ {alvo:,.2f}" if isinstance(alvo, (int, float)) else "Não calculado"
+            moeda_alvo = (analista.get("dcf") or {}).get("moeda") or analista.get("moeda") or "R$"
+            alvo_txt = f"{moeda_alvo} {alvo:,.2f}" if isinstance(alvo, (int, float)) else "Não calculado"
             alvo_txt = alvo_txt.replace(",", "X").replace(".", ",").replace("X", ".")
             alvo_rotulo = html.escape(str(analista.get("preco_alvo_rotulo") or ""))
             upside_analista = analista.get("upside_pct")
@@ -317,6 +321,38 @@ def _render_consolidado(consolidado: dict):
                 with col_con:
                     st.markdown("**Pontos contrários**")
                     lista_compacta(html.escape(str(x)) for x in contras) if contras else st.caption("Sem evidência contrária estruturada.")
+
+                dcf = analista.get("dcf") or {}
+                if dcf.get("disponivel"):
+                    subtitulo("DCF — cenários de valor justo")
+                    cenarios = dcf.get("cenarios") or {}
+                    linhas_dcf = ["<table class='coord-tabela'><thead><tr><th>Cenário</th><th>Preço-alvo</th><th>Potencial</th><th>Crescimento FCF</th><th>WACC</th><th>g terminal</th></tr></thead><tbody>"]
+                    for chave in ("otimista", "base", "pessimista"):
+                        c = cenarios.get(chave) or {}
+                        valor = c.get("preco_alvo")
+                        potencial = c.get("upside_pct")
+                        moeda_dcf = dcf.get("moeda") or "moeda"
+                        valor_txt = f"{moeda_dcf} {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(valor, (int, float)) else "—"
+                        potencial_txt = f"{potencial:+.1f}%" if isinstance(potencial, (int, float)) else "—"
+                        crescimento_txt = f"{c.get('crescimento_fcf', 0) * 100:.1f}%"
+                        wacc_txt = f"{c.get('wacc', 0) * 100:.1f}%"
+                        terminal_txt = f"{c.get('g_terminal', 0) * 100:.1f}%"
+                        linhas_dcf.append(
+                            f"<tr><td>{html.escape(str(c.get('rotulo') or chave.upper()))}</td>"
+                            f"<td>{html.escape(valor_txt)}</td><td>{html.escape(potencial_txt)}</td>"
+                            f"<td>{html.escape(crescimento_txt)}</td><td>{html.escape(wacc_txt)}</td>"
+                            f"<td>{html.escape(terminal_txt)}</td></tr>"
+                        )
+                    linhas_dcf.append("</tbody></table>")
+                    st.markdown("".join(linhas_dcf), unsafe_allow_html=True)
+                    st.caption(
+                        f"Premissas: {dcf.get('fonte_premissas') or 'fonte não identificada'} · "
+                        f"Data-base: {dcf.get('data_base') or 'não informada'}. "
+                        "FCF, dívida, valor de mercado e ações usam as unidades originais da fonte; preço por ação em R$. Confira as premissas antes de usar."
+                    )
+                else:
+                    motivo_dcf = dcf.get("motivo") or "Premissas DCF ainda não foram fornecidas pela análise."
+                    st.caption(f"DCF não calculado: {motivo_dcf}")
 
     casas = pareceres.get("casas_research") or []
     if casas:
@@ -483,6 +519,36 @@ def render_analisar(prefs: dict = None):
             format_func=lambda k: _FLUXOS[k][0],
         )
 
+    premissas_dcf = None
+    if fluxo_escolhido == "analise_ticker":
+        with st.expander("Premissas do DCF — opcional, sem valores padrão"):
+            usar_dcf = st.checkbox("Calcular DCF com premissas informadas", key="coord_dcf_ativar")
+            st.caption("Informe taxas em %. O FCF, EBITDA, alavancagem, valor de mercado e cotação serão lidos dos fundamentos disponíveis; se faltar algum dado, o DCF não será calculado.")
+            if usar_dcf:
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    g_otimista = st.text_input("Crescimento FCF — otimista (%)", key="coord_dcf_g_otimista")
+                    g_base = st.text_input("Crescimento FCF — base (%)", key="coord_dcf_g_base")
+                with c2:
+                    g_pessimista = st.text_input("Crescimento FCF — pessimista (%)", key="coord_dcf_g_pessimista")
+                    wacc = st.text_input("WACC (%)", key="coord_dcf_wacc")
+                with c3:
+                    g_terminal = st.text_input("Crescimento perpétuo (%)", key="coord_dcf_g_terminal")
+                entradas = {
+                    "crescimento_fcf_otimista": g_otimista,
+                    "crescimento_fcf_base": g_base,
+                    "crescimento_fcf_pessimista": g_pessimista,
+                    "wacc": wacc,
+                    "g_terminal": g_terminal,
+                }
+                try:
+                    if all(str(v).strip() for v in entradas.values()):
+                        premissas_dcf = {k: float(str(v).strip().replace(",", ".")) for k, v in entradas.items()}
+                    else:
+                        st.caption("Preencha as cinco taxas para habilitar o DCF nesta análise.")
+                except ValueError:
+                    st.warning("Use apenas números nas premissas do DCF (ex.: 12,5).")
+
     acionar = st.button("Acionar especialistas", key="coord_analisar_botao", disabled=not ticker)
 
     subtitulo("Sugestões")
@@ -507,7 +573,10 @@ def render_analisar(prefs: dict = None):
     nome_fluxo, funcao_fluxo = _FLUXOS[fluxo_id]
     with st.spinner(f"Executando {nome_fluxo} para {ticker_executar} — acionando especialistas em paralelo…"):
         try:
-            consolidado = funcao_fluxo(ticker_executar)
+            if fluxo_id == "analise_ticker" and premissas_dcf is not None:
+                consolidado = funcao_fluxo(ticker_executar, premissas_dcf=premissas_dcf)
+            else:
+                consolidado = funcao_fluxo(ticker_executar)
         except Exception as exc:
             st.error(f"Falha ao executar a análise: {exc!r}")
             return
