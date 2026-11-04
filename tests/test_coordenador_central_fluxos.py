@@ -320,3 +320,13 @@ def test_dcf_bloqueia_moeda_desconhecida_sem_tentar_converter():
     assert p["fcf_base"] is None
     assert p["acoes"] is None
     assert p["motivo_bloqueio"] is not None
+
+
+def test_finalizacao_marca_parcial_quando_resultado_final_nao_persiste():
+    consolidado = {}
+    resultados = {"analise_ticker": _resultado("analise_ticker", disponivel=True)}
+    with patch.object(fluxos.persistencia, "concluir_analise", return_value=False) as concluir:
+        fluxos._concluir_fluxo("a", consolidado, resultados, telemetria_ok=True, duracao_ms=12)
+    concluir.assert_called_once()
+    assert consolidado["persistencia_analise_ok"] is False
+    assert consolidado["status_execucao"] == "PARCIAL"
