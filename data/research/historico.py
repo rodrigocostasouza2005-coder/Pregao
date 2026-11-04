@@ -11,8 +11,9 @@ desde o ultimo snapshot conhecido daquele casa+ticker - cresce devagar
 (poucas linhas por ticker/ano na pratica), e cada linha e' um fato real
 ("a Genial tinha X, passou a ter Y"), nunca um valor inventado/estimado.
 
-Fonte de dado estruturado hoje: so' Genial (data/research/genial.py:
-obter_recomendacoes/obter_swing_trade) - arquitetura generica (campo
+Fonte de dado estruturado historico: Genial (data/research/genial.py), agora
+ desativada para novas coletas; snapshots ja salvos continuam consultaveis.
+A arquitetura permanece generica (campo
 'casa' em toda consulta) pra outras fontes alimentarem a mesma tabela no
 futuro, se/quando tiverem dado estruturado equivalente."""
 
