@@ -380,6 +380,7 @@ def _campos_resultado(item: dict, origem_match: str) -> dict:
         "tipo_documento": item.get("tipo_documento"),
         "premissas": item.get("premissas") or [],
         "projecoes": item.get("projecoes") or {},
+        "riscos": item.get("riscos") or [],
         "recomendacao": item.get("recomendacao"),
         "preco_alvo": item.get("preco_alvo"),
         "origem_match": origem_match,
