@@ -25,6 +25,10 @@ from data.supabase_client import obter_cliente
 
 from .base import TTL_COLETA
 
+# Genial Analisa e XP permanecem no histórico já salvo, mas seus coletores
+# foram desativados: bloqueios externos persistentes impedem atualização.
+COLETA_GENIAL_ATIVA = False
+
 _CAMPOS_COMPARADOS = ("recomendacao", "preco_alvo")
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
 
@@ -203,6 +207,9 @@ def coletar_snapshot_genial() -> tuple[int, int]:
     proposito: um script standalone roda uma vez só e encerra, cache de
     sessao nao faz sentido aqui - chama registrar_se_mudou direto por
     item."""
+    if not COLETA_GENIAL_ATIVA:
+        return 0, 0
+
     from . import genial
 
     recomendacoes = genial.obter_recomendacoes() or []
