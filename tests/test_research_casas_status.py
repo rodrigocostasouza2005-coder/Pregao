@@ -51,6 +51,10 @@ def test_casas_bloqueadas_no_cloud_sao_identificadas():
     por_nome = {r["nome"]: r for r in resultado}
     assert por_nome["Genial Analisa"]["coleta_automatica_cloud"] is False
     assert por_nome["XP Investimentos"]["coleta_automatica_cloud"] is False
+    assert por_nome["Genial Analisa"]["disponivel"] is False
+    assert por_nome["XP Investimentos"]["disponivel"] is False
+    assert "bloqueio WAF" in por_nome["Genial Analisa"]["motivo_indisponivel"]
+    assert "HTTP 403" in por_nome["XP Investimentos"]["motivo_indisponivel"]
     assert por_nome["BTG Pactual Research"]["coleta_automatica_cloud"] is True
 
 
