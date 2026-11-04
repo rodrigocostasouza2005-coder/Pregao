@@ -138,6 +138,7 @@ export default async function Inteligencia({ searchParams }: { searchParams: Pro
     { tipo: "sintese", rotulo: "Síntese (IA)" },
     { tipo: "radar_x", rotulo: "Radar X (sinais sociais)" },
     { tipo: "embeddings", rotulo: "Memória de Research (embeddings)" },
+    { tipo: "comite_noturno", rotulo: "Comitê de Investimentos (análise noturna)" },
   ] as const;
 
   return (
