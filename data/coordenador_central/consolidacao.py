@@ -13,6 +13,8 @@ Rótulos de tipo de evidência (FATO/CALCULO_INTERNO/ESTIMATIVA_TERCEIRO/
 HIPOTESE_ANALISTA/DADO_INSUFICIENTE) são os MESMOS já usados em
 data/radar.py - importados, nunca reinventados com nomes novos."""
 
+from math import isfinite
+
 from data.radar import TIPO_CALCULO, TIPO_FATO, TIPO_INSUFICIENTE
 from data.research.comparador import _normalizar_recomendacao
 from data.coordenador_central.pareceres import montar_pareceres, montar_sinal_comite
@@ -39,6 +41,17 @@ _ROTULO_EXIBICAO = {
 
 def _rotulo(tipo: str) -> str:
     return _ROTULO_EXIBICAO.get(tipo, tipo)
+
+
+def _numero(valor):
+    """Normaliza um valor numerico finito; ausencia/invalidez vira None."""
+    if valor is None or isinstance(valor, bool):
+        return None
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError):
+        return None
+    return numero if isfinite(numero) else None
 
 
 # ============================================================
