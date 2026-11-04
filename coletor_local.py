@@ -7,11 +7,10 @@ bloqueada la mas funcionar daqui.
 Chama data.research.coletar_todas_disponiveis() (mesma logica de coleta
 do app, sem o gate de 30min - faz sentido aqui porque quem decide a
 frequencia e' o agendamento, nao o app) e roda a limpeza de itens com
-mais de 5 dias (data.research.store.apagar_itens_antigos). Tambem
-coleta o snapshot de recomendacoes/preco-alvo da Genial pro historico
-nao-perecivel (data.research.historico.coletar_snapshot_genial,
-2026-10-01) - mesma logica/motivo: bloqueado por WAF no Cloud, so'
-funciona rodando daqui. Nao depende do app rodando - so precisa do
+mais de 5 dias (data.research.store.apagar_itens_antigos). Genial
+Analisa, XP e Genial (Lives) estao desativadas e nao recebem novas
+tentativas; snapshots historicos antigos continuam preservados. Nao
+depende do app rodando - so precisa do
 .streamlit/secrets.toml (Supabase) no mesmo diretorio, igual o app usa.
 
 Tambem roda o coletor de datas REAIS de resultado (RI->NEWS->PRAZO_CVM,
