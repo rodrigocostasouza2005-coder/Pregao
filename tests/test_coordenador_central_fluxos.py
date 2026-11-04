@@ -179,6 +179,60 @@ def test_identificar_catalisadores_aciona_os_4_especialistas_em_paralelo(persist
 
 
 
+
+def test_comparar_casas_registra_duracao_quando_fluxo_gera_erro(persistencia_mockada):
+    with patch.object(fluxos.executor, "executar_especialista", side_effect=RuntimeError("falha comparador")):
+        with pytest.raises(RuntimeError):
+            fluxos.comparar_casas("WEGE3")
+
+    chamada = persistencia_mockada["concluir"].call_args
+    assert chamada.args[1] == "ERRO"
+    assert chamada.kwargs["duracao_ms"] >= 0
+
+
+def test_catalisadores_marca_parcial_quando_especialista_falha(persistencia_mockada):
+    resultados = {
+        "catalisadores": _resultado("catalisadores", disponivel=True),
+        "noticias": _resultado("noticias", disponivel=False),
+        "calendario": _resultado("calendario", disponivel=True),
+        "memoria_research": _resultado("memoria_research", disponivel=True),
+    }
+    with patch.object(fluxos.executor, "executar_varios", return_value=resultados):
+        consolidado = fluxos.identificar_catalisadores("WEGE3")
+
+    assert consolidado["status_execucao"] == "PARCIAL"
+    chamada = persistencia_mockada["concluir"].call_args
+    assert chamada.args[1] == "PARCIAL"
+    assert chamada.kwargs["duracao_ms"] >= 0
+
+
+def test_catalisadores_marca_parcial_quando_telemetria_nao_persiste(persistencia_mockada):
+    resultados = {
+        "catalisadores": _resultado("catalisadores"),
+        "noticias": _resultado("noticias"),
+    }
+    with patch.object(fluxos.executor, "executar_varios", return_value=resultados), \
+         patch.object(fluxos.persistencia, "registrar_execucao_especialista", return_value=False):
+        consolidado = fluxos.identificar_catalisadores("WEGE3")
+
+    assert consolidado["status_execucao"] == "PARCIAL"
+    chamada = persistencia_mockada["concluir"].call_args
+    assert chamada.args[1] == "PARCIAL"
+    assert chamada.kwargs["duracao_ms"] >= 0
+
+
+def test_comparar_casas_marca_parcial_quando_telemetria_falha(persistencia_mockada):
+    resultado = _resultado("comparador", dados={"tabela_comparativa": []})
+    with patch.object(fluxos.executor, "executar_especialista", return_value=resultado), \
+         patch.object(fluxos.persistencia, "registrar_execucao_especialista", return_value=False):
+        consolidado = fluxos.comparar_casas("WEGE3")
+
+    assert consolidado["status_execucao"] == "PARCIAL"
+    chamada = persistencia_mockada["concluir"].call_args
+    assert chamada.args[1] == "PARCIAL"
+    assert chamada.kwargs["duracao_ms"] >= 0
+
+
 def _dados_dcf_base():
     return {
         "analise_ticker": {
