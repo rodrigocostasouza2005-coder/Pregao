@@ -274,6 +274,16 @@ def _parecer_valuation(dados, comparador, research=None):
     # comparável, nunca misturado ao DCF.
     alvo_principal = alvo_dcf if alvo_dcf is not None else alvo_proprio
     upside_principal = upside_dcf if upside_dcf is not None else upside_proprio
+    if alvo_dcf is not None:
+        if upside_dcf >= 10:
+            vies = "VALOR INTRÍNSECO ACIMA DO PREÇO"
+            pros.append(f"DCF no cenário-base indica potencial de {upside_dcf:+.1f}%.")
+        elif upside_dcf <= -10:
+            vies = "VALOR INTRÍNSECO ABAIXO DO PREÇO"
+            contras.append(f"DCF no cenário-base indica risco de queda de {upside_dcf:+.1f}%.")
+        else:
+            vies = "PRÓXIMO AO VALOR INTRÍNSECO"
+            pros.append("Preço próximo ao valor intrínseco estimado no cenário-base.")
     recomendacao = ("COMPRA" if upside_principal is not None and upside_principal >= 10
                     else "VENDA" if upside_principal is not None and upside_principal <= -10
                     else "NEUTRO" if upside_principal is not None else "INSUFICIENTE")
