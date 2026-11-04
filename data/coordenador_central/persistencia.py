@@ -49,7 +49,7 @@ def iniciar_analise(solicitacao: str, tipo_fluxo: str, ticker: str = None) -> st
     return analise_id
 
 
-def concluir_analise(analise_id: str, status: str, resultado: dict = None, erro: str = None) -> bool:
+def concluir_analise(analise_id: str, status: str, resultado: dict = None, erro: str = None, duracao_ms: int = None) -> bool:
     """Atualiza a linha reservada por iniciar_analise com o resultado
     final (status CONCLUIDA/ERRO). False se o Supabase estiver
     indisponível ou a escrita falhar - nunca lança."""
@@ -58,7 +58,8 @@ def concluir_analise(analise_id: str, status: str, resultado: dict = None, erro:
         return False
     try:
         cliente.table(_TABELA_ANALISES).update({
-            "status": status, "concluido_em": _agora_iso(), "resultado": resultado, "erro": erro,
+            "status": status, "concluido_em": _agora_iso(), "duracao_ms": duracao_ms,
+            "resultado": resultado, "erro": erro,
         }).eq("id", analise_id).execute()
         return True
     except Exception as exc:
