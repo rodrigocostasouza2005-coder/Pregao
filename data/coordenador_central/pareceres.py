@@ -223,6 +223,7 @@ def _parecer_valuation(dados, comparador, research=None):
     maximo = max(alvos_externos) if alvos_externos else None
     dispersao = {"n_casas_com_preco_alvo": len(alvos_externos)}
     preco = _numero(fundamentos.get("preco"))
+    moeda = fundamentos.get("moeda") or "R$"
     pl = _numero(fundamentos.get("pl"))
     pl_setor = _numero(setorial.get("pl_mediana"))
     premissas_dcf = dados.get("premissas_dcf") or fundamentos.get("premissas_dcf")
@@ -265,7 +266,7 @@ def _parecer_valuation(dados, comparador, research=None):
     else:
         fatos = ["Faixa de preços-alvo externos indisponível."]
     tese = (
-        f"Preço atual R$ {preco:.2f}; P/L {pl:.1f}x versus mediana setorial {pl_setor:.1f}x. "
+        f"Preço atual {moeda} {preco:.2f}; P/L {pl:.1f}x versus mediana setorial {pl_setor:.1f}x. "
         if preco is not None and pl is not None and pl_setor is not None
         else "Múltiplos insuficientes para comparação setorial. "
     ) + " ".join(fatos)
@@ -309,6 +310,7 @@ def _parecer_valuation(dados, comparador, research=None):
         "id": "valuation_reviewer", "nome": "Valuation Reviewer / Model Builder",
         "recomendacao": recomendacao,
         "especialidade": "DCF, múltiplos, comparáveis e preço-alvo",
+        "moeda": moeda,
         "metodo": metodo,
         "vies": vies, "tese": tese,
         "pros": pros, "contras": contras,
