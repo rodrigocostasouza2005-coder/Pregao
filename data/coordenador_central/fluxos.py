@@ -56,6 +56,16 @@ def _concluir_com_erro(analise_id: str, exc: Exception, duracao_ms: int = None) 
     persistencia.concluir_analise(analise_id, "ERRO", None, erro=repr(exc), duracao_ms=duracao_ms)
 
 
+def _concluir_fluxo(analise_id: str, consolidado: dict, resultados: dict, telemetria_ok: bool, duracao_ms: int) -> None:
+    """Finaliza o fluxo e não anuncia CONCLUIDA se a gravação do resultado falhar."""
+    status = _status_fluxo(resultados, telemetria_ok)
+    consolidado["status_execucao"] = status
+    persistida = persistencia.concluir_analise(analise_id, status, consolidado, duracao_ms=duracao_ms)
+    consolidado["persistencia_analise_ok"] = bool(persistida)
+    if not persistida:
+        consolidado["status_execucao"] = "PARCIAL"
+
+
 def _moeda_normalizada(valor) -> str | None:
     """Normaliza apenas aliases inequívocos; moeda desconhecida não é presumida."""
     texto = str(valor or "").strip().upper()
@@ -169,9 +179,7 @@ def analisar_ticker(ticker: str, premissas_dcf: dict | None = None) -> dict:
         _anexar_premissas_dcf(resultados, premissas_dcf)
         consolidado = consolidacao.consolidar(resultados, ticker=ticker)
         duracao_ms = int((time.monotonic() - inicio) * 1000)
-        status = _status_fluxo(resultados, telemetria_ok)
-        consolidado["status_execucao"] = status
-        persistencia.concluir_analise(analise_id, status, consolidado, duracao_ms=duracao_ms)
+        _concluir_fluxo(analise_id, consolidado, resultados, telemetria_ok, duracao_ms)
         consolidado["_analise_id"] = analise_id
         consolidado["_duracao_ms"] = duracao_ms
         return consolidado
@@ -217,9 +225,7 @@ def comparar_casas(ticker: str, casas: list = None) -> dict:
         telemetria_ok = _registrar_execucoes(analise_id, resultados)
         consolidado = consolidacao.consolidar(resultados, ticker=ticker)
         duracao_ms = int((time.monotonic() - inicio) * 1000)
-        status = _status_fluxo(resultados, telemetria_ok)
-        consolidado["status_execucao"] = status
-        persistencia.concluir_analise(analise_id, status, consolidado, duracao_ms=duracao_ms)
+        _concluir_fluxo(analise_id, consolidado, resultados, telemetria_ok, duracao_ms)
         consolidado["_analise_id"] = analise_id
         consolidado["_duracao_ms"] = duracao_ms
         return consolidado
@@ -242,9 +248,7 @@ def identificar_catalisadores(ticker: str) -> dict:
         telemetria_ok = _registrar_execucoes(analise_id, resultados)
         consolidado = consolidacao.consolidar(resultados, ticker=ticker)
         duracao_ms = int((time.monotonic() - inicio) * 1000)
-        status = _status_fluxo(resultados, telemetria_ok)
-        consolidado["status_execucao"] = status
-        persistencia.concluir_analise(analise_id, status, consolidado, duracao_ms=duracao_ms)
+        _concluir_fluxo(analise_id, consolidado, resultados, telemetria_ok, duracao_ms)
         consolidado["_analise_id"] = analise_id
         consolidado["_duracao_ms"] = duracao_ms
         return consolidado
