@@ -408,6 +408,30 @@ def montar_pareceres(resultados, ticker=None):
         _parecer_earnings(earnings),
         _parecer_valuation(analise, comparador, research),
     ]
+    modelo = (resultados.get("model_builder") or {}).get("dados") or {}
+    revisao = (resultados.get("valuation_reviewer") or {}).get("dados") or {}
+    cenarios = modelo.get("cenarios") or {}
+    alvo_base = _numero((cenarios.get("base") or {}).get("preco_alvo"))
+    analistas.append({
+        "id": "model_builder", "nome": "Model Builder",
+        "especialidade": "Projeção financeira e DCF em três cenários",
+        "recomendacao": "MODELADO" if modelo.get("disponivel") else "INSUFICIENTE",
+        "vies": "MODELO DISPONÍVEL" if modelo.get("disponivel") else "SEM PREMISSAS SUFICIENTES",
+        "tese": modelo.get("motivo") or modelo.get("metodo") or "DCF indisponível.",
+        "preco_alvo": alvo_base, "preco_alvo_rotulo": "Preço-alvo do cenário-base calculado pelo Model Builder.",
+        "cenarios": cenarios, "premissas": modelo.get("premissas") or {},
+        "sensibilidade": modelo.get("sensibilidade"),
+        "fontes": [modelo.get("fonte_premissas")] if modelo.get("fonte_premissas") else [],
+    })
+    analistas.append({
+        "id": "valuation_reviewer", "nome": "Valuation Reviewer",
+        "especialidade": "Revisão independente de cenários, premissas e sensibilidade",
+        "recomendacao": "APROVADO" if revisao.get("disponivel") and revisao.get("aprovado") else "COM RESSALVAS" if revisao.get("disponivel") else "INSUFICIENTE",
+        "vies": "APROVADO" if revisao.get("disponivel") and revisao.get("aprovado") else "REVISÃO COM RESSALVAS" if revisao.get("disponivel") else "REVISÃO INDISPONÍVEL",
+        "tese": revisao.get("motivo") or ("Revisão concluída; ver achados e limitações." if revisao.get("disponivel") else "Revisão indisponível."),
+        "preco_alvo": alvo_base, "preco_alvo_rotulo": "Referência do cenário-base do Model Builder; não é um cálculo independente.",
+        "achados": revisao.get("achados") or [], "limitacoes": revisao.get("limitacoes") or [],
+    })
     alvos = [_numero(item.get("preco_alvo")) for item in research]
     alvos = [x for x in alvos if x is not None and x > 0]
     mediana = median(alvos) if len(alvos) >= 2 else None
