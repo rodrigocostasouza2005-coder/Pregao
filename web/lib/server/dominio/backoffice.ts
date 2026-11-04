@@ -45,7 +45,7 @@ export function lerAchados(limite = 200) {
 }
 
 export type Execucao = {
-  id: number; tipo: "backoffice" | "sintese"; status: "EM_ANDAMENTO" | "OK" | "PARCIAL" | "ERRO";
+  id: number; tipo: "backoffice" | "sintese" | "radar_x" | "embeddings"; status: "EM_ANDAMENTO" | "OK" | "PARCIAL" | "ERRO";
   iniciado_em: string; concluido_em: string | null; duracao_ms: number | null; resumo: string | null; erro: string | null;
 };
 
