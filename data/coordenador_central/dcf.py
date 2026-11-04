@@ -127,3 +127,60 @@ def calcular_dcf(premissas: dict | None, preco_atual=None) -> dict:
         "premissas": valores, "cenarios": cenarios,
         "observacao": "DCF sensível às premissas; confira WACC, crescimento, dívida líquida e ações antes de usar.",
     }
+
+
+def calcular_sensibilidade_dcf(
+    premissas: dict | None,
+    preco_atual=None,
+    passos_wacc=(-0.02, -0.01, 0.0, 0.01, 0.02),
+    passos_crescimento=(-0.02, -0.01, 0.0, 0.01, 0.02),
+) -> dict:
+    """Matriz 5x5 do preço-alvo-base sob variações de WACC e crescimento.
+
+    As variações são pontos percentuais em decimal (ex.: 0.01 = 1 p.p.).
+    Mantém FCF, dívida, ações e crescimento terminal constantes. Não
+    substitui premissas nem altera o DCF principal.
+    """
+    if not isinstance(premissas, dict):
+        return {"disponivel": False, "motivo": "Premissas DCF ausentes.", "linhas": []}
+    original = calcular_dcf(premissas, preco_atual=preco_atual)
+    if not original.get("disponivel"):
+        return {"disponivel": False, "motivo": original.get("motivo"), "linhas": []}
+
+    wacc_base = _num(premissas.get("wacc"))
+    crescimento_base = _num(premissas.get("crescimento_fcf_base"))
+    if wacc_base is None or crescimento_base is None:
+        return {"disponivel": False, "motivo": "WACC ou crescimento-base ausente.", "linhas": []}
+
+    linhas = []
+    for delta_wacc in passos_wacc:
+        wacc = wacc_base + float(delta_wacc)
+        celulas = []
+        for delta_crescimento in passos_crescimento:
+            crescimento = crescimento_base + float(delta_crescimento)
+            variacao = dict(premissas)
+            variacao["wacc"] = wacc
+            variacao["crescimento_fcf_base"] = crescimento
+            calculo = calcular_dcf(variacao, preco_atual=preco_atual)
+            base_cenario = ((calculo.get("cenarios") or {}).get("base") or {})
+            celulas.append({
+                "delta_crescimento": float(delta_crescimento),
+                "crescimento_fcf": crescimento,
+                "preco_alvo": base_cenario.get("preco_alvo"),
+                "upside_pct": base_cenario.get("upside_pct"),
+                "disponivel": bool(calculo.get("disponivel")),
+                "motivo": calculo.get("motivo"),
+            })
+        linhas.append({
+            "delta_wacc": float(delta_wacc),
+            "wacc": wacc,
+            "celulas": celulas,
+        })
+    return {
+        "disponivel": True,
+        "metodo": "Sensibilidade do cenário-base",
+        "linhas": linhas,
+        "passos_crescimento": [float(x) for x in passos_crescimento],
+        "passos_wacc": [float(x) for x in passos_wacc],
+        "observacao": "Varia uma premissa por vez em cada eixo; mantém FCF inicial, dívida líquida, ações e crescimento terminal constantes.",
+    }

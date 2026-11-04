@@ -130,3 +130,24 @@ def test_fluxo_bloqueia_calculo_quando_moeda_da_cotacao_e_fonte_divergem():
     resultado = calcular_dcf(premissas, preco_atual=20)
     assert resultado["disponivel"] is False
     assert "Moeda" in resultado["motivo"]
+
+
+def test_sensibilidade_dcf_matriz_5x5_e_centro_igual_ao_cenario_base():
+    from data.coordenador_central.dcf import calcular_sensibilidade_dcf
+
+    premissas = _premissas()
+    resultado = calcular_sensibilidade_dcf(premissas, preco_atual=20)
+    assert resultado["disponivel"] is True
+    assert len(resultado["linhas"]) == 5
+    assert all(len(linha["celulas"]) == 5 for linha in resultado["linhas"])
+    centro = resultado["linhas"][2]["celulas"][2]["preco_alvo"]
+    base = calcular_dcf(premissas, preco_atual=20)["cenarios"]["base"]["preco_alvo"]
+    assert centro == base
+
+
+def test_sensibilidade_dcf_bloqueia_premissas_invalidas_sem_inventar():
+    from data.coordenador_central.dcf import calcular_sensibilidade_dcf
+
+    resultado = calcular_sensibilidade_dcf(_premissas(wacc=0.02, g_terminal=0.03), preco_atual=20)
+    assert resultado["disponivel"] is False
+    assert resultado["linhas"] == []
