@@ -66,6 +66,14 @@ def test_analisar_ticker_marca_parcial_quando_especialista_indisponivel(persiste
     assert chamada.kwargs["duracao_ms"] >= 0
 
 
+def test_status_fluxo_nao_conclui_quando_nenhum_especialista_foi_acionado():
+    assert fluxos._status_fluxo({}, telemetria_ok=True) == "PARCIAL"
+    assert fluxos._status_fluxo(
+        {"memoria_research": {**_resultado("memoria_research"), "pulado": True}},
+        telemetria_ok=True,
+    ) == "PARCIAL"
+
+
 def test_registro_nao_contabiliza_especialista_pulado():
     with patch.object(fluxos.persistencia, "registrar_execucao_especialista", return_value=True) as registrar:
         ok = fluxos._registrar_execucoes("a", {
