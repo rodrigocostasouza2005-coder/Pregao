@@ -47,7 +47,7 @@ def test_analisar_ticker_registra_inicio_antes_de_rodar_especialistas(persistenc
     assert persistencia_mockada["concluir"].call_args[0][0] == "analise-fake-1"
     assert persistencia_mockada["concluir"].call_args[0][1] == "CONCLUIDA"
     mock_varios.assert_called_once()
-    assert mock_varios.call_args[0][0] == ["analise_ticker", "comparador", "memoria_research", "noticias", "catalisadores"]
+    assert mock_varios.call_args[0][0] == ["analise_ticker", "comparador", "memoria_research", "noticias", "catalisadores", "resultados_corporativos"]
     assert mock_varios.call_args[1]["ticker"] == "PETR4"
     assert "_analise_id" in consolidado and "_duracao_ms" in consolidado
 
