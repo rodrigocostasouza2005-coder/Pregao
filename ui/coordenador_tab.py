@@ -295,7 +295,8 @@ def _render_consolidado(consolidado: dict):
             alvo_rotulo = html.escape(str(analista.get("preco_alvo_rotulo") or ""))
             upside_analista = analista.get("upside_pct")
             upside_analista_txt = f" · potencial {upside_analista:+.1f}%" if isinstance(upside_analista, (int, float)) else ""
-            with st.expander(f"{nome} — {vies}", expanded=True):
+            recomendacao = html.escape(str(analista.get("recomendacao") or "INSUFICIENTE"))
+            with st.expander(f"{nome} — {recomendacao} ({vies})", expanded=True):
                 st.markdown(f"<div class='coord-nota'>{especialidade}</div><b>Tese</b><div class='coord-conclusao-linha'>{tese}</div><b>Preço-alvo</b><div class='coord-conclusao-linha'>{html.escape(alvo_txt)}{html.escape(upside_analista_txt)} · {alvo_rotulo}</div>", unsafe_allow_html=True)
                 pros = analista.get("pros") or []
                 contras = analista.get("contras") or []
