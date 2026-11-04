@@ -514,6 +514,36 @@ def render_analisar(prefs: dict = None):
             format_func=lambda k: _FLUXOS[k][0],
         )
 
+    premissas_dcf = None
+    if fluxo_escolhido == "analise_ticker":
+        with st.expander("Premissas do DCF — opcional, sem valores padrão"):
+            usar_dcf = st.checkbox("Calcular DCF com premissas informadas", key="coord_dcf_ativar")
+            st.caption("Informe taxas em %. O FCF, EBITDA, alavancagem, valor de mercado e cotação serão lidos dos fundamentos disponíveis; se faltar algum dado, o DCF não será calculado.")
+            if usar_dcf:
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    g_otimista = st.text_input("Crescimento FCF — otimista (%)", key="coord_dcf_g_otimista")
+                    g_base = st.text_input("Crescimento FCF — base (%)", key="coord_dcf_g_base")
+                with c2:
+                    g_pessimista = st.text_input("Crescimento FCF — pessimista (%)", key="coord_dcf_g_pessimista")
+                    wacc = st.text_input("WACC (%)", key="coord_dcf_wacc")
+                with c3:
+                    g_terminal = st.text_input("Crescimento perpétuo (%)", key="coord_dcf_g_terminal")
+                entradas = {
+                    "crescimento_fcf_otimista": g_otimista,
+                    "crescimento_fcf_base": g_base,
+                    "crescimento_fcf_pessimista": g_pessimista,
+                    "wacc": wacc,
+                    "g_terminal": g_terminal,
+                }
+                try:
+                    if all(str(v).strip() for v in entradas.values()):
+                        premissas_dcf = {k: float(str(v).strip().replace(",", ".")) for k, v in entradas.items()}
+                    else:
+                        st.caption("Preencha as cinco taxas para habilitar o DCF nesta análise.")
+                except ValueError:
+                    st.warning("Use apenas números nas premissas do DCF (ex.: 12,5).")
+
     acionar = st.button("Acionar especialistas", key="coord_analisar_botao", disabled=not ticker)
 
     subtitulo("Sugestões")
@@ -538,7 +568,10 @@ def render_analisar(prefs: dict = None):
     nome_fluxo, funcao_fluxo = _FLUXOS[fluxo_id]
     with st.spinner(f"Executando {nome_fluxo} para {ticker_executar} — acionando especialistas em paralelo…"):
         try:
-            consolidado = funcao_fluxo(ticker_executar)
+            if fluxo_id == "analise_ticker" and premissas_dcf is not None:
+                consolidado = funcao_fluxo(ticker_executar, premissas_dcf=premissas_dcf)
+            else:
+                consolidado = funcao_fluxo(ticker_executar)
         except Exception as exc:
             st.error(f"Falha ao executar a análise: {exc!r}")
             return
