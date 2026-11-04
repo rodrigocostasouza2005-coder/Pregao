@@ -70,7 +70,7 @@ def test_research_genial_e_xp_nao_entra_no_comite():
     analise = _base()
     analise["cobertura_research"] = {"cobertura": [
         {"casa": "Genial Analisa", "recomendacao": "VENDA"},
-        {"casa": "XP Investimentos", "recomendacao": "VENDA"},
+        {"casa": "XP", "recomendacao": "VENDA"},
     ]}
     resultado = calcular_sinal_comite(analise)
     assert all(c["grupo"] != "Research independente" for c in resultado["criterios"])
