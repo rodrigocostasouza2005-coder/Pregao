@@ -282,9 +282,10 @@ def _parecer_valuation(dados, comparador, research=None):
         ]
         alvos_dcf = [valor for valor in alvos_dcf if valor is not None]
         if alvos_dcf:
+            moeda_dcf = dcf.get("moeda") or "moeda da cotação"
             tese += (
-                f" DCF de cinco anos: cenário-base R$ {alvo_dcf:.2f}; "
-                f"faixa de cenários R$ {min(alvos_dcf):.2f} a R$ {max(alvos_dcf):.2f} por ação."
+                f" DCF de cinco anos: cenário-base {moeda_dcf} {alvo_dcf:.2f}; "
+                f"faixa de cenários {moeda_dcf} {min(alvos_dcf):.2f} a {moeda_dcf} {max(alvos_dcf):.2f} por ação."
             )
         if upside_dcf >= 10:
             vies = "VALOR INTRÍNSECO ACIMA DO PREÇO"
