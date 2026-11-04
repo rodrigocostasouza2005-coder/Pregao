@@ -111,6 +111,17 @@ def test_snapshot_genial_desativado_nao_tenta_fonte_externa():
     mock_recomendacoes.assert_not_called()
 
 
+def test_coletar_todas_disponiveis_pula_genial_xp_e_lives_desativados():
+    import data.research as research_mod
+    casas_desativadas = [
+        c for c in research_mod.CASAS
+        if c["id"] in {"genial", "xp", "genial_lives"}
+    ]
+    with patch.object(research_mod, "CASAS", casas_desativadas), \
+         patch.object(research_mod, "coletar_casa") as mock_coletar:
+        assert research_mod.coletar_todas_disponiveis() == {}
+    mock_coletar.assert_not_called()
+
 def test_historico_primeiro_snapshot_grava_mas_nao_reporta_mudanca():
     cliente, inserts = _cliente_mock([])
     with patch.object(historico, "obter_cliente", return_value=cliente):
