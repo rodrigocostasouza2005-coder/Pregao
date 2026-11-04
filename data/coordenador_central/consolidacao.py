@@ -46,11 +46,12 @@ def _rotulo(tipo: str) -> str:
 # ============================================================
 
 def _resumo_executivo(resultados: dict, ticker: str = None) -> str:
-    disponiveis = sorted(id_ for id_, r in resultados.items() if r.get("disponivel"))
-    indisponiveis = sorted(id_ for id_, r in resultados.items() if not r.get("disponivel"))
+    acionados = {id_: r for id_, r in resultados.items() if not r.get("pulado")}
+    disponiveis = sorted(id_ for id_, r in acionados.items() if r.get("disponivel"))
+    indisponiveis = sorted(id_ for id_, r in acionados.items() if not r.get("disponivel"))
 
     partes = [f"Análise consolidada para {ticker}." if ticker else "Análise consolidada."]
-    partes.append(f"{len(disponiveis)} de {len(resultados)} especialista(s) acionado(s) responderam com dado disponível.")
+    partes.append(f"{len(disponiveis)} de {len(acionados)} especialista(s) acionado(s) responderam com dado disponível.")
     if indisponiveis:
         partes.append(f"Indisponível nesta rodada: {', '.join(indisponiveis)}.")
     return " ".join(partes)
@@ -167,8 +168,9 @@ def _pontos_atencao(resultados: dict) -> list:
 # ============================================================
 
 def _conclusao(resultados: dict, divergencia_cross: dict | None, confianca: dict) -> list:
-    n_total = len(resultados)
-    n_disponiveis = sum(1 for r in resultados.values() if r.get("disponivel"))
+    acionados = [r for r in resultados.values() if not r.get("pulado")]
+    n_total = len(acionados)
+    n_disponiveis = sum(1 for r in acionados if r.get("disponivel"))
 
     if n_disponiveis == 0:
         return [f"[{_rotulo(TIPO_INSUFICIENTE)}] Nenhum especialista acionado retornou dado disponível - não há base para qualquer conclusão."]
@@ -198,11 +200,12 @@ def _conclusao(resultados: dict, divergencia_cross: dict | None, confianca: dict
 # ============================================================
 
 def _confianca(resultados: dict) -> dict:
-    n_total = len(resultados)
+    acionados = [r for r in resultados.values() if not r.get("pulado")]
+    n_total = len(acionados)
     if n_total == 0:
         return {"categoria": CONFIANCA_INSUFICIENTE, "justificativa": "Nenhum especialista foi acionado nesta rodada."}
 
-    n_com_evidencia = sum(1 for r in resultados.values() if r.get("disponivel") and r.get("evidencias"))
+    n_com_evidencia = sum(1 for r in acionados if r.get("disponivel") and r.get("evidencias"))
     proporcao = n_com_evidencia / n_total
 
     if n_com_evidencia >= 2 and proporcao >= 0.75:
