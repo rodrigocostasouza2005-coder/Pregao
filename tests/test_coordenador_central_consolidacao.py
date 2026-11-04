@@ -218,6 +218,8 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
     assert "Leitura construtiva" in pareceres["analistas"][0]["tese"]
     assert "Leitura construtiva" in pareceres["analistas"][1]["tese"]
     assert consolidado["sinal_comite"]["sinal"] in {"COMPRA", "VENDA", "NEUTRO", "INSUFICIENTE"}
+    assert consolidado["sinal_comite"]["preco_alvo_modelo"] == 30.0
+    assert consolidado["sinal_comite"]["preco_alvo_consenso"] == 26.25
 
 
 def test_consolidar_sem_research_nao_inventa_preco_alvo():
