@@ -50,7 +50,7 @@ def analisar_ticker(ticker: str) -> dict:
     inicio = time.monotonic()
     try:
         resultados = executor.executar_varios(
-            ["analise_ticker", "comparador", "memoria_research", "noticias", "catalisadores"], ticker=ticker,
+            ["analise_ticker", "comparador", "memoria_research", "noticias", "catalisadores", "resultados_corporativos"], ticker=ticker,
         )
         _registrar_execucoes(analise_id, resultados)
         consolidado = consolidacao.consolidar(resultados, ticker=ticker)
