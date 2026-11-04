@@ -255,15 +255,23 @@ def consolidar(resultados: dict, ticker: str = None) -> dict:
     )
     alvo_consenso = pareceres.get("preco_alvo_consenso") or {}
     cenario_base_modelo = (analista_modelo.get("cenarios") or {}).get("base") or {}
+    # O DCF do Model Builder tem prioridade. Sem DCF, preserva-se no
+    # campo legado a estimativa mecânica por P/L setorial do parecer de
+    # valuation, sempre acompanhada do rótulo que impede tratá-la como DCF.
+    alvo_modelo = cenario_base_modelo.get("preco_alvo")
+    upside_modelo = cenario_base_modelo.get("upside_pct")
+    metodo_modelo = analista_modelo.get("preco_alvo_rotulo")
+    if alvo_modelo is None:
+        alvo_modelo = analista_valuation.get("preco_alvo")
+        upside_modelo = analista_valuation.get("upside_pct")
+        metodo_modelo = analista_valuation.get("preco_alvo_rotulo")
     sinal_comite["preco_alvo_modelo"] = (
-        cenario_base_modelo.get("preco_alvo")
-        if cenario_base_modelo.get("preco_alvo") is not None
-        else analista_modelo.get("preco_alvo")
+        alvo_modelo if alvo_modelo is not None else analista_modelo.get("preco_alvo")
     )
     fundamentos_sinal = ((resultados.get("analise_ticker") or {}).get("dados") or {}).get("fundamentos") or {}
     sinal_comite["moeda_preco_alvo_modelo"] = fundamentos_sinal.get("moeda") or "R$"
-    sinal_comite["upside_modelo_pct"] = _numero(cenario_base_modelo.get("upside_pct") if cenario_base_modelo.get("upside_pct") is not None else analista_modelo.get("upside_pct"))
-    sinal_comite["metodo_preco_alvo_modelo"] = analista_modelo.get("preco_alvo_rotulo")
+    sinal_comite["upside_modelo_pct"] = _numero(upside_modelo if upside_modelo is not None else analista_modelo.get("upside_pct"))
+    sinal_comite["metodo_preco_alvo_modelo"] = metodo_modelo
     sinal_comite["preco_alvo_pl_setorial"] = analista_valuation.get("preco_alvo_pl_setorial")
     sinal_comite["upside_pl_setorial_pct"] = analista_valuation.get("upside_pl_setorial_pct")
     sinal_comite["preco_alvo_consenso"] = alvo_consenso.get("mediana")
