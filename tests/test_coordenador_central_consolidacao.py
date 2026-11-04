@@ -166,7 +166,8 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
             "fundamentos": {"preco": 20.0, "roe": 15.0, "margem_liquida": 12.0,
                             "divida_liquida_ebitda": 1.0, "fluxo_caixa_livre": 100.0, "pl": 12.0},
             "fundamentos_historicos": {"disponivel": True,
-                "receita_liquida": {"yoy_pct_serie": [8.0, 12.0]}},
+                "receita_liquida": {"yoy_pct_serie": [8.0, 12.0]},
+                "roic_pct": {"serie": [3.5]}},
             "comparativo_setorial": {"pl_mediana": 18.0},
             "cobertura_research": {"cobertura": []},
         }),
@@ -217,6 +218,7 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
     assert [x["recomendacao"] for x in pareceres["analistas"]] == ["COMPRA", "COMPRA", "COMPRA"]
     assert "Leitura construtiva" in pareceres["analistas"][0]["tese"]
     assert "Leitura construtiva" in pareceres["analistas"][1]["tese"]
+    assert any("ROIC trimestral positivo" in x for x in pareceres["analistas"][0]["pros"])
     assert consolidado["sinal_comite"]["sinal"] in {"COMPRA", "VENDA", "NEUTRO", "INSUFICIENTE"}
     assert consolidado["sinal_comite"]["preco_alvo_modelo"] == 30.0
     assert consolidado["sinal_comite"]["preco_alvo_consenso"] == 26.25
