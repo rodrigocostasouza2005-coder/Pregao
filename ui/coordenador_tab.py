@@ -303,7 +303,7 @@ def _render_consolidado(consolidado: dict):
             especialidade = html.escape(str(analista.get("especialidade") or ""))
             metodo_analista = html.escape(str(analista.get("metodo") or ""))
             alvo = analista.get("preco_alvo")
-            moeda_alvo = (analista.get("dcf") or {}).get("moeda") or "R$"
+            moeda_alvo = (analista.get("dcf") or {}).get("moeda") or analista.get("moeda") or "R$"
             alvo_txt = f"{moeda_alvo} {alvo:,.2f}" if isinstance(alvo, (int, float)) else "Não calculado"
             alvo_txt = alvo_txt.replace(",", "X").replace(".", ",").replace("X", ".")
             alvo_rotulo = html.escape(str(analista.get("preco_alvo_rotulo") or ""))
