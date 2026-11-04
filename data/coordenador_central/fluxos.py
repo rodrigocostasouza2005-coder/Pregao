@@ -69,6 +69,7 @@ def _anexar_premissas_dcf(resultados: dict, premissas_usuario: dict | None) -> N
             "g_terminal": float(premissas_usuario["g_terminal"]) / 100,
             "divida_liquida": divida_liquida,
             "acoes": acoes,
+            "moeda": fundamentos.get("moeda"),
             "fonte_premissas": "FCF, EBITDA, alavancagem, valor de mercado e cotação: yfinance; taxas de crescimento e WACC: premissas manuais do usuário.",
             "data_base": str(fundamentos.get("consultado_em") or ""),
         }
