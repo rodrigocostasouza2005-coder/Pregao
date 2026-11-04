@@ -8,7 +8,7 @@
 -- data/coordenador_central/fluxos.py) - gravada EM_ANDAMENTO antes de
 -- rodar qualquer especialista, atualizada no final (CONCLUIDA/ERRO).
 -- coordenador_especialistas_execucoes: 1 linha por especialista
--- acionado dentro de uma análise - usada pra monitorar desempenho
+-- efetivamente acionado dentro de uma análise (itens pulados não entram) - usada pra monitorar desempenho
 -- (taxa de sucesso/tempo médio por especialista ao longo do tempo, ver
 -- data/coordenador_central/persistencia.py:metricas_especialistas).
 --
@@ -20,7 +20,7 @@ create table if not exists coordenador_analises (
   solicitacao   text not null,                            -- ex: "Analisar PETR4"
   tipo_fluxo    text not null,                            -- analise_ticker / comparar_casas / catalisadores
   ticker        text,
-  status        text not null default 'EM_ANDAMENTO',     -- EM_ANDAMENTO / CONCLUIDA / ERRO
+  status        text not null default 'EM_ANDAMENTO',     -- EM_ANDAMENTO / CONCLUIDA / PARCIAL / ERRO
   iniciado_em   timestamptz not null default now(),
   concluido_em  timestamptz,
   duracao_ms    int,
