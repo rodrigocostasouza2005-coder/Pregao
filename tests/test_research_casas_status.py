@@ -71,6 +71,9 @@ def test_casas_investigadas_em_20261030_registram_motivo_verificavel():
         "ativa_investimentos": "borda",
         "andbank_brasil": "robots.txt",
         "planner_investimentos": "robots.txt",
+        "genial": "bloqueio WAF persistente",
+        "xp": "HTTP 403",
+        "genial_lives": "HTTP 404",
     }
     for casa_id, trecho in esperado_substring.items():
         assert casa_id in por_id, f"casa {casa_id} nao encontrada em CASAS"
