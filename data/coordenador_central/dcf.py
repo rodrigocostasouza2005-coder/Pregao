@@ -124,7 +124,12 @@ def calcular_dcf(premissas: dict | None, preco_atual=None) -> dict:
         "disponivel": True, "metodo": "DCF de 5 anos + Gordon Growth",
         "moeda": p.get("moeda") or "moeda da cotação", "unidade_fcf": "mesma unidade monetária do valor de mercado e do FCF",
         "fonte_premissas": fonte, "data_base": data_base,
-        "premissas": valores, "cenarios": cenarios,
+        "premissas": {
+            **valores,
+            "origem_divida_liquida": p.get("origem_divida_liquida"),
+            "fonte_divida_liquida": p.get("fonte_divida_liquida"),
+        },
+        "cenarios": cenarios,
         "observacao": "DCF sensível às premissas; confira WACC, crescimento, dívida líquida e ações antes de usar.",
     }
 

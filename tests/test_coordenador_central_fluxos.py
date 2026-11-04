@@ -152,3 +152,85 @@ def test_identificar_catalisadores_aciona_os_4_especialistas_em_paralelo(persist
 
     assert mock_varios.call_args[0][0] == ["catalisadores", "noticias", "calendario", "memoria_research"]
     assert set(consolidado["visao_especialistas"].keys()) == {"catalisadores", "noticias", "calendario", "memoria_research"}
+
+
+
+def _dados_dcf_base():
+    return {
+        "analise_ticker": {
+            "dados": {
+                "fundamentos": {
+                    "fluxo_caixa_livre": 1_000_000.0,
+                    "ebitda": 500_000.0,
+                    "divida_liquida_ebitda": 2.0,
+                    "preco": 20.0,
+                    "valor_mercado": 10_000_000.0,
+                    "moeda": "BRL",
+                    "moeda_fonte": "BRL",
+                    "consultado_em": "2026-11-04",
+                }
+            }
+        },
+        "resultados_corporativos": {
+            "dados": {
+                "disponivel": True,
+                "moeda": "REAL",
+                "periodo_label": "2T2026",
+                "dt_referencia": "2026-06-30",
+                "balanco_fluxo_caixa": {"divida_liquida_atual": 1_250_000.0},
+            }
+        },
+    }
+
+
+_PREMISSAS_DCF_TESTE = {
+    "crescimento_fcf_otimista": 12,
+    "crescimento_fcf_base": 8,
+    "crescimento_fcf_pessimista": 2,
+    "wacc": 12,
+    "g_terminal": 4,
+}
+
+
+def test_dcf_prioriza_divida_liquida_reportada_no_balanco_cvm():
+    resultados = _dados_dcf_base()
+    fluxos._anexar_premissas_dcf(resultados, _PREMISSAS_DCF_TESTE)
+    p = resultados["analise_ticker"]["dados"]["premissas_dcf"]
+    assert p["divida_liquida"] == pytest.approx(1_250_000.0)
+    assert p["origem_divida_liquida"] == "CVM — balanço patrimonial consolidado"
+    assert p["fonte_divida_liquida"] == "CVM ITR 2T2026"
+    assert p["data_base"] == "2026-06-30"
+    assert p["fcf_base"] == pytest.approx(1_000_000.0)
+    assert p["acoes"] == pytest.approx(500_000.0)
+    assert "CVM ITR 2T2026" in p["fonte_premissas"]
+
+
+def test_dcf_nao_mistura_divida_cvm_quando_moeda_nao_compativel():
+    resultados = _dados_dcf_base()
+    resultados["resultados_corporativos"]["dados"]["moeda"] = "USD"
+    fluxos._anexar_premissas_dcf(resultados, _PREMISSAS_DCF_TESTE)
+    p = resultados["analise_ticker"]["dados"]["premissas_dcf"]
+    # Fallback de alavancagem só é permitido porque yfinance confirma BRL/BRL.
+    assert p["divida_liquida"] == pytest.approx(1_000_000.0)
+    assert p["origem_divida_liquida"] == "Estimativa — EBITDA × dívida líquida/EBITDA"
+    assert "CVM" not in p["fonte_divida_liquida"]
+
+
+def test_dcf_fallback_de_divida_yfinance_fica_identificado_quando_cvm_ausente():
+    resultados = _dados_dcf_base()
+    resultados["resultados_corporativos"]["dados"]["balanco_fluxo_caixa"]["divida_liquida_atual"] = None
+    fluxos._anexar_premissas_dcf(resultados, _PREMISSAS_DCF_TESTE)
+    p = resultados["analise_ticker"]["dados"]["premissas_dcf"]
+    assert p["divida_liquida"] == pytest.approx(1_000_000.0)
+    assert p["origem_divida_liquida"] == "Estimativa — EBITDA × dívida líquida/EBITDA"
+    assert "estimativa" in p["fonte_premissas"].lower()
+
+
+def test_dcf_bloqueia_moeda_desconhecida_sem_tentar_converter():
+    resultados = _dados_dcf_base()
+    resultados["analise_ticker"]["dados"]["fundamentos"]["moeda_fonte"] = "XXX"
+    fluxos._anexar_premissas_dcf(resultados, _PREMISSAS_DCF_TESTE)
+    p = resultados["analise_ticker"]["dados"]["premissas_dcf"]
+    assert p["fcf_base"] is None
+    assert p["acoes"] is None
+    assert p["motivo_bloqueio"] is not None
