@@ -311,7 +311,7 @@ def indexar_pendentes(limite: int = 30) -> dict:
     if existentes is None:
         return {"processados": 0, "falhas": 0, "pendentes_restantes": len(premissas)}
 
-    _, modelo_atual = config.obter_credenciais_gemini()
+    api_key, modelo_atual = config.obter_credenciais_gemini()
 
     a_processar = []
     for linha in premissas:
@@ -332,7 +332,6 @@ def indexar_pendentes(limite: int = 30) -> dict:
     # retornaria None repetidamente e poderia deixar a rodada com status
     # enganoso (principalmente quando o lote nao esgota os pendentes).
     # Explicita o bloqueio para o Coordenador mostrar PARCIAL.
-    api_key, _ = config.obter_credenciais_gemini()
     if a_processar and not api_key:
         return {
             "processados": 0,
