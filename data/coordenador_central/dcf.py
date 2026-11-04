@@ -32,13 +32,20 @@ def calcular_dcf(premissas: dict | None, preco_atual=None) -> dict:
       wacc: custo médio ponderado de capital
       g_terminal: crescimento perpétuo
       divida_liquida: dívida líquida (caixa líquido pode ser negativo)
-      acoes: ações diluídas em circulação
+      acoes: ações implícitas (valor de mercado / cotação)
       fonte_premissas: fonte/documento que suporta as premissas
       data_base: data de referência dos dados
 
     Projeção explícita de 5 anos; Gordon Growth no valor terminal.
     """
     p = premissas if isinstance(premissas, dict) else {}
+    if p.get("motivo_bloqueio"):
+        return {
+            "disponivel": False, "metodo": "DCF de 5 anos + Gordon Growth",
+            "motivo": str(p["motivo_bloqueio"]), "campos_faltantes": [],
+            "fonte_premissas": p.get("fonte_premissas"),
+            "data_base": p.get("data_base"), "cenarios": {},
+        }
     obrigatorias = (
         "fcf_base", "wacc", "g_terminal", "divida_liquida", "acoes",
         "crescimento_fcf_otimista", "crescimento_fcf_base",
