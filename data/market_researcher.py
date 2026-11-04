@@ -326,7 +326,7 @@ def registrar_achados_atuais() -> dict:
             chave = _chave_achado(a["coletor"], a["categoria"], a["codigo_estado"])
             chaves_atuais.add(chave)
             existente = (
-                cliente.table(_TABELA_ACHADOS).select("id,ocorrencias")
+                cliente.table(_TABELA_ACHADOS).select("id,ocorrencias,status")
                 .eq("chave", chave).limit(1).execute()
             )
             if existente.data:
