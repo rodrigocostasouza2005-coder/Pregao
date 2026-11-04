@@ -391,7 +391,7 @@ def _render_consolidado(consolidado: dict):
                             return f"{moeda_alvo} {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
                         linhas_premissas = [
                             ("FCF inicial (TTM)", _fmt_moeda_dcf(premissas.get("fcf_base"))),
-                            ("Dívida líquida", _fmt_moeda_dcf(premissas.get("divida_liquida"))),
+                            ("Dívida líquida" + (f" — {premissas.get('origem_divida_liquida')}" if premissas.get("origem_divida_liquida") else ""), _fmt_moeda_dcf(premissas.get("divida_liquida"))),
                             ("Ações (estimadas por valor de mercado ÷ cotação)", f"{premissas.get('acoes'):,.0f}".replace(",", ".") if isinstance(premissas.get("acoes"), (int, float)) else "—"),
                             ("Crescimento FCF otimista", f"{premissas.get('crescimento_fcf_otimista') * 100:.1f}%" if isinstance(premissas.get("crescimento_fcf_otimista"), (int, float)) else "—"),
                             ("Crescimento FCF base", f"{premissas.get('crescimento_fcf_base') * 100:.1f}%" if isinstance(premissas.get("crescimento_fcf_base"), (int, float)) else "—"),
