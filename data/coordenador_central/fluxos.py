@@ -40,12 +40,25 @@ def _concluir_com_erro(analise_id: str, exc: Exception) -> None:
     persistencia.concluir_analise(analise_id, "ERRO", None, erro=repr(exc))
 
 
-def _anexar_premissas_dcf(resultados: dict, premissas_usuario: dict | None) -> None:
-    """Combina premissas manuais de crescimento/WACC com dados observados.
+def _moeda_normalizada(valor) -> str | None:
+    """Normaliza apenas aliases inequívocos; moeda desconhecida não é presumida."""
+    texto = str(valor or "").strip().upper()
+    aliases = {
+        "BRL": "BRL", "REAL": "BRL", "REAIS": "BRL", "R$": "BRL",
+        "USD": "USD", "US$": "USD", "DOLAR": "USD", "DÓLAR": "USD",
+    }
+    return aliases.get(texto)
 
-    FCF vem do yfinance; dívida líquida é inferida apenas quando EBITDA e
-    dívida líquida/EBITDA existem; ações = valor de mercado / cotação.
-    Se qualquer dado-base faltar, o DCF permanece indisponível.
+
+def _anexar_premissas_dcf(resultados: dict, premissas_usuario: dict | None) -> None:
+    """Combina taxas manuais com dados observados e dívida líquida reportada.
+
+    FCF e valor de mercado/cotação vêm dos fundamentos do yfinance. Para
+    dívida líquida, prioriza o balanço consolidado da CVM (valores já
+    convertidos pelo Earnings Reviewer para reais absolutos) quando a
+    moeda reportada coincide com a moeda da cotação. Só usa EBITDA ×
+    alavancagem do yfinance como fallback explícito quando a moeda também
+    está confirmada. Nunca mistura moedas nem trata FCF YTD como TTM.
     """
     if not isinstance(premissas_usuario, dict):
         return
@@ -59,15 +72,38 @@ def _anexar_premissas_dcf(resultados: dict, premissas_usuario: dict | None) -> N
     valor_mercado = fundamentos.get("valor_mercado")
     moeda_cotacao = fundamentos.get("moeda")
     moeda_fonte = fundamentos.get("moeda_fonte")
-    moeda_compativel = bool(
-        moeda_cotacao and moeda_fonte
-        and str(moeda_cotacao).upper() == str(moeda_fonte).upper()
-    )
+    moeda_base = _moeda_normalizada(moeda_cotacao)
+    moeda_fundamentos = _moeda_normalizada(moeda_fonte)
+    moeda_yfinance_compativel = bool(moeda_base and moeda_fundamentos and moeda_base == moeda_fundamentos)
+
+    resultado_earnings = resultados.get("resultados_corporativos") or {}
+    nota_earnings = resultado_earnings.get("dados") or {}
+    bfc = nota_earnings.get("balanco_fluxo_caixa") or {}
+    moeda_cvm = _moeda_normalizada(nota_earnings.get("moeda"))
+    divida_cvm = bfc.get("divida_liquida_atual")
+    cvm_compativel = bool(moeda_base and moeda_cvm and moeda_base == moeda_cvm)
+
     try:
-        divida_liquida = float(ebitda) * float(alavancagem) if moeda_compativel and ebitda is not None and alavancagem is not None else None
-        acoes = float(valor_mercado) / float(preco) if moeda_compativel and valor_mercado is not None and preco is not None and float(preco) > 0 else None
+        divida_liquida = None
+        origem_divida = None
+        fonte_divida = None
+        if cvm_compativel and isinstance(divida_cvm, (int, float)) and not isinstance(divida_cvm, bool):
+            divida_liquida = float(divida_cvm)
+            origem_divida = "CVM — balanço patrimonial consolidado"
+            fonte_divida = (
+                f"CVM ITR {nota_earnings.get('periodo_label') or nota_earnings.get('dt_referencia') or 'período não informado'}"
+            )
+        elif moeda_yfinance_compativel and ebitda is not None and alavancagem is not None:
+            divida_liquida = float(ebitda) * float(alavancagem)
+            origem_divida = "Estimativa — EBITDA × dívida líquida/EBITDA"
+            fonte_divida = "yfinance — fundamentos e indicador de alavancagem"
+        acoes = (
+            float(valor_mercado) / float(preco)
+            if moeda_yfinance_compativel and valor_mercado is not None
+            and preco is not None and float(preco) > 0 else None
+        )
         campos = {
-            "fcf_base": fcf if moeda_compativel else None,
+            "fcf_base": fcf if moeda_yfinance_compativel else None,
             "crescimento_fcf_otimista": float(premissas_usuario["crescimento_fcf_otimista"]) / 100,
             "crescimento_fcf_base": float(premissas_usuario["crescimento_fcf_base"]) / 100,
             "crescimento_fcf_pessimista": float(premissas_usuario["crescimento_fcf_pessimista"]) / 100,
@@ -76,11 +112,22 @@ def _anexar_premissas_dcf(resultados: dict, premissas_usuario: dict | None) -> N
             "divida_liquida": divida_liquida,
             "acoes": acoes,
             "moeda": moeda_cotacao,
-            "motivo_bloqueio": None if moeda_compativel else (
-                f"Moeda de origem dos fundamentos ({moeda_fonte or 'não informada'}) não foi confirmada como igual à moeda da cotação ({moeda_cotacao or 'não informada'}); conversão não é presumida."
+            "origem_divida_liquida": origem_divida,
+            "fonte_divida_liquida": fonte_divida,
+            "motivo_bloqueio": None if moeda_yfinance_compativel else (
+                f"Moeda de origem dos fundamentos ({moeda_fonte or 'não informada'}) não foi confirmada "
+                f"como igual à moeda da cotação ({moeda_cotacao or 'não informada'}); conversão não é presumida."
             ),
-            "fonte_premissas": "FCF, EBITDA, alavancagem, valor de mercado e moeda de origem: yfinance; taxas de crescimento e WACC: premissas manuais do usuário.",
-            "data_base": str(fundamentos.get("consultado_em") or ""),
+            "fonte_premissas": (
+                "FCF, valor de mercado, cotação e moeda: yfinance; "
+                f"dívida líquida: {fonte_divida or 'indisponível por falta de dado/moeda compatível'}; "
+                "taxas de crescimento e WACC: premissas manuais do usuário."
+            ),
+            "data_base": str(
+                nota_earnings.get("dt_referencia")
+                if origem_divida == "CVM — balanço patrimonial consolidado"
+                else fundamentos.get("consultado_em") or ""
+            ),
         }
     except (KeyError, TypeError, ValueError, OverflowError):
         return
