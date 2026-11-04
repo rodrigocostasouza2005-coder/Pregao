@@ -44,11 +44,11 @@ def _registrar_execucoes(analise_id: str, resultados: dict) -> bool:
 
 
 def _status_fluxo(resultados: dict, telemetria_ok: bool) -> str:
-    """CONCLUIDA somente quando todos os especialistas acionados responderam
-    e a telemetria foi persistida; indisponibilidade documentada vira PARCIAL."""
-    todos_disponiveis = all(
-        bool(r.get("disponivel")) for r in resultados.values() if not r.get("pulado")
-    )
+    """CONCLUIDA somente quando pelo menos um especialista foi acionado,
+    todos responderam e a telemetria foi persistida; ausência de execução
+    real ou indisponibilidade documentada vira PARCIAL."""
+    acionados = [r for r in resultados.values() if not r.get("pulado")]
+    todos_disponiveis = bool(acionados) and all(bool(r.get("disponivel")) for r in acionados)
     return "CONCLUIDA" if todos_disponiveis and telemetria_ok else "PARCIAL"
 
 
