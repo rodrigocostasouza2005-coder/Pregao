@@ -305,6 +305,29 @@ def test_4d_calendario_tempo_esgotado_marca_parcial():
     _checar("2d orcamento esgotado -> parcial=True", kwargs.get("parcial") is True, f"({kwargs})")
 
 
+def test_4e2_timeout_calendario_no_github_actions_e_parcial_esperado():
+    """No cron da nuvem, o timeout de 5min e' parte do desenho de
+    rotacao/checkpoint. Mantem PARCIAL na Saude dos Dados, mas nao falha
+    o workflow; falhas reais continuam retornando codigo 1."""
+    stats = {"processados": 79, "confirmados": 6, "estimados": 0, "mantidos_prazo_cvm": 62,
+             "falhas": 0, "tempo_esgotado": True, "tabela_disponivel": True}
+    with patch.dict("os.environ", {"GITHUB_ACTIONS": "true"}), \
+         patch.object(coletor_local, "diagnosticar_persistencia", return_value={"ok": True, "etapa": "OK", "detalhe": "x"}), \
+         patch.object(coletor_local, "coletar_todas_disponiveis", return_value={}), \
+         patch.object(coletor_local, "obter_documentos_watchlist", return_value=([], [])), \
+         patch.object(coletor_local, "_universo_rotativo", return_value=[]), \
+         patch.object(coletor_local, "apagar_itens_antigos", return_value=0), \
+         patch.object(coletor_local, "coletar_snapshot_genial", return_value=(0, 0)), \
+         patch.object(coletor_local, "pregerar_resumos_news", return_value=_STATS_NEWS_VAZIO), \
+         patch.object(coletor_local, "coletar_eventos_universo", return_value=stats), \
+         patch.object(coletor_local, "salvar_snapshot_calendario", return_value=True), \
+         patch.object(coletor_local, "registrar_tentativa") as mock_reg:
+        codigo = coletor_local.main()
+    kwargs = next(k for a, k in mock_reg.call_args_list if a[0] == "CALENDARIO")
+    _checar("4e2 GitHub Actions: timeout esperado -> exit code 0", codigo == 0, f"(codigo={codigo})")
+    _checar("4e2 Saude dos Dados continua marcando PARCIAL", kwargs.get("parcial") is True, f"({kwargs})")
+
+
 def test_4e_timeout_calendario_retorna_codigo_erro_ao_agendador():
     """O timeout e' parcial recuperavel, mas nao pode ser exit code 0:
     o Agendador do Windows precisa sinalizar que o universo ficou incompleto."""
