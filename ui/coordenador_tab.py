@@ -347,7 +347,7 @@ def _render_consolidado(consolidado: dict):
                     st.markdown("".join(linhas_dcf), unsafe_allow_html=True)
                     sensibilidade = calcular_sensibilidade_dcf(
                         (analista.get("dcf") or {}).get("premissas"),
-                        preco_atual=(analista.get("dcf") or {}).get("preco_atual"),
+                        preco_atual=analista.get("preco_atual"),
                     )
                     if sensibilidade.get("disponivel"):
                         subtitulo("Sensibilidade do cenário-base")
