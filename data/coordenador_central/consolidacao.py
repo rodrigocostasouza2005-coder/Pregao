@@ -15,6 +15,7 @@ data/radar.py - importados, nunca reinventados com nomes novos."""
 
 from data.radar import TIPO_CALCULO, TIPO_FATO, TIPO_INSUFICIENTE
 from data.research.comparador import _normalizar_recomendacao
+from data.coordenador_central.pareceres import montar_pareceres, montar_sinal_comite
 
 CONFIANCA_ALTA = "ALTA"
 CONFIANCA_MEDIA = "MEDIA"
@@ -228,6 +229,16 @@ def consolidar(resultados: dict, ticker: str = None) -> dict:
     um estado explícito de "sem dado", nunca omitidas)."""
     divergencia_cross = _divergencia_cross_comparador_memoria(resultados)
     confianca = _confianca(resultados)
+    pareceres = montar_pareceres(resultados, ticker=ticker)
+    sinal_comite = montar_sinal_comite(resultados)
+    analista_valuation = next(
+        (a for a in pareceres.get("analistas", []) if a.get("id") == "valuation_reviewer"), {}
+    )
+    alvo_consenso = pareceres.get("preco_alvo_consenso") or {}
+    sinal_comite["preco_alvo_modelo"] = analista_valuation.get("preco_alvo")
+    sinal_comite["upside_modelo_pct"] = analista_valuation.get("upside_pct")
+    sinal_comite["preco_alvo_consenso"] = alvo_consenso.get("mediana")
+    sinal_comite["upside_consenso_pct"] = alvo_consenso.get("upside_pct")
     return {
         "resumo_executivo": _resumo_executivo(resultados, ticker),
         "visao_especialistas": _visao_especialistas(resultados),
@@ -236,4 +247,6 @@ def consolidar(resultados: dict, ticker: str = None) -> dict:
         "pontos_atencao": _pontos_atencao(resultados),
         "conclusao": _conclusao(resultados, divergencia_cross, confianca),
         "confianca": confianca,
+        "pareceres_analistas": pareceres,
+        "sinal_comite": sinal_comite,
     }

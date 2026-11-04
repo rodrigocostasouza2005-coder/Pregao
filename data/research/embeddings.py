@@ -157,6 +157,7 @@ def _texto_para_indexar(linha_premissa: dict) -> str:
     tickers = linha_premissa.get("tickers") or []
     tipo_documento = linha_premissa.get("tipo_documento")
     premissas = linha_premissa.get("premissas") or []
+    riscos = linha_premissa.get("riscos") or []
     projecoes = linha_premissa.get("projecoes") or {}
     recomendacao = linha_premissa.get("recomendacao")
     preco_alvo = linha_premissa.get("preco_alvo")
@@ -171,6 +172,8 @@ def _texto_para_indexar(linha_premissa: dict) -> str:
         partes.append(f"Tipo de documento: {tipo_documento}")
     if premissas:
         partes.append("Premissas: " + "; ".join(premissas))
+    if riscos:
+        partes.append("Riscos: " + "; ".join(riscos))
     if projecoes:
         projecoes_txt = "; ".join(f"{k}: {v}" for k, v in sorted(projecoes.items()))
         partes.append(f"Projecoes: {projecoes_txt}")
@@ -380,6 +383,7 @@ def _campos_resultado(item: dict, origem_match: str) -> dict:
         "tipo_documento": item.get("tipo_documento"),
         "premissas": item.get("premissas") or [],
         "projecoes": item.get("projecoes") or {},
+        "riscos": item.get("riscos") or [],
         "recomendacao": item.get("recomendacao"),
         "preco_alvo": item.get("preco_alvo"),
         "origem_match": origem_match,

@@ -11,8 +11,9 @@ desde o ultimo snapshot conhecido daquele casa+ticker - cresce devagar
 (poucas linhas por ticker/ano na pratica), e cada linha e' um fato real
 ("a Genial tinha X, passou a ter Y"), nunca um valor inventado/estimado.
 
-Fonte de dado estruturado hoje: so' Genial (data/research/genial.py:
-obter_recomendacoes/obter_swing_trade) - arquitetura generica (campo
+Fonte de dado estruturado historico: Genial (data/research/genial.py), agora
+desativada para novas coletas; snapshots ja salvos continuam consultaveis.
+A arquitetura permanece generica (campo
 'casa' em toda consulta) pra outras fontes alimentarem a mesma tabela no
 futuro, se/quando tiverem dado estruturado equivalente."""
 
@@ -24,6 +25,10 @@ import streamlit as st
 from data.supabase_client import obter_cliente
 
 from .base import TTL_COLETA
+
+# Genial Analisa e XP permanecem no histórico já salvo, mas seus coletores
+# foram desativados: bloqueios externos persistentes impedem atualização.
+COLETA_GENIAL_ATIVA = False
 
 _CAMPOS_COMPARADOS = ("recomendacao", "preco_alvo")
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -203,6 +208,9 @@ def coletar_snapshot_genial() -> tuple[int, int]:
     proposito: um script standalone roda uma vez só e encerra, cache de
     sessao nao faz sentido aqui - chama registrar_se_mudou direto por
     item."""
+    if not COLETA_GENIAL_ATIVA:
+        return 0, 0
+
     from . import genial
 
     recomendacoes = genial.obter_recomendacoes() or []

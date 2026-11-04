@@ -34,6 +34,7 @@ def test_texto_para_indexar_com_todos_os_campos():
         "casa": "Genial Analisa", "titulo": "WEGE3 - Iniciação de cobertura",
         "tickers": ["WEGE3"], "tipo_documento": "INICIACAO_COBERTURA",
         "premissas": ["ganho de market share", "expansão de capacidade em 2027"],
+        "riscos": ["câmbio volátil"],
         "projecoes": {"receita": "crescimento de 12% a.a.", "ebitda_margem": "22% em 2027"},
         "recomendacao": "COMPRA", "preco_alvo": 55.0,
     }
@@ -43,6 +44,7 @@ def test_texto_para_indexar_com_todos_os_campos():
     assert "WEGE3" in texto
     assert "INICIACAO_COBERTURA" in texto
     assert "ganho de market share" in texto
+    assert "Riscos: câmbio volátil" in texto
     assert "receita" in texto and "crescimento de 12% a.a." in texto
     assert "COMPRA" in texto
     assert "55.0" in texto
@@ -342,11 +344,11 @@ def test_salvar_embedding_erro_de_escrita_retorna_false_sem_excecao():
 # ============================================================
 
 def _item(link, casa="Genial Analisa", titulo="t", tickers=None, tipo_documento=None,
-          premissas=None, projecoes=None, recomendacao=None, preco_alvo=None, data_publicacao=None):
+          premissas=None, projecoes=None, riscos=None, recomendacao=None, preco_alvo=None, data_publicacao=None):
     return {
         "link": link, "casa": casa, "titulo": titulo, "tickers": tickers or [],
         "tipo_documento": tipo_documento, "premissas": premissas or [],
-        "projecoes": projecoes or {}, "recomendacao": recomendacao,
+        "projecoes": projecoes or {}, "riscos": riscos or [], "recomendacao": recomendacao,
         "preco_alvo": preco_alvo, "data_publicacao": data_publicacao,
     }
 
@@ -355,13 +357,14 @@ def test_buscar_sem_pergunta_filtra_so_estrutural():
     # store.listar_premissas(tickers=[...]) ja faz o filtro por overlap no
     # proprio Supabase (ver data/research/store.py) - o mock simula isso
     # retornando SO' o item que a chamada real teria retornado p/ WEGE3.
-    base_filtrada = [_item("a", casa="Genial Analisa", tickers=["WEGE3"])]
+    base_filtrada = [_item("a", casa="BTG Pactual", tickers=["WEGE3"], riscos=["câmbio volátil"])]
     with patch.object(emb.store, "listar_premissas", return_value=base_filtrada) as mock_listar:
         resultado = emb.buscar(ticker="WEGE3")
     mock_listar.assert_called_once_with(tickers=["WEGE3"], casa=None)
     assert resultado["confianca"] == "ALTA"
     assert [r["link"] for r in resultado["resultados"]] == ["a"]
     assert resultado["resultados"][0]["origem_match"] == "estrutural"
+    assert resultado["resultados"][0]["riscos"] == ["câmbio volátil"]
 
 
 def test_buscar_filtra_por_tipo_documento_e_periodo():

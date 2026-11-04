@@ -995,7 +995,7 @@ def _secao_cobertura_saude(prefs: dict, contagem_por_casa: dict):
     disputar espaço com a área principal."""
     with st.expander("COBERTURA E SAÚDE DAS CASAS", expanded=False):
         st.markdown(
-            "<div class='casas-nota'>Estado real de cada casa coletada hoje pelo PREGÃO — nunca mostra "
+            "<div class='casas-nota'>Estado real de cada casa coletada hoje pelo PREGÃO — Genial Analisa, XP e Genial (Lives) estão desativadas por bloqueios externos persistentes; o histórico já salvo permanece preservado. Nunca mostra "
             "uma fonte como funcionando sem evidência de coleta bem-sucedida. Candidatas investigadas e "
             "bloqueadas (Itaú BBA, Safra, Rico, Ágora, BB Investalk e outras) estão documentadas em "
             "<code>docs/research-fontes-20261022.md</code>, fora desta lista.</div>",
@@ -1006,9 +1006,13 @@ def _secao_cobertura_saude(prefs: dict, contagem_por_casa: dict):
         for item in obter_status_casas():
             cor = _COR_POR_ESTADO.get(item["codigo_estado"], "neutro")
             acesso = (
-                "coleta automática (Cloud + local)" if item["coleta_automatica_cloud"]
+                "desativada por decisão do projeto" if not item.get("disponivel", True)
+                else "coleta automática (Cloud + local)" if item["coleta_automatica_cloud"]
                 else "só via coletor_local.py (bloqueada no Streamlit Cloud)"
             )
+            fonte_exibida = item["fonte"]
+            if item.get("motivo_indisponivel"):
+                fonte_exibida += " · " + item["motivo_indisponivel"]
             ultimo_sucesso = _idade_formatada(item["ultimo_sucesso_em"])
             registros = item["registros_novos_ultima_coleta"]
             registros_fmt = "—" if registros is None else str(registros)
@@ -1016,7 +1020,7 @@ def _secao_cobertura_saude(prefs: dict, contagem_por_casa: dict):
             linhas_html += (
                 "<tr>"
                 f"<td class='casas-nome'>{html.escape(item['nome'])}</td>"
-                f"<td class='cinza'>{html.escape(item['fonte'])}</td>"
+                f"<td class='cinza'>{html.escape(fonte_exibida)}</td>"
                 f"<td class='casas-acesso'>{acesso}</td>"
                 f"<td class='{cor}'>{html.escape(item['rotulo_estado'])}</td>"
                 f"<td class='cinza'>{ultimo_sucesso}</td>"

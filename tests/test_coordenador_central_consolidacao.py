@@ -13,7 +13,7 @@ from data.coordenador_central import consolidacao
 
 _SECOES_OBRIGATORIAS = {
     "resumo_executivo", "visao_especialistas", "evidencias",
-    "divergencias", "pontos_atencao", "conclusao", "confianca",
+    "divergencias", "pontos_atencao", "conclusao", "confianca", "pareceres_analistas", "sinal_comite",
 }
 
 
@@ -158,3 +158,75 @@ def test_divergencia_none_quando_falta_um_dos_dois_especialistas():
     resultados = {"comparador": _resultado("comparador", dados={"tabela_comparativa": _TABELA_COMPARADOR})}
     consolidado = consolidacao.consolidar(resultados)
     assert consolidado["divergencias"]["cross_comparador_memoria"] is None
+
+
+def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
+    resultados = {
+        "analise_ticker": _resultado("analise_ticker", dados={
+            "fundamentos": {"preco": 20.0, "roe": 15.0, "margem_liquida": 12.0,
+                            "divida_liquida_ebitda": 1.0, "fluxo_caixa_livre": 100.0, "pl": 12.0},
+            "fundamentos_historicos": {"disponivel": True,
+                "receita_liquida": {"yoy_pct_serie": [8.0, 12.0]},
+                "roic_pct": {"serie": [3.5]}},
+            "comparativo_setorial": {"pl_mediana": 18.0},
+            "cobertura_research": {"cobertura": []},
+        }),
+        "comparador": _resultado("comparador", dados={
+            "dispersao_precos_alvo": {"mediana": 25.0, "minimo": 22.0, "maximo": 28.0,
+                                      "n_casas_com_preco_alvo": 2},
+            "tabela_comparativa": [
+                {"casa": "BTG Pactual", "recomendacao_categoria": "OTIMISTA",
+                 "preco_alvo": 25.0, "data_publicacao": "2026-10-20",
+                 "titulo": "Relatório teste", "link": "https://example.com/research"},
+                {"casa": "XP Investimentos", "recomendacao_categoria": "CAUTELOSO",
+                 "preco_alvo": 18.0},
+                {"casa": "Genial Analisa", "recomendacao_categoria": "CAUTELOSO",
+                 "preco_alvo": 10.0},
+            ],
+        }),
+        "memoria_research": _resultado("memoria_research", dados={"resultados": [
+            {"casa": "BTG Pactual", "preco_alvo": 25.0, "premissas": ["ganho de market share"],
+             "riscos": ["câmbio volátil"], "projecoes": {"receita": "12% a.a."},
+             "titulo": "Iniciação de cobertura", "link": "https://example.com/btg"},
+            {"casa": "Monte Bravo", "preco_alvo": 27.5, "premissas": ["expansão de capacidade"],
+             "riscos": ["execução do capex"], "projecoes": {"receita": "10% a.a."},
+             "titulo": "Atualização", "link": "https://example.com/mb"},
+        ]}),
+        "resultados_corporativos": _resultado("resultados_corporativos", dados={
+            "disponivel": True, "periodo_label": "3T2026",
+            "metricas": {
+                "receita_liquida": {"yoy_variacao_pct": 12.0},
+                "ebit": {"yoy_variacao_pct": -3.0},
+                "lucro_liquido_consolidado": {"yoy_variacao_pct": 8.0},
+            },
+            "margem_bruta_pct": 25.0, "margem_bruta_yoy_anterior_pct": 23.0,
+            "balanco_fluxo_caixa": {"roic_pct": 4.0}, "fontes": [], "limitacoes": [],
+        }),
+    }
+    consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
+    pareceres = consolidado["pareceres_analistas"]
+    assert len(pareceres["analistas"]) == 3
+    assert pareceres["preco_alvo_consenso"]["mediana"] == 26.25
+    assert pareceres["preco_alvo_consenso"]["upside_pct"] == 31.25
+    assert [c["casa"] for c in pareceres["casas_research"]] == ["BTG Pactual", "Monte Bravo"]
+    assert pareceres["casas_research"][0]["tese"] == ["ganho de market share"]
+    assert pareceres["casas_research"][0]["contras"] == ["câmbio volátil"]
+    assert pareceres["casas_research"][0]["preco_alvo"] == 25.0
+    assert pareceres["analistas"][2]["preco_alvo"] == 30.0
+    assert pareceres["analistas"][2]["upside_pct"] == 50.0
+    assert pareceres["analistas"][2]["preco_alvo_rotulo"].startswith("Estimativa mecânica")
+    assert [x["recomendacao"] for x in pareceres["analistas"]] == ["COMPRA", "COMPRA", "COMPRA"]
+    assert "Leitura construtiva" in pareceres["analistas"][0]["tese"]
+    assert "Leitura construtiva" in pareceres["analistas"][1]["tese"]
+    assert any("ROIC trimestral positivo" in x for x in pareceres["analistas"][0]["pros"])
+    assert consolidado["sinal_comite"]["sinal"] in {"COMPRA", "VENDA", "NEUTRO", "INSUFICIENTE"}
+    assert consolidado["sinal_comite"]["preco_alvo_modelo"] == 30.0
+    assert consolidado["sinal_comite"]["preco_alvo_consenso"] == 26.25
+
+
+def test_consolidar_sem_research_nao_inventa_preco_alvo():
+    consolidado = consolidacao.consolidar({})
+    pareceres = consolidado["pareceres_analistas"]
+    assert pareceres["preco_alvo_consenso"]["mediana"] is None
+    assert all(a["preco_alvo"] is None for a in pareceres["analistas"])
+    assert pareceres["casas_research"] == []

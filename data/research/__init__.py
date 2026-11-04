@@ -5,13 +5,11 @@ formato (casa, titulo, data, autor, tipo, setor, tickers, link).
 Pra ligar/desligar uma casa (por padrao ou por usuario, via prefs), mexa
 so nessa lista - a UI (ui/research_tab.py) le CASAS pra montar o filtro.
 
-Verificado na pratica quais casas de research tem conteudo publico
-coletavel sem login:
-- Genial Analisa: publica, coletavel (JSON __NEXT_DATA__ da home).
-- XP Investimentos: publica, coletavel (API do WordPress, wp-json/wp/v2 -
-  ver xp.py). Campos confirmados com requisicao real feita fora do
-  sandbox (2026-09-23) - IP deste sandbox de dev continua bloqueado pelo
-  CDN da XP, mas o coletor esta ativo por padrao.
+Estado atual das fontes (revisado em 2026-11-04):
+- Genial Analisa, XP Investimentos e Genial (Lives): DESATIVADAS. Os
+  bloqueios persistentes (WAF/Akamai HTTP 403 e YouTube RSS HTTP 404)
+  fizeram o projeto parar novas tentativas automatizadas; dados antigos
+  continuam preservados no Supabase e fora do consenso decisorio.
 - BTG Research: API real (content.btgpactual.com/api/research/content-hub/
   analysis/filter) coletavel - achado que corrigiu a investigacao anterior
   (2026-10-17): o campo "tier" (AREA_PUBLICA/AREA_LOGADA) JA' vem no
@@ -85,8 +83,9 @@ CASAS = [
         "id": "genial",
         "nome": "Genial Analisa",
         "fonte": "analisa.genialinvestimentos.com.br",
-        "ativa_por_padrao": True,
-        "disponivel": True,
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "motivo_indisponivel": "Coleta desativada por decisão do projeto: bloqueio WAF persistente nas execuções de produção e em nuvem; mantém apenas o histórico já salvo.",
         "obter_relatorios": genial.obter_relatorios,
         "extrator_texto": None,  # generico (baixa a pagina publica do relatorio)
         # diagnostico de producao (2026-09-24): bloqueada no Streamlit
@@ -122,8 +121,9 @@ CASAS = [
         "id": "xp",
         "nome": "XP Investimentos",
         "fonte": "conteudos.xpi.com.br (WP REST)",
-        "ativa_por_padrao": True,  # campos confirmados com requisicao real (fora do sandbox), ver xp.py
-        "disponivel": True,
+        "ativa_por_padrao": False,  # campos confirmados com requisicao real (fora do sandbox), ver xp.py
+        "disponivel": False,
+        "motivo_indisponivel": "Coleta desativada por decisão do projeto: CDN/Akamai responde HTTP 403; não serão feitas novas tentativas automatizadas.",
         "obter_relatorios": xp.obter_relatorios,
         "extrator_texto": xp.obter_texto_aberto,  # nunca baixa a pagina publica (paywall)
         "tentar_coleta_automatica": False,  # idem Genial - bloqueada no Cloud (403), ver coletor_local.py
@@ -142,8 +142,9 @@ CASAS = [
         "id": "genial_lives",
         "nome": "Genial (Lives)",
         "fonte": "YouTube RSS (canal Genial Analisa)",
-        "ativa_por_padrao": True,
-        "disponivel": True,
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "motivo_indisponivel": "Coleta desativada por decisão do projeto: feed RSS do YouTube retorna HTTP 404; não serão feitas novas tentativas automatizadas.",
         "obter_relatorios": genial_lives.obter_relatorios,
         "extrator_texto": genial_lives.obter_texto_transcricao,
         # achado real (2026-10-17): a execucao de producao no GitHub

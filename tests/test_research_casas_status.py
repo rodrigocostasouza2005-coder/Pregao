@@ -51,6 +51,11 @@ def test_casas_bloqueadas_no_cloud_sao_identificadas():
     por_nome = {r["nome"]: r for r in resultado}
     assert por_nome["Genial Analisa"]["coleta_automatica_cloud"] is False
     assert por_nome["XP Investimentos"]["coleta_automatica_cloud"] is False
+    assert por_nome["Genial (Lives)"]["disponivel"] is False
+    assert por_nome["Genial Analisa"]["disponivel"] is False
+    assert por_nome["XP Investimentos"]["disponivel"] is False
+    assert "bloqueio WAF" in por_nome["Genial Analisa"]["motivo_indisponivel"]
+    assert "HTTP 403" in por_nome["XP Investimentos"]["motivo_indisponivel"]
     assert por_nome["BTG Pactual Research"]["coleta_automatica_cloud"] is True
 
 
@@ -83,3 +88,17 @@ def test_casas_investigadas_em_20261030_registram_motivo_verificavel():
             f"{casa_id}: motivo_indisponivel nao cita '{trecho}' "
             f"({casa['motivo_indisponivel']!r})"
         )
+
+
+def test_fontes_genial_e_xp_desativadas_sem_novas_tentativas():
+    por_id = {c["id"]: c for c in CASAS}
+    motivos = {
+        "genial": "bloqueio WAF persistente",
+        "xp": "HTTP 403",
+        "genial_lives": "HTTP 404",
+    }
+    for casa_id, trecho in motivos.items():
+        casa = por_id[casa_id]
+        assert casa["disponivel"] is False
+        assert casa["ativa_por_padrao"] is False
+        assert trecho in casa["motivo_indisponivel"]

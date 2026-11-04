@@ -82,7 +82,7 @@ _PERGUNTAS_ESPERADAS = (
     "Resumo executivo", "Qualidade do negócio", "Crescimento e rentabilidade", "Estrutura de capital",
     "Geração de caixa", "Tese positiva", "Tese negativa", "Valuation", "Catalisadores",
     "Riscos e invalidação da tese", "Consenso de Research", "Cenários (otimista, base e pessimista)",
-    "Confiança da análise", "Lacunas de informação",
+    "Sinal do Comitê", "Confiança da análise", "Lacunas de informação",
 )
 
 
@@ -173,12 +173,18 @@ def test_conclusao_usa_riscos_da_tese_propria_quando_existe():
     assert "Tese própria" in invalida["resposta"]
 
 
-def test_conclusao_nunca_recomenda_compra_ou_venda():
-    for analise, tese in ((_ANALISE_COMPLETA, None), (_ANALISE_VAZIA, None)):
-        blocos = at_mod._montar_conclusao(analise, tese)
-        texto = " ".join(b["resposta"].lower() for b in blocos)
-        for palavra_proibida in ("recomendo comprar", "recomendo vender", "deve comprar", "deve vender"):
-            assert palavra_proibida not in texto
+def test_conclusao_agora_exibe_sinal_explicavel_do_comite():
+    blocos = at_mod._montar_conclusao(_ANALISE_COMPLETA, tese=None)
+    sinal = next(b for b in blocos if b["pergunta"] == "Sinal do Comitê")
+    assert any(x in sinal["resposta"] for x in ("COMPRA", "VENDA", "NEUTRO", "INSUFICIENTE"))
+    assert "score" in sinal["resposta"].lower()
+    assert "confiança" in sinal["resposta"].lower()
+
+
+def test_conclusao_sem_dados_nao_forca_sinal_direcional():
+    blocos = at_mod._montar_conclusao(_ANALISE_VAZIA, tese=None)
+    sinal = next(b for b in blocos if b["pergunta"] == "Sinal do Comitê")
+    assert "INSUFICIENTE" in sinal["resposta"]
 
 
 def test_conclusao_nunca_trata_catalisador_futuro_como_positivo_automatico():

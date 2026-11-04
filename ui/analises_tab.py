@@ -32,6 +32,7 @@ from data.radar import (
 )
 from data.research.historico import historico_ticker
 from data.research.tese import scorecard
+from data.research.sinal import calcular_sinal_comite
 from ui import navegacao
 from ui.design_system import lista_compacta, subtitulo
 from ui.setores_tab import ir_para_setor, setores_do_ticker
@@ -917,6 +918,20 @@ def _montar_conclusao(analise: dict, tese: dict | None) -> list:
         _montar_cenarios(historico, catalisadores, riscos, cobertura),
     ]
 
+    sinal_comite = calcular_sinal_comite(analise)
+    bloco_sinal = {
+        "pergunta": "Sinal do Comitê",
+        "resposta": (
+            f"{sinal_comite['sinal']} · score {sinal_comite['score'] if sinal_comite['score'] is not None else '—'} · "
+            f"confiança {sinal_comite['confianca']}. {sinal_comite['justificativa']} "
+            + ("Fatores favoráveis: " + "; ".join(sinal_comite.get("favoraveis") or []) + ". "
+               if sinal_comite.get("favoraveis") else "")
+            + ("Fatores contrários: " + "; ".join(sinal_comite.get("contrarios") or []) + ". "
+               if sinal_comite.get("contrarios") else "")
+            + sinal_comite["aviso"]
+        ),
+        "tipo_evidencia": TIPO_CALCULO if sinal_comite["sinal"] != "INSUFICIENTE" else TIPO_INSUFICIENTE,
+    }
     confianca = _calcular_confianca(secoes_analiticas, historico=historico, fundamentos=fundamentos)
     bloco_confianca = {
         "pergunta": "Confiança da análise",
@@ -960,7 +975,7 @@ def _montar_conclusao(analise: dict, tese: dict | None) -> list:
         "tipo_evidencia": TIPO_CALCULO,
     }
 
-    return [bloco_resumo] + secoes_analiticas + [bloco_confianca, bloco_lacunas]
+    return [bloco_resumo] + secoes_analiticas + [bloco_sinal, bloco_confianca, bloco_lacunas]
 
 
 # rótulo + cor por tipo de evidência (pedido do redesign institucional:

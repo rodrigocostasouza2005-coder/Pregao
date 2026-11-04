@@ -269,6 +269,92 @@ def _render_consolidado(consolidado: dict):
         unsafe_allow_html=True,
     )
 
+    sinal = consolidado.get("sinal_comite") or {}
+    if sinal:
+        subtitulo("Sinal do Comitê")
+        alvo_modelo = sinal.get("preco_alvo_modelo")
+        alvo_consenso = sinal.get("preco_alvo_consenso")
+        upside_modelo = sinal.get("upside_modelo_pct")
+        alvo_modelo_txt = f"R$ {alvo_modelo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_modelo, (int, float)) else "não calculado"
+        alvo_consenso_txt = f"R$ {alvo_consenso:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_consenso, (int, float)) else "não disponível"
+        upside_modelo_txt = f"{upside_modelo:+.1f}%" if isinstance(upside_modelo, (int, float)) else "—"
+        st.markdown(
+            f"<div class='coord-metricas'><div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('sinal') or 'INSUFICIENTE'))}</div><div class='coord-metrica-rotulo'>Recomendação quantitativa</div></div>"
+            f"<div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('score') if sinal.get('score') is not None else '—'))}</div><div class='coord-metrica-rotulo'>Score</div></div>"
+            f"<div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('confianca') or '—'))}</div><div class='coord-metrica-rotulo'>Confiança</div></div></div>"
+            f"<div class='coord-nota'>Alvo por P/L setorial: {html.escape(alvo_modelo_txt)} · "
+            f"Potencial: {html.escape(upside_modelo_txt)} · "
+            f"Consenso das casas: {html.escape(alvo_consenso_txt)}</div>"
+            f"<div class='coord-nota'>{html.escape(str(sinal.get('justificativa') or ''))}</div>",
+            unsafe_allow_html=True,
+        )
+
+    pareceres = consolidado.get("pareceres_analistas") or {}
+    analistas = pareceres.get("analistas") or []
+    if analistas:
+        subtitulo("Pareceres dos analistas")
+        for analista in analistas:
+            nome = html.escape(str(analista.get("nome") or analista.get("id") or "Analista"))
+            vies = html.escape(str(analista.get("vies") or "SEM BASE"))
+            tese = html.escape(str(analista.get("tese") or "Parecer indisponível."))
+            especialidade = html.escape(str(analista.get("especialidade") or ""))
+            metodo_analista = html.escape(str(analista.get("metodo") or ""))
+            alvo = analista.get("preco_alvo")
+            alvo_txt = f"R$ {alvo:,.2f}" if isinstance(alvo, (int, float)) else "Não calculado"
+            alvo_txt = alvo_txt.replace(",", "X").replace(".", ",").replace("X", ".")
+            alvo_rotulo = html.escape(str(analista.get("preco_alvo_rotulo") or ""))
+            upside_analista = analista.get("upside_pct")
+            upside_analista_txt = f" · potencial {upside_analista:+.1f}%" if isinstance(upside_analista, (int, float)) else ""
+            recomendacao = html.escape(str(analista.get("recomendacao") or "INSUFICIENTE"))
+            with st.expander(f"{nome} — {recomendacao} ({vies})", expanded=True):
+                st.markdown(f"<div class='coord-nota'>{especialidade}</div><div class='coord-nota'>Método: {metodo_analista}</div><b>Tese</b><div class='coord-conclusao-linha'>{tese}</div><b>Preço-alvo</b><div class='coord-conclusao-linha'>{html.escape(alvo_txt)}{html.escape(upside_analista_txt)} · {alvo_rotulo}</div>", unsafe_allow_html=True)
+                pros = analista.get("pros") or []
+                contras = analista.get("contras") or []
+                col_pro, col_con = st.columns(2)
+                with col_pro:
+                    st.markdown("**Pontos favoráveis**")
+                    lista_compacta(html.escape(str(x)) for x in pros) if pros else st.caption("Sem evidência favorável estruturada.")
+                with col_con:
+                    st.markdown("**Pontos contrários**")
+                    lista_compacta(html.escape(str(x)) for x in contras) if contras else st.caption("Sem evidência contrária estruturada.")
+
+    casas = pareceres.get("casas_research") or []
+    if casas:
+        subtitulo("O que dizem as casas de research")
+        linhas = ["<table class='coord-tabela'><thead><tr><th>Casa</th><th>Recomendação</th><th>Preço-alvo</th><th>Potencial</th><th>Publicação</th></tr></thead><tbody>"]
+        for casa in casas:
+            alvo = casa.get("preco_alvo")
+            alvo_txt = f"R$ {alvo:,.2f}" if isinstance(alvo, (int, float)) else "—"
+            alvo_txt = alvo_txt.replace(",", "X").replace(".", ",").replace("X", ".")
+            upside = casa.get("upside_pct")
+            upside_txt = f"{upside:+.1f}%" if isinstance(upside, (int, float)) else "—"
+            titulo = html.escape(str(casa.get("titulo") or ""))
+            link = casa.get("link")
+            casa_nome = html.escape(str(casa.get("casa") or "—"))
+            casa_html = f"<a href='{html.escape(str(link), quote=True)}' target='_blank' rel='noopener'>{casa_nome}</a>" if link else casa_nome
+            linhas.append(f"<tr><td>{casa_html}<div class='coord-nota'>{titulo}</div></td><td>{html.escape(str(casa.get('recomendacao') or '—'))}</td><td>{html.escape(alvo_txt)}</td><td>{html.escape(upside_txt)}</td><td>{html.escape(_fmt_data(casa.get('data_publicacao')))}</td></tr>")
+        linhas.append("</tbody></table>")
+        st.markdown("".join(linhas), unsafe_allow_html=True)
+        for casa in casas:
+            with st.expander(f"Tese e riscos — {casa.get('casa') or 'Casa'}"):
+                premissas = casa.get("tese") or []
+                riscos_casa = casa.get("contras") or []
+                projecoes = casa.get("projecoes") or {}
+                st.markdown("**Tese / premissas publicadas**")
+                lista_compacta(html.escape(str(x)) for x in premissas) if premissas else st.caption("A extração estruturada não encontrou premissas para esta publicação.")
+                st.markdown("**Riscos apontados pela casa**")
+                lista_compacta(html.escape(str(x)) for x in riscos_casa) if riscos_casa else st.caption("A extração estruturada não encontrou riscos para esta publicação.")
+                if projecoes:
+                    st.markdown("**Projeções extraídas**")
+                    lista_compacta(f"{html.escape(str(k))}: {html.escape(str(v))}" for k, v in projecoes.items() if v is not None)
+        consenso = pareceres.get("preco_alvo_consenso") or {}
+        mediana = consenso.get("mediana")
+        upside = consenso.get("upside_pct")
+        if isinstance(mediana, (int, float)):
+            mediana_txt = f"R$ {mediana:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            upside_txt = f" · potencial {upside:+.1f}%" if isinstance(upside, (int, float)) else ""
+            st.markdown(f"<div class='coord-nota'>Mediana dos preços-alvo publicados: <b>{html.escape(mediana_txt)}</b>{html.escape(upside_txt)} · {html.escape(str(consenso.get('n_casas') or 0))} casa(s). Não é preço-alvo proprietário do Pregão.</div>", unsafe_allow_html=True)
+
     confianca = consolidado.get("confianca") or {}
     st.markdown(
         f"<span class='coord-badge coord-badge-ok'>CONFIANÇA {html.escape(str(confianca.get('categoria') or '—'))}</span> "
