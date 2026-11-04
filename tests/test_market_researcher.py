@@ -112,9 +112,11 @@ class _TabelaAchadosFake:
         self._op = None
         self._filtros = {}
         self._payload = None
+        self._colunas = None
 
-    def select(self, *_a, **_k):
+    def select(self, colunas="*", **_k):
         self._op = "select"
+        self._colunas = colunas
         return self
 
     def insert(self, payload):
@@ -156,6 +158,9 @@ class _TabelaAchadosFake:
         if self._op == "select":
             linhas = [l for l in self.cliente.linhas.values()
                       if all(l.get(k) == v for k, v in self._filtros.items())]
+            if self._colunas and self._colunas != "*":
+                campos = {campo.strip() for campo in self._colunas.split(",")}
+                linhas = [{k: v for k, v in linha.items() if k in campos} for linha in linhas]
             return _RespostaFake(linhas)
         return _RespostaFake([])
 
