@@ -80,6 +80,18 @@ def _parecer_market(dados):
         (positivos if fcf > 0 else negativos if fcf < 0 else fatos).append(
             "Geração de caixa livre positiva." if fcf > 0 else "Consumo de caixa livre." if fcf < 0 else "FCF sem saldo positivo ou negativo."
         )
+    roic_serie = ((historico.get("roic_pct") or {}).get("serie") or [])
+    roic_validos = [_numero(x) for x in roic_serie]
+    roic_validos = [x for x in roic_validos if x is not None]
+    if roic_validos:
+        roic = roic_validos[-1]
+        fatos.append(f"ROIC trimestral não anualizado de {roic:.1f}%.")
+        (positivos if roic > 0 else negativos if roic < 0 else fatos).append(
+            f"ROIC trimestral positivo de {roic:.1f}% (não anualizado)." if roic > 0
+            else f"ROIC trimestral negativo de {roic:.1f}% (não anualizado)." if roic < 0
+            else "ROIC trimestral nulo (não anualizado)."
+        )
+
     receita = ((historico.get("receita_liquida") or {}).get("yoy_pct_serie") or [])
     receita_validada = [_numero(x) for x in receita]
     receita_validada = [x for x in receita_validada if x is not None]
