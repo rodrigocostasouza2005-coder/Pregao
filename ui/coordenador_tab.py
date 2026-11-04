@@ -28,7 +28,26 @@ _CSS_COORDENADOR = """
 .coord-metrica { min-width: 140px; }
 .coord-metrica-valor { font-size: 1.4rem; font-weight: 600; color: var(--destaque); font-family: 'IBM Plex Mono', monospace; }
 .coord-metrica-rotulo { font-size: 0.68rem; color: var(--cinza); letter-spacing: 0.03em; text-transform: uppercase; }
-.coord-tabela { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.coord-tabela-wrap { width: 100%; max-width: 100%; overflow-x: auto; margin: 0.35rem 0 0.9rem; border: 1px solid var(--borda); border-radius: 3px; }
+.coord-tabela { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+.coord-tabela-dcf { min-width: 650px; }
+.coord-tabela-sens { min-width: 520px; }
+.coord-tabela-premissas { min-width: 0; }
+.coord-tabela-dcf th:not(:first-child), .coord-tabela-dcf td:not(:first-child),
+.coord-tabela-sens th:not(:first-child), .coord-tabela-sens td:not(:first-child),
+.coord-tabela-premissas td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.coord-tabela-dcf td:nth-child(2), .coord-tabela-sens td { font-family: 'IBM Plex Mono', monospace; }
+.coord-tabela tr:last-child td { border-bottom: 0; }
+.coord-tabela td, .coord-tabela th { white-space: nowrap; }
+.coord-tabela td:first-child, .coord-tabela th:first-child { white-space: normal; }
+.coord-valuation-destaque { border-left: 3px solid var(--destaque); padding: 0.55rem 0.8rem; margin: 0.45rem 0 0.75rem; background: transparent; }
+.coord-valuation-preco { color: var(--destaque); font: 600 1.35rem 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+.coord-valuation-legenda { color: var(--cinza); font-size: 0.68rem; margin-top: 0.15rem; }
+@media (max-width: 700px) {
+  .coord-tabela { font-size: 0.7rem; }
+  .coord-tabela th, .coord-tabela td { padding: 0.3rem 0.4rem; }
+  .coord-valuation-preco { font-size: 1.15rem; }
+}
 .coord-tabela th {
     text-align: left; color: var(--cinza); font-size: 0.64rem; letter-spacing: 0.03em;
     padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--borda);
@@ -297,21 +316,20 @@ def _render_consolidado(consolidado: dict):
     if analistas:
         subtitulo("Pareceres dos analistas")
         for analista in analistas:
-            nome = html.escape(str(analista.get("nome") or analista.get("id") or "Analista"))
+            analista_id = str(analista.get("id") or "")
+            nome = html.escape(str(analista.get("nome") or analista_id or "Analista"))
             vies = html.escape(str(analista.get("vies") or "SEM BASE"))
             tese = html.escape(str(analista.get("tese") or "Parecer indisponível."))
             especialidade = html.escape(str(analista.get("especialidade") or ""))
             metodo_analista = html.escape(str(analista.get("metodo") or ""))
-            alvo = analista.get("preco_alvo")
-            moeda_alvo = (analista.get("dcf") or {}).get("moeda") or analista.get("moeda") or "R$"
-            alvo_txt = f"{moeda_alvo} {alvo:,.2f}" if isinstance(alvo, (int, float)) else "Não calculado"
-            alvo_txt = alvo_txt.replace(",", "X").replace(".", ",").replace("X", ".")
-            alvo_rotulo = html.escape(str(analista.get("preco_alvo_rotulo") or ""))
-            upside_analista = analista.get("upside_pct")
-            upside_analista_txt = f" · potencial {upside_analista:+.1f}%" if isinstance(upside_analista, (int, float)) else ""
             recomendacao = html.escape(str(analista.get("recomendacao") or "INSUFICIENTE"))
             with st.expander(f"{nome} — {recomendacao} ({vies})", expanded=True):
-                st.markdown(f"<div class='coord-nota'>{especialidade}</div><div class='coord-nota'>Método: {metodo_analista}</div><b>Tese</b><div class='coord-conclusao-linha'>{tese}</div><b>Preço-alvo</b><div class='coord-conclusao-linha'>{html.escape(alvo_txt)}{html.escape(upside_analista_txt)} · {alvo_rotulo}</div>", unsafe_allow_html=True)
+                st.markdown(
+                    f"<div class='coord-nota'>{especialidade}</div>"
+                    f"<div class='coord-nota'>Método: {metodo_analista}</div>"
+                    f"<b>Tese</b><div class='coord-conclusao-linha'>{tese}</div>",
+                    unsafe_allow_html=True,
+                )
                 pros = analista.get("pros") or []
                 contras = analista.get("contras") or []
                 col_pro, col_con = st.columns(2)
@@ -322,63 +340,128 @@ def _render_consolidado(consolidado: dict):
                     st.markdown("**Pontos contrários**")
                     lista_compacta(html.escape(str(x)) for x in contras) if contras else st.caption("Sem evidência contrária estruturada.")
 
-                dcf = analista.get("dcf") or {}
-                if dcf.get("disponivel"):
-                    subtitulo("DCF — cenários de valor justo")
-                    cenarios = dcf.get("cenarios") or {}
-                    linhas_dcf = ["<table class='coord-tabela'><thead><tr><th>Cenário</th><th>Preço-alvo</th><th>Potencial</th><th>Crescimento FCF</th><th>WACC</th><th>g terminal</th></tr></thead><tbody>"]
-                    for chave in ("otimista", "base", "pessimista"):
-                        c = cenarios.get(chave) or {}
-                        valor = c.get("preco_alvo")
-                        potencial = c.get("upside_pct")
-                        moeda_dcf = dcf.get("moeda") or "moeda"
-                        valor_txt = f"{moeda_dcf} {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(valor, (int, float)) else "—"
-                        potencial_txt = f"{potencial:+.1f}%" if isinstance(potencial, (int, float)) else "—"
-                        crescimento_txt = f"{c.get('crescimento_fcf', 0) * 100:.1f}%"
-                        wacc_txt = f"{c.get('wacc', 0) * 100:.1f}%"
-                        terminal_txt = f"{c.get('g_terminal', 0) * 100:.1f}%"
-                        linhas_dcf.append(
-                            f"<tr><td>{html.escape(str(c.get('rotulo') or chave.upper()))}</td>"
-                            f"<td>{html.escape(valor_txt)}</td><td>{html.escape(potencial_txt)}</td>"
-                            f"<td>{html.escape(crescimento_txt)}</td><td>{html.escape(wacc_txt)}</td>"
-                            f"<td>{html.escape(terminal_txt)}</td></tr>"
-                        )
-                    linhas_dcf.append("</tbody></table>")
-                    st.markdown("".join(linhas_dcf), unsafe_allow_html=True)
-                    sensibilidade = calcular_sensibilidade_dcf(
-                        (analista.get("dcf") or {}).get("premissas"),
-                        preco_atual=analista.get("preco_atual"),
+                # Preço-alvo é responsabilidade do Model Builder ou de uma casa
+                # de research; os analistas de fundamentos e resultados não
+                # devem exibir um campo vazio que pareça uma falha.
+                if analista_id == "valuation_reviewer":
+                    dcf = analista.get("dcf") or {}
+                    alvo = analista.get("preco_alvo")
+                    moeda_alvo = dcf.get("moeda") or analista.get("moeda") or "R$"
+                    upside = analista.get("upside_pct")
+                    alvo_txt = (
+                        f"{moeda_alvo} {alvo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                        if isinstance(alvo, (int, float)) else "Não calculado"
                     )
-                    if sensibilidade.get("disponivel"):
-                        subtitulo("Sensibilidade do cenário-base")
-                        st.caption("Preço-alvo por ação variando WACC (linhas) e crescimento do FCF (colunas), em pontos percentuais. As demais premissas ficam constantes.")
-                        colunas_sens = sensibilidade.get("passos_crescimento") or []
-                        cabecalho = "".join(
-                            f"<th>{(float((analista.get('dcf') or {}).get('premissas', {}).get('crescimento_fcf_base', 0)) + delta) * 100:.1f}%</th>"
-                            for delta in colunas_sens
+                    upside_txt = f"{upside:+.1f}%" if isinstance(upside, (int, float)) else "—"
+                    if dcf.get("disponivel"):
+                        st.markdown(
+                            "<div class='coord-valuation-destaque'>"
+                            "<div class='coord-valuation-legenda'>PREÇO-ALVO PRINCIPAL · DCF · CENÁRIO-BASE</div>"
+                            f"<div class='coord-valuation-preco'>{html.escape(alvo_txt)}</div>"
+                            f"<div class='coord-valuation-legenda'>Potencial sobre a cotação: {html.escape(upside_txt)}</div>"
+                            "</div>",
+                            unsafe_allow_html=True,
                         )
-                        linhas_sens = [f"<table class='coord-tabela'><thead><tr><th>WACC \\ Crescimento</th>{cabecalho}</tr></thead><tbody>"]
-                        for linha_sens in sensibilidade.get("linhas") or []:
-                            celulas_html = []
-                            for celula in linha_sens.get("celulas") or []:
-                                valor = celula.get("preco_alvo")
-                                valor_txt = f"{(analista.get('dcf') or {}).get('moeda') or '—'} {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(valor, (int, float)) else "—"
-                                celulas_html.append(f"<td>{html.escape(valor_txt)}</td>")
-                            linhas_sens.append(
-                                f"<tr><th>{linha_sens.get('wacc', 0) * 100:.1f}%</th>{''.join(celulas_html)}</tr>"
+                        subtitulo("DCF — preços-alvo por cenário")
+                        cenarios = dcf.get("cenarios") or {}
+                        linhas_dcf = ["<table class='coord-tabela coord-tabela-dcf'><thead><tr><th>Cenário</th><th>Preço-alvo</th><th>Potencial</th><th>Crescimento FCF</th><th>WACC</th><th>g terminal</th></tr></thead><tbody>"]
+                        for chave in ("otimista", "base", "pessimista"):
+                            c = cenarios.get(chave) or {}
+                            valor = c.get("preco_alvo")
+                            potencial = c.get("upside_pct")
+                            valor_txt = f"{moeda_alvo} {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(valor, (int, float)) else "—"
+                            potencial_c = f"{potencial:+.1f}%" if isinstance(potencial, (int, float)) else "—"
+                            crescimento_txt = f"{c.get('crescimento_fcf', 0) * 100:.1f}%"
+                            wacc_txt = f"{c.get('wacc', 0) * 100:.1f}%"
+                            terminal_txt = f"{c.get('g_terminal', 0) * 100:.1f}%"
+                            linhas_dcf.append(
+                                f"<tr><td>{html.escape(str(c.get('rotulo') or chave.upper()))}</td>"
+                                f"<td>{html.escape(valor_txt)}</td><td>{html.escape(potencial_c)}</td>"
+                                f"<td>{html.escape(crescimento_txt)}</td><td>{html.escape(wacc_txt)}</td>"
+                                f"<td>{html.escape(terminal_txt)}</td></tr>"
                             )
-                        linhas_sens.append("</tbody></table>")
-                        st.markdown("".join(linhas_sens), unsafe_allow_html=True)
+                        linhas_dcf.append("</tbody></table>")
+                        st.markdown("<div class='coord-tabela-wrap'>" + "".join(linhas_dcf) + "</div>", unsafe_allow_html=True)
+
+                        premissas = dcf.get("premissas") or {}
+                        subtitulo("Premissas utilizadas e rastreabilidade")
+                        def _fmt_moeda_dcf(valor):
+                            if not isinstance(valor, (int, float)):
+                                return "—"
+                            return f"{moeda_alvo} {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                        linhas_premissas = [
+                            ("FCF inicial (TTM)", _fmt_moeda_dcf(premissas.get("fcf_base"))),
+                            ("Dívida líquida", _fmt_moeda_dcf(premissas.get("divida_liquida"))),
+                            ("Ações (estimadas por valor de mercado ÷ cotação)", f"{premissas.get('acoes'):,.0f}".replace(",", ".") if isinstance(premissas.get("acoes"), (int, float)) else "—"),
+                            ("Crescimento FCF otimista", f"{premissas.get('crescimento_fcf_otimista') * 100:.1f}%" if isinstance(premissas.get("crescimento_fcf_otimista"), (int, float)) else "—"),
+                            ("Crescimento FCF base", f"{premissas.get('crescimento_fcf_base') * 100:.1f}%" if isinstance(premissas.get("crescimento_fcf_base"), (int, float)) else "—"),
+                            ("Crescimento FCF pessimista", f"{premissas.get('crescimento_fcf_pessimista') * 100:.1f}%" if isinstance(premissas.get("crescimento_fcf_pessimista"), (int, float)) else "—"),
+                            ("WACC", f"{premissas.get('wacc') * 100:.1f}%" if isinstance(premissas.get("wacc"), (int, float)) else "—"),
+                            ("Crescimento perpétuo", f"{premissas.get('g_terminal') * 100:.1f}%" if isinstance(premissas.get("g_terminal"), (int, float)) else "—"),
+                        ]
+                        tabela_premissas = ["<table class='coord-tabela coord-tabela-premissas'><thead><tr><th>Premissa</th><th>Valor utilizado</th></tr></thead><tbody>"]
+                        for rotulo, valor in linhas_premissas:
+                            tabela_premissas.append(f"<tr><td>{html.escape(rotulo)}</td><td>{html.escape(str(valor))}</td></tr>")
+                        tabela_premissas.append("</tbody></table>")
+                        st.markdown("<div class='coord-tabela-wrap'>" + "".join(tabela_premissas) + "</div>", unsafe_allow_html=True)
+                        st.caption(
+                            f"Fonte: {dcf.get('fonte_premissas') or 'não identificada'} · "
+                            f"Data-base: {dcf.get('data_base') or 'não informada'} · "
+                            f"Moeda: {dcf.get('moeda') or 'não identificada'}. "
+                            "FCF, dívida e valor de mercado permanecem na unidade monetária original da fonte."
+                        )
+
+                        sensibilidade = calcular_sensibilidade_dcf(
+                            dcf.get("premissas"),
+                            preco_atual=analista.get("preco_atual"),
+                        )
+                        if sensibilidade.get("disponivel"):
+                            subtitulo("Sensibilidade do cenário-base")
+                            st.caption("Preço-alvo por ação variando WACC (linhas) e crescimento do FCF (colunas), em pontos percentuais. As demais premissas permanecem constantes.")
+                            passos = sensibilidade.get("passos_crescimento") or []
+                            crescimento_base = premissas.get("crescimento_fcf_base", 0)
+                            cabecalho = "".join(f"<th>{(float(crescimento_base) + delta) * 100:.1f}%</th>" for delta in passos)
+                            tabela_sens = [f"<table class='coord-tabela coord-tabela-sens'><thead><tr><th>WACC \\ Crescimento</th>{cabecalho}</tr></thead><tbody>"]
+                            for linha_sens in sensibilidade.get("linhas") or []:
+                                celulas = []
+                                for celula in linha_sens.get("celulas") or []:
+                                    valor = celula.get("preco_alvo")
+                                    valor_txt = _fmt_moeda_dcf(valor) if isinstance(valor, (int, float)) else "—"
+                                    celulas.append(f"<td>{html.escape(valor_txt)}</td>")
+                                tabela_sens.append(f"<tr><th>{linha_sens.get('wacc', 0) * 100:.1f}%</th>{''.join(celulas)}</tr>")
+                            tabela_sens.append("</tbody></table>")
+                            st.markdown("<div class='coord-tabela-wrap'>" + "".join(tabela_sens) + "</div>", unsafe_allow_html=True)
                     else:
-                        st.caption(f"Sensibilidade indisponível: {sensibilidade.get('motivo') or 'premissas insuficientes'}")
-                    st.caption(
-                        f"Premissas: {dcf.get('fonte_premissas') or 'fonte não identificada'} · "
-                        f"Data-base: {dcf.get('data_base') or 'não informada'}. "
-                        "FCF, dívida, valor de mercado e ações usam as unidades originais da fonte; preço por ação na moeda da cotação ({dcf.get('moeda') or 'não identificada'}). Confira as premissas antes de usar."
-                    )
-                else:
-                    motivo_dcf = dcf.get("motivo") or "Premissas DCF ainda não foram fornecidas pela análise."
-                    st.caption(f"DCF não calculado: {motivo_dcf}")
+                        # O alvo por múltiplos não deve ser confundido com DCF.
+                        rotulo_alvo = "Referência por P/L setorial (não é DCF)" if isinstance(alvo, (int, float)) else "Preço-alvo por DCF indisponível"
+                        st.markdown(
+                            f"**{rotulo_alvo}:** {html.escape(alvo_txt)}"
+                            f" · potencial {html.escape(upside_txt)}",
+                            unsafe_allow_html=True,
+                        )
+                        subtitulo("Por que o DCF não foi calculado")
+                        campos = dcf.get("campos_faltantes") or []
+                        nomes_campos = {
+                            "fcf_base": "FCF inicial (TTM)",
+                            "wacc": "WACC",
+                            "g_terminal": "crescimento perpétuo",
+                            "divida_liquida": "dívida líquida",
+                            "acoes": "quantidade de ações",
+                            "crescimento_fcf_otimista": "crescimento do FCF — otimista",
+                            "crescimento_fcf_base": "crescimento do FCF — base",
+                            "crescimento_fcf_pessimista": "crescimento do FCF — pessimista",
+                        }
+                        if campos:
+                            faltantes_txt = ", ".join(nomes_campos.get(c, c) for c in campos)
+                            st.warning(f"Premissas/dados ausentes: {faltantes_txt}.")
+                        else:
+                            st.info(dcf.get("motivo") or "As premissas explícitas ainda não foram fornecidas.")
+                        st.caption(
+                            "Para obter os três preços-alvo, faça uma nova análise em "
+                            "Analisar → Premissas do DCF, informe as cinco taxas e acione os especialistas. "
+                            "Os dados financeiros-base são coletados automaticamente; se não houver FCF, "
+                            "dívida ou ações compatíveis, o DCF continuará bloqueado."
+                        )
 
     casas = pareceres.get("casas_research") or []
     if casas:
@@ -549,17 +632,17 @@ def render_analisar(prefs: dict = None):
     if fluxo_escolhido == "analise_ticker":
         with st.expander("Premissas do DCF — opcional, sem valores padrão"):
             usar_dcf = st.checkbox("Calcular DCF com premissas informadas", key="coord_dcf_ativar")
-            st.caption("Informe taxas em %. O FCF, EBITDA, alavancagem, valor de mercado e cotação serão lidos dos fundamentos disponíveis; se faltar algum dado, o DCF não será calculado.")
+            st.caption("As cinco taxas abaixo são premissas do analista, não previsões automáticas do sistema. O Pregão coleta FCF, EBITDA, alavancagem, valor de mercado e cotação nos fundamentos disponíveis; se faltar algum dado-base ou houver incompatibilidade de moeda, o DCF será bloqueado.")
             if usar_dcf:
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    g_otimista = st.text_input("Crescimento FCF — otimista (%)", key="coord_dcf_g_otimista")
-                    g_base = st.text_input("Crescimento FCF — base (%)", key="coord_dcf_g_base")
+                    g_otimista = st.text_input("Crescimento FCF — otimista (%)", key="coord_dcf_g_otimista", help="Taxa anual de crescimento do fluxo de caixa livre no cenário otimista.")
+                    g_base = st.text_input("Crescimento FCF — base (%)", key="coord_dcf_g_base", help="Taxa anual de crescimento do fluxo de caixa livre no cenário central.")
                 with c2:
-                    g_pessimista = st.text_input("Crescimento FCF — pessimista (%)", key="coord_dcf_g_pessimista")
-                    wacc = st.text_input("WACC (%)", key="coord_dcf_wacc")
+                    g_pessimista = st.text_input("Crescimento FCF — pessimista (%)", key="coord_dcf_g_pessimista", help="Taxa anual de crescimento do fluxo de caixa livre no cenário pessimista.")
+                    wacc = st.text_input("WACC (%)", key="coord_dcf_wacc", help="Custo médio ponderado de capital usado para descontar os fluxos. Precisa ser maior que o crescimento perpétuo.")
                 with c3:
-                    g_terminal = st.text_input("Crescimento perpétuo (%)", key="coord_dcf_g_terminal")
+                    g_terminal = st.text_input("Crescimento perpétuo (%)", key="coord_dcf_g_terminal", help="Taxa de crescimento de longo prazo após o quinto ano.")
                 entradas = {
                     "crescimento_fcf_otimista": g_otimista,
                     "crescimento_fcf_base": g_base,
