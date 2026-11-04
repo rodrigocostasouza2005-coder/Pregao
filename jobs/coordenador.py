@@ -169,11 +169,10 @@ def _rodar_embeddings(cliente) -> bool:
     por item ali, não é um especialista novo aqui, só mais uma rotina
     agendada, mesmo padrão de backoffice/síntese/radar_x acima). Sem
     GEMINI_API_KEY configurada nos secrets do GitHub Actions (gap real -
-    ver docstring do módulo), indexar_pendentes() já degrada
-    graciosamente (0 processados, 0 falhas, nunca lança) - conta como
-    OK mesmo sem processar nada de verdade (mesma distinção que
-    radar_x/sintese já fazem pra "indisponível e documentado" não ser
-    um erro de execução do job)."""
+    ver docstring do módulo), indexar_pendentes() devolve um bloqueio
+    explícito quando há documentos pendentes: registra PARCIAL, sem
+    tratar ausência de credencial como falha técnica e sem sinalizar
+    falsamente que a fila foi concluída."""
     execucao_id = _iniciar_execucao(cliente, "embeddings")
     inicio = time.monotonic()
     try:
@@ -182,10 +181,21 @@ def _rodar_embeddings(cliente) -> bool:
         processados = resultado.get("processados", 0)
         falhas = resultado.get("falhas", 0)
         pendentes = resultado.get("pendentes_restantes", 0)
-        status = "ERRO" if (processados == 0 and falhas > 0 and pendentes == 0) else "OK"
+        bloqueio = resultado.get("bloqueio")
+        if bloqueio:
+            status = "PARCIAL"
+        elif falhas > 0:
+            status = "ERRO"
+        elif pendentes > 0:
+            status = "PARCIAL"
+        else:
+            status = "OK"
+        resumo = f"{processados} processado(s), {falhas} falha(s), {pendentes} pendente(s)"
+        if bloqueio:
+            resumo += f" - bloqueado: {bloqueio}"
         _concluir_execucao(cliente, execucao_id, status=status, duracao_ms=duracao_ms,
-                            resumo=f"{processados} processado(s), {falhas} falha(s), {pendentes} pendente(s)")
-        return status == "OK"
+                            resumo=resumo)
+        return status != "ERRO"
     except Exception as exc:
         duracao_ms = int((time.monotonic() - inicio) * 1000)
         print(f"[coordenador] embeddings falhou: {exc!r}")
