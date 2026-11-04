@@ -224,7 +224,7 @@ def comparar_casas(ticker: str, casas: list = None) -> dict:
         consolidado["_duracao_ms"] = duracao_ms
         return consolidado
     except Exception as exc:
-        _concluir_com_erro(analise_id, exc)
+        _concluir_com_erro(analise_id, exc, int((time.monotonic() - inicio) * 1000))
         raise
 
 
@@ -239,13 +239,15 @@ def identificar_catalisadores(ticker: str) -> dict:
         resultados = executor.executar_varios(
             ["catalisadores", "noticias", "calendario", "memoria_research"], ticker=ticker,
         )
-        _registrar_execucoes(analise_id, resultados)
+        telemetria_ok = _registrar_execucoes(analise_id, resultados)
         consolidado = consolidacao.consolidar(resultados, ticker=ticker)
         duracao_ms = int((time.monotonic() - inicio) * 1000)
-        persistencia.concluir_analise(analise_id, "CONCLUIDA", consolidado)
+        status = _status_fluxo(resultados, telemetria_ok)
+        consolidado["status_execucao"] = status
+        persistencia.concluir_analise(analise_id, status, consolidado, duracao_ms=duracao_ms)
         consolidado["_analise_id"] = analise_id
         consolidado["_duracao_ms"] = duracao_ms
         return consolidado
     except Exception as exc:
-        _concluir_com_erro(analise_id, exc)
+        _concluir_com_erro(analise_id, exc, int((time.monotonic() - inicio) * 1000))
         raise
