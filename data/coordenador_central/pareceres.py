@@ -421,6 +421,8 @@ def montar_pareceres(resultados, ticker=None):
         "preco_alvo": alvo_base, "preco_alvo_rotulo": "Preço-alvo do cenário-base calculado pelo Model Builder.",
         "cenarios": cenarios, "premissas": modelo.get("premissas") or {},
         "sensibilidade": modelo.get("sensibilidade"),
+        "moeda": modelo.get("moeda"), "data_base": modelo.get("data_base"),
+        "campos_faltantes": modelo.get("campos_faltantes") or [],
         "fontes": [modelo.get("fonte_premissas")] if modelo.get("fonte_premissas") else [],
     })
     analistas.append({
