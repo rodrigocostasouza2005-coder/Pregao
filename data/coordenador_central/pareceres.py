@@ -275,6 +275,17 @@ def _parecer_valuation(dados, comparador, research=None):
     alvo_principal = alvo_dcf if alvo_dcf is not None else alvo_proprio
     upside_principal = upside_dcf if upside_dcf is not None else upside_proprio
     if alvo_dcf is not None:
+        cenarios_dcf = dcf.get("cenarios") or {}
+        alvos_dcf = [
+            _numero((cenarios_dcf.get(chave) or {}).get("preco_alvo"))
+            for chave in ("pessimista", "base", "otimista")
+        ]
+        alvos_dcf = [valor for valor in alvos_dcf if valor is not None]
+        if alvos_dcf:
+            tese += (
+                f" DCF de cinco anos: cenário-base R$ {alvo_dcf:.2f}; "
+                f"faixa de cenários R$ {min(alvos_dcf):.2f} a R$ {max(alvos_dcf):.2f} por ação."
+            )
         if upside_dcf >= 10:
             vies = "VALOR INTRÍNSECO ACIMA DO PREÇO"
             pros.append(f"DCF no cenário-base indica potencial de {upside_dcf:+.1f}%.")
