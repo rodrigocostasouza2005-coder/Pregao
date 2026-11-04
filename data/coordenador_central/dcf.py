@@ -26,8 +26,8 @@ def _num(valor):
 def calcular_dcf(premissas: dict | None, preco_atual=None) -> dict:
     """Calcula valor justo por ação em 3 cenários.
 
-    Contrato de entrada (valores em R$, percentuais em decimal):
-      fcf_base: FCF anual normalizado do último exercício
+    Contrato de entrada (valores na moeda do ativo, percentuais em decimal):
+      fcf_base: FCF anual TTM reportado pela fonte (não anualizar novamente)
       crescimento_fcf_{otimista,base,pessimista}: crescimento anual
       wacc: custo médio ponderado de capital
       g_terminal: crescimento perpétuo
