@@ -21,6 +21,7 @@ import streamlit as st
 from data.coordenador_central import fluxos, persistencia
 from data.coordenador_central.registro import listar_especialistas
 from ui.design_system import lista_compacta, subtitulo
+from ui.dcf_operacional import render_dcf_operacional
 
 _CSS_COORDENADOR = """
 .coord-nota { color: var(--cinza); font-size: 0.7rem; margin: 0.1rem 0 0.8rem 0; line-height: 1.5; }
@@ -628,6 +629,8 @@ def render_analisar(prefs: dict = None):
         "Cada chamada aqui executa código real (sem dado simulado) - pode levar alguns segundos.</div>",
         unsafe_allow_html=True,
     )
+
+    render_dcf_operacional()
 
     col_ticker, col_fluxo = st.columns([2, 2])
     with col_ticker:
