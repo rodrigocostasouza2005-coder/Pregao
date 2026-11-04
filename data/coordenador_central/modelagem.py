@@ -54,7 +54,7 @@ def revisar_valuation(ticker: str = None, model_builder: dict | None = None, **_
     if not sens.get("disponivel"):
         achados.append({"tipo": "SENSIBILIDADE", "descricao": "Matriz de sensibilidade indisponível."})
     return {
-        "disponivel": True, "ticker": ticker, "aprovado": ordem and not any(a["tipo"] == "RASTREABILIDADE" for a in achados),
+        "disponivel": True, "ticker": ticker, "aprovado": ordem and not achados,
         "precos_alvo_revisados": alvos, "moeda": modelo.get("moeda"),
         "achados": achados,
         "limitacoes": ["Revisão determinística; não substitui validação humana das premissas e dos documentos de origem."],
