@@ -164,7 +164,7 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
     resultados = {
         "analise_ticker": _resultado("analise_ticker", dados={
             "fundamentos": {"preco": 20.0, "roe": 15.0, "margem_liquida": 12.0,
-                            "divida_liquida_ebitda": 1.0, "fluxo_caixa_livre": 100.0},
+                            "divida_liquida_ebitda": 1.0, "fluxo_caixa_livre": 100.0, "pl": 12.0},
             "fundamentos_historicos": {"disponivel": True,
                 "receita_liquida": {"yoy_pct_serie": [8.0, 12.0]}},
             "comparativo_setorial": {"pl_mediana": 18.0},
@@ -199,7 +199,9 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
     assert pareceres["preco_alvo_consenso"]["upside_pct"] == 25.0
     assert [c["casa"] for c in pareceres["casas_research"]] == ["BTG Pactual"]
     assert pareceres["casas_research"][0]["preco_alvo"] == 25.0
-    assert pareceres["analistas"][2]["preco_alvo_rotulo"].startswith("Mediana")
+    assert pareceres["analistas"][2]["preco_alvo"] == 30.0
+    assert pareceres["analistas"][2]["upside_pct"] == 50.0
+    assert pareceres["analistas"][2]["preco_alvo_rotulo"].startswith("Estimativa mecânica")
     assert consolidado["sinal_comite"]["sinal"] in {"COMPRA", "VENDA", "NEUTRO", "INSUFICIENTE"}
 
 
