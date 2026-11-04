@@ -87,6 +87,7 @@ def _injetar_css():
 def _badge_status(status: str) -> str:
     mapa = {
         "CONCLUIDA": ("coord-badge-ok", "CONCLUÍDA"),
+        "PARCIAL": ("coord-badge-andamento", "PARCIAL"),
         "OK": ("coord-badge-ok", "OK"),
         "EM_ANDAMENTO": ("coord-badge-andamento", "EM ANDAMENTO"),
         "ERRO": ("coord-badge-erro", "ERRO"),
@@ -150,6 +151,7 @@ def render_visao_geral(prefs: dict = None):
         analises = []
     em_andamento = sum(1 for a in analises if a.get("status") == "EM_ANDAMENTO")
     concluidas = sum(1 for a in analises if a.get("status") == "CONCLUIDA")
+    parciais = sum(1 for a in analises if a.get("status") == "PARCIAL")
     ultima = analises[0] if analises else None
 
     duracoes = [a["duracao_ms"] for a in analises if isinstance(a.get("duracao_ms"), (int, float))]
@@ -162,6 +164,7 @@ def render_visao_geral(prefs: dict = None):
         + _metrica_html(com_falha, "Com falha recente")
         + _metrica_html(em_andamento, "Análises em andamento")
         + _metrica_html(concluidas, "Análises concluídas")
+        + _metrica_html(parciais, "Análises parciais")
         + _metrica_html(tempo_medio, "Tempo médio por análise")
         + "</div>",
         unsafe_allow_html=True,
