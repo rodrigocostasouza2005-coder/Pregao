@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-import pytest\n\nfrom data.coordenador_central.dcf_operacional import calcular_dcf_operacional
+import pytest
+
+from data.coordenador_central.dcf_operacional import calcular_dcf_operacional
 
 
 def _premissas(**overrides):
