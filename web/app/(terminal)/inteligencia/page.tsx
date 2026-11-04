@@ -132,7 +132,7 @@ export default async function Inteligencia({ searchParams }: { searchParams: Pro
   const todosAchados = [...coordenado.incidentesAbertos];
   const incidentesFiltrados = filtros.estado ? todosAchados.filter((a) => a.status === filtros.estado) : todosAchados;
 
-  const execucoesPorTipo = new Map(execucoes.ultimas.map((e) => [e.tipo, e]));
+  const execucoesPorTipo = new Map(execucoes.ultimas.map((e) => [e.tipo, e] as const));
   const rotinasAgendadas = [
     { tipo: "backoffice", rotulo: "Backoffice (achados)" },
     { tipo: "sintese", rotulo: "Síntese (IA)" },
