@@ -272,13 +272,19 @@ def _render_consolidado(consolidado: dict):
     sinal = consolidado.get("sinal_comite") or {}
     if sinal:
         subtitulo("Sinal do Comitê")
+        alvo_modelo = sinal.get("preco_alvo_modelo")
+        alvo_consenso = sinal.get("preco_alvo_consenso")
+        upside_modelo = sinal.get("upside_modelo_pct")
+        alvo_modelo_txt = f"R$ {alvo_modelo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_modelo, (int, float)) else "não calculado"
+        alvo_consenso_txt = f"R$ {alvo_consenso:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_consenso, (int, float)) else "não disponível"
+        upside_modelo_txt = f"{upside_modelo:+.1f}%" if isinstance(upside_modelo, (int, float)) else "—"
         st.markdown(
             f"<div class='coord-metricas'><div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('sinal') or 'INSUFICIENTE'))}</div><div class='coord-metrica-rotulo'>Recomendação quantitativa</div></div>"
             f"<div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('score') if sinal.get('score') is not None else '—'))}</div><div class='coord-metrica-rotulo'>Score</div></div>"
             f"<div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('confianca') or '—'))}</div><div class='coord-metrica-rotulo'>Confiança</div></div></div>"
-            f"<div class='coord-nota'>Alvo por P/L setorial: {html.escape(str(sinal.get('preco_alvo_modelo') if sinal.get('preco_alvo_modelo') is not None else 'não calculado'))} · "
-            f"Potencial: {html.escape(str(sinal.get('upside_modelo_pct') if sinal.get('upside_modelo_pct') is not None else '—'))}% · "
-            f"Consenso das casas: {html.escape(str(sinal.get('preco_alvo_consenso') if sinal.get('preco_alvo_consenso') is not None else 'não disponível'))}</div>"
+            f"<div class='coord-nota'>Alvo por P/L setorial: {html.escape(alvo_modelo_txt)} · "
+            f"Potencial: {html.escape(upside_modelo_txt)} · "
+            f"Consenso das casas: {html.escape(alvo_consenso_txt)}</div>"
             f"<div class='coord-nota'>{html.escape(str(sinal.get('justificativa') or ''))}</div>",
             unsafe_allow_html=True,
         )
