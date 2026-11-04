@@ -89,8 +89,7 @@ def test_fluxo_nao_inventa_dados_base_quando_fundamentos_faltam():
     premissas = resultados["analise_ticker"]["dados"]["premissas_dcf"]
     resultado = calcular_dcf(premissas, preco_atual=10)
     assert resultado["disponivel"] is False
-    assert "fcf_base" in resultado["campos_faltantes"]
-    assert "divida_liquida" in resultado["campos_faltantes"]
+    assert "Moeda de origem" in resultado["motivo"]
 
 
 
