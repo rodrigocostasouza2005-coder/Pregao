@@ -300,7 +300,8 @@ def _render_consolidado(consolidado: dict):
             especialidade = html.escape(str(analista.get("especialidade") or ""))
             metodo_analista = html.escape(str(analista.get("metodo") or ""))
             alvo = analista.get("preco_alvo")
-            alvo_txt = f"R$ {alvo:,.2f}" if isinstance(alvo, (int, float)) else "Não calculado"
+            moeda_alvo = (analista.get("dcf") or {}).get("moeda") or "R$"
+            alvo_txt = f"{moeda_alvo} {alvo:,.2f}" if isinstance(alvo, (int, float)) else "Não calculado"
             alvo_txt = alvo_txt.replace(",", "X").replace(".", ",").replace("X", ".")
             alvo_rotulo = html.escape(str(analista.get("preco_alvo_rotulo") or ""))
             upside_analista = analista.get("upside_pct")
@@ -327,7 +328,8 @@ def _render_consolidado(consolidado: dict):
                         c = cenarios.get(chave) or {}
                         valor = c.get("preco_alvo")
                         potencial = c.get("upside_pct")
-                        valor_txt = f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(valor, (int, float)) else "—"
+                        moeda_dcf = dcf.get("moeda") or "moeda"
+                        valor_txt = f"{moeda_dcf} {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(valor, (int, float)) else "—"
                         potencial_txt = f"{potencial:+.1f}%" if isinstance(potencial, (int, float)) else "—"
                         crescimento_txt = f"{c.get('crescimento_fcf', 0) * 100:.1f}%"
                         wacc_txt = f"{c.get('wacc', 0) * 100:.1f}%"
