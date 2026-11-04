@@ -181,6 +181,14 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
                  "preco_alvo": 18.0},
             ],
         }),
+        "memoria_research": _resultado("memoria_research", dados={"resultados": [
+            {"casa": "BTG Pactual", "preco_alvo": 25.0, "premissas": ["ganho de market share"],
+             "riscos": ["câmbio volátil"], "projecoes": {"receita": "12% a.a."},
+             "titulo": "Iniciação de cobertura", "link": "https://example.com/btg"},
+            {"casa": "Monte Bravo", "preco_alvo": 27.5, "premissas": ["expansão de capacidade"],
+             "riscos": ["execução do capex"], "projecoes": {"receita": "10% a.a."},
+             "titulo": "Atualização", "link": "https://example.com/mb"},
+        ]}),
         "resultados_corporativos": _resultado("resultados_corporativos", dados={
             "disponivel": True, "periodo_label": "3T2026",
             "metricas": {
@@ -195,9 +203,11 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
     consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
     pareceres = consolidado["pareceres_analistas"]
     assert len(pareceres["analistas"]) == 3
-    assert pareceres["preco_alvo_consenso"]["mediana"] == 25.0
-    assert pareceres["preco_alvo_consenso"]["upside_pct"] == 25.0
-    assert [c["casa"] for c in pareceres["casas_research"]] == ["BTG Pactual"]
+    assert pareceres["preco_alvo_consenso"]["mediana"] == 26.25
+    assert pareceres["preco_alvo_consenso"]["upside_pct"] == 31.25
+    assert [c["casa"] for c in pareceres["casas_research"]] == ["BTG Pactual", "Monte Bravo"]
+    assert pareceres["casas_research"][0]["tese"] == ["ganho de market share"]
+    assert pareceres["casas_research"][0]["contras"] == ["câmbio volátil"]
     assert pareceres["casas_research"][0]["preco_alvo"] == 25.0
     assert pareceres["analistas"][2]["preco_alvo"] == 30.0
     assert pareceres["analistas"][2]["upside_pct"] == 50.0
