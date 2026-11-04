@@ -328,14 +328,10 @@ def main() -> int:
     else:
         logger.info("  limpeza: Supabase fora do ar, pulou")
 
-    # historico de recomendacoes/preco-alvo da Genial (2026-10-01, ver
-    # data/research/historico.py) - diferente de coletar_todas_disponiveis
-    # (relatorios), isso busca obter_recomendacoes() da Genial e so' grava
-    # um snapshot novo quando recomendacao/preco-alvo mudam de verdade.
-    # Precisa rodar daqui (e nao so' no app ao vivo) pelo mesmo motivo que
-    # a coleta de relatorios da Genial ja precisava: bloqueada por WAF no
-    # Streamlit Cloud, so' funciona de uma maquina real (ver CASAS em
-    # data/research/__init__.py, tentar_coleta_automatica=False).
+    # O historico antigo de recomendacoes/precos-alvo da Genial permanece
+    # consultavel, mas novas capturas foram desativadas por decisao do
+    # projeto (bloqueio WAF persistente). A funcao retorna (0, 0) sem
+    # consultar a fonte; nao gastar tempo/rede tentando novamente.
     n_comparados, n_mudancas = coletar_snapshot_genial()
     if n_comparados == 0:
         logger.info("  historico de recomendacoes: coleta Genial desativada por decisão do projeto; histórico existente preservado")
