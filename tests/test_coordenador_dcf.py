@@ -91,3 +91,23 @@ def test_fluxo_nao_inventa_dados_base_quando_fundamentos_faltam():
     assert resultado["disponivel"] is False
     assert "fcf_base" in resultado["campos_faltantes"]
     assert "divida_liquida" in resultado["campos_faltantes"]
+
+
+
+def test_parecer_valuation_prioriza_preco_alvo_dcf_quando_premissas_validas():
+    from data.coordenador_central.pareceres import montar_pareceres
+
+    premissas = _premissas()
+    premissas["moeda"] = "BRL"
+    resultado = montar_pareceres({
+        "analise_ticker": {"dados": {
+            "fundamentos": {"preco": 20.0, "pl": 10.0},
+            "premissas_dcf": premissas,
+        }},
+    }, ticker="TEST3")
+    valuation = next(a for a in resultado["analistas"] if a["id"] == "valuation_reviewer")
+    assert valuation["dcf"]["disponivel"] is True
+    assert valuation["preco_alvo"] == valuation["dcf"]["cenarios"]["base"]["preco_alvo"]
+    assert valuation["upside_pct"] == valuation["dcf"]["cenarios"]["base"]["upside_pct"]
+    assert valuation["recomendacao"] in {"COMPRA", "VENDA", "NEUTRO"}
+    assert "cenário-base" in valuation["tese"]
