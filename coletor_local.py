@@ -544,12 +544,27 @@ def main() -> int:
     # O Agendador do Windows tambem precisa enxergar execucao parcial:
     # timeout nao e falha definitiva (a rotacao continua no proximo run),
     # mas nao pode sair com codigo 0 como se o universo inteiro tivesse sido coberto.
+    # No Agendador do Windows, timeout parcial continua retornando 1:
+    # e' util saber que esta rodada nao cobriu o universo inteiro. No
+    # GitHub Actions, o mesmo timeout e' esperado por desenho (orcamento
+    # de 5min + checkpoint/rotacao a cada cron); o painel SAUDE DOS DADOS
+    # continua registrando PARCIAL e o proximo cron retoma o universo.
+    # Nao deixe esse estado recuperavel pintar toda execucao agendada de
+    # vermelho - falhas reais de fonte/persistencia continuam retornando 1.
     coleta_parcial_calendario = bool(stats_eventos.get("tempo_esgotado", False))
+    timeout_esperado_actions = (
+        coleta_parcial_calendario and os.getenv("GITHUB_ACTIONS") == "true"
+    )
+    if timeout_esperado_actions:
+        logger.info(
+            "  calendario: cobertura parcial esperada no GitHub Actions; "
+            "checkpoint salvo e proximo ciclo continuara o universo"
+        )
     return 1 if (
         any(_falha_critica(info) for info in resultado.values())
         or falha_persistencia_calendario
         or falha_coleta_calendario
-        or coleta_parcial_calendario
+        or (coleta_parcial_calendario and not timeout_esperado_actions)
     ) else 0
 
 
