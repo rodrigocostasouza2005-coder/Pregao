@@ -40,6 +40,8 @@ def obter_status_casas() -> list:
             "nome": casa["nome"],
             "fonte": casa.get("fonte", casa["nome"]),
             "coleta_automatica_cloud": bool(casa.get("tentar_coleta_automatica", True)),
+            "disponivel": bool(casa.get("disponivel", True)),
+            "motivo_indisponivel": casa.get("motivo_indisponivel"),
             "codigo_estado": item_saude["codigo_estado"] if item_saude else "NAO_COMPROVADO",
             "rotulo_estado": item_saude["rotulo_estado"] if item_saude else saude_dados.ESTADOS["NAO_COMPROVADO"] + " (sem linha no painel de saúde)",
             "ultimo_sucesso_em": status_bruto.get("ultimo_sucesso_em"),
