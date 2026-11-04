@@ -276,9 +276,10 @@ def _render_consolidado(consolidado: dict):
         alvo_pl = sinal.get("preco_alvo_pl_setorial")
         alvo_consenso = sinal.get("preco_alvo_consenso")
         upside_modelo = sinal.get("upside_modelo_pct")
-        alvo_modelo_txt = f"R$ {alvo_modelo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_modelo, (int, float)) else "não calculado"
-        alvo_pl_txt = f"R$ {alvo_pl:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_pl, (int, float)) else "não calculado"
-        alvo_consenso_txt = f"R$ {alvo_consenso:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_consenso, (int, float)) else "não disponível"
+        moeda_modelo = sinal.get("moeda_preco_alvo_modelo") or "R$"
+        alvo_modelo_txt = f"{moeda_modelo} {alvo_modelo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_modelo, (int, float)) else "não calculado"
+        alvo_pl_txt = f"{moeda_modelo} {alvo_pl:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_pl, (int, float)) else "não calculado"
+        alvo_consenso_txt = f"{moeda_modelo} {alvo_consenso:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_consenso, (int, float)) else "não disponível"
         upside_modelo_txt = f"{upside_modelo:+.1f}%" if isinstance(upside_modelo, (int, float)) else "—"
         st.markdown(
             f"<div class='coord-metricas'><div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('sinal') or 'INSUFICIENTE'))}</div><div class='coord-metrica-rotulo'>Recomendação quantitativa</div></div>"
