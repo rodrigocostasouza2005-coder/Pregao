@@ -35,7 +35,7 @@ _CSS_COORDENADOR = """
 .coord-tabela-premissas { min-width: 0; }
 .coord-tabela td, .coord-tabela th { white-space: nowrap; }
 .coord-tabela td:first-child, .coord-tabela th:first-child { white-space: normal; }
-.coord-valuation-destaque { border-left: 3px solid var(--destaque); padding: 0.55rem 0.8rem; margin: 0.45rem 0 0.75rem; background: rgba(255,160,40,0.06); }
+.coord-valuation-destaque { border-left: 3px solid var(--destaque); padding: 0.55rem 0.8rem; margin: 0.45rem 0 0.75rem; background: transparent; }
 .coord-valuation-preco { color: var(--destaque); font: 600 1.35rem 'IBM Plex Mono', monospace; }
 .coord-valuation-legenda { color: var(--cinza); font-size: 0.68rem; margin-top: 0.15rem; }
 @media (max-width: 700px) {
