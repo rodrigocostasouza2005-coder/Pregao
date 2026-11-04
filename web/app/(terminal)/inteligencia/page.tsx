@@ -132,8 +132,13 @@ export default async function Inteligencia({ searchParams }: { searchParams: Pro
   const todosAchados = [...coordenado.incidentesAbertos];
   const incidentesFiltrados = filtros.estado ? todosAchados.filter((a) => a.status === filtros.estado) : todosAchados;
 
-  const execBackoffice = execucoes.ultimas.find((e) => e.tipo === "backoffice");
-  const execSintese = execucoes.ultimas.find((e) => e.tipo === "sintese");
+  const execucoesPorTipo = new Map(execucoes.ultimas.map((e) => [e.tipo, e] as const));
+  const rotinasAgendadas = [
+    { tipo: "backoffice", rotulo: "Backoffice (achados)" },
+    { tipo: "sintese", rotulo: "Síntese (IA)" },
+    { tipo: "radar_x", rotulo: "Radar X (sinais sociais)" },
+    { tipo: "embeddings", rotulo: "Memória de Research (embeddings)" },
+  ] as const;
 
   return (
     <>
@@ -203,8 +208,17 @@ export default async function Inteligencia({ searchParams }: { searchParams: Pro
         <div className="space-y-3">
           <Painel titulo="Status dos especialistas" rodape="Última execução de cada agente agendado (jobs/coordenador.py)">
             <ul className="space-y-1.5 text-[11.5px]">
-              <li className="flex items-center justify-between"><span className="text-suave">Backoffice (achados)</span>{execBackoffice ? <span className={COR_EXECUCAO[execBackoffice.status]}>{execBackoffice.status} · {idade(execBackoffice.iniciado_em)}</span> : <span className="text-apagado">nunca rodou</span>}</li>
-              <li className="flex items-center justify-between"><span className="text-suave">Síntese (IA)</span>{execSintese ? <span className={COR_EXECUCAO[execSintese.status]}>{execSintese.status} · {idade(execSintese.iniciado_em)}</span> : <span className="text-apagado">nunca rodou</span>}</li>
+              {rotinasAgendadas.map((rotina) => {
+                const execucao = execucoesPorTipo.get(rotina.tipo);
+                return (
+                  <li key={rotina.tipo} className="flex items-center justify-between gap-2">
+                    <span className="text-suave">{rotina.rotulo}</span>
+                    {execucao
+                      ? <span className={COR_EXECUCAO[execucao.status]}>{execucao.status} · {idade(execucao.iniciado_em)}</span>
+                      : <span className="text-apagado">nunca rodou</span>}
+                  </li>
+                );
+              })}
               {saude.linhas.filter((l) => problemas.includes(l)).slice(0, 6).map((l) => (
                 <li key={l.nome} className="flex items-center justify-between"><span className="text-suave">{l.nome}</span><span className={COR_ESTADO_COLETOR[l.estado.codigo]}>{l.estado.codigo}</span></li>
               ))}
