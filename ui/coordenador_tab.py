@@ -273,17 +273,19 @@ def _render_consolidado(consolidado: dict):
     if sinal:
         subtitulo("Sinal do Comitê")
         alvo_modelo = sinal.get("preco_alvo_modelo")
+        alvo_pl = sinal.get("preco_alvo_pl_setorial")
         alvo_consenso = sinal.get("preco_alvo_consenso")
         upside_modelo = sinal.get("upside_modelo_pct")
         alvo_modelo_txt = f"R$ {alvo_modelo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_modelo, (int, float)) else "não calculado"
+        alvo_pl_txt = f"R$ {alvo_pl:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_pl, (int, float)) else "não calculado"
         alvo_consenso_txt = f"R$ {alvo_consenso:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo_consenso, (int, float)) else "não disponível"
         upside_modelo_txt = f"{upside_modelo:+.1f}%" if isinstance(upside_modelo, (int, float)) else "—"
         st.markdown(
             f"<div class='coord-metricas'><div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('sinal') or 'INSUFICIENTE'))}</div><div class='coord-metrica-rotulo'>Recomendação quantitativa</div></div>"
             f"<div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('score') if sinal.get('score') is not None else '—'))}</div><div class='coord-metrica-rotulo'>Score</div></div>"
             f"<div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('confianca') or '—'))}</div><div class='coord-metrica-rotulo'>Confiança</div></div></div>"
-            f"<div class='coord-nota'>Alvo por P/L setorial: {html.escape(alvo_modelo_txt)} · "
-            f"Potencial: {html.escape(upside_modelo_txt)} · "
+            f"<div class='coord-nota'>Alvo do Model Builder: {html.escape(alvo_modelo_txt)} · "
+            f"Potencial: {html.escape(upside_modelo_txt)} · P/L setorial: {html.escape(alvo_pl_txt)} · "
             f"Consenso das casas: {html.escape(alvo_consenso_txt)}</div>"
             f"<div class='coord-nota'>{html.escape(str(sinal.get('justificativa') or ''))}</div>",
             unsafe_allow_html=True,
