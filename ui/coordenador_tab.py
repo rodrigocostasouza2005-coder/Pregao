@@ -86,6 +86,7 @@ def _injetar_css():
 def _badge_status(status: str) -> str:
     mapa = {
         "CONCLUIDA": ("coord-badge-ok", "CONCLUÍDA"),
+        "PARCIAL": ("coord-badge-andamento", "PARCIAL"),
         "OK": ("coord-badge-ok", "OK"),
         "EM_ANDAMENTO": ("coord-badge-andamento", "EM ANDAMENTO"),
         "ERRO": ("coord-badge-erro", "ERRO"),
