@@ -239,28 +239,62 @@ def _parecer_valuation(dados, comparador):
     }
 
 
-def _pareceres_research(comparador, preco_atual):
+def _pareceres_research(comparador, memoria, preco_atual):
+    por_casa = {}
+    for pub in memoria.get("resultados") or []:
+        casa = pub.get("casa")
+        if casa and casa not in por_casa:
+            por_casa[casa] = pub
+
     saida = []
-    for linha in comparador.get("tabela_comparativa") or []:
+    linhas = comparador.get("tabela_comparativa") or []
+    casas_vistas = set()
+    for linha in linhas:
         casa = linha.get("casa")
         if not casa or "GENIAL" in str(casa).upper() or "XP" in str(casa).upper():
             continue
+        casas_vistas.add(casa)
+        pub = por_casa.get(casa) or {}
         alvo = _numero(linha.get("preco_alvo"))
+        if alvo is None:
+            alvo = _numero(pub.get("preco_alvo"))
         upside = ((alvo / preco_atual) - 1) * 100 if alvo is not None and preco_atual is not None and preco_atual > 0 else None
         categoria = str(linha.get("recomendacao_categoria") or "").upper()
         recomendacao = {
             "OTIMISTA": "COMPRA", "NEUTRO": "NEUTRO", "CAUTELOSO": "VENDA",
-        }.get(categoria, linha.get("recomendacao_original") or "SEM RECOMENDAÇÃO")
+        }.get(categoria, linha.get("recomendacao_original") or pub.get("recomendacao") or "SEM RECOMENDAÇÃO")
+        premissas = pub.get("premissas") or []
+        riscos = pub.get("riscos") or []
+        projecoes = pub.get("projecoes") or {
+            "receita": linha.get("projecao_receita"),
+            "margem_ebitda": linha.get("projecao_ebitda_margem"),
+            "lucro": linha.get("projecao_lucro"),
+        }
         saida.append({
             "casa": casa, "recomendacao": recomendacao,
             "preco_alvo": alvo, "upside_pct": upside,
-            "data_publicacao": linha.get("data_publicacao"),
-            "titulo": linha.get("titulo"), "link": linha.get("link"),
-            "premissas": {
-                "receita": linha.get("projecao_receita"),
-                "margem_ebitda": linha.get("projecao_ebitda_margem"),
-                "lucro": linha.get("projecao_lucro"),
-            },
+            "data_publicacao": linha.get("data_publicacao") or pub.get("data_publicacao"),
+            "titulo": linha.get("titulo") or pub.get("titulo"),
+            "link": linha.get("link") or pub.get("link"),
+            "tese": premissas,
+            "pros": [], "contras": riscos,
+            "projecoes": projecoes,
+        })
+
+    # A memória permanente pode ter uma casa que ainda não apareceu na
+    # tabela resumida do comparador; preserva a publicação com atribuição.
+    for casa, pub in por_casa.items():
+        if casa in casas_vistas or not casa or "GENIAL" in str(casa).upper() or "XP" in str(casa).upper():
+            continue
+        alvo = _numero(pub.get("preco_alvo"))
+        upside = ((alvo / preco_atual) - 1) * 100 if alvo is not None and preco_atual is not None and preco_atual > 0 else None
+        saida.append({
+            "casa": casa, "recomendacao": pub.get("recomendacao") or "SEM RECOMENDAÇÃO",
+            "preco_alvo": alvo, "upside_pct": upside,
+            "data_publicacao": pub.get("data_publicacao"), "titulo": pub.get("titulo"),
+            "link": pub.get("link"), "tese": pub.get("premissas") or [],
+            "pros": [], "contras": pub.get("riscos") or [],
+            "projecoes": pub.get("projecoes") or {},
         })
     return saida
 
@@ -280,7 +314,8 @@ def montar_pareceres(resultados, ticker=None):
         _parecer_earnings(earnings),
         _parecer_valuation(analise, comparador),
     ]
-    research = _pareceres_research(comparador, preco)
+    memoria = (resultados.get("memoria_research") or {}).get("dados") or {}
+    research = _pareceres_research(comparador, memoria, preco)
     dispersao = comparador.get("dispersao_precos_alvo") or {}
     return {
         "ticker": ticker,
