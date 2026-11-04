@@ -93,7 +93,7 @@ def test_fluxo_nao_inventa_dados_base_quando_fundamentos_faltam():
 
 
 
-def test_parecer_valuation_prioriza_preco_alvo_dcf_quando_premissas_validas():
+def test_pareceres_nao_atribuem_dcf_ao_reviewer_sem_execucao_do_model_builder():
     from data.coordenador_central.pareceres import montar_pareceres
 
     premissas = _premissas()
@@ -104,12 +104,13 @@ def test_parecer_valuation_prioriza_preco_alvo_dcf_quando_premissas_validas():
             "premissas_dcf": premissas,
         }},
     }, ticker="TEST3")
-    valuation = next(a for a in resultado["analistas"] if a["id"] == "valuation_reviewer")
-    assert valuation["dcf"]["disponivel"] is True
-    assert valuation["preco_alvo"] == valuation["dcf"]["cenarios"]["base"]["preco_alvo"]
-    assert valuation["upside_pct"] == valuation["dcf"]["cenarios"]["base"]["upside_pct"]
-    assert valuation["recomendacao"] in {"COMPRA", "VENDA", "NEUTRO"}
-    assert "cenário-base" in valuation["tese"]
+    model_builder = next(a for a in resultado["analistas"] if a["id"] == "model_builder")
+    reviewer = next(a for a in resultado["analistas"] if a["id"] == "valuation_reviewer")
+    # O parecer não executa especialistas implicitamente nem apresenta
+    # um DCF como revisado quando o fluxo não acionou Model Builder.
+    assert model_builder["recomendacao"] == "INSUFICIENTE"
+    assert reviewer["recomendacao"] == "INSUFICIENTE"
+    assert reviewer["preco_alvo"] is None
 
 
 
