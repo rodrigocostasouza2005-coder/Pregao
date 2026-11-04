@@ -298,8 +298,11 @@ def indexar_pendentes(limite: int = 30) -> dict:
     falhou num unico link) nunca derruba o lote inteiro - loga e
     continua pro proximo.
 
-    NAO e' chamado por jobs/coordenador.py (outra frente de trabalho vai
-    integrar isso depois) - fica pronto e testado aqui, isolado."""
+    O retorno inclui 'bloqueio' quando ha documentos pendentes mas
+    GEMINI_API_KEY nao esta configurada. Isso permite ao Coordenador
+    registrar PARCIAL (indisponivel e documentado), sem pintar a
+    indexacao como concluida e sem tratar ausencia de credencial como
+    falha tecnica."""
     premissas = store.listar_premissas()
     if premissas is None:
         return {"processados": 0, "falhas": 0, "pendentes_restantes": 0}
@@ -308,7 +311,7 @@ def indexar_pendentes(limite: int = 30) -> dict:
     if existentes is None:
         return {"processados": 0, "falhas": 0, "pendentes_restantes": len(premissas)}
 
-    _, modelo_atual = config.obter_credenciais_gemini()
+    api_key, modelo_atual = config.obter_credenciais_gemini()
 
     a_processar = []
     for linha in premissas:
@@ -324,6 +327,18 @@ def indexar_pendentes(limite: int = 30) -> dict:
         ):
             continue  # ja indexado, texto E modelo sem mudanca - pula
         a_processar.append((link, texto_atual))
+
+    # Sem credencial, nao tente cada documento: _gerar_embedding
+    # retornaria None repetidamente e poderia deixar a rodada com status
+    # enganoso (principalmente quando o lote nao esgota os pendentes).
+    # Explicita o bloqueio para o Coordenador mostrar PARCIAL.
+    if a_processar and not api_key:
+        return {
+            "processados": 0,
+            "falhas": 0,
+            "pendentes_restantes": len(a_processar),
+            "bloqueio": "GEMINI_API_KEY nao configurada",
+        }
 
     lote = a_processar[:limite]
 

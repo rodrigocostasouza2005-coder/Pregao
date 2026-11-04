@@ -64,7 +64,10 @@ class _ClienteFake:
 
 _RADAR_X_SEM_CREDENCIAL = {"ok": False, "motivo": "sem credencial", "estado": "sem_credencial", "sinais_novos": 0}
 _RADAR_X_OK = {"ok": True, "sinais_novos": 5, "estado": "ok", "motivo": None}
-_EMBEDDINGS_SEM_CREDENCIAL = {"processados": 0, "falhas": 0, "pendentes_restantes": 0}
+_EMBEDDINGS_SEM_CREDENCIAL = {
+    "processados": 0, "falhas": 0, "pendentes_restantes": 12,
+    "bloqueio": "GEMINI_API_KEY nao configurada",
+}
 _EMBEDDINGS_OK = {"processados": 4, "falhas": 0, "pendentes_restantes": 0}
 
 
@@ -103,12 +106,10 @@ def test_radar_x_sem_credencial_registra_parcial_e_nao_conta_como_falha():
     assert "sem_credencial" in por_tipo["radar_x"]["resumo"]
 
 
-def test_embeddings_sem_credencial_gemini_registra_ok_e_nao_conta_como_falha():
-    """Indisponível-e-documentado (sem GEMINI_API_KEY nos secrets do
-    GitHub Actions - gap real confirmado na auditoria da Fase E) não é
-    um erro de execução do job: indexar_pendentes() já degrada pra
-    0 processados/0 falhas/0 pendentes sem lançar, e isso conta como OK
-    (mesma distinção que radar_x faz pra 'indisponível e documentado')."""
+def test_embeddings_sem_credencial_com_pendencias_registra_parcial_sem_falhar_job():
+    """Sem GEMINI_API_KEY e com documentos pendentes, a indexacao nao
+    pode aparecer como OK/concluida. Registra PARCIAL e permite que os
+    demais componentes do Coordenador terminem normalmente."""
     cliente = _ClienteFake()
     with patch.object(job, "obter_cliente", return_value=cliente), \
          patch.object(job, "registrar_achados_atuais", return_value={"ok": True, "achados_atuais": 0}), \
@@ -117,8 +118,21 @@ def test_embeddings_sem_credencial_gemini_registra_ok_e_nao_conta_como_falha():
          patch.object(job, "indexar_pendentes", return_value=_EMBEDDINGS_SEM_CREDENCIAL):
         assert job.executar() == 0
     por_tipo = {l["tipo"]: l for l in cliente.linhas.values()}
-    assert por_tipo["embeddings"]["status"] == "OK"
-    assert "0 processado" in por_tipo["embeddings"]["resumo"]
+    assert por_tipo["embeddings"]["status"] == "PARCIAL"
+    assert "GEMINI_API_KEY nao configurada" in por_tipo["embeddings"]["resumo"]
+    assert "12 pendente(s)" in por_tipo["embeddings"]["resumo"]
+
+def test_embeddings_com_pendencias_por_limite_registra_parcial():
+    cliente = _ClienteFake()
+    with patch.object(job, "obter_cliente", return_value=cliente), \
+         patch.object(job, "registrar_achados_atuais", return_value={"ok": True, "achados_atuais": 0}), \
+         patch.object(job, "obter_sintese_mercado", return_value={"ok": True, "atual": True}), \
+         patch.object(job, "executar_ciclo_radar_x", return_value=_RADAR_X_OK), \
+         patch.object(job, "indexar_pendentes", return_value={"processados": 30, "falhas": 0, "pendentes_restantes": 7}):
+        assert job.executar() == 0
+    por_tipo = {l["tipo"]: l for l in cliente.linhas.values()}
+    assert por_tipo["embeddings"]["status"] == "PARCIAL"
+    assert "7 pendente(s)" in por_tipo["embeddings"]["resumo"]
 
 
 def test_embeddings_com_falhas_reais_registra_erro():
