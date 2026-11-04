@@ -205,7 +205,9 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
     }
     consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
     pareceres = consolidado["pareceres_analistas"]
-    assert len(pareceres["analistas"]) == 3
+    assert len(pareceres["analistas"]) == 5
+    ids_pareceres = {item["id"] for item in pareceres["analistas"]}
+    assert {"model_builder", "valuation_reviewer", "valuation_comparables"} <= ids_pareceres
     assert pareceres["preco_alvo_consenso"]["mediana"] == 26.25
     assert pareceres["preco_alvo_consenso"]["upside_pct"] == 31.25
     assert [c["casa"] for c in pareceres["casas_research"]] == ["BTG Pactual", "Monte Bravo"]
@@ -215,7 +217,9 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
     assert pareceres["analistas"][2]["preco_alvo"] == 30.0
     assert pareceres["analistas"][2]["upside_pct"] == 50.0
     assert pareceres["analistas"][2]["preco_alvo_rotulo"].startswith("Estimativa mecânica")
-    assert [x["recomendacao"] for x in pareceres["analistas"]] == ["COMPRA", "COMPRA", "COMPRA"]
+    assert [x["recomendacao"] for x in pareceres["analistas"][:3]] == ["COMPRA", "COMPRA", "COMPRA"]
+    assert next(x for x in pareceres["analistas"] if x["id"] == "model_builder")["recomendacao"] == "INSUFICIENTE"
+    assert next(x for x in pareceres["analistas"] if x["id"] == "valuation_reviewer")["recomendacao"] == "INSUFICIENTE"
     assert "Leitura construtiva" in pareceres["analistas"][0]["tese"]
     assert "Leitura construtiva" in pareceres["analistas"][1]["tese"]
     assert any("ROIC trimestral positivo" in x for x in pareceres["analistas"][0]["pros"])
