@@ -52,6 +52,30 @@ def test_analisar_ticker_registra_inicio_antes_de_rodar_especialistas(persistenc
     assert "_analise_id" in consolidado and "_duracao_ms" in consolidado
 
 
+def test_analisar_ticker_marca_parcial_quando_especialista_indisponivel(persistencia_mockada):
+    resultados = {
+        "analise_ticker": _resultado("analise_ticker", disponivel=True),
+        "comparador": _resultado("comparador", disponivel=False),
+    }
+    with patch.object(fluxos.executor, "executar_varios", return_value=resultados):
+        consolidado = fluxos.analisar_ticker("PETR4")
+
+    assert consolidado["status_execucao"] == "PARCIAL"
+    chamada = persistencia_mockada["concluir"].call_args
+    assert chamada.args[1] == "PARCIAL"
+    assert chamada.kwargs["duracao_ms"] >= 0
+
+
+def test_registro_nao_contabiliza_especialista_pulado():
+    with patch.object(fluxos.persistencia, "registrar_execucao_especialista", return_value=True) as registrar:
+        ok = fluxos._registrar_execucoes("a", {
+            "comparador": _resultado("comparador"),
+            "memoria_research": {**_resultado("memoria_research"), "pulado": True},
+        })
+    assert ok is True
+    registrar.assert_called_once_with("a", "comparador", registrar.call_args.args[2])
+
+
 def test_analisar_ticker_registra_erro_e_relanca_quando_executor_falha(persistencia_mockada):
     with patch.object(fluxos.executor, "executar_varios", side_effect=RuntimeError("falha geral")):
         with pytest.raises(RuntimeError):
