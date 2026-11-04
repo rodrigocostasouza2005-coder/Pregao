@@ -28,7 +28,21 @@ _CSS_COORDENADOR = """
 .coord-metrica { min-width: 140px; }
 .coord-metrica-valor { font-size: 1.4rem; font-weight: 600; color: var(--destaque); font-family: 'IBM Plex Mono', monospace; }
 .coord-metrica-rotulo { font-size: 0.68rem; color: var(--cinza); letter-spacing: 0.03em; text-transform: uppercase; }
-.coord-tabela { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.coord-tabela-wrap { width: 100%; max-width: 100%; overflow-x: auto; margin: 0.35rem 0 0.9rem; border: 1px solid var(--borda); border-radius: 3px; }
+.coord-tabela { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+.coord-tabela-dcf { min-width: 650px; }
+.coord-tabela-sens { min-width: 520px; }
+.coord-tabela-premissas { min-width: 0; }
+.coord-tabela td, .coord-tabela th { white-space: nowrap; }
+.coord-tabela td:first-child, .coord-tabela th:first-child { white-space: normal; }
+.coord-valuation-destaque { border-left: 3px solid var(--destaque); padding: 0.55rem 0.8rem; margin: 0.45rem 0 0.75rem; background: rgba(255,160,40,0.06); }
+.coord-valuation-preco { color: var(--destaque); font: 600 1.35rem 'IBM Plex Mono', monospace; }
+.coord-valuation-legenda { color: var(--cinza); font-size: 0.68rem; margin-top: 0.15rem; }
+@media (max-width: 700px) {
+  .coord-tabela { font-size: 0.7rem; }
+  .coord-tabela th, .coord-tabela td { padding: 0.3rem 0.4rem; }
+  .coord-valuation-preco { font-size: 1.15rem; }
+}
 .coord-tabela th {
     text-align: left; color: var(--cinza); font-size: 0.64rem; letter-spacing: 0.03em;
     padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--borda);
@@ -336,13 +350,16 @@ def _render_consolidado(consolidado: dict):
                     upside_txt = f"{upside:+.1f}%" if isinstance(upside, (int, float)) else "—"
                     if dcf.get("disponivel"):
                         st.markdown(
-                            f"**Preço-alvo principal — DCF, cenário-base:** {html.escape(alvo_txt)}"
-                            f" · potencial {html.escape(upside_txt)}",
+                            "<div class='coord-valuation-destaque'>"
+                            "<div class='coord-valuation-legenda'>PREÇO-ALVO PRINCIPAL · DCF · CENÁRIO-BASE</div>"
+                            f"<div class='coord-valuation-preco'>{html.escape(alvo_txt)}</div>"
+                            f"<div class='coord-valuation-legenda'>Potencial sobre a cotação: {html.escape(upside_txt)}</div>"
+                            "</div>",
                             unsafe_allow_html=True,
                         )
                         subtitulo("DCF — preços-alvo por cenário")
                         cenarios = dcf.get("cenarios") or {}
-                        linhas_dcf = ["<table class='coord-tabela'><thead><tr><th>Cenário</th><th>Preço-alvo</th><th>Potencial</th><th>Crescimento FCF</th><th>WACC</th><th>g terminal</th></tr></thead><tbody>"]
+                        linhas_dcf = ["<table class='coord-tabela coord-tabela-dcf'><thead><tr><th>Cenário</th><th>Preço-alvo</th><th>Potencial</th><th>Crescimento FCF</th><th>WACC</th><th>g terminal</th></tr></thead><tbody>"]
                         for chave in ("otimista", "base", "pessimista"):
                             c = cenarios.get(chave) or {}
                             valor = c.get("preco_alvo")
@@ -359,7 +376,7 @@ def _render_consolidado(consolidado: dict):
                                 f"<td>{html.escape(terminal_txt)}</td></tr>"
                             )
                         linhas_dcf.append("</tbody></table>")
-                        st.markdown("".join(linhas_dcf), unsafe_allow_html=True)
+                        st.markdown("<div class='coord-tabela-wrap'>" + "".join(linhas_dcf) + "</div>", unsafe_allow_html=True)
 
                         premissas = dcf.get("premissas") or {}
                         subtitulo("Premissas utilizadas e rastreabilidade")
@@ -377,11 +394,11 @@ def _render_consolidado(consolidado: dict):
                             ("WACC", f"{premissas.get('wacc') * 100:.1f}%" if isinstance(premissas.get("wacc"), (int, float)) else "—"),
                             ("Crescimento perpétuo", f"{premissas.get('g_terminal') * 100:.1f}%" if isinstance(premissas.get("g_terminal"), (int, float)) else "—"),
                         ]
-                        tabela_premissas = ["<table class='coord-tabela'><thead><tr><th>Premissa</th><th>Valor utilizado</th></tr></thead><tbody>"]
+                        tabela_premissas = ["<table class='coord-tabela coord-tabela-premissas'><thead><tr><th>Premissa</th><th>Valor utilizado</th></tr></thead><tbody>"]
                         for rotulo, valor in linhas_premissas:
                             tabela_premissas.append(f"<tr><td>{html.escape(rotulo)}</td><td>{html.escape(str(valor))}</td></tr>")
                         tabela_premissas.append("</tbody></table>")
-                        st.markdown("".join(tabela_premissas), unsafe_allow_html=True)
+                        st.markdown("<div class='coord-tabela-wrap'>" + "".join(tabela_premissas) + "</div>", unsafe_allow_html=True)
                         st.caption(
                             f"Fonte: {dcf.get('fonte_premissas') or 'não identificada'} · "
                             f"Data-base: {dcf.get('data_base') or 'não informada'} · "
@@ -399,7 +416,7 @@ def _render_consolidado(consolidado: dict):
                             passos = sensibilidade.get("passos_crescimento") or []
                             crescimento_base = premissas.get("crescimento_fcf_base", 0)
                             cabecalho = "".join(f"<th>{(float(crescimento_base) + delta) * 100:.1f}%</th>" for delta in passos)
-                            tabela_sens = [f"<table class='coord-tabela'><thead><tr><th>WACC \\ Crescimento</th>{cabecalho}</tr></thead><tbody>"]
+                            tabela_sens = [f"<table class='coord-tabela coord-tabela-sens'><thead><tr><th>WACC \\ Crescimento</th>{cabecalho}</tr></thead><tbody>"]
                             for linha_sens in sensibilidade.get("linhas") or []:
                                 celulas = []
                                 for celula in linha_sens.get("celulas") or []:
@@ -408,7 +425,7 @@ def _render_consolidado(consolidado: dict):
                                     celulas.append(f"<td>{html.escape(valor_txt)}</td>")
                                 tabela_sens.append(f"<tr><th>{linha_sens.get('wacc', 0) * 100:.1f}%</th>{''.join(celulas)}</tr>")
                             tabela_sens.append("</tbody></table>")
-                            st.markdown("".join(tabela_sens), unsafe_allow_html=True)
+                            st.markdown("<div class='coord-tabela-wrap'>" + "".join(tabela_sens) + "</div>", unsafe_allow_html=True)
                     else:
                         # O alvo por múltiplos não deve ser confundido com DCF.
                         rotulo_alvo = "Referência por P/L setorial (não é DCF)" if isinstance(alvo, (int, float)) else "Preço-alvo por DCF indisponível"
