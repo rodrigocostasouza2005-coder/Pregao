@@ -62,7 +62,7 @@ def test_fluxo_monta_premissas_somente_com_dados_observados_e_taxas_manuais():
     resultados = {"analise_ticker": {"dados": {"fundamentos": {
         "fluxo_caixa_livre": 1000.0, "ebitda": 500.0,
         "divida_liquida_ebitda": 1.2, "valor_mercado": 10000.0,
-        "preco": 20.0, "consultado_em": "2026-11-04",
+        "preco": 20.0, "moeda": "BRL", "moeda_fonte": "BRL", "consultado_em": "2026-11-04",
     }}}}
     taxas = {
         "crescimento_fcf_otimista": 12, "crescimento_fcf_base": 8,
@@ -111,3 +111,23 @@ def test_parecer_valuation_prioriza_preco_alvo_dcf_quando_premissas_validas():
     assert valuation["upside_pct"] == valuation["dcf"]["cenarios"]["base"]["upside_pct"]
     assert valuation["recomendacao"] in {"COMPRA", "VENDA", "NEUTRO"}
     assert "cenário-base" in valuation["tese"]
+
+
+
+def test_fluxo_bloqueia_calculo_quando_moeda_da_cotacao_e_fonte_divergem():
+    from data.coordenador_central.fluxos import _anexar_premissas_dcf
+
+    resultados = {"analise_ticker": {"dados": {"fundamentos": {
+        "fluxo_caixa_livre": 1000.0, "ebitda": 500.0,
+        "divida_liquida_ebitda": 1.2, "valor_mercado": 10000.0,
+        "preco": 20.0, "moeda": "BRL", "moeda_fonte": "USD",
+    }}}}
+    taxas = {
+        "crescimento_fcf_otimista": 12, "crescimento_fcf_base": 8,
+        "crescimento_fcf_pessimista": 2, "wacc": 12, "g_terminal": 3,
+    }
+    _anexar_premissas_dcf(resultados, taxas)
+    premissas = resultados["analise_ticker"]["dados"]["premissas_dcf"]
+    resultado = calcular_dcf(premissas, preco_atual=20)
+    assert resultado["disponivel"] is False
+    assert "Moeda" in resultado["motivo"]
