@@ -5,13 +5,11 @@ formato (casa, titulo, data, autor, tipo, setor, tickers, link).
 Pra ligar/desligar uma casa (por padrao ou por usuario, via prefs), mexa
 so nessa lista - a UI (ui/research_tab.py) le CASAS pra montar o filtro.
 
-Verificado na pratica quais casas de research tem conteudo publico
-coletavel sem login:
-- Genial Analisa: publica, coletavel (JSON __NEXT_DATA__ da home).
-- XP Investimentos: publica, coletavel (API do WordPress, wp-json/wp/v2 -
-  ver xp.py). Campos confirmados com requisicao real feita fora do
-  sandbox (2026-09-23) - IP deste sandbox de dev continua bloqueado pelo
-  CDN da XP, mas o coletor esta ativo por padrao.
+Estado atual das fontes (revisado em 2026-11-04):
+- Genial Analisa, XP Investimentos e Genial (Lives): DESATIVADAS. Os
+  bloqueios persistentes (WAF/Akamai HTTP 403 e YouTube RSS HTTP 404)
+  fizeram o projeto parar novas tentativas automatizadas; dados antigos
+  continuam preservados no Supabase e fora do consenso decisorio.
 - BTG Research: API real (content.btgpactual.com/api/research/content-hub/
   analysis/filter) coletavel - achado que corrigiu a investigacao anterior
   (2026-10-17): o campo "tier" (AREA_PUBLICA/AREA_LOGADA) JA' vem no
