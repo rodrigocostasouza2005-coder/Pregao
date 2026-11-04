@@ -31,13 +31,39 @@ def _especialista_pulado(especialista_id: str, motivo: str) -> dict:
     }
 
 
-def _registrar_execucoes(analise_id: str, resultados: dict) -> None:
+def _registrar_execucoes(analise_id: str, resultados: dict) -> bool:
+    """Persiste apenas especialistas realmente acionados; itens pulados não
+    entram na taxa de sucesso. False sinaliza perda de telemetria."""
+    persistidos = True
     for especialista_id, resultado in resultados.items():
-        persistencia.registrar_execucao_especialista(analise_id, especialista_id, resultado)
+        if resultado.get("pulado"):
+            continue
+        ok = persistencia.registrar_execucao_especialista(analise_id, especialista_id, resultado)
+        persistidos = bool(ok) and persistidos
+    return persistidos
 
 
-def _concluir_com_erro(analise_id: str, exc: Exception) -> None:
-    persistencia.concluir_analise(analise_id, "ERRO", None, erro=repr(exc))
+def _status_fluxo(resultados: dict, telemetria_ok: bool) -> str:
+    """CONCLUIDA somente quando pelo menos um especialista foi acionado,
+    todos responderam e a telemetria foi persistida; ausência de execução
+    real ou indisponibilidade documentada vira PARCIAL."""
+    acionados = [r for r in resultados.values() if not r.get("pulado")]
+    todos_disponiveis = bool(acionados) and all(bool(r.get("disponivel")) for r in acionados)
+    return "CONCLUIDA" if todos_disponiveis and telemetria_ok else "PARCIAL"
+
+
+def _concluir_com_erro(analise_id: str, exc: Exception, duracao_ms: int = None) -> None:
+    persistencia.concluir_analise(analise_id, "ERRO", None, erro=repr(exc), duracao_ms=duracao_ms)
+
+
+def _concluir_fluxo(analise_id: str, consolidado: dict, resultados: dict, telemetria_ok: bool, duracao_ms: int) -> None:
+    """Finaliza o fluxo e não anuncia CONCLUIDA se a gravação do resultado falhar."""
+    status = _status_fluxo(resultados, telemetria_ok)
+    consolidado["status_execucao"] = status
+    persistida = persistencia.concluir_analise(analise_id, status, consolidado, duracao_ms=duracao_ms)
+    consolidado["persistencia_analise_ok"] = bool(persistida)
+    if not persistida:
+        consolidado["status_execucao"] = "PARCIAL"
 
 
 def _moeda_normalizada(valor) -> str | None:
@@ -149,16 +175,16 @@ def analisar_ticker(ticker: str, premissas_dcf: dict | None = None) -> dict:
         resultados = executor.executar_varios(
             ["analise_ticker", "comparador", "memoria_research", "noticias", "catalisadores", "resultados_corporativos"], ticker=ticker,
         )
-        _registrar_execucoes(analise_id, resultados)
+        telemetria_ok = _registrar_execucoes(analise_id, resultados)
         _anexar_premissas_dcf(resultados, premissas_dcf)
         consolidado = consolidacao.consolidar(resultados, ticker=ticker)
         duracao_ms = int((time.monotonic() - inicio) * 1000)
-        persistencia.concluir_analise(analise_id, "CONCLUIDA", consolidado)
+        _concluir_fluxo(analise_id, consolidado, resultados, telemetria_ok, duracao_ms)
         consolidado["_analise_id"] = analise_id
         consolidado["_duracao_ms"] = duracao_ms
         return consolidado
     except Exception as exc:
-        _concluir_com_erro(analise_id, exc)
+        _concluir_com_erro(analise_id, exc, int((time.monotonic() - inicio) * 1000))
         raise
 
 
@@ -196,15 +222,15 @@ def comparar_casas(ticker: str, casas: list = None) -> dict:
                 "permanente de research - buscar as publicações originais não traria nenhum resultado novo.",
             )
 
-        _registrar_execucoes(analise_id, resultados)
+        telemetria_ok = _registrar_execucoes(analise_id, resultados)
         consolidado = consolidacao.consolidar(resultados, ticker=ticker)
         duracao_ms = int((time.monotonic() - inicio) * 1000)
-        persistencia.concluir_analise(analise_id, "CONCLUIDA", consolidado)
+        _concluir_fluxo(analise_id, consolidado, resultados, telemetria_ok, duracao_ms)
         consolidado["_analise_id"] = analise_id
         consolidado["_duracao_ms"] = duracao_ms
         return consolidado
     except Exception as exc:
-        _concluir_com_erro(analise_id, exc)
+        _concluir_com_erro(analise_id, exc, int((time.monotonic() - inicio) * 1000))
         raise
 
 
@@ -219,13 +245,13 @@ def identificar_catalisadores(ticker: str) -> dict:
         resultados = executor.executar_varios(
             ["catalisadores", "noticias", "calendario", "memoria_research"], ticker=ticker,
         )
-        _registrar_execucoes(analise_id, resultados)
+        telemetria_ok = _registrar_execucoes(analise_id, resultados)
         consolidado = consolidacao.consolidar(resultados, ticker=ticker)
         duracao_ms = int((time.monotonic() - inicio) * 1000)
-        persistencia.concluir_analise(analise_id, "CONCLUIDA", consolidado)
+        _concluir_fluxo(analise_id, consolidado, resultados, telemetria_ok, duracao_ms)
         consolidado["_analise_id"] = analise_id
         consolidado["_duracao_ms"] = duracao_ms
         return consolidado
     except Exception as exc:
-        _concluir_com_erro(analise_id, exc)
+        _concluir_com_erro(analise_id, exc, int((time.monotonic() - inicio) * 1000))
         raise

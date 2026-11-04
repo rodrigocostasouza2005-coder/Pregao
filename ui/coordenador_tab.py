@@ -86,6 +86,7 @@ def _injetar_css():
 def _badge_status(status: str) -> str:
     mapa = {
         "CONCLUIDA": ("coord-badge-ok", "CONCLUÍDA"),
+        "PARCIAL": ("coord-badge-andamento", "PARCIAL"),
         "OK": ("coord-badge-ok", "OK"),
         "EM_ANDAMENTO": ("coord-badge-andamento", "EM ANDAMENTO"),
         "ERRO": ("coord-badge-erro", "ERRO"),
@@ -137,11 +138,17 @@ def render_visao_geral(prefs: dict = None):
     especialistas = listar_especialistas()
     metricas = persistencia.metricas_especialistas()
     total = len(especialistas)
+    sem_historico = sum(1 for e in especialistas if not (metricas.get(e.id) or {}).get("total_execucoes", 0))
     com_falha = sum(
         1 for e in especialistas
-        if (metricas.get(e.id) or {}).get("taxa_sucesso_recente_pct", 100.0) < 100.0
+        if (metricas.get(e.id) or {}).get("total_execucoes", 0) > 0
+        and (metricas.get(e.id) or {}).get("taxa_sucesso_recente_pct", 0.0) < 100.0
     )
-    operacionais = total - com_falha
+    operacionais = sum(
+        1 for e in especialistas
+        if (metricas.get(e.id) or {}).get("total_execucoes", 0) > 0
+        and (metricas.get(e.id) or {}).get("taxa_sucesso_recente_pct", 0.0) >= 100.0
+    )
 
     analises = persistencia.listar_analises_recentes(limite=50)
     if analises is None:
@@ -149,6 +156,7 @@ def render_visao_geral(prefs: dict = None):
         analises = []
     em_andamento = sum(1 for a in analises if a.get("status") == "EM_ANDAMENTO")
     concluidas = sum(1 for a in analises if a.get("status") == "CONCLUIDA")
+    parciais = sum(1 for a in analises if a.get("status") == "PARCIAL")
     ultima = analises[0] if analises else None
 
     duracoes = [a["duracao_ms"] for a in analises if isinstance(a.get("duracao_ms"), (int, float))]
@@ -159,8 +167,10 @@ def render_visao_geral(prefs: dict = None):
         + _metrica_html(total, "Especialistas registrados")
         + _metrica_html(operacionais, "Operacionais")
         + _metrica_html(com_falha, "Com falha recente")
+        + _metrica_html(sem_historico, "Sem evidência de execução")
         + _metrica_html(em_andamento, "Análises em andamento")
         + _metrica_html(concluidas, "Análises concluídas")
+        + _metrica_html(parciais, "Análises parciais")
         + _metrica_html(tempo_medio, "Tempo médio por análise")
         + "</div>",
         unsafe_allow_html=True,

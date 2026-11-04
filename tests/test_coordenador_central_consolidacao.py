@@ -230,3 +230,24 @@ def test_consolidar_sem_research_nao_inventa_preco_alvo():
     assert pareceres["preco_alvo_consenso"]["mediana"] is None
     assert all(a["preco_alvo"] is None for a in pareceres["analistas"])
     assert pareceres["casas_research"] == []
+
+
+def test_especialista_pulado_nao_reduz_confianca_nem_conta_como_acionado():
+    resultados = {
+        "comparador": _resultado("comparador", evidencias=[{"fonte": "casa"}]),
+        "noticias": _resultado("noticias", disponivel=False, resumo=None, motivo="fonte indisponível"),
+        "memoria_research": {**_resultado("memoria_research", resumo="não necessário"), "pulado": True},
+    }
+    consolidado = consolidacao.consolidar(resultados, ticker="WEGE3")
+    assert consolidado["confianca"]["categoria"] == consolidacao.CONFIANCA_MEDIA
+    assert "1 de 2 especialista(s) acionado(s)" in consolidado["resumo_executivo"]
+    assert any("1 de 2 especialista(s) acionado(s)" in linha for linha in consolidado["conclusao"])
+
+
+def test_especialista_pulado_sozinho_nao_cria_confianca():
+    resultados = {
+        "memoria_research": {**_resultado("memoria_research", resumo="não necessário"), "pulado": True},
+    }
+    consolidado = consolidacao.consolidar(resultados)
+    assert consolidado["confianca"]["categoria"] == consolidacao.CONFIANCA_INSUFICIENTE
+    assert "0 especialista(s) acionado(s)" in consolidado["resumo_executivo"]

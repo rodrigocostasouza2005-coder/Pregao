@@ -52,6 +52,38 @@ def test_analisar_ticker_registra_inicio_antes_de_rodar_especialistas(persistenc
     assert "_analise_id" in consolidado and "_duracao_ms" in consolidado
 
 
+def test_analisar_ticker_marca_parcial_quando_especialista_indisponivel(persistencia_mockada):
+    resultados = {
+        "analise_ticker": _resultado("analise_ticker", disponivel=True),
+        "comparador": _resultado("comparador", disponivel=False),
+    }
+    with patch.object(fluxos.executor, "executar_varios", return_value=resultados):
+        consolidado = fluxos.analisar_ticker("PETR4")
+
+    assert consolidado["status_execucao"] == "PARCIAL"
+    chamada = persistencia_mockada["concluir"].call_args
+    assert chamada.args[1] == "PARCIAL"
+    assert chamada.kwargs["duracao_ms"] >= 0
+
+
+def test_status_fluxo_nao_conclui_quando_nenhum_especialista_foi_acionado():
+    assert fluxos._status_fluxo({}, telemetria_ok=True) == "PARCIAL"
+    assert fluxos._status_fluxo(
+        {"memoria_research": {**_resultado("memoria_research"), "pulado": True}},
+        telemetria_ok=True,
+    ) == "PARCIAL"
+
+
+def test_registro_nao_contabiliza_especialista_pulado():
+    with patch.object(fluxos.persistencia, "registrar_execucao_especialista", return_value=True) as registrar:
+        ok = fluxos._registrar_execucoes("a", {
+            "comparador": _resultado("comparador"),
+            "memoria_research": {**_resultado("memoria_research"), "pulado": True},
+        })
+    assert ok is True
+    registrar.assert_called_once_with("a", "comparador", registrar.call_args.args[2])
+
+
 def test_analisar_ticker_registra_erro_e_relanca_quando_executor_falha(persistencia_mockada):
     with patch.object(fluxos.executor, "executar_varios", side_effect=RuntimeError("falha geral")):
         with pytest.raises(RuntimeError):
@@ -155,6 +187,60 @@ def test_identificar_catalisadores_aciona_os_4_especialistas_em_paralelo(persist
 
 
 
+
+def test_comparar_casas_registra_duracao_quando_fluxo_gera_erro(persistencia_mockada):
+    with patch.object(fluxos.executor, "executar_especialista", side_effect=RuntimeError("falha comparador")):
+        with pytest.raises(RuntimeError):
+            fluxos.comparar_casas("WEGE3")
+
+    chamada = persistencia_mockada["concluir"].call_args
+    assert chamada.args[1] == "ERRO"
+    assert chamada.kwargs["duracao_ms"] >= 0
+
+
+def test_catalisadores_marca_parcial_quando_especialista_falha(persistencia_mockada):
+    resultados = {
+        "catalisadores": _resultado("catalisadores", disponivel=True),
+        "noticias": _resultado("noticias", disponivel=False),
+        "calendario": _resultado("calendario", disponivel=True),
+        "memoria_research": _resultado("memoria_research", disponivel=True),
+    }
+    with patch.object(fluxos.executor, "executar_varios", return_value=resultados):
+        consolidado = fluxos.identificar_catalisadores("WEGE3")
+
+    assert consolidado["status_execucao"] == "PARCIAL"
+    chamada = persistencia_mockada["concluir"].call_args
+    assert chamada.args[1] == "PARCIAL"
+    assert chamada.kwargs["duracao_ms"] >= 0
+
+
+def test_catalisadores_marca_parcial_quando_telemetria_nao_persiste(persistencia_mockada):
+    resultados = {
+        "catalisadores": _resultado("catalisadores"),
+        "noticias": _resultado("noticias"),
+    }
+    with patch.object(fluxos.executor, "executar_varios", return_value=resultados), \
+         patch.object(fluxos.persistencia, "registrar_execucao_especialista", return_value=False):
+        consolidado = fluxos.identificar_catalisadores("WEGE3")
+
+    assert consolidado["status_execucao"] == "PARCIAL"
+    chamada = persistencia_mockada["concluir"].call_args
+    assert chamada.args[1] == "PARCIAL"
+    assert chamada.kwargs["duracao_ms"] >= 0
+
+
+def test_comparar_casas_marca_parcial_quando_telemetria_falha(persistencia_mockada):
+    resultado = _resultado("comparador", dados={"tabela_comparativa": []})
+    with patch.object(fluxos.executor, "executar_especialista", return_value=resultado), \
+         patch.object(fluxos.persistencia, "registrar_execucao_especialista", return_value=False):
+        consolidado = fluxos.comparar_casas("WEGE3")
+
+    assert consolidado["status_execucao"] == "PARCIAL"
+    chamada = persistencia_mockada["concluir"].call_args
+    assert chamada.args[1] == "PARCIAL"
+    assert chamada.kwargs["duracao_ms"] >= 0
+
+
 def _dados_dcf_base():
     return {
         "analise_ticker": {
@@ -234,3 +320,13 @@ def test_dcf_bloqueia_moeda_desconhecida_sem_tentar_converter():
     assert p["fcf_base"] is None
     assert p["acoes"] is None
     assert p["motivo_bloqueio"] is not None
+
+
+def test_finalizacao_marca_parcial_quando_resultado_final_nao_persiste():
+    consolidado = {}
+    resultados = {"analise_ticker": _resultado("analise_ticker", disponivel=True)}
+    with patch.object(fluxos.persistencia, "concluir_analise", return_value=False) as concluir:
+        fluxos._concluir_fluxo("a", consolidado, resultados, telemetria_ok=True, duracao_ms=12)
+    concluir.assert_called_once()
+    assert consolidado["persistencia_analise_ok"] is False
+    assert consolidado["status_execucao"] == "PARCIAL"
