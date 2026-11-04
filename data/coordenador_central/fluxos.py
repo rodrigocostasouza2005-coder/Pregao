@@ -78,7 +78,14 @@ def comparar_casas(ticker: str, casas: list = None) -> dict:
         resultado_comparador = executor.executar_especialista("comparador", ticker=ticker)
         resultados = {"comparador": resultado_comparador}
 
-        casas_encontradas = (resultado_comparador.get("dados") or {}).get("casas") or []
+        dados_comparador = resultado_comparador.get("dados") or {}
+        # O contrato público de montar_relatorio_comparativo expõe as casas
+        # em tabela_comparativa (não em "casas"). O fallback legado mantém
+        # compatibilidade com extratores antigos.
+        casas_encontradas = dados_comparador.get("casas") or [
+            linha.get("casa") for linha in (dados_comparador.get("tabela_comparativa") or [])
+            if linha.get("casa")
+        ]
         if casas_encontradas:
             casa_filtro = list(casas) if casas else None
             resultados["memoria_research"] = executor.executar_especialista(
