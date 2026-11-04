@@ -7,6 +7,8 @@ o consenso nunca é apresentado como target próprio do Pregão. Ausência de
 dados permanece explícita.
 """
 
+from statistics import median
+
 from data.research.sinal import calcular_sinal_comite
 
 
@@ -175,16 +177,19 @@ def _parecer_earnings(nota):
     }
 
 
-def _parecer_valuation(dados, comparador):
+def _parecer_valuation(dados, comparador, research=None):
     fundamentos = dados.get("fundamentos") or {}
     setorial = dados.get("comparativo_setorial") or {}
-    dispersao = comparador.get("dispersao_precos_alvo") or {}
+    research = research or []
+    alvos_externos = [_numero(item.get("preco_alvo")) for item in research]
+    alvos_externos = [x for x in alvos_externos if x is not None and x > 0]
+    mediana_research = median(alvos_externos) if len(alvos_externos) >= 2 else None
+    minimo = min(alvos_externos) if alvos_externos else None
+    maximo = max(alvos_externos) if alvos_externos else None
+    dispersao = {"n_casas_com_preco_alvo": len(alvos_externos)}
     preco = _numero(fundamentos.get("preco"))
     pl = _numero(fundamentos.get("pl"))
     pl_setor = _numero(setorial.get("pl_mediana"))
-    mediana_research = _numero(dispersao.get("mediana"))
-    minimo = _numero(dispersao.get("minimo"))
-    maximo = _numero(dispersao.get("maximo"))
 
     # Estimativa relativa simples: mantém o lucro por ação implícito
     # constante e aplica a mediana setorial de P/L. Não é DCF nem target
@@ -309,26 +314,30 @@ def montar_pareceres(resultados, ticker=None):
     fundamentos = analise.get("fundamentos") or {}
     preco = _numero(fundamentos.get("preco"))
 
+    memoria = (resultados.get("memoria_research") or {}).get("dados") or {}
+    research = _pareceres_research(comparador, memoria, preco)
     analistas = [
         _parecer_market(analise),
         _parecer_earnings(earnings),
-        _parecer_valuation(analise, comparador),
+        _parecer_valuation(analise, comparador, research),
     ]
-    memoria = (resultados.get("memoria_research") or {}).get("dados") or {}
-    research = _pareceres_research(comparador, memoria, preco)
-    dispersao = comparador.get("dispersao_precos_alvo") or {}
+    alvos = [_numero(item.get("preco_alvo")) for item in research]
+    alvos = [x for x in alvos if x is not None and x > 0]
+    mediana = median(alvos) if len(alvos) >= 2 else None
+    minimo = min(alvos) if alvos else None
+    maximo = max(alvos) if alvos else None
     return {
         "ticker": ticker,
         "analistas": analistas,
         "casas_research": research,
         "preco_alvo_consenso": {
-            "mediana": _numero(dispersao.get("mediana")),
-            "minimo": _numero(dispersao.get("minimo")),
-            "maximo": _numero(dispersao.get("maximo")),
-            "n_casas": dispersao.get("n_casas_com_preco_alvo", 0),
+            "mediana": mediana,
+            "minimo": minimo,
+            "maximo": maximo,
+            "n_casas": len(alvos),
             "preco_atual": preco,
-            "upside_pct": (((_numero(dispersao.get("mediana")) / preco) - 1) * 100
-                           if _numero(dispersao.get("mediana")) is not None and preco is not None and preco > 0 else None),
+            "upside_pct": (((mediana / preco) - 1) * 100
+                           if mediana is not None and preco is not None and preco > 0 else None),
             "rotulo": "Consenso de preços-alvo publicados; não é estimativa proprietária.",
         },
     }
