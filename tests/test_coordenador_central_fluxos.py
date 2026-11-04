@@ -64,7 +64,7 @@ def test_comparar_casas_encadeamento_pula_memoria_quando_sem_cobertura(persisten
     """Decisão real baseada no resultado do comparador: 0 casas
     encontradas -> memoria_research NUNCA é acionado."""
     with patch.object(fluxos.executor, "executar_especialista") as mock_individual:
-        mock_individual.return_value = _resultado("comparador", dados={"casas": []})
+        mock_individual.return_value = _resultado("comparador", dados={"tabela_comparativa": []})
         consolidado = fluxos.comparar_casas("WEGE3")
 
     mock_individual.assert_called_once_with("comparador", ticker="WEGE3")
@@ -78,7 +78,7 @@ def test_comparar_casas_encadeamento_aciona_memoria_quando_ha_cobertura(persiste
     def _fake_executar(especialista_id, **kwargs):
         chamadas.append((especialista_id, kwargs))
         if especialista_id == "comparador":
-            return _resultado("comparador", dados={"casas": ["Genial", "XP"]})
+            return _resultado("comparador", dados={"tabela_comparativa": [{"casa": "BTG Pactual"}]})
         return _resultado("memoria_research", dados={"resultados": []})
 
     with patch.object(fluxos.executor, "executar_especialista", side_effect=_fake_executar):
@@ -98,7 +98,7 @@ def test_comparar_casas_filtra_memoria_por_casa_unica():
          patch.object(fluxos.persistencia, "registrar_execucao_especialista"), \
          patch.object(fluxos.executor, "executar_especialista") as mock_individual:
         mock_individual.side_effect = lambda especialista_id, **kw: (
-            _resultado("comparador", dados={"casas": ["Genial"]}) if especialista_id == "comparador"
+            _resultado("comparador", dados={"tabela_comparativa": [{"casa": "BTG Pactual"}]}) if especialista_id == "comparador"
             else _resultado("memoria_research", dados={"resultados": []})
         )
         fluxos.comparar_casas("WEGE3", casas=["Genial"])
@@ -115,7 +115,7 @@ def test_comparar_casas_filtra_memoria_por_varias_casas():
          patch.object(fluxos.persistencia, "registrar_execucao_especialista"), \
          patch.object(fluxos.executor, "executar_especialista") as mock_individual:
         mock_individual.side_effect = lambda especialista_id, **kw: (
-            _resultado("comparador", dados={"casas": ["Genial", "XP", "BTG"]}) if especialista_id == "comparador"
+            _resultado("comparador", dados={"tabela_comparativa": [{"casa": "BTG Pactual"}, {"casa": "Monte Bravo"}, {"casa": "Nord"}]}) if especialista_id == "comparador"
             else _resultado("memoria_research", dados={"resultados": []})
         )
         fluxos.comparar_casas("WEGE3", casas=["Genial", "XP"])
