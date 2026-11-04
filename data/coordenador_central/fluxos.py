@@ -40,11 +40,51 @@ def _concluir_com_erro(analise_id: str, exc: Exception) -> None:
     persistencia.concluir_analise(analise_id, "ERRO", None, erro=repr(exc))
 
 
-def analisar_ticker(ticker: str) -> dict:
+def _anexar_premissas_dcf(resultados: dict, premissas_usuario: dict | None) -> None:
+    """Combina premissas manuais de crescimento/WACC com dados observados.
+
+    FCF vem do yfinance; dívida líquida é inferida apenas quando EBITDA e
+    dívida líquida/EBITDA existem; ações = valor de mercado / cotação.
+    Se qualquer dado-base faltar, o DCF permanece indisponível.
+    """
+    if not isinstance(premissas_usuario, dict):
+        return
+    analise = resultados.get("analise_ticker") or {}
+    dados = analise.get("dados") or {}
+    fundamentos = dados.get("fundamentos") or {}
+    fcf = fundamentos.get("fluxo_caixa_livre")
+    ebitda = fundamentos.get("ebitda")
+    alavancagem = fundamentos.get("divida_liquida_ebitda")
+    preco = fundamentos.get("preco")
+    valor_mercado = fundamentos.get("valor_mercado")
+    try:
+        divida_liquida = float(ebitda) * float(alavancagem) if ebitda is not None and alavancagem is not None else None
+        acoes = float(valor_mercado) / float(preco) if valor_mercado is not None and preco is not None and float(preco) > 0 else None
+        campos = {
+            "fcf_base": fcf,
+            "crescimento_fcf_otimista": float(premissas_usuario["crescimento_fcf_otimista"]) / 100,
+            "crescimento_fcf_base": float(premissas_usuario["crescimento_fcf_base"]) / 100,
+            "crescimento_fcf_pessimista": float(premissas_usuario["crescimento_fcf_pessimista"]) / 100,
+            "wacc": float(premissas_usuario["wacc"]) / 100,
+            "g_terminal": float(premissas_usuario["g_terminal"]) / 100,
+            "divida_liquida": divida_liquida,
+            "acoes": acoes,
+            "fonte_premissas": "FCF, EBITDA, alavancagem, valor de mercado e cotação: yfinance; taxas de crescimento e WACC: premissas manuais do usuário.",
+            "data_base": str(fundamentos.get("consultado_em") or ""),
+        }
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return
+    dados["premissas_dcf"] = campos
+    analise["dados"] = dados
+    resultados["analise_ticker"] = analise
+
+
+def analisar_ticker(ticker: str, premissas_dcf: dict | None = None) -> dict:
     """Fluxo A: fundamentos/catalisadores/cobertura (analise_ticker) +
     comparação entre casas (comparador) + publicações originais
     (memoria_research) + notícias + catalisadores de calendário - tudo
-    em paralelo via executor.executar_varios."""
+    em paralelo via executor.executar_varios.
+    premissas_dcf é opcional e nunca recebe defaults silenciosos."""
     ticker = (ticker or "").strip().upper()
     analise_id = persistencia.iniciar_analise(f"Analisar {ticker}", "analise_ticker", ticker)
     inicio = time.monotonic()
@@ -53,6 +93,7 @@ def analisar_ticker(ticker: str) -> dict:
             ["analise_ticker", "comparador", "memoria_research", "noticias", "catalisadores", "resultados_corporativos"], ticker=ticker,
         )
         _registrar_execucoes(analise_id, resultados)
+        _anexar_premissas_dcf(resultados, premissas_dcf)
         consolidado = consolidacao.consolidar(resultados, ticker=ticker)
         duracao_ms = int((time.monotonic() - inicio) * 1000)
         persistencia.concluir_analise(analise_id, "CONCLUIDA", consolidado)
