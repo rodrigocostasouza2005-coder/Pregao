@@ -85,8 +85,9 @@ CASAS = [
         "id": "genial",
         "nome": "Genial Analisa",
         "fonte": "analisa.genialinvestimentos.com.br",
-        "ativa_por_padrao": True,
-        "disponivel": True,
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "motivo_indisponivel": "Coleta desativada por decisão do projeto: bloqueio WAF persistente nas execuções de produção e em nuvem; mantém apenas o histórico já salvo.",
         "obter_relatorios": genial.obter_relatorios,
         "extrator_texto": None,  # generico (baixa a pagina publica do relatorio)
         # diagnostico de producao (2026-09-24): bloqueada no Streamlit
@@ -122,8 +123,9 @@ CASAS = [
         "id": "xp",
         "nome": "XP Investimentos",
         "fonte": "conteudos.xpi.com.br (WP REST)",
-        "ativa_por_padrao": True,  # campos confirmados com requisicao real (fora do sandbox), ver xp.py
-        "disponivel": True,
+        "ativa_por_padrao": False,  # campos confirmados com requisicao real (fora do sandbox), ver xp.py
+        "disponivel": False,
+        "motivo_indisponivel": "Coleta desativada por decisão do projeto: CDN/Akamai responde HTTP 403; não serão feitas novas tentativas automatizadas.",
         "obter_relatorios": xp.obter_relatorios,
         "extrator_texto": xp.obter_texto_aberto,  # nunca baixa a pagina publica (paywall)
         "tentar_coleta_automatica": False,  # idem Genial - bloqueada no Cloud (403), ver coletor_local.py
@@ -142,8 +144,9 @@ CASAS = [
         "id": "genial_lives",
         "nome": "Genial (Lives)",
         "fonte": "YouTube RSS (canal Genial Analisa)",
-        "ativa_por_padrao": True,
-        "disponivel": True,
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "motivo_indisponivel": "Coleta desativada por decisão do projeto: feed RSS do YouTube retorna HTTP 404; não serão feitas novas tentativas automatizadas.",
         "obter_relatorios": genial_lives.obter_relatorios,
         "extrator_texto": genial_lives.obter_texto_transcricao,
         # achado real (2026-10-17): a execucao de producao no GitHub
