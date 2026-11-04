@@ -28,7 +28,10 @@ create table if not exists coordenador_analises (
   erro          text
 );
 
--- Migração segura para instalações que já tinham a tabela criada antes de duracao_ms.\nalter table coordenador_analises add column if not exists duracao_ms int;\n\ncreate index if not exists idx_coordenador_analises_status on coordenador_analises (status);
+-- Migração segura para instalações que já tinham a tabela criada antes de duracao_ms.
+alter table coordenador_analises add column if not exists duracao_ms int;
+
+create index if not exists idx_coordenador_analises_status on coordenador_analises (status);
 create index if not exists idx_coordenador_analises_ticker on coordenador_analises (ticker);
 create index if not exists idx_coordenador_analises_iniciado_em on coordenador_analises (iniciado_em desc);
 
