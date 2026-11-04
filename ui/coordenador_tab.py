@@ -324,6 +324,18 @@ def _render_consolidado(consolidado: dict):
             linhas.append(f"<tr><td>{casa_html}<div class='coord-nota'>{titulo}</div></td><td>{html.escape(str(casa.get('recomendacao') or '—'))}</td><td>{html.escape(alvo_txt)}</td><td>{html.escape(upside_txt)}</td><td>{html.escape(_fmt_data(casa.get('data_publicacao')))}</td></tr>")
         linhas.append("</tbody></table>")
         st.markdown("".join(linhas), unsafe_allow_html=True)
+        for casa in casas:
+            with st.expander(f"Tese e riscos — {casa.get('casa') or 'Casa'}"):
+                premissas = casa.get("tese") or []
+                riscos_casa = casa.get("contras") or []
+                projecoes = casa.get("projecoes") or {}
+                st.markdown("**Tese / premissas publicadas**")
+                lista_compacta(html.escape(str(x)) for x in premissas) if premissas else st.caption("A extração estruturada não encontrou premissas para esta publicação.")
+                st.markdown("**Riscos apontados pela casa**")
+                lista_compacta(html.escape(str(x)) for x in riscos_casa) if riscos_casa else st.caption("A extração estruturada não encontrou riscos para esta publicação.")
+                if projecoes:
+                    st.markdown("**Projeções extraídas**")
+                    lista_compacta(f"{html.escape(str(k))}: {html.escape(str(v))}" for k, v in projecoes.items() if v is not None)
         consenso = pareceres.get("preco_alvo_consenso") or {}
         mediana = consenso.get("mediana")
         upside = consenso.get("upside_pct")
