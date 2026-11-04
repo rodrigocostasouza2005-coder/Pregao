@@ -179,6 +179,8 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
                  "titulo": "Relatório teste", "link": "https://example.com/research"},
                 {"casa": "XP Investimentos", "recomendacao_categoria": "CAUTELOSO",
                  "preco_alvo": 18.0},
+                {"casa": "Genial Analisa", "recomendacao_categoria": "CAUTELOSO",
+                 "preco_alvo": 10.0},
             ],
         }),
         "memoria_research": _resultado("memoria_research", dados={"resultados": [
@@ -212,6 +214,7 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
     assert pareceres["analistas"][2]["preco_alvo"] == 30.0
     assert pareceres["analistas"][2]["upside_pct"] == 50.0
     assert pareceres["analistas"][2]["preco_alvo_rotulo"].startswith("Estimativa mecânica")
+    assert [x["recomendacao"] for x in pareceres["analistas"]] == ["COMPRA", "COMPRA", "COMPRA"]
     assert consolidado["sinal_comite"]["sinal"] in {"COMPRA", "VENDA", "NEUTRO", "INSUFICIENTE"}
 
 
