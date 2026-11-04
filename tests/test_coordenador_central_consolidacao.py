@@ -274,3 +274,27 @@ def test_model_builder_e_valuation_reviewer_aparecem_com_pareceres_distintos():
     assert "valuation_reviewer" in por_id
     assert por_id["model_builder"]["cenarios"]["base"]["preco_alvo"] == 30.0
     assert por_id["valuation_reviewer"]["recomendacao"] == "APROVADO"
+
+
+def test_sinal_comite_usa_preco_alvo_e_upside_do_model_builder():
+    resultados = {
+        "analise_ticker": _resultado("analise_ticker", dados={
+            "ticker": "PETR4", "fundamentos": {"preco": 25.0, "moeda": "BRL"},
+        }),
+        "model_builder": _resultado("model_builder", dados={
+            "disponivel": True,
+            "cenarios": {
+                "pessimista": {"preco_alvo": 20.0, "upside_pct": -20.0},
+                "base": {"preco_alvo": 30.0, "upside_pct": 20.0},
+                "otimista": {"preco_alvo": 40.0, "upside_pct": 60.0},
+            },
+        }),
+        "valuation_reviewer": _resultado("valuation_reviewer", dados={
+            "disponivel": True, "aprovado": True,
+            "precos_alvo_revisados": {"pessimista": 20.0, "base": 30.0, "otimista": 40.0},
+            "achados": [], "limitacoes": [],
+        }),
+    }
+    sinal = consolidacao.consolidar(resultados, ticker="PETR4")["sinal_comite"]
+    assert sinal["preco_alvo_modelo"] == 30.0
+    assert sinal["upside_modelo_pct"] == 20.0
