@@ -338,7 +338,7 @@ def main() -> int:
     # data/research/__init__.py, tentar_coleta_automatica=False).
     n_comparados, n_mudancas = coletar_snapshot_genial()
     if n_comparados == 0:
-        logger.info("  historico de recomendacoes: fonte indisponivel (WAF/rede) ou nenhuma recomendacao retornada")
+        logger.info("  historico de recomendacoes: coleta Genial desativada por decisão do projeto; histórico existente preservado")
     else:
         logger.info(f"  historico de recomendacoes: {n_comparados} ticker(s) comparado(s), {n_mudancas} mudanca(s) real(is) registrada(s)")
 
