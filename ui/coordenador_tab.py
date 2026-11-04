@@ -345,6 +345,32 @@ def _render_consolidado(consolidado: dict):
                         )
                     linhas_dcf.append("</tbody></table>")
                     st.markdown("".join(linhas_dcf), unsafe_allow_html=True)
+                    sensibilidade = calcular_sensibilidade_dcf(
+                        (analista.get("dcf") or {}).get("premissas"),
+                        preco_atual=(analista.get("dcf") or {}).get("preco_atual"),
+                    )
+                    if sensibilidade.get("disponivel"):
+                        subtitulo("Sensibilidade do cenário-base")
+                        st.caption("Preço-alvo por ação variando WACC (linhas) e crescimento do FCF (colunas), em pontos percentuais. As demais premissas ficam constantes.")
+                        colunas_sens = sensibilidade.get("passos_crescimento") or []
+                        cabecalho = "".join(
+                            f"<th>{(float((analista.get('dcf') or {}).get('premissas', {}).get('crescimento_fcf_base', 0)) + delta) * 100:.1f}%</th>"
+                            for delta in colunas_sens
+                        )
+                        linhas_sens = [f"<table class='coord-tabela'><thead><tr><th>WACC \\ Crescimento</th>{cabecalho}</tr></thead><tbody>"]
+                        for linha_sens in sensibilidade.get("linhas") or []:
+                            celulas_html = []
+                            for celula in linha_sens.get("celulas") or []:
+                                valor = celula.get("preco_alvo")
+                                valor_txt = f"{(analista.get('dcf') or {}).get('moeda') or '—'} {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(valor, (int, float)) else "—"
+                                celulas_html.append(f"<td>{html.escape(valor_txt)}</td>")
+                            linhas_sens.append(
+                                f"<tr><th>{linha_sens.get('wacc', 0) * 100:.1f}%</th>{''.join(celulas_html)}</tr>"
+                            )
+                        linhas_sens.append("</tbody></table>")
+                        st.markdown("".join(linhas_sens), unsafe_allow_html=True)
+                    else:
+                        st.caption(f"Sensibilidade indisponível: {sensibilidade.get('motivo') or 'premissas insuficientes'}")
                     st.caption(
                         f"Premissas: {dcf.get('fonte_premissas') or 'fonte não identificada'} · "
                         f"Data-base: {dcf.get('data_base') or 'não informada'}. "
