@@ -236,6 +236,8 @@ def consolidar(resultados: dict, ticker: str = None) -> dict:
     )
     alvo_consenso = pareceres.get("preco_alvo_consenso") or {}
     sinal_comite["preco_alvo_modelo"] = analista_valuation.get("preco_alvo")
+    fundamentos_sinal = ((resultados.get("analise_ticker") or {}).get("dados") or {}).get("fundamentos") or {}
+    sinal_comite["moeda_preco_alvo_modelo"] = fundamentos_sinal.get("moeda") or "R$"
     sinal_comite["upside_modelo_pct"] = analista_valuation.get("upside_pct")
     sinal_comite["metodo_preco_alvo_modelo"] = analista_valuation.get("preco_alvo_rotulo")
     sinal_comite["preco_alvo_pl_setorial"] = analista_valuation.get("preco_alvo_pl_setorial")
