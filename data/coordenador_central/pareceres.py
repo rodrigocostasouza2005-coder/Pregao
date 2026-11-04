@@ -104,8 +104,10 @@ def _parecer_market(dados):
     else:
         vies = "MISTO"
 
+    recomendacao = {"POSITIVO": "COMPRA", "NEGATIVO": "VENDA", "MISTO": "NEUTRO"}.get(vies, "INSUFICIENTE")
     return {
         "id": "market_researcher", "nome": "Analista de Empresas",
+        "recomendacao": recomendacao,
         "especialidade": "Fundamentos, qualidade do negócio, crescimento e riscos",
         "vies": vies,
         "tese": " ".join(fatos) if fatos else "Fundamentos estruturados não disponíveis nesta rodada.",
@@ -164,8 +166,10 @@ def _parecer_earnings(nota):
         vies = "NEGATIVO"
     else:
         vies = "MISTO"
+    recomendacao = {"POSITIVO": "COMPRA", "NEGATIVO": "VENDA", "MISTO": "NEUTRO"}.get(vies, "INSUFICIENTE")
     return {
         "id": "earnings_reviewer", "nome": "Analista de Resultados",
+        "recomendacao": recomendacao,
         "especialidade": "DRE, balanço, fluxo de caixa e evolução trimestral",
         "vies": vies,
         "tese": f"Resultado {nota.get('periodo_label') or 'mais recente'}: " + (" ".join(fatos) if fatos else "métricas comparáveis insuficientes."),
@@ -229,8 +233,12 @@ def _parecer_valuation(dados, comparador, research=None):
         if preco is not None and pl is not None and pl_setor is not None
         else "Múltiplos insuficientes para comparação setorial. "
     ) + " ".join(fatos)
+    recomendacao = ("COMPRA" if upside_proprio is not None and upside_proprio >= 10
+                    else "VENDA" if upside_proprio is not None and upside_proprio <= -10
+                    else "NEUTRO" if upside_proprio is not None else "INSUFICIENTE")
     return {
         "id": "valuation_reviewer", "nome": "Analista de Valuation",
+        "recomendacao": recomendacao,
         "especialidade": "Múltiplos, comparáveis e preço-alvo",
         "vies": vies, "tese": tese,
         "pros": pros, "contras": contras,
