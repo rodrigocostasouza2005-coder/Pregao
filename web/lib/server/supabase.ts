@@ -66,6 +66,10 @@ export async function atualizarLinha(
       console.error(`[supabase] atualizarLinha ${tabela}: HTTP ${resp.status} ${await resp.text().catch(() => "")}`);
       return { ok: false, mensagem: "O banco de dados não aceitou esta atualização." };
     }
+    const linhas = (await resp.json().catch(() => [])) as unknown[];
+    if (linhas.length === 0) {
+      return { ok: false, mensagem: "O registro mudou desde que foi carregado. Atualize a fila e tente novamente." };
+    }
     return { ok: true };
   } catch (erro) {
     console.error(`[supabase] atualizarLinha ${tabela}:`, erro);
