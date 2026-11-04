@@ -454,3 +454,20 @@ def test_consenso_research_propaga_divergencia_estruturada():
     cobertura = {**_COBERTURA_WEGE3, "divergencia": {"descricao": "diverge", "por_casa": {"A": "COMPRA", "B": "VENDA"}}}
     resultado = mr.consenso_research(cobertura)
     assert resultado["divergencia"]["descricao"] == "diverge"
+
+
+def test_registrar_achados_preserva_todos_os_estados_de_triagem_manual():
+    achado = {"coletor": "NEWS (Brasil)", "categoria": "Noticias", "codigo_estado": "FALHA_EXECUCAO",
+              "rotulo_estado": "Falha de execucao", "critico": True, "evidencia": {}}
+    for estado in ("INVESTIGANDO", "AGUARDANDO_INTERVENCAO", "INCONCLUSIVO"):
+        cliente = _ClienteAchadosFake()
+        with patch.object(mr, "obter_cliente", return_value=cliente), \
+             patch.object(mr, "achados_qualidade_coletores", return_value=[achado]):
+            mr.registrar_achados_atuais()
+        linha = next(iter(cliente.linhas.values()))
+        linha["status"] = estado
+        with patch.object(mr, "obter_cliente", return_value=cliente), \
+             patch.object(mr, "achados_qualidade_coletores", return_value=[achado]):
+            resultado = mr.registrar_achados_atuais()
+        assert resultado["ok"] is True
+        assert next(iter(cliente.linhas.values()))["status"] == estado
