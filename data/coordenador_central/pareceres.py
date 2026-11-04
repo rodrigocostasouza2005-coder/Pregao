@@ -22,6 +22,22 @@ def _variacao(metricas, chave):
     return _numero((metricas.get(chave) or {}).get("yoy_variacao_pct"))
 
 
+def _montar_tese(vies, positivos, negativos, fatos):
+    if vies == "POSITIVO":
+        abertura = "Leitura construtiva: "
+    elif vies == "NEGATIVO":
+        abertura = "Leitura cautelosa: "
+    elif vies == "MISTO":
+        abertura = "Leitura equilibrada, com sinais conflitantes: "
+    else:
+        return "Dados disponíveis não permitem formar uma tese consistente nesta rodada."
+    base = "; ".join(positivos[:3] if vies == "POSITIVO" else negativos[:3] if vies == "NEGATIVO" else fatos[:3])
+    texto = abertura + (base or "há fatos observáveis, mas sem direção predominante.")
+    if positivos and negativos:
+        texto += " O contraponto relevante é: " + "; ".join(negativos[:2] if vies == "POSITIVO" else positivos[:2]) + "."
+    return texto
+
+
 def _adicionar_direcao(lista, nome, valor, unidade="%"):
     if valor is None:
         return
@@ -110,7 +126,7 @@ def _parecer_market(dados):
         "recomendacao": recomendacao,
         "especialidade": "Fundamentos, qualidade do negócio, crescimento e riscos",
         "vies": vies,
-        "tese": " ".join(fatos) if fatos else "Fundamentos estruturados não disponíveis nesta rodada.",
+        "tese": _montar_tese(vies, positivos, negativos, fatos),
         "pros": positivos, "contras": negativos,
         "preco_alvo": None, "preco_alvo_rotulo": "Não calculado por este analista nesta versão.",
         "preco_atual": preco,
@@ -172,7 +188,7 @@ def _parecer_earnings(nota):
         "recomendacao": recomendacao,
         "especialidade": "DRE, balanço, fluxo de caixa e evolução trimestral",
         "vies": vies,
-        "tese": f"Resultado {nota.get('periodo_label') or 'mais recente'}: " + (" ".join(fatos) if fatos else "métricas comparáveis insuficientes."),
+        "tese": f"Resultado {nota.get('periodo_label') or 'mais recente'} — " + _montar_tese(vies, positivos, negativos, fatos),
         "pros": positivos, "contras": negativos, "preco_alvo": None,
         "preco_alvo_rotulo": "Não faz parte do escopo do Earnings Reviewer.",
         "periodo": nota.get("periodo_label"),
