@@ -231,6 +231,14 @@ def consolidar(resultados: dict, ticker: str = None) -> dict:
     confianca = _confianca(resultados)
     pareceres = montar_pareceres(resultados, ticker=ticker)
     sinal_comite = montar_sinal_comite(resultados)
+    analista_valuation = next(
+        (a for a in pareceres.get("analistas", []) if a.get("id") == "valuation_reviewer"), {}
+    )
+    alvo_consenso = pareceres.get("preco_alvo_consenso") or {}
+    sinal_comite["preco_alvo_modelo"] = analista_valuation.get("preco_alvo")
+    sinal_comite["upside_modelo_pct"] = analista_valuation.get("upside_pct")
+    sinal_comite["preco_alvo_consenso"] = alvo_consenso.get("mediana")
+    sinal_comite["upside_consenso_pct"] = alvo_consenso.get("upside_pct")
     return {
         "resumo_executivo": _resumo_executivo(resultados, ticker),
         "visao_especialistas": _visao_especialistas(resultados),
