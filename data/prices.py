@@ -609,6 +609,7 @@ def obter_indicadores(ticker: str) -> dict:
 
     resultado = {
         "valor_mercado": info.get("marketCap"),
+        "moeda_fonte": info.get("financialCurrency") or info.get("currency"),
         "pl": info.get("trailingPE"),
         "pvp": info.get("priceToBook"),
         "dividend_yield": _dividend_yield_12m(yf.Ticker(symbol), preco_atual) if info else None,
