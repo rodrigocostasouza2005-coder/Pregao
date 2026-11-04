@@ -113,7 +113,7 @@ def calcular_sinal_comite(analise: dict) -> dict:
 
     # Só considera casas independentes efetivamente coletadas. XP e Genial
     # ficam explicitamente fora do universo decisório por indisponibilidade.
-    casas_excluidas = ("GENIAL", "XP INVEST", "XP RESEARCH")
+    casas_excluidas = ("GENIAL", "XP")
     recomendacoes = {}
     for item in cobertura.get("cobertura") or []:
         casa = str(item.get("casa") or "").upper()
