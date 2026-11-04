@@ -298,6 +298,7 @@ def _render_consolidado(consolidado: dict):
             vies = html.escape(str(analista.get("vies") or "SEM BASE"))
             tese = html.escape(str(analista.get("tese") or "Parecer indisponível."))
             especialidade = html.escape(str(analista.get("especialidade") or ""))
+            metodo_analista = html.escape(str(analista.get("metodo") or ""))
             alvo = analista.get("preco_alvo")
             alvo_txt = f"R$ {alvo:,.2f}" if isinstance(alvo, (int, float)) else "Não calculado"
             alvo_txt = alvo_txt.replace(",", "X").replace(".", ",").replace("X", ".")
@@ -306,7 +307,7 @@ def _render_consolidado(consolidado: dict):
             upside_analista_txt = f" · potencial {upside_analista:+.1f}%" if isinstance(upside_analista, (int, float)) else ""
             recomendacao = html.escape(str(analista.get("recomendacao") or "INSUFICIENTE"))
             with st.expander(f"{nome} — {recomendacao} ({vies})", expanded=True):
-                st.markdown(f"<div class='coord-nota'>{especialidade}</div><b>Tese</b><div class='coord-conclusao-linha'>{tese}</div><b>Preço-alvo</b><div class='coord-conclusao-linha'>{html.escape(alvo_txt)}{html.escape(upside_analista_txt)} · {alvo_rotulo}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='coord-nota'>{especialidade}</div><div class='coord-nota'>Método: {metodo_analista}</div><b>Tese</b><div class='coord-conclusao-linha'>{tese}</div><b>Preço-alvo</b><div class='coord-conclusao-linha'>{html.escape(alvo_txt)}{html.escape(upside_analista_txt)} · {alvo_rotulo}</div>", unsafe_allow_html=True)
                 pros = analista.get("pros") or []
                 contras = analista.get("contras") or []
                 col_pro, col_con = st.columns(2)
