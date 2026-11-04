@@ -251,3 +251,26 @@ def test_especialista_pulado_sozinho_nao_cria_confianca():
     consolidado = consolidacao.consolidar(resultados)
     assert consolidado["confianca"]["categoria"] == consolidacao.CONFIANCA_INSUFICIENTE
     assert "0 especialista(s) acionado(s)" in consolidado["resumo_executivo"]
+
+
+def test_model_builder_e_valuation_reviewer_aparecem_com_pareceres_distintos():
+    resultados = {
+        "model_builder": _resultado("model_builder", dados={
+            "disponivel": True, "metodo": "DCF de 5 anos",
+            "fonte_premissas": "CVM + premissas manuais",
+            "cenarios": {"pessimista": {"preco_alvo": 20.0}, "base": {"preco_alvo": 30.0}, "otimista": {"preco_alvo": 40.0}},
+            "sensibilidade": {"disponivel": True, "linhas": []},
+        }),
+        "valuation_reviewer": _resultado("valuation_reviewer", dados={
+            "disponivel": True, "aprovado": True,
+            "precos_alvo_revisados": {"pessimista": 20.0, "base": 30.0, "otimista": 40.0},
+            "achados": [], "limitacoes": [],
+        }),
+    }
+    consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
+    pareceres = consolidado["pareceres_analistas"]["analistas"]
+    por_id = {item["id"]: item for item in pareceres}
+    assert "model_builder" in por_id
+    assert "valuation_reviewer" in por_id
+    assert por_id["model_builder"]["cenarios"]["base"]["preco_alvo"] == 30.0
+    assert por_id["valuation_reviewer"]["recomendacao"] == "APROVADO"
