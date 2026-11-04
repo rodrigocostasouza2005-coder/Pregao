@@ -933,9 +933,14 @@ def _montar_conclusao(analise: dict, tese: dict | None) -> list:
         _MOTIVO_FONTE_INDISPONIVEL.get(f, f"Fonte '{f}' indisponível nesta checagem.")
         for f in fontes_indisponiveis
     ))
+    # cada texto em _TEXTOS_LACUNA/_MOTIVO_FONTE_INDISPONIVEL já termina
+    # com ponto final - bug real encontrado na validação (2026-11-02):
+    # "; ".join(...) + "." duplicava o ponto final do último item
+    # ("...por isso não foi calculado.." - cosmético, mas falava mal da
+    # qualidade do texto principal). strip() antes de juntar.
     bloco_lacunas = {
         "pergunta": "Lacunas de informação",
-        "resposta": (("; ".join(textos_lacuna) + ".") if textos_lacuna else
+        "resposta": (("; ".join(t.rstrip(".") for t in textos_lacuna) + ".") if textos_lacuna else
                      "Nenhuma lacuna estrutural adicional identificada nesta checagem.") +
                     " Esta síntese organiza evidência real já coletada - não é e não substitui "
                     "recomendação de compra ou venda.",
@@ -1115,7 +1120,16 @@ def _render_riscos_e_indicadores(relatorio: dict, fmt: str):
             roe = ind.get("roe")
             st.markdown(f"**ROE:** {config.formatar_numero(roe, 2, fmt) + '%' if roe is not None else '—'} "
                         "<span class='cinza' style='font-size:0.68rem;'>(FATO, yfinance)</span>", unsafe_allow_html=True)
-            st.caption(f"ROIC: não disponível — {ind['roic_motivo']}")
+            if ind.get("roic_disponivel"):
+                roic_texto = config.formatar_numero(ind["roic"], 2, fmt) + "%"
+                tendencia_rotulo = _ROTULO_TENDENCIA.get(ind.get("roic_tendencia"))
+                if tendencia_rotulo:
+                    roic_texto += f" ({tendencia_rotulo})"
+                st.markdown(f"**ROIC:** {roic_texto} "
+                            "<span class='cinza' style='font-size:0.68rem;'>(CÁLCULO INTERNO, trimestre mais "
+                            "recente, não anualizado)</span>", unsafe_allow_html=True)
+            else:
+                st.caption(f"ROIC: não disponível — {ind['roic_motivo']}")
             if ind.get("riscos_mercado"):
                 st.markdown("**Riscos de mercado (determinístico, dados da empresa):**")
                 for alerta in ind["riscos_mercado"]:

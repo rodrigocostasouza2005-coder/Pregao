@@ -38,9 +38,16 @@ _indicadores_fundamentalistas:
   usuario) - nunca confundido com "a tese nao tem risco".
 - ROE: FATO real da empresa (yfinance, mesma fonte/cache do resto do
   app - data/radar.py:linha_valuation), nao e' uma projecao de casa.
-- ROIC: continua honestamente indisponivel - decisao ja tomada e
-  documentada em data/prices.py:obter_indicadores (yfinance nao reporta,
-  calcular seria estimativa) - nunca recalculado aqui.
+- ROIC: atualizado em 2026-11-02 (validacao da Fase 2 de Balanco/Fluxo
+  de Caixa, pedido do Rodrigo) - yfinance continua sem reportar o
+  indicador, mas agora existe um calculo REAL via CVM (Balanco+DFC+DRE,
+  data/earnings/reviewer.py:_roic_pct), exposto por
+  data/market_researcher.py:historico_fundamentos (mesma funcao que
+  ANALISES > Empresas ja usa). Este modulo so' CONSOME esse resultado
+  (ultimo trimestre + tendencia), nunca reimplementa a formula - banco/
+  seguradora e empresa internacional continuam indisponiveis, com o
+  motivo real de cada caso (guard de plano de contas / calendario fiscal
+  nao detectado), nunca um texto generico "yfinance nao reporta".
 - riscos_mercado: alertas deterministicos (P/L negativo, margem
   negativa, divida/EBITDA alta) da EMPRESA, zero IA, mesmo mecanismo ja
   usado no Valuation Radar/Market Makers - complementa (nunca substitui)
@@ -59,7 +66,7 @@ dado) - hoje e' um gap assumido e documentado, nao resolvido.
 import statistics
 from datetime import datetime
 
-from data.market_researcher import cobertura_cruzada_casas
+from data.market_researcher import cobertura_cruzada_casas, historico_fundamentos
 from data.radar import linha_valuation
 from data.research import historico
 from data.research.store import listar_premissas
@@ -449,42 +456,69 @@ def _evolucao_historica(ticker: str, agrupado: dict) -> dict:
 # deterministicos - fechamento do gap, 2026-11-01, pedido do Rodrigo).
 # ============================================================
 
-_MOTIVO_ROIC_INDISPONIVEL = (
-    "ROIC nao e reportado pelo yfinance (so' ROE/ROA no tk.info) - calcular "
-    "exigiria montar capital investido + taxa efetiva de imposto a partir "
-    "do Balanco Patrimonial/DRE da CVM, o que viraria estimativa, nao dado "
-    "reportado - decisao ja tomada e documentada em data/prices.py:"
-    "obter_indicadores (testado contra PETR4/VALE3/ITUB4/MELI34 antes de "
-    "decidir), nunca recalculado aqui, so' o mesmo motivo repetido."
+_MOTIVO_ROIC_SEM_DADO_CVM = (
+    "ROIC indisponível para este ticker nesta checagem: Balanço Patrimonial/"
+    "Fluxo de Caixa/DRE da CVM não cobrem os dados necessários (alíquota "
+    "efetiva real do trimestre + capital investido) - ver seção Lacunas de "
+    "informação em ANÁLISES > Empresas pro motivo exato deste ticker."
 )
 
 
+def _roic_mais_recente(ticker: str) -> tuple:
+    """(valor_pct, disponivel, motivo, tendencia) - reaproveita
+    data/market_researcher.py:historico_fundamentos (MESMA função que
+    ANALISES > Empresas já usa pra Conclusão de Investimento, ver
+    data/earnings/reviewer.py:_roic_pct) - NUNCA reimplementa a fórmula
+    de ROIC aqui. Atualizado em 2026-11-02 (validação da Fase 2 de
+    Balanço/Fluxo de Caixa) - antes disso o yfinance realmente não tinha
+    o indicador e não havia fonte alternativa; agora a CVM tem (só
+    Brasil - banco/seguradora e internacional continuam indisponíveis,
+    com o motivo REAL de cada caso, nunca um texto genérico fixo)."""
+    try:
+        historico = historico_fundamentos(ticker)
+    except Exception as exc:
+        return None, False, f"consulta de histórico fundamentalista falhou: {exc!r}", None
+    if not historico.get("disponivel"):
+        return None, False, historico.get("motivo") or _MOTIVO_ROIC_SEM_DADO_CVM, None
+    bfc = (historico.get("ultima_nota") or {}).get("balanco_fluxo_caixa") or {}
+    roic = bfc.get("roic_pct")
+    tendencia = historico.get("roic_pct", {}).get("tendencia")
+    if roic is None:
+        return None, False, _MOTIVO_ROIC_SEM_DADO_CVM, None
+    return roic, True, None, tendencia
+
+
 def _indicadores_fundamentalistas(ticker: str) -> dict:
-    """Indicadores da EMPRESA (nao de uma casa especifica - diferente de
-    `projecoes` por casa, que vem do relatorio de cada uma). ROE e' FATO
-    real (yfinance, mesma fonte/cache ja usado no resto do app - ver
-    data/radar.py:linha_valuation), riscos_mercado sao alertas
+    """Indicadores da EMPRESA (nao e' de uma casa especifica - diferente
+    de `projecoes` por casa, que vem do relatorio de cada uma). ROE e'
+    FATO real (yfinance, mesma fonte/cache ja usado no resto do app -
+    ver data/radar.py:linha_valuation), riscos_mercado sao alertas
     deterministicos de qualidade (P/L negativo, margem negativa, divida/
     EBITDA alta - zero IA, mesmo mecanismo do Valuation Radar/Market
-    Makers). ROIC fica honestamente indisponivel (ver
-    _MOTIVO_ROIC_INDISPONIVEL) - nunca estimado. Nunca lanca excecao: se
-    a consulta real falhar, volta tudo vazio com disponivel=False."""
+    Makers). ROIC agora e' CALCULO INTERNO real via CVM quando
+    disponivel (ver _roic_mais_recente) - indisponivel so' quando a
+    propria fonte (banco/seguradora, internacional, ou dado insuficiente
+    no trimestre) nao permite, nunca estimado. Nunca lanca excecao: se a
+    consulta real falhar, volta tudo vazio com disponivel=False."""
     try:
         linha = linha_valuation(ticker)
     except Exception as exc:
         return {
             "disponivel": False, "motivo": f"consulta de indicadores fundamentalistas falhou: {exc!r}",
-            "roe": None, "roic": None, "roic_disponivel": False, "roic_motivo": _MOTIVO_ROIC_INDISPONIVEL,
-            "riscos_mercado": [], "fonte": None, "consultado_em": None,
+            "roe": None, "roic": None, "roic_disponivel": False, "roic_motivo": _MOTIVO_ROIC_SEM_DADO_CVM,
+            "roic_tendencia": None, "riscos_mercado": [], "fonte": None, "consultado_em": None,
         }
+    roic, roic_disponivel, roic_motivo, roic_tendencia = _roic_mais_recente(ticker)
     return {
         "disponivel": True,
         "roe": linha.get("roe"),
-        "roic": None,
-        "roic_disponivel": False,
-        "roic_motivo": _MOTIVO_ROIC_INDISPONIVEL,
+        "roic": roic,
+        "roic_disponivel": roic_disponivel,
+        "roic_motivo": roic_motivo,
+        "roic_tendencia": roic_tendencia,
         "riscos_mercado": linha.get("alerta_qualidade") or [],
-        "fonte": "yfinance (mesmo indicador ja usado em MERCADO/ANALISES - data/prices.py:obter_indicadores)",
+        "fonte": "yfinance (ROE - data/prices.py:obter_indicadores) + CVM (ROIC, quando disponível - "
+                 "data/earnings/reviewer.py, via data/market_researcher.py:historico_fundamentos)",
         "consultado_em": linha.get("consultado_em"),
     }
 

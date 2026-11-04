@@ -30,12 +30,23 @@ def _pub(casa, link, data_publicacao=None, recomendacao=None, preco_alvo=None, r
     }
 
 
-def _gerar_relatorio_real(publicacoes, linha_valuation_retorno=None):
+_HISTORICO_FUNDAMENTOS_INDISPONIVEL_PADRAO = {
+    "disponivel": False, "motivo": "série histórica trimestral indisponível neste teste (mock padrão).",
+}
+
+
+def _gerar_relatorio_real(publicacoes, linha_valuation_retorno=None, historico_fundamentos_retorno=None):
     """Monta um relatorio de verdade via montar_relatorio_comparativo,
-    só mockando as fontes externas (Supabase/yfinance/historico)."""
+    só mockando as fontes externas (Supabase/yfinance/historico/CVM) -
+    `historico_fundamentos_retorno` (2026-11-02, validação da Fase 2 de
+    Balanço/Fluxo de Caixa) cobre o ROIC real via CVM; default
+    indisponível, pra nenhum teste bater rede real sem pedir
+    explicitamente."""
     with patch.object(comp_mod, "listar_premissas", return_value=publicacoes), \
          patch.object(comp_mod, "linha_valuation",
                        return_value=linha_valuation_retorno or {"roe": None, "alerta_qualidade": [], "consultado_em": None}), \
+         patch.object(comp_mod, "historico_fundamentos",
+                       return_value=historico_fundamentos_retorno or _HISTORICO_FUNDAMENTOS_INDISPONIVEL_PADRAO), \
          patch.multiple(comp_mod.historico, historico_ticker=MagicMock(return_value=[]), mudancas_hoje=MagicMock(return_value=[])), \
          patch.object(comp_mod, "cobertura_cruzada_casas", return_value={
              "ticker": "WEGE3", "janela_dias": 30, "cobertura": [], "sem_cobertura": [], "divergencia": None,
@@ -127,13 +138,39 @@ def test_riscos_indisponivel_mostra_motivo_honesto_nunca_inventa():
     assert "nunca inventado" in html_render
 
 
-def test_roic_sempre_mostrado_como_indisponivel_mesmo_com_roe_real():
+def test_roic_indisponivel_mostra_motivo_quando_cvm_nao_tem_dado():
+    """ROIC indisponível por falta de dado da CVM (mock padrão) - ROE
+    real continua aparecendo de qualquer forma."""
     publicacoes = [_pub("Genial Analisa", "https://x/1", data_publicacao="2026-10-20", recomendacao="COMPRA")]
     relatorio = _gerar_relatorio_real(publicacoes, linha_valuation_retorno={"roe": 20.1, "alerta_qualidade": [], "consultado_em": None})
 
     html_render = _capturar_render(relatorio)
     assert "ROIC" in html_render and "não disponível" in html_render
     assert "20,1" in html_render
+
+
+def test_roic_real_via_cvm_aparece_quando_disponivel():
+    """Bug real corrigido na validação da Fase 2 (2026-11-02): a UI
+    mostrava SEMPRE 'ROIC: não disponível' mesmo quando o dado real já
+    existia (ignorava roic_disponivel) - agora renderiza o valor real
+    com a tendência, rotulado CÁLCULO INTERNO."""
+    publicacoes = [_pub("Genial Analisa", "https://x/1", data_publicacao="2026-10-20", recomendacao="COMPRA")]
+    historico_mock = {
+        "disponivel": True, "periodos": ["1T2026", "2T2026"],
+        "roic_pct": {"serie": [8.5, 8.9], "tendencia": "RECUPERACAO"},
+        "ultima_nota": {"balanco_fluxo_caixa": {"roic_pct": 8.9, "aliquota_efetiva_pct": 16.2}},
+    }
+    relatorio = _gerar_relatorio_real(
+        publicacoes, linha_valuation_retorno={"roe": 29.9, "alerta_qualidade": [], "consultado_em": None},
+        historico_fundamentos_retorno=historico_mock,
+    )
+    assert relatorio["indicadores_adicionais"]["roic_disponivel"] is True
+
+    html_render = _capturar_render(relatorio)
+    assert "ROIC" in html_render
+    assert "8,9" in html_render
+    assert "CÁLCULO INTERNO" in html_render
+    assert "não disponível" not in html_render
 
 
 def test_riscos_mercado_deterministicos_aparecem_junto_do_roe():

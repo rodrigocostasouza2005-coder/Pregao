@@ -44,6 +44,21 @@ def _mock_linha_valuation_padrao():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _mock_historico_fundamentos_padrao():
+    """Autouse (2026-11-02, validação da Fase 2 de Balanço/Fluxo de
+    Caixa): NENHUM teste deste arquivo pode bater CVM/rede real via
+    data/research/comparador.py:_roic_mais_recente (usa
+    data.market_researcher.historico_fundamentos). Default "indisponível"
+    - mesmo padrão de _mock_linha_valuation_padrao acima; testes que
+    querem verificar o caminho com ROIC real sobrescrevem com seu próprio
+    `with patch.object(comp_mod, "historico_fundamentos", ...)`."""
+    with patch.object(comp_mod, "historico_fundamentos", return_value={
+        "disponivel": False, "motivo": "série histórica trimestral indisponível neste teste (mock padrão).",
+    }):
+        yield
+
+
 def _mock_historico_vazio():
     return patch.multiple(
         comp_mod.historico,
@@ -222,17 +237,61 @@ def test_roe_real_flui_do_yfinance_via_linha_valuation():
     assert ind["consultado_em"] == "2026-11-01T10:00:00"
 
 
-def test_roic_sempre_indisponivel_com_motivo_mesmo_com_roe_real():
+def test_roic_indisponivel_com_motivo_quando_cvm_nao_tem_dado_mesmo_com_roe_real():
+    """ROIC indisponível por falta de dado da CVM neste trimestre/ticker
+    (mock padrão autouse) - mesmo com ROE real disponível. Motivo cita a
+    fonte/seção certa, nunca o texto antigo fixo "yfinance não reporta"
+    (desatualizado desde a Fase 2 de Balanço/Fluxo de Caixa, 2026-11-02)."""
     publicacoes = [_pub("Genial Analisa", "l1", data_publicacao="2026-10-01", recomendacao="COMPRA")]
     with patch.object(comp_mod, "listar_premissas", return_value=publicacoes), \
          patch.object(comp_mod, "linha_valuation", return_value={"roe": 20.0, "alerta_qualidade": [], "consultado_em": None}), \
          _mock_historico_vazio(), _mock_cobertura_vazia():
         resultado = comp_mod.comparar_ticker("WEGE3")
     ind = resultado["indicadores_adicionais"]
+    assert ind["roe"] == 20.0
     assert ind["roic"] is None
     assert ind["roic_disponivel"] is False
-    assert "yfinance" in ind["roic_motivo"]
-    assert "balanco" in ind["roic_motivo"].lower() or "balanço" in ind["roic_motivo"].lower()
+    assert ind["roic_motivo"]  # sempre tem motivo, nunca vazio
+    assert "yfinance" not in ind["roic_motivo"]  # motivo antigo desatualizado nunca mais aparece
+
+
+def test_roic_real_disponivel_via_cvm_reaproveita_historico_fundamentos_sem_duplicar_calculo():
+    """Quando a CVM tem o dado (Balanço+DFC+DRE), ROIC vem REAL - este
+    módulo só CONSOME o resultado de historico_fundamentos (mesma função
+    que ANALISES > Empresas usa pra Conclusão de Investimento), nunca
+    reimplementa a fórmula de NOPAT/capital investido aqui."""
+    publicacoes = [_pub("Genial Analisa", "l1", data_publicacao="2026-10-01", recomendacao="COMPRA")]
+    historico_mock = {
+        "disponivel": True, "periodos": ["1T2026", "2T2026"],
+        "roic_pct": {"serie": [4.4, 4.8], "tendencia": "RECUPERACAO"},
+        "ultima_nota": {"balanco_fluxo_caixa": {"roic_pct": 4.8, "aliquota_efetiva_pct": 4.1}},
+    }
+    with patch.object(comp_mod, "listar_premissas", return_value=publicacoes), \
+         patch.object(comp_mod, "linha_valuation", return_value={"roe": 23.2, "alerta_qualidade": [], "consultado_em": None}), \
+         patch.object(comp_mod, "historico_fundamentos", return_value=historico_mock), \
+         _mock_historico_vazio(), _mock_cobertura_vazia():
+        resultado = comp_mod.comparar_ticker("WEGE3")
+    ind = resultado["indicadores_adicionais"]
+    assert ind["roic"] == pytest.approx(4.8)
+    assert ind["roic_disponivel"] is True
+    assert ind["roic_motivo"] is None
+    assert ind["roic_tendencia"] == "RECUPERACAO"
+
+
+def test_roic_banco_ou_internacional_usa_motivo_real_da_fonte():
+    """Banco/seguradora (plano de contas incompatível) ou internacional
+    (calendário fiscal não detectado) - o motivo exibido é o REAL da
+    fonte (historico_fundamentos), nunca um texto genérico fixo."""
+    publicacoes = [_pub("Genial Analisa", "l1", data_publicacao="2026-10-01", recomendacao="COMPRA")]
+    motivo_banco = ("instituição financeira/seguradora (Bancos) usa plano de contas regulatório "
+                     "próprio (COSIF) - dado não calculado para evitar rótulo incorreto.")
+    with patch.object(comp_mod, "listar_premissas", return_value=publicacoes), \
+         patch.object(comp_mod, "historico_fundamentos", return_value={"disponivel": False, "motivo": motivo_banco}), \
+         _mock_historico_vazio(), _mock_cobertura_vazia():
+        resultado = comp_mod.comparar_ticker("ITUB4")
+    ind = resultado["indicadores_adicionais"]
+    assert ind["roic_disponivel"] is False
+    assert ind["roic_motivo"] == motivo_banco
 
 
 def test_indicadores_fundamentalistas_falha_de_consulta_nunca_propaga():
