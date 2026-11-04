@@ -17,6 +17,7 @@ def test_todos_os_especialistas_esperados_estao_registrados():
     esperados = {
         "comparador", "memoria_research", "analise_ticker", "noticias",
         "calendario", "catalisadores", "resultados_corporativos", "radar_x",
+        "model_builder", "valuation_reviewer",
     }
     assert esperados <= set(registro.REGISTRO.keys())
 
