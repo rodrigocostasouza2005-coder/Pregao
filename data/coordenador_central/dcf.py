@@ -115,7 +115,7 @@ def calcular_dcf(premissas: dict | None, preco_atual=None) -> dict:
 
     return {
         "disponivel": True, "metodo": "DCF de 5 anos + Gordon Growth",
-        "moeda": "BRL", "unidade_fcf": "R$ milhões",
+        "moeda": "BRL", "unidade_fcf": "mesma unidade monetária do valor de mercado e do FCF",
         "fonte_premissas": fonte, "data_base": data_base,
         "premissas": valores, "cenarios": cenarios,
         "observacao": "DCF sensível às premissas; confira WACC, crescimento, dívida líquida e ações antes de usar.",
