@@ -348,7 +348,7 @@ def _render_consolidado(consolidado: dict):
                     st.caption(
                         f"Premissas: {dcf.get('fonte_premissas') or 'fonte não identificada'} · "
                         f"Data-base: {dcf.get('data_base') or 'não informada'}. "
-                        "FCF, dívida, valor de mercado e ações usam as unidades originais da fonte; preço por ação em R$. Confira as premissas antes de usar."
+                        "FCF, dívida, valor de mercado e ações usam as unidades originais da fonte; preço por ação na moeda da cotação ({dcf.get('moeda') or 'não identificada'}). Confira as premissas antes de usar."
                     )
                 else:
                     motivo_dcf = dcf.get("motivo") or "Premissas DCF ainda não foram fornecidas pela análise."
