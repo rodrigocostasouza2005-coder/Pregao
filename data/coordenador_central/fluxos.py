@@ -57,11 +57,17 @@ def _anexar_premissas_dcf(resultados: dict, premissas_usuario: dict | None) -> N
     alavancagem = fundamentos.get("divida_liquida_ebitda")
     preco = fundamentos.get("preco")
     valor_mercado = fundamentos.get("valor_mercado")
+    moeda_cotacao = fundamentos.get("moeda")
+    moeda_fonte = fundamentos.get("moeda_fonte")
+    moeda_compativel = bool(
+        moeda_cotacao and moeda_fonte
+        and str(moeda_cotacao).upper() == str(moeda_fonte).upper()
+    )
     try:
-        divida_liquida = float(ebitda) * float(alavancagem) if ebitda is not None and alavancagem is not None else None
-        acoes = float(valor_mercado) / float(preco) if valor_mercado is not None and preco is not None and float(preco) > 0 else None
+        divida_liquida = float(ebitda) * float(alavancagem) if moeda_compativel and ebitda is not None and alavancagem is not None else None
+        acoes = float(valor_mercado) / float(preco) if moeda_compativel and valor_mercado is not None and preco is not None and float(preco) > 0 else None
         campos = {
-            "fcf_base": fcf,
+            "fcf_base": fcf if moeda_compativel else None,
             "crescimento_fcf_otimista": float(premissas_usuario["crescimento_fcf_otimista"]) / 100,
             "crescimento_fcf_base": float(premissas_usuario["crescimento_fcf_base"]) / 100,
             "crescimento_fcf_pessimista": float(premissas_usuario["crescimento_fcf_pessimista"]) / 100,
@@ -69,8 +75,11 @@ def _anexar_premissas_dcf(resultados: dict, premissas_usuario: dict | None) -> N
             "g_terminal": float(premissas_usuario["g_terminal"]) / 100,
             "divida_liquida": divida_liquida,
             "acoes": acoes,
-            "moeda": fundamentos.get("moeda"),
-            "fonte_premissas": "FCF, EBITDA, alavancagem, valor de mercado e cotação: yfinance; taxas de crescimento e WACC: premissas manuais do usuário.",
+            "moeda": moeda_cotacao,
+            "motivo_bloqueio": None if moeda_compativel else (
+                f"Moeda de origem dos fundamentos ({moeda_fonte or 'não informada'}) não foi confirmada como igual à moeda da cotação ({moeda_cotacao or 'não informada'}); conversão não é presumida."
+            ),
+            "fonte_premissas": "FCF, EBITDA, alavancagem, valor de mercado e moeda de origem: yfinance; taxas de crescimento e WACC: premissas manuais do usuário.",
             "data_base": str(fundamentos.get("consultado_em") or ""),
         }
     except (KeyError, TypeError, ValueError, OverflowError):
