@@ -307,7 +307,7 @@ def _parecer_valuation(dados, comparador, research=None):
         "Preço atual × P/L mediano setorial ÷ P/L atual; DCF não calculado por falta de premissas explícitas."
     )
     return {
-        "id": "valuation_reviewer", "nome": "Valuation Reviewer / Model Builder",
+        "id": "valuation_comparables", "nome": "Valuation por Múltiplos e Research",
         "recomendacao": recomendacao,
         "especialidade": "DCF, múltiplos, comparáveis e preço-alvo",
         "moeda": moeda,
