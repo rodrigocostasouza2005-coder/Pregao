@@ -45,7 +45,7 @@ describe("definirEstadoIncidente - permissões e isolamento (Fase 7, item 10)", 
     const r = await definirEstadoIncidente(42, "ABERTO", "INVESTIGANDO");
     expect(r.ok).toBe(true);
     expect(atualizarLinhaMock).toHaveBeenCalledWith(
-      "market_researcher_achados", { id: "eq.42" }, { status: "INVESTIGANDO", resolvido_em: null },
+      "market_researcher_achados", { id: "eq.42", status: "eq.ABERTO" }, { status: "INVESTIGANDO", resolvido_em: null },
     );
     expect(revalidatePathMock).toHaveBeenCalledWith("/inteligencia");
   });
@@ -67,3 +67,21 @@ describe("definirEstadoIncidente - permissões e isolamento (Fase 7, item 10)", 
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 });
+
+
+  it("usa compare-and-set do estado atual para não sobrescrever uma triagem concorrente", async () => {
+    usuarioAtualMock.mockResolvedValue({ sub: "1", email: "admin@x.com", nome: "Admin", admin: true });
+    atualizarLinhaMock.mockResolvedValue({
+      ok: false,
+      mensagem: "O registro mudou desde que foi carregado. Atualize a fila e tente novamente.",
+    });
+    const r = await definirEstadoIncidente(42, "ABERTO", "INVESTIGANDO");
+    expect(atualizarLinhaMock).toHaveBeenCalledWith(
+      "market_researcher_achados",
+      { id: "eq.42", status: "eq.ABERTO" },
+      { status: "INVESTIGANDO", resolvido_em: null },
+    );
+    expect(r.ok).toBe(false);
+    expect(r.mensagem).toMatch(/mudou desde que foi carregado/);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });

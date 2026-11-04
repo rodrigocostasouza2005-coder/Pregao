@@ -58,13 +58,17 @@ export async function atualizarLinha(
       method: "PATCH",
       headers: {
         apikey: env.supabaseChave, Authorization: `Bearer ${env.supabaseChave}`,
-        "Content-Type": "application/json", Prefer: "return=minimal",
+        "Content-Type": "application/json", Prefer: "return=representation",
       },
       body: JSON.stringify(campos),
     });
     if (!resp.ok) {
       console.error(`[supabase] atualizarLinha ${tabela}: HTTP ${resp.status} ${await resp.text().catch(() => "")}`);
       return { ok: false, mensagem: "O banco de dados não aceitou esta atualização." };
+    }
+    const linhas = (await resp.json().catch(() => [])) as unknown[];
+    if (linhas.length === 0) {
+      return { ok: false, mensagem: "O registro mudou desde que foi carregado. Atualize a fila e tente novamente." };
     }
     return { ok: true };
   } catch (erro) {

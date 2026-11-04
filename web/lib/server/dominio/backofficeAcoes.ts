@@ -26,7 +26,10 @@ export async function definirEstadoIncidente(
   }
   const campos: Record<string, unknown> = { status: novoEstado };
   campos.resolvido_em = novoEstado === "RESOLVIDO" ? new Date().toISOString() : null;
-  const resultado = await atualizarLinha("market_researcher_achados", { id: `eq.${id}` }, campos);
+  const resultado = await atualizarLinha("market_researcher_achados", {
+    id: `eq.${id}`,
+    status: `eq.${estadoAtual}`,
+  }, campos);
   if (resultado.ok) revalidatePath("/inteligencia");
   return resultado;
 }
