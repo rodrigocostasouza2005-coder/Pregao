@@ -215,6 +215,8 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
     assert pareceres["analistas"][2]["upside_pct"] == 50.0
     assert pareceres["analistas"][2]["preco_alvo_rotulo"].startswith("Estimativa mecânica")
     assert [x["recomendacao"] for x in pareceres["analistas"]] == ["COMPRA", "COMPRA", "COMPRA"]
+    assert "Leitura construtiva" in pareceres["analistas"][0]["tese"]
+    assert "Leitura construtiva" in pareceres["analistas"][1]["tese"]
     assert consolidado["sinal_comite"]["sinal"] in {"COMPRA", "VENDA", "NEUTRO", "INSUFICIENTE"}
 
 
