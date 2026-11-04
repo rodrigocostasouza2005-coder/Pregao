@@ -105,6 +105,12 @@ def test_ui_research_mostra_aviso_claro_sem_credencial_nao_mensagem_tecnica():
             not any("sem_credencial" in b for b in blocos_caption), f"(blocos={blocos_caption})")
 
 
+def test_snapshot_genial_desativado_nao_tenta_fonte_externa():
+    with patch.object(genial, "obter_recomendacoes") as mock_recomendacoes:
+        assert historico.coletar_snapshot_genial() == (0, 0)
+    mock_recomendacoes.assert_not_called()
+
+
 def test_historico_primeiro_snapshot_grava_mas_nao_reporta_mudanca():
     cliente, inserts = _cliente_mock([])
     with patch.object(historico, "obter_cliente", return_value=cliente):
