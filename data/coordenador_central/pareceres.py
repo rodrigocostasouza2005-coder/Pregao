@@ -177,37 +177,64 @@ def _parecer_earnings(nota):
 
 def _parecer_valuation(dados, comparador):
     fundamentos = dados.get("fundamentos") or {}
+    setorial = dados.get("comparativo_setorial") or {}
     dispersao = comparador.get("dispersao_precos_alvo") or {}
     preco = _numero(fundamentos.get("preco"))
-    mediana = _numero(dispersao.get("mediana"))
+    pl = _numero(fundamentos.get("pl"))
+    pl_setor = _numero(setorial.get("pl_mediana"))
+    mediana_research = _numero(dispersao.get("mediana"))
     minimo = _numero(dispersao.get("minimo"))
     maximo = _numero(dispersao.get("maximo"))
-    upside = ((mediana / preco) - 1) * 100 if mediana is not None and preco is not None and preco > 0 else None
-    if mediana is None:
-        vies = "SEM PREÇO-ALVO PUBLICADO"
-        tese = "Não há amostra numérica suficiente de preços-alvo publicados pelas casas monitoradas."
-    elif upside is None:
-        vies = "PREÇO ATUAL INDISPONÍVEL"
-        tese = f"Mediana dos preços-alvo publicados: R$ {mediana:.2f}; cotação atual indisponível para calcular potencial."
-    elif upside > 10:
-        vies = "POTENCIAL POSITIVO"
-        tese = f"Mediana dos preços-alvo publicados: R$ {mediana:.2f}, potencial indicativo de {upside:+.1f}% ante cotação de R$ {preco:.2f}."
-    elif upside < -10:
-        vies = "POTENCIAL NEGATIVO"
-        tese = f"Mediana dos preços-alvo publicados: R$ {mediana:.2f}, potencial indicativo de {upside:+.1f}% ante cotação de R$ {preco:.2f}."
+
+    # Estimativa relativa simples: mantém o lucro por ação implícito
+    # constante e aplica a mediana setorial de P/L. Não é DCF nem target
+    # de research; só existe com preço, P/L positivo e amostra setorial.
+    alvo_proprio = (preco * pl_setor / pl) if (
+        preco is not None and preco > 0 and pl is not None and pl > 0
+        and pl_setor is not None and pl_setor > 0
+    ) else None
+    upside_proprio = ((alvo_proprio / preco) - 1) * 100 if alvo_proprio is not None else None
+    upside_research = ((mediana_research / preco) - 1) * 100 if (
+        mediana_research is not None and preco is not None and preco > 0
+    ) else None
+
+    pros, contras = [], []
+    if upside_proprio is not None:
+        if upside_proprio >= 10:
+            vies = "DESCONTO RELATIVO"
+            pros.append(f"Preço implícito pelo P/L mediano do setor sugere potencial de {upside_proprio:+.1f}%.")
+        elif upside_proprio <= -10:
+            vies = "PRÊMIO RELATIVO"
+            contras.append(f"Preço implícito pelo P/L mediano do setor sugere risco de ajuste de {upside_proprio:+.1f}%.")
+        else:
+            vies = "PRÓXIMO À MEDIANA SETORIAL"
+            pros.append("Múltiplo próximo à mediana setorial, sem desconto ou prêmio expressivo.")
     else:
-        vies = "POTENCIAL LIMITADO"
-        tese = f"Mediana dos preços-alvo publicados: R$ {mediana:.2f}, potencial indicativo de {upside:+.1f}% ante cotação de R$ {preco:.2f}."
+        vies = "VALUATION INSUFICIENTE"
+    if upside_research is not None:
+        (pros if upside_research > 0 else contras if upside_research < 0 else pros).append(
+            f"Mediana dos alvos publicados implica potencial de {upside_research:+.1f}%."
+        )
+    if minimo is not None and maximo is not None:
+        fatos = [f"Faixa dos preços-alvo externos: R$ {minimo:.2f} a R$ {maximo:.2f}."]
+    else:
+        fatos = ["Faixa de preços-alvo externos indisponível."]
+    tese = (
+        f"Preço atual R$ {preco:.2f}; P/L {pl:.1f}x versus mediana setorial {pl_setor:.1f}x. "
+        if preco is not None and pl is not None and pl_setor is not None
+        else "Múltiplos insuficientes para comparação setorial. "
+    ) + " ".join(fatos)
     return {
         "id": "valuation_reviewer", "nome": "Analista de Valuation",
-        "especialidade": "Múltiplos, comparáveis e preço-alvo de research",
+        "especialidade": "Múltiplos, comparáveis e preço-alvo",
         "vies": vies, "tese": tese,
-        "pros": [f"Menor preço-alvo publicado: R$ {minimo:.2f}." ] if minimo is not None else [],
-        "contras": [f"Maior preço-alvo publicado: R$ {maximo:.2f}." ] if maximo is not None else [],
-        "preco_alvo": mediana,
-        "preco_alvo_rotulo": "Mediana das casas monitoradas; não é target proprietário do Pregão.",
-        "preco_atual": preco, "upside_pct": upside,
-        "faixa_precos_alvo": {"minimo": minimo, "maximo": maximo},
+        "pros": pros, "contras": contras,
+        "preco_alvo": alvo_proprio,
+        "preco_alvo_rotulo": "Estimativa mecânica: P/L atual da empresa substituído pela mediana setorial; não é DCF nem preço-alvo de research.",
+        "preco_atual": preco, "upside_pct": upside_proprio,
+        "preco_alvo_consenso_research": mediana_research,
+        "upside_consenso_research_pct": upside_research,
+        "faixa_precos_alvo_research": {"minimo": minimo, "maximo": maximo},
         "n_casas_com_preco_alvo": dispersao.get("n_casas_com_preco_alvo"),
     }
 
