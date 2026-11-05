@@ -408,7 +408,11 @@ def _render_consolidado(consolidado: dict):
             f"<div class='coord-nota'>Alvo do Model Builder: {html.escape(alvo_modelo_txt)} · "
             f"Potencial: {html.escape(upside_modelo_txt)} · P/L setorial: {html.escape(alvo_pl_txt)} · "
             f"Consenso das casas: {html.escape(alvo_consenso_txt)}</div>"
-            f"<div class='coord-nota'>{html.escape(str(sinal.get('justificativa') or ''))}</div>",
+            f"<div class='coord-nota'>{html.escape(str(sinal.get('justificativa') or ''))}</div>"
+            "<div class='coord-nota'>Cálculo independente do parecer de Valuation abaixo: este sinal "
+            "pontua ROE, margem, dívida, FCF, crescimento e P/L relativo (sem usar DCF), enquanto a "
+            "recomendação do parecer de Valuation vem do upside do DCF oficial. Os dois podem divergir "
+            "para o mesmo ticker.</div>",
             unsafe_allow_html=True,
         )
 

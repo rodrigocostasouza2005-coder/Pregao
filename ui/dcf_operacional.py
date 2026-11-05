@@ -15,6 +15,13 @@ def render_dcf_operacional():
             "inventa margens. Percentuais devem ser informados em pontos percentuais "
             "(ex.: 12,5 para 12,5%)."
         )
+        st.markdown(
+            "<div class='coord-nota'>Simulador manual independente: usa só as premissas que você "
+            "digitar aqui. Não alimenta nem é alimentado pelo DCF oficial do comitê (o parecer de "
+            "Valuation, calculado a partir dos fundamentos coletados automaticamente, nesta mesma aba). "
+            "Os dois podem apontar preços-alvo diferentes para o mesmo ticker.</div>",
+            unsafe_allow_html=True,
+        )
         with st.form("coord_dcf_operacional_form"):
             c1, c2, c3 = st.columns(3)
             receita = c1.number_input("Receita-base (milhões)", min_value=0.0, value=None, placeholder="Informe", key="op_receita")

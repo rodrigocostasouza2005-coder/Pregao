@@ -1462,6 +1462,10 @@ def _render_research_e_fatores(ticker: str, fmt: str):
         else:
             st.info("O registro mais recente não contém preço-alvo positivo válido. Um alvo histórico anterior não será apresentado como se fosse o atual.")
         st.caption("Fonte estruturada disponível nesta tela: Genial. Não há consenso multi-casa calculado enquanto os alvos comparáveis das demais casas não estiverem integrados.")
+        navegacao.link(
+            "Ver DCF proprietário com cenários (COORDENADOR CENTRAL) ↗", "coordenador", "analisar",
+            chave=f"research_dcf_{ticker}", ajuda="Preço-alvo por DCF (otimista/base/pessimista) calculado pelo Coordenador Central, não listado aqui.",
+        )
         if validos:
             subtitulo("Histórico recente de preço-alvo e recomendação")
             linhas = []
