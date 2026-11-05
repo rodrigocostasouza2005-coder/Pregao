@@ -1416,9 +1416,10 @@ def render_valuation(prefs: dict):
     _injetar_css()
     st.markdown('<div class="painel-titulo">VALUATION</div>', unsafe_allow_html=True)
     st.markdown(
-        "<div class='rq-nota'>Múltiplos reportados pela fonte (Yahoo Finance) comparados com pares do setor. "
-        "Não é preço-alvo nem modelo de fluxo de caixa descontado: cenários, premissas e sensibilidade "
-        "ainda não têm modelo próprio no PREGÃO (desenvolvimento posterior).</div>",
+        "<div class='rq-nota'>Múltiplos reportados pela fonte (Yahoo Finance) comparados com pares do setor "
+        "- leitura rápida, não é preço-alvo. O modelo de DCF com cenários (pessimista/base/otimista), "
+        "premissas auditáveis e recomendação do comitê (COMPRA/VENDA/NEUTRO) vivem na aba "
+        "COORDENADOR CENTRAL.</div>",
         unsafe_allow_html=True,
     )
     escopo = _escopo_watchlist(prefs, com_janela=False)
