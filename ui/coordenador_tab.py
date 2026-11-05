@@ -312,6 +312,18 @@ def render_especialistas(prefs: dict = None):
             status_html = "<span class='coord-badge coord-badge-erro'>FALHANDO</span>"
 
         pre_req = ", ".join(e.pre_requisitos) if e.pre_requisitos else "nenhum"
+        # Erro técnico da ÚLTIMA execução (coluna `erro` de
+        # coordenador_especialistas_execucoes, já gravada, antes nunca
+        # exibida em nenhuma tela - achado real, auditoria 2026-11-05).
+        # Nunca HTML cru: html.escape protege contra texto de exceção
+        # que por acaso contenha caracteres de markup.
+        ultimo_erro = m.get("ultimo_erro_tecnico")
+        erro_titulo = html.escape(ultimo_erro) if ultimo_erro else ""
+        erro_html = (
+            f"<span title='{erro_titulo}' style='cursor:help;'>{html.escape(ultimo_erro[:60])}"
+            f"{'…' if len(ultimo_erro) > 60 else ''}</span>"
+            if ultimo_erro else "—"
+        )
         linhas.append(
             "<tr>"
             f"<td class='coord-nome'>{html.escape(e.nome)}</td>"
@@ -322,6 +334,7 @@ def render_especialistas(prefs: dict = None):
             f"<td>{m.get('tempo_medio_ms', '—')}</td>"
             f"<td>{m.get('taxa_sucesso_pct', '—')}%</td>"
             f"<td>{_fmt_data(m.get('ultima_execucao_em'))}</td>"
+            f"<td>{erro_html}</td>"
             "</tr>"
         )
 
@@ -329,6 +342,7 @@ def render_especialistas(prefs: dict = None):
         "<table class='coord-tabela'><thead><tr>"
         "<th>Especialista</th><th>Descrição</th><th>Status</th><th>Pré-requisitos</th>"
         "<th>Execuções</th><th>Tempo médio (ms)</th><th>Taxa de sucesso</th><th>Última execução</th>"
+        "<th>Último erro técnico</th>"
         "</tr></thead><tbody>" + "".join(linhas) + "</tbody></table>"
     )
     st.markdown(tabela_html, unsafe_allow_html=True)
@@ -793,5 +807,24 @@ def render_analisar(prefs: dict = None):
             st.error(f"Falha ao executar a análise: {exc!r}")
             return
 
-    st.success(f"Análise concluída em {consolidado.get('_duracao_ms', 0) / 1000:.1f}s.")
+    duracao_txt = f"{consolidado.get('_duracao_ms', 0) / 1000:.1f}s"
+    status_execucao = consolidado.get("status_execucao")
+    # Mesma categorização de _badge_status (CONCLUIDA=sucesso, PARCIAL=
+    # alerta, qualquer outra coisa=erro) - achado real (2 auditorias,
+    # 2026-11-05): antes sempre mostrava st.success mesmo quando a
+    # análise ficou PARCIAL (especialista indisponível OU falha ao
+    # persistir o resultado completo, ver persistencia.concluir_analise).
+    if status_execucao == "CONCLUIDA":
+        st.success(f"Análise concluída em {duracao_txt}.")
+    elif status_execucao == "PARCIAL":
+        st.warning(
+            f"Análise concluída em {duracao_txt}, mas de forma PARCIAL - algum especialista "
+            "ficou indisponível nesta rodada ou houve falha ao persistir o resultado completo "
+            "(ver 'Pontos de atenção' e a coluna Erro em Execuções/Histórico)."
+        )
+    else:
+        st.error(
+            f"Análise finalizada em {duracao_txt} com status inesperado "
+            f"({status_execucao or 'desconhecido'}) - não assuma que terminou bem."
+        )
     _render_consolidado(consolidado)
