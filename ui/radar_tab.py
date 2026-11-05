@@ -35,6 +35,16 @@ from ui.news_tab import abrir_card_noticia
 
 _CSS_RADAR = """
 .radar-subtitulo { color: var(--cinza); font-size: 0.72rem; margin: 0.1rem 0 0.8rem 0; }
+/* radar-pergunta (nao painel-titulo) pro titulo de cada rota desta aba -
+   achado real da auditoria visual 2026-11-05: painel-titulo usa margem
+   NEGATIVA pra "sangrar" o titulo ate a borda de um st.container(
+   border=True) pai (ver style.css) - as rotas do RADAR nunca envolvem seu
+   conteudo nesse container (e' composicao solta, nao um painel), entao o
+   titulo ficava deslocado (~0,2-1rem, direcao depende da densidade
+   escolhida em CONFIG) em relacao ao resto do conteudo da aba logo abaixo.
+   Todas as rotas deste arquivo (render_radar_alertas/_carteiras/
+   _oportunidades/_acompanhamento, render_valuation, render_teses) usam
+   radar-pergunta pro mesmo titulo solto, por este motivo. */
 .radar-pergunta {
     font-size: 0.78rem; color: var(--destaque); letter-spacing: 0.04em; font-weight: 600;
     border-top: 1px solid var(--borda); padding-top: 0.8rem; margin-top: 1rem; margin-bottom: 0.5rem;
@@ -600,6 +610,11 @@ def _linha_evidencia(item: dict, watchlist: list):
 
 
 def _secao_evidencias(tickers: list, watchlist: list):
+    """"Research com evidências" - usada de propósito em dois pontos de
+    entrada (render_radar_oportunidades, RADAR › Oportunidades; e
+    render_teses, RESEARCH › Minha Tese): mesmo bloco de evidências em
+    dois contextos distintos, reuso deliberado de função, não duplicação
+    acidental."""
     itens = radar.evidencias_recentes(tuple(tickers))
     if not itens:
         st.markdown("<div class='radar-vazio'>Nenhuma notícia ou documento recente pros ativos selecionados.</div>", unsafe_allow_html=True)
@@ -961,74 +976,26 @@ def _secao_radar_quedas(prefs: dict):
 # ============================================================
 # Entrada da aba
 # ============================================================
-
-@st.fragment
-def render_radar(prefs: dict, sub: str):
-    """Ponto de entrada da aba RADAR, chamado pelo app.py."""
-    _injetar_css()
-    # radar-pergunta (nao painel-titulo) - achado real da auditoria visual
-    # 2026-11-05: painel-titulo usa margem NEGATIVA pra "sangrar" o titulo
-    # ate a borda de um st.container(border=True) pai (ver style.css) - RADAR
-    # nunca envolve seu conteudo nesse container (e' composicao solta, nao um
-    # painel), entao o titulo ficava deslocado (~0,2-1rem, direcao depende da
-    # densidade escolhida em CONFIG) em relacao ao resto do conteudo da aba
-    # logo abaixo. As subabas irmas do PREGAO 2.0 (render_radar_alertas/
-    # _carteiras/_oportunidades/_acompanhamento, mais abaixo neste arquivo)
-    # ja usavam radar-pergunta pro mesmo titulo solto - alinha aqui tambem.
-    st.markdown('<div class="radar-pergunta">RADAR</div>', unsafe_allow_html=True)
-    st.markdown(
-        "<div class='radar-subtitulo'>O que mudou · onde vale investigar · o que pode dar errado</div>",
-        unsafe_allow_html=True,
-    )
-
-    # Radar de quedas em carteiras recomendadas e independente da watchlist.
-    _secao_radar_quedas(prefs)
-
-    st.markdown('<div class="radar-separador">INTELIGÊNCIA DA WATCHLIST</div>', unsafe_allow_html=True)
-    watchlist = prefs.get("watchlist") or []
-    if not watchlist:
-        st.info("Adicione tickers na watchlist (barra lateral) para o restante do RADAR analisar os ativos.")
-        return
-
-    col_janela, col_escopo = st.columns(2)
-    with col_janela:
-        janela = st.pills(
-            "Janela", list(radar.JANELAS_DIAS.keys()), default="7 DIAS",
-            key="radar_janela", label_visibility="collapsed",
-        ) or "7 DIAS"
-    with col_escopo:
-        opcoes_escopo = ["WATCHLIST"] + watchlist
-        escopo = st.pills("Escopo", opcoes_escopo, default="WATCHLIST", key="radar_escopo", label_visibility="collapsed")
-    tickers_escopo = watchlist if escopo in (None, "WATCHLIST") else [escopo]
-
-    _secao_mudancas_tese(tickers_escopo, janela, prefs)
-
-    # 4 das 5 secoes abaixo passam a abrir por padrao (achado da auditoria
-    # de redesign 2026-10-30): sao leitura passiva (tabela/lista), nao
-    # ferramenta sob demanda - fechadas por padrao, a aba inteira (cujo
-    # subtitulo promete "onde vale investigar · o que pode dar errado")
-    # parecia vazia no 1o carregamento, só a seção de MUDANÇAS DE TESE
-    # aparecia de verdade. Só COPILOTO DE RESEARCH continua fechado: é
-    # genuinamente sob demanda (pergunta sugerida -> resposta), não um
-    # dado que já existe pronto pra mostrar.
-    with st.expander("ONDE VALE INVESTIGAR — Valuation Radar", expanded=True):
-        _secao_valuation(tickers_escopo, prefs)
-    with st.expander("ONDE VALE INVESTIGAR — Próximos catalisadores", expanded=True):
-        _secao_catalisadores(tickers_escopo)
-    with st.expander("O QUE PODE DAR ERRADO — Risco da carteira", expanded=True):
-        _secao_risco(prefs, sub)
-    with st.expander("RESEARCH COM EVIDÊNCIAS", expanded=True):
-        _secao_evidencias(tickers_escopo, watchlist)
-    with st.expander("COPILOTO DE RESEARCH", expanded=False):
-        _secao_copiloto(tickers_escopo)
-
-
+#
+# NOTA (auditoria 2026-11-05): existiu aqui uma render_radar(prefs, sub)
+# com @st.fragment - composicao completa e monolitica da aba antiga,
+# anterior ao PREGAO 2.0. Desde o redesign "Bloomberg terminal"
+# (2026-10-30) nenhuma rota de producao em app.py chama mais essa
+# funcao: a aba RADAR e' composta pelas subabas abaixo (render_radar_
+# alertas/_carteiras/_oportunidades/_acompanhamento) + render_valuation/
+# render_teses em ANALISES. A funcao so' sobrevivia pra um teste
+# (tests/test_radar_tab_fontes_ui.py, via .__wrapped__) que exercitava
+# os mesmos blocos (_bloco_cobertura, _bloco_monitorados, _bloco_
+# alertas, _bloco_contexto_alertas) que render_radar_carteiras/_alertas
+# ja chamam de verdade em produção - removida, e o teste foi reescrito
+# pra chamar essas rotas reais diretamente (mesma cobertura, sem
+# depender de composicao morta).
 # ============================================================
 # G. MINHA TESE (registro persistido, ver data/research/tese.py) -
 # integração Market Researcher/equity-research da Anthropic
 # (2026-10-22, ver docs/market-researcher-integracao.md): adaptação do
-# skill "thesis-tracker" oficial. Só na subaba nova (ANÁLISES › Teses) -
-# render_radar (composição legada) não ganha esta seção de propósito.
+# skill "thesis-tracker" oficial. Só na subaba nova (ANÁLISES › Teses,
+# render_teses mais abaixo) - nenhuma outra rota ganha esta seção.
 # ============================================================
 
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -1294,10 +1261,13 @@ def _secao_tese(tickers: list, usuario_sub: str, prefs: dict):
 
 
 # ============================================================
-# Subabas do PREGAO 2.0 (ui/navegacao.py) - mesmas secoes de render_radar
-# acima, so' redistribuidas: RADAR > Alertas/Carteiras/Oportunidades/
-# Acompanhamento e ANALISES > Valuation/Teses. render_radar continua
-# existindo (composicao completa, usada pelos testes de UI).
+# Subabas do PREGAO 2.0 (ui/navegacao.py) - mesmos blocos/secoes
+# definidos acima (A-G), so' redistribuidos entre RADAR > Alertas/
+# Carteiras/Oportunidades/Acompanhamento e ANALISES > Valuation/Teses.
+# Sao estas funcoes (render_radar_alertas/_carteiras/_oportunidades/
+# _acompanhamento, render_valuation, render_teses) que app.py chama -
+# nao existe mais uma render_radar() unica (removida na auditoria
+# 2026-11-05, ver nota acima da secao "Entrada da aba").
 # ============================================================
 
 _AVISO_SINAL = (
@@ -1309,8 +1279,9 @@ _AVISO_SINAL = (
 
 def _escopo_watchlist(prefs: dict, com_janela: bool = True):
     """Pills de janela/escopo compartilhados pelas subabas que analisam a
-    watchlist - mesmas keys de render_radar, entao o filtro escolhido
-    numa subaba vale nas outras. None = watchlist vazia (aviso ja dado)."""
+    watchlist - mesmas keys em todas as subabas que chamam isto, entao o
+    filtro escolhido numa subaba vale nas outras. None = watchlist vazia
+    (aviso ja dado)."""
     watchlist = prefs.get("watchlist") or []
     if not watchlist:
         st.info("Adicione tickers na watchlist (barra lateral ou busca global) para analisar os ativos.")
@@ -1360,9 +1331,12 @@ def _bloco_cobertura_compacta() -> bool:
 
 @st.fragment
 def render_radar_carteiras(prefs: dict):
-    """Cobertura das carteiras recomendadas monitoradas. O feed de research
-    (casas, recomendacoes, relatorios) vem logo abaixo, em app.py, pelo
-    render_research ja existente - nao e' reimplementado aqui."""
+    """Cobertura das carteiras recomendadas monitoradas (estado por casa:
+    atualizada/desatualizada/indisponível). O feed de research (casas,
+    recomendações, relatórios, ver ui/research_tab.py:render_research)
+    NÃO vem mais logo abaixo desta função - desde que RESEARCH virou
+    área própria na navegação (23/10/2026), é uma rota separada
+    (RESEARCH › Feed), não uma composição sequencial com esta tela."""
     _injetar_css()
     st.markdown('<div class="radar-pergunta">CARTEIRAS RECOMENDADAS — FONTES MONITORADAS</div>',
                 unsafe_allow_html=True)
@@ -1423,8 +1397,9 @@ def render_radar_acompanhamento(prefs: dict, usuario: dict):
 @st.fragment
 def render_valuation(prefs: dict):
     _injetar_css()
-    # radar-pergunta, mesmo motivo de render_radar acima (titulo solto, sem
-    # st.container(border=True) pai pra painel-titulo sangrar contra).
+    # radar-pergunta, nao painel-titulo (ver comentario na definicao da
+    # classe em _CSS_RADAR, acima: titulo solto, sem st.container(
+    # border=True) pai pra painel-titulo sangrar contra).
     st.markdown('<div class="radar-pergunta">VALUATION</div>', unsafe_allow_html=True)
     st.markdown(
         "<div class='rq-nota'>Múltiplos reportados pela fonte (Yahoo Finance) comparados com pares do setor "
@@ -1442,8 +1417,9 @@ def render_valuation(prefs: dict):
 @st.fragment
 def render_teses(prefs: dict, usuario: dict):
     _injetar_css()
-    # radar-pergunta, mesmo motivo de render_radar acima (titulo solto, sem
-    # st.container(border=True) pai pra painel-titulo sangrar contra).
+    # radar-pergunta, nao painel-titulo (ver comentario na definicao da
+    # classe em _CSS_RADAR, acima: titulo solto, sem st.container(
+    # border=True) pai pra painel-titulo sangrar contra).
     st.markdown('<div class="radar-pergunta">TESES</div>', unsafe_allow_html=True)
     st.markdown(
         "<div class='rq-nota'>Base de evidências e copiloto de research já existentes. Registro persistente "

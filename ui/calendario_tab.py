@@ -565,8 +565,16 @@ def _painel_agenda(prefs: dict):
     # ver _badge_status, so' o titulo do painel que precisava deixar de
     # prometer algo que a lista nao entrega)
     st.markdown('<div class="painel-titulo">CALENDÁRIO</div>', unsafe_allow_html=True)
+    # subtitulo deixa explicito o escopo (rotulo de clareza, auditoria
+    # 2026-11-05): esta e' a rota MERCADO > Agenda - resultados
+    # corporativos e prazos CVM da watchlist/universo de empresas (ver
+    # data/eventos.py). Nao e' o calendario de indicadores MACRO
+    # (Selic/IPCA/Focus etc.), que vive em MACRO > Calendario Economico
+    # (ui/macro_tab.py:render_macro_calendario) - rotas e dados distintos.
     st.markdown(
-        "<div class='cal-subtitulo'>Eventos de resultados e conferências das empresas</div>",
+        "<div class='cal-subtitulo'>Agenda de resultados corporativos e prazos CVM das empresas "
+        "(watchlist ou universo filtrado) — não é o calendário de indicadores macroeconômicos "
+        "(ver MACRO › Calendário Econômico)</div>",
         unsafe_allow_html=True,
     )
     info_atualizacao = _rotulo_atualizacao()
