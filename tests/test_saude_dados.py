@@ -408,6 +408,35 @@ def test_23_mercado_cotacao_individual_presente_e_nome_diferente_do_lote():
     _checar("23b nome diferente de MERCADO (lote)", "MERCADO (cotação individual)" != "MERCADO")
 
 
+def test_24_timestamp_invalido_nao_derruba_classificacao():
+    status = {
+        "execucao_ok": True,
+        "persistencia_ok": True,
+        "registros_novos": 1,
+        "ultimo_sucesso_em": "data-invalida-vinda-do-banco",
+    }
+    codigo, rotulo = saude_mod.classificar_estado(status, idade_maxima_horas=6)
+    _checar(
+        "24 timestamp corrompido -> NAO_COMPROVADO, nunca sucesso falso",
+        codigo == "NAO_COMPROVADO",
+    )
+    _checar(
+        "24b rotulo explica a causa sem expor excecao",
+        "timestamp" in rotulo.lower() and "invalido" in rotulo.lower(),
+        rotulo,
+    )
+
+
+def test_25_timestamp_nulo_mantem_nao_comprovado():
+    status = {
+        "execucao_ok": True,
+        "persistencia_ok": True,
+        "ultimo_sucesso_em": None,
+    }
+    codigo, _ = saude_mod.classificar_estado(status)
+    _checar("25 timestamp nulo continua NAO_COMPROVADO", codigo == "NAO_COMPROVADO")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
