@@ -966,7 +966,16 @@ def _secao_radar_quedas(prefs: dict):
 def render_radar(prefs: dict, sub: str):
     """Ponto de entrada da aba RADAR, chamado pelo app.py."""
     _injetar_css()
-    st.markdown('<div class="painel-titulo">RADAR</div>', unsafe_allow_html=True)
+    # radar-pergunta (nao painel-titulo) - achado real da auditoria visual
+    # 2026-11-05: painel-titulo usa margem NEGATIVA pra "sangrar" o titulo
+    # ate a borda de um st.container(border=True) pai (ver style.css) - RADAR
+    # nunca envolve seu conteudo nesse container (e' composicao solta, nao um
+    # painel), entao o titulo ficava deslocado (~0,2-1rem, direcao depende da
+    # densidade escolhida em CONFIG) em relacao ao resto do conteudo da aba
+    # logo abaixo. As subabas irmas do PREGAO 2.0 (render_radar_alertas/
+    # _carteiras/_oportunidades/_acompanhamento, mais abaixo neste arquivo)
+    # ja usavam radar-pergunta pro mesmo titulo solto - alinha aqui tambem.
+    st.markdown('<div class="radar-pergunta">RADAR</div>', unsafe_allow_html=True)
     st.markdown(
         "<div class='radar-subtitulo'>O que mudou · onde vale investigar · o que pode dar errado</div>",
         unsafe_allow_html=True,
@@ -1414,7 +1423,9 @@ def render_radar_acompanhamento(prefs: dict, usuario: dict):
 @st.fragment
 def render_valuation(prefs: dict):
     _injetar_css()
-    st.markdown('<div class="painel-titulo">VALUATION</div>', unsafe_allow_html=True)
+    # radar-pergunta, mesmo motivo de render_radar acima (titulo solto, sem
+    # st.container(border=True) pai pra painel-titulo sangrar contra).
+    st.markdown('<div class="radar-pergunta">VALUATION</div>', unsafe_allow_html=True)
     st.markdown(
         "<div class='rq-nota'>Múltiplos reportados pela fonte (Yahoo Finance) comparados com pares do setor. "
         "Não é preço-alvo nem modelo de fluxo de caixa descontado: cenários, premissas e sensibilidade "
@@ -1430,7 +1441,9 @@ def render_valuation(prefs: dict):
 @st.fragment
 def render_teses(prefs: dict, usuario: dict):
     _injetar_css()
-    st.markdown('<div class="painel-titulo">TESES</div>', unsafe_allow_html=True)
+    # radar-pergunta, mesmo motivo de render_radar acima (titulo solto, sem
+    # st.container(border=True) pai pra painel-titulo sangrar contra).
+    st.markdown('<div class="radar-pergunta">TESES</div>', unsafe_allow_html=True)
     st.markdown(
         "<div class='rq-nota'>Base de evidências e copiloto de research já existentes. Registro persistente "
         "de tese própria (premissas, riscos, catalisadores, convicção) com histórico de versões — pessoal, "

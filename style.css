@@ -1241,6 +1241,27 @@ button[data-testid^="stBaseButton"] {
     }
 }
 
+/* st.expander (RADAR/MORNING CALL/RESEARCH/CALENDARIO/CVM) - achado real da
+   auditoria visual 2026-11-05: era o UNICO widget nativo do Streamlit em
+   todo o projeto sem NENHUMA regra propria - cantos arredondados padrao do
+   Streamlit, destoando de caixa quadrada deliberada usada em QUALQUER outro
+   elemento (stButton, inputs, select, pills, tabs, paineis com borda -
+   border-radius:0 em todos). Mais visivel em RADAR, que usa st.expander
+   como principal mecanismo de secao (ONDE VALE INVESTIGAR, O QUE PODE DAR
+   ERRADO etc.) - cada uma destoava do resto do terminal com cantos
+   arredondados e fundo levemente diferente dos paineis vizinhos. */
+[data-testid="stExpander"] {
+    border: 1px solid var(--borda) !important;
+    border-radius: 0 !important;
+    background-color: var(--painel-bg) !important;
+}
+[data-testid="stExpander"] summary {
+    font-family: 'IBM Plex Mono', monospace !important;
+}
+[data-testid="stExpanderDetails"] {
+    border-top: 1px solid var(--borda);
+}
+
 /* barras de vinculos contextuais (PREGAO 2.0: empresa -> noticias/radar/
    setor, atalhos da Visao Geral, setores -> empresas): no celular o
    Streamlit empilha cada coluna em largura total - 5 botoes viravam ~250px
