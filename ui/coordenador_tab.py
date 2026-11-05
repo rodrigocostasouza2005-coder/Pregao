@@ -15,10 +15,11 @@ badges/tabela seguem o mesmo esquema de .casas-badge/.casas-tabela).
   execução (nunca simula progresso - ver render_analisar)."""
 
 import html
+from datetime import datetime, timezone
 
 import streamlit as st
 
-from data.coordenador_central import fluxos, persistencia
+from data.coordenador_central import execucoes_agendadas, fluxos, persistencia
 from data.coordenador_central.registro import listar_especialistas
 from ui.design_system import lista_compacta, subtitulo
 from ui.dcf_operacional import render_dcf_operacional
@@ -112,6 +113,86 @@ def _metrica_html(valor, rotulo: str) -> str:
     )
 
 
+def _idade_formatada(iso_ts: str | None) -> str:
+    """Mesmo formato de ui/saude_dados_tab.py:_idade_formatada (min/h/d) -
+    cópia local pra não importar entre abas que são frentes separadas
+    (ver CLAUDE.md regra 8: Saúde dos Dados é frente isolada)."""
+    if not iso_ts:
+        return "—"
+    try:
+        ts = datetime.fromisoformat(str(iso_ts).replace("Z", "+00:00"))
+    except ValueError:
+        return "—"
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    minutos = (datetime.now(timezone.utc) - ts).total_seconds() / 60
+    if minutos < 0:
+        minutos = 0
+    if minutos < 60:
+        return f"há {int(minutos)}min"
+    horas = minutos / 60
+    if horas < 48:
+        return f"há {horas:.0f}h"
+    return f"há {horas / 24:.0f}d"
+
+
+def _duracao_formatada(duracao_ms) -> str:
+    if not isinstance(duracao_ms, (int, float)):
+        return "—"
+    if duracao_ms < 1000:
+        return f"{int(duracao_ms)}ms"
+    return f"{duracao_ms / 1000:.1f}s"
+
+
+# ============================================================
+# ÚLTIMAS EXECUÇÕES AGENDADAS (jobs/coordenador.py, cron)
+# ============================================================
+
+def _render_execucoes_agendadas():
+    """Lê coordenador_execucoes (execucoes_agendadas.listar_ultimas_execucoes())
+    e mostra, por tipo de rotina agendada, o status mais recente, há
+    quanto tempo, duração e resumo/erro - equivalente em Streamlit do
+    painel "Status dos especialistas" já existente na versão web
+    (web/app/(terminal)/inteligencia/page.tsx), que até 2026-11-05 não
+    tinha nenhum lado no Streamlit."""
+    execucoes = execucoes_agendadas.listar_ultimas_execucoes()
+    if execucoes is None:
+        st.warning("Histórico de execuções agendadas indisponível no momento (Supabase fora do ar).")
+        return
+
+    por_tipo = {e.get("tipo"): e for e in execucoes}
+    linhas = []
+    for tipo, rotulo in execucoes_agendadas.ROTULOS_TIPO.items():
+        execucao = por_tipo.get(tipo)
+        if execucao is None:
+            linhas.append(
+                "<tr>"
+                f"<td class='coord-nome'>{html.escape(rotulo)}</td>"
+                "<td><span class='coord-badge coord-badge-indisponivel'>NUNCA RODOU</span></td>"
+                "<td>—</td><td>—</td><td>—</td>"
+                "</tr>"
+            )
+            continue
+        status = execucao.get("status")
+        resumo_ou_erro = execucao.get("erro") if status == "ERRO" else execucao.get("resumo")
+        linhas.append(
+            "<tr>"
+            f"<td class='coord-nome'>{html.escape(rotulo)}</td>"
+            f"<td>{_badge_status(status)}</td>"
+            f"<td>{html.escape(_idade_formatada(execucao.get('iniciado_em')))}</td>"
+            f"<td>{html.escape(_duracao_formatada(execucao.get('duracao_ms')))}</td>"
+            f"<td>{html.escape(str(resumo_ou_erro) if resumo_ou_erro else '—')}</td>"
+            "</tr>"
+        )
+
+    tabela_html = (
+        "<div class='coord-tabela-wrap'><table class='coord-tabela'><thead><tr>"
+        "<th>Rotina</th><th>Status</th><th>Última execução</th><th>Duração</th><th>Resumo / erro</th>"
+        "</tr></thead><tbody>" + "".join(linhas) + "</tbody></table></div>"
+    )
+    st.markdown(tabela_html, unsafe_allow_html=True)
+
+
 # ============================================================
 # VISÃO GERAL
 # ============================================================
@@ -135,6 +216,15 @@ def render_visao_geral(prefs: dict = None):
         "Não substitui jobs/coordenador.py (esse é o agendador puro via GitHub Actions).</div>",
         unsafe_allow_html=True,
     )
+
+    with st.expander("ÚLTIMAS EXECUÇÕES AGENDADAS", expanded=True):
+        st.markdown(
+            "<div class='coord-nota' style='margin-top:0;'>Rotinas do agendador via cron "
+            "(jobs/coordenador.py, tabela coordenador_execucoes) - diferente das análises sob "
+            "demanda abaixo: aqui cada linha é 1 rodada automática de 1 rotina.</div>",
+            unsafe_allow_html=True,
+        )
+        _render_execucoes_agendadas()
 
     especialistas = listar_especialistas()
     metricas = persistencia.metricas_especialistas()
