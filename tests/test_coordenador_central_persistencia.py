@@ -356,6 +356,42 @@ def test_concluir_analise_fallback_preserva_status_erro_sem_rebaixar():
     assert "FALHA_PERSISTENCIA" in linha["erro"]
 
 
+def test_concluir_analise_serializa_date_puro_dentro_do_resultado():
+    """Bug real encontrado na validação operacional com dados reais
+    (2026-11-05, Parte 6/comite-validacao-3-empresas): especialistas
+    como `catalisadores` (data/radar.py) devolvem datetime.date puro no
+    campo "data" sempre que há evento na janela - isso chegava inteiro
+    dentro de `resultado["visao_especialistas"]` e o UPDATE completo
+    falhava 100% das vezes (TypeError: Object of type date is not JSON
+    serializable), rebaixando CONCLUIDA pra PARCIAL mesmo com todos os
+    especialistas disponíveis. _serializar_jsonb converte date/datetime
+    pra string ISO antes do UPDATE; aqui confirmamos que o valor
+    persistido já é string e que json.dumps do payload nunca falha."""
+    import datetime as _dt
+    import json
+
+    cliente = _ClienteFake()
+    resultado_com_date = {
+        "visao_especialistas": {
+            "catalisadores": {
+                "dados": [{"ticker": "PETR4", "data": _dt.date(2026, 11, 10)}],
+            },
+        },
+        "momento_consolidado_em": _dt.datetime(2026, 11, 5, 10, 0, tzinfo=_dt.timezone.utc),
+    }
+    with _patched(cliente):
+        analise_id = persistencia.iniciar_analise("Analisar PETR4", "analise_ticker", "PETR4")
+        ok = persistencia.concluir_analise(analise_id, "CONCLUIDA", resultado_com_date)
+
+    assert ok is True
+    linha = cliente.tabelas["coordenador_analises"][analise_id]
+    assert linha["status"] == "CONCLUIDA"
+    data_persistida = linha["resultado"]["visao_especialistas"]["catalisadores"]["dados"][0]["data"]
+    assert data_persistida == "2026-11-10"
+    assert isinstance(data_persistida, str)
+    json.dumps(linha["resultado"])  # nunca lança - é o que o cliente HTTP real faria
+
+
 def test_concluir_analise_quando_tudo_falha_linha_fica_em_andamento_mas_tentativas_sao_registradas():
     """Se até o fallback mínimo falhar (indisponibilidade real do
     Supabase), a linha fica EM_ANDAMENTO (nenhum UPDATE de fato foi
