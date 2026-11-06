@@ -236,7 +236,23 @@ def _painel_leitura_pregao(prefs):
     if not chips:
         st.markdown("<div class='cinza' style='font-size:0.76rem;'>Sem fatos com evidência suficiente nesta rodada.</div>", unsafe_allow_html=True)
         return
-    st.markdown("".join(chips), unsafe_allow_html=True)
+    # BUG REAL achado nesta auditoria (Playwright contra o harness local,
+    # 2026-11-06): os chips (_chip_html) comecam com <span>, uma tag
+    # INLINE - o CommonMark so' trata um bloco de HTML cru (sem nenhum
+    # parsing inline por cima) quando a string comeca com uma tag de
+    # BLOCO (div/table/p/...), nunca com <span>. Sem essa condicao, o
+    # markdown-it do Streamlit processa o conteudo como paragrafo normal,
+    # e QUALQUER "$" solto (ex: "R$" no chip de maior negociado + "US$"
+    # dentro de um texto de sintese por IA, ambos reais e sem relacao
+    # entre si) e' interpretado como abre/fecha de matematica LaTeX -
+    # tudo entre os dois "$" vira um bloco "language-math" quebrado em
+    # vez do HTML pretendido (confirmado: reproduzido e corrigido via
+    # Playwright, screenshot real antes/depois). Envolver a string
+    # inteira num <div> (tag de bloco) faz o CommonMark reconhecer HTML
+    # block de verdade e pular o parsing inline - mesmo efeito visual
+    # (chips lado a lado, display:inline-flex em cada <span>), zero
+    # dado/texto alterado.
+    st.markdown(f"<div>{''.join(chips)}</div>", unsafe_allow_html=True)
 
 
 def _painel_para_investigar(prefs):

@@ -98,6 +98,58 @@ def test_painel_agenda_e_teses_renderiza_sem_excecao():
         vg._painel_agenda_e_teses(_PREFS)
 
 
+def test_painel_leitura_pregao_chips_ficam_dentro_de_bloco_html():
+    """Regressão de um bug real achado via Playwright (auditoria
+    independente de HOME/MERCADO, 2026-11-06): os chips (_chip_html)
+    começam com <span>, tag INLINE - o CommonMark só reconhece "HTML
+    block" (conteúdo cru, sem nenhum parsing inline por cima) quando a
+    string passada a st.markdown começa com uma tag de BLOCO (div/table/
+    p/...), nunca com <span>/<em>/<a>. Sem isso, o markdown-it do
+    Streamlit processa a string como parágrafo normal, e QUALQUER "$"
+    solto (ex: "R$" no chip de maior negociado + um "US$" dentro de um
+    texto de síntese por IA, os dois reais e sem relação um com o outro)
+    é interpretado como abre/fecha de matemática LaTeX - tudo entre os
+    dois "$" virava um bloco "language-math" quebrado em vez do HTML
+    pretendido (confirmado via Playwright contra um harness real:
+    reproduzido e corrigido, screenshot antes/depois). Envolver a string
+    final num <div> faz o CommonMark reconhecer HTML block de verdade e
+    pular o parsing inline - mesmo efeito visual, zero dado alterado."""
+    negociado_com_cifrao = [
+        {"ticker": "PETR4", "preco": 36.5, "variacao_pct": 3.1, "setor": "Petróleo e Gás", "volume_financeiro": 4.2e9},
+    ]
+    sintese_com_cifrao_extra = {
+        "ok": True, "gerado_em": None, "atual": True,
+        "dados": {
+            "resumo_executivo": {"texto": "Ibov sobe."},
+            # "US$" aqui e' o 2o "$" da rodada - junto com o "R$" do chip
+            # de maior volume financeiro (sempre presente), e' exatamente
+            # a combinacao real que disparava o bug.
+            "movimentos": [{"evento": "Brent sobe acima de US$ 86", "fonte": "Valor Econômico"}],
+            "oportunidades_riscos": [], "cenarios": [],
+        },
+    }
+    htmls = []
+    with patch.object(vg, "obter_altas_baixas", return_value=([], [])), \
+         patch.object(vg, "obter_mais_negociados", return_value=negociado_com_cifrao), \
+         patch.object(vg, "_proximo_evento_watchlist", return_value=None), \
+         patch.object(vg, "obter_sintese_mercado", return_value=sintese_com_cifrao_extra), \
+         patch.object(vg.st, "markdown", side_effect=lambda html, **k: htmls.append(html)):
+        vg._painel_leitura_pregao(_PREFS)
+
+    chamada_chips = next(h for h in htmls if "DADO" in h and "<span" in h)
+    assert chamada_chips.lstrip().startswith("<div>"), (
+        f"chips precisam estar envolvidos por uma tag de BLOCO (<div>), nunca "
+        f"começar direto com <span> (tag inline, vulnerável ao parsing de "
+        f"matemática do Streamlit quando há 2+ '$' na mesma chamada): {chamada_chips[:80]!r}"
+    )
+    # ambos os "$" (R$ do chip de volume, US$ do texto de sintese) continuam
+    # no HTML gerado, intactos - a string em si nao e' alterada, so' passa a
+    # vir envolvida por <div> (o parsing errado de "$...$" como matematica
+    # acontece no browser, do lado do markdown-it do Streamlit - nao da pra
+    # reproduzir aqui sem um browser real, ja validado via Playwright).
+    assert "R$" in chamada_chips and "US$ 86" in chamada_chips
+
+
 def test_render_visao_geral_completo_sem_excecao():
     """render_visao_geral (cockpit fixo de ponta a ponta), tudo mockado -
     garante que a composição inteira (indicadores/leitura do pregão/
