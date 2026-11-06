@@ -58,7 +58,9 @@ from data.research.historico import historico_ticker
 from data.research.tese import scorecard
 from data.research.sinal import calcular_sinal_comite
 from ui import navegacao
-from ui.design_system import divisor, lista_compacta, subtitulo
+from ui.design_system import (
+    classe_sinal, divisor, lista_compacta, numero_financeiro_html, subtitulo, variacao_html,
+)
 from ui.setores_tab import ir_para_setor, setores_do_ticker
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -1813,11 +1815,56 @@ def _dias_desde_captura(valor, hoje=None):
     return (referencia - data_registro).days
 
 
+def _reais_html_ou_traco(valor, fmt: str) -> str:
+    """numero_financeiro_html() (design_system) quando o valor e' um numero
+    real; '—' plano (sem span/cor) quando a fonte nao devolveu nada - mesma
+    distincao FATO vs. ausencia que o resto da tela usa, nunca inventa um
+    0,00 pra disfarcar dado faltante."""
+    numero = _numero_finito(valor)
+    if numero is None:
+        return "—"
+    return numero_financeiro_html(numero, 2, fmt, prefixo="R$ ")
+
+
+def _linha_tabela_html(celulas: list) -> str:
+    """1 <tr> compacto, mesmo padrao visual das demais tabelas desta tela
+    (render_fundamentos, acima): cada item de `celulas` e' (texto_html,
+    alinhamento) - alinhamento 'd' (direita, numero) ou 'e' (esquerda,
+    texto)."""
+    tds = "".join(
+        f"<td style='padding:0.2rem 0.4rem; text-align:{'right' if alinhamento == 'd' else 'left'};'>{texto}</td>"
+        for texto, alinhamento in celulas
+    )
+    return f"<tr>{tds}</tr>"
+
+
+def _tabela_html(cabecalhos: list, linhas_html: list) -> str:
+    """Tabela HTML compacta terminal - mesma estrutura de render_fundamentos
+    (thead cinza 0.66rem, tbody 0.78rem, sem bordas pesadas) - usada aqui
+    pra manter RESEARCH & FATORES DE MERCADO no mesmo padrão visual do
+    resto da tela de Fundamentos, em vez de st.dataframe (grade genérica,
+    padding/tipografia diferentes do terminal)."""
+    ths = "".join(
+        f"<th style='text-align:{'right' if alinhamento == 'd' else 'left'}; padding:0 0.4rem 0.2rem 0;'>{html.escape(rotulo)}</th>"
+        for rotulo, alinhamento in cabecalhos
+    )
+    return (
+        "<div style='overflow-x:auto; overflow-y:hidden;'><table style='width:100%; font-size:0.78rem; "
+        "border-collapse:collapse;'><thead><tr class='cinza' style='font-size:0.66rem;'>"
+        f"{ths}</tr></thead><tbody>{''.join(linhas_html)}</tbody></table></div>"
+    )
+
+
 def _render_research_e_fatores(ticker: str, fmt: str):
     """Mostra apenas alvos realmente persistidos e cotações de fatores mapeados."""
     with st.container(border=True):
         st.markdown('<div class="painel-titulo">RESEARCH & FATORES DE MERCADO</div>', unsafe_allow_html=True)
-        st.markdown(f"**{ticker}** · cobertura estruturada disponível")
+        st.markdown(
+            f"<div style='font-size:0.82rem; margin:0 0 0.4rem 0;'>"
+            f"<span style='color:var(--destaque); font-weight:700;'>{html.escape(ticker)}</span> "
+            f"<span class='cinza'>· cobertura estruturada disponível</span></div>",
+            unsafe_allow_html=True,
+        )
         try:
             snapshots = historico_ticker("genial", ticker, limite=5)
         except Exception:
@@ -1832,10 +1879,19 @@ def _render_research_e_fatores(ticker: str, fmt: str):
             cot = obter_cotacao(ticker)
             preco = cot.get("preco") if not cot.get("erro") else None
             potencial = _potencial_pct(alvo_atual, preco)
-            cols = st.columns(3)
-            cols[0].metric("PREÇO-ALVO GENIAL", _fmt_reais(alvo_atual, fmt))
-            cols[1].metric("PREÇO ATUAL", _fmt_reais(preco, fmt))
-            cols[2].metric("POTENCIAL INDICATIVO", f"{potencial:+.1f}%" if potencial is not None else "—")
+            metricas = [
+                ("PREÇO-ALVO GENIAL", _reais_html_ou_traco(alvo_atual, fmt)),
+                ("PREÇO ATUAL", _reais_html_ou_traco(preco, fmt)),
+                ("POTENCIAL INDICATIVO", variacao_html(potencial, fmt, casas=1) if potencial is not None else "—"),
+            ]
+            st.markdown(
+                "<div style='display:flex; flex-wrap:wrap; gap:1.4rem; margin:0.1rem 0 0.5rem 0;'>" + "".join(
+                    f"<div><div class='cinza' style='font-size:0.6rem; letter-spacing:0.04em;'>{rot}</div>"
+                    f"<div style='font-size:0.92rem; font-weight:700;'>{val}</div></div>"
+                    for rot, val in metricas
+                ) + "</div>",
+                unsafe_allow_html=True,
+            )
             st.caption("Preço do ativo consultado no Yahoo Finance; o atraso pode variar. O potencial é indicativo e usa o último preço retornado, não uma cotação executável.")
             captura = ultimo.get("capturado_em")
             st.caption(f"Último registro persistido: {captura or 'data indisponível'}. O histórico registra mudanças, não necessariamente o relatório mais recente.")
@@ -1851,15 +1907,22 @@ def _render_research_e_fatores(ticker: str, fmt: str):
         )
         if validos:
             subtitulo("Histórico recente de preço-alvo e recomendação")
-            linhas = []
-            for s in validos:
-                linhas.append({
-                    "Data de captura": str(s.get("capturado_em") or "—")[:10],
-                    "Casa": str(s.get("casa") or "genial").upper(),
-                    "Recomendação": s.get("recomendacao") or "—",
-                    "Preço-alvo": _fmt_reais(s.get("preco_alvo"), fmt),
-                })
-            st.dataframe(linhas, hide_index=True, width="stretch")
+            linhas_hist = [
+                _linha_tabela_html([
+                    (html.escape(str(s.get("capturado_em") or "—")[:10]), "e"),
+                    (html.escape(str(s.get("casa") or "genial").upper()), "e"),
+                    (html.escape(str(s.get("recomendacao") or "—")), "e"),
+                    (_reais_html_ou_traco(s.get("preco_alvo"), fmt), "d"),
+                ])
+                for s in validos
+            ]
+            st.markdown(
+                _tabela_html(
+                    [("DATA DE CAPTURA", "e"), ("CASA", "e"), ("RECOMENDAÇÃO", "e"), ("PREÇO-ALVO", "d")],
+                    linhas_hist,
+                ),
+                unsafe_allow_html=True,
+            )
         elif not snapshots:
             st.info("Ainda não há preço-alvo estruturado e persistido para este ticker.")
         fatores = _FATORES_POR_TICKER.get(ticker, [])
@@ -1870,25 +1933,55 @@ def _render_research_e_fatores(ticker: str, fmt: str):
         linhas_fatores = []
         for nome, simbolo in fatores:
             if not simbolo:
-                linhas_fatores.append({"Fator": nome, "Contrato": "—", "Cotação": "—", "Unidade": "não integrada", "Variação": "—", "Fonte/status": "Sem série integrada"})
+                linhas_fatores.append(_linha_tabela_html([
+                    (html.escape(nome), "e"), ("—", "e"), ("—", "d"),
+                    (html.escape("não integrada"), "e"), ("—", "d"), (html.escape("Sem série integrada"), "e"),
+                ]))
                 continue
             dado = obter_cotacao(simbolo)
             if dado.get("erro"):
-                linhas_fatores.append({"Fator": nome, "Contrato": simbolo, "Cotação": "—", "Unidade": _UNIDADE_FATOR.get(simbolo, "unidade não validada"), "Variação": "—", "Fonte/status": "Indisponível no provedor"})
+                linhas_fatores.append(_linha_tabela_html([
+                    (html.escape(nome), "e"), (html.escape(simbolo), "e"), ("—", "d"),
+                    (html.escape(_UNIDADE_FATOR.get(simbolo, "unidade não validada")), "e"),
+                    ("—", "d"), (html.escape("Indisponível no provedor"), "e"),
+                ]))
                 continue
             preco_fator = dado.get("preco")
             variacao_pct = _numero_finito(dado.get("variacao_pct"))
             numero_fator = _numero_finito(preco_fator)
-            linhas_fatores.append({
-                "Fator": nome,
-                "Contrato": simbolo,
-                "Cotação": _fmt_reais(numero_fator, fmt) if simbolo == "USDBRL=X" else (config.formatar_numero(numero_fator, 2, fmt) if numero_fator is not None else "—"),
-                "Unidade": _UNIDADE_FATOR.get(simbolo, "unidade não validada"),
-                "Variação": f"{variacao_pct:+.2f}%" if variacao_pct is not None else "—",
-                "Fonte/status": "Yahoo Finance · pode haver atraso" if numero_fator is not None else "Cotação indisponível",
-            })
-        st.dataframe(linhas_fatores, hide_index=True, width="stretch")
+            if numero_fator is None:
+                cotacao_html = "—"
+            elif simbolo == "USDBRL=X":
+                cotacao_html = numero_financeiro_html(numero_fator, 2, fmt, prefixo="R$ ")
+            else:
+                cotacao_html = numero_financeiro_html(numero_fator, 2, fmt)
+            variacao_html_cel = variacao_html(variacao_pct, fmt, casas=2) if variacao_pct is not None else "—"
+            linhas_fatores.append(_linha_tabela_html([
+                (html.escape(nome), "e"), (html.escape(simbolo), "e"), (cotacao_html, "d"),
+                (html.escape(_UNIDADE_FATOR.get(simbolo, "unidade não validada")), "e"),
+                (variacao_html_cel, "d"),
+                (html.escape("Yahoo Finance · pode haver atraso" if numero_fator is not None else "Cotação indisponível"), "e"),
+            ]))
+        st.markdown(
+            _tabela_html(
+                [("FATOR", "e"), ("CONTRATO", "e"), ("COTAÇÃO", "d"), ("UNIDADE", "e"), ("VARIAÇÃO", "d"), ("FONTE/STATUS", "e")],
+                linhas_fatores,
+            ),
+            unsafe_allow_html=True,
+        )
         st.caption("Relações são um mapa inicial de exposição econômica, não prova de causalidade. Algumas séries são proxies e devem ser refinadas; cotações podem estar atrasadas ou indisponíveis.")
+
+
+# Colunas da tabela "FUNDAMENTOS - WATCHLIST" cujo SINAL (>=0 / <0) e' um
+# FATO de qualidade/rentabilidade - cor via classe_sinal() (design_system)
+# faz sentido (margem/ROE negativos e FCF negativo sao sempre um alerta
+# real, independente da empresa). VALOR DE MERCADO, P/L, P/VP, DY,
+# DIVIDA LIQUIDA e DL/EBITDA ficam neutros de proposito: sao niveis/
+# multiplos, nao uma "variacao" com leitura binaria boa/ma pelo sinal
+# (ver design_system.py, ponto 2 da docstring - nem todo numero vira
+# colorido so' porque tem sinal).
+_CAMPOS_SINAL_FUNDAMENTOS = {"roe", "margem_liquida", "margem_operacional", "margem_ebitda", "fluxo_caixa_livre"}
+
 
 def render_fundamentos(prefs: dict):
     fmt = prefs["formato_numerico"]
@@ -1921,10 +2014,21 @@ def render_fundamentos(prefs: dict):
                               f"<td colspan='{len(colunas) + 1}' class='cinza' style='padding:0.2rem 0.4rem;'>"
                               f"indisponível agora (fonte não respondeu)</td></tr>")
                 continue
-            celulas = "".join(
-                f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>{_celula(ind.get(c), f)}</td>"
-                for _, c, f in colunas
-            )
+            celulas_linha = []
+            for _, c, f in colunas:
+                valor = ind.get(c)
+                texto = _celula(valor, f)
+                # numero_financeiro_html() nao serve aqui direto: vm()/mult()
+                # ja' devolvem o texto final (bi/mi compacto, "N.M." pra
+                # multiplo nao significativo) - reaproveita a MESMA classe CSS
+                # (.ds-numero, tabular-nums) que o helper gera, sem duplicar a
+                # formatacao numerica que ja' veio de config.formatar_*.
+                classe = classe_sinal(valor) if (valor is not None and c in _CAMPOS_SINAL_FUNDAMENTOS) else "neutro"
+                celulas_linha.append(
+                    f"<td style='padding:0.2rem 0.4rem; text-align:right;'>"
+                    f"<span class='ds-numero {classe}'>{texto}</span></td>"
+                )
+            celulas = "".join(celulas_linha)
             linhas.append(f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>{nome_t}</td>{celulas}"
                           f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='cinza'>{coleta}</td></tr>")
         cabecalho = "".join(f"<th style='text-align:right; padding:0 0.4rem 0.2rem;'>{r}</th>"
