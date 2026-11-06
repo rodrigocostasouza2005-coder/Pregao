@@ -45,6 +45,7 @@ from data.news import (
 from data.research import store as research_store
 from data.research.genial import obter_recomendacoes
 from ui import navegacao
+from ui.design_system import divisor_html, subtitulo_html
 from ui.research_tab import _abrir_resumo_live, _casas_ativas, _EXTRATOR_POR_CASA
 
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -1320,8 +1321,11 @@ def _bloco_contexto_research(tickers: list, watchlist: list):
     if not relevantes:
         return
 
-    st.markdown("<div class='w-card-divisor'></div>", unsafe_allow_html=True)
-    st.markdown("<div class='cinza' style='font-size:0.72rem; text-transform:uppercase; margin-bottom:0.2rem;'>Research</div>", unsafe_allow_html=True)
+    # divisor/subtitulo do design system compartilhado (ui/design_system.py)
+    # em vez de reinventar o rotulo de subsecao em CSS local (ver docstring
+    # daquele modulo, item 6 - mesma convencao ja' usada por MORNING CALL).
+    st.markdown(divisor_html(), unsafe_allow_html=True)
+    st.markdown(subtitulo_html("Research"), unsafe_allow_html=True)
     for r in relevantes:
         potencial = r.get("potencial_pct")
         potencial_txt = f" · potencial {potencial:.1f}%" if potencial is not None else ""
