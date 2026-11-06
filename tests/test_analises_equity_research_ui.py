@@ -157,17 +157,21 @@ def test_analise_ticker_cacheada_nao_recalcula_dentro_do_ttl():
 
 def test_botao_comparativo_setor_nao_aparece_sem_fundamentos():
     """Sem fundamentos, a seção inteira já diz 'indisponível agora' - não
-    faz sentido oferecer comparação setorial do que não existe."""
+    faz sentido oferecer comparação setorial do que não existe. O botão
+    de histórico/evolução/perspectivas (3 anos, 2026-11-06) é
+    independente de `fundamentos` (cobre CVM/catalisadores/riscos) -
+    continua aparecendo; só o botão de comparação setorial some."""
     analise = _analise()
     with patch.object(analises_mod, "_analise_ticker_cacheada", return_value=analise), \
          patch.object(analises_mod.st, "markdown"), patch.object(analises_mod.st, "caption"), \
-         patch.object(analises_mod.st, "button") as mock_button, \
+         patch.object(analises_mod.st, "button", return_value=False) as mock_button, \
          patch.object(analises_mod.st, "columns", return_value=[MagicMock()] * 4), \
          patch.object(analises_mod.st, "container") as container_mock:
         container_mock.return_value.__enter__ = lambda self: self
         container_mock.return_value.__exit__ = lambda *a: False
         analises_mod.render_equity_research_executivo("WEGE3", _PREFS)
-    mock_button.assert_not_called()
+    rotulos = [c.args[0] for c in mock_button.call_args_list if c.args]
+    assert not any("setor" in r.lower() for r in rotulos)
 
 
 def test_botao_comparativo_setor_abre_dialogo_quando_clicado():
@@ -178,11 +182,13 @@ def test_botao_comparativo_setor_abre_dialogo_quando_clicado():
          patch.object(analises_mod.st, "button", return_value=True), \
          patch.object(analises_mod.st, "columns", return_value=[MagicMock()] * 4), \
          patch.object(analises_mod, "_dialog_comparativo_setor_empresa") as mock_dialog, \
+         patch.object(analises_mod, "_dialog_historico_evolucao_empresa") as mock_dialog_historico, \
          patch.object(analises_mod.st, "container") as container_mock:
         container_mock.return_value.__enter__ = lambda self: self
         container_mock.return_value.__exit__ = lambda *a: False
         analises_mod.render_equity_research_executivo("WEGE3", _PREFS)
     mock_dialog.assert_called_once_with("WEGE3", _PREFS)
+    mock_dialog_historico.assert_called_once_with("WEGE3", _PREFS, analise)
 
 
 def test_botao_comparativo_setor_nao_abre_dialogo_sem_clique():
