@@ -93,6 +93,7 @@ def calcular_dcf_operacional(premissas: dict | None, preco_atual=None) -> dict:
     return {"disponivel": True, "metodo": "DCF operacional de 5 anos + Gordon Growth",
             "moeda": p.get("moeda") or "moeda da cotação", "preco_alvo": alvo,
             "upside_pct": (alvo/preco-1)*100 if preco is not None and preco > 0 else None,
+            "margem_seguranca_pct": (1 - preco/alvo)*100 if preco is not None and preco > 0 and alvo > 0 else None,
             "valor_presente_fluxos": vp_fluxos, "fcf_terminal_base": fcf5,
             "valor_terminal": vt, "valor_presente_terminal": vp_terminal,
             "valor_empresa": valor_empresa, "divida_liquida": e["divida_liquida"],
@@ -100,3 +101,135 @@ def calcular_dcf_operacional(premissas: dict | None, preco_atual=None) -> dict:
             "premissas": p, "fonte_premissas": p.get("fonte_premissas"),
             "data_base": p.get("data_base"),
             "observacao": "Premissas operacionais informadas pelo usuário; não são previsões automáticas."}
+
+
+# ============================================================================
+# Extensões de apresentação (cenários + sensibilidade) - adicionadas sem
+# alterar calcular_dcf_operacional acima. Ambas são composições puras sobre
+# a função já testada: constroem variações explícitas das premissas
+# recebidas e chamam calcular_dcf_operacional de novo pra cada variação -
+# nenhuma taxa/premissa nova é inventada, só reaproveitada com um delta que
+# quem chamou escolheu (default 0 = sem variação, nunca um número
+# presumido).
+# ============================================================================
+
+CENARIOS_OPERACIONAL = {
+    "otimista": "OTIMISTA",
+    "base": "BASE",
+    "pessimista": "PESSIMISTA",
+}
+
+
+def calcular_cenarios_dcf_operacional(
+    premissas: dict | None,
+    delta_otimista_pp: float = 0.0,
+    delta_pessimista_pp: float = 0.0,
+    preco_atual=None,
+) -> dict:
+    """Três cenários do DCF operacional, a partir das MESMAS premissas
+    anuais recebidas - "base" é o cálculo normal; "otimista"/"pessimista"
+    somam `delta_*_pp` (pontos percentuais, já em escala "pp" - ex.: 2.0 =
+    +2 p.p.) ao crescimento de receita de TODOS os cinco anos, mantendo
+    margem, D&A, CAPEX, capital de giro, WACC e crescimento terminal
+    intactos. Os deltas são escolha explícita de quem chama (default 0.0 =
+    cenário idêntico ao base) - nunca um otimismo/pessimismo inventado
+    pelo motor.
+    """
+    p = premissas if isinstance(premissas, dict) else {}
+    faltantes = [k for k in ESCALARES + VETORES if p.get(k) is None]
+    if faltantes:
+        return {
+            "disponivel": False,
+            "motivo": "Premissas operacionais insuficientes; nenhuma taxa foi presumida.",
+            "campos_faltantes": faltantes, "cenarios": {},
+        }
+    deltas = {
+        "pessimista": _numero(delta_pessimista_pp),
+        "base": 0.0,
+        "otimista": _numero(delta_otimista_pp),
+    }
+    if any(v is None for v in deltas.values()):
+        return {"disponivel": False, "motivo": "Delta de cenário não numérico ou não finito.", "cenarios": {}}
+
+    cenarios = {}
+    algum_disponivel = False
+    for chave, rotulo in CENARIOS_OPERACIONAL.items():
+        delta = deltas[chave] / 100
+        variacao = dict(p)
+        crescimento_base = p.get("crescimento_receita")
+        if isinstance(crescimento_base, (list, tuple)) and len(crescimento_base) == ANOS:
+            variacao["crescimento_receita"] = [
+                (_numero(x) + delta) if _numero(x) is not None else None for x in crescimento_base
+            ]
+        resultado = calcular_dcf_operacional(variacao, preco_atual=preco_atual)
+        resultado["rotulo"] = rotulo
+        resultado["delta_crescimento_pp"] = deltas[chave]
+        cenarios[chave] = resultado
+        algum_disponivel = algum_disponivel or bool(resultado.get("disponivel"))
+
+    return {
+        "disponivel": algum_disponivel,
+        "metodo": "DCF operacional - 3 cenários (delta uniforme no crescimento de receita)",
+        "cenarios": cenarios,
+        "observacao": (
+            "Otimista/pessimista somam o delta informado (p.p.) ao crescimento de receita de "
+            "todos os anos; margem, D&A, CAPEX, capital de giro, WACC e g terminal não mudam "
+            "entre cenários."
+        ),
+    }
+
+
+def calcular_sensibilidade_dcf_operacional(
+    premissas: dict | None,
+    preco_atual=None,
+    passos_wacc=(-0.02, -0.01, 0.0, 0.01, 0.02),
+    passos_g=(-0.01, -0.005, 0.0, 0.005, 0.01),
+) -> dict:
+    """Matriz do preço-alvo sob variações de WACC (linhas) x crescimento
+    terminal (colunas), mantendo receita-base e todos os vetores anuais
+    constantes. Mesma lógica de calcular_sensibilidade_dcf (data/
+    coordenador_central/dcf.py), adaptada ao motor operacional - varia uma
+    premissa por vez a partir do valor que quem chamou informou, nunca
+    substitui por um número presumido.
+    """
+    p = premissas if isinstance(premissas, dict) else {}
+    base = calcular_dcf_operacional(p, preco_atual=preco_atual)
+    if not base.get("disponivel"):
+        return {"disponivel": False, "motivo": base.get("motivo") or "Premissas insuficientes.", "linhas": []}
+
+    wacc_base = _numero(p.get("wacc"))
+    g_base = _numero(p.get("g_terminal"))
+    if wacc_base is None or g_base is None:
+        return {"disponivel": False, "motivo": "WACC ou g terminal ausente.", "linhas": []}
+
+    linhas = []
+    for delta_wacc in passos_wacc:
+        wacc = wacc_base + float(delta_wacc)
+        celulas = []
+        for delta_g in passos_g:
+            g = g_base + float(delta_g)
+            variacao = dict(p)
+            variacao["wacc"] = wacc
+            variacao["g_terminal"] = g
+            calculo = calcular_dcf_operacional(variacao, preco_atual=preco_atual)
+            celulas.append({
+                "delta_g": float(delta_g), "g_terminal": g,
+                "preco_alvo": calculo.get("preco_alvo"),
+                "upside_pct": calculo.get("upside_pct"),
+                "disponivel": bool(calculo.get("disponivel")),
+                "motivo": calculo.get("motivo"),
+            })
+        linhas.append({"delta_wacc": float(delta_wacc), "wacc": wacc, "celulas": celulas})
+
+    return {
+        "disponivel": True,
+        "metodo": "Sensibilidade do DCF operacional (WACC x crescimento terminal)",
+        "linhas": linhas,
+        "passos_g": [float(x) for x in passos_g],
+        "passos_wacc": [float(x) for x in passos_wacc],
+        "preco_alvo_base": base.get("preco_alvo"),
+        "observacao": (
+            "Varia WACC e crescimento terminal um em relação ao outro; mantém receita-base, "
+            "margens, D&A, CAPEX, capital de giro, dívida líquida e ações constantes."
+        ),
+    }
