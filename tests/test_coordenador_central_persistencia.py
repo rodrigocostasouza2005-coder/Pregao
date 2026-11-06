@@ -191,6 +191,42 @@ def test_listar_analises_recentes_ordena_por_iniciado_em_desc():
     assert lista[0]["solicitacao"] == "Segunda"
 
 
+# ============================================================
+# listar_analises_por_ticker: filtra por `ticker` usando o índice
+# idx_coordenador_analises_ticker (sql/coordenador_central.sql) - antes
+# desta revisão nenhuma função acionava esse índice.
+# ============================================================
+
+def test_supabase_indisponivel_listar_por_ticker_devolve_none():
+    with _patched(None):
+        assert persistencia.listar_analises_por_ticker("PETR4") is None
+
+
+def test_listar_por_ticker_devolve_so_analises_daquele_ticker_ordenadas_por_data_desc():
+    cliente = _ClienteFake()
+    with _patched(cliente):
+        id_antiga = persistencia.iniciar_analise("Primeira PETR4", "analise_ticker", "PETR4")
+        cliente.tabelas["coordenador_analises"][id_antiga]["iniciado_em"] = "2026-10-01T00:00:00Z"
+        persistencia.iniciar_analise("Outro ticker", "analise_ticker", "VALE3")
+        id_recente = persistencia.iniciar_analise("Segunda PETR4", "analise_ticker", "PETR4")
+        cliente.tabelas["coordenador_analises"][id_recente]["iniciado_em"] = "2026-11-01T00:00:00Z"
+
+        lista = persistencia.listar_analises_por_ticker("PETR4")
+
+    assert len(lista) == 2
+    assert all(linha["ticker"] == "PETR4" for linha in lista)
+    assert lista[0]["solicitacao"] == "Segunda PETR4"
+    assert lista[1]["solicitacao"] == "Primeira PETR4"
+
+
+def test_listar_por_ticker_sem_nenhuma_analise_devolve_lista_vazia():
+    cliente = _ClienteFake()
+    with _patched(cliente):
+        persistencia.iniciar_analise("Analisar VALE3", "analise_ticker", "VALE3")
+        lista = persistencia.listar_analises_por_ticker("PETR4")
+    assert lista == []
+
+
 def test_obter_analise_encontra_por_id():
     cliente = _ClienteFake()
     with _patched(cliente):
