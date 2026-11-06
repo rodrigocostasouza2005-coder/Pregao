@@ -199,6 +199,27 @@ def listar_analises_recentes(limite: int = 20) -> list | None:
         return None
 
 
+def listar_analises_por_ticker(ticker: str, limite: int = 20) -> list | None:
+    """Histórico de análises de um ticker específico (mais recentes
+    primeiro) - usa o índice idx_coordenador_analises_ticker (sql/
+    coordenador_central.sql), já existente mas sem nenhuma função que o
+    acionasse até esta revisão. Mesmo padrão de listar_analises_recentes:
+    None só quando o Supabase está indisponível ou a consulta falha;
+    [] quando a consulta funciona mas o ticker não tem nenhuma análise."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        resp = (
+            cliente.table(_TABELA_ANALISES).select("*")
+            .eq("ticker", ticker).order("iniciado_em", desc=True).limit(limite).execute()
+        )
+        return resp.data or []
+    except Exception as exc:
+        print(f"[coordenador_central] listar_analises_por_ticker falhou: {exc!r}")
+        return None
+
+
 def obter_analise(analise_id: str) -> dict | None:
     cliente = obter_cliente()
     if cliente is None:
