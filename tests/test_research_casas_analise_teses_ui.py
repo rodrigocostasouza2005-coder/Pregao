@@ -141,3 +141,128 @@ def test_dedup_por_link_nao_mostra_a_mesma_publicacao_duas_vezes():
 
 def test_nenhuma_excecao_com_dado_minimo():
     assert _render([]) is not None
+
+
+# ============================================================
+# PRINCIPAIS ARGUMENTOS (2026-11-06) - ui/research_tab.py:
+# _bloco_principais_argumentos/_mapa_premissas_por_link, a partir da
+# biblioteca PERMANENTE research_premissas (data/research/store.py:
+# listar_premissas) - mesmo dado já usado por MEMÓRIA DE RESEARCH e pelo
+# Comparador de Casas, nunca uma síntese nova feita na UI.
+# ============================================================
+
+def _premissa(link, premissas=None, riscos=None, casa="Genial Analisa", ticker="PETR4"):
+    return {
+        "link": link, "casa": casa, "titulo": "relatorio", "tickers": [ticker],
+        "data_publicacao": "2026-10-20", "tipo_documento": "ATUALIZACAO_COBERTURA",
+        "premissas": premissas or [], "projecoes": {}, "recomendacao": None,
+        "preco_alvo": None, "modelo_extracao": "modelo-teste", "riscos": riscos or [],
+    }
+
+
+def _render_com_premissas(relatorios, premissas):
+    """Mesmo harness de _render, mas mockando store.listar_premissas
+    (chamada por _mapa_premissas_por_link via o wrapper cacheado
+    _premissas_por_tickers_cacheado) - cache limpo antes de cada chamada
+    pra nunca reaproveitar resultado de um teste anterior com tickers
+    iguais."""
+    rt._premissas_por_tickers_cacheado.clear()
+    blocos = []
+
+    def _texto(texto, *_a, **_k):
+        blocos.append(texto)
+
+    with patch.object(rt, "preparar_leitura", return_value=(relatorios, [], [], [])), \
+         patch.object(rt, "ultimas_coletas_formatadas", return_value=""), \
+         patch.object(rt, "coletar_pendentes", return_value=[]), \
+         patch.object(rt, "obter_status_casas", return_value=[]), \
+         patch.object(rt.store, "listar_premissas", return_value=premissas), \
+         patch.object(rt, "cobertura_cruzada_casas", return_value={"ticker": "X", "cobertura": [], "sem_cobertura": [], "divergencia": None}), \
+         patch.object(rt.st, "markdown", side_effect=_texto), \
+         patch.object(rt.st, "info", side_effect=_texto), \
+         patch.object(rt.st, "warning", side_effect=_texto):
+        rt.render_casas_analise.__wrapped__(_PREFS)
+    return "\n".join(b for b in blocos if not b.lstrip().startswith("<style>"))
+
+
+def test_card_mostra_principais_argumentos_quando_premissas_ja_extraidas():
+    item = _item(link="https://genial.com.br/petr4", tickers=["PETR4"], resumo="já resumido")
+    premissas = [_premissa("https://genial.com.br/petr4", premissas=["Tese de recuperação de margem"],
+                            riscos=["variação do Brent pode comprimir o resultado"])]
+    out = _render_com_premissas([item], premissas)
+    assert "PRINCIPAIS ARGUMENTOS" in out
+    assert "Tese de recuperação de margem" in out
+    assert "Riscos citados pela casa" in out
+    assert "variação do Brent pode comprimir o resultado" in out
+
+
+def test_card_sem_premissas_extraidas_nao_mostra_secao():
+    item = _item(link="https://genial.com.br/petr4", tickers=["PETR4"], resumo=None)
+    out = _render_com_premissas([item], [])  # biblioteca permanente ainda sem nada pra este link
+    assert "PRINCIPAIS ARGUMENTOS" not in out
+
+
+def test_principais_argumentos_so_casa_com_link_correspondente():
+    """Premissa de OUTRA publicação (link diferente) nunca aparece no
+    card de um item que não tem premissas extraídas - nunca mistura
+    tese de uma publicação com o card de outra."""
+    item = _item(link="https://genial.com.br/petr4", tickers=["PETR4"], resumo="já resumido")
+    premissas = [_premissa("https://outra-publicacao.com/x", premissas=["Tese de outra publicação"])]
+    out = _render_com_premissas([item], premissas)
+    assert "PRINCIPAIS ARGUMENTOS" not in out
+    assert "Tese de outra publicação" not in out
+
+
+# ============================================================
+# COMPARAÇÃO ENTRE CASAS (2026-11-06) - só aparece em TESES E
+# PUBLICAÇÕES quando o usuário filtra por UM ticker específico (nunca
+# "Todos") - reaproveita ui/analises_tab.py:render_comparativo_casas
+# (import local, ver comentário em _secao_teses).
+# ============================================================
+
+def _render_com_filtro_ticker(relatorios, ticker_selecionado):
+    """Mesmo harness de _render, mas força o pill 'Ticker ou empresa' a
+    devolver `ticker_selecionado` (em vez do default 'Todos') - demais
+    pills continuam com o comportamento real de bare mode (devolvem o
+    próprio `default`)."""
+    pills_real = rt.st.pills
+
+    def _pills_fake(label, opcoes, *args, **kwargs):
+        if kwargs.get("key") == "casas_filtro_ticker":
+            return ticker_selecionado
+        return pills_real(label, opcoes, *args, **kwargs)
+
+    with patch.object(rt, "preparar_leitura", return_value=(relatorios, [], [], [])), \
+         patch.object(rt, "ultimas_coletas_formatadas", return_value=""), \
+         patch.object(rt, "coletar_pendentes", return_value=[]), \
+         patch.object(rt, "obter_status_casas", return_value=[]), \
+         patch.object(rt.store, "listar_premissas", return_value=[]), \
+         patch.object(rt, "cobertura_cruzada_casas", return_value={"ticker": "X", "cobertura": [], "sem_cobertura": [], "divergencia": None}), \
+         patch.object(rt.st, "markdown"), patch.object(rt.st, "info"), patch.object(rt.st, "warning"), \
+         patch.object(rt.st, "pills", side_effect=_pills_fake):
+        import ui.analises_tab as analises_mod
+        with patch.object(analises_mod, "render_comparativo_casas") as comparativo_mock:
+            rt.render_casas_analise.__wrapped__(_PREFS)
+            return comparativo_mock
+
+
+def test_comparacao_entre_casas_aparece_quando_ticker_especifico_selecionado():
+    item = rt_item = {
+        "casa": "Genial Analisa", "titulo": "t", "data": "2026-10-20", "autor": "",
+        "tipo": "ACOES", "tickers": ["PETR4"], "link": "https://a", "resumo": None,
+        "modelo_resumo": None, "preco_alvo": None, "recomendacao": None,
+        "coletado_em": "2026-10-20T10:00:00+00:00", "publicado_em": None,
+    }
+    comparativo_mock = _render_com_filtro_ticker([item], "PETR4")
+    comparativo_mock.assert_called_once_with("PETR4", _PREFS)
+
+
+def test_comparacao_entre_casas_nao_aparece_com_filtro_todos():
+    item = {
+        "casa": "Genial Analisa", "titulo": "t", "data": "2026-10-20", "autor": "",
+        "tipo": "ACOES", "tickers": ["PETR4"], "link": "https://a", "resumo": None,
+        "modelo_resumo": None, "preco_alvo": None, "recomendacao": None,
+        "coletado_em": "2026-10-20T10:00:00+00:00", "publicado_em": None,
+    }
+    comparativo_mock = _render_com_filtro_ticker([item], "Todos")
+    comparativo_mock.assert_not_called()

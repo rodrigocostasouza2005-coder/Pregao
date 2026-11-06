@@ -712,7 +712,9 @@ def render_research(prefs: dict):
 
 # ============================================================
 # CASAS DE ANÁLISE (Fase 3, 2026-10-23 -> reformulação 2026-10-24: painel
-# de teses de investimento). Duas áreas:
+# de teses de investimento -> reforço 2026-11-06: principais argumentos
+# por publicação + comparação entre casas inline no filtro por ticker).
+# Duas áreas:
 # A. TESES E PUBLICAÇÕES (principal) - o que cada casa publicou, de
 #    verdade, a partir do MESMO dado já persistido que o FEED usa
 #    (data/research/store.py:listar_itens, via preparar_leitura) - zero
@@ -723,7 +725,18 @@ def render_research(prefs: dict):
 #    _extrair_dados_estruturados) - por isso NUNCA são mostrados antes
 #    disso: item sem resumo ainda não tem como saber se a casa publicou
 #    recomendação/preço-alvo ou não (estado "ainda não verificado", bem
-#    diferente de "a casa não publicou").
+#    diferente de "a casa não publicou"). Cada card também mostra
+#    "PRINCIPAIS ARGUMENTOS"/riscos quando já existirem na biblioteca
+#    PERMANENTE de premissas (research_premissas, via
+#    store.listar_premissas - ver _mapa_premissas_por_link/
+#    _bloco_principais_argumentos) - mesmo dado estruturado que já
+#    alimenta MEMÓRIA DE RESEARCH e o Comparador de Casas, nunca uma
+#    síntese nova feita aqui. Quando o usuário filtra por UM ticker
+#    específico (não "Todos"), aparece também COMPARAÇÃO ENTRE CASAS
+#    (consenso/dispersão de preço-alvo, divergência de recomendação e de
+#    premissas/riscos por casa) reaproveitando render_comparativo_casas
+#    (ui/analises_tab.py, já existente e testado em ANÁLISES > Empresas) -
+#    zero lógica de comparação duplicada aqui.
 # B. COBERTURA E SAÚDE DAS CASAS (secundária, num expander fechado por
 #    padrão pra não dominar a tela) - leitura pura de
 #    data/research/casas_status.py (CASAS + saude_dados, categoria
@@ -877,6 +890,70 @@ def _badge_disponibilidade(rel: dict) -> str:
     return "<span class='casas-badge casas-badge-meta'>SOMENTE METADADOS</span>"
 
 
+@st.cache_data(ttl=TTL_COLETA, show_spinner=False)
+def _premissas_por_tickers_cacheado(tickers: tuple) -> list:
+    """Wrapper cacheado de store.listar_premissas (mesma biblioteca
+    PERMANENTE que já alimenta MEMÓRIA DE RESEARCH, ver
+    _premissas_para_opcoes_cacheado abaixo) - só pra montar "PRINCIPAIS
+    ARGUMENTOS" por publicação em TESES E PUBLICAÇÕES, sem bater no
+    Supabase a cada rerun da aba. [] se o banco estiver fora do ar ou
+    `tickers` vier vazio (listar_premissas(tickers=[]) sem filtro
+    retornaria TUDO - nunca chamado nesse caso, ver _secao_teses)."""
+    if not tickers:
+        return []
+    return store.listar_premissas(tickers=list(tickers)) or []
+
+
+def _mapa_premissas_por_link(itens: list) -> dict:
+    """{link: linha de research_premissas} pros tickers presentes nos
+    itens já carregados (preparar_leitura) - usado só pra enriquecer o
+    card de uma publicação com "PRINCIPAIS ARGUMENTOS"/riscos JÁ
+    extraídos pela pipeline de IA (data/research/resumir.py), nunca uma
+    extração nova feita aqui. Publicação sem ticker identificado nunca
+    aparece aqui (research_premissas é indexada por ticker) - comportamento
+    aceito, não um bug: sem ticker não há como casar com a biblioteca de
+    premissas de qualquer forma."""
+    tickers = _tickers_disponiveis(itens)
+    if not tickers:
+        return {}
+    premissas = _premissas_por_tickers_cacheado(tuple(tickers))
+    return {p["link"]: p for p in premissas if p.get("link")}
+
+
+def _bloco_principais_argumentos(premissa: dict | None) -> str | None:
+    """"PRINCIPAIS ARGUMENTOS" (pedido do Rodrigo: a tese de cada casa,
+    não só título/resumo em texto livre) - renderiza SÓ as premissas já
+    extraídas e persistidas em research_premissas pra ESTE link
+    específico (mesmo dado que alimenta a MEMÓRIA DE RESEARCH e o
+    Comparador de Casas, nunca uma síntese nova). None quando a
+    publicação ainda não tem premissas extraídas (ainda não processada
+    por essa pipeline, ou publicação sem premissa explícita identificada)
+    - nunca inventa um argumento."""
+    if not premissa:
+        return None
+    pontos = premissa.get("premissas") or []
+    riscos = premissa.get("riscos") or []
+    if not pontos and not riscos:
+        return None
+    partes = []
+    if pontos:
+        itens_html = "".join(
+            f"<li class='cinza' style='font-size:0.74rem;'>{html.escape(p)}</li>" for p in pontos[:5]
+        )
+        partes.append(
+            "<div class='cinza' style='font-size:0.62rem; text-transform:uppercase; margin-top:0.35rem;'>"
+            "PRINCIPAIS ARGUMENTOS</div>"
+            f"<ul style='margin:0.15rem 0 0.2rem 1rem; padding:0;'>{itens_html}</ul>"
+        )
+    if riscos:
+        riscos_txt = "; ".join(html.escape(r) for r in riscos[:3])
+        partes.append(
+            f"<div class='cinza' style='font-size:0.7rem; margin-bottom:0.2rem;'>"
+            f"Riscos citados pela casa: {riscos_txt}</div>"
+        )
+    return "".join(partes)
+
+
 def _linha_recomendacao(rel: dict, fmt: str) -> str | None:
     """None antes do resumo existir (ver comentário no topo da seção CASAS
     DE ANÁLISE) - recomendacao/preco_alvo só têm significado DEPOIS que o
@@ -896,16 +973,21 @@ def _linha_recomendacao(rel: dict, fmt: str) -> str | None:
     )
 
 
-def _card_tese(rel: dict, fmt: str, permitir_resumo_auto: bool):
+def _card_tese(rel: dict, fmt: str, permitir_resumo_auto: bool, premissas_por_link: dict | None = None):
     """Card de 1 publicação: disponibilidade (resumo IA vs. só metadados),
-    recomendação/preço-alvo quando aplicável, e o resto (título/link,
-    meta, resumo sob demanda) via _linha_relatorio - mesma lógica/cache
-    do FEED, sem duplicar a chamada de IA nem o fluxo de resumo."""
+    recomendação/preço-alvo quando aplicável, principais argumentos/riscos
+    já extraídos (quando existirem, ver _bloco_principais_argumentos) e o
+    resto (título/link, meta, resumo sob demanda) via _linha_relatorio -
+    mesma lógica/cache do FEED, sem duplicar a chamada de IA nem o fluxo
+    de resumo."""
     with st.container(border=True):
         st.markdown(_badge_disponibilidade(rel), unsafe_allow_html=True)
         linha_rec = _linha_recomendacao(rel, fmt)
         if linha_rec:
             st.markdown(linha_rec, unsafe_allow_html=True)
+        argumentos_html = _bloco_principais_argumentos((premissas_por_link or {}).get(rel.get("link")))
+        if argumentos_html:
+            st.markdown(argumentos_html, unsafe_allow_html=True)
         _linha_relatorio(rel, permitir_resumo_auto=permitir_resumo_auto, mostrar_contexto_news=True)
 
 
@@ -983,13 +1065,42 @@ def _secao_teses(prefs: dict, relatorios: list, falhas: list):
         unsafe_allow_html=True,
     )
 
+    # COMPARAÇÃO ENTRE CASAS (pedido do Rodrigo: comparar recomendação/
+    # preço-alvo/premissas entre casas pra 1 ticker, não só olhar
+    # publicação por publicação) - só aparece quando o usuário de fato
+    # escolheu UM ticker no filtro acima (nunca pra "Todos", onde a
+    # pergunta "qual casa diverge de qual" não faz sentido). Reaproveita
+    # render_comparativo_casas (ui/analises_tab.py), que já consome
+    # data/research/comparador.py:montar_relatorio_comparativo - mesmo
+    # motor determinístico (consenso/dispersão de preço-alvo/divergência
+    # de recomendação e de premissas/riscos por casa), sem duplicar
+    # nenhuma lógica nova aqui; o módulo de origem já é 100%
+    # determinístico (sem chamada de IA) e testado em
+    # tests/test_research_comparador.py e
+    # tests/test_analises_comparativo_casas_ui.py.
+    #
+    # Import LOCAL (não no topo do arquivo) de propósito: ui.analises_tab
+    # importa ui.setores_tab -> ui.mercado_tab -> ui.news_tab, que por sua
+    # vez importa deste MESMO módulo (ui.research_tab:_abrir_resumo_live/
+    # _casas_ativas/_EXTRATOR_POR_CASA) - um import no topo criaria um
+    # ciclo (research_tab -> analises_tab -> ... -> news_tab ->
+    # research_tab, ainda incompleto) e quebraria a importação de todo
+    # módulo que carregar ui.research_tab primeiro (achado real, só
+    # detectado rodando a suíte completa). Em tempo de execução (depois
+    # que o app já carregou todos os módulos uma vez) isso nunca é um
+    # problema.
+    if filtro_ticker != "Todos":
+        from ui.analises_tab import render_comparativo_casas
+        render_comparativo_casas(filtro_ticker, prefs)
+
     if not filtrados:
         st.info("Nenhuma publicação disponível para os filtros selecionados.")
         return
 
     fmt = prefs["formato_numerico"]
+    premissas_por_link = _mapa_premissas_por_link(itens)
     for rel in filtrados[:60]:
-        _card_tese(rel, fmt, permitir_resumo_auto=False)
+        _card_tese(rel, fmt, permitir_resumo_auto=False, premissas_por_link=premissas_por_link)
 
 
 def _secao_cobertura_saude(prefs: dict, contagem_por_casa: dict):
