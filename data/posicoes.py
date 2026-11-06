@@ -9,6 +9,7 @@ de verdade (concentração/exposição/correlação/volatilidade/drawdown/
 cenários de estresse, ver data/radar.py:risco_carteira) - watchlist nunca
 é usada como substituto de posição real (regra explícita do projeto)."""
 
+import math
 from datetime import date, datetime, timezone
 
 from data.supabase_client import obter_cliente
@@ -75,7 +76,8 @@ def posicao_valida(quantidade, preco_medio) -> bool:
     preco medio precisam ser numeros finitos e positivos; uma posicao com
     quantidade/preco <= 0 nao representa nenhuma posse real."""
     try:
-        return float(quantidade) > 0 and float(preco_medio) > 0
+        q, p = float(quantidade), float(preco_medio)
+        return math.isfinite(q) and math.isfinite(p) and q > 0 and p > 0
     except (TypeError, ValueError):
         return False
 

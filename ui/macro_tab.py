@@ -549,7 +549,19 @@ def render_macro_calendario(prefs):
     """Calendario economico: o PREGAO ainda NAO tem fonte de agenda de
     divulgacoes (IBGE/BC/Fed) - mostra o que existe de verdade (ultima
     decisao do Copom, datas de referencia de cada serie, projecoes Focus)
-    e declara o resto como indisponivel, sem inventar datas."""
+    e declara o resto como indisponivel, sem inventar datas.
+
+    Rotulo de desambiguacao (auditoria 2026-11-05): esta subaba tem nome
+    parecido com MERCADO > Agenda (ui/calendario_tab.py), mas e' fonte
+    DIFERENTE - aqui e' agenda de bancos centrais/indicadores macro
+    (Copom/Focus/IPCA), nunca resultado de empresa/CVM (isso fica em
+    MERCADO > Agenda). So' texto, sem mudar rota nem dado."""
+    st.markdown(
+        "<div class='cinza' style='font-size:0.68rem; margin-bottom:0.5rem;'>Agenda de bancos centrais e "
+        "indicadores macro (Copom, Focus, IPCA) — não é resultado de empresa. Para resultados corporativos "
+        "e prazos CVM, veja <b>MERCADO › Agenda</b>.</div>",
+        unsafe_allow_html=True,
+    )
     with st.container(border=True):
         st.markdown('<div class="painel-titulo">ÚLTIMA DECISÃO DO COPOM (REALIZADO)</div>', unsafe_allow_html=True)
         copom = _copom_vigente()

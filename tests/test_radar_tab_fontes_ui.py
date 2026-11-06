@@ -12,6 +12,18 @@ a UI:
    resumo_fontes_vigentes() só lê o que já está persistido
    (listar_carteiras(), sem rede nova).
 
+Chama as rotas REAIS de produção (render_radar_carteiras/render_radar_
+alertas, as mesmas que app.py despacha pra RADAR › Carteiras
+Recomendadas e RADAR › Alertas) em vez de uma composição própria de
+teste - antes este arquivo chamava render_radar, uma função legada que
+nenhuma rota de produção usa mais (auditoria 2026-11-05: ui/radar_tab.py
+compõe a aba via render_radar_alertas/_carteiras/_oportunidades/
+_acompanhamento desde o redesign "Bloomberg terminal" de 2026-10-30).
+render_radar e seus blocos (_bloco_cobertura, _bloco_monitorados,
+_bloco_alertas, _bloco_contexto_alertas) são os MESMOS chamados pelas
+rotas reais, então trocar o ponto de entrada aqui não perde cobertura -
+pelo contrário, passa a testar exatamente o que é servido.
+
 Bare mode (sem ScriptRunContext real) - mesmo padrão de
 tests/test_mercado_ranking_ui.py/test_calendario_ui.py deste projeto:
 st.columns/st.pills/st.caption/st.markdown funcionam fora de uma sessão
@@ -29,30 +41,45 @@ import ui.radar_tab as radar_tab_mod
 _PREFS_SEM_WATCHLIST = {"formato_numerico": "BR", "watchlist": []}
 
 
-def _capturar_render(resumo_fontes, alertas=None, monitorados=None):
-    """Chama render_radar de verdade com os dados ja' persistidos mockados
-    (resumo_fontes_vigentes/painel_monitorados/alertas_periodo, sem rede)
-    e os coletores reais substituidos por algo que FALHA o teste se for
-    chamado - prova que desenhar a tela nao dispara coleta nova. Retorna
-    todo o HTML passado a st.markdown, concatenado."""
+def _coletor_nao_deveria_ser_chamado(*_a, **_k):
+    raise AssertionError("coletor de rede chamado só para exibir o Radar")
+
+
+def _capturar_carteiras(resumo_fontes):
+    """Chama render_radar_carteiras de verdade (rota real de produção,
+    RADAR › Carteiras Recomendadas) com resumo_fontes_vigentes mockado
+    (sem rede) e os coletores reais substituídos por algo que FALHA o
+    teste se forem chamados - prova que desenhar a tela não dispara
+    coleta nova. Exercita _bloco_cobertura, o mesmo bloco que render_
+    radar (removido) testava antes. Retorna todo o HTML passado a
+    st.markdown, concatenado."""
     blocos = []
-
-    def _coletor_nao_deveria_ser_chamado(*_a, **_k):
-        raise AssertionError("coletor de rede chamado só para exibir o Radar")
-
     with patch.object(radar_quedas_mod, "resumo_fontes_vigentes", return_value=resumo_fontes), \
-         patch.object(radar_quedas_mod, "painel_monitorados", return_value=monitorados if monitorados is not None else []), \
-         patch.object(radar_quedas_mod, "alertas_periodo", return_value=alertas if alertas is not None else []), \
          patch.object(radar_quedas_mod, "coletar_carteiras_genial", side_effect=_coletor_nao_deveria_ser_chamado), \
          patch.object(radar_quedas_mod, "coletar_carteiras_safra", side_effect=_coletor_nao_deveria_ser_chamado), \
          patch.object(radar_quedas_mod, "coletar_carteiras_itau", side_effect=_coletor_nao_deveria_ser_chamado), \
          patch.object(radar_tab_mod.st, "markdown", side_effect=lambda texto, **_k: blocos.append(texto)):
-        # render_radar e' decorado com @st.fragment, que em bare mode (sem
-        # ScriptRunContext real) NUNCA executa o corpo da funcao - chamar
-        # render_radar(...) direto aqui silenciosamente nao faria nada e o
-        # teste passaria "por acidente" sem checar coisa alguma.
+        # render_radar_carteiras e' decorado com @st.fragment, que em bare
+        # mode (sem ScriptRunContext real) NUNCA executa o corpo da funcao -
+        # chamar render_radar_carteiras(...) direto aqui silenciosamente nao
+        # faria nada e o teste passaria "por acidente" sem checar nada.
         # .__wrapped__ e' a funcao original (sem o decorador).
-        radar_tab_mod.render_radar.__wrapped__(_PREFS_SEM_WATCHLIST, "sub-teste")
+        radar_tab_mod.render_radar_carteiras.__wrapped__(_PREFS_SEM_WATCHLIST)
+
+    return "\n".join(b for b in blocos if not b.lstrip().startswith("<style>"))
+
+
+def _capturar_alertas(resumo_fontes, alertas=None, monitorados=None):
+    """Mesma ideia de _capturar_carteiras, pra render_radar_alertas (rota
+    real RADAR › Alertas: regra + alertas registrados + monitorados
+    agora) - exercita _bloco_alertas/_bloco_monitorados/_bloco_
+    contexto_alertas."""
+    blocos = []
+    with patch.object(radar_quedas_mod, "resumo_fontes_vigentes", return_value=resumo_fontes), \
+         patch.object(radar_quedas_mod, "painel_monitorados", return_value=monitorados if monitorados is not None else []), \
+         patch.object(radar_quedas_mod, "alertas_periodo", return_value=alertas if alertas is not None else []), \
+         patch.object(radar_tab_mod.st, "markdown", side_effect=lambda texto, **_k: blocos.append(texto)):
+        radar_tab_mod.render_radar_alertas.__wrapped__(_PREFS_SEM_WATCHLIST)
 
     return "\n".join(b for b in blocos if not b.lstrip().startswith("<style>"))
 
@@ -68,7 +95,7 @@ def test_fonte_atualizada_e_fonte_indisponivel_sao_distinguidas():
                             "carteiras": ["Top 10 Ações"], "data_publicacao": "2026-10-01"},
         # Genial Analisa ausente do resumo -> UI trata como indisponível
     }
-    html_render = _capturar_render(resumo)
+    html_render = _capturar_carteiras(resumo)
     assert "rq-estado-ATUALIZADA" in _linha_da_casa(html_render, "Safra Corretora")
     assert "rq-estado-INDISPONIVEL" in _linha_da_casa(html_render, "Genial Analisa")
     assert "1 de 3 casas com carteira vigente" in html_render
@@ -82,7 +109,7 @@ def test_fonte_desatualizada_e_distinguida_de_atualizada_e_de_indisponivel():
         "Genial Analisa": {"ativos": 42, "verificado_em": "2026-10-17T10:00:00+00:00", "desatualizada": False,
                            "carteiras": ["Carteira Ações"], "data_publicacao": "2026-10-05"},
     }
-    html_render = _capturar_render(resumo)
+    html_render = _capturar_carteiras(resumo)
     assert "rq-estado-DESATUALIZADA" in _linha_da_casa(html_render, "Safra Corretora")
     assert "rq-estado-ATUALIZADA" in _linha_da_casa(html_render, "Genial Analisa")
     assert "rq-estado-INDISPONIVEL" in _linha_da_casa(html_render, "Itaú Investimentos")
@@ -92,7 +119,7 @@ def test_fonte_desatualizada_e_distinguida_de_atualizada_e_de_indisponivel():
 def test_supabase_indisponivel_avisa_e_nao_quebra():
     """resumo_fontes_vigentes() devolve None quando o Supabase está fora do
     ar - a UI avisa, não desenha tabela nenhuma e nunca lança exceção."""
-    html_render = _capturar_render(resumo_fontes=None)
+    html_render = _capturar_carteiras(resumo_fontes=None)
     assert "Banco indisponível" in html_render
     assert "rq-tabela" not in html_render
 
@@ -110,7 +137,7 @@ def test_alertas_e_monitorados_renderizados_com_numero_brasileiro_e_estado_do_em
                 "preco_atual": 36.10, "fechamento_anterior": 37.92, "casas": ["Safra Corretora"],
                 "carteiras": ["Top 10 Ações"], "fontes": ["https://www.safra.com.br/x"],
                 "alertado_em": "2026-10-16T15:31:05+00:00", "status": "FALHA_ENVIO"}]
-    html_render = _capturar_render(resumo, alertas=alertas, monitorados=monitorados)
+    html_render = _capturar_alertas(resumo, alertas=alertas, monitorados=monitorados)
     assert "-4,80%" in html_render and "37,92" in html_render  # formato BR, nunca 37.92
     assert "rq-estado-ALERTA" in html_render
     assert "rq-estado-SEM_COTACAO" in html_render  # VALE3 sem cotação não vira "0,00%"
@@ -147,7 +174,7 @@ def test_alerta_com_evidencia_real_mostra_contexto_market_makers():
              patch.object(radar_tab_mod.st, "expander") as expander_mock:
             expander_mock.return_value.__enter__ = lambda self: self
             expander_mock.return_value.__exit__ = lambda *a: False
-            radar_tab_mod.render_radar.__wrapped__(_PREFS_SEM_WATCHLIST, "sub-teste")
+            radar_tab_mod.render_radar_alertas.__wrapped__(_PREFS_SEM_WATCHLIST)
     html_render = "\n".join(b for b in blocos if not b.lstrip().startswith("<style>"))
     assert "Genial revisou WEGE3 de COMPRA para NEUTRO" in html_render
     assert "href='https://genial.com.br'" in html_render
@@ -170,7 +197,7 @@ def test_alerta_sem_nenhuma_evidencia_nao_mostra_contexto_inventado():
          patch("data.market_makers.contexto_ticker", return_value=sem_evidencia):
         blocos = []
         with patch.object(radar_tab_mod.st, "markdown", side_effect=lambda texto, **_k: blocos.append(texto)):
-            radar_tab_mod.render_radar.__wrapped__(_PREFS_SEM_WATCHLIST, "sub-teste")
+            radar_tab_mod.render_radar_alertas.__wrapped__(_PREFS_SEM_WATCHLIST)
     html_render = "\n".join(b for b in blocos if not b.lstrip().startswith("<style>"))
     assert "CONTEXTO DO MOVIMENTO" not in html_render
 
@@ -193,7 +220,7 @@ def test_ticker_das_tabelas_densas_e_clicavel():
                 "preco_atual": 60.0, "fechamento_anterior": 63.0, "casas": ["Safra Corretora"],
                 "carteiras": ["Top 10 Ações"], "fontes": [], "alertado_em": "2026-10-16T15:31:05+00:00",
                 "status": "ENVIADO"}]
-    html_render = _capturar_render(resumo, alertas=alertas, monitorados=monitorados)
+    html_render = _capturar_alertas(resumo, alertas=alertas, monitorados=monitorados)
     assert "<a class='rq-ticker' href='?ticker=PETR4'>PETR4</a>" in html_render
     assert "<a class='rq-ticker' href='?ticker=VALE3'>VALE3</a>" in html_render
     # nenhum ticker sobrevive como <span> sem destino (regressao do achado original)

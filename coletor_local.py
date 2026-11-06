@@ -97,13 +97,32 @@ logger = logging.getLogger("coletor_local")
 logger.setLevel(logging.INFO)
 _formato = logging.Formatter("[%(asctime)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
-_handler_arquivo = RotatingFileHandler(_LOG_PATH, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
-_handler_arquivo.setFormatter(_formato)
-logger.addHandler(_handler_arquivo)
+# Os handlers (arquivo+console) so' sao anexados quando este script roda
+# como processo principal (python/pythonw coletor_local.py - unico uso
+# real, ver docstring do modulo). Achado real (auditoria 2026-10-13):
+# tests/test_coletor_local.py faz `import coletor_local` e, so' por isso,
+# este bloco rodava do mesmo jeito - o RotatingFileHandler apontava pro
+# coletor_local.log DE PRODUCAO (mesmo caminho, relativo a __file__), e
+# cada rodada de teste (incl. `python tests/test_coletor_local.py` direto
+# na maquina do Rodrigo) escrevia nele entradas FICTICIAS indistinguiveis
+# de uma falha real - confirmado no log de producao (coletor_local.log,
+# entradas de 2026-10-22): "persistencia (self-test escrita+leitura):
+# FALHOU na etapa INSERT - x" (etapa/detalhe literalmente do fixture
+# `diagnostico_ok=False` de test_8c) e um traceback de
+# "RuntimeError: falha inesperada" saindo de unittest.mock (o
+# side_effect de test_8d), ambos indistinguiveis de um incidente real de
+# persistencia/coleta pra quem le' o log depois pra diagnosticar um
+# problema de verdade. Sem handler nenhum, logger.warning/exception
+# ainda aparecem no stderr (logging.lastResort) durante os testes -
+# so' nunca mais no arquivo de producao.
+if __name__ == "__main__":
+    _handler_arquivo = RotatingFileHandler(_LOG_PATH, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+    _handler_arquivo.setFormatter(_formato)
+    logger.addHandler(_handler_arquivo)
 
-_handler_console = logging.StreamHandler(sys.stdout)
-_handler_console.setFormatter(_formato)
-logger.addHandler(_handler_console)
+    _handler_console = logging.StreamHandler(sys.stdout)
+    _handler_console.setFormatter(_formato)
+    logger.addHandler(_handler_console)
 
 # streamlit e' importado indiretamente (varios modulos usam
 # st.cache_data/st.cache_resource como decorator, mesmo fora de uma

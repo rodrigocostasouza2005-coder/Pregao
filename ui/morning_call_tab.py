@@ -32,7 +32,25 @@ log tecnico, nao de jornal. Duas mudancas:
    uma camada de apresentacao nova, como jobs/morning_call_pdf.py e' pro
    ReportLab). A edicao JA PUBLICADA (persistida em
    morning_call_execucoes) so' guarda o texto simples do e-mail - sem
-   dict estruturado no banco, ela continua pelo caminho 1."""
+   dict estruturado no banco, ela continua pelo caminho 1.
+
+Alinhamento ao design system compartilhado (05/11/2026, missao
+"consistencia visual"): esta aba ja usava os TOKENS corretos (var(--
+destaque)/var(--borda)/var(--painel-bg)/var(--cinza)/var(--neutro)), a
+classe global .painel-titulo e st.container(border=True) pros 4 paineis
+- o que faltava era importar ui/design_system.py (unico modulo formal
+do padrao "Bloomberg terminal", usado por COORDENADOR CENTRAL e
+ANALISES) em vez de reinventar rotulos de subsecao genericos em CSS
+local. Ver ui.design_system.subtitulo_html - variante PURA (string, nao
+chama st.markdown) de subtitulo(), criada por isso: as funcoes de
+montagem de HTML desta aba (_bloco_cenarios_html,
+_corpo_edicao_estruturada_html) sao propositalmente testaveis fora de
+uma sessao Streamlit real (ver tests/test_morning_call_tab_ui.py e
+tests/test_morning_call_briefing_ui.py), subtitulo()/lista_compacta()
+chamam st.markdown direto e quebrariam esse contrato. Rotulos
+editoriais (titulo de secao do jornal, nome de ativo/casa/ticker) NAO
+foram trocados por subtitulo_html - sao conteudo, nao rotulo generico
+de subsecao, e ja seguiam a mesma paleta."""
 
 import html
 import re
@@ -44,6 +62,7 @@ import streamlit as st
 from data.morning_call_briefing import alertas_confiabilidade, tickers_novos
 from data.morning_call_historico import listar_edicoes
 from data.sintese_mercado import obter_sintese_mercado
+from ui.design_system import subtitulo, subtitulo_html
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 _URL = re.compile(r"https?://[^\s<>\"')]+")
@@ -145,9 +164,6 @@ def _estilo_mc() -> str:
         ".mc-prosa,.mc-prosa-inline{font-family:" + _SANS + ";line-height:1.6;color:var(--neutro);}"
         ".mc-prosa{margin:0 0 .6rem;}"
         # agenda
-        ".mc-agenda-grupo-titulo{color:var(--cinza);font-size:.66rem;text-transform:uppercase;"
-        "letter-spacing:.06em;margin:10px 0 4px;}"
-        ".mc-agenda-grupo-titulo:first-child{margin-top:0;}"
         ".mc-agenda-linha{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;padding:5px 0;"
         "font-family:'IBM Plex Mono',monospace;font-size:.72rem;"
         "border-bottom:1px solid color-mix(in srgb, var(--borda) 40%, transparent);}"
@@ -704,7 +720,7 @@ def _bloco_cenarios_html(sintese: dict) -> str:
             "nunca uma previsão de preço.</div>"
         )
     if observar:
-        partes.append("<div class='mc-radar-nome' style='margin-top:8px;'>O que observar nas próximas sessões</div>")
+        partes.append(subtitulo_html("O que observar nas próximas sessões"))
         for item in observar:
             fonte = item.get("fonte") or "fonte não informada"
             data_fonte = f" · {html.escape(str(item['data_fonte']))}" if item.get("data_fonte") else ""
@@ -801,13 +817,13 @@ def _corpo_edicao_estruturada_html(edicao: dict) -> str:
     if agenda_hoje is not None or agenda_prox is not None:
         partes.append("<div class='mc-secao'><div class='mc-secao-titulo'>AGENDA</div>")
         if agenda_hoje is not None:
-            partes.append("<div class='mc-agenda-grupo-titulo'>Hoje</div>")
+            partes.append(subtitulo_html("Hoje"))
             if agenda_hoje:
                 partes.append("".join(_linha_agenda_estruturada(e) for e in agenda_hoje))
             else:
                 partes.append("<div class='mc-aviso'>Nenhum evento relevante identificado para hoje.</div>")
         if agenda_prox is not None:
-            partes.append("<div class='mc-agenda-grupo-titulo'>Próximos dias</div>")
+            partes.append(subtitulo_html("Próximos dias"))
             if agenda_prox:
                 partes.append("".join(_linha_agenda_estruturada(e) for e in agenda_prox))
             else:
@@ -1146,6 +1162,7 @@ def render_historico(prefs: dict):
             "FALHA_ENVIO = o conteúdo foi gerado normalmente, mas o envio por e-mail falhou para todos os "
             "destinatários dessa execução (problema de entrega — SMTP/provedor —, não de geração ou dado)."
         )
+        subtitulo("Filtros")
         busca = st.text_input(
             "Buscar no histórico",
             placeholder="Data, manchete, empresa ou palavra-chave…",
