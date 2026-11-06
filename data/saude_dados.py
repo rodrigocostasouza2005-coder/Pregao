@@ -95,7 +95,15 @@ def classificar_estado(status: dict | None, idade_maxima_horas: float | None = N
             return "NAO_COMPROVADO", f"{ESTADOS['NAO_COMPROVADO']} (nenhum sucesso ainda; ultimo erro: {erro})"
         return "NAO_COMPROVADO", ESTADOS["NAO_COMPROVADO"] + " (nenhum sucesso confirmado ainda)"
 
-    idade_h = _idade_horas(ultimo_sucesso_em)
+    try:
+        idade_h = _idade_horas(ultimo_sucesso_em)
+    except (TypeError, ValueError, OverflowError):
+        # Um timestamp corrompido no registro nao pode derrubar a aba
+        # inteira nem ser interpretado como coleta recente/saudavel.
+        return (
+            "NAO_COMPROVADO",
+            ESTADOS["NAO_COMPROVADO"] + " (timestamp do ultimo sucesso invalido)",
+        )
     desatualizado = idade_maxima_horas is not None and idade_h > idade_maxima_horas
 
     if execucao_ok is False:
