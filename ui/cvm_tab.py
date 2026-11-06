@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 from data.cvm import TIPO_LABEL, obter_documentos_cvm, obter_documentos_watchlist, obter_resumo_documento
+from ui.design_system import subtitulo
 
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
 
@@ -187,7 +188,13 @@ def _combina_busca(d: dict, termo_normalizado: str) -> bool:
 
 @st.dialog("DOCUMENTO CVM", width="large")
 def _abrir_card(d: dict):
-    st.markdown(f"**{html.escape(d['assunto'])}**")
+    # subtitulo (ui/design_system.py), nao st.markdown("**texto**") solto
+    # (achado da auditoria 2026-11-05): bold sem HTML/font-size proprio
+    # renderiza no tamanho PADRAO do Streamlit, bem maior que o resto do
+    # app (que usa font-size explicito em quase toda parte, ver
+    # ui/design_system.py:subtitulo) - mesmo padrao ja usado em
+    # ANALISES/COORDENADOR CENTRAL.
+    subtitulo(d["assunto"])
     st.caption(f"{d['ticker']} · {_fmt_data(d['data'])} · {d['categoria_original']}")
 
     classe = _CLASSE_TIPO.get(d["tipo"], "cvm-tipo-normal")

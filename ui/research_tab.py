@@ -20,6 +20,7 @@ from data.research.resumir import obter_resumo
 from data.market_researcher import cobertura_cruzada_casas
 from data.x_radar import CATEGORIAS_PUBLICACAO, CONTAS_MONITORADAS
 from data.x_radar.store import listar_sinais, saude_conector
+from ui.design_system import subtitulo
 from ui.saude_dados_tab import _COR_POR_ESTADO, _idade_formatada
 
 _TIPO_LABEL = {
@@ -213,7 +214,12 @@ def _abrir_resumo_live(rel: dict, extrator):
     ainda nao tinha resumo salvo OU se o resumo salvo e' do formato antigo
     (ficha tecnica, de antes da reescrita do prompt - ver
     _resumo_formato_antigo)."""
-    st.markdown(f"**{rel['titulo']}**")
+    # subtitulo (ui/design_system.py), nao st.markdown("**texto**") solto
+    # (achado da auditoria 2026-11-05, mesmo bug ja corrigido em
+    # ui/cvm_tab.py:_abrir_card): bold sem HTML/font-size proprio
+    # renderiza no tamanho PADRAO do Streamlit, bem maior que o resto do
+    # app, e tambem nao escapava rel['titulo'].
+    subtitulo(rel["titulo"])
     meta = " · ".join(filter(None, [rel["casa"], rel.get("autor") or "", _fmt_data(rel["data"])]))
     st.caption(meta)
     st.markdown("<div style='border-bottom:1px solid var(--borda); margin:0.4rem 0 0.6rem 0;'></div>", unsafe_allow_html=True)
