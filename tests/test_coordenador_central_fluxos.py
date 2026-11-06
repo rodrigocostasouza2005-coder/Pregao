@@ -45,13 +45,69 @@ def test_analisar_ticker_registra_inicio_antes_de_rodar_especialistas(persistenc
     assert persistencia_mockada["iniciar"].call_args[0][2] == "PETR4"
     persistencia_mockada["concluir"].assert_called_once()
     assert persistencia_mockada["concluir"].call_args[0][0] == "analise-fake-1"
-    assert persistencia_mockada["concluir"].call_args[0][1] == "PARCIAL"
+    # Sem premissas_dcf (caminho real de jobs/comite_noturno.py e da UI
+    # quando o analista não marca "Calcular DCF"), model_builder/
+    # valuation_reviewer são marcados "pulado" (ver analisar_ticker) -
+    # não contam para o status do fluxo, então uma rodada sem nenhum
+    # especialista de fato indisponível conclui CONCLUIDA, não PARCIAL.
+    assert persistencia_mockada["concluir"].call_args[0][1] == "CONCLUIDA"
     mock_varios.assert_called_once()
     assert mock_varios.call_args[0][0] == ["analise_ticker", "comparador", "memoria_research", "noticias", "catalisadores", "resultados_corporativos"]
     assert mock_varios.call_args[1]["ticker"] == "PETR4"
     assert "_analise_id" in consolidado and "_duracao_ms" in consolidado
     assert "model_builder" in consolidado["visao_especialistas"]
     assert "valuation_reviewer" in consolidado["visao_especialistas"]
+
+
+def test_analisar_ticker_pula_model_builder_e_reviewer_sem_premissas_dcf(persistencia_mockada):
+    """Caminho real de jobs/comite_noturno.py (nunca passa premissas_dcf)
+    e da UI quando o analista não marca "Calcular DCF" em
+    ui/coordenador_tab.py:render_analisar - o motor de DCF corretamente
+    se recusa a inventar WACC/crescimento (data/coordenador_central/
+    dcf.py), então model_builder/valuation_reviewer SEMPRE voltam
+    disponivel=False aqui, não por falha. "pulado"=True evita que isso
+    rebaixe a rodada inteira para PARCIAL todas as noites."""
+    with patch.object(fluxos.executor, "executar_varios", return_value={
+        "analise_ticker": _resultado("analise_ticker"),
+        "comparador": _resultado("comparador"),
+        "memoria_research": _resultado("memoria_research"),
+        "noticias": _resultado("noticias"),
+        "catalisadores": _resultado("catalisadores"),
+        "resultados_corporativos": _resultado("resultados_corporativos"),
+    }):
+        consolidado = fluxos.analisar_ticker("PETR4")
+
+    visao = consolidado["visao_especialistas"]
+    assert visao["model_builder"]["pulado"] is True
+    assert visao["model_builder"]["disponivel"] is False
+    assert visao["valuation_reviewer"]["pulado"] is True
+    assert visao["valuation_reviewer"]["disponivel"] is False
+    assert consolidado["status_execucao"] == "CONCLUIDA"
+
+
+def test_analisar_ticker_nao_pula_model_builder_quando_premissas_fornecidas(persistencia_mockada):
+    """Quando o chamador passa premissas_dcf explicitamente (mesmo que
+    incompletas/bloqueadas), o resultado real de model_builder/
+    valuation_reviewer continua contando pro status do fluxo - só o
+    caminho "nenhuma premissa foi pedida" (premissas_dcf is None) é
+    tratado como skip."""
+    with patch.object(fluxos.executor, "executar_varios", return_value={
+        "analise_ticker": _resultado("analise_ticker"),
+        "comparador": _resultado("comparador"),
+        "memoria_research": _resultado("memoria_research"),
+        "noticias": _resultado("noticias"),
+        "catalisadores": _resultado("catalisadores"),
+        "resultados_corporativos": _resultado("resultados_corporativos"),
+    }):
+        consolidado = fluxos.analisar_ticker("PETR4", premissas_dcf=_PREMISSAS_DCF_TESTE)
+
+    visao = consolidado["visao_especialistas"]
+    assert "pulado" not in visao["model_builder"]
+    assert "pulado" not in visao["valuation_reviewer"]
+    # fundamentos vazios (analise_ticker mockado sem dados) -> fcf_base/
+    # acoes ficam None -> DCF segue indisponível, mas por falta de dado
+    # real, não por skip - PARCIAL continua correto aqui.
+    assert consolidado["status_execucao"] == "PARCIAL"
 
 
 def test_analisar_ticker_marca_parcial_quando_especialista_indisponivel(persistencia_mockada):
