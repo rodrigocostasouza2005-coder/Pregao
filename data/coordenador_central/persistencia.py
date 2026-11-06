@@ -8,7 +8,7 @@ Mesmo padrão try/except de data/research/store.py - nunca lança
 exceção; None é distinto de vazio ([]/{}) em toda função que lê."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from data.supabase_client import obter_cliente
 
@@ -41,6 +41,31 @@ _TENTATIVAS_UPDATE = 2
 
 def _agora_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _serializar_jsonb(valor):
+    """Converte recursivamente date/datetime pra string ISO antes de
+    mandar pro Supabase. Achado real na validação operacional com dados
+    reais (2026-11-05, Parte 6): especialistas como `catalisadores`
+    (data/radar.py:catalisadores) devolvem datetime.date puro no campo
+    "data" sempre que há um evento na janela coberta - isso é comum, não
+    um caso raro. O cliente HTTP do supabase-py (httpx) serializa o
+    payload com json.dumps padrão, sem encoder pra date/datetime, então
+    o UPDATE completo de concluir_analise falhava de forma 100%
+    determinística (nunca transitória) sempre que o resultado consolidado
+    continha uma data assim. _TENTATIVAS_UPDATE (retry) nunca ajudava -
+    não é falha de rede - e a análise sempre caía pro fallback mínimo
+    (status rebaixado pra PARCIAL), mesmo quando todos os especialistas
+    acionados responderam com sucesso. Nunca lança: tipo desconhecido
+    passa adiante sem alteração, deixando o erro real (se houver)
+    aparecer no payload mínimo de diagnóstico, nunca escondido aqui."""
+    if isinstance(valor, dict):
+        return {chave: _serializar_jsonb(v) for chave, v in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [_serializar_jsonb(v) for v in valor]
+    if isinstance(valor, (datetime, date)):
+        return valor.isoformat()
+    return valor
 
 
 def iniciar_analise(solicitacao: str, tipo_fluxo: str, ticker: str = None) -> str:
@@ -102,7 +127,7 @@ def concluir_analise(analise_id: str, status: str, resultado: dict = None, erro:
     concluido_em = _agora_iso()
     payload_completo = {
         "status": status, "concluido_em": concluido_em, "duracao_ms": duracao_ms,
-        "resultado": resultado, "erro": erro,
+        "resultado": _serializar_jsonb(resultado), "erro": erro,
     }
     if _tentar_update(cliente, analise_id, payload_completo, "update completo"):
         return True
