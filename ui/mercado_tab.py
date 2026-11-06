@@ -23,7 +23,7 @@ from data.mercado import (
 )
 from data.news import obter_top_mercado_tudo
 from data.prices import obter_cotacao_indice, rotulo_cotacao_em_cache
-from ui import graficos, navegacao, workspace
+from ui import design_system, graficos, navegacao, workspace
 from ui.news_tab import _injetar_css as _injetar_css_news
 # helpers do renderer PROPRIO de noticias (ver _painel_noticias_resumo) e do
 # vinculo noticia<->ticker em _painel_destaques - mesmo padrao ja usado por
@@ -186,7 +186,12 @@ def _item_ticker_html(rotulo: str, preco, variacao_pct, casas: int, prefs, statu
             f"<div class='cinza' style='font-size:0.88rem; font-weight:700; margin-top:0.1rem;'>—</div>"
             f"<div class='cinza' style='font-size:0.64rem; margin-top:0.1rem;'>SEM DADO</div></div>"
         )
-    cls = "alta" if variacao_pct >= 0 else "baixa"
+    # cor/sinal via design_system (fundação do design system, 2026-11-06):
+    # centraliza o "alta se >=0, senão baixa" que se repetia, literalmente
+    # duplicado, nesta e em outras funções do app (ver docstring de
+    # ui/design_system.py) - prova de conceito dos novos helpers aqui, o
+    # grosso do redesign visual de MERCADO/VISÃO GERAL é de outra frente.
+    cls = design_system.classe_sinal(variacao_pct)
     seta = "▲" if variacao_pct >= 0 else "▼"
     status_html = (
         f"<div class='cinza' style='font-size:0.54rem; margin-top:0.1rem;'>{html.escape(status)}</div>"
@@ -196,8 +201,9 @@ def _item_ticker_html(rotulo: str, preco, variacao_pct, casas: int, prefs, statu
         f"<div style='padding:0.5rem 0.8rem; border-right:1px solid var(--borda); flex:1 1 0; min-width:7rem;'>"
         f"<div class='cinza' style='font-size:0.6rem; letter-spacing:0.04em;'>{rotulo}</div>"
         f"<div class='neutro' style='font-size:0.88rem; font-weight:700; margin-top:0.1rem;'>"
-        f"{config.formatar_numero(preco, casas, prefs['formato_numerico'])}</div>"
-        f"<div class='{cls}' style='font-size:0.66rem; font-weight:600; margin-top:0.1rem;'>{seta} {_fmt_pct(variacao_pct, prefs)}</div>"
+        f"{design_system.numero_financeiro_html(preco, casas, prefs['formato_numerico'])}</div>"
+        f"<div class='{cls}' style='font-size:0.66rem; font-weight:600; margin-top:0.1rem;'>{seta} "
+        f"{design_system.numero_financeiro_html(variacao_pct, 2, prefs['formato_numerico'], sufixo='%', com_sinal=True)}</div>"
         f"{status_html}</div>"
     )
 
