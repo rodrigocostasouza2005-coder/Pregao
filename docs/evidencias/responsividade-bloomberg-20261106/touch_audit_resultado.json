@@ -1,0 +1,45 @@
+{
+  "alertas_pill_7dias": {
+    "label": "pill 7 dias",
+    "achou": true,
+    "visivel": true,
+    "box": {
+      "x": 77.984375,
+      "y": 184.375,
+      "width": 74.78125,
+      "height": 44
+    },
+    "elemento_no_ponto_do_toque": "<p>7 DIAS</p>",
+    "clique_registrado": true
+  },
+  "alertas_pill_30dias_antes": null,
+  "alertas_pill_30dias_depois": "30 DIAS",
+  "alertas_link_ticker": {
+    "label": "link ticker PETR4",
+    "achou": true,
+    "visivel": true,
+    "box": {
+      "x": 81.09375,
+      "y": 269.34375,
+      "width": 36.484375,
+      "height": 15
+    },
+    "elemento_no_ponto_do_toque": "<a href=\"?ticker=PETR4\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"rq-ticker\">PETR4</a>",
+    "clique_registrado": true
+  },
+  "carteiras_link_ticker": {
+    "label": "link ticker na composicao",
+    "achou": true,
+    "visivel": true,
+    "box": {
+      "x": 24.796875,
+      "y": 576.234375,
+      "width": 36.484375,
+      "height": 15
+    },
+    "elemento_no_ponto_do_toque": "<a href=\"?ticker=ITUB4\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"rq-ticker\">ITUB4</a>",
+    "clique_registrado": true
+  },
+  "carteiras_selectbox_abre_por_toque": true,
+  "carteiras_selectbox_valor_apos_toque": ""
+}

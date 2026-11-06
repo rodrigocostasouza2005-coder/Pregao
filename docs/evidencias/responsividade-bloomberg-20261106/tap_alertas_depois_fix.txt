@@ -1,0 +1,5 @@
+box: {'x': 16, 'y': 379.59375, 'width': 84.40625, 'height': 44}
+elemento no ponto (DEPOIS do fix): <p>Alertas</p>
+url apos toque: http://127.0.0.1:8778/?aba=radar&sub=alertas
+sidebar aria-expanded: true
+url apos toque em Carteiras Recomendadas: http://127.0.0.1:8778/?aba=radar&sub=carteiras

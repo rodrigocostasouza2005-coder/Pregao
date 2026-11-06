@@ -421,6 +421,46 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
         display: flex !important;
         align-items: center !important;
     }
+    /* BUG REAL confirmado por Playwright com toque real - viewport iPad
+       1024x1366, has_touch:true (auditoria de responsividade, 2026-11-06):
+       a sidebar (WATCHLIST) abre por padrao em telas largas o bastante
+       (initial_sidebar_state="auto" em app.py, decidido pelo proprio
+       Streamlit so' por LARGURA, sem saber que e' touch) e em touch e'
+       sempre overlay (position:fixed, z-index 999991 nativo do Streamlit -
+       ver correcao de 2026-11-01 logo acima) cobrindo os primeiros 300px
+       da tela INTEIRA, altura total. Num iPad (1024px, 2 subabas do RADAR
+       testadas) isso cai bem em cima das subabas mais a esquerda de
+       .st-key-nav_sub (ALERTAS e CARTEIRAS RECOMENDADAS, as primeiras e
+       mais curtas) - document.elementFromPoint no ponto exato do botao
+       "Alertas" confirmou: o elemento ali era uma linha da watchlist
+       (ex: "VALE3") da propria sidebar, nao o botao da subaba - o toque
+       e' literalmente engolido pela sidebar, a aba nunca troca (aria-
+       expanded da sidebar nem muda, ou seja nao e' sequer um dismiss-ao-
+       tocar-fora; o toque simplesmente nunca chega no botao de verdade).
+       Mesma causa-raiz do bug ja corrigido acima (Streamlit decide so'
+       por largura, nao por capacidade de input) - z-index maior que o da
+       sidebar faz a subnav ficar por CIMA dela (sempre tocavel, mesmo com
+       a sidebar aberta); position:relative e' necessario pra z-index ter
+       efeito (o elemento comeca position:static, que ignora z-index).
+       Escopado so' a .st-key-nav_sub (NAO ao .st-key-header_fixo inteiro,
+       que tambem fica abaixo da sidebar aqui): o header_fixo ocupa
+       justamente a faixa onde a PROPRIA sidebar tem seu botao de FECHAR
+       (topo dela, ~primeiros 60px, ver correcao de stSidebarCollapseButton
+       logo acima) - subir o header_fixo inteiro pra cima da sidebar
+       cobriria esse botao de fechar e trocaria um bug de toque por outro.
+       nav_sub comeca bem mais abaixo (depois do header fixo inteiro),
+       fora do alcance do cabecalho da sidebar - seguro subir so' ele. */
+    .st-key-nav_sub {
+        position: relative;
+        z-index: 1000000;
+        /* sem isso, o texto dos botoes da subnav aparece "fantasma" por
+           cima do conteudo da sidebar (ambos pintados na mesma faixa de
+           pixels, so' a ORDEM muda com o z-index acima - sem fundo opaco
+           aqui o que esta' atras continua visivel entre as letras/
+           espacos). Mesmo fundo solido ja usado pra fechar esse tipo de
+           buraco em header[data-testid="stHeader"] (topo deste arquivo). */
+        background-color: var(--bg);
+    }
 }
 
 /* botoes ---------------------------------------------------------------------- */
