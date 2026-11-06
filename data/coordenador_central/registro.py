@@ -68,6 +68,47 @@ def _trimestre_mais_recente_antes_do_pendente(ano_pendente: int, trimestre_pende
     return ano_pendente, trimestre_pendente - 1
 
 
+def _persistir_e_comparar_resultados_corporativos(nota: dict) -> dict:
+    """Persiste a nota (append-only, best-effort - mesmo padrão de
+    ui/analises_tab.py:_gerar_nota_earnings) e anexa o diff contra a
+    ÚLTIMA versão já persistida do MESMO ticker (período diferente) na
+    chave nova `mudancas_desde_ultima_versao` - cada rodada automática
+    do Comitê (via _chamar_resultados_corporativos) fica sabendo o que
+    mudou de direção (alta<->queda) desde a última revisão, sem
+    recalcular nada além do que montar_nota_br já calculou.
+
+    Só roda quando a nota está disponível (nunca persiste nem compara
+    nota com disponivel=False - mesma regra de salvar_versao/
+    comparar_com_versao_anterior). Falha de persistência OU de leitura
+    do histórico é isolada por try/except (mesmo padrão já usado na UI
+    manual) - nunca derruba a nota já calculada com sucesso por causa
+    disso.
+
+    Exclusivo do caminho automático do Coordenador: o fluxo manual
+    (ui/analises_tab.py:_gerar_nota_earnings/_historico_revisao_earnings)
+    já faz sua própria chamada a salvar_versao/obter_ultima_versao/
+    comparar_com_versao_anterior direto sobre montar_nota_br/
+    montar_nota_internacional - esta função nunca é chamada por ele, pra
+    não duplicar o insert append-only nem a leitura do histórico."""
+    if not nota.get("disponivel"):
+        return nota
+    try:
+        earnings_reviewer.salvar_versao(nota)
+    except Exception:
+        pass
+    try:
+        anterior = earnings_reviewer.obter_ultima_versao(
+            nota["ticker"], nota["pais"], excluir_periodo=nota.get("periodo_label"),
+        )
+    except Exception:
+        anterior = None
+    try:
+        mudancas = earnings_reviewer.comparar_com_versao_anterior(nota, anterior)
+    except Exception:
+        mudancas = []
+    return {**nota, "mudancas_desde_ultima_versao": mudancas}
+
+
 def _chamar_resultados_corporativos(ticker: str = None, ano: int = None, trimestre: int = None, **_ignorado) -> dict:
     """data.earnings.reviewer.montar_nota_br exige (ticker, ano,
     trimestre) explícitos - quando ano/trimestre não são informados,
@@ -76,7 +117,11 @@ def _chamar_resultados_corporativos(ticker: str = None, ano: int = None, trimest
     o reportável mais recente é sempre o anterior a esse). Nunca inventa
     um período quando a fonte CVM está indisponível ou o ticker não tem
     CNPJ mapeado (periodo_pendente devolve None nesses dois casos) -
-    reporta disponivel=False com motivo explícito em vez disso."""
+    reporta disponivel=False com motivo explícito em vez disso.
+
+    Depois de montar a nota, persiste a versão e anexa o diff contra a
+    anterior (ver _persistir_e_comparar_resultados_corporativos) - único
+    caminho que faz isso automaticamente a cada rodada do Comitê."""
     ticker = (ticker or "").strip().upper()
     if ano is None or trimestre is None:
         periodo = eventos.periodo_pendente(ticker)
@@ -87,7 +132,8 @@ def _chamar_resultados_corporativos(ticker: str = None, ano: int = None, trimest
                           "fonte CVM indisponível) - impossível determinar automaticamente qual trimestre revisar.",
             }
         ano, trimestre = _trimestre_mais_recente_antes_do_pendente(*periodo)
-    return earnings_reviewer.montar_nota_br(ticker, ano, trimestre)
+    nota = earnings_reviewer.montar_nota_br(ticker, ano, trimestre)
+    return _persistir_e_comparar_resultados_corporativos(nota)
 
 
 def _chamar_radar_x(**_ignorado) -> dict:
@@ -215,6 +261,21 @@ def _extrair_resultados_corporativos(bruto: dict) -> dict:
         return {"disponivel": False, "resumo": None, "evidencias": [], "motivo_indisponivel": bruto.get("motivo") or "indisponível", "dados": bruto}
     periodo_label = bruto.get("periodo_label")
     resumo = f"Nota de resultado trimestral disponível para {periodo_label or 'o período revisado'}."
+    # mudancas_desde_ultima_versao so' existe quando a nota passou por
+    # _persistir_e_comparar_resultados_corporativos (caminho automatico
+    # do Coordenador, ver registro acima) - ausente (nunca []) quando o
+    # bruto vem direto de montar_nota_br/montar_nota_internacional sem
+    # passar por la' (ex: chamada manual de teste), tratado igual a
+    # "sem diff calculado" (nunca mencionado no resumo nesse caso).
+    mudancas = bruto.get("mudancas_desde_ultima_versao")
+    if mudancas:
+        rotulos = ", ".join(m["metrica"] for m in mudancas)
+        resumo += (
+            f" {len(mudancas)} indicador(es) mudaram de direção (alta<->queda) desde a "
+            f"última revisão deste ticker ({mudancas[0]['periodo_anterior']} -> {periodo_label}): {rotulos}."
+        )
+    elif mudancas is not None:
+        resumo += " Nenhum indicador mudou de direção desde a última revisão deste ticker."
     evidencias = [{"fonte": "CVM/DRE" if bruto.get("pais") == "BR" else "SEC/XBRL", "data": None, "link": None, "titulo": periodo_label}]
     return {"disponivel": True, "resumo": resumo, "evidencias": evidencias, "motivo_indisponivel": None, "dados": bruto}
 
