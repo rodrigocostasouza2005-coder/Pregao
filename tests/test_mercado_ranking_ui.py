@@ -137,19 +137,26 @@ def test_1_grid_de_colunas_identico_para_ticker_nome_e_percentual_de_tamanhos_di
 # ============================================================
 
 def test_2_cor_do_valor_reflete_o_sinal_do_campo():
+    """ATUALIZADO (fundação do design system, 2026-11-06): _linha_ranking
+    passou a usar ui/design_system.py:classe_sinal() em vez do ternário
+    `"var(--alta)" if valor >= 0 else "var(--baixa)"` + `style='color:...'`
+    reimplementado na mão - a cor agora vem da classe global .alta/.baixa
+    (já existente em style.css, mesmo var(--alta)/var(--baixa) de sempre),
+    aplicada em `class='rank-valor {classe}'` em vez de cor inline. Mesmo
+    resultado visual, zero duplicação do ternário de sinal."""
     casos = [
-        (10.0, "var(--alta)"),
-        (-10.0, "var(--baixa)"),
-        (0.0, "var(--alta)"),  # zero conta como "alta" (valor >= 0)
-        (-0.01, "var(--baixa)"),
+        (10.0, "alta"),
+        (-10.0, "baixa"),
+        (0.0, "alta"),  # zero conta como "alta" (valor >= 0)
+        (-0.01, "baixa"),
     ]
-    for valor, cor_esperada in casos:
+    for valor, classe_esperada in casos:
         papel = {"ticker": "TEST3", "variacao_pct": valor}
         _, htmls = _renderizar_linha(papel, campo="variacao_pct")
         html_nome_valor = next(h for h in htmls if "rank-nome-valor" in h)
         _checar(
-            f"2 valor={valor}: cor do valor é {cor_esperada}",
-            f"color:{cor_esperada};" in html_nome_valor, f"(html: {html_nome_valor!r})",
+            f"2 valor={valor}: classe do valor é '{classe_esperada}'",
+            f"class='rank-valor {classe_esperada}'" in html_nome_valor, f"(html: {html_nome_valor!r})",
         )
 
 
