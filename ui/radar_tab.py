@@ -1401,11 +1401,34 @@ def render_valuation(prefs: dict):
     # classe em _CSS_RADAR, acima: titulo solto, sem st.container(
     # border=True) pai pra painel-titulo sangrar contra).
     st.markdown('<div class="radar-pergunta">VALUATION</div>', unsafe_allow_html=True)
+    # Legenda explícita de proveniência do dado (reformulação 2026-11-06,
+    # onda VALUATION) - reaproveita os mesmos selos FATO/CÁLCULO INTERNO
+    # já usados em Mudanças de Tese (ver _selo_evidencia, acima neste
+    # arquivo) pra esta tabela nunca deixar ambíguo o que é número
+    # reportado pela fonte vs. mediana calculada agora sob demanda.
+    #
+    # ".valrad-nota": classe só desta legenda (mais comprida que o uso
+    # usual de .rq-nota, por isso quebra em 3 linhas em telas normais) +
+    # regra local de margem, igual ao fix documentado acima em
+    # ".radar-stub" (mesmo bug real: o wrapper que o Streamlit gera ao
+    # redor de HTML custom mede uma altura menor que o conteúdo quando ele
+    # quebra em várias linhas, sobrepondo o próximo elemento - aqui, os
+    # pills de escopo). Regra escopada só a esta classe nova (não mexe em
+    # ".rq-nota" nem em nenhum outro uso compartilhado da classe).
     st.markdown(
-        "<div class='rq-nota'>Múltiplos reportados pela fonte (Yahoo Finance) comparados com pares do setor "
-        "- leitura rápida, não é preço-alvo. O modelo de DCF com cenários (pessimista/base/otimista), "
-        "premissas auditáveis e recomendação do comitê (COMPRA/VENDA/NEUTRO) vivem na aba "
-        "COORDENADOR CENTRAL.</div>",
+        "<style>div[data-testid='stElementContainer']:has(.valrad-nota) + "
+        "div { margin-top: 1.3rem; }</style>"
+        "<div class='rq-nota valrad-nota'>"
+        f"{_selo_evidencia(radar.TIPO_FATO)} múltiplo/preço reportado pela fonte (Yahoo Finance) "
+        f"&nbsp;·&nbsp; {_selo_evidencia(radar.TIPO_CALCULO)} mediana do setor, calculada agora, "
+        "sob demanda (botão \"Comparar ... com o setor\" abaixo)"
+        "<br>Isto é leitura rápida de múltiplos comparáveis - não é preço-alvo. DCF com premissas "
+        "auditáveis, projeção de 5 anos, WACC, crescimento na perpetuidade, sensibilidade, cenários "
+        "(otimista/base/pessimista) e margem de segurança vivem na aba COORDENADOR CENTRAL: o "
+        "parecer oficial do comitê (fundamentos coletados automaticamente, em ANALISAR) e o "
+        "simulador manual de DCF operacional (suas próprias premissas, mesma rota) são cálculos "
+        "independentes e podem apontar preços-alvo diferentes para o mesmo papel."
+        "</div>",
         unsafe_allow_html=True,
     )
     escopo = _escopo_watchlist(prefs, com_janela=False)
