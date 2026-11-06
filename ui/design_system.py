@@ -15,16 +15,25 @@ import html
 import streamlit as st
 
 
+def subtitulo_html(texto: str) -> str:
+    """Mesmo visual de subtitulo() (ver abaixo), em string em vez de
+    st.markdown direto - para código que monta um bloco HTML grande antes
+    de exibir tudo de uma vez (ex: ui/morning_call_tab.py, cujas funções
+    de montagem são propositalmente puras/testáveis fora de uma sessão
+    Streamlit real - ver docstring do módulo). `texto` é sempre escapado
+    (mesma regra de subtitulo)."""
+    return (
+        f"<div style='font-size:0.72rem; font-weight:700; letter-spacing:0.03em; "
+        f"margin:0.7rem 0 0.3rem 0; color:var(--neutro);'>{html.escape(texto)}</div>"
+    )
+
+
 def subtitulo(texto: str):
     """Subtítulo de seção compacto - mesmo tamanho de fonte usado em
     quase todo o resto do app (~0.72rem), nunca o padrão do Streamlit.
     `texto` é sempre escapado (é um rótulo curto, nunca HTML pré-formatado -
     diferente de lista_compacta, que recebe HTML de quem chama)."""
-    st.markdown(
-        f"<div style='font-size:0.72rem; font-weight:700; letter-spacing:0.03em; "
-        f"margin:0.7rem 0 0.3rem 0; color:var(--neutro);'>{html.escape(texto)}</div>",
-        unsafe_allow_html=True,
-    )
+    st.markdown(subtitulo_html(texto), unsafe_allow_html=True)
 
 
 def lista_compacta(linhas_html):
