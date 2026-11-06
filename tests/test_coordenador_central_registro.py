@@ -183,6 +183,81 @@ def test_wrapper_resultados_corporativos_sem_periodo_pendente_nunca_inventa():
     assert "período de resultado não identificável" in resultado["motivo"]
 
 
+def test_persistir_e_comparar_resultados_corporativos_salva_e_anexa_diff():
+    nota = {"ticker": "PETR4", "pais": "BR", "disponivel": True, "periodo_label": "3T2026",
+            "metricas": {"receita_liquida": {"yoy_variacao_pct": 5.0}}}
+    anterior = {"ticker": "PETR4", "pais": "BR", "disponivel": True, "periodo_label": "2T2026",
+                "metricas": {"receita_liquida": {"yoy_variacao_pct": -5.0}}}
+    mudancas_esperadas = [{"metrica": "receita_liquida", "direcao_anterior": "QUEDA", "direcao_atual": "ALTA",
+                           "periodo_anterior": "2T2026", "periodo_atual": "3T2026"}]
+    with patch.object(registro.earnings_reviewer, "salvar_versao", return_value=True) as mock_salvar, \
+         patch.object(registro.earnings_reviewer, "obter_ultima_versao", return_value=anterior) as mock_obter, \
+         patch.object(registro.earnings_reviewer, "comparar_com_versao_anterior", return_value=mudancas_esperadas) as mock_comparar:
+        resultado = registro._persistir_e_comparar_resultados_corporativos(nota)
+    mock_salvar.assert_called_once_with(nota)
+    mock_obter.assert_called_once_with("PETR4", "BR", excluir_periodo="3T2026")
+    mock_comparar.assert_called_once_with(nota, anterior)
+    assert resultado["mudancas_desde_ultima_versao"] == mudancas_esperadas
+    # nota original devolvida intocada (só um novo dict com a chave extra)
+    assert "mudancas_desde_ultima_versao" not in nota
+
+
+def test_persistir_e_comparar_resultados_corporativos_nota_indisponivel_nunca_persiste():
+    nota = {"ticker": "MELI34", "pais": "BR", "disponivel": False, "motivo": "sem CNPJ mapeado"}
+    with patch.object(registro.earnings_reviewer, "salvar_versao") as mock_salvar, \
+         patch.object(registro.earnings_reviewer, "obter_ultima_versao") as mock_obter:
+        resultado = registro._persistir_e_comparar_resultados_corporativos(nota)
+    mock_salvar.assert_not_called()
+    mock_obter.assert_not_called()
+    assert resultado is nota
+
+
+def test_persistir_e_comparar_resultados_corporativos_falha_de_persistencia_nao_derruba_nota():
+    nota = {"ticker": "VALE3", "pais": "BR", "disponivel": True, "periodo_label": "3T2026", "metricas": {}}
+    with patch.object(registro.earnings_reviewer, "salvar_versao", side_effect=RuntimeError("banco fora do ar")), \
+         patch.object(registro.earnings_reviewer, "obter_ultima_versao", side_effect=RuntimeError("banco fora do ar")):
+        resultado = registro._persistir_e_comparar_resultados_corporativos(nota)
+    assert resultado["disponivel"] is True
+    assert resultado["mudancas_desde_ultima_versao"] == []
+
+
+def test_wrapper_resultados_corporativos_persiste_e_anexa_diff_fim_a_fim():
+    nota = {"ticker": "PETR4", "pais": "BR", "disponivel": True, "periodo_label": "3T2026", "metricas": {}}
+    with patch.object(registro.eventos, "periodo_pendente", return_value=(2026, 4)), \
+         patch.object(registro.earnings_reviewer, "montar_nota_br", return_value=nota), \
+         patch.object(registro.earnings_reviewer, "salvar_versao", return_value=True) as mock_salvar, \
+         patch.object(registro.earnings_reviewer, "obter_ultima_versao", return_value=None), \
+         patch.object(registro.earnings_reviewer, "comparar_com_versao_anterior", return_value=[]) as mock_comparar:
+        resultado = registro._chamar_resultados_corporativos(ticker="PETR4")
+    mock_salvar.assert_called_once_with(nota)
+    mock_comparar.assert_called_once()
+    assert resultado["mudancas_desde_ultima_versao"] == []
+
+
+def test_extrator_resultados_corporativos_menciona_mudanca_de_direcao_no_resumo():
+    bruto = {
+        "ticker": "PETR4", "pais": "BR", "disponivel": True, "periodo_label": "3T2026",
+        "mudancas_desde_ultima_versao": [{
+            "metrica": "receita_liquida", "direcao_anterior": "QUEDA", "direcao_atual": "ALTA",
+            "periodo_anterior": "2T2026", "periodo_atual": "3T2026",
+        }],
+    }
+    saida = registro._extrair_resultados_corporativos(bruto)
+    assert "1 indicador" in saida["resumo"]
+    assert "receita_liquida" in saida["resumo"]
+    assert saida["dados"]["mudancas_desde_ultima_versao"] == bruto["mudancas_desde_ultima_versao"]
+
+
+def test_extrator_resultados_corporativos_sem_diff_calculado_nao_menciona_mudanca():
+    # Chamada manual (montar_nota_br direto, sem passar por
+    # _persistir_e_comparar_resultados_corporativos) - nunca tem a chave
+    # mudancas_desde_ultima_versao, resumo não fala de diff nenhum.
+    bruto = {"ticker": "PETR4", "pais": "BR", "disponivel": True, "periodo_label": "3T2026"}
+    saida = registro._extrair_resultados_corporativos(bruto)
+    assert "mudaram de direção" not in saida["resumo"]
+    assert "Nenhum indicador mudou" not in saida["resumo"]
+
+
 def test_wrapper_catalisadores_converte_ticker_em_tupla():
     with patch.object(registro.radar, "catalisadores") as mock_cat:
         mock_cat.return_value = []
