@@ -510,7 +510,7 @@ def _render_consolidado(consolidado: dict):
                         origem_divida = premissas_modelo.get("origem_divida_liquida")
                         itens_premissas = [
                             ("FCF inicial (TTM)", premissas_modelo.get("fcf_base")),
-                            ("Dívida líquida", premissas_modelo.get("divida_liquida")),
+                            ("Dívida líquida" + (f" — {origem_divida}" if origem_divida else ""), premissas_modelo.get("divida_liquida")),
                             ("Ações", premissas_modelo.get("acoes")),
                             ("Crescimento FCF pessimista", pct(premissas_modelo.get("crescimento_fcf_pessimista"))),
                             ("Crescimento FCF base", pct(premissas_modelo.get("crescimento_fcf_base"))),
