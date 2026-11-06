@@ -18,6 +18,10 @@ Submódulos:
 - fluxos.py: casos de uso de alto nível (Fluxo A/B/C) chamados pela UI.
 - persistencia.py: histórico de análises e métricas de especialistas no
   Supabase (sql/coordenador_central.sql), nunca lança exceção.
+- execucoes_agendadas.py (2026-11-05): leitura (só leitura) de
+  coordenador_execucoes (sql/coordenador.sql) - log do SCHEDULER puro
+  via cron (jobs/coordenador.py), tabela/escrita diferentes de
+  persistencia.py acima.
 
 Nenhum destes módulos reescreve a lógica de negócio das inteligências
 originais - sempre importa e reaproveita (data/research/comparador.py,

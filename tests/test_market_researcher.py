@@ -112,9 +112,11 @@ class _TabelaAchadosFake:
         self._op = None
         self._filtros = {}
         self._payload = None
+        self._colunas = None
 
-    def select(self, *_a, **_k):
+    def select(self, colunas="*", **_k):
         self._op = "select"
+        self._colunas = colunas
         return self
 
     def insert(self, payload):
@@ -156,6 +158,9 @@ class _TabelaAchadosFake:
         if self._op == "select":
             linhas = [l for l in self.cliente.linhas.values()
                       if all(l.get(k) == v for k, v in self._filtros.items())]
+            if self._colunas and self._colunas != "*":
+                campos = {campo.strip() for campo in self._colunas.split(",")}
+                linhas = [{k: v for k, v in linha.items() if k in campos} for linha in linhas]
             return _RespostaFake(linhas)
         return _RespostaFake([])
 
@@ -449,3 +454,20 @@ def test_consenso_research_propaga_divergencia_estruturada():
     cobertura = {**_COBERTURA_WEGE3, "divergencia": {"descricao": "diverge", "por_casa": {"A": "COMPRA", "B": "VENDA"}}}
     resultado = mr.consenso_research(cobertura)
     assert resultado["divergencia"]["descricao"] == "diverge"
+
+
+def test_registrar_achados_preserva_todos_os_estados_de_triagem_manual():
+    achado = {"coletor": "NEWS (Brasil)", "categoria": "Noticias", "codigo_estado": "FALHA_EXECUCAO",
+              "rotulo_estado": "Falha de execucao", "critico": True, "evidencia": {}}
+    for estado in ("INVESTIGANDO", "AGUARDANDO_INTERVENCAO", "INCONCLUSIVO"):
+        cliente = _ClienteAchadosFake()
+        with patch.object(mr, "obter_cliente", return_value=cliente), \
+             patch.object(mr, "achados_qualidade_coletores", return_value=[achado]):
+            mr.registrar_achados_atuais()
+        linha = next(iter(cliente.linhas.values()))
+        linha["status"] = estado
+        with patch.object(mr, "obter_cliente", return_value=cliente), \
+             patch.object(mr, "achados_qualidade_coletores", return_value=[achado]):
+            resultado = mr.registrar_achados_atuais()
+        assert resultado["ok"] is True
+        assert next(iter(cliente.linhas.values()))["status"] == estado

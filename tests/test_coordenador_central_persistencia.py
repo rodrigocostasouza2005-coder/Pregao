@@ -90,6 +90,36 @@ def _patched(cliente):
 
 
 # ============================================================
+# Cliente fake com UPDATE que pode falhar de propósito (retry/fallback
+# de concluir_analise, incidente real 2026-11-05 - ver persistencia.py)
+# ============================================================
+
+class _TabelaComFalha(_TabelaFake):
+    def execute(self):
+        if self._op == "update":
+            self.cliente.chamadas_update.append(dict(self._payload))
+            if self.cliente.falhar(self._payload):
+                raise RuntimeError("falha simulada de rede/Supabase no UPDATE")
+        return super().execute()
+
+
+class _ClienteComFalha(_ClienteFake):
+    """`falhar(payload)` decide, por chamada de UPDATE, se ela deve
+    lançar - nunca toca rede real, só injeta a falha no fake local."""
+
+    def __init__(self, falhar):
+        super().__init__()
+        self.chamadas_update = []
+        self._falhar = falhar
+
+    def table(self, nome):
+        return _TabelaComFalha(self, nome)
+
+    def falhar(self, payload):
+        return self._falhar(payload)
+
+
+# ============================================================
 # Supabase indisponível - nunca lança, None/False distinto de vazio
 # ============================================================
 
@@ -203,6 +233,41 @@ def test_metricas_especialistas_taxa_recente_distinta_da_taxa_historica():
     assert metricas["noticias"]["taxa_sucesso_recente_pct"] == 75.0  # só 4 execuções, todas contam na janela de N=10
 
 
+def test_metricas_especialistas_expoe_erro_tecnico_da_ultima_execucao():
+    """Bug 3 (auditoria 2026-11-05): a coluna `erro` de cada execução era
+    lida por metricas_especialistas() mas descartada na agregação -
+    nenhuma tela mostrava o erro técnico de uma execução específica."""
+    cliente = _ClienteFake()
+    with _patched(cliente):
+        persistencia.registrar_execucao_especialista("a", "comparador", {
+            "disponivel": True, "duracao_ms": 100, "erro_tecnico": None,
+        })
+        persistencia.registrar_execucao_especialista("b", "comparador", {
+            "disponivel": False, "duracao_ms": None, "erro_tecnico": "TimeoutError: x",
+        })
+        linhas = list(cliente.tabelas["coordenador_especialistas_execucoes"].values())
+        linhas[0]["executado_em"] = "2026-11-01T00:00:00Z"
+        linhas[1]["executado_em"] = "2026-11-02T00:00:00Z"  # mais recente = a que falhou
+        metricas = persistencia.metricas_especialistas()
+    assert metricas["comparador"]["ultimo_erro_tecnico"] == "TimeoutError: x"
+
+
+def test_metricas_especialistas_ultimo_erro_e_none_quando_ultima_execucao_teve_sucesso():
+    cliente = _ClienteFake()
+    with _patched(cliente):
+        persistencia.registrar_execucao_especialista("a", "noticias", {
+            "disponivel": False, "duracao_ms": None, "erro_tecnico": "ConnectionError: y",
+        })
+        persistencia.registrar_execucao_especialista("b", "noticias", {
+            "disponivel": True, "duracao_ms": 50, "erro_tecnico": None,
+        })
+        linhas = list(cliente.tabelas["coordenador_especialistas_execucoes"].values())
+        linhas[0]["executado_em"] = "2026-11-01T00:00:00Z"  # falha antiga
+        linhas[1]["executado_em"] = "2026-11-02T00:00:00Z"  # sucesso mais recente
+        metricas = persistencia.metricas_especialistas()
+    assert metricas["noticias"]["ultimo_erro_tecnico"] is None
+
+
 def test_metricas_especialistas_erro_tecnico_nunca_persistido_como_credencial():
     """registrar_execucao_especialista só persiste erro_tecnico (texto
     de diagnóstico), nunca o valor de nenhuma credencial - aqui só
@@ -215,3 +280,129 @@ def test_metricas_especialistas_erro_tecnico_nunca_persistido_como_credencial():
         })
     linha = next(iter(cliente.tabelas["coordenador_especialistas_execucoes"].values()))
     assert linha["erro"] == "TimeoutError: x"
+
+
+# ============================================================
+# Bug 1 (auditoria 2026-11-05, rodada real de jobs/comite_noturno.py):
+# as 20 linhas da rodada ficaram EM_ANDAMENTO pra sempre porque o UPDATE
+# final (concluir_analise) falhou e nada tentava de novo nem registrava
+# o motivo no banco. concluir_analise agora faz retry simples e, se o
+# UPDATE completo (com o jsonb `resultado`) continuar falhando, tenta um
+# fallback mínimo (sem `resultado`) pra nunca deixar a linha travada de
+# forma não rastreável.
+# ============================================================
+
+def test_concluir_analise_retry_recupera_de_falha_transitoria_de_rede():
+    """1a tentativa do UPDATE completo falha (ex: blip de rede); o retry
+    (2a tentativa) funciona - resultado completo É salvo, sem precisar
+    do fallback mínimo."""
+    chamadas = {"n": 0}
+
+    def falhar(_payload):
+        chamadas["n"] += 1
+        return chamadas["n"] == 1  # só a 1a chamada de UPDATE falha
+
+    cliente = _ClienteComFalha(falhar)
+    with _patched(cliente):
+        analise_id = persistencia.iniciar_analise("Analisar PETR4", "analise_ticker", "PETR4")
+        ok = persistencia.concluir_analise(analise_id, "CONCLUIDA", {"resumo_executivo": "ok"})
+
+    assert ok is True
+    linha = cliente.tabelas["coordenador_analises"][analise_id]
+    assert linha["status"] == "CONCLUIDA"
+    assert linha["resultado"] == {"resumo_executivo": "ok"}
+    assert len(cliente.chamadas_update) == 2  # 1 falhou, 1 (retry) funcionou
+
+
+def test_concluir_analise_usa_fallback_minimo_quando_update_completo_sempre_falha():
+    """UPDATE completo (com `resultado`, o payload grande) falha mesmo
+    após retry - fallback mínimo (sem `resultado`) grava status PARCIAL +
+    erro rastreável na coluna `erro` já existente (nenhum enum/coluna
+    novo), tirando a linha de EM_ANDAMENTO. concluir_analise ainda
+    devolve False: o resultado consolidado pedido não foi persistido."""
+    def falhar(payload):
+        return "resultado" in payload  # só o UPDATE completo tem essa chave
+
+    cliente = _ClienteComFalha(falhar)
+    with _patched(cliente):
+        analise_id = persistencia.iniciar_analise("Analisar VALE3", "analise_ticker", "VALE3")
+        ok = persistencia.concluir_analise(analise_id, "CONCLUIDA", {"resumo_executivo": "ok"})
+
+    assert ok is False
+    linha = cliente.tabelas["coordenador_analises"][analise_id]
+    assert linha["status"] == "PARCIAL"  # nunca fica travada em EM_ANDAMENTO
+    assert "FALHA_PERSISTENCIA" in linha["erro"]
+    assert linha.get("resultado") is None  # resultado consolidado nunca foi salvo
+    # 2 tentativas do completo (ambas falham) + 1 do fallback (sucesso de primeira).
+    assert len(cliente.chamadas_update) == 3
+
+
+def test_concluir_analise_fallback_preserva_status_erro_sem_rebaixar():
+    """Quando o fluxo original já era ERRO (fluxos.py:_concluir_com_erro),
+    o fallback mínimo nunca rebaixa pra PARCIAL - só anexa o aviso de
+    falha de persistência ao erro original, na mesma coluna `erro`."""
+    def falhar(payload):
+        return "resultado" in payload
+
+    cliente = _ClienteComFalha(falhar)
+    with _patched(cliente):
+        analise_id = persistencia.iniciar_analise("Analisar X", "analise_ticker", "X")
+        ok = persistencia.concluir_analise(analise_id, "ERRO", None, erro="ValueError: algo quebrou")
+
+    assert ok is False
+    linha = cliente.tabelas["coordenador_analises"][analise_id]
+    assert linha["status"] == "ERRO"
+    assert "ValueError: algo quebrou" in linha["erro"]
+    assert "FALHA_PERSISTENCIA" in linha["erro"]
+
+
+def test_concluir_analise_serializa_date_puro_dentro_do_resultado():
+    """Bug real encontrado na validação operacional com dados reais
+    (2026-11-05, Parte 6/comite-validacao-3-empresas): especialistas
+    como `catalisadores` (data/radar.py) devolvem datetime.date puro no
+    campo "data" sempre que há evento na janela - isso chegava inteiro
+    dentro de `resultado["visao_especialistas"]` e o UPDATE completo
+    falhava 100% das vezes (TypeError: Object of type date is not JSON
+    serializable), rebaixando CONCLUIDA pra PARCIAL mesmo com todos os
+    especialistas disponíveis. _serializar_jsonb converte date/datetime
+    pra string ISO antes do UPDATE; aqui confirmamos que o valor
+    persistido já é string e que json.dumps do payload nunca falha."""
+    import datetime as _dt
+    import json
+
+    cliente = _ClienteFake()
+    resultado_com_date = {
+        "visao_especialistas": {
+            "catalisadores": {
+                "dados": [{"ticker": "PETR4", "data": _dt.date(2026, 11, 10)}],
+            },
+        },
+        "momento_consolidado_em": _dt.datetime(2026, 11, 5, 10, 0, tzinfo=_dt.timezone.utc),
+    }
+    with _patched(cliente):
+        analise_id = persistencia.iniciar_analise("Analisar PETR4", "analise_ticker", "PETR4")
+        ok = persistencia.concluir_analise(analise_id, "CONCLUIDA", resultado_com_date)
+
+    assert ok is True
+    linha = cliente.tabelas["coordenador_analises"][analise_id]
+    assert linha["status"] == "CONCLUIDA"
+    data_persistida = linha["resultado"]["visao_especialistas"]["catalisadores"]["dados"][0]["data"]
+    assert data_persistida == "2026-11-10"
+    assert isinstance(data_persistida, str)
+    json.dumps(linha["resultado"])  # nunca lança - é o que o cliente HTTP real faria
+
+
+def test_concluir_analise_quando_tudo_falha_linha_fica_em_andamento_mas_tentativas_sao_registradas():
+    """Se até o fallback mínimo falhar (indisponibilidade real do
+    Supabase), a linha fica EM_ANDAMENTO (nenhum UPDATE de fato foi
+    aplicado) - mas a função ainda tentou retry + fallback antes de
+    desistir (nunca lança, sempre devolve False)."""
+    cliente = _ClienteComFalha(lambda _payload: True)  # todo UPDATE falha
+    with _patched(cliente):
+        analise_id = persistencia.iniciar_analise("Analisar Y", "analise_ticker", "Y")
+        ok = persistencia.concluir_analise(analise_id, "CONCLUIDA", {"x": 1})
+
+    assert ok is False
+    linha = cliente.tabelas["coordenador_analises"][analise_id]
+    assert linha["status"] == "EM_ANDAMENTO"
+    assert len(cliente.chamadas_update) == 4  # 2 (completo) + 2 (fallback), todas falharam

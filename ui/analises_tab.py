@@ -4,15 +4,38 @@ EQUITY (continua em app.py, intocada no miolo); aqui ficam a barra de
 vinculos da empresa (empresa -> setor/noticias/radar/fundamentos) e a
 subaba Fundamentos. Valuation/Teses vem de ui/radar_tab.py.
 
-Fundamentos (ponto atual) so' mostra o que a fonte reporta HOJE
-(data/prices.py:obter_indicadores, Yahoo Finance, cache de 12h). Série
-histórica trimestral REAL de receita líquida/EBIT/lucro líquido/margem
-bruta existe via Earnings Reviewer (data/earnings/reviewer.py:
-serie_historica_br, só Brasil) e alimenta a CONCLUSÃO DE INVESTIMENTO
-abaixo (2026-10-30) - mas ROIC, dívida líquida histórica, fluxo de caixa
-operacional/livre, CAPEX e dividendos em série histórica ainda não têm
-fonte integrada (ver seção "Lacunas de informação" da conclusão), e a
-tela diz isso em vez de estimar."""
+render_fundamentos abaixo (tabela "FUNDAMENTOS - WATCHLIST") so' mostra
+o que a fonte reporta HOJE pra cada ticker da watchlist
+(data/prices.py:obter_indicadores, Yahoo Finance, cache de 12h) - isso
+continua vale (auditoria 2026-11-05, ver nota abaixo).
+
+ATUALIZACAO (auditoria 2026-11-05): a frase original deste docstring
+("ROIC, divida liquida historica, fluxo de caixa operacional/livre,
+CAPEX e dividendos em serie historica ainda nao tem fonte integrada")
+ficou desatualizada - Earnings Reviewer (data/earnings/reviewer.py:
+serie_historica_br, so' Brasil) ganhou esses 4 blocos em 2026-11-01/02
+(Fase 1/2, balanco patrimonial + DFC via CVM) e eles JA alimentam a
+CONCLUSAO DE INVESTIMENTO abaixo - ver _secao_crescimento_rentabilidade
+(ROIC), _secao_estrutura_capital (divida liquida historica) e
+_secao_geracao_caixa (FCO/CAPEX/FCF/dividendos YTD), todas consumindo
+_ultimo_bfc(historico). Disponibilidade ainda varia por ticker/trimestre
+(banco/seguradora com plano de contas proprio, calendario fiscal
+internacional nao detectado) - quando falta, a secao 14 (Lacunas de
+informacao, _TEXTOS_LACUNA) diz o motivo real, nunca estima.
+
+GAP REAL REMANESCENTE (nao fechado nesta auditoria, decisao deliberada):
+a tabela "FUNDAMENTOS - WATCHLIST" (render_fundamentos) continua so'
+ponto atual (yfinance) pra TODOS os tickers da watchlist, renderizada
+sem gate de botao no primeiro load. Plugar serie_historica_br ali
+multiplicaria N consultas CVM (balanco+DFC por trimestre candidato) por
+ticker da watchlist a cada abertura da aba, sem cache dedicado pro custo
+disso (o cache de 12h hoje e' so' do yfinance) e sem cobertura
+internacional (serie_historica_br e' so' Brasil) - misturar linha com e
+sem historico na mesma tabela comparativa exigiria um desenho de UI
+proprio (ex.: sob demanda por ticker, como o comparativo setorial em
+_dialog_comparativo_setor_empresa). Isso e' trabalho de escopo maior que
+"integracao de leitura simples" - fica documentado como pendencia, fora
+desta rodada."""
 
 import html
 from collections import Counter
@@ -325,9 +348,13 @@ def _dcf_calculo(fcf_atual, taxa_crescimento_pct, taxa_desconto_pct, anos_projec
     explícito dizendo QUAL está faltando (nunca aproxima). Perpetuidade
     de Gordon pro valor terminal - exige taxa_desconto > taxa_crescimento
     (senão o denominador inverte de sinal, premissa inválida, não
-    calculado). Função pura, testável isoladamente - não é chamada pela
-    conclusão nesta versão porque fcf_atual nunca está disponível (ver
-    _TEXTOS_LACUNA['dcf']); fica pronta pra quando essa fonte existir."""
+    calculado). Função pura, testável isoladamente - chamada por
+    _controle_dcf_inline (abaixo) sempre que _fcf_para_dcf encontra FCF
+    (ponto do yfinance OU, na ausência dele, acumulado no ano via CVM -
+    corrigido na auditoria 2026-11-05, este docstring dizia erradamente
+    que fcf_atual nunca estava disponível). Quando nenhuma das duas
+    fontes tem FCF, a seção de Valuation cai pra _TEXTOS_LACUNA['dcf']
+    e _controle_dcf_inline nem renderiza o controle."""
     faltando = []
     if fcf_atual is None:
         faltando.append("fluxo de caixa livre atual")
@@ -1462,6 +1489,10 @@ def _render_research_e_fatores(ticker: str, fmt: str):
         else:
             st.info("O registro mais recente não contém preço-alvo positivo válido. Um alvo histórico anterior não será apresentado como se fosse o atual.")
         st.caption("Fonte estruturada disponível nesta tela: Genial. Não há consenso multi-casa calculado enquanto os alvos comparáveis das demais casas não estiverem integrados.")
+        navegacao.link(
+            "Ver DCF proprietário com cenários (COORDENADOR CENTRAL) ↗", "coordenador", "analisar",
+            chave=f"research_dcf_{ticker}", ajuda="Preço-alvo por DCF (otimista/base/pessimista) calculado pelo Coordenador Central, não listado aqui.",
+        )
         if validos:
             subtitulo("Histórico recente de preço-alvo e recomendação")
             linhas = []
@@ -1553,8 +1584,10 @@ def render_fundamentos(prefs: dict):
         st.caption(
             "Dados REPORTADOS pela fonte (Yahoo Finance, últimos 12 meses), atualizados a cada 12h; — = campo "
             "não informado pela fonte (nunca estimado). COLETA = quando o dado foi obtido (Brasília); se a fonte "
-            "falhou agora, vale a última coleta bem-sucedida, com a data dela. Receita, lucro e fluxo de caixa em série histórica "
-            "ainda não têm fonte integrada; documentos de resultado oficiais ficam em NOTÍCIAS › Documentos CVM."
+            "falhou agora, vale a última coleta bem-sucedida, com a data dela. Esta tabela compara a watchlist "
+            "inteira só no PONTO ATUAL - série histórica trimestral real de receita/lucro/ROIC/dívida líquida/"
+            "fluxo de caixa (CVM) existe por ticker individual em ANÁLISES › Empresas › Conclusão de "
+            "Investimento (Earnings Reviewer); documentos de resultado oficiais ficam em NOTÍCIAS › Documentos CVM."
         )
     if watchlist:
         ticker_foco = st.selectbox("AÇÃO PARA RESEARCH & FATORES", options=watchlist, key="fund_research_ticker")
