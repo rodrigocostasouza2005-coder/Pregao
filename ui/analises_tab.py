@@ -45,6 +45,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 import config
+from data.coordenador_central import persistencia as coordenador_persistencia
 from data.earnings import reviewer as earnings_reviewer
 from data.market_researcher import analise_ticker, consenso_research
 from data.prices import obter_cotacao, obter_indicadores
@@ -57,7 +58,7 @@ from data.research.historico import historico_ticker
 from data.research.tese import scorecard
 from data.research.sinal import calcular_sinal_comite
 from ui import navegacao
-from ui.design_system import lista_compacta, subtitulo
+from ui.design_system import divisor, lista_compacta, subtitulo
 from ui.setores_tab import ir_para_setor, setores_do_ticker
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -152,6 +153,353 @@ def _dialog_comparativo_setor_empresa(ticker: str, prefs: dict):
         "contra lucro/patrimônio contábil do momento - empresas com margens, crescimento ou estrutura de "
         "capital diferentes dentro do mesmo setor podem justificar múltiplos diferentes; isto não é um "
         "preço justo nem uma recomendação."
+    )
+
+
+# ============================================================
+# HISTÓRICO, EVOLUÇÃO E PERSPECTIVAS - "COMPANY 360" (2026-11-06)
+#
+# Diálogo sob demanda (mesmo padrão de custo de
+# _dialog_comparativo_setor_empresa acima: nunca no primeiro render,
+# só quando o usuário clica) que amplia a janela trimestral usada pela
+# Conclusão de Investimento (4 trimestres civis, ~1 ano) para 12
+# trimestres civis (~3 anos), na MESMA fonte determinística
+# (earnings_reviewer.serie_historica_br, zero cálculo novo - só um
+# `n_trimestres` maior) e reaproveita as MESMAS funções analíticas puras
+# já existentes neste módulo (_secao_qualidade_negocio,
+# _secao_crescimento_rentabilidade, _secao_estrutura_capital,
+# _secao_geracao_caixa, _montar_cenarios, _secao_riscos_invalidacao,
+# _secao_catalisadores) - nenhuma lógica de cálculo nova é criada aqui,
+# nenhum dado financeiro é inventado quando a série não cobrir um ponto.
+#
+# "Premissas atualizadas pelo Comitê": cross-referência só de LEITURA
+# com o Coordenador Central (data/coordenador_central/persistencia.py) -
+# mostra a modelagem (Model Builder) mais recente já persistida pra este
+# ticker QUANDO EXISTIR; nunca inventa isso quando não houver nenhuma
+# análise do comitê registrada (ou quando o Supabase estiver fora do
+# ar - os dois casos têm motivo distinto, nunca a mesma mensagem). Zero
+# execução nova é disparada daqui - só leitura do que já foi persistido
+# por ui/coordenador_tab.py.
+# ============================================================
+
+@st.cache_data(ttl=90, show_spinner=False)
+def _historico_3anos_cacheado(ticker: str) -> dict:
+    """Mesma fonte/mesma forma de retorno de
+    data/market_researcher.py:historico_fundamentos (que usa o padrão
+    de 4 trimestres, ~1 ano, pra Conclusão de Investimento), só com uma
+    janela de 12 trimestres civis (~3 anos) - pedido específico desta
+    página (ANÁLISES › Empresas), sob demanda (nunca na tabela de
+    watchlist inteira - ver docstring no topo do arquivo sobre o custo
+    de multiplicar consultas CVM por ticker da watchlist; aqui é sempre
+    1 ticker por vez, o mesmo já selecionado na página). Só Brasil
+    nesta versão (CVM) - mesma limitação de historico_fundamentos."""
+    if (config.info_ativo(ticker) or {}).get("pais") != "Brasil":
+        return {
+            "disponivel": False,
+            "motivo": "série histórica trimestral só cobre empresas brasileiras nesta versão "
+                      "(CVM) - calendário fiscal de empresa internacional não é detectado "
+                      "automaticamente (ver limitações do Earnings Reviewer).",
+        }
+    return earnings_reviewer.serie_historica_br(ticker, n_trimestres=12)
+
+
+@st.cache_data(ttl=90, show_spinner=False)
+def _execucao_comite_cacheada(ticker: str) -> dict:
+    """Só LEITURA (nenhuma execução nova disparada daqui) da análise mais
+    recente do Coordenador Central (comitê de especialistas, ver
+    ui/coordenador_tab.py) já persistida pra este ticker - usado só pra
+    avisar quando o comitê (Model Builder) já atualizou premissas de DCF
+    pra este ativo. `disponivel`=False (fonte fora do ar) é um motivo
+    DIFERENTE de `encontrada`=False (fonte respondeu, nenhuma análise
+    deste ticker ainda) - nunca a mesma mensagem pros dois."""
+    try:
+        analises = coordenador_persistencia.listar_analises_recentes(limite=100)
+    except Exception:
+        return {"disponivel": False, "motivo": "indisponível agora (fonte não respondeu)."}
+    if analises is None:
+        return {"disponivel": False, "motivo": "indisponível agora (Supabase fora do ar)."}
+    candidatas = [
+        a for a in analises
+        if (a.get("ticker") or "").strip().upper() == ticker.upper()
+        and a.get("status") != "ERRO" and a.get("resultado")
+    ]
+    if not candidatas:
+        return {"disponivel": True, "encontrada": False}
+    mais_recente = candidatas[0]  # listar_analises_recentes já vem ordenado desc por iniciado_em
+    resultado = mais_recente.get("resultado") or {}
+    analistas = (resultado.get("pareceres_analistas") or {}).get("analistas") or []
+    modelo = next((a for a in analistas if a.get("id") == "model_builder"), None)
+    premissas_modelo = (modelo or {}).get("premissas") or {}
+    return {
+        "disponivel": True, "encontrada": True,
+        "data": mais_recente.get("iniciado_em"),
+        "modelo_disponivel": bool(modelo and modelo.get("recomendacao") == "MODELADO"),
+        "premissas": premissas_modelo or None,
+        "origem_divida_liquida": premissas_modelo.get("origem_divida_liquida"),
+    }
+
+
+_COR_TENDENCIA_HISTORICO = {
+    "RECUPERACAO": "var(--alta)", "DETERIORACAO": "var(--baixa)", "ESTABILIDADE": "var(--cinza)",
+}
+
+
+def _badge_tendencia_html(tendencia: str | None) -> str:
+    """Badge compacto RECUPERAÇÃO/DETERIORAÇÃO/ESTABILIDADE - só rotula a
+    tendência que data/earnings/reviewer.py:_tendencia já calcula sobre
+    a série real (primeiro vs. último ponto válido da janela), nenhum
+    cálculo novo aqui."""
+    if not tendencia:
+        return "<span class='cinza' style='font-size:0.64rem;'>sem tendência (menos de 2 pontos)</span>"
+    rotulo = html.escape(_ROTULO_TENDENCIA.get(tendencia, tendencia).upper())
+    cor = _COR_TENDENCIA_HISTORICO.get(tendencia, "var(--cinza)")
+    return f"<span style='color:{cor}; font-size:0.64rem; font-weight:700; letter-spacing:0.03em;'>{rotulo}</span>"
+
+
+def _linha_tabela_historico_3anos(rotulo: str, serie: list, tendencia, formatador) -> str:
+    """1 linha da tabela de histórico de 3 anos: MÉTRICA | TENDÊNCIA |
+    ÚLTIMO PONTO VÁLIDO | MÍNIMO | MÁXIMO | PONTOS VÁLIDOS/JANELA. Nunca
+    assume alinhamento posicional entre a série (que pode ter menos
+    pontos que a janela de 12 trimestres quando falta o YoY de algum
+    trimestre isolado - ver docstring de serie_historica_br) e os
+    rótulos de período - por isso mostra o ÚLTIMO PONTO REAL disponível
+    na série, nunca "o período mais recente da janela" (que poderia não
+    ter dado nesta série específica)."""
+    serie = serie or []
+    pontos = [v for v in serie if v is not None]
+    if not pontos:
+        return (f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>{html.escape(rotulo)}</td>"
+                f"<td colspan='5' class='cinza' style='padding:0.2rem 0.4rem;'>dado insuficiente nesta janela</td></tr>")
+    badge = _badge_tendencia_html(tendencia)
+    ultimo, minimo, maximo = formatador(pontos[-1]), formatador(min(pontos)), formatador(max(pontos))
+    return (
+        f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>{html.escape(rotulo)}</td>"
+        f"<td style='padding:0.2rem 0.4rem;'>{badge}</td>"
+        f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>{ultimo}</td>"
+        f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='cinza'>{minimo}</td>"
+        f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='cinza'>{maximo}</td>"
+        f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='cinza'>{len(pontos)}/{len(serie)}</td></tr>"
+    )
+
+
+def _tabela_historico_3anos_html(historico3: dict, fmt: str) -> tuple:
+    """Tabela HTML compacta (mesmo padrão de render_fundamentos, acima)
+    com a série REAL dos últimos até 12 trimestres civis (CVM) - receita,
+    EBIT, lucro líquido (YoY), margem bruta e ROIC (nível), dívida
+    líquida (nível e YoY) e EBITDA/FCO/FCF/CAPEX/dividendos acumulados no
+    ano (YoY). Retorna (tabela_html, legenda_da_janela)."""
+    pct = lambda v: f"{v:+.1f}%"  # noqa: E731
+    nivel_pct = lambda v: config.formatar_numero(v, 1, fmt) + "%"  # noqa: E731
+    reais = lambda v: _fmt_reais(v, fmt)  # noqa: E731
+    linhas = [
+        _linha_tabela_historico_3anos("Receita líquida (YoY)", historico3["receita_liquida"]["yoy_pct_serie"],
+                                       historico3["receita_liquida"]["tendencia"], pct),
+        _linha_tabela_historico_3anos("EBIT (YoY)", historico3["ebit"]["yoy_pct_serie"],
+                                       historico3["ebit"]["tendencia"], pct),
+        _linha_tabela_historico_3anos("Lucro líquido consolidado (YoY)",
+                                       historico3["lucro_liquido_consolidado"]["yoy_pct_serie"],
+                                       historico3["lucro_liquido_consolidado"]["tendencia"], pct),
+        _linha_tabela_historico_3anos("Margem bruta (nível)", historico3["margem_bruta_pct"]["serie"],
+                                       historico3["margem_bruta_pct"]["tendencia"], nivel_pct),
+        _linha_tabela_historico_3anos("ROIC trimestral (nível, não anualizado)", historico3["roic_pct"]["serie"],
+                                       historico3["roic_pct"]["tendencia"], nivel_pct),
+        _linha_tabela_historico_3anos("Dívida líquida (nível)", historico3["divida_liquida"]["serie"],
+                                       None, reais),
+        _linha_tabela_historico_3anos("Dívida líquida (YoY)", historico3["divida_liquida"]["yoy_pct_serie"],
+                                       historico3["divida_liquida"]["tendencia"], pct),
+        _linha_tabela_historico_3anos("EBITDA acum. no ano (YoY)", historico3["ebitda_ytd"]["yoy_pct_serie"],
+                                       historico3["ebitda_ytd"]["tendencia"], pct),
+        _linha_tabela_historico_3anos("Fluxo de caixa operacional acum. no ano (YoY)",
+                                       historico3["fco_ytd"]["yoy_pct_serie"], historico3["fco_ytd"]["tendencia"], pct),
+        _linha_tabela_historico_3anos("Fluxo de caixa livre acum. no ano (YoY)",
+                                       historico3["fcf_ytd"]["yoy_pct_serie"], historico3["fcf_ytd"]["tendencia"], pct),
+        _linha_tabela_historico_3anos("CAPEX acum. no ano (YoY)", historico3["capex_ytd"]["yoy_pct_serie"],
+                                       historico3["capex_ytd"]["tendencia"], pct),
+        _linha_tabela_historico_3anos("Dividendos pagos acum. no ano (YoY)",
+                                       historico3["dividendos_pagos_ytd"]["yoy_pct_serie"],
+                                       historico3["dividendos_pagos_ytd"]["tendencia"], pct),
+    ]
+    periodos = historico3.get("periodos") or []
+    legenda = (f"Janela considerada: {periodos[0]} a {periodos[-1]} ({len(periodos)} trimestre(s) com DRE "
+               "disponível na CVM, de até 12 trimestres civis pedidos) - fonte: CVM (ITR), mesma nota "
+               "trimestral usada em Revisão de Resultados." if periodos else
+               "Janela de 3 anos sem nenhum trimestre com DRE disponível na CVM.")
+    tabela = (
+        "<div style='overflow-x:auto; overflow-y:hidden;'><table style='width:100%; font-size:0.76rem; "
+        "border-collapse:collapse;'><thead><tr class='cinza' style='font-size:0.62rem;'>"
+        "<th style='text-align:left; padding:0 0.4rem 0.2rem 0;'>MÉTRICA</th>"
+        "<th style='text-align:left; padding:0 0.4rem 0.2rem;'>TENDÊNCIA (JANELA)</th>"
+        "<th style='text-align:right; padding:0 0.4rem 0.2rem;'>ÚLTIMO PONTO</th>"
+        "<th style='text-align:right; padding:0 0.4rem 0.2rem;'>MÍN. NA JANELA</th>"
+        "<th style='text-align:right; padding:0 0.4rem 0.2rem;'>MÁX. NA JANELA</th>"
+        "<th style='text-align:right; padding:0 0 0.2rem 0.4rem;'>PONTOS VÁLIDOS</th></tr></thead>"
+        f"<tbody>{''.join(linhas)}</tbody></table></div>"
+    )
+    return tabela, legenda
+
+
+def _render_multiplos_atuais_empresa(fundamentos: dict | None, fmt: str):
+    subtitulo("Múltiplos e indicadores atuais (ponto, FATO)")
+    if not fundamentos:
+        st.caption("Múltiplos atuais indisponíveis agora (fonte não respondeu).")
+        return
+    linhas = [
+        ("P/L", _celula(fundamentos.get("pl"), lambda v: config.formatar_multiplo(v, 2, fmt))),
+        ("P/VP", _celula(fundamentos.get("pvp"), lambda v: config.formatar_multiplo(v, 2, fmt))),
+        ("DY 12M", _celula(fundamentos.get("dividend_yield"), lambda v: config.formatar_numero(v, 2, fmt) + "%")),
+        ("ROE", _celula(fundamentos.get("roe"), lambda v: config.formatar_numero(v, 2, fmt) + "%")),
+        ("EV/EBITDA", _celula(fundamentos.get("ev_ebitda"), lambda v: config.formatar_multiplo(v, 1, fmt))),
+        ("DÍV. LÍQ./EBITDA", _celula(fundamentos.get("divida_liquida_ebitda"),
+                                      lambda v: config.formatar_numero(v, 1, fmt) + "x")),
+    ]
+    st.markdown(
+        "<div style='display:flex; flex-wrap:wrap; gap:1.2rem; margin:0.2rem 0 0.4rem 0;'>" + "".join(
+            f"<div><div class='cinza' style='font-size:0.6rem; letter-spacing:0.04em;'>{rot}</div>"
+            f"<div class='neutro' style='font-size:0.88rem; font-weight:700;'>{val}</div></div>"
+            for rot, val in linhas
+        ) + "</div>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Ponto atual (yfinance) - série histórica de múltiplos e de ROE não é calculada nesta versão (só o "
+        "ponto de hoje existe pra esses dois indicadores, nunca estimado); o histórico real acima (CVM) cobre "
+        "receita, EBIT, lucro líquido, margem bruta, ROIC, dívida líquida e fluxo de caixa."
+    )
+
+
+def _render_evolucao_operacional_empresa(fundamentos: dict | None, historico3: dict):
+    subtitulo("Evolução operacional (mesma janela de 3 anos)")
+    lacunas_locais = set()
+    blocos = [
+        _secao_qualidade_negocio(historico3, lacunas_locais),
+        _secao_crescimento_rentabilidade(fundamentos, historico3, lacunas_locais),
+        _secao_estrutura_capital(fundamentos, historico3, lacunas_locais),
+        _secao_geracao_caixa(fundamentos, historico3, lacunas_locais),
+    ]
+    for bloco in blocos:
+        tipo = bloco["tipo_evidencia"]
+        if tipo == TIPO_INSUFICIENTE:
+            st.caption(f"{bloco['pergunta']}: {bloco['resposta']}")
+            continue
+        rotulo, cor = _ROTULO_EVIDENCIA.get(tipo, (None, None))
+        prefixo = f"<span style='color:{cor};'>[{rotulo}]</span> " if rotulo else ""
+        st.markdown(
+            f"<div style='font-size:0.78rem; margin-bottom:0.25rem;'><b>{html.escape(bloco['pergunta'])}:</b> "
+            f"{prefixo}{html.escape(bloco['resposta'])}</div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _render_perspectivas_riscos_empresa(historico3: dict, catalisadores, riscos, cobertura):
+    subtitulo("Perspectivas (cenários otimista, base e pessimista)")
+    cenario = _montar_cenarios(historico3, catalisadores, riscos, cobertura)
+    if cenario["tipo_evidencia"] == TIPO_INSUFICIENTE:
+        st.caption(cenario["resposta"])
+    else:
+        st.markdown(f"<div style='font-size:0.78rem;'>{html.escape(cenario['resposta'])}</div>",
+                    unsafe_allow_html=True)
+
+    subtitulo("Catalisadores")
+    bloco_cat = _secao_catalisadores(catalisadores)
+    if bloco_cat["tipo_evidencia"] == TIPO_INSUFICIENTE:
+        st.caption(bloco_cat["resposta"])
+    else:
+        st.markdown(f"<div style='font-size:0.78rem;'>{html.escape(bloco_cat['resposta'])}</div>",
+                    unsafe_allow_html=True)
+
+    subtitulo("Riscos e invalidação da tese")
+    bloco_risco = _secao_riscos_invalidacao(riscos, None)
+    if bloco_risco["tipo_evidencia"] == TIPO_INSUFICIENTE:
+        st.caption(bloco_risco["resposta"])
+    else:
+        st.markdown(f"<div style='font-size:0.78rem;'>{html.escape(bloco_risco['resposta'])}</div>",
+                    unsafe_allow_html=True)
+
+
+def _render_premissas_comite_empresa(ticker: str):
+    subtitulo("Premissas atualizadas pelo Comitê")
+    try:
+        info = _execucao_comite_cacheada(ticker)
+    except Exception:
+        info = {"disponivel": False, "motivo": "indisponível agora (fonte não respondeu)."}
+    if not info.get("disponivel"):
+        st.caption(f"Comitê (Coordenador Central): {info.get('motivo')}")
+        return
+    if not info.get("encontrada"):
+        st.caption(f"Nenhuma análise do Comitê (Coordenador Central) registrada ainda para {ticker} nesta instalação.")
+        return
+    quando = _fmt_gerado_em(info.get("data"))
+    premissas = info.get("premissas")
+    if info.get("modelo_disponivel") and premissas:
+        origem_dl = info.get("origem_divida_liquida")
+        partes = []
+        if premissas.get("wacc") is not None:
+            partes.append(f"WACC {premissas['wacc'] * 100:.1f}%")
+        if premissas.get("crescimento_fcf_base") is not None:
+            partes.append(f"crescimento FCF base {premissas['crescimento_fcf_base'] * 100:.1f}%")
+        if premissas.get("divida_liquida") is not None:
+            texto_dl = f"dívida líquida {_fmt_reais(premissas['divida_liquida'], 'BR')}"
+            if origem_dl:
+                texto_dl += f" ({origem_dl})"
+            partes.append(texto_dl)
+        corpo = "; ".join(partes) + "." if partes else "premissas não detalhadas nesta execução."
+        st.markdown(
+            f"<span style='color:var(--ciano); font-size:0.62rem; letter-spacing:0.04em;'>"
+            f"[CÁLCULO INTERNO DO COMITÊ]</span> Última modelagem (Model Builder) registrada em {quando}: {corpo}",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.caption(f"O Comitê já analisou {ticker} em {quando}, mas sem modelagem (Model Builder) concluída "
+                   "nesta execução.")
+    st.caption(
+        "Ver COORDENADOR CENTRAL › Histórico para o registro completo (especialistas, evidências e "
+        "sensibilidade) - as premissas do comitê podem diferir das exibidas nesta página (fontes e datas "
+        "distintas); esta seção só avisa quando o comitê já atualizou alguma, nunca inventa isso."
+    )
+
+
+@st.dialog("HISTÓRICO, EVOLUÇÃO E PERSPECTIVAS — 3 ANOS", width="large")
+def _dialog_historico_evolucao_empresa(ticker: str, prefs: dict, analise: dict):
+    """"Company 360" sob demanda - histórico real de até 3 anos (CVM),
+    múltiplos atuais, evolução operacional, perspectivas, catalisadores,
+    riscos e premissas do Comitê, tudo reaproveitando dados/funções já
+    existentes neste módulo (ver bloco de comentários acima)."""
+    fmt = prefs["formato_numerico"]
+    fundamentos = analise.get("fundamentos")
+    catalisadores = analise.get("catalisadores")
+    riscos = analise.get("riscos_indicadores")
+    cobertura = analise.get("cobertura_research")
+
+    with st.spinner("Consultando histórico trimestral na CVM (até 12 trimestres, pode levar alguns segundos)..."):
+        try:
+            historico3 = _historico_3anos_cacheado(ticker)
+        except Exception:
+            historico3 = {"disponivel": False, "motivo": "indisponível agora (fonte não respondeu)."}
+
+    if not historico3.get("disponivel"):
+        st.caption(f"Histórico trimestral (3 anos) indisponível: "
+                   f"{historico3.get('motivo') or 'motivo não especificado'}.")
+        historico_para_evolucao = analise.get("fundamentos_historicos") or {}
+    else:
+        tabela_html, legenda = _tabela_historico_3anos_html(historico3, fmt)
+        st.caption(legenda)
+        st.markdown(tabela_html, unsafe_allow_html=True)
+        historico_para_evolucao = historico3
+    divisor()
+
+    _render_multiplos_atuais_empresa(fundamentos, fmt)
+    divisor()
+    _render_evolucao_operacional_empresa(fundamentos, historico_para_evolucao)
+    divisor()
+    _render_perspectivas_riscos_empresa(historico_para_evolucao, catalisadores, riscos, cobertura)
+    divisor()
+    _render_premissas_comite_empresa(ticker)
+
+    st.caption(
+        "Histórico real (CVM/ITR) e evolução derivada só dos dados já coletados - nunca uma recomendação de "
+        "compra/venda nem preço-alvo do Pregão. Catalisadores, riscos e cenários reaproveitam exatamente as "
+        "mesmas funções da Conclusão de Investimento (mais abaixo nesta página), só com uma janela trimestral "
+        "maior; sem evidência suficiente, a resposta diz isso explicitamente, nunca estima."
     )
 
 
@@ -278,6 +626,14 @@ def render_equity_research_executivo(ticker: str, prefs: dict):
             "nunca uma recomendação ou preço-alvo do Pregão. Preço-alvo/recomendação de casas de research são "
             "sempre ESTIMATIVA DE TERCEIRO, nunca um cálculo ou opinião própria do Pregão."
         )
+
+        if st.button(
+            "Histórico, evolução e perspectivas (3 anos) ↗", key=f"empresa_historico_3anos_{ticker}",
+            help="Receita/EBITDA/margens/lucro líquido/dívida líquida/ROIC/fluxo de caixa (CVM, até 12 "
+                 "trimestres) + evolução operacional, cenários, riscos e premissas atualizadas pelo Comitê — "
+                 "consulta sob demanda (pode levar alguns segundos).",
+        ):
+            _dialog_historico_evolucao_empresa(ticker, prefs, analise)
 
 
 # ============================================================
