@@ -361,11 +361,11 @@ def render_especialistas(prefs: dict = None):
         )
 
     tabela_html = (
-        "<table class='coord-tabela'><thead><tr>"
+        "<div class='coord-tabela-wrap'><table class='coord-tabela'><thead><tr>"
         "<th>Especialista</th><th>Descrição</th><th>Status</th><th>Pré-requisitos</th>"
         "<th>Execuções</th><th>Tempo médio (ms)</th><th>Taxa de sucesso</th><th>Última execução</th>"
         "<th>Último erro técnico</th>"
-        "</tr></thead><tbody>" + "".join(linhas) + "</tbody></table>"
+        "</tr></thead><tbody>" + "".join(linhas) + "</tbody></table></div>"
     )
     st.markdown(tabela_html, unsafe_allow_html=True)
 
@@ -403,9 +403,9 @@ def render_execucoes(prefs: dict = None):
             "</tr>"
         )
     tabela_html = (
-        "<table class='coord-tabela'><thead><tr>"
+        "<div class='coord-tabela-wrap'><table class='coord-tabela'><thead><tr>"
         "<th>ID</th><th>Solicitação</th><th>Fluxo</th><th>Início</th><th>Status</th><th>Duração</th><th>Erro</th>"
-        "</tr></thead><tbody>" + "".join(linhas) + "</tbody></table>"
+        "</tr></thead><tbody>" + "".join(linhas) + "</tbody></table></div>"
     )
     st.markdown(tabela_html, unsafe_allow_html=True)
 
