@@ -26,7 +26,7 @@ from data.user_prefs import (
     deve_oferecer_morning_call, email_valido, obter_prefs, registrar_acesso, salvar_prefs,
 )
 from ui import (
-    analises_tab, busca, graficos, macro_tab, morning_call_tab, navegacao, paineis,
+    analises_tab, busca, design_system, graficos, macro_tab, morning_call_tab, navegacao, paineis,
     radar_tab, secoes, setores_tab,
 )
 from ui import coordenador_tab
@@ -214,7 +214,9 @@ def _ticker_tape():
                 f"({sinal}{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%) [{em_cache}]</span>"
             )
         else:
-            cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
+            # cls/sinal via design_system (fundação do design system,
+            # 2026-11-06) - ver ui/design_system.py:classe_sinal.
+            cls = design_system.classe_sinal(cot["variacao_pct"])
             sinal = "+" if cot["variacao_pct"] >= 0 else ""
             itens.append(
                 f"<span class='cinza'>{nome_idx}</span> "
@@ -239,7 +241,7 @@ def _ticker_tape():
         if cot.get("erro"):
             itens.append(f"<span class='cinza'>{t} --</span>")
         else:
-            cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
+            cls = design_system.classe_sinal(cot["variacao_pct"])
             sinal = "+" if cot["variacao_pct"] >= 0 else ""
             itens.append(
                 f"<span class='cinza'>{t}</span> "

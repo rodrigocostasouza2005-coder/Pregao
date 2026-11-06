@@ -1380,3 +1380,44 @@ div[data-testid="stVerticalBlock"].st-emotion-cache-1t2xbk4 {
     border-color: var(--borda) !important;
     background-color: var(--painel-bg) !important;
 }
+
+/* ============================================================================
+   DESIGN SYSTEM COMPARTILHADO (fundação, 2026-11-06) - ver ui/design_system.py
+   para os helpers Python que geram estas classes/atributos e para o guia de
+   como as próximas frentes (uma por aba: Home/Mercado, Watchlist, Research
+   Radar, Comitê, Análise de Empresas, Valuation, Carteiras, Notícias/Morning
+   Call) devem IMPORTAR daqui em vez de recriar CSS equivalente por conta
+   própria. As cores em si (--destaque/--alta/--baixa/...) já existem desde
+   o topo do arquivo (:root) e já respondem a qualquer tema escolhido em
+   CONFIGURAÇÕES (AMBAR é o padrão e é a identidade "terminal Bloomberg"
+   alvo: preto + âmbar #FFA028) - as classes abaixo só empacotam USOS
+   recorrentes dessas mesmas variáveis, nenhuma cor nova. ========================= */
+
+/* número financeiro alinhado: dígitos de largura fixa (colunas de preço/
+   variação não "dançam" entre linhas com dígitos diferentes) + alinhado à
+   direita, do jeito que uma coluna de número de terminal financeiro sempre
+   é. Gerado por ui/design_system.py:numero_financeiro_html/variacao_html -
+   não aplicar esta classe direto sem passar por lá (quem decide cor de
+   sinal é classe_sinal(), não esta regra). */
+.ds-numero {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    display: inline-block;
+}
+
+/* densidade compacta reutilizável: container de linhas empilhadas (feed,
+   ranking, lista de itens) com respiro vertical mínimo entre filhos -
+   mesma filosofia de "informação densa, sem espaço vazio grande" do resto
+   do terminal, mas como classe aplicável ao container pai em vez de
+   repetir padding/line-height em cada aba nova. Aplicar no elemento PAI
+   dos itens (ex: a <div> que envolve as linhas de uma lista), não em cada
+   filho individualmente. */
+.ds-compacto > * {
+    padding-top: 0.12rem;
+    padding-bottom: 0.12rem;
+    margin: 0 !important;
+    line-height: 1.3;
+}
+.ds-compacto > * + * {
+    border-top: 1px solid color-mix(in srgb, var(--borda) 45%, transparent);
+}
