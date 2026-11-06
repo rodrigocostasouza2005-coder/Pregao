@@ -34,7 +34,7 @@ from data.news import obter_top_mercado_tudo
 from data.prices import obter_cotacao, obter_cotacao_indice, rotulo_cotacao_em_cache
 from data.research import preparar_leitura
 from data.sintese_mercado import obter_sintese_mercado
-from ui import graficos
+from ui import design_system, graficos
 from ui.calendario_tab import _painel_proximos_watchlist
 from ui.mercado_tab import _item_ticker_html, _painel_globais
 from ui.news_tab import (
@@ -436,7 +436,11 @@ def _painel_mapa_setorial_compacto(prefs):
     # proposito - metade dos setores, nao todos.
     for s in setores[:6]:
         v = s["variacao_media_pct"]
-        cor = tema["alta"] if v >= 0 else tema["baixa"]
+        # cor via design_system.classe_sinal (fundação do design system,
+        # 2026-11-06): centraliza o "alta se >=0, senão baixa" em vez de
+        # reimplementar o ternário na mão - ver docstring de
+        # ui/design_system.py.
+        cor = tema[design_system.classe_sinal(v)]
         blocos.append(
             f"<div style='flex:1 1 44%; min-width:6rem; border:1px solid {cor}55; "
             f"background:{cor}1c; border-radius:3px; padding:0.35rem 0.45rem;'>"
@@ -450,9 +454,12 @@ def _painel_mapa_setorial_compacto(prefs):
         unsafe_allow_html=True,
     )
     maior_dispersao = max(setores, key=lambda s: abs(s["variacao_media_pct"]))
+    # divisor via design_system.divisor_html() (fundação do design system,
+    # 2026-11-06) em vez de um border-top avulso - mesma linha fina usada
+    # em qualquer outro painel que separa seções.
     st.markdown(
-        f"<div class='cinza' style='font-size:0.6rem; margin-top:0.4rem; padding-top:0.35rem; "
-        f"border-top:1px solid var(--borda);'>Maior dispersão: "
+        design_system.divisor_html()
+        + f"<div class='cinza' style='font-size:0.6rem; margin-top:-0.15rem;'>Maior dispersão: "
         f"<b style='color:var(--destaque);'>{html.escape(maior_dispersao['setor'])}</b> "
         f"({maior_dispersao['n_papeis']} papel(éis), {_fmt_pct(maior_dispersao['variacao_media_pct'], prefs)} méd.)</div>",
         unsafe_allow_html=True,
@@ -485,8 +492,11 @@ def _painel_desempenho_tabela(prefs):
         "<td style='padding:0 0 0.25rem 0.3rem; text-align:right;'>VOL. (R$ MI)</td></tr>"
     )
     linhas = [cabecalho]
+    # numero_financeiro_html/variacao_html (design_system, fundação
+    # 2026-11-06): tabular-nums + alinhamento a direita pras colunas de
+    # PREÇO/VAR. %/VOL., cor de sinal via classe_sinal em vez do ternário
+    # "alta" if ... else "baixa" reimplementado na mão.
     for p in papeis:
-        cls = "alta" if p["variacao_pct"] >= 0 else "baixa"
         nome = config.TICKER_NOME.get(p["ticker"], p["ticker"])
         link_ticker = html.escape(p["ticker"], quote=True)
         linhas.append(
@@ -497,10 +507,10 @@ def _painel_desempenho_tabela(prefs):
             f"<span class='cinza' style='font-size:0.64rem;'>{html.escape(nome)}</span></td>"
             f"<td style='padding:0.2rem 0.3rem;' class='cinza'>{html.escape(p['setor'])}</td>"
             f"<td style='padding:0.2rem 0.3rem; text-align:right;' class='neutro'>"
-            f"{config.formatar_numero(p['preco'], 2, prefs['formato_numerico'])}</td>"
-            f"<td style='padding:0.2rem 0.3rem; text-align:right;' class='{cls}'>{_fmt_pct(p['variacao_pct'], prefs)}</td>"
+            f"{design_system.numero_financeiro_html(p['preco'], 2, prefs['formato_numerico'])}</td>"
+            f"<td style='padding:0.2rem 0.3rem; text-align:right;'>{design_system.variacao_html(p['variacao_pct'], prefs['formato_numerico'])}</td>"
             f"<td style='padding:0.2rem 0 0.2rem 0.3rem; text-align:right;' class='neutro'>"
-            f"{config.formatar_numero(p['volume_financeiro'] / 1_000_000, 1, prefs['formato_numerico'])}</td></tr>"
+            f"{design_system.numero_financeiro_html(p['volume_financeiro'] / 1_000_000, 1, prefs['formato_numerico'])}</td></tr>"
         )
     st.markdown(
         f"<div style='overflow-x:auto;'><table style='width:100%; border-collapse:collapse;'>"
@@ -595,15 +605,21 @@ def _painel_watchlist_compacta(prefs):
                 f"<td colspan='3' class='cinza'>—</td></tr>"
             )
             continue
-        cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
+        # numero_financeiro_html/variacao_html (design_system): tabular-
+        # nums + alinhamento a direita + cor de sinal via classe_sinal, em
+        # vez do "{cls}"/concat manual de sinal reimplementado na mão.
         vol_mi = cot.get("volume_financeiro")
-        vol_fmt = config.formatar_numero(vol_mi / 1_000_000, 1, prefs["formato_numerico"]) if vol_mi else "—"
+        vol_html = (
+            design_system.numero_financeiro_html(vol_mi / 1_000_000, 1, prefs["formato_numerico"])
+            if vol_mi else "<span class='cinza'>—</span>"
+        )
         linhas.append(
             f"<tr><td style='padding:0.2rem 0.4rem 0.2rem 0;'>"
             f"<a href='?ticker={link_ticker}' class='vg-ticker-link'>{html.escape(t)}</a></td>"
-            f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>R$ {config.formatar_numero(cot['preco'], 2, prefs['formato_numerico'])}</td>"
-            f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='{cls}'>{_fmt_pct(cot['variacao_pct'], prefs)}</td>"
-            f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='neutro'>{vol_fmt}</td></tr>"
+            f"<td style='padding:0.2rem 0.4rem; text-align:right;' class='neutro'>"
+            f"{design_system.numero_financeiro_html(cot['preco'], 2, prefs['formato_numerico'], prefixo='R$ ')}</td>"
+            f"<td style='padding:0.2rem 0.4rem; text-align:right;'>{design_system.variacao_html(cot['variacao_pct'], prefs['formato_numerico'])}</td>"
+            f"<td style='padding:0.2rem 0 0.2rem 0.4rem; text-align:right;' class='neutro'>{vol_html}</td></tr>"
         )
     st.markdown(f"<table style='width:100%; font-size:0.8rem; border-collapse:collapse;'>{''.join(linhas)}</table>", unsafe_allow_html=True)
 

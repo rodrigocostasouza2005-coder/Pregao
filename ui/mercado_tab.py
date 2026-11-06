@@ -270,17 +270,19 @@ def _painel_leitura_rapida(prefs):
         return
 
     variacao = ibov["variacao_pct"]
-    cls_dir = "alta" if variacao >= 0 else "baixa"
     if variacao > 0.15:
         direcao = "Pressão compradora"
     elif variacao < -0.15:
         direcao = "Pressão vendedora"
     else:
         direcao = "Sessão estável"
+    # cor/sinal via design_system.variacao_html (fundação do design
+    # system, 2026-11-06) em vez do ternário "alta" if ... else "baixa"
+    # reimplementado na mão.
     st.markdown(
         f"<div class='cinza' style='font-size:0.66rem;'>DIREÇÃO DO ÍNDICE</div>"
         f"<div style='font-size:0.92rem; font-weight:700; margin-top:0.15rem;'>{direcao} "
-        f"<span class='{cls_dir}'>{_fmt_pct(variacao, prefs)}</span></div>"
+        f"{design_system.variacao_html(variacao, prefs['formato_numerico'])}</div>"
         f"<div class='cinza' style='font-size:0.68rem; margin-top:0.1rem;'>Ibovespa "
         f"{'em alta' if variacao >= 0 else 'em queda'} no pregão de hoje.</div>",
         unsafe_allow_html=True,
@@ -290,8 +292,11 @@ def _painel_leitura_rapida(prefs):
     if altas:
         p = altas[0]
         nome = _nome_papel(p["ticker"])
+        # divisor via design_system.divisor_html() (fundação do design
+        # system, 2026-11-06) em vez de um border-top avulso.
+        st.markdown(design_system.divisor_html(), unsafe_allow_html=True)
         st.markdown(
-            f"<div style='border-top:1px solid var(--borda); padding-top:0.5rem; margin-top:0.5rem;'>"
+            f"<div style='margin-top:-0.15rem;'>"
             f"<div class='cinza' style='font-size:0.66rem;'>DESTAQUE POSITIVO</div>"
             f"<div style='margin-top:0.15rem;'><b class='alta'>{html.escape(p['ticker'])} "
             f"{_fmt_pct(p['variacao_pct'], prefs)}</b>"
@@ -304,9 +309,12 @@ def _painel_leitura_rapida(prefs):
     setores = obter_desempenho_setorial("dia")
     if setores:
         pior = setores[-1]
-        cls_setor = "alta" if pior["variacao_media_pct"] >= 0 else "baixa"
+        # classe_sinal (design_system) em vez do ternário reimplementado;
+        # divisor via divisor_html() em vez de border-top avulso.
+        cls_setor = design_system.classe_sinal(pior["variacao_media_pct"])
+        st.markdown(design_system.divisor_html(), unsafe_allow_html=True)
         st.markdown(
-            f"<div style='border-top:1px solid var(--borda); padding-top:0.5rem; margin-top:0.5rem;'>"
+            f"<div style='margin-top:-0.15rem;'>"
             f"<div class='cinza' style='font-size:0.66rem;'>PONTO DE ATENÇÃO</div>"
             f"<div style='margin-top:0.15rem;'><b class='{cls_setor}'>{html.escape(pior['setor'])} "
             f"{_fmt_pct(pior['variacao_media_pct'], prefs)}</b></div>"
@@ -330,8 +338,9 @@ def _painel_leitura_rapida(prefs):
             f"B3 indisponível no momento - usando lista curada de fallback "
             f"({len(config.IBOVESPA_SETORES)} papéis)."
         )
+    st.markdown(design_system.divisor_html(), unsafe_allow_html=True)
     st.markdown(
-        f"<div style='border-top:1px solid var(--borda); padding-top:0.5rem; margin-top:0.5rem;'>"
+        f"<div style='margin-top:-0.15rem;'>"
         f"<div class='cinza' style='font-size:0.66rem;'>QUALIDADE DOS DADOS</div>"
         f"<div class='{cls_qualidade}' style='margin-top:0.15rem;'>● {rotulo_qualidade}</div>"
         f"<div class='cinza' style='font-size:0.68rem; margin-top:0.1rem;'>{detalhe_qualidade}</div></div>",
@@ -426,7 +435,7 @@ def _painel_destaques(prefs):
     setores = obter_desempenho_setorial("dia")
     if setores:
         pior = setores[-1]
-        cls_setor = "alta" if pior["variacao_media_pct"] >= 0 else "baixa"
+        cls_setor = design_system.classe_sinal(pior["variacao_media_pct"])
         linha1 = f"<span class='{cls_setor}'>{html.escape(pior['setor'])} {_fmt_pct(pior['variacao_media_pct'], prefs)}</span>"
         _linha_destaque(
             "PONTO DE ATENÇÃO SETORIAL", None, tema, linha1,
@@ -560,7 +569,10 @@ def _linha_ranking(p: dict, campo: str, prefs: dict, tema: dict):
     Rodrigo. Botao do ticker (unico elemento interativo da linha) e'
     preservado - clicar nele continua abrindo ANALISES > Empresas."""
     valor = p[campo]
-    cor_var = "var(--alta)" if valor >= 0 else "var(--baixa)"
+    # classe_sinal (design_system) em vez do ternário var(--alta)/
+    # var(--baixa) reimplementado na mão - usa as classes globais
+    # .alta/.baixa (ja' existentes em style.css) em vez de cor inline.
+    cls_valor = design_system.classe_sinal(valor)
     nome = _nome_papel(p["ticker"])
 
     col_badge, col_ticker, col_nome_valor = st.columns(
@@ -578,7 +590,7 @@ def _linha_ranking(p: dict, campo: str, prefs: dict, tema: dict):
         st.markdown(
             f"<div class='rank-nome-valor'><span class='rank-nome' title='{html.escape(nome or p['ticker'])}'>"
             f"{html.escape(nome) if nome else '&nbsp;'}</span>"
-            f"<span class='rank-valor' style='color:{cor_var};'>{_fmt_pct(valor, prefs)}</span></div>",
+            f"<span class='rank-valor {cls_valor}'>{_fmt_pct(valor, prefs)}</span></div>",
             unsafe_allow_html=True,
         )
 
@@ -595,9 +607,11 @@ def _nota_contextual(tag: str, texto: str):
     Rodrigo (redesign do Painel, 2026-10-27): diferenciar fato de
     interpretacao, nunca misturar os dois sem rotulo."""
     cor = "var(--cinza)" if tag == "FATO" else "var(--destaque)"
+    # divisor via design_system.divisor_html() em vez de border-top avulso.
     st.markdown(
-        f"<div style='margin-top:0.4rem; padding-top:0.35rem; border-top:1px solid var(--borda); "
-        f"font-size:0.66rem; color:var(--cinza);'><b style='color:{cor};'>[{tag}]</b> {texto}</div>",
+        design_system.divisor_html()
+        + f"<div style='margin-top:-0.15rem; font-size:0.66rem; color:var(--cinza);'>"
+        f"<b style='color:{cor};'>[{tag}]</b> {texto}</div>",
         unsafe_allow_html=True,
     )
 
@@ -632,11 +646,13 @@ def _painel_altas_baixas(prefs):
     # que ja existia.
     ibov = obter_cotacao_indice("IBOVESPA", config.SIMBOLO_IBOVESPA)
     if not ibov.get("erro"):
-        cls_ibov = "alta" if ibov["variacao_pct"] >= 0 else "baixa"
+        # classe_sinal/numero_financeiro_html (design_system) em vez do
+        # ternário e da formatação manual reimplementados na mão.
+        cls_ibov = design_system.classe_sinal(ibov["variacao_pct"])
         st.markdown(
             f"<div class='rank-header-indice'>"
             f"<span class='rank-header-indice-nome'>IBOVESPA</span>"
-            f"<span class='rank-header-indice-valor'>{config.formatar_numero(ibov['preco'], 0, prefs['formato_numerico'])}</span>"
+            f"<span class='rank-header-indice-valor'>{design_system.numero_financeiro_html(ibov['preco'], 0, prefs['formato_numerico'])}</span>"
             f"<span class='{cls_ibov}' style='font-weight:600;'>{_fmt_pct(ibov['variacao_pct'], prefs)}</span>"
             + (f"<span class='cinza' style='font-size:0.62rem;'>{rotulo_cotacao_em_cache(ibov)}</span>"
                if rotulo_cotacao_em_cache(ibov) else "")
@@ -767,15 +783,18 @@ def _painel_mais_negociados(prefs):
                     help=f"Abrir {p['ticker']} em ANÁLISES › Empresas",
                 )
             with col_volume:
+                # numero_financeiro_html (design_system): tabular-nums +
+                # alinhamento a direita, com prefixo/sufixo embutidos.
                 st.markdown(
                     f"<div class='neutro' style='text-align:right; font-size:0.8rem;'>"
-                    f"R$ {config.formatar_numero(p['volume_financeiro'] / 1_000_000, 1, prefs['formato_numerico'])} mi</div>",
+                    f"{design_system.numero_financeiro_html(p['volume_financeiro'] / 1_000_000, 1, prefs['formato_numerico'], prefixo='R$ ', sufixo=' mi')}</div>",
                     unsafe_allow_html=True,
                 )
             with col_var:
-                cls = "alta" if p["variacao_pct"] >= 0 else "baixa"
+                # variacao_html (design_system): cor de sinal via
+                # classe_sinal + tabular-nums, em vez do ternário/concat na mão.
                 st.markdown(
-                    f"<div class='{cls}' style='text-align:right; font-size:0.8rem;'>{_fmt_pct(p['variacao_pct'], prefs)}</div>",
+                    f"<div style='text-align:right; font-size:0.8rem;'>{design_system.variacao_html(p['variacao_pct'], prefs['formato_numerico'])}</div>",
                     unsafe_allow_html=True,
                 )
 
@@ -789,7 +808,10 @@ def _painel_setorial(prefs):
         return
     tema = _tema_atual(prefs)
     df = pd.DataFrame(setores)
-    cores = [tema["alta"] if v >= 0 else tema["baixa"] for v in df["variacao_media_pct"]]
+    # classe_sinal (design_system) em vez do ternário reimplementado -
+    # Plotly exige o HEX real (ver docstring de ui/design_system.py,
+    # regra 1), por isso le de tema[...] em vez de var(--*).
+    cores = [tema[design_system.classe_sinal(v)] for v in df["variacao_media_pct"]]
     fig = go.Figure(go.Bar(
         x=df["variacao_media_pct"], y=df["setor"], orientation="h",
         marker_color=cores, text=df["variacao_media_pct"].map(lambda v: _fmt_pct(v, prefs)),
@@ -1042,12 +1064,13 @@ def _painel_globais(prefs):
         st.markdown("<div class='cinza' style='font-size:0.78rem;'>—</div>", unsafe_allow_html=True)
         return
     partes = []
+    # numero_financeiro_html/variacao_html (design_system): tabular-nums +
+    # cor de sinal via classe_sinal em vez do ternário reimplementado.
     for g in globais:
-        cls = "alta" if g["variacao_pct"] >= 0 else "baixa"
         partes.append(
             f"<div style='min-width:9rem;'><span class='cinza' style='font-size:0.7rem;'>{g['nome']}</span><br>"
-            f"<span class='neutro' style='font-size:0.85rem;'>{config.formatar_numero(g['preco'], 0, prefs['formato_numerico'])}</span> "
-            f"<span class='{cls}' style='font-size:0.78rem;'>{_fmt_pct(g['variacao_pct'], prefs)}</span></div>"
+            f"<span class='neutro' style='font-size:0.85rem;'>{design_system.numero_financeiro_html(g['preco'], 0, prefs['formato_numerico'])}</span> "
+            f"<span style='font-size:0.78rem;'>{design_system.variacao_html(g['variacao_pct'], prefs['formato_numerico'])}</span></div>"
         )
     st.markdown(
         "<div style='display:flex; flex-wrap:wrap; gap:1rem;'>" + "".join(partes) + "</div>",
