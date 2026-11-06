@@ -180,8 +180,34 @@ def analisar_ticker(ticker: str, premissas_dcf: dict | None = None) -> dict:
         fundamentos = dados_analise.get('fundamentos') or {}
         premissas_modelo = dados_analise.get('premissas_dcf')
         resultado_model_builder = executor.executar_especialista('model_builder', ticker=ticker, premissas_dcf=premissas_modelo, preco_atual=fundamentos.get('preco'))
-        resultados['model_builder'] = resultado_model_builder
         resultado_valor = executor.executar_especialista('valuation_reviewer', ticker=ticker, model_builder=resultado_model_builder.get('dados') or {})
+        if premissas_dcf is None:
+            # Nenhuma premissa de DCF foi fornecida a ESTA chamada (nem
+            # pelo job noturno - jobs/comite_noturno.py nunca passa
+            # premissas_dcf -, nem pela UI quando o analista não marca
+            # "Calcular DCF" em ui/coordenador_tab.py:render_analisar).
+            # O motor (data/coordenador_central/dcf.py) corretamente se
+            # recusa a inventar WACC/crescimento, então model_builder e
+            # valuation_reviewer SEMPRE voltam disponivel=False neste
+            # caminho - não por falha, mas por design. Sem este marcador,
+            # _status_fluxo (abaixo) rebaixava TODA análise sem DCF
+            # manual para PARCIAL, inclusive numa noite perfeita do
+            # comitê noturno, por um motivo esperado e correto, não uma
+            # falha real. "pulado" é o mesmo padrão já usado acima
+            # (_especialista_pulado/comparar_casas) para memoria_research
+            # sem cobertura: não conta como "acionado" no status do
+            # fluxo nem na telemetria agregada de metricas_especialistas
+            # (ver persistencia.py) - os dados/motivo originais (ex.:
+            # "Premissas DCF explícitas não fornecidas...") continuam
+            # intactos e visíveis no resultado consolidado; só muda a
+            # classificação do fluxo. Quando o usuário FORNECE premissas
+            # (mesmo que incompletas/bloqueadas por moeda incompatível),
+            # premissas_dcf não é None aqui e o resultado continua
+            # contando de verdade para PARCIAL - só o caminho "nunca
+            # pedi DCF" é tratado como skip.
+            resultado_model_builder = {**resultado_model_builder, "pulado": True}
+            resultado_valor = {**resultado_valor, "pulado": True}
+        resultados['model_builder'] = resultado_model_builder
         resultados['valuation_reviewer'] = resultado_valor
         telemetria_ok = _registrar_execucoes(analise_id, resultados)
         consolidado = consolidacao.consolidar(resultados, ticker=ticker)
