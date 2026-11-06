@@ -13,6 +13,8 @@ Rótulos de tipo de evidência (FATO/CALCULO_INTERNO/ESTIMATIVA_TERCEIRO/
 HIPOTESE_ANALISTA/DADO_INSUFICIENTE) são os MESMOS já usados em
 data/radar.py - importados, nunca reinventados com nomes novos."""
 
+from math import isfinite
+
 from data.radar import TIPO_CALCULO, TIPO_FATO, TIPO_INSUFICIENTE
 from data.research.comparador import _normalizar_recomendacao
 from data.coordenador_central.pareceres import montar_pareceres, montar_sinal_comite
@@ -39,6 +41,17 @@ _ROTULO_EXIBICAO = {
 
 def _rotulo(tipo: str) -> str:
     return _ROTULO_EXIBICAO.get(tipo, tipo)
+
+
+def _numero(valor):
+    """Normaliza um valor numerico finito; ausencia/invalidez vira None."""
+    if valor is None or isinstance(valor, bool):
+        return None
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError):
+        return None
+    return numero if isfinite(numero) else None
 
 
 # ============================================================
@@ -235,14 +248,30 @@ def consolidar(resultados: dict, ticker: str = None) -> dict:
     pareceres = montar_pareceres(resultados, ticker=ticker)
     sinal_comite = montar_sinal_comite(resultados)
     analista_valuation = next(
-        (a for a in pareceres.get("analistas", []) if a.get("id") == "valuation_reviewer"), {}
+        (a for a in pareceres.get("analistas", []) if a.get("id") == "valuation_comparables"), {}
+    )
+    analista_modelo = next(
+        (a for a in pareceres.get("analistas", []) if a.get("id") == "model_builder"), {}
     )
     alvo_consenso = pareceres.get("preco_alvo_consenso") or {}
-    sinal_comite["preco_alvo_modelo"] = analista_valuation.get("preco_alvo")
+    cenario_base_modelo = (analista_modelo.get("cenarios") or {}).get("base") or {}
+    # O DCF do Model Builder tem prioridade. Sem DCF, preserva-se no
+    # campo legado a estimativa mecânica por P/L setorial do parecer de
+    # valuation, sempre acompanhada do rótulo que impede tratá-la como DCF.
+    alvo_modelo = cenario_base_modelo.get("preco_alvo")
+    upside_modelo = cenario_base_modelo.get("upside_pct")
+    metodo_modelo = analista_modelo.get("preco_alvo_rotulo")
+    if alvo_modelo is None:
+        alvo_modelo = analista_valuation.get("preco_alvo")
+        upside_modelo = analista_valuation.get("upside_pct")
+        metodo_modelo = analista_valuation.get("preco_alvo_rotulo")
+    sinal_comite["preco_alvo_modelo"] = (
+        alvo_modelo if alvo_modelo is not None else analista_modelo.get("preco_alvo")
+    )
     fundamentos_sinal = ((resultados.get("analise_ticker") or {}).get("dados") or {}).get("fundamentos") or {}
     sinal_comite["moeda_preco_alvo_modelo"] = fundamentos_sinal.get("moeda") or "R$"
-    sinal_comite["upside_modelo_pct"] = analista_valuation.get("upside_pct")
-    sinal_comite["metodo_preco_alvo_modelo"] = analista_valuation.get("preco_alvo_rotulo")
+    sinal_comite["upside_modelo_pct"] = _numero(upside_modelo if upside_modelo is not None else analista_modelo.get("upside_pct"))
+    sinal_comite["metodo_preco_alvo_modelo"] = metodo_modelo
     sinal_comite["preco_alvo_pl_setorial"] = analista_valuation.get("preco_alvo_pl_setorial")
     sinal_comite["upside_pl_setorial_pct"] = analista_valuation.get("upside_pl_setorial_pct")
     sinal_comite["preco_alvo_consenso"] = alvo_consenso.get("mediana")

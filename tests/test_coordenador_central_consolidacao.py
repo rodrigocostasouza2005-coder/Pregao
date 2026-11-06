@@ -205,7 +205,9 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
     }
     consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
     pareceres = consolidado["pareceres_analistas"]
-    assert len(pareceres["analistas"]) == 3
+    assert len(pareceres["analistas"]) == 5
+    ids_pareceres = {item["id"] for item in pareceres["analistas"]}
+    assert {"model_builder", "valuation_reviewer", "valuation_comparables"} <= ids_pareceres
     assert pareceres["preco_alvo_consenso"]["mediana"] == 26.25
     assert pareceres["preco_alvo_consenso"]["upside_pct"] == 31.25
     assert [c["casa"] for c in pareceres["casas_research"]] == ["BTG Pactual", "Monte Bravo"]
@@ -215,7 +217,9 @@ def test_consolidar_monta_pareceres_e_research_com_preco_alvo_atribuido():
     assert pareceres["analistas"][2]["preco_alvo"] == 30.0
     assert pareceres["analistas"][2]["upside_pct"] == 50.0
     assert pareceres["analistas"][2]["preco_alvo_rotulo"].startswith("Estimativa mecânica")
-    assert [x["recomendacao"] for x in pareceres["analistas"]] == ["COMPRA", "COMPRA", "COMPRA"]
+    assert [x["recomendacao"] for x in pareceres["analistas"][:3]] == ["COMPRA", "COMPRA", "COMPRA"]
+    assert next(x for x in pareceres["analistas"] if x["id"] == "model_builder")["recomendacao"] == "INSUFICIENTE"
+    assert next(x for x in pareceres["analistas"] if x["id"] == "valuation_reviewer")["recomendacao"] == "INSUFICIENTE"
     assert "Leitura construtiva" in pareceres["analistas"][0]["tese"]
     assert "Leitura construtiva" in pareceres["analistas"][1]["tese"]
     assert any("ROIC trimestral positivo" in x for x in pareceres["analistas"][0]["pros"])
@@ -251,3 +255,50 @@ def test_especialista_pulado_sozinho_nao_cria_confianca():
     consolidado = consolidacao.consolidar(resultados)
     assert consolidado["confianca"]["categoria"] == consolidacao.CONFIANCA_INSUFICIENTE
     assert "0 especialista(s) acionado(s)" in consolidado["resumo_executivo"]
+
+
+def test_model_builder_e_valuation_reviewer_aparecem_com_pareceres_distintos():
+    resultados = {
+        "model_builder": _resultado("model_builder", dados={
+            "disponivel": True, "metodo": "DCF de 5 anos",
+            "fonte_premissas": "CVM + premissas manuais",
+            "cenarios": {"pessimista": {"preco_alvo": 20.0}, "base": {"preco_alvo": 30.0}, "otimista": {"preco_alvo": 40.0}},
+            "sensibilidade": {"disponivel": True, "linhas": []},
+        }),
+        "valuation_reviewer": _resultado("valuation_reviewer", dados={
+            "disponivel": True, "aprovado": True,
+            "precos_alvo_revisados": {"pessimista": 20.0, "base": 30.0, "otimista": 40.0},
+            "achados": [], "limitacoes": [],
+        }),
+    }
+    consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
+    pareceres = consolidado["pareceres_analistas"]["analistas"]
+    por_id = {item["id"]: item for item in pareceres}
+    assert "model_builder" in por_id
+    assert "valuation_reviewer" in por_id
+    assert por_id["model_builder"]["cenarios"]["base"]["preco_alvo"] == 30.0
+    assert por_id["valuation_reviewer"]["recomendacao"] == "APROVADO"
+
+
+def test_sinal_comite_usa_preco_alvo_e_upside_do_model_builder():
+    resultados = {
+        "analise_ticker": _resultado("analise_ticker", dados={
+            "ticker": "PETR4", "fundamentos": {"preco": 25.0, "moeda": "BRL"},
+        }),
+        "model_builder": _resultado("model_builder", dados={
+            "disponivel": True,
+            "cenarios": {
+                "pessimista": {"preco_alvo": 20.0, "upside_pct": -20.0},
+                "base": {"preco_alvo": 30.0, "upside_pct": 20.0},
+                "otimista": {"preco_alvo": 40.0, "upside_pct": 60.0},
+            },
+        }),
+        "valuation_reviewer": _resultado("valuation_reviewer", dados={
+            "disponivel": True, "aprovado": True,
+            "precos_alvo_revisados": {"pessimista": 20.0, "base": 30.0, "otimista": 40.0},
+            "achados": [], "limitacoes": [],
+        }),
+    }
+    sinal = consolidacao.consolidar(resultados, ticker="PETR4")["sinal_comite"]
+    assert sinal["preco_alvo_modelo"] == 30.0
+    assert sinal["upside_modelo_pct"] == 20.0

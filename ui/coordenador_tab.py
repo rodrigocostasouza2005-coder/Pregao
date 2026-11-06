@@ -459,6 +459,99 @@ def _render_consolidado(consolidado: dict):
                     st.markdown("**Pontos contrários**")
                     lista_compacta(html.escape(str(x)) for x in contras) if contras else st.caption("Sem evidência contrária estruturada.")
 
+                # Modelo consultável: o DCF pertence ao Model Builder.
+                # Exibir aqui evita depender de um campo legado do Reviewer.
+                if analista_id == "model_builder":
+                    modelo_disponivel = recomendacao == "MODELADO"
+                    cenarios_modelo = analista.get("cenarios") or {}
+                    premissas_modelo = analista.get("premissas") or {}
+                    sensibilidade_modelo = analista.get("sensibilidade") or {}
+                    if not modelo_disponivel:
+                        st.warning(str(analista.get("tese") or "Modelo indisponível; premissas explícitas são necessárias."))
+                        faltantes = analista.get("campos_faltantes") or []
+                        if faltantes:
+                            st.caption("Campos ausentes: " + ", ".join(str(x) for x in faltantes))
+                    else:
+                        moeda_modelo = str(analista.get("moeda") or "moeda do ativo")
+                        base_modelo = cenarios_modelo.get("base") or {}
+                        alvo_base_modelo = base_modelo.get("preco_alvo")
+                        if isinstance(alvo_base_modelo, (int, float)):
+                            alvo_fmt = f"{moeda_modelo} {alvo_base_modelo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                            upside_base = base_modelo.get("upside_pct")
+                            upside_fmt = f"{upside_base:+.1f}%" if isinstance(upside_base, (int, float)) else "—"
+                            st.markdown(
+                                "<div class='coord-valuation-destaque'><div class='coord-valuation-legenda'>PREÇO-ALVO · CENÁRIO-BASE</div>"
+                                f"<div class='coord-valuation-preco'>{html.escape(alvo_fmt)}</div>"
+                                f"<div class='coord-valuation-legenda'>Potencial: {html.escape(upside_fmt)} · {html.escape(moeda_modelo)}</div></div>",
+                                unsafe_allow_html=True,
+                            )
+                        subtitulo("Modelo DCF — três cenários")
+                        linhas_modelo = ["<table class='coord-tabela coord-tabela-dcf'><thead><tr><th>Cenário</th><th>Preço-alvo</th><th>Upside</th><th>Cresc. FCF</th><th>WACC</th><th>g terminal</th><th>Valor da firma</th><th>Valor do patrimônio</th></tr></thead><tbody>"]
+                        for chave in ("pessimista", "base", "otimista"):
+                            cenario = cenarios_modelo.get(chave) or {}
+                            alvo = cenario.get("preco_alvo")
+                            alvo_txt = f"{moeda_modelo} {alvo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(alvo, (int, float)) else "—"
+                            upside = cenario.get("upside_pct")
+                            upside_txt = f"{upside:+.1f}%" if isinstance(upside, (int, float)) else "—"
+                            pct = lambda v: f"{v * 100:.1f}%" if isinstance(v, (int, float)) else "—"
+                            firma = cenario.get("valor_empresa")
+                            patrimonio = cenario.get("valor_patrimonio")
+                            firma_txt = f"{moeda_modelo} {firma:,.0f}".replace(",", ".") if isinstance(firma, (int, float)) else "—"
+                            patrimonio_txt = f"{moeda_modelo} {patrimonio:,.0f}".replace(",", ".") if isinstance(patrimonio, (int, float)) else "—"
+                            linhas_modelo.append(
+                                f"<tr><td>{html.escape(chave.upper())}</td><td>{html.escape(alvo_txt)}</td><td>{html.escape(upside_txt)}</td>"
+                                f"<td>{pct(cenario.get('crescimento_fcf'))}</td><td>{pct(cenario.get('wacc'))}</td><td>{pct(cenario.get('g_terminal'))}</td>"
+                                f"<td>{html.escape(firma_txt)}</td><td>{html.escape(patrimonio_txt)}</td></tr>"
+                            )
+                        linhas_modelo.append("</tbody></table>")
+                        st.markdown("<div class='coord-tabela-wrap'>" + "".join(linhas_modelo) + "</div>", unsafe_allow_html=True)
+
+                        subtitulo("Premissas e rastreabilidade")
+                        origem_divida = premissas_modelo.get("origem_divida_liquida")
+                        itens_premissas = [
+                            ("FCF inicial (TTM)", premissas_modelo.get("fcf_base")),
+                            ("Dívida líquida" + (f" — {origem_divida}" if origem_divida else ""), premissas_modelo.get("divida_liquida")),
+                            ("Ações", premissas_modelo.get("acoes")),
+                            ("Crescimento FCF pessimista", pct(premissas_modelo.get("crescimento_fcf_pessimista"))),
+                            ("Crescimento FCF base", pct(premissas_modelo.get("crescimento_fcf_base"))),
+                            ("Crescimento FCF otimista", pct(premissas_modelo.get("crescimento_fcf_otimista"))),
+                            ("WACC", pct(premissas_modelo.get("wacc"))),
+                            ("Crescimento perpétuo", pct(premissas_modelo.get("g_terminal"))),
+                        ]
+                        linhas_premissas = []
+                        for rotulo, valor in itens_premissas:
+                            if isinstance(valor, (int, float)):
+                                exibicao = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                            else:
+                                exibicao = str(valor or "—")
+                            linhas_premissas.append(f"<tr><td>{html.escape(rotulo)}</td><td>{html.escape(exibicao)}</td></tr>")
+                        st.markdown("<div class='coord-tabela-wrap'><table class='coord-tabela coord-tabela-premissas'><tbody>" + "".join(linhas_premissas) + "</tbody></table></div>", unsafe_allow_html=True)
+                        st.caption(
+                            f"Fonte: {analista.get('fontes') or ['Não informada']} · "
+                            f"Data-base: {analista.get('data_base') or 'Não informada'} · "
+                            f"Método: DCF de 5 anos + Gordon Growth. Valores na moeda/unidade dos dados de origem."
+                        )
+
+                        if sensibilidade_modelo.get("disponivel"):
+                            subtitulo("Sensibilidade do preço-alvo-base")
+                            linhas_sens = ["<table class='coord-tabela coord-tabela-sens'><thead><tr><th>WACC ↓ / Cresc. FCF →</th>"]
+                            passos = sensibilidade_modelo.get("passos_crescimento") or []
+                            for passo in passos:
+                                linhas_sens.append(f"<th>{pct(passo + (premissas_modelo.get('crescimento_fcf_base') or 0))}</th>")
+                            linhas_sens.append("</tr></thead><tbody>")
+                            for linha in sensibilidade_modelo.get("linhas") or []:
+                                linhas_sens.append(f"<tr><td>{pct(linha.get('wacc'))}</td>")
+                                for celula in linha.get("celulas") or []:
+                                    valor = celula.get("preco_alvo")
+                                    exibicao = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(valor, (int, float)) else "—"
+                                    linhas_sens.append(f"<td>{html.escape(exibicao)}</td>")
+                                linhas_sens.append("</tr>")
+                            linhas_sens.append("</tbody></table>")
+                            st.markdown("<div class='coord-tabela-wrap'>" + "".join(linhas_sens) + "</div>", unsafe_allow_html=True)
+                            st.caption(str(sensibilidade_modelo.get("observacao") or "Sensibilidade varia WACC e crescimento FCF-base."))
+                        else:
+                            st.caption("Sensibilidade indisponível: " + str(sensibilidade_modelo.get("motivo") or "não calculada."))
+
                 # Preço-alvo é responsabilidade do Model Builder ou de uma casa
                 # de research; os analistas de fundamentos e resultados não
                 # devem exibir um campo vazio que pareça uma falha.

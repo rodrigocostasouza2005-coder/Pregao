@@ -175,8 +175,15 @@ def analisar_ticker(ticker: str, premissas_dcf: dict | None = None) -> dict:
         resultados = executor.executar_varios(
             ["analise_ticker", "comparador", "memoria_research", "noticias", "catalisadores", "resultados_corporativos"], ticker=ticker,
         )
-        telemetria_ok = _registrar_execucoes(analise_id, resultados)
         _anexar_premissas_dcf(resultados, premissas_dcf)
+        dados_analise = (resultados.get('analise_ticker') or {}).get('dados') or {}
+        fundamentos = dados_analise.get('fundamentos') or {}
+        premissas_modelo = dados_analise.get('premissas_dcf')
+        resultado_model_builder = executor.executar_especialista('model_builder', ticker=ticker, premissas_dcf=premissas_modelo, preco_atual=fundamentos.get('preco'))
+        resultados['model_builder'] = resultado_model_builder
+        resultado_valor = executor.executar_especialista('valuation_reviewer', ticker=ticker, model_builder=resultado_model_builder.get('dados') or {})
+        resultados['valuation_reviewer'] = resultado_valor
+        telemetria_ok = _registrar_execucoes(analise_id, resultados)
         consolidado = consolidacao.consolidar(resultados, ticker=ticker)
         duracao_ms = int((time.monotonic() - inicio) * 1000)
         _concluir_fluxo(analise_id, consolidado, resultados, telemetria_ok, duracao_ms)

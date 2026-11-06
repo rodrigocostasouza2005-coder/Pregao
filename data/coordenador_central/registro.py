@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from data import eventos, radar
+from data.coordenador_central import modelagem
 from data import x_radar
 from data.earnings import reviewer as earnings_reviewer
 from data.market_researcher import analise_ticker as _analise_ticker_real
@@ -303,6 +304,24 @@ REGISTRO: dict = {
         entradas_aceitas={"ticker": str, "ano": "int|None", "trimestre": "int|None"},
         funcao=_chamar_resultados_corporativos,
         extrator_saida=_extrair_resultados_corporativos,
+    ),
+    "model_builder": Especialista(
+        id="model_builder", nome="Model Builder",
+        descricao="Modelagem DCF em três cenários e sensibilidade usando somente premissas explícitas e rastreáveis.",
+        capacidades=("modelagem_financeira", "dcf", "cenarios", "sensibilidade"),
+        pre_requisitos=(),
+        entradas_aceitas={"ticker": str, "premissas_dcf": dict, "preco_atual": "float|None"},
+        funcao=modelagem.modelar_empresa,
+        extrator_saida=modelagem.extrair_model_builder,
+    ),
+    "valuation_reviewer": Especialista(
+        id="valuation_reviewer", nome="Valuation Reviewer",
+        descricao="Revisão independente da coerência dos cenários, rastreabilidade e sensibilidade do DCF produzido pelo Model Builder.",
+        capacidades=("revisao_valuation", "auditoria_premissas", "sensibilidade"),
+        pre_requisitos=(),
+        entradas_aceitas={"ticker": str, "model_builder": dict},
+        funcao=modelagem.revisar_valuation,
+        extrator_saida=modelagem.extrair_valuation_reviewer,
     ),
     "radar_x": Especialista(
         id="radar_x", nome="Radar X (Inteligência Social)",
