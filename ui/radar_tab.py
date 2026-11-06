@@ -844,6 +844,315 @@ def _bloco_cobertura(prefs: dict) -> bool:
     return True
 
 
+# ---- Composição/alocação/exposição setorial por carteira (reformulação
+# 2026-11-06) ------------------------------------------------------------
+#
+# Reaproveita só o que já está persistido em radar_carteiras_recomendadas
+# (listar_carteiras/painel_monitorados, data/radar_quedas.py) - nunca
+# inventa peso/alocação por posição: nenhuma das 3 fontes (Itaú/Safra/
+# Genial) persiste peso por ativo hoje (a Safra ATÉ coleta "peso atual"
+# do PDF original, ver data/research/safra_carteiras.py:_parsear_texto,
+# mas descarta esse campo antes de gravar - não é coluna de
+# radar_carteiras_recomendadas; corrigir isso é migração de schema, fora
+# do escopo desta tela). "Exposição setorial" aqui é Nº DE POSIÇÕES por
+# setor (config.IBOVESPA_SETORES, mesma classificação de
+# radar.comparaveis_setor/risco_carteira) - um fato contável, não uma
+# alocação em R$/%. "Justificativa de cada posição" (texto qualitativo
+# do relatório) também não é reproduzida - as fontes não autorizam
+# reprodução do relatório completo (ver docstrings dos 3 coletores); o
+# link "ver fonte" leva ao relatório original de verdade.
+
+
+def _distribuicao_setorial(tickers: list) -> list:
+    """[{'setor', 'n', 'pct'}, ...] - Nº de posições por setor (NUNCA
+    peso/alocação, ver nota acima), maior primeiro. 'Outros' pra ticker
+    sem classificação em config.IBOVESPA_SETORES (universo Ibovespa) -
+    uma carteira recomendada pode conter papel fora do Ibovespa."""
+    contagem: dict = {}
+    for t in tickers:
+        setor = config.IBOVESPA_SETORES.get(t, "Outros")
+        contagem[setor] = contagem.get(setor, 0) + 1
+    total = sum(contagem.values()) or 1
+    return sorted(
+        ({"setor": s, "n": n, "pct": n / total * 100} for s, n in contagem.items()),
+        key=lambda d: (-d["n"], d["setor"]),
+    )
+
+
+def _agrupar_por_carteira(linhas: list) -> dict:
+    """{(casa, carteira): [linha, ...]} a partir de listar_carteiras() -
+    ordem de inserção = ordem de exibição (casa, depois carteira, ambos
+    alfabéticos)."""
+    grupos: dict = {}
+    for l in sorted(linhas or [], key=lambda x: (x.get("casa") or "", x.get("carteira") or "")):
+        chave = (l.get("casa") or "—", l.get("carteira") or "—")
+        grupos.setdefault(chave, []).append(l)
+    return grupos
+
+
+def _mapa_painel(monitorados: list) -> dict:
+    """ticker -> linha de painel_monitorados() (preço/variação/estado
+    atuais), pra lookup O(1) ao montar composição/comparação."""
+    return {l["ticker"]: l for l in (monitorados or [])}
+
+
+def _resumo_grupo(chave: tuple, linhas_grupo: list, painel_mapa: dict, alertas_90d: list, resumo_fontes) -> dict:
+    casa, carteira = chave
+    tickers = sorted({normalizar_ticker_seguro(l.get("ticker")) for l in linhas_grupo} - {""})
+    publicacoes = [l.get("data_publicacao") for l in linhas_grupo if l.get("data_publicacao")]
+    data_publicacao = max(publicacoes) if publicacoes else None
+    fonte_url = next((l.get("fonte_url") for l in linhas_grupo if l.get("fonte_url")), None)
+
+    variacoes, n_alerta, n_atencao, n_normal, n_sem_cotacao = [], 0, 0, 0, 0
+    for t in tickers:
+        linha_painel = painel_mapa.get(t)
+        estado = linha_painel["estado"] if linha_painel else "SEM_COTACAO"
+        if estado == "ALERTA":
+            n_alerta += 1
+        elif estado == "ATENCAO":
+            n_atencao += 1
+        elif estado == "NORMAL":
+            n_normal += 1
+        else:
+            n_sem_cotacao += 1
+        if linha_painel and linha_painel.get("variacao_pct") is not None:
+            variacoes.append(linha_painel["variacao_pct"])
+
+    n_alertas_90d = sum(
+        1 for a in (alertas_90d or [])
+        if carteira in (a.get("carteiras") or []) and casa in (a.get("casas") or [])
+    )
+    distribuicao = _distribuicao_setorial(tickers)
+    info_fonte = (resumo_fontes or {}).get(casa) or {}
+    return {
+        "casa": casa, "carteira": carteira, "tickers": tickers, "n_ativos": len(tickers),
+        "data_publicacao": data_publicacao, "fonte_url": fonte_url,
+        "var_media": (sum(variacoes) / len(variacoes)) if variacoes else None,
+        "n_alerta": n_alerta, "n_atencao": n_atencao, "n_normal": n_normal, "n_sem_cotacao": n_sem_cotacao,
+        "n_alertas_90d": n_alertas_90d, "distribuicao_setorial": distribuicao,
+        "setor_dominante": distribuicao[0]["setor"] if distribuicao else "—",
+        "desatualizada": info_fonte.get("desatualizada"),
+    }
+
+
+def normalizar_ticker_seguro(valor) -> str:
+    """Mesma regra de data.radar_quedas.normalizar_ticker, sem import de
+    módulo pra cada chamada (helpers acima rodam por grupo/ticker)."""
+    from data import radar_quedas as rq
+    return rq.normalizar_ticker(valor)
+
+
+def _tabela_comparar_carteiras_html(resumos: list) -> str:
+    linhas = []
+    for r in resumos:
+        var_txt = "—" if r["var_media"] is None else _pct_simples(r["var_media"])
+        classe_var = _classe_var(r["var_media"])
+        riscos = []
+        if r["n_alerta"]:
+            riscos.append(f"<span class='rq-baixa'>{r['n_alerta']} em alerta</span>")
+        if r["n_atencao"]:
+            riscos.append(f"<span style='color:var(--destaque)'>{r['n_atencao']} em atenção</span>")
+        risco_txt = " · ".join(riscos) if riscos else "<span class='rq-cinza'>nenhum em alerta/atenção</span>"
+        if r["desatualizada"] is None:
+            estado_html = _chip("INDISPONIVEL", "SEM CONFIRMAÇÃO")
+        elif r["desatualizada"]:
+            estado_html = _chip("DESATUALIZADA", "DESATUALIZADA")
+        else:
+            estado_html = _chip("ATUALIZADA", "ATUALIZADA")
+        nome_carteira = html.escape(r["carteira"])
+        if r.get("fonte_url"):
+            nome_carteira += (
+                f" <a href='{html.escape(r['fonte_url'], quote=True)}' target='_blank' rel='noopener'>↗</a>"
+            )
+        linhas.append(
+            f"<tr><td class='rq-esq'>{html.escape(r['casa'])}</td>"
+            f"<td class='rq-esq'>{nome_carteira}</td>"
+            f"<td>{r['n_ativos']}</td>"
+            f"<td class='rq-sec'>{_data_br(r['data_publicacao'])}</td>"
+            f"<td class='{classe_var}'>{var_txt}</td>"
+            f"<td class='rq-esq rq-sec'>{risco_txt}</td>"
+            f"<td class='rq-esq rq-sec'>{html.escape(r['setor_dominante'])}</td>"
+            f"<td class='rq-sec'>{estado_html}</td></tr>"
+        )
+    return (
+        "<div class='rq-scroll'><table class='rq-tabela'><thead><tr>"
+        "<th class='rq-esq'>CASA</th><th class='rq-esq'>CARTEIRA</th><th>ATIVOS</th>"
+        "<th class='rq-sec'>PUBLICAÇÃO</th><th>VAR. DIA MÉDIA</th>"
+        "<th class='rq-esq rq-sec'>RISCO AGORA</th><th class='rq-esq rq-sec'>SETOR DOMINANTE</th>"
+        "<th class='rq-sec'>FONTE</th>"
+        f"</tr></thead><tbody>{''.join(linhas)}</tbody></table></div>"
+    )
+
+
+def _pct_simples(valor) -> str:
+    """Mesma formatação de _pct, sem depender de prefs (comparação entre
+    carteiras usa só o sinal/magnitude pra ordenar visualmente, formato BR
+    por padrão - mesma convenção do resto do RADAR DE QUEDAS)."""
+    if valor is None:
+        return "—"
+    sinal = "+" if valor > 0 else ""
+    return f"{sinal}{valor:.2f}%".replace(".", ",")
+
+
+def _tabela_composicao_carteira_html(linhas_grupo: list, painel_mapa: dict, prefs: dict) -> str:
+    por_ticker = {}
+    for l in linhas_grupo:
+        ticker = normalizar_ticker_seguro(l.get("ticker"))
+        if not ticker:
+            continue
+        atual = por_ticker.get(ticker)
+        # Prefere a linha com preco_alvo quando o mesmo ticker aparece 2x
+        # no grupo (nunca deveria, mas nao assume unicidade da fonte).
+        if atual is None or (l.get("preco_alvo") is not None and atual.get("preco_alvo") is None):
+            por_ticker[ticker] = l
+
+    corpo = []
+    for ticker in sorted(por_ticker):
+        l = por_ticker[ticker]
+        painel = painel_mapa.get(ticker)
+        preco = painel.get("preco") if painel else None
+        variacao = painel.get("variacao_pct") if painel else None
+        estado = painel["estado"] if painel else "SEM_COTACAO"
+        link_ticker = urllib.parse.quote(ticker)
+        preco_alvo_txt = "—" if l.get("preco_alvo") is None else f"R$ {_fmt_num(l['preco_alvo'], 2, prefs)}"
+        corpo.append(
+            f"<tr><td class='rq-esq'><a class='rq-ticker' href='?ticker={link_ticker}'>{html.escape(ticker)}</a>"
+            f"<span class='rq-sub rq-sec'>{html.escape(l.get('empresa') or '')}</span></td>"
+            f"<td>{_fmt_num(preco, 2, prefs)}</td>"
+            f"<td class='{_classe_var(variacao)}'>{_pct(variacao, prefs)}</td>"
+            f"<td class='rq-sec'>{preco_alvo_txt}</td>"
+            f"<td>{_chip(estado, _ROTULO_ESTADO.get(estado, estado))}</td></tr>"
+        )
+    return (
+        "<div class='rq-scroll'><table class='rq-tabela'><thead><tr>"
+        "<th class='rq-esq'>ATIVO</th><th>PREÇO</th><th>VAR. DIA</th>"
+        "<th class='rq-sec'>PREÇO-ALVO (FONTE)</th><th>ESTADO</th>"
+        f"</tr></thead><tbody>{''.join(corpo)}</tbody></table></div>"
+    )
+
+
+def _tabela_setorial_html(distribuicao: list) -> str:
+    linhas = "".join(
+        f"<tr><td class='rq-esq'>{html.escape(d['setor'])}</td><td>{d['n']}</td>"
+        f"<td class='rq-sec'>{d['pct']:.0f}%</td></tr>"
+        for d in distribuicao
+    )
+    return (
+        "<div class='rq-scroll'><table class='rq-tabela'><thead><tr>"
+        "<th class='rq-esq'>SETOR</th><th>Nº POSIÇÕES</th><th class='rq-sec'>% DA CARTEIRA</th>"
+        f"</tr></thead><tbody>{linhas}</tbody></table></div>"
+    )
+
+
+_NOTA_SEM_PESO = (
+    "<div class='rq-nota'>Peso/alocação de cada posição não é divulgado por nenhuma das fontes monitoradas - "
+    "carteiras \"Top N\"/mensais não têm percentual por ativo publicado de forma confiável e persistida aqui "
+    "(nunca inventamos esse número). \"Exposição setorial\" abaixo é contagem de posições por setor, não "
+    "alocação em R$/%. Justificativa qualitativa de cada posição (texto do relatório) também não é "
+    "reproduzida - as fontes não autorizam reprodução do relatório completo; use \"ver fonte\" para o "
+    "relatório original.</div>"
+)
+
+
+def _bloco_comparar_carteiras(resumos: list):
+    if not resumos:
+        return
+    st.markdown(
+        f"<div class='rq-bloco'><span>COMPARAR CARTEIRAS</span>"
+        f"<span class='rq-bloco-meta'>{len(resumos)} carteira(s) vigente(s)</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(_tabela_comparar_carteiras_html(resumos), unsafe_allow_html=True)
+    st.markdown(
+        "<div class='rq-nota'>VAR. DIA MÉDIA = média simples da variação do dia dos ativos com cotação "
+        "disponível na carteira (não é retorno da carteira desde a publicação, que exigiria peso por ativo - "
+        "ver nota abaixo). RISCO AGORA = ativos da carteira em ALERTA/ATENÇÃO pela mesma regra do Radar de "
+        "Quedas, agora.</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _bloco_detalhe_carteira(grupos: dict, resumos_por_chave: dict, painel_mapa: dict, prefs: dict):
+    if not grupos:
+        return
+    opcoes = [f"{casa} — {carteira}" for casa, carteira in grupos]
+    escolha = st.selectbox(
+        "Ver composição da carteira", opcoes, key="radar_carteira_detalhe", label_visibility="collapsed",
+    )
+    if escolha not in opcoes:
+        return
+    casa_sel, carteira_sel = escolha.split(" — ", 1)
+    chave = (casa_sel, carteira_sel)
+    linhas_grupo = grupos.get(chave, [])
+    resumo = resumos_por_chave.get(chave) or {}
+
+    meta = [f"{resumo.get('n_ativos', len(linhas_grupo))} ativo(s)"]
+    if resumo.get("data_publicacao"):
+        meta.append(f"publicada em {_data_br(resumo['data_publicacao'])}")
+    if resumo.get("n_alertas_90d"):
+        meta.append(f"{resumo['n_alertas_90d']} alerta(s) de queda nos últimos 90 dias")
+    if resumo.get("fonte_url"):
+        meta.append(
+            f"<a href='{html.escape(resumo['fonte_url'], quote=True)}' target='_blank' rel='noopener'>ver fonte ↗</a>"
+        )
+    st.markdown(
+        f"<div class='rq-bloco'><span>COMPOSIÇÃO — {html.escape(casa_sel)} · {html.escape(carteira_sel)}</span>"
+        f"<span class='rq-bloco-meta'>{' · '.join(meta)}</span></div>",
+        unsafe_allow_html=True,
+    )
+    if not linhas_grupo:
+        st.markdown("<div class='rq-vazio'>Composição indisponível agora.</div>", unsafe_allow_html=True)
+        return
+    st.markdown(_tabela_composicao_carteira_html(linhas_grupo, painel_mapa, prefs), unsafe_allow_html=True)
+    st.markdown(_NOTA_SEM_PESO, unsafe_allow_html=True)
+
+    distribuicao = resumo.get("distribuicao_setorial") or _distribuicao_setorial(
+        sorted({normalizar_ticker_seguro(l.get("ticker")) for l in linhas_grupo} - {""})
+    )
+    st.markdown("<div class='rq-bloco'><span>EXPOSIÇÃO SETORIAL</span></div>", unsafe_allow_html=True)
+    if distribuicao:
+        st.markdown(_tabela_setorial_html(distribuicao), unsafe_allow_html=True)
+    else:
+        st.markdown("<div class='rq-vazio'>Nenhum ativo classificado por setor.</div>", unsafe_allow_html=True)
+
+
+def _bloco_carteiras_detalhadas(prefs: dict):
+    """COMPARAR CARTEIRAS + COMPOSIÇÃO/EXPOSIÇÃO SETORIAL de 1 carteira por
+    vez (seletor nativo - st.selectbox, não st.pills/drag, de propósito:
+    há um bug conhecido de seleção por toque em iPad nesta aba, documentado
+    pra quem assume a frente de responsividade depois desta; select nativo
+    do navegador evita abrir mais uma superfície com o mesmo risco).
+    Nenhuma chamada de rede NOVA: listar_carteiras/painel_monitorados já
+    são lidos por _bloco_cobertura/_bloco_monitorados (cache próprio de
+    cada um, ver data/radar_quedas.py)."""
+    from data import radar_quedas as rq
+
+    linhas = rq.listar_carteiras()
+    if not linhas:
+        if linhas is None:
+            st.markdown(
+                "<div class='rq-vazio'>Composição indisponível: banco fora do ar (mesmo problema do bloco "
+                "COBERTURA acima).</div>", unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                "<div class='rq-vazio'>Nenhuma carteira vigente pra comparar ou detalhar agora.</div>",
+                unsafe_allow_html=True,
+            )
+        return
+    grupos = _agrupar_por_carteira(linhas)
+    painel_mapa = _mapa_painel(rq.painel_monitorados())
+    alertas_90d = rq.alertas_periodo(90) or []
+    resumo_fontes = rq.resumo_fontes_vigentes() or {}
+
+    resumos = [_resumo_grupo(chave, linhas_grupo, painel_mapa, alertas_90d, resumo_fontes)
+               for chave, linhas_grupo in grupos.items()]
+    resumos_por_chave = {(r["casa"], r["carteira"]): r for r in resumos}
+
+    _bloco_comparar_carteiras(resumos)
+    _bloco_detalhe_carteira(grupos, resumos_por_chave, painel_mapa, prefs)
+
+
 def _bloco_monitorados(prefs: dict):
     from data import radar_quedas as rq
 
@@ -1332,15 +1641,20 @@ def _bloco_cobertura_compacta() -> bool:
 @st.fragment
 def render_radar_carteiras(prefs: dict):
     """Cobertura das carteiras recomendadas monitoradas (estado por casa:
-    atualizada/desatualizada/indisponível). O feed de research (casas,
-    recomendações, relatórios, ver ui/research_tab.py:render_research)
-    NÃO vem mais logo abaixo desta função - desde que RESEARCH virou
-    área própria na navegação (23/10/2026), é uma rota separada
-    (RESEARCH › Feed), não uma composição sequencial com esta tela."""
+    atualizada/desatualizada/indisponível) + comparação entre carteiras e
+    composição/exposição setorial de cada uma (reformulação 2026-11-06,
+    ver bloco "Composição/alocação/exposição setorial por carteira" mais
+    acima neste arquivo). O feed de research (casas, recomendações,
+    relatórios, ver ui/research_tab.py:render_research) NÃO vem mais logo
+    abaixo desta função - desde que RESEARCH virou área própria na
+    navegação (23/10/2026), é uma rota separada (RESEARCH › Feed), não
+    uma composição sequencial com esta tela."""
     _injetar_css()
     st.markdown('<div class="radar-pergunta">CARTEIRAS RECOMENDADAS — FONTES MONITORADAS</div>',
                 unsafe_allow_html=True)
-    _bloco_cobertura(prefs)
+    if not _bloco_cobertura(prefs):
+        return
+    _bloco_carteiras_detalhadas(prefs)
 
 
 @st.fragment

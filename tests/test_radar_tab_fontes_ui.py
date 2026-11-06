@@ -39,26 +39,52 @@ import data.radar_quedas as radar_quedas_mod
 import ui.radar_tab as radar_tab_mod
 
 _PREFS_SEM_WATCHLIST = {"formato_numerico": "BR", "watchlist": []}
+_SEM_MOCK = object()  # sentinel: nao faz patch, deixa a chamada real acontecer
 
 
 def _coletor_nao_deveria_ser_chamado(*_a, **_k):
     raise AssertionError("coletor de rede chamado só para exibir o Radar")
 
 
-def _capturar_carteiras(resumo_fontes):
+def _capturar_carteiras(resumo_fontes, linhas_carteiras=_SEM_MOCK, monitorados=_SEM_MOCK,
+                        alertas_90d=_SEM_MOCK, selecao_detalhe=None):
     """Chama render_radar_carteiras de verdade (rota real de produção,
     RADAR › Carteiras Recomendadas) com resumo_fontes_vigentes mockado
     (sem rede) e os coletores reais substituídos por algo que FALHA o
     teste se forem chamados - prova que desenhar a tela não dispara
     coleta nova. Exercita _bloco_cobertura, o mesmo bloco que render_
     radar (removido) testava antes. Retorna todo o HTML passado a
-    st.markdown, concatenado."""
+    st.markdown, concatenado.
+
+    `linhas_carteiras`/`monitorados`/`alertas_90d`: quando fornecidos,
+    mockam respectivamente listar_carteiras()/painel_monitorados()/
+    alertas_periodo(90) - usados pelos blocos novos (COMPARAR CARTEIRAS/
+    COMPOSIÇÃO/EXPOSIÇÃO SETORIAL, reformulação 2026-11-06). Om
+    `_SEM_MOCK` (padrão), a chamada real acontece (sem Supabase no
+    ambiente de teste, cai no caminho "banco indisponível" - mesmo
+    comportamento de antes desta reformulação, pros testes que não
+    passam esses argumentos).
+
+    `selecao_detalhe`: mocka st.selectbox (usado pelo seletor nativo de
+    "ver composição da carteira") pra devolver uma opção específica."""
     blocos = []
-    with patch.object(radar_quedas_mod, "resumo_fontes_vigentes", return_value=resumo_fontes), \
-         patch.object(radar_quedas_mod, "coletar_carteiras_genial", side_effect=_coletor_nao_deveria_ser_chamado), \
-         patch.object(radar_quedas_mod, "coletar_carteiras_safra", side_effect=_coletor_nao_deveria_ser_chamado), \
-         patch.object(radar_quedas_mod, "coletar_carteiras_itau", side_effect=_coletor_nao_deveria_ser_chamado), \
-         patch.object(radar_tab_mod.st, "markdown", side_effect=lambda texto, **_k: blocos.append(texto)):
+    patches = [
+        patch.object(radar_quedas_mod, "resumo_fontes_vigentes", return_value=resumo_fontes),
+        patch.object(radar_quedas_mod, "coletar_carteiras_genial", side_effect=_coletor_nao_deveria_ser_chamado),
+        patch.object(radar_quedas_mod, "coletar_carteiras_safra", side_effect=_coletor_nao_deveria_ser_chamado),
+        patch.object(radar_quedas_mod, "coletar_carteiras_itau", side_effect=_coletor_nao_deveria_ser_chamado),
+        patch.object(radar_tab_mod.st, "markdown", side_effect=lambda texto, **_k: blocos.append(texto)),
+    ]
+    if linhas_carteiras is not _SEM_MOCK:
+        patches.append(patch.object(radar_quedas_mod, "listar_carteiras", return_value=linhas_carteiras))
+    if monitorados is not _SEM_MOCK:
+        patches.append(patch.object(radar_quedas_mod, "painel_monitorados", return_value=monitorados))
+    if alertas_90d is not _SEM_MOCK:
+        patches.append(patch.object(radar_quedas_mod, "alertas_periodo", return_value=alertas_90d))
+    if selecao_detalhe is not None:
+        patches.append(patch.object(radar_tab_mod.st, "selectbox", return_value=selecao_detalhe))
+
+    with _aplicar(patches):
         # render_radar_carteiras e' decorado com @st.fragment, que em bare
         # mode (sem ScriptRunContext real) NUNCA executa o corpo da funcao -
         # chamar render_radar_carteiras(...) direto aqui silenciosamente nao
@@ -67,6 +93,17 @@ def _capturar_carteiras(resumo_fontes):
         radar_tab_mod.render_radar_carteiras.__wrapped__(_PREFS_SEM_WATCHLIST)
 
     return "\n".join(b for b in blocos if not b.lstrip().startswith("<style>"))
+
+
+def _aplicar(patches):
+    """contextlib.ExitStack minimalista pra uma lista dinamica de
+    patches (numero varia conforme os mocks opcionais pedidos acima)."""
+    from contextlib import ExitStack
+
+    stack = ExitStack()
+    for p in patches:
+        stack.enter_context(p)
+    return stack
 
 
 def _capturar_alertas(resumo_fontes, alertas=None, monitorados=None):
@@ -225,3 +262,113 @@ def test_ticker_das_tabelas_densas_e_clicavel():
     assert "<a class='rq-ticker' href='?ticker=VALE3'>VALE3</a>" in html_render
     # nenhum ticker sobrevive como <span> sem destino (regressao do achado original)
     assert "<span class='rq-ticker'>" not in html_render
+
+
+# ============================================================
+# COMPARAR CARTEIRAS / COMPOSIÇÃO / EXPOSIÇÃO SETORIAL
+# (reformulação 2026-11-06 - render_radar_carteiras passa a comparar as
+# carteiras vigentes entre si e mostrar a composição + exposição
+# setorial (nº de posições por setor) de uma carteira por vez, sem
+# nunca inventar peso/alocação por ativo - nenhuma fonte monitorada
+# persiste esse dado hoje, ver nota em ui/radar_tab.py.)
+# ============================================================
+
+_RESUMO_DUAS_CASAS = {
+    "Safra Corretora": {"ativos": 2, "verificado_em": "2026-11-05T10:00:00+00:00", "desatualizada": False,
+                        "carteiras": ["Top 10 Ações"], "data_publicacao": "2026-11-01"},
+    "Genial Analisa": {"ativos": 2, "verificado_em": "2026-11-05T10:00:00+00:00", "desatualizada": False,
+                       "carteiras": ["Carteira Ibovespa 10+"], "data_publicacao": "2026-11-03"},
+}
+
+_LINHAS_DUAS_CARTEIRAS = [
+    {"casa": "Safra Corretora", "carteira": "Top 10 Ações", "ticker": "PETR4", "empresa": "Petrobras",
+     "preco_alvo": None, "data_publicacao": "2026-11-01", "fonte_url": "https://www.safra.com.br/x"},
+    {"casa": "Safra Corretora", "carteira": "Top 10 Ações", "ticker": "VALE3", "empresa": "Vale",
+     "preco_alvo": None, "data_publicacao": "2026-11-01", "fonte_url": "https://www.safra.com.br/x"},
+    {"casa": "Genial Analisa", "carteira": "Carteira Ibovespa 10+", "ticker": "WEGE3", "empresa": "WEG",
+     "preco_alvo": None, "data_publicacao": "2026-11-03", "fonte_url": "https://genial.com.br/y"},
+    {"casa": "Genial Analisa", "carteira": "Carteira Ibovespa 10+", "ticker": "ITUB4", "empresa": "Itaú Unibanco",
+     "preco_alvo": 42.5, "data_publicacao": "2026-11-03", "fonte_url": "https://genial.com.br/y"},
+]
+
+
+def _monitorados_duas_carteiras():
+    import data.radar_quedas as rq
+    recomendacoes = [
+        {"casa": l["casa"], "carteira": l["carteira"], "ticker": l["ticker"], "empresa": l["empresa"]}
+        for l in _LINHAS_DUAS_CARTEIRAS
+    ]
+    cotacoes = {
+        "PETR4": {"preco": 36.10, "fechamento_anterior": 37.92, "erro": None},  # queda forte -> ALERTA
+        "VALE3": {"preco": 61.0, "fechamento_anterior": 60.0, "erro": None},    # alta leve
+        "WEGE3": {"preco": 40.0, "fechamento_anterior": 41.0, "erro": None},    # queda leve -> NORMAL
+        "ITUB4": {"erro": "timeout"},                                          # sem cotação
+    }
+    return rq.linhas_monitorados(recomendacoes, cotacoes)
+
+
+def test_comparar_carteiras_mostra_cada_carteira_com_ativos_var_media_e_risco():
+    html_render = _capturar_carteiras(
+        _RESUMO_DUAS_CASAS, linhas_carteiras=_LINHAS_DUAS_CARTEIRAS,
+        monitorados=_monitorados_duas_carteiras(), alertas_90d=[],
+    )
+    assert "COMPARAR CARTEIRAS" in html_render
+    # as 2 carteiras aparecem, cada uma com o nº real de ativos (2)
+    assert "Top 10 Ações" in html_render and "Carteira Ibovespa 10+" in html_render
+    assert "<td>2</td>" in html_render
+    # PETR4 caiu mais de 4% -> a carteira da Safra tem 1 ativo em alerta
+    assert "1 em alerta" in html_render
+    # a tela declara explicitamente que não inventa peso/alocação por ativo
+    assert "Peso/alocação de cada posição não é divulgado" in html_render
+
+
+def test_composicao_da_carteira_selecionada_mostra_ativos_reais_sem_inventar_peso():
+    html_render = _capturar_carteiras(
+        _RESUMO_DUAS_CASAS, linhas_carteiras=_LINHAS_DUAS_CARTEIRAS,
+        monitorados=_monitorados_duas_carteiras(), alertas_90d=[],
+        selecao_detalhe="Genial Analisa — Carteira Ibovespa 10+",
+    )
+    assert "COMPOSIÇÃO — Genial Analisa · Carteira Ibovespa 10+" in html_render
+    assert "WEGE3" in html_render and "ITUB4" in html_render
+    # preço-alvo real da fonte (ITUB4) aparece; WEGE3 (sem preço-alvo coletado) mostra "—"
+    assert "42,50" in html_render
+    # nota explícita: nunca inventa peso/alocação por posição
+    assert "Peso/alocação de cada posição não é divulgado" in html_render
+    assert "EXPOSIÇÃO SETORIAL" in html_render
+
+
+def test_exposicao_setorial_conta_posicoes_por_setor_sem_fabricar_percentual_monetario():
+    import config
+    html_render = _capturar_carteiras(
+        _RESUMO_DUAS_CASAS, linhas_carteiras=_LINHAS_DUAS_CARTEIRAS,
+        monitorados=_monitorados_duas_carteiras(), alertas_90d=[],
+        selecao_detalhe="Safra Corretora — Top 10 Ações",
+    )
+    setor_petr4 = config.IBOVESPA_SETORES.get("PETR4", "Outros")
+    setor_vale3 = config.IBOVESPA_SETORES.get("VALE3", "Outros")
+    assert "EXPOSIÇÃO SETORIAL" in html_render
+    assert "Nº POSIÇÕES" in html_render
+    if setor_petr4 == setor_vale3:
+        assert f"<td class='rq-esq'>{setor_petr4}</td><td>2</td>" in html_render
+    else:
+        assert f"<td class='rq-esq'>{setor_petr4}</td><td>1</td>" in html_render
+        assert f"<td class='rq-esq'>{setor_vale3}</td><td>1</td>" in html_render
+
+
+def test_sem_carteira_vigente_para_comparar_nao_quebra_e_avisa():
+    """listar_carteiras() vazio (nenhuma carteira vigente), mas resumo_fontes
+    tem casas presentes (estado possível quando todas foram descobertas
+    EXPIRADAS entre as duas leituras) - UI avisa, não lança excecao nem
+    desenha tabela de comparação vazia."""
+    html_render = _capturar_carteiras(_RESUMO_DUAS_CASAS, linhas_carteiras=[], monitorados=[], alertas_90d=[])
+    assert "Nenhuma carteira vigente pra comparar ou detalhar agora" in html_render
+    assert "COMPARAR CARTEIRAS" not in html_render
+
+
+def test_banco_fora_do_ar_na_composicao_nao_quebra_mesmo_com_cobertura_mockada():
+    """resumo_fontes_vigentes mockado (cobertura OK), mas listar_carteiras()
+    real (sem Supabase no teste) retorna None - a composição avisa
+    'banco fora do ar' em vez de lançar excecao ou fingir dado vazio."""
+    html_render = _capturar_carteiras(_RESUMO_DUAS_CASAS)  # linhas_carteiras não mockado = chamada real
+    assert "Composição indisponível: banco fora do ar" in html_render
+    assert "COMPARAR CARTEIRAS" not in html_render
