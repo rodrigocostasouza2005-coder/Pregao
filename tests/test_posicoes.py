@@ -112,6 +112,11 @@ def test_1_posicao_valida_rejeita_nao_positivo_e_nao_numerico():
     _checar("1b quantidade zero -> invalida", posicoes_mod.posicao_valida(0, 32.5) is False)
     _checar("1c preco negativo -> invalida", posicoes_mod.posicao_valida(100, -1) is False)
     _checar("1d nao numerico -> invalida, sem excecao", posicoes_mod.posicao_valida("abc", 10) is False)
+    _checar("1e quantidade infinita -> invalida (nao finita)", posicoes_mod.posicao_valida(float("inf"), 10) is False)
+    _checar("1f preco infinito -> invalida (nao finita)", posicoes_mod.posicao_valida(100, float("inf")) is False)
+    _checar("1g string que converte pra infinito ('1e400') -> invalida", posicoes_mod.posicao_valida("1e400", 10) is False)
+    _checar("1h NaN -> invalida (ja' coberto por > 0, mas confirma com a nova checagem)",
+             posicoes_mod.posicao_valida(float("nan"), 10) is False)
 
 
 # ============================================================
