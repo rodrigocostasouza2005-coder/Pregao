@@ -1,0 +1,254 @@
+[
+  {
+    "rota": "mercado-visaogeral",
+    "breakpoint": "desktop-1440",
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "mercado-painel",
+    "breakpoint": "desktop-1440",
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "watchlist",
+    "breakpoint": "desktop-1440",
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "research-feed",
+    "breakpoint": "desktop-1440",
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "research-casas",
+    "breakpoint": "desktop-1440",
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "coordenador-visaogeral",
+    "breakpoint": "desktop-1440",
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "analises-empresas",
+    "breakpoint": "desktop-1440",
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "analises-valuation",
+    "breakpoint": "desktop-1440",
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "radar-alertas",
+    "breakpoint": "desktop-1440",
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "radar-carteiras",
+    "breakpoint": "desktop-1440",
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "noticias-destaques",
+    "breakpoint": "desktop-1440",
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "morningcall-edicao",
+    "breakpoint": "desktop-1440",
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "mercado-visaogeral",
+    "breakpoint": "ipad-1024",
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "mercado-painel",
+    "breakpoint": "ipad-1024",
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "watchlist",
+    "breakpoint": "ipad-1024",
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "research-feed",
+    "breakpoint": "ipad-1024",
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "research-casas",
+    "breakpoint": "ipad-1024",
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "coordenador-visaogeral",
+    "breakpoint": "ipad-1024",
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "analises-empresas",
+    "breakpoint": "ipad-1024",
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "analises-valuation",
+    "breakpoint": "ipad-1024",
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "radar-alertas",
+    "breakpoint": "ipad-1024",
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "radar-carteiras",
+    "breakpoint": "ipad-1024",
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "noticias-destaques",
+    "breakpoint": "ipad-1024",
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "morningcall-edicao",
+    "breakpoint": "ipad-1024",
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "mercado-visaogeral",
+    "breakpoint": "celular-390",
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "overflow": false
+  },
+  {
+    "rota": "mercado-painel",
+    "breakpoint": "celular-390",
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "overflow": false
+  },
+  {
+    "rota": "watchlist",
+    "breakpoint": "celular-390",
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "overflow": false
+  },
+  {
+    "rota": "research-feed",
+    "breakpoint": "celular-390",
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "overflow": false
+  },
+  {
+    "rota": "research-casas",
+    "breakpoint": "celular-390",
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "overflow": false
+  },
+  {
+    "rota": "coordenador-visaogeral",
+    "breakpoint": "celular-390",
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "overflow": false
+  },
+  {
+    "rota": "analises-empresas",
+    "breakpoint": "celular-390",
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "overflow": false
+  },
+  {
+    "rota": "analises-valuation",
+    "breakpoint": "celular-390",
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "overflow": false
+  },
+  {
+    "rota": "radar-alertas",
+    "breakpoint": "celular-390",
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "overflow": false
+  },
+  {
+    "rota": "radar-carteiras",
+    "breakpoint": "celular-390",
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "overflow": false
+  },
+  {
+    "rota": "noticias-destaques",
+    "breakpoint": "celular-390",
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "overflow": false
+  },
+  {
+    "rota": "morningcall-edicao",
+    "breakpoint": "celular-390",
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "overflow": false
+  }
+]
