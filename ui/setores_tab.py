@@ -15,10 +15,10 @@ import html
 
 import streamlit as st
 
-import config
 from data.mercado import obter_cotacoes_lote
 from data.news_setores import NOMES_SETORES, SETORES
 from data.radar_setorial import CATALOGO
+from ui import design_system as ds
 from ui import navegacao
 from ui.mercado_tab import _painel_setorial, _painel_treemap
 from ui.radar_tab import _injetar_css as _css_radar
@@ -66,38 +66,59 @@ def render_mapa_setorial(prefs: dict):
 
 
 def _tabela_empresas(setor: str, prefs: dict):
+    """EMPRESAS DO SETOR - tabela densa (mesmo padrao das outras tabelas
+    HTML pos-fundacao: ui/secoes.py:_tabela_watchlist_comparativa,
+    ui/radar_tab.py, ui/visao_geral.py), nao mais 1 st.button por linha
+    (3 st.columns cada) com sinal/cor reimplementados na mao - exatamente
+    o padrao apontado como duplicado na docstring de ui/design_system.py
+    (regra 2, cita este arquivo). Ticker clicavel via `?ticker=X`
+    (ui.navegacao.ticker_da_url, lido em app.py) em vez de navegacao.link:
+    mesmo destino (ANALISES > Empresas com o ticker pre-selecionado),
+    sem widget por linha."""
     tickers = SETORES[setor]["tickers"]
     cotacoes = obter_cotacoes_lote(tuple(tickers))
     fmt = prefs["formato_numerico"]
     variacoes = []
     st.markdown('<div class="painel-titulo">EMPRESAS DO SETOR</div>', unsafe_allow_html=True)
+    cabecalho = (
+        "<tr style='font-size:0.6rem; color:var(--cinza);'>"
+        "<td style='padding:0 0.4rem 0.3rem 0;'>TICKER</td>"
+        "<td style='padding:0 0.4rem 0.3rem; text-align:right;'>PREÇO</td>"
+        "<td style='padding:0 0 0.3rem 0.4rem; text-align:right;'>VAR. %</td></tr>"
+    )
+    linhas = [cabecalho]
     for t in tickers:
         cot = cotacoes.get(t, {"erro": "sem dado"})
-        col_t, col_p, col_v = st.columns([1.2, 1.2, 1], vertical_alignment="center")
-        with col_t:
-            navegacao.link(t, "analises", "empresas", chave=f"setor_emp_{t}", ticker=t, width="stretch")
+        ticker_html = f"<a href='?ticker={html.escape(t, quote=True)}' class='vg-ticker-link'>{html.escape(t)}</a>"
         if cot.get("erro"):
-            col_p.markdown("<div class='cinza' style='text-align:right; font-size:0.8rem;'>—</div>",
-                           unsafe_allow_html=True)
+            linhas.append(
+                "<tr>"
+                f"<td style='padding:0.22rem 0.4rem 0.22rem 0;'>{ticker_html}</td>"
+                "<td colspan='2' class='cinza' style='text-align:right; font-size:0.78rem;'>—</td>"
+                "</tr>"
+            )
             continue
         variacoes.append(cot["variacao_pct"])
-        cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
-        sinal = "+" if cot["variacao_pct"] >= 0 else ""
-        col_p.markdown(
-            f"<div class='neutro' style='text-align:right; font-size:0.8rem;'>R$ "
-            f"{config.formatar_numero(cot['preco'], 2, fmt)}</div>", unsafe_allow_html=True,
+        linhas.append(
+            "<tr>"
+            f"<td style='padding:0.22rem 0.4rem 0.22rem 0;'>{ticker_html}</td>"
+            f"<td style='padding:0.22rem 0.4rem; text-align:right;'>"
+            f"{ds.numero_financeiro_html(cot['preco'], 2, fmt, prefixo='R$ ')}</td>"
+            f"<td style='padding:0.22rem 0 0.22rem 0.4rem; text-align:right;'>"
+            f"{ds.variacao_html(cot['variacao_pct'], fmt)}</td>"
+            "</tr>"
         )
-        col_v.markdown(
-            f"<div class='{cls}' style='text-align:right; font-size:0.8rem;'>{sinal}"
-            f"{config.formatar_numero(cot['variacao_pct'], 2, fmt)}%</div>", unsafe_allow_html=True,
-        )
+    st.markdown(
+        "<div style='overflow-x:auto;'>"
+        f"<table style='width:100%; font-size:0.8rem; border-collapse:collapse;'>{''.join(linhas)}</table></div>",
+        unsafe_allow_html=True,
+    )
     if variacoes:
         media = sum(variacoes) / len(variacoes)
-        cls = "alta" if media >= 0 else "baixa"
         st.markdown(
-            f"<div class='cinza' style='font-size:0.7rem; margin-top:0.3rem;'>Média simples do dia "
-            f"({len(variacoes)} de {len(tickers)} com cotação): <span class='{cls}'>"
-            f"{'+' if media >= 0 else ''}{config.formatar_numero(media, 2, fmt)}%</span> · Yahoo Finance, "
+            ds.divisor_html()
+            + f"<div class='cinza' style='font-size:0.7rem; margin-top:-0.15rem;'>Média simples do dia "
+            f"({len(variacoes)} de {len(tickers)} com cotação): {ds.variacao_html(media, fmt)} · Yahoo Finance, "
             f"com atraso. Clique num ticker para abrir a empresa.</div>",
             unsafe_allow_html=True,
         )
@@ -124,7 +145,8 @@ def _bloco_por_que_importa(setor: str):
     if not cfg:
         st.caption("Sem texto editorial para este setor.")
         return
-    st.markdown(f"<div style='font-size:0.8rem;'>{html.escape(cfg['importa'])}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:0.8rem; margin-bottom:0.6rem;'>{html.escape(cfg['importa'])}</div>",
+                unsafe_allow_html=True)
     st.caption("Texto editorial fixo (o mesmo do radar setorial do Morning Call) — explica o mecanismo, "
                "não é previsão nem recomendação.")
 
