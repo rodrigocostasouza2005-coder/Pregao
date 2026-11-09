@@ -43,6 +43,18 @@ def render_top_mercado(prefs: dict, regiao_fixa: str | None = None, setor_fixo: 
     with st.container(border=True):
         st.markdown(f'<div class="painel-titulo">{titulo}</div>', unsafe_allow_html=True)
 
+        # legenda do ranking logo abaixo do titulo, antes dos controles de
+        # filtro - mesma ordem de leitura (titulo -> legenda -> filtros ->
+        # contagem -> lista) usada por NOTICIAS > Empresas (ui/news_tab.py:
+        # render_news), a aba irma' ja reformulada (PR #262); so' nao e'
+        # IDENTICA porque aqui regiao/setor decidem o QUE buscar (entram
+        # antes da busca), enquanto la' os pills so' filtram dados ja
+        # buscados da watchlist.
+        st.caption(
+            "Ranking estimado por regras (nº de fontes, recência, veículos confiáveis, temas) — "
+            "não é medição de audiência. Clique na manchete para ver os detalhes."
+        )
+
         # regiao (pills curtas) e setor (select compacto) na MESMA linha: os
         # 13 pills de setor ocupavam ~5 linhas antes da primeira manchete
         if regiao_fixa and setor_fixo:
@@ -60,11 +72,6 @@ def render_top_mercado(prefs: dict, regiao_fixa: str | None = None, setor_fixo: 
             with c_setor:
                 setor = setor_fixo or st.selectbox("Setor", _SETORES, index=0, key="top_select_setor")
 
-        st.caption(
-            "Ranking estimado por regras (nº de fontes, recência, veículos confiáveis, temas) — "
-            "não é medição de audiência. Clique na manchete para ver os detalhes."
-        )
-
         itens = _BUSCADORES[regiao](setor)
         if itens is None:
             st.warning("Fontes de mercado indisponíveis no momento.")
@@ -74,8 +81,12 @@ def render_top_mercado(prefs: dict, regiao_fixa: str | None = None, setor_fixo: 
             st.info(f"Nenhuma notícia de mercado encontrada{rotulo_setor} no momento.")
             return
 
+        # mesmo estilo/margem de ui/news_tab.py:render_news (contador "X de
+        # Y item(ns)") - texto proprio aqui (nao ha' janela "ver mais" no
+        # TOP MERCADO, so' um ranking fixo), mas o visual fica identico
+        # entre as 3 subabas de NOTICIAS.
         st.markdown(
-            f"<div class='cinza' style='font-size:0.68rem; margin:0.4rem 0 0.5rem 0;'>{len(itens)} do momento</div>",
+            f"<div class='cinza' style='font-size:0.68rem; margin:0.3rem 0 0.4rem 0;'>{len(itens)} do momento</div>",
             unsafe_allow_html=True,
         )
 
