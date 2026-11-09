@@ -20,7 +20,7 @@ from data.macro import (
     obter_selic_meta_copom,
 )
 from data.prices import rotulo_cotacao_em_cache
-from ui import graficos, workspace
+from ui import design_system, graficos, workspace
 
 # Meta de inflacao vigente (Banco Central / CMN): centro 3,0% a.a.,
 # tolerancia +-1,5 p.p. (banda 1,5% a 4,5%). Nao da pra importar de
@@ -62,6 +62,17 @@ def _fmt(valor, casas, prefs):
     if valor is None:
         return "—"
     return config.formatar_numero(valor, casas, prefs["formato_numerico"])
+
+
+def _fmt_grande(valor, prefs, casas=2):
+    """Número de taxa (Selic/CDI/IPCA/juro real) pronto pra exibir no
+    destaque do RESUMO - tabular-nums via design_system.numero_financeiro_html
+    (nunca "dança" entre reruns), "—" pra indisponível (sem inventar
+    número, mesmo critério de _fmt). Nunca colorido: taxa em si não é
+    uma variação (ver docstring de numero_financeiro_html)."""
+    if valor is None:
+        return "—"
+    return design_system.numero_financeiro_html(valor, casas, prefs["formato_numerico"], sufixo="%")
 
 
 def _fmt_data(timestamp):
@@ -123,13 +134,13 @@ def _painel_resumo(prefs):
             <th class="cinza">JURO REAL EX-POST</th>
         </tr></thead>
         <tbody><tr>
-            <td style="text-align:left; font-size:1.05rem; font-weight:600; color:var(--destaque);">{_fmt(selic_meta, 2, prefs)}%
+            <td style="text-align:left; font-size:1.05rem; font-weight:600; color:var(--destaque);">{_fmt_grande(selic_meta, prefs)}
                 <div class="cinza" style="font-size:0.62rem; font-weight:400;">{_fmt_data(selic_data)}</div></td>
-            <td class="neutro" style="font-size:1.05rem; font-weight:600;">{_fmt(cdi_aa, 2, prefs)}%
+            <td class="neutro" style="font-size:1.05rem; font-weight:600;">{_fmt_grande(cdi_aa, prefs)}
                 <div class="cinza" style="font-size:0.62rem; font-weight:400;">{_fmt_data(cdi_data)}</div></td>
-            <td class="neutro" style="font-size:1.05rem; font-weight:600;">{_fmt(ipca_12m, 2, prefs)}%
+            <td class="neutro" style="font-size:1.05rem; font-weight:600;">{_fmt_grande(ipca_12m, prefs)}
                 <div class="cinza" style="font-size:0.62rem; font-weight:400;">{_fmt_data(ipca_data)}</div></td>
-            <td class="neutro" style="font-size:1.05rem; font-weight:600;">{_fmt(juro_real, 2, prefs)}%
+            <td class="neutro" style="font-size:1.05rem; font-weight:600;">{_fmt_grande(juro_real, prefs)}
                 <div class="cinza" style="font-size:0.62rem; font-weight:400;">CDI vs IPCA 12m</div></td>
         </tr></tbody>
         </table>
@@ -142,14 +153,16 @@ def _painel_resumo(prefs):
     def _linha_focus(nome, df):
         if df is None or df.empty:
             faltando.append(f"Focus {nome}")
-            return "<td class='cinza'>—</td>" * QUANTIDADE_ANOS_FOCUS
+            return "<td class='cinza' style='text-align:right;'>—</td>" * QUANTIDADE_ANOS_FOCUS
         celulas = ""
         for _, linha in df.iterrows():
             celulas += (
-                f"<td class='neutro'>{int(linha['ano_referencia'])}: "
-                f"<span style='font-weight:600;'>{_fmt(linha['mediana_pct'], 2, prefs)}%</span></td>"
+                f"<td class='neutro' style='text-align:right;'>{int(linha['ano_referencia'])}: "
+                f"<span style='font-weight:600;'>"
+                f"{design_system.numero_financeiro_html(linha['mediana_pct'], 2, prefs['formato_numerico'], sufixo='%')}"
+                f"</span></td>"
             )
-        celulas += "<td class='cinza'>—</td>" * (QUANTIDADE_ANOS_FOCUS - df.shape[0])
+        celulas += "<td class='cinza' style='text-align:right;'>—</td>" * (QUANTIDADE_ANOS_FOCUS - df.shape[0])
         return celulas
 
     data_calculo_focus = None
@@ -352,11 +365,6 @@ _UNIDADES_CENARIO_GLOBAL = {
 }
 
 
-def _fmt_pct(valor, prefs):
-    sinal = "+" if valor >= 0 else ""
-    return f"{sinal}{config.formatar_numero(valor, 2, prefs['formato_numerico'])}%"
-
-
 def _painel_cenario_global(prefs):
     st.markdown('<div class="painel-titulo">CENÁRIO GLOBAL</div>', unsafe_allow_html=True)
     dados = obter_cenario_global()
@@ -365,13 +373,18 @@ def _painel_cenario_global(prefs):
         return
     partes = []
     for d in dados:
-        cls = "alta" if d["variacao_pct"] >= 0 else "baixa"
         unidade = _UNIDADES_CENARIO_GLOBAL.get(d["nome"], "")
+        # classe_sinal/variacao_html (design_system) em vez do ternario
+        # "alta" if ... >= 0 else "baixa" + "+" na mao - esse exato padrao
+        # era um dos citados na docstring da fundacao do design system
+        # (2026-11-06) como duplicado neste arquivo.
         partes.append(
             f"<div style='min-width:9rem;'><span class='cinza' style='font-size:0.7rem;'>{d['nome']}</span><br>"
-            f"<span class='neutro' style='font-size:0.85rem;'>{config.formatar_numero(d['preco'], 2, prefs['formato_numerico'])}</span> "
+            f"<span class='neutro' style='font-size:0.85rem;'>"
+            f"{design_system.numero_financeiro_html(d['preco'], 2, prefs['formato_numerico'])}</span> "
             f"<span class='cinza' style='font-size:0.62rem;'>{unidade}</span><br>"
-            f"<span class='{cls}' style='font-size:0.78rem;'>{_fmt_pct(d['variacao_pct'], prefs)}</span></div>"
+            f"<span style='font-size:0.78rem;'>"
+            f"{design_system.variacao_html(d['variacao_pct'], prefs['formato_numerico'])}</span></div>"
         )
     st.markdown(
         "<div style='display:flex; flex-wrap:wrap; gap:1rem;'>" + "".join(partes) + "</div>",
@@ -479,11 +492,27 @@ def render_macro_cambio_commodities(prefs):
                               f"<span class='cinza'>indisponível</span></div>")
                 continue
             em_cache = rotulo_cotacao_em_cache(cot)
-            cls = "cinza" if em_cache else ("alta" if cot["variacao_pct"] >= 0 else "baixa")
+            # cor de sinal via design_system: cotacao EM CACHE nunca usa
+            # classe_sinal/variacao_html (ficaria colorida como se fosse um
+            # movimento real desta tentativa) - fica cinza de proposito,
+            # so' com tabular-nums (numero_financeiro_html sem colorir).
+            # Mesmo criterio que ja existia aqui antes da fundacao do
+            # design system (ver teste tests/test_cotacao_em_cache_
+            # sinalizada.py:test_appteste_cambio_mostra_rotulo_e_sem_cor_
+            # de_movimento), so' trocando a montagem manual pelos helpers.
+            if em_cache:
+                var_html = (
+                    f"<span class='cinza'>"
+                    f"{design_system.numero_financeiro_html(cot['variacao_pct'], 2, prefs['formato_numerico'], sufixo='%', com_sinal=True)}"
+                    f"</span>"
+                )
+            else:
+                var_html = design_system.variacao_html(cot["variacao_pct"], prefs["formato_numerico"])
             partes.append(
                 f"<div style='min-width:9rem;'><span class='cinza' style='font-size:0.7rem;'>{nome}</span><br>"
-                f"<span class='neutro' style='font-size:0.85rem;'>{_fmt(cot['preco'], 4, prefs)}</span> "
-                f"<span class='{cls}' style='font-size:0.78rem;'>{_fmt_pct(cot['variacao_pct'], prefs)}</span>"
+                f"<span class='neutro' style='font-size:0.85rem;'>"
+                f"{design_system.numero_financeiro_html(cot['preco'], 4, prefs['formato_numerico'])}</span> "
+                f"<span style='font-size:0.78rem;'>{var_html}</span>"
                 + (f"<br><span class='cinza' style='font-size:0.6rem;'>{em_cache}</span>" if em_cache else "")
                 + "</div>"
             )
@@ -526,16 +555,24 @@ def _painel_expectativas(prefs):
             continue
         data_calculo = data_calculo or df["data_calculo"].iloc[0]
         for _, r in df.iterrows():
+            # tabular-nums (design_system.numero_financeiro_html) nas 3
+            # colunas numericas - coluna de numero de terminal nunca
+            # "danca" entre linhas/reruns (ver docstring do modulo).
             linhas.append(
                 f"<tr><td style='text-align:left;' class='neutro'>{nome} {int(r['ano_referencia'])}</td>"
-                f"<td class='neutro'>{_fmt(r['mediana_pct'], 2, prefs)}%</td>"
-                f"<td class='cinza'>{_fmt(r['media_pct'], 2, prefs)}%</td>"
-                f"<td class='cinza'>{int(r['numero_respondentes'])}</td></tr>"
+                f"<td style='text-align:right;' class='neutro'>"
+                f"{design_system.numero_financeiro_html(r['mediana_pct'], 2, prefs['formato_numerico'], sufixo='%')}</td>"
+                f"<td style='text-align:right;' class='cinza'>"
+                f"{design_system.numero_financeiro_html(r['media_pct'], 2, prefs['formato_numerico'], sufixo='%')}</td>"
+                f"<td style='text-align:right;' class='cinza'>"
+                f"{design_system.numero_financeiro_html(int(r['numero_respondentes']), 0, prefs['formato_numerico'])}</td></tr>"
             )
     st.markdown(
         "<div style='overflow-x:auto; overflow-y:hidden;'><table style='width:100%; border-collapse:collapse;'>"
         "<thead><tr><th style='text-align:left;' class='cinza'>PROJEÇÃO</th>"
-        "<th class='cinza'>MEDIANA</th><th class='cinza'>MÉDIA</th><th class='cinza'>RESPONDENTES</th></tr></thead>"
+        "<th style='text-align:right;' class='cinza'>MEDIANA</th>"
+        "<th style='text-align:right;' class='cinza'>MÉDIA</th>"
+        "<th style='text-align:right;' class='cinza'>RESPONDENTES</th></tr></thead>"
         f"<tbody>{''.join(linhas)}</tbody></table></div>",
         unsafe_allow_html=True,
     )
@@ -576,7 +613,7 @@ def render_macro_calendario(prefs):
             reuniao = f"{copom['reuniao']}ª reunião · " if copom.get("reuniao") else ""
             st.markdown(
                 f"<div style='font-size:1.05rem; font-weight:600; color:var(--destaque);'>"
-                f"Meta Selic {_fmt(copom['valor'], 2, prefs)}% a.a.</div>"
+                f"Meta Selic {design_system.numero_financeiro_html(copom['valor'], 2, prefs['formato_numerico'], sufixo='%')} a.a.</div>"
                 f"<div class='cinza' style='font-size:0.7rem;'>{reuniao}vigente desde "
                 f"{copom['vigente_desde'].strftime('%d/%m/%Y')} · fonte: histórico de taxas do Copom (bcb.gov.br)</div>",
                 unsafe_allow_html=True,
