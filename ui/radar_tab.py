@@ -1661,15 +1661,31 @@ def render_radar_carteiras(prefs: dict):
 def render_radar_oportunidades(prefs: dict):
     _injetar_css()
     st.markdown('<div class="radar-pergunta">ONDE VALE INVESTIGAR</div>', unsafe_allow_html=True)
-    st.markdown(_AVISO_SINAL, unsafe_allow_html=True)
+    # BUG REAL confirmado em screenshot (Playwright, 2026-11-06): mesmo
+    # problema documentado acima em ".radar-stub"/".valrad-nota" - o
+    # wrapper que o Streamlit gera ao redor deste st.markdown mede uma
+    # altura menor que o conteudo real quando _AVISO_SINAL quebra em 2
+    # linhas, e os pills de janela/escopo (_escopo_watchlist logo abaixo)
+    # nasciam sobrepostos ao texto. Mesma tecnica de fix (respiro no
+    # elemento SEGUINTE), escopada so' a esta ocorrencia via marcador
+    # proprio - nao mexe em ".rq-nota" nem em nenhum outro uso
+    # compartilhado da classe (_AVISO_SINAL tambem e' usado, sem este
+    # problema, no fim de render_radar_alertas - lá não há elemento
+    # seguinte pra sobrepor).
+    st.markdown(
+        "<style>div[data-testid='stElementContainer']:has(.radar-opor-aviso) + "
+        "div { margin-top: 1.3rem; }</style>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(f"<div class='radar-opor-aviso'>{_AVISO_SINAL}</div>", unsafe_allow_html=True)
     escopo = _escopo_watchlist(prefs)
     if escopo is None:
         return
     tickers, janela, watchlist = escopo
     _secao_mudancas_tese(tickers, janela, prefs)
-    with st.expander("Próximos catalisadores", expanded=True):
+    with st.expander("PRÓXIMOS CATALISADORES", expanded=True):
         _secao_catalisadores(tickers)
-    with st.expander("Research com evidências", expanded=False):
+    with st.expander("RESEARCH COM EVIDÊNCIAS", expanded=False):
         _secao_evidencias(tickers, watchlist)
 
 
@@ -1699,7 +1715,7 @@ def render_radar_acompanhamento(prefs: dict, usuario: dict):
                 "últimos 90 dias (o monitor só cobre ativos de carteiras recomendadas).</div>",
                 unsafe_allow_html=True,
             )
-    with st.expander("O QUE PODE DAR ERRADO — Risco da carteira", expanded=True):
+    with st.expander("O QUE PODE DAR ERRADO — RISCO DA CARTEIRA", expanded=True):
         _secao_risco(prefs, usuario["sub"])
     st.markdown(
         "<div class='rq-nota'>Itens salvos e anotações pessoais ainda não existem: exigem uma tabela nova no "
@@ -1805,3 +1821,5 @@ def render_preferencias(prefs: dict, usuario: dict, persistir_fn):
             else:
                 st.warning("Preferência aplicada nesta sessão (banco indisponível, não foi salva).")
             st.rerun()
+        st.caption(f"Destino: {usuario['email']} · envio imediato ao detectar a queda (sem horário fixo, "
+                   "diferente do Morning Call).")
