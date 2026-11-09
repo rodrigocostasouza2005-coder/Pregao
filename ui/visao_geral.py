@@ -50,11 +50,6 @@ def _tema_atual(prefs):
     return config.TEMAS.get(prefs["tema"], config.TEMAS["AMBAR"])
 
 
-def _fmt_pct(valor, prefs):
-    sinal = "+" if valor >= 0 else ""
-    return f"{sinal}{config.formatar_numero(valor, 2, prefs['formato_numerico'])}%"
-
-
 def _status_cotacao_indice(cotacao: dict) -> str | None:
     """Identifica fallback sem confundir hora da tentativa com hora da coleta valida."""
     return rotulo_cotacao_em_cache(cotacao)
@@ -364,7 +359,8 @@ def _painel_altas_baixas_resumo(prefs):
                 f"<div style='padding:0.16rem 0; white-space:nowrap;'>"
                 f"{_badge_ticker(p['ticker'], tema, '1.3rem')}"
                 f"<a href='?ticker={link_ticker}' class='vg-ticker-link' style='font-size:0.72rem;'>{p['ticker']}</a>"
-                f"<span class='{cls}' style='float:right; font-size:0.72rem;'>{_fmt_pct(p['variacao_pct'], prefs)}</span>"
+                f"<span style='float:right; font-size:0.72rem;'>"
+                f"{design_system.variacao_html(p['variacao_pct'], prefs['formato_numerico'])}</span>"
                 f"<div style='height:2px; background:var(--borda); margin-top:0.2rem;'>"
                 f"<div style='height:100%; width:{largura}%; background:{cor};'></div></div></div>"
             )
@@ -463,7 +459,7 @@ def _painel_mapa_setorial_compacto(prefs):
             f"<div class='neutro' style='font-size:0.62rem; font-weight:600; white-space:nowrap; "
             f"overflow:hidden; text-overflow:ellipsis;'>{html.escape(s['setor'])}</div>"
             f"<div style='color:{cor}; font-size:0.76rem; font-weight:700; margin-top:0.1rem;'>"
-            f"{_fmt_pct(v, prefs)}</div></div>"
+            f"{design_system.numero_financeiro_html(v, 2, prefs['formato_numerico'], sufixo='%', com_sinal=True)}</div></div>"
         )
     st.markdown(
         f"<div style='display:flex; flex-wrap:wrap; gap:0.35rem;'>{''.join(blocos)}</div>",
@@ -477,7 +473,8 @@ def _painel_mapa_setorial_compacto(prefs):
         design_system.divisor_html()
         + f"<div class='cinza' style='font-size:0.6rem; margin-top:-0.15rem;'>Maior dispersão: "
         f"<b style='color:var(--destaque);'>{html.escape(maior_dispersao['setor'])}</b> "
-        f"({maior_dispersao['n_papeis']} papel(éis), {_fmt_pct(maior_dispersao['variacao_media_pct'], prefs)} méd.)</div>",
+        f"({maior_dispersao['n_papeis']} papel(éis), "
+        f"{design_system.numero_financeiro_html(maior_dispersao['variacao_media_pct'], 2, prefs['formato_numerico'], sufixo='%', com_sinal=True)} méd.)</div>",
         unsafe_allow_html=True,
     )
 
