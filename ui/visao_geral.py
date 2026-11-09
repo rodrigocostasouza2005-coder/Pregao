@@ -4,9 +4,13 @@
 Redesign terminal (2026-10-27, seguindo conceito visual aprovado pelo
 Rodrigo, inspirado em terminal Bloomberg): cockpit único e fixo (sem
 drag/resize por painel - trade-off aceito explicitamente, ver PR #186) -
-leitura do pregão primeiro, depois indicadores, gráfico+investigação,
-grade de exploração compacta (altas/baixas, notícias, setorial),
-desempenho+agenda, globais+watchlist. Inteligência DISTRIBUÍDA nos
+leitura do pregão primeiro, depois indicadores, gráfico+notícias,
+oportunidades/movimentações (para investigar+altas/baixas+setorial+mais
+negociados), watchlists/complementar (agenda+teses, globais, watchlist).
+Reagrupamento estrutural em 2026-11-09 (ver docstring de
+render_visao_geral) corrigiu espaço vazio causado por `st.columns()`
+encadeado 1-por-linha - zero painel novo/removido, só reorganização.
+Inteligência DISTRIBUÍDA nos
 módulos (chips DADO/NOTÍCIA/AGENDA na leitura do pregão, "para
 investigar" condensado ao lado do gráfico, flags inline em setorial) em
 vez de 4 blocos de texto separados (resumo executivo/movimentos/
@@ -413,21 +417,29 @@ def _painel_noticias_resumo(prefs):
         tooltip = html.escape(_tooltip_regras(n))
         veiculos = [v for v in (n.get("veiculos") or []) if v]
         fontes = " · ".join(html.escape(v) for v in veiculos[:2]) + (f" +{len(veiculos) - 2}" if len(veiculos) > 2 else "")
+        # Hora dentro da propria linha de meta (nao mais em st.columns([0.11,
+        # 0.89]) ao lado do botao) - achado real nesta reorganizacao
+        # (2026-11-09): a coluna de Destaques do Dia ficou mais estreita no
+        # novo agrupamento (par com GRAFICO em vez de 3-colunas antiga) e
+        # "dd/mm HH:MM" (_fmt_hora_curta pra item de outro dia) nao cabia
+        # nos 11% de largura - sobrepunha o inicio da manchete. Empilhar
+        # verticalmente (botao full-width, hora+fontes+selo+link numa linha
+        # soh depois) e' robusto a qualquer largura de coluna, nao so' a
+        # este caso - mesma categoria de bug ja documentado no modulo
+        # (_renderizar_lista generico tambem quebrava estreito, por isso
+        # esta funcao ja existe separada).
         meta = (
-            f"<div class='bb-meta'>{fontes or _plural_fontes(n['fontes_count'])}"
+            f"<div class='bb-meta'><span class='bb-hora' style='margin-right:0.5rem;'>"
+            f"{_fmt_hora_curta(n['data'])}</span>{fontes or _plural_fontes(n['fontes_count'])}"
             f"<span class='selo-tag {classe_selo}' title='{tooltip}'>{_texto_tag(n)}</span>"
             f"<a class='w-abrir-link' href='{html.escape(n['link'])}' target='_blank' rel='noopener' "
             f"title='Abrir matéria na fonte'>↗</a></div>"
         )
         with st.container(key=f"bbnews-{idx}"):
-            col_hora, col_corpo = st.columns([0.11, 0.89], gap="small", vertical_alignment="top")
-            with col_hora:
-                st.markdown(f"<div class='bb-hora'>{_fmt_hora_curta(n['data'])}</div>", unsafe_allow_html=True)
-            with col_corpo:
-                chave_botao = f"vg-manchete-{idx}-{abs(hash(n['link']))}"
-                if st.button(_truncar(n["titulo"], 150), key=chave_botao, width="stretch"):
-                    _abrir_card(n, watchlist)
-                st.markdown(meta, unsafe_allow_html=True)
+            chave_botao = f"vg-manchete-{idx}-{abs(hash(n['link']))}"
+            if st.button(_truncar(n["titulo"], 150), key=chave_botao, width="stretch"):
+                _abrir_card(n, watchlist)
+            st.markdown(meta, unsafe_allow_html=True)
 
 
 def _painel_mapa_setorial_compacto(prefs):
@@ -652,45 +664,93 @@ def render_visao_geral(prefs: dict, persistir_fn=None):
     """Ponto de entrada da aba VISÃO GERAL, chamado pelo app.py.
     `persistir_fn` não é mais usado aqui (sem painel arrastável/
     configurável nesta aba) - mantido no parâmetro só pra manter a
-    mesma assinatura que app.py já chama."""
+    mesma assinatura que app.py já chama.
+
+    Reorganização estrutural (2026-11-09, pedido explícito do Rodrigo):
+    a versão anterior tinha 1 `st.columns()` POR LINHA lógica (4 linhas
+    seguidas) - cada linha é, pro Streamlit, uma unidade de altura igual
+    entre as colunas DAQUELA linha só, e a próxima linha só começa depois
+    que a anterior termina inteira. Resultado medido (Playwright,
+    docs/evidencias/visao-geral-redesign-estrutural-20261109/
+    medir_paineis.py, dados mockados realistas): "Principais Altas e
+    Baixas" (191px) e "Mapa Setorial" (218px) ficavam ao lado de
+    "Destaques do Dia" (353px) na MESMA linha - ~140px de espaço vazio
+    sob os dois painéis curtos até a próxima linha poder começar. Mesmo
+    padrão, menor, entre "Mais Negociados"/"Resultados da Watchlist" e
+    entre "Mercados Globais"/"Minha Watchlist".
+
+    Fix: menos `st.columns()` (3 REGIÕES em vez de 4 linhas), cada coluna
+    de uma região empilhando MÚLTIPLOS painéis em sequência - dentro de
+    uma coluna o Streamlit empilha normalmente (altura livre), só o
+    conjunto de colunas de uma MESMA chamada de `st.columns()` força
+    altura igual entre si. Agrupamento escolhido por altura REAL medida
+    (não por chute de proporção), pareando sempre um painel curto com
+    outro curto e um longo com outro longo:
+    - Região GRÁFICO+NOTÍCIAS: Gráfico (sempre o mais alto, protagonista)
+      | Destaques do Dia (também cresce com a quantidade de notícias -
+      os dois crescem juntos, não há painel curto preso ao lado).
+    - Região OPORTUNIDADES: [Para Investigar + Altas e Baixas] (320+191
+      medidos) | [Mapa Setorial + Mais Negociados] (218+261 medidos) -
+      as duas colunas somam altura parecida.
+    - Região WATCHLISTS: Resultados da Watchlist (212) | Mercados
+      Globais (155) | Minha Watchlist (212) - as 3 já são parecidas,
+      3 colunas simples não cria buraco.
+
+    Ordem de leitura também revisada pra bater com a hierarquia pedida
+    (situação geral → indicadores → gráfico → notícias/leitura →
+    oportunidades/movimentações → watchlists/complementar): Destaques do
+    Dia subiu pra ficar ao lado do gráfico (antes ficava preso na região
+    de oportunidades); Para Investigar desceu pra região de
+    oportunidades (é leitura interpretativa sobre movimentação, não
+    parte do bloco gráfico).
+
+    Todas as 3 regiões usam chave `vg_grid_*` (mesmo prefixo das regiões
+    antigas) - reaproveita a regra responsiva já existente em style.css
+    (`[class*="st-key-vg_grid_"] [data-testid="stHorizontalBlock"]`, telas
+    ≤900px ou ≤1200px com sidebar aberta: colunas da região viram 100% de
+    largura e empilham) sem precisar de CSS novo - zero funcionalidade
+    nova, zero painel novo, zero painel removido, mesmas 10 funções de
+    sempre só reagrupadas."""
     with st.container(border=True):
         _painel_leitura_pregao(prefs)
 
     with st.container(border=True):
         _painel_indicadores(prefs)
 
-    with st.container(key="vg_grid_principal"):
-        col_grafico, col_investigar = st.columns([0.7, 0.3], gap="small")
+    with st.container(key="vg_grid_grafico_noticias"):
+        col_grafico, col_noticias = st.columns([0.62, 0.38], gap="small")
         with col_grafico:
             with st.container(border=True):
                 _painel_grafico_principal(prefs)
-        with col_investigar:
-            with st.container(border=True):
-                _painel_para_investigar(prefs)
-
-    with st.container(key="vg_grid_exploracao"):
-        col_ab, col_news, col_setor = st.columns([0.28, 0.46, 0.26], gap="small")
-        with col_ab:
-            with st.container(border=True):
-                _painel_altas_baixas_resumo(prefs)
-        with col_news:
+        with col_noticias:
             with st.container(border=True):
                 _painel_noticias_resumo(prefs)
-        with col_setor:
+
+    with st.container(key="vg_grid_oportunidades"):
+        col_movimentos, col_setorial = st.columns([0.42, 0.58], gap="small")
+        with col_movimentos:
+            with st.container(border=True):
+                _painel_para_investigar(prefs)
+            with st.container(border=True):
+                _painel_altas_baixas_resumo(prefs)
+        with col_setorial:
             with st.container(border=True):
                 _painel_mapa_setorial_compacto(prefs)
-
-    with st.container(key="vg_grid_desempenho"):
-        col_desemp, col_agenda = st.columns([0.6, 0.4], gap="small")
-        with col_desemp:
             with st.container(border=True):
                 _painel_desempenho_tabela(prefs)
+
+    with st.container(key="vg_grid_watchlists"):
+        # agenda com fatia maior (nao 1/3 igual): o status de evento
+        # (_painel_proximos_watchlist, componente compartilhado - nao
+        # mexer no interior dele) quebra linha de forma feia em telas
+        # ~1024px com so' 1/3 de largura (achado real nesta reorganizacao,
+        # screenshot em docs/evidencias/visao-geral-redesign-estrutural-
+        # 20261109/zoom_resultados.png) - 0.40 resolve sem compactar os
+        # outros dois painéis (ambos mais curtos em conteúdo).
+        col_agenda, col_globais, col_watchlist = st.columns([0.40, 0.30, 0.30], gap="small")
         with col_agenda:
             with st.container(border=True):
                 _painel_agenda_e_teses(prefs)
-
-    with st.container(key="vg_grid_globais"):
-        col_globais, col_watchlist = st.columns([0.55, 0.45], gap="small")
         with col_globais:
             with st.container(border=True):
                 _painel_globais(prefs)
