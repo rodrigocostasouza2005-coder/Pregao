@@ -20,6 +20,7 @@ import streamlit as st
 
 import config
 from data.admin_usuarios import diagnosticar_usuarios_admin, obter_usuarios_admin
+from ui import design_system as ds
 
 _ROTULO_STATUS = {
     "inscrito": "Inscrito",
@@ -145,6 +146,23 @@ def _tabela_html(linhas: list[dict]) -> str:
     )
 
 
+# Reformulação visual (missão "MAIS admin Bloomberg", 2026-11-06): bloco
+# de métrica denso (rótulo pequeno em cima, valor em destaque embaixo),
+# mesmo padrão já usado em ui/mercado_tab.py:_item_ticker_html - substitui
+# st.metric(), que renderizava no tamanho de fonte PADRÃO do Streamlit
+# (bem maior que o resto do app - exatamente o problema que motivou
+# ui/design_system.py, ver docstring do módulo). Mesmos 6 números de
+# antes, zero cálculo novo - só o visual mudou.
+def _metrica_html(rotulo: str, valor: int) -> str:
+    return (
+        "<div style='padding:0.5rem 0.8rem; border-right:1px solid var(--borda); "
+        "flex:1 1 0; min-width:7rem;'>"
+        f"<div class='cinza' style='font-size:0.6rem; letter-spacing:0.04em;'>{html.escape(rotulo)}</div>"
+        f"<div class='neutro' style='font-size:0.88rem; font-weight:700; margin-top:0.1rem;'>"
+        f"{ds.numero_financeiro_html(valor, casas=0)}</div></div>"
+    )
+
+
 _PREFIXOS_FORMULA_CSV = ("=", "+", "-", "@")
 _CONTROLE_LIDER_CSV = ("\t", "\r")
 
@@ -238,15 +256,17 @@ def render_usuarios(usuario: dict):
     ) or 30
     metricas = calcular_metricas(usuarios, dias_novos=dias_novos)
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("TOTAL", metricas["total"])
-    c2.metric(f"NOVOS ({dias_novos}D)", metricas["novos"])
-    c3.metric("ATIVOS 7D", metricas["ativos_7d"])
-    c4.metric("ATIVOS 30D", metricas["ativos_30d"])
-    c5.metric("INSCRITOS MC", metricas["inscritos"])
-    c6.metric("NÃO RESPONDERAM", metricas["nao_responderam"])
+    blocos_metrica = [
+        _metrica_html("TOTAL", metricas["total"]),
+        _metrica_html(f"NOVOS ({dias_novos}D)", metricas["novos"]),
+        _metrica_html("ATIVOS 7D", metricas["ativos_7d"]),
+        _metrica_html("ATIVOS 30D", metricas["ativos_30d"]),
+        _metrica_html("INSCRITOS MC", metricas["inscritos"]),
+        _metrica_html("NÃO RESPONDERAM", metricas["nao_responderam"]),
+    ]
+    st.markdown(f"<div style='display:flex; flex-wrap:wrap;'>{''.join(blocos_metrica)}</div>", unsafe_allow_html=True)
 
-    st.divider()
+    ds.divisor()
 
     busca = st.text_input("Buscar por e-mail", key="usuarios_busca", placeholder="parte do e-mail...")
     colf1, colf2 = st.columns(2)
