@@ -1066,19 +1066,25 @@ if rota == ("mais", "config"):
         # imediato (opt-in explícito, default DESLIGADO) mudou pra
         # MORNING CALL › Preferências (ui/morning_call_tab.py:
         # render_preferencias) - mesmo comportamento, mesma chave de prefs.
-        st.markdown(
-            "<div class='cinza' style='font-size:0.68rem; margin-bottom:0.3rem;'>NOTIFICAÇÕES</div>",
-            unsafe_allow_html=True,
-        )
+        #
+        # Reformulação visual (missão "MAIS admin Bloomberg", 2026-11-06):
+        # rótulo de seção trocado pelo subtitulo() do design system (mesmo
+        # 0.72rem/700/letter-spacing usado em toda outra aba já reformulada,
+        # ver ui/design_system.py) em vez de um cinza 0.68rem "solto"
+        # próprio deste bloco - zero mudança de texto/link/comportamento.
+        design_system.subtitulo("NOTIFICAÇÕES")
         navegacao.link(
             "MORNING CALL POR E-MAIL: "
             + ("ATIVADO" if prefs.get("morning_call_email_ativo", False) else "DESATIVADO") + " — ALTERAR ↗",
             "morning-call", "preferencias", chave="config_ir_mc_prefs",
         )
 
+        design_system.divisor()
+
         with st.form("form_config"):
             c1, c2 = st.columns(2)
             with c1:
+                design_system.subtitulo("APARÊNCIA E COMPORTAMENTO")
                 novo_tema = st.selectbox("TEMA", list(config.TEMAS.keys()),
                                           index=list(config.TEMAS.keys()).index(prefs["tema"]))
                 nova_densidade = st.selectbox("DENSIDADE", list(config.DENSIDADES.keys()),
@@ -1092,6 +1098,7 @@ if rota == ("mais", "config"):
                 idx_intervalo = valores_intervalo.index(prefs["atualizacao_intervalo"]) if prefs["atualizacao_intervalo"] in valores_intervalo else 1
                 novo_rotulo_intervalo = st.selectbox("ATUALIZAÇÃO AUTOMÁTICA", rotulos_intervalo, index=idx_intervalo)
             with c2:
+                design_system.subtitulo("GRÁFICO E LETREIRO")
                 novo_tipo_grafico = st.selectbox("TIPO DE GRÁFICO", ["CANDLE", "LINHA", "AREA"],
                                                   index=["CANDLE", "LINHA", "AREA"].index(prefs["grafico_tipo"]))
                 novo_periodo_padrao = st.selectbox("PERÍODO PADRÃO", list(config.PERIODOS_GRAFICO.keys()),
@@ -1113,6 +1120,8 @@ if rota == ("mais", "config"):
                 novo_tape_velocidade = st.selectbox("VELOCIDADE DO LETREIRO", list(config.VELOCIDADES_TICKER_TAPE.keys()),
                                                      index=list(config.VELOCIDADES_TICKER_TAPE.keys()).index(prefs["ticker_tape_velocidade"]))
 
+            design_system.divisor()
+            design_system.subtitulo("MÓDULOS E PAINÉIS")
             novas_abas = st.multiselect(
                 "MÓDULOS VISÍVEIS (esconde as subabas que exibem o conteúdo de cada módulo)",
                 config.ABAS_DISPONIVEIS, default=abas_visiveis,
@@ -1153,6 +1162,8 @@ if rota == ("mais", "config"):
                 nova_ordem_visao_geral = []
                 novos_visiveis_visao_geral = []
 
+            design_system.divisor()
+            design_system.subtitulo("RESEARCH")
             ids_casas_research = [c["id"] for c in CASAS_RESEARCH]
             nomes_casas_research = {c["id"]: c["nome"] for c in CASAS_RESEARCH}
             padrao_casas_research = [c for c in prefs.get("research_casas_ativas", []) if c in ids_casas_research]
@@ -1162,6 +1173,7 @@ if rota == ("mais", "config"):
                 format_func=lambda cid: nomes_casas_research.get(cid, cid),
             )
 
+            design_system.divisor()
             salvar = st.form_submit_button("SALVAR")
             if salvar:
                 st.session_state.prefs.update({
@@ -1237,11 +1249,17 @@ if rota == ("mais", "config"):
                         st.write(f"→ {fonte['nome']}: {sinal} ({resultado['status']}, {resultado['tempo_ms']}ms)")
                     status_box.update(label="Diagnóstico concluído.", state="complete")
 
+                # numero_financeiro_html (design_system) nas 2 colunas
+                # numericas - digitos de largura fixa (tabular-nums) +
+                # alinhado a direita e respeita o formato BR/US do usuario
+                # em vez do "{valor:,}" fixo (sempre separador US) que
+                # existia antes aqui. Mesmos numeros de sempre, so' o
+                # visual/formato mudou.
                 linhas_html = "".join(
                     f"<tr><td style='text-align:left;' class='neutro'>{r['nome']}</td>"
                     f"<td class='{'alta' if r['ok'] else 'baixa'}'>{r['status']}</td>"
-                    f"<td class='neutro'>{r['tempo_ms']}ms</td>"
-                    f"<td class='neutro'>{r['tamanho_bytes']:,} bytes</td></tr>"
+                    f"<td class='neutro'>{design_system.numero_financeiro_html(r['tempo_ms'], 0, prefs['formato_numerico'], sufixo=' ms')}</td>"
+                    f"<td class='neutro'>{design_system.numero_financeiro_html(r['tamanho_bytes'], 0, prefs['formato_numerico'], sufixo=' bytes')}</td></tr>"
                     for r in resultados
                 )
                 st.markdown(
