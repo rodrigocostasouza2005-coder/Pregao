@@ -71,6 +71,37 @@ Estado atual das fontes (revisado em 2026-11-04):
   desde 29/10/2026); Bradesco BBI permanece sem nenhum canal publico
   (reconfirmado: pagina institucional carrega, mas continua sem nenhum
   link de relatorio/RSS/API).
+- Goldman Sachs, Jefferies, Deutsche Bank Research Institute, Levante
+  Ideias de Investimentos: adicionadas em 2026-11-12 (missao Agente B -
+  expansao de casas de research, pedido explicito do Rodrigo). Goldman
+  Sachs e Jefferies seguem o MESMO padrao dos 4 bancos de 11/11/2026
+  (hub editorial publico via sitemap + ld+json por pagina, research
+  institucional pago nunca coletado - ver data/research/goldman_sachs.py
+  e data/research/jefferies.py). Deutsche Bank Research Institute usa um
+  padrao novo: sem sitemap funcional, descoberta direto na pagina-indice
+  de topico (widget HTML customizado, titulo+data+link de varios itens
+  num unico request - ver data/research/dbresearch.py). Levante e' a
+  primeira casa INDEPENDENTE brasileira nova desde Nord/Monte Bravo -
+  feed RSS real com disclaimer formal de analista CNPI (ver
+  data/research/levante.py).
+  Na mesma rodada, investigadas e NAO implementadas (ver comentario de
+  cada entrada abaixo pro detalhe completo da sondagem real): Barclays
+  (hub existe, sem mecanismo de descoberta de item novo - paginas
+  evergreen sem arquivo/data), HSBC (sem secao de insights descobrivel no
+  orcamento desta rodada - investigacao incompleta), UBS (hub existe,
+  sitemap multi-pais grande demais pra analisar por completo no
+  orcamento desta rodada - investigacao incompleta), Safra research de
+  acoes (oespecialista.safra.com.br, HTTP 403 reconfirmado, sem mudanca
+  desde 22/10/2026), BB Investimentos (Investalk - pagina carrega sem
+  bloqueio mas catalogo e' client-side sem API publica encontrada), Suno
+  Research (feed publico e' blog educacional geral; paginas por ticker
+  sao perfil de cotacao, nao relatorio datado), Eleven Financial (SPA
+  client-side, sem sitemap/listagem real encontrado), Terra Investimentos
+  (falha de TLS neste ambiente - nao foi possivel conectar, limitacao do
+  ambiente). UBS, HSBC, Eleven Financial e Terra Investimentos tem
+  investigacao MARCADA COMO INCOMPLETA (nao e' veredito final de
+  bloqueio/ausencia de conteudo) - revisitar com mais orcamento de tempo
+  ou outro ambiente de rede antes de descartar de vez.
 
 Os itens coletados sao persistidos no Supabase (tabela research_itens,
 ver data/research/store.py) - a aba RESEARCH sempre le do banco primeiro
@@ -86,7 +117,10 @@ import streamlit as st
 
 from data.coletores_status import obter_status, registrar_tentativa
 
-from . import bankofamerica, btg, citi, genial, genial_lives, jpmorgan, montebravo, morgan_stanley, nord, store, xp
+from . import (
+    bankofamerica, btg, citi, dbresearch, genial, genial_lives, goldman_sachs, jefferies,
+    jpmorgan, levante, montebravo, morgan_stanley, nord, store, xp,
+)
 from .base import TEMPO_MAX_COLETA_S, CooldownPorChave
 
 # nao tenta recoletar a mesma casa antes desse tempo desde a ULTIMA
@@ -364,6 +398,108 @@ CASAS = [
         "motivo_falha": citi.motivo_ultima_falha,
     },
     {
+        # Adicionada em 12/11/2026 (missao Agente B - expansao de casas de
+        # research, pedido explicito do Rodrigo: Goldman Sachs, UBS,
+        # Barclays, HSBC, Deutsche Bank, Jefferies). Sondagem real: o
+        # research institucional completo da Goldman Sachs (rating/
+        # preco-alvo por ativo, via GS Marquee/GS Research) e' client-only
+        # - NUNCA coletado aqui. O banco tambem publica, sem login, um hub
+        # editorial proprio "Insights" (goldmansachs.com/insights/articles)
+        # com conteudo macro/tematico real e atual (confirmado com pagina
+        # real: "Why the ECB Is Unlikely to Keep Rates Higher Than 3%",
+        # datePublished 2026-09-25, e itens de 11/2026 no sitemap) - mesma
+        # distincao documentada pros bancos globais de 11/11/2026 (ver
+        # docstring de data/research/goldman_sachs.py pro detalhe completo
+        # da investigacao, inclusive a limitacao). Descoberta via sitemap
+        # real (indice -> sitemap-1.xml, ~1.5MB, filtra so'
+        # "/insights/articles/" - exclui ~3700 ocorrencias de "insights" do
+        # blog de filantropia "/community-transformation/.../insights/",
+        # que nao e' mercado).
+        "id": "goldman_sachs",
+        "nome": "Goldman Sachs Insights",
+        "fonte": "goldmansachs.com/insights/articles (conteudo publico; research completo e' client-only)",
+        "ativa_por_padrao": True,
+        "disponivel": True,
+        "obter_relatorios": goldman_sachs.obter_relatorios,
+        "extrator_texto": None,
+        "motivo_falha": goldman_sachs.motivo_ultima_falha,
+    },
+    {
+        # Adicionada em 12/11/2026 (mesma missao acima). Sondagem real: o
+        # research institucional completo da Jefferies (cobertura de
+        # acoes por ativo, via Jefferies Live/portal de clientes) e'
+        # client-only - NUNCA coletado aqui. O banco tambem publica, sem
+        # login, um hub editorial proprio em jefferies.com/insights
+        # (WordPress publico) com conteudo tematico real e atual sobre
+        # mercados/setores/politica (confirmado com pagina real:
+        # "What's Driving Healthcare Dealmaking Right Now?", datePublished
+        # 2026-11-10, author real "amarx", articleSection "Markets") - ver
+        # docstring de data/research/jefferies.py pro detalhe completo da
+        # investigacao, inclusive a limitacao. Descoberta via sitemap
+        # padrao do Yoast SEO (post-sitemap.xml, ~230 URLs, hoje todos sob
+        # "/insights/" - filtra por esse prefixo mesmo assim, por
+        # seguranca).
+        "id": "jefferies",
+        "nome": "Jefferies Insights",
+        "fonte": "jefferies.com/insights (conteudo publico; research completo e' client-only)",
+        "ativa_por_padrao": True,
+        "disponivel": True,
+        "obter_relatorios": jefferies.obter_relatorios,
+        "extrator_texto": None,
+        "motivo_falha": jefferies.motivo_ultima_falha,
+    },
+    {
+        # Adicionada em 12/11/2026 (mesma missao acima). Sondagem real: o
+        # research institucional completo do Deutsche Bank (cobertura de
+        # acoes por ativo, via DB Research/Autobahn) e' client-only -
+        # NUNCA coletado aqui. O banco tambem publica, sem login, uma
+        # secao propria "Research Institute" (dbresearch.com/PROD/IE-PROD/
+        # <Topico>__Research_Institute/<alias>.alias) com conteudo macro
+        # real e atual, assinado por nomes reais do research global do
+        # banco (confirmado com pagina real de Macro: "Jim Reid on AI and
+        # bond vigilantes", "CPI Reaction", itens de 11-12/11/2026) - ver
+        # docstring de data/research/dbresearch.py pro detalhe completo da
+        # investigacao, inclusive a limitacao. Sem sitemap.xml funcional
+        # (404) - descoberta direto na pagina-indice do topico Macro
+        # (RI_MAC.alias), que lista varios itens (titulo+data+link) num
+        # unico request, sem precisar de 1 request por item (diferente de
+        # citi.py/nord.py). robots.txt tem "Allow: /" pro grupo "*" -
+        # bloqueia so' user-agents de bot NOMEADOS (incluindo crawlers de
+        # IA), nenhum deles bate o UA deste projeto.
+        "id": "dbresearch",
+        "nome": "Deutsche Bank Research Institute",
+        "fonte": "dbresearch.com/PROD/IE-PROD (secao Macro; conteudo publico, research completo e' client-only)",
+        "ativa_por_padrao": True,
+        "disponivel": True,
+        "obter_relatorios": dbresearch.obter_relatorios,
+        "extrator_texto": None,
+        "motivo_falha": dbresearch.motivo_ultima_falha,
+    },
+    {
+        # Adicionada em 12/11/2026 (missao Agente B - expansao de casas de
+        # research, Grupo 3: independentes). Levante Ideias de
+        # Investimentos e' uma casa de research independente de verdade
+        # (CVM/APIMEC, analistas CNPI nomeados) - confirmado com amostra
+        # real do feed: o content:encoded de cada post traz o disclaimer
+        # formal completo da "INSIDE RESEARCH LTDA." (empresa do Grupo
+        # Levante), com nome e numero de registro CNPI do analista
+        # responsavel. robots.txt "Allow: /" (tudo permitido, Sitemap:
+        # declarado); feed RSS 2.0 real em levanteideias.com.br/feed/
+        # (o content-type do servidor vem errado como "text/html", mas o
+        # corpo e' XML real - nao e' motivo pra descartar). Filtra por
+        # ticker B3 na categoria OU por categoria de research conhecida
+        # ("research"/"insideresearch"/"EECI") - ver docstring de
+        # data/research/levante.py pro detalhe completo.
+        "id": "levante",
+        "nome": "Levante Ideias de Investimentos",
+        "fonte": "levanteideias.com.br (feed RSS do blog, itens com ticker B3 ou categoria de research)",
+        "ativa_por_padrao": True,
+        "disponivel": True,
+        "obter_relatorios": levante.obter_relatorios,
+        "extrator_texto": None,
+        "motivo_falha": levante.motivo_ultima_falha,
+    },
+    {
         # Investigada em 2026-10-29 (pedido explicito do Rodrigo): pagina
         # institucional de research bloqueia fetch automatizado (403,
         # borda/WAF) - mesmo padrao de genial.py/xp.py, mas sem nenhum
@@ -500,6 +636,179 @@ CASAS = [
         "disponivel": False,
         "extrator_texto": None,
         "motivo_indisponivel": "robots.txt do dominio ('Disallow: /') proibe qualquer coleta automatizada do site inteiro",
+    },
+    {
+        # Investigada em 12/11/2026 (missao Agente B, Grupo 1 - bancos
+        # internacionais). O hub editorial publico existe
+        # (ib.barclays/our-insights.html, varias sub-paginas: "Weekly
+        # Insights", "Barclays Brief", "3-Point Perspective") e responde
+        # sem bloqueio (HTTP 200, robots.txt permite), mas cada sub-pagina
+        # e' uma unica pagina EVERGREEN (confirmado com "Weekly Insights":
+        # so' 1 data no HTML, "06 Nov 2026", sem lista/arquivo de edicoes
+        # anteriores) - os 4 blocos ld+json reais da pagina sao so'
+        # metadado de Organization/WebSite, nenhum com headline/
+        # datePublished por item. Sem um mecanismo de descoberta de ITEM
+        # NOVO (sitemap, feed ou lista datada), um coletor agendado nao
+        # teria como saber se o conteudo mudou - mesma logica de
+        # "agora_insights" acima (nao e' bloqueio de borda, e' ausencia de
+        # mecanismo de descoberta).
+        "id": "barclays_insights",
+        "nome": "Barclays Insights",
+        "fonte": "ib.barclays/our-insights.html (sem mecanismo de descoberta de item novo)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "extrator_texto": None,
+        "motivo_indisponivel": "hub editorial publico existe mas cada secao e' 1 pagina evergreen sem arquivo/data por item - sem sitemap/feed proprio, nao ha' como descobrir relatorio novo de forma confiavel",
+    },
+    {
+        # Investigada em 12/11/2026 (mesma missao acima). sitemap.xml do
+        # dominio responde (robots.txt permite), mas e' majoritariamente
+        # navegacional/institucional - a pagina www.hsbc.com/insights
+        # devolve HTTP 404 (caminho nao existe mais) e
+        # www.hsbc.com/news-and-insight carrega mas nao tem nenhum link
+        # para sub-paginas no HTML estatico (renderizacao client-side) - 0
+        # URLs "/news-and-insight/..." encontradas no sitemap de 339KB
+        # (so' a pagina-indice e aparece). Sem orcamento de tempo pra
+        # investigar mais a fundo (ex: achar o dominio/produto certo de
+        # "HSBC Global Research" publico, se existir) nesta rodada -
+        # registrada indisponivel por ora, revisitar se houver pista nova.
+        "id": "hsbc_insights",
+        "nome": "HSBC Global Viewpoint",
+        "fonte": "hsbc.com/news-and-insight (nao confirmado - sem secao de insights descobrivel no orcamento desta rodada)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "extrator_texto": None,
+        "motivo_indisponivel": "pagina /insights da' HTTP 404 e /news-and-insight carrega mas e' renderizada client-side (0 sub-paginas no sitemap/HTML estatico) - nenhum mecanismo de descoberta encontrado no orcamento de tempo desta rodada; investigacao incompleta, nao e' veredito final",
+    },
+    {
+        # Investigada em 12/11/2026 (mesma missao acima). O hub publico
+        # "UBS CIO" (ubs.com/global/en/wealthmanagement/insights.html)
+        # existe e carrega (HTTP 200); o sitemap.xml e' um indice bem
+        # maior que o dos outros bancos (dezenas de sitemaps por
+        # pais/idioma, o do "en" global sozinho tem 3.9MB e ~2400
+        # ocorrencias de "/insights/"). Nao foi possivel, no orcamento de
+        # tempo desta rodada, confirmar quais desses itens sao RECENTES
+        # (o filtro por <lastmod> adjacente ao <loc> nao bateu no formato
+        # real do arquivo - precisa de um parser mais cuidadoso da
+        # estrutura) nem distinguir conteudo editorial atual de paginas
+        # antigas (ha' itens de 2018-2024 misturados). Registrada
+        # indisponivel por ora - candidata a revisitar com mais tempo de
+        # investigacao, diferente de bloqueio de borda ou paywall.
+        "id": "ubs_insights",
+        "nome": "UBS CIO Insights",
+        "fonte": "ubs.com/global/en/wealthmanagement/insights.html (nao confirmado - sitemap multi-pais nao analisado por completo no orcamento desta rodada)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "extrator_texto": None,
+        "motivo_indisponivel": "hub publico existe mas o sitemap real e' um indice multi-pais/idioma muito grande (3.9MB so' pro 'en' global); nao foi possivel confirmar recencia/estrutura dos itens no orcamento de tempo desta rodada - investigacao incompleta, nao e' veredito final",
+    },
+    {
+        # Investigada em 12/11/2026 (missao Agente B, Grupo 2 - research
+        # de acoes do Safra, alem da carteira recomendada ja' coberta por
+        # data/research/safra_carteiras.py). Reconfirma o achado de
+        # 22/10/2026 (docs/research-fontes-20261022.md): o portal
+        # "O Especialista" (oespecialista.safra.com.br) devolve HTTP 403
+        # tanto no robots.txt quanto no feed RSS (/feed/), deste ambiente
+        # e com o mesmo User-Agent do projeto - bloqueio de borda
+        # consistente, sem mudanca desde a sondagem anterior.
+        "id": "safra_research",
+        "nome": "Safra O Especialista",
+        "fonte": "oespecialista.safra.com.br (bloqueio de borda - HTTP 403 no robots.txt e no feed)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "extrator_texto": None,
+        "motivo_indisponivel": "HTTP 403 no robots.txt e no feed RSS, reconfirmado em 12/11/2026 (mesmo bloqueio de borda de 22/10/2026) - sem mudanca; carteira recomendada do Safra continua coletada separadamente em data/research/safra_carteiras.py",
+    },
+    {
+        # Investigada em 12/11/2026 (mesma missao acima, BB Investimentos
+        # ainda nao tinha sido investigada - ver comentario de 2026-10-29
+        # acima). O portal "BB Investalk" (investalk.bb.com.br) nao
+        # bloqueia mais (HTTP 200 em toda rota testada, diferente do 403
+        # de 22/10/2026 no /feed/ e /wp-json/) e tem um sitemap.xml real,
+        # mas ele so' lista paginas de NAVEGACAO (ex: "/noticias",
+        # "/relatorios-e-analises", "/carteiras-sugeridas" - sem nenhuma
+        # URL de item individual). A pagina "/relatorios-e-analises"
+        # carrega (1.25MB de HTML) mas nao tem nenhum link
+        # "/noticias/onde-investir/..." no HTML estatico nem
+        # __NEXT_DATA__/JSON embutido - catalogo client-side (XHR), sem
+        # API publica encontrada nos bundles carregados. Sem mecanismo de
+        # descoberta de item novo (mesma logica de "agora_insights" e
+        # "barclays_insights" acima).
+        "id": "bb_investimentos",
+        "nome": "BB Investimentos (Investalk)",
+        "fonte": "investalk.bb.com.br/relatorios-e-analises (sem mecanismo de descoberta de item novo)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "extrator_texto": None,
+        "motivo_indisponivel": "paginas carregam sem bloqueio, mas o sitemap so' lista navegacao (sem item individual) e o catalogo de relatorios e' renderizado client-side sem API publica encontrada - sem sitemap/feed/API de listagem, nao ha' como descobrir relatorio novo de forma confiavel",
+    },
+    {
+        # Investigada em 12/11/2026 (missao Agente B, Grupo 3 -
+        # independentes). O feed publico (suno.com.br/feed/) existe e
+        # responde (RSS real, robots.txt permite), mas e' o blog GERAL do
+        # site (conteudo educacional: "Financas pessoais: guia completo",
+        # "O que e' CDB" etc.), nao analise de acoes. O subdominio/secao
+        # "Suno Analitica" (suno.com.br/analitica/, com sitemaps proprios
+        # "acao-sitemap.xml"/"bdr-sitemap.xml"/"fiis-sitemap.xml") tem 1
+        # pagina POR TICKER (ex: /analitica/acoes/itub4/), mas cada pagina
+        # e' um perfil de COTACAO (schema.org WebPage/Article generico,
+        # "dateModified" atualizado todo dia so' pela cotacao mudar, nao
+        # por um relatorio novo ter sido publicado) - confirmado com o
+        # ld+json real da pagina ITUB4, sem nenhum item de analise datado
+        # dentro. Sem um feed/sitemap que liste RELATORIOS individuais
+        # (so' cotacoes por ticker), nao ha' como diferenciar "relatorio
+        # novo" de "cotacao atualizada hoje".
+        "id": "suno_research",
+        "nome": "Suno Research",
+        "fonte": "suno.com.br/analitica (paginas sao perfil de cotacao por ticker, nao relatorio datado)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "extrator_texto": None,
+        "motivo_indisponivel": "feed publico e' o blog educacional geral (nao analise de acoes); as paginas por ticker de 'Suno Analitica' sao perfil de cotacao continuamente atualizado (dateModified muda por cotacao, nao por relatorio novo) - sem um feed/sitemap de RELATORIOS individuais, nao ha' como distinguir relatorio novo de atualizacao de cotacao",
+    },
+    {
+        # Investigada em 12/11/2026 (mesma missao acima). O dominio real
+        # da empresa (elevenfinancial.com.br, confirmado pelo <title>
+        # "ELEVEN FINANCIAL" na resposta real) carrega sem bloqueio, mas e'
+        # uma SPA client-side (bundle JS de inicializacao de popups/
+        # tracking no HTML, sem nenhum link de navegacao no HTML
+        # estatico). "/sitemap.xml" e "/sitemap_index.xml" devolvem o
+        # MESMO HTML da home (fallback de rota SPA, nao um sitemap real) -
+        # nenhum XML valido encontrado. Sem conseguir enumerar nenhuma
+        # pagina de research no orcamento de tempo desta rodada, nao ha'
+        # fonte coletavel identificada - investigacao incompleta (um
+        # endpoint de API client-side pode existir e nao foi encontrado),
+        # nao e' veredito final de bloqueio.
+        "id": "eleven_financial",
+        "nome": "Eleven Financial",
+        "fonte": "elevenfinancial.com.br (SPA client-side - nenhum sitemap/listagem real encontrado no orcamento desta rodada)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "extrator_texto": None,
+        "motivo_indisponivel": "site carrega sem bloqueio mas e' renderizado inteiramente client-side (SPA); '/sitemap.xml' cai no fallback de rota SPA (mesmo HTML da home, nao XML real) - nenhuma pagina de research nem API publica encontrada no orcamento de tempo desta rodada",
+    },
+    {
+        # Investigada em 12/11/2026 (mesma missao acima). Nao foi possivel
+        # nem ESTABELECER UMA CONEXAO HTTPS com o dominio oficial
+        # (www.terrainvestimentos.com.br, confirmado via busca como o site
+        # real da casa) deste ambiente - erro de certificado TLS
+        # ("Hostname mismatch... not valid for
+        # 'terrainvestimentos.com.br'") em toda tentativa, inclusive com
+        # verificacao de certificado desligada. Diferente das outras
+        # casas desta lista (onde a pagina carrega e falta so' o
+        # mecanismo de descoberta, ou ha' bloqueio HTTP explicito), aqui
+        # nem a camada de rede/TLS completa deste ambiente - limitacao
+        # honesta do ambiente de investigacao, nao um veredito sobre a
+        # fonte em si (mesmo princípio ja' documentado pra outras
+        # ferramentas indisponiveis no projeto, ex: Genial/XP via
+        # WebFetch em 22/10/2026).
+        "id": "terra_investimentos",
+        "nome": "Terra Investimentos",
+        "fonte": "terrainvestimentos.com.br (falha de TLS neste ambiente - nao foi possivel conectar)",
+        "ativa_por_padrao": False,
+        "disponivel": False,
+        "extrator_texto": None,
+        "motivo_indisponivel": "falha de certificado TLS ao conectar neste ambiente ('Hostname mismatch'), mesmo com verificacao desligada - nao foi possivel buscar nenhuma pagina do dominio; limitacao do ambiente de investigacao, nao um veredito sobre bloqueio/disponibilidade da fonte",
     },
 ]
 

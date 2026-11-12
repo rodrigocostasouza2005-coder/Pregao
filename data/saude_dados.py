@@ -432,6 +432,47 @@ REGISTRO_COLETORES = [
         "leitor": _leitor_hibrido("Citi Global Insights", _leitor_research("Citi Global Insights")),
     },
     {
+        # linha nova (12/11/2026, missao Agente B): mesmo gap acima pra
+        # "Goldman Sachs Insights" (ver data/research/goldman_sachs.py:
+        # _NOME_CASA).
+        "nome": "Goldman Sachs Insights", "fonte": "goldmansachs.com/insights/articles (conteudo publico)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 96, "instrumentado": True,
+        "leitor": _leitor_hibrido("Goldman Sachs Insights", _leitor_research("Goldman Sachs Insights")),
+    },
+    {
+        # linha nova (12/11/2026, missao Agente B): mesmo gap acima pra
+        # "Jefferies Insights" (ver data/research/jefferies.py:_NOME_CASA).
+        "nome": "Jefferies Insights", "fonte": "jefferies.com/insights (conteudo publico)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 96, "instrumentado": True,
+        "leitor": _leitor_hibrido("Jefferies Insights", _leitor_research("Jefferies Insights")),
+    },
+    {
+        # linha nova (12/11/2026, missao Agente B): mesmo gap acima pra
+        # "Deutsche Bank Research Institute" (ver data/research/
+        # dbresearch.py:_NOME_CASA). idade_maxima_horas mais baixa: a
+        # pagina-indice de Macro observada na sondagem real tem cadencia
+        # diaria (varios itens/dia).
+        "nome": "Deutsche Bank Research Institute", "fonte": "dbresearch.com/PROD/IE-PROD (secao Macro, conteudo publico)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 48, "instrumentado": True,
+        "leitor": _leitor_hibrido("Deutsche Bank Research Institute", _leitor_research("Deutsche Bank Research Institute")),
+    },
+    {
+        # linha nova (12/11/2026, missao Agente B): "Levante Ideias de
+        # Investimentos" e' casa INDEPENDENTE (nao banco global) - mesmo
+        # gap do Nord/Monte Bravo acima se essa linha nao existisse (ver
+        # data/research/levante.py:_NOME_CASA). idade_maxima_horas igual
+        # ao Nord (120h = 5 dias): cadencia observada na amostra real e'
+        # irregular (varios itens em dias de resultado/evento corporativo,
+        # dias sem nenhum item novo sao normais).
+        "nome": "Levante Ideias de Investimentos", "fonte": "levanteideias.com.br (feed RSS, itens com ticker B3 ou categoria de research)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 120, "instrumentado": True,
+        "leitor": _leitor_hibrido("Levante Ideias de Investimentos", _leitor_research("Levante Ideias de Investimentos")),
+    },
+    {
         "nome": "CALENDARIO", "fonte": "RI das empresas + NEWS + prazo CVM",
         "categoria": "Calendario", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
         "idade_maxima_horas": 48, "instrumentado": True,
