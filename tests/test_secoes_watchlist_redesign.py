@@ -123,6 +123,21 @@ def test_2c_recomendacao_nunca_inventada_quando_nao_ha_tese_salva():
     assert "COMPRA" not in tabela and "VENDA" not in tabela
 
 
+def test_2d_tabela_sinaliza_alta_baixa_com_classe_design_system():
+    """Missão HOME/watchlist/cotações (2026-11-11): confirma que a
+    sinalização verde/vermelho pedida pro terminal denso (ticker/preço/
+    variação%/volume) vem de fato da classe do design system
+    (`ds-numero alta`/`ds-numero baixa`, via design_system.variacao_html) -
+    PETR4 (+3,14%) sai 'alta', VALE3 (-1,02%) sai 'baixa', nunca as duas
+    presas na mesma cor."""
+    htmls, _ = _renderizar(_PREFS)
+    tabela = "".join(h for h in htmls if "<table" in h)
+    linha_petr4 = tabela[tabela.index("PETR4"):tabela.index("VALE3")]
+    linha_vale3 = tabela[tabela.index("VALE3"):]
+    assert "ds-numero alta" in linha_petr4 and "ds-numero baixa" not in linha_petr4
+    assert "ds-numero baixa" in linha_vale3
+
+
 # ============================================================
 # 3. Ticker sem cotação (fonte falhou pra esse papel) nunca derruba a
 #    tela nem esconde os demais - mesma regra de _painel_watchlist_compacta

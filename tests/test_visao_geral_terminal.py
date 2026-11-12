@@ -150,6 +150,54 @@ def test_painel_leitura_pregao_chips_ficam_dentro_de_bloco_html():
     assert "R$" in chamada_chips and "US$ 86" in chamada_chips
 
 
+def test_painel_watchlist_compacta_sinaliza_alta_baixa_via_design_system():
+    """Missão HOME/watchlist/cotações (2026-11-11): "MINHA WATCHLIST" (painel
+    compacto da Visão Geral, `_painel_watchlist_compacta`) precisa mostrar
+    sinalização verde/vermelho real por ativo - isso já vinha de
+    `design_system.variacao_html` (sem CSS paralelo), mas nenhum teste
+    conferia que a classe aplicada bate com o SINAL de cada cotação. Regressão:
+    garante que uma alta (PETR4, +3,14%) sai com a classe 'alta' e uma baixa
+    (VALE3, -1,02%) sai com 'baixa', nunca as duas presas na mesma classe."""
+    cotacoes = {
+        "PETR4": {"preco": 36.52, "variacao_pct": 3.14, "volume_financeiro": 1_250_000_000.0, "erro": None},
+        "VALE3": {"preco": 71.80, "variacao_pct": -1.02, "volume_financeiro": 980_000_000.0, "erro": None},
+    }
+    prefs = {"formato_numerico": "BR", "watchlist": ["PETR4", "VALE3"], "tema": "AMBAR"}
+    htmls = []
+    with patch.object(vg, "obter_cotacoes_lote", return_value=cotacoes), \
+         patch.object(vg.st, "markdown", side_effect=lambda h, **k: htmls.append(h)):
+        vg._painel_watchlist_compacta(prefs)
+    tabela = "".join(h for h in htmls if "<table" in h)
+    linha_petr4 = tabela[tabela.index("PETR4"):tabela.index("VALE3")]
+    linha_vale3 = tabela[tabela.index("VALE3"):]
+    assert "ds-numero alta" in linha_petr4
+    assert "ds-numero baixa" not in linha_petr4
+    assert "ds-numero baixa" in linha_vale3
+
+
+def test_altas_baixas_resumo_sinaliza_cores_corretas():
+    """"PRINCIPAIS ALTAS E BAIXAS": a coluna ALTAS só deve conter variação
+    marcada como 'alta' e a coluna BAIXAS só 'baixa' - nenhuma mistura."""
+    htmls = []
+    with patch.object(vg, "obter_altas_baixas", return_value=(_ALTAS, _BAIXAS)), \
+         patch.object(vg.st, "markdown", side_effect=lambda h, **k: htmls.append(h)):
+        vg._painel_altas_baixas_resumo(_PREFS)
+    bloco_altas = next(h for h in htmls if "PETR4" in h or "PRIO3" in h)
+    bloco_baixas = next(h for h in htmls if "MGLU3" in h)
+    assert "ds-numero alta" in bloco_altas and "ds-numero baixa" not in bloco_altas
+    assert "ds-numero baixa" in bloco_baixas and "ds-numero alta" not in bloco_baixas
+
+
+def test_desempenho_tabela_sinaliza_cor_da_variacao():
+    """"MAIS NEGOCIADOS (VOLUME)": variação positiva sai com classe 'alta'."""
+    htmls = []
+    with patch.object(vg, "obter_mais_negociados", return_value=_NEGOCIADOS), \
+         patch.object(vg.st, "markdown", side_effect=lambda h, **k: htmls.append(h)):
+        vg._painel_desempenho_tabela(_PREFS)
+    tabela = "".join(h for h in htmls if "<table" in h)
+    assert "ds-numero alta" in tabela
+
+
 def test_render_visao_geral_completo_sem_excecao():
     """render_visao_geral (cockpit fixo de ponta a ponta), tudo mockado -
     garante que a composição inteira (indicadores/leitura do pregão/
