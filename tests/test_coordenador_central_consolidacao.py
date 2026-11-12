@@ -379,3 +379,138 @@ def test_sinal_comite_sem_fundamentos_declara_preco_atual_ausente():
     sinal = consolidacao.consolidar({}, ticker="PETR4")["sinal_comite"]
     assert sinal["preco_atual"] is None
     assert sinal["preco_atual_consultado_em"] is None
+
+
+# ============================================================
+# Divergência entre os PRÓPRIOS pareceres do Comitê - diferente da
+# cross_comparador_memoria (que compara 2 fontes EXTERNAS sobre a
+# mesma casa). Aqui o conflito é entre os especialistas internos
+# (market_researcher/earnings_reviewer/valuation_comparables) a
+# partir dos MESMOS dados de entrada.
+# ============================================================
+
+# Fundamentos desenhados pra produzir um conflito real: indicadores
+# operacionais fortes (ROE/margem/dívida/FCF positivos) levam o Market
+# Researcher a COMPRA, mas o P/L muito acima da mediana setorial (30x
+# vs 10x) leva o Valuation por Múltiplos a VENDA - mesmo ticket, duas
+# leituras opostas.
+_FUNDAMENTOS_DIVERGENTES = {
+    "preco": 20.0, "roe": 25.0, "margem_liquida": 20.0,
+    "divida_liquida_ebitda": 0.5, "fluxo_caixa_livre": 500.0, "pl": 30.0,
+}
+_SETORIAL_DIVERGENTE = {"pl_mediana": 10.0}
+
+# Mesmos indicadores, mas com P/L alinhado ao setor (múltiplo barato
+# relativo) - Market Researcher e Valuation concordam em COMPRA.
+_FUNDAMENTOS_CONCORDANTES = {
+    "preco": 20.0, "roe": 25.0, "margem_liquida": 20.0,
+    "divida_liquida_ebitda": 0.5, "fluxo_caixa_livre": 500.0, "pl": 10.0,
+}
+_SETORIAL_CONCORDANTE = {"pl_mediana": 18.0}
+
+
+def test_divergencia_entre_analistas_do_comite_quando_recomendacoes_comparaveis_discordam():
+    resultados = {
+        "analise_ticker": _resultado("analise_ticker", dados={
+            "fundamentos": _FUNDAMENTOS_DIVERGENTES,
+            "comparativo_setorial": _SETORIAL_DIVERGENTE,
+        }),
+    }
+    consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
+    pareceres = {a["id"]: a.get("recomendacao") for a in consolidado["pareceres_analistas"]["analistas"]}
+    assert pareceres["market_researcher"] == "COMPRA"
+    assert pareceres["valuation_comparables"] == "VENDA"
+
+    divergencia = consolidado["divergencias"]["entre_analistas_comite"]
+    assert divergencia is not None
+    assert divergencia["divergente"] is True
+    assert divergencia["categorias"]["market_researcher"] == "COMPRA"
+    assert divergencia["categorias"]["valuation_comparables"] == "VENDA"
+    assert any("comitê" in p and "DIVERGEM" in p for p in consolidado["pontos_atencao"])
+    assert any("divergem entre si" in linha for linha in consolidado["conclusao"])
+
+
+def test_sem_divergencia_entre_analistas_do_comite_quando_recomendacoes_concordam():
+    resultados = {
+        "analise_ticker": _resultado("analise_ticker", dados={
+            "fundamentos": _FUNDAMENTOS_CONCORDANTES,
+            "comparativo_setorial": _SETORIAL_CONCORDANTE,
+        }),
+    }
+    consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
+    divergencia = consolidado["divergencias"]["entre_analistas_comite"]
+    assert divergencia is not None
+    assert divergencia["divergente"] is False
+    assert not any("comitê" in p and "DIVERGEM" in p for p in consolidado["pontos_atencao"])
+    assert not any("divergem entre si" in linha for linha in consolidado["conclusao"])
+
+
+def test_divergencia_entre_analistas_do_comite_none_quando_menos_de_dois_comparaveis():
+    # Sem nenhum dado de entrada, market_researcher e valuation_comparables
+    # caem em "SEM BASE SUFICIENTE"/"VALUATION INSUFICIENTE" (recomendacao
+    # INSUFICIENTE, fora da escala comparável) e earnings_reviewer nem
+    # chega a ter a chave "recomendacao" (nota indisponível) - 0 analistas
+    # comparáveis, nunca "concordam por falta de dado".
+    consolidado = consolidacao.consolidar({}, ticker="PETR4")
+    assert consolidado["divergencias"]["entre_analistas_comite"] is None
+
+
+def test_confianca_rebaixada_de_alta_para_media_quando_comite_diverge():
+    resultados = {
+        "analise_ticker": _resultado("analise_ticker", dados={
+            "fundamentos": _FUNDAMENTOS_DIVERGENTES,
+            "comparativo_setorial": _SETORIAL_DIVERGENTE,
+        }),
+        "comparador": _resultado("comparador", evidencias=[{"fonte": "x"}]),
+        "memoria_research": _resultado("memoria_research", evidencias=[{"fonte": "y"}]),
+        "noticias": _resultado("noticias", evidencias=[{"fonte": "z"}]),
+    }
+    # Confirma a premissa do teste: sem o rebaixamento por divergência,
+    # este cenário (3 de 4 acionados com evidência real) classificaria ALTA.
+    confianca_sem_divergencia = consolidacao._confianca(resultados, divergencia_comite=None)
+    assert confianca_sem_divergencia["categoria"] == consolidacao.CONFIANCA_ALTA
+
+    consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
+    assert consolidado["divergencias"]["entre_analistas_comite"]["divergente"] is True
+    assert consolidado["confianca"]["categoria"] == consolidacao.CONFIANCA_MEDIA
+    assert "Rebaixada de ALTA para MEDIA" in consolidado["confianca"]["justificativa"]
+    assert "%" not in consolidado["confianca"]["justificativa"]
+
+
+def test_confianca_nao_rebaixa_quando_comite_concorda_mesmo_com_muita_evidencia():
+    resultados = {
+        "analise_ticker": _resultado("analise_ticker", dados={
+            "fundamentos": _FUNDAMENTOS_CONCORDANTES,
+            "comparativo_setorial": _SETORIAL_CONCORDANTE,
+        }),
+        "comparador": _resultado("comparador", evidencias=[{"fonte": "x"}]),
+        "memoria_research": _resultado("memoria_research", evidencias=[{"fonte": "y"}]),
+        "noticias": _resultado("noticias", evidencias=[{"fonte": "z"}]),
+    }
+    consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
+    assert consolidado["divergencias"]["entre_analistas_comite"]["divergente"] is False
+    assert consolidado["confianca"]["categoria"] == consolidacao.CONFIANCA_ALTA
+    assert "Rebaixada" not in consolidado["confianca"]["justificativa"]
+
+
+def test_model_builder_e_valuation_reviewer_nunca_entram_na_divergencia_entre_analistas():
+    """model_builder (MODELADO/INSUFICIENTE) e valuation_reviewer (APROVADO/
+    COM RESSALVAS/INSUFICIENTE) respondem perguntas diferentes de
+    market_researcher/earnings_reviewer/valuation_comparables (COMPRA/
+    VENDA/NEUTRO) - nunca podem ser contados como "divergência de
+    recomendação" só por estarem fora dessa escala."""
+    resultados = {
+        "model_builder": _resultado("model_builder", dados={
+            "disponivel": True, "metodo": "DCF de 5 anos",
+            "fonte_premissas": "CVM + premissas manuais",
+            "cenarios": {"pessimista": {"preco_alvo": 20.0}, "base": {"preco_alvo": 30.0}, "otimista": {"preco_alvo": 40.0}},
+            "sensibilidade": {"disponivel": True, "linhas": []},
+        }),
+        "valuation_reviewer": _resultado("valuation_reviewer", dados={
+            "disponivel": True, "aprovado": True,
+            "precos_alvo_revisados": {"pessimista": 20.0, "base": 30.0, "otimista": 40.0},
+            "achados": [], "limitacoes": [],
+        }),
+    }
+    consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
+    assert consolidado["divergencias"]["entre_analistas_comite"] is None
