@@ -59,6 +59,14 @@ _CSS_COORDENADOR = """
 .coord-tabela-dcf { min-width: 650px; }
 .coord-tabela-sens { min-width: 520px; }
 .coord-tabela-premissas { min-width: 0; }
+/* coord-tabela-execagendadas (redesign estrutural 2026-11-12, Agente D):
+   esta tabela passou a dividir a largura da tela com outro painel (grade
+   2 colunas em VISÃO GERAL, ver render_visao_geral) - sem um min-width
+   explícito, a coluna livre "Resumo / erro" cortava o texto em vez de
+   deixar o wrapper (.coord-tabela-wrap, que já tem overflow-x:auto)
+   rolar horizontalmente - mesma técnica já usada em .coord-tabela-dcf/
+   .coord-tabela-sens acima pro mesmo problema. */
+.coord-tabela-execagendadas { min-width: 560px; }
 .coord-tabela-dcf th:not(:first-child), .coord-tabela-dcf td:not(:first-child),
 .coord-tabela-sens th:not(:first-child), .coord-tabela-sens td:not(:first-child),
 .coord-tabela-premissas td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
@@ -228,7 +236,7 @@ def _render_execucoes_agendadas():
         )
 
     tabela_html = (
-        "<div class='coord-tabela-wrap'><table class='coord-tabela'><thead><tr>"
+        "<div class='coord-tabela-wrap'><table class='coord-tabela coord-tabela-execagendadas'><thead><tr>"
         "<th>Rotina</th><th>Status</th><th>Última execução</th><th>Duração</th><th>Resumo / erro</th>"
         "</tr></thead><tbody>" + "".join(linhas) + "</tbody></table></div>"
     )
@@ -249,7 +257,24 @@ def render_visao_geral(prefs: dict = None):
     calculado em Python sobre as linhas mais recentes de
     coordenador_especialistas_execucoes - nunca sobre o histórico
     completo (um especialista que já teve 1 falha antiga isolada mas
-    está 100% saudável agora não deve aparecer como "com falha")."""
+    está 100% saudável agora não deve aparecer como "com falha").
+
+    REDESIGN ESTRUTURAL (2026-11-12, Agente D - redesign visual terminal):
+    antes desta mudança a tela inteira era 1 coluna só, de cima pra baixo
+    (título → nota → expander fechável com a tabela de execuções agendadas
+    → 8 métricas num único `flex-wrap` → 1 linha de texto sobre a última
+    análise) - nenhuma composição lado a lado, nenhuma hierarquia visual
+    entre "especialistas" e "análises", e a tabela de execuções agendadas
+    só aparecia se o usuário clicasse pra abrir o expander. Reorganizado
+    em 2 REGIÕES de 2 colunas cada (mesmo mecanismo de `st.container(key=
+    "coord_grid_...")` + CSS responsivo já usado por VISÃO GERAL/MERCADO/
+    RESEARCH, ver style.css): (1) ESPECIALISTAS | ANÁLISES SOB DEMANDA lado
+    a lado (as 8 métricas agrupadas por assunto, não mais um bloco só); (2)
+    ÚLTIMAS EXECUÇÕES AGENDADAS (promovida de expander fechável pra painel
+    sempre visível) | ANÁLISES SOB DEMANDA RECENTES (preview das 5 mais
+    recentes, novo - mas sobre os MESMOS dados de `analises` já buscados
+    pras métricas acima, zero consulta nova) com atalho pra Execuções (lista
+    completa). Zero dado novo, zero cálculo novo - só reagrupamento."""
     _injetar_css()
     st.markdown('<div class="painel-titulo">COORDENADOR CENTRAL — VISÃO GERAL</div>', unsafe_allow_html=True)
     st.markdown(
@@ -258,15 +283,6 @@ def render_visao_geral(prefs: dict = None):
         "Não substitui jobs/coordenador.py (esse é o agendador puro via GitHub Actions).</div>",
         unsafe_allow_html=True,
     )
-
-    with st.expander("ÚLTIMAS EXECUÇÕES AGENDADAS", expanded=True):
-        st.markdown(
-            "<div class='coord-nota' style='margin-top:0;'>Rotinas do agendador via cron "
-            "(jobs/coordenador.py, tabela coordenador_execucoes) - diferente das análises sob "
-            "demanda abaixo: aqui cada linha é 1 rodada automática de 1 rotina.</div>",
-            unsafe_allow_html=True,
-        )
-        _render_execucoes_agendadas()
 
     especialistas = listar_especialistas()
     metricas = persistencia.metricas_especialistas()
@@ -290,33 +306,77 @@ def render_visao_geral(prefs: dict = None):
     em_andamento = sum(1 for a in analises if a.get("status") == "EM_ANDAMENTO")
     concluidas = sum(1 for a in analises if a.get("status") == "CONCLUIDA")
     parciais = sum(1 for a in analises if a.get("status") == "PARCIAL")
-    ultima = analises[0] if analises else None
 
     duracoes = [a["duracao_ms"] for a in analises if isinstance(a.get("duracao_ms"), (int, float))]
     tempo_medio = f"{(sum(duracoes) / len(duracoes)) / 1000:.1f}s" if duracoes else "—"
 
-    st.markdown(
-        "<div class='coord-metricas'>"
-        + _metrica_html(total, "Especialistas registrados")
-        + _metrica_html(operacionais, "Operacionais")
-        + _metrica_html(com_falha, "Com falha recente")
-        + _metrica_html(sem_historico, "Sem evidência de execução")
-        + _metrica_html(em_andamento, "Análises em andamento")
-        + _metrica_html(concluidas, "Análises concluídas")
-        + _metrica_html(parciais, "Análises parciais")
-        + _metrica_html(tempo_medio, "Tempo médio por análise")
-        + "</div>",
-        unsafe_allow_html=True,
-    )
+    with st.container(key="coord_grid_visao_stats"):
+        col_especialistas, col_analises = st.columns(2, gap="small")
+        with col_especialistas:
+            with st.container(border=True):
+                st.markdown('<div class="painel-titulo" style="font-size:0.74rem;">ESPECIALISTAS</div>', unsafe_allow_html=True)
+                st.markdown(
+                    "<div class='coord-metricas'>"
+                    + _metrica_html(total, "Registrados")
+                    + _metrica_html(operacionais, "Operacionais")
+                    + _metrica_html(com_falha, "Com falha recente")
+                    + _metrica_html(sem_historico, "Sem evidência de execução")
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+        with col_analises:
+            with st.container(border=True):
+                st.markdown('<div class="painel-titulo" style="font-size:0.74rem;">ANÁLISES SOB DEMANDA</div>', unsafe_allow_html=True)
+                st.markdown(
+                    "<div class='coord-metricas'>"
+                    + _metrica_html(em_andamento, "Em andamento")
+                    + _metrica_html(concluidas, "Concluídas")
+                    + _metrica_html(parciais, "Parciais")
+                    + _metrica_html(tempo_medio, "Tempo médio")
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
 
-    if ultima:
-        st.markdown(
-            f"<div class='coord-nota'>Última execução: <b>{html.escape(ultima.get('solicitacao') or '')}</b> "
-            f"({_fmt_data(ultima.get('iniciado_em'))}) — {_badge_status(ultima.get('status'))}</div>",
-            unsafe_allow_html=True,
-        )
-    else:
-        st.info("Nenhuma análise executada ainda nesta instalação - use a subaba Analisar.")
+    with st.container(key="coord_grid_visao_execucoes"):
+        col_agendadas, col_demanda = st.columns(2, gap="small")
+        with col_agendadas:
+            with st.container(border=True):
+                st.markdown('<div class="painel-titulo" style="font-size:0.74rem;">ÚLTIMAS EXECUÇÕES AGENDADAS</div>', unsafe_allow_html=True)
+                st.markdown(
+                    "<div class='coord-nota' style='margin-top:0;'>Rotinas do agendador via cron "
+                    "(jobs/coordenador.py, tabela coordenador_execucoes) - diferente das análises sob "
+                    "demanda ao lado: aqui cada linha é 1 rodada automática de 1 rotina.</div>",
+                    unsafe_allow_html=True,
+                )
+                _render_execucoes_agendadas()
+        with col_demanda:
+            with st.container(border=True):
+                st.markdown('<div class="painel-titulo" style="font-size:0.74rem;">ANÁLISES SOB DEMANDA RECENTES</div>', unsafe_allow_html=True)
+                if not analises:
+                    st.markdown(
+                        "<div class='coord-nota' style='margin-top:0;'>Nenhuma análise executada ainda "
+                        "nesta instalação — use a subaba Analisar.</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    linhas = []
+                    for a in analises[:5]:
+                        duracao = f"{a['duracao_ms']}ms" if isinstance(a.get("duracao_ms"), (int, float)) else "—"
+                        linhas.append(
+                            "<tr>"
+                            f"<td>{html.escape(str(a.get('solicitacao') or ''))}</td>"
+                            f"<td>{_badge_status(a.get('status'))}</td>"
+                            f"<td>{_fmt_data(a.get('iniciado_em'))}</td>"
+                            f"<td>{duracao}</td>"
+                            "</tr>"
+                        )
+                    tabela_html = (
+                        "<div class='coord-tabela-wrap'><table class='coord-tabela'><thead><tr>"
+                        "<th>Solicitação</th><th>Status</th><th>Início</th><th>Duração</th>"
+                        "</tr></thead><tbody>" + "".join(linhas) + "</tbody></table></div>"
+                    )
+                    st.markdown(tabela_html, unsafe_allow_html=True)
+                    st.caption(f"{len(analises)} análise(s) no total - lista completa em COORDENADOR › Execuções.")
 
 
 # ============================================================
@@ -511,74 +571,100 @@ def _render_cabecalho_decisao(consolidado: dict):
     tudo (reformulação visual 2026-11-06, pedido do Rodrigo: "resultado
     final deve apresentar recomendação fundamentada"). A lógica de
     consolidação (data/coordenador_central/consolidacao.py e pareceres.py)
-    não muda - só a apresentação."""
+    não muda - só a apresentação.
+
+    REDESIGN ESTRUTURAL (2026-11-12, Agente D): antes, narrativa (empresa/
+    recomendação/confiança/resumo/justificativa) e o painel numérico de
+    preços-alvo ficavam EMPILHADOS, nessa ordem, ocupando a largura toda os
+    dois - o leitor via primeiro um bloco de texto, só depois os números.
+    Agora é um painel de decisão em 2 colunas lado a lado (mesmo mecanismo
+    de grade responsiva de VISÃO GERAL/MERCADO, `st.container(key=
+    "coord_grid_...")`, ver style.css): esquerda = narrativa da decisão
+    (o "porquê"), direita = os preços-alvo/potencial (o "quanto") - lidos
+    ao mesmo tempo, não em sequência. Usada por HISTÓRICO e ANALISAR (toda
+    análise consolidada passa por aqui). Nenhum campo novo, nenhum valor
+    recalculado - só a composição."""
     sinal = consolidado.get("sinal_comite") or {}
     confianca = consolidado.get("confianca") or {}
     recomendacao = str(sinal.get("sinal") or "INSUFICIENTE")
 
-    # Empresa + ticker no topo - achado real (auditoria 2026-11-11): a
-    # análise consolidada nunca identificava QUAL empresa estava sendo
-    # analisada no próprio cabeçalho (só aparecia em texto corrido no
-    # resumo executivo, ou fora desta função, no cabeçalho de
-    # render_historico - render_analisar não mostrava nada). ticker vem
-    # de consolidado["ticker"] (consolidacao.consolidar) com fallback pro
-    # campo legado em pareceres_analistas, pra não quebrar consolidados
-    # antigos/fixtures de teste que só tinham o campo lá.
-    ticker = consolidado.get("ticker") or (consolidado.get("pareceres_analistas") or {}).get("ticker")
-    if ticker:
-        nome_empresa = _nome_empresa_exibicao(ticker)
-        rotulo_empresa = f"{nome_empresa} ({ticker})" if nome_empresa and nome_empresa.upper() != ticker else ticker
-        st.markdown(
-            f"<div style='font-size:0.95rem; font-weight:600; margin-bottom:0.25rem;'>{html.escape(rotulo_empresa)}</div>",
-            unsafe_allow_html=True,
-        )
+    with st.container(key="coord_grid_cabecalho_decisao"):
+        col_narrativa, col_numeros = st.columns([0.52, 0.48], gap="small")
+        with col_narrativa:
+            # Empresa + ticker no topo - achado real (auditoria 2026-11-11): a
+            # análise consolidada nunca identificava QUAL empresa estava sendo
+            # analisada no próprio cabeçalho (só aparecia em texto corrido no
+            # resumo executivo, ou fora desta função, no cabeçalho de
+            # render_historico - render_analisar não mostrava nada). ticker vem
+            # de consolidado["ticker"] (consolidacao.consolidar) com fallback pro
+            # campo legado em pareceres_analistas, pra não quebrar consolidados
+            # antigos/fixtures de teste que só tinham o campo lá.
+            ticker = consolidado.get("ticker") or (consolidado.get("pareceres_analistas") or {}).get("ticker")
+            if ticker:
+                nome_empresa = _nome_empresa_exibicao(ticker)
+                rotulo_empresa = f"{nome_empresa} ({ticker})" if nome_empresa and nome_empresa.upper() != ticker else ticker
+                st.markdown(
+                    f"<div style='font-size:0.95rem; font-weight:600; margin-bottom:0.25rem;'>{html.escape(rotulo_empresa)}</div>",
+                    unsafe_allow_html=True,
+                )
 
+            st.markdown(
+                f"<div style='display:flex; align-items:baseline; gap:0.6rem; flex-wrap:wrap; margin-bottom:0.2rem;'>"
+                f"<span style='font-size:0.68rem; color:var(--cinza); letter-spacing:0.05em; text-transform:uppercase;'>RECOMENDAÇÃO DO COMITÊ</span>"
+                f"<span style='font-size:1.3rem; font-weight:700; color:{_cor_recomendacao(recomendacao)};'>{html.escape(recomendacao)}</span>"
+                f"{_badge_confianca(confianca.get('categoria'))}"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"<div style='font-size:0.78rem; margin-bottom:0.4rem;'>{html.escape(str(consolidado.get('resumo_executivo') or ''))}</div>"
+                f"<div class='coord-nota' style='margin-bottom:0.6rem;'>{html.escape(confianca.get('justificativa') or '')}</div>",
+                unsafe_allow_html=True,
+            )
+            if sinal:
+                st.markdown(
+                    f"<div class='coord-nota'>{html.escape(str(sinal.get('justificativa') or ''))}</div>"
+                    "<div class='coord-nota'>Cálculo independente do parecer de Valuation (aba abaixo): este sinal "
+                    "pontua ROE, margem, dívida, FCF, crescimento e P/L relativo (sem usar DCF), enquanto a "
+                    "recomendação do parecer de Valuation vem do upside do DCF oficial. Os dois podem divergir "
+                    "para o mesmo ticker.</div>",
+                    unsafe_allow_html=True,
+                )
+        with col_numeros:
+            _render_metricas_preco_alvo(sinal)
+
+
+def _render_metricas_preco_alvo(sinal: dict):
+    """Painel numérico de preços-alvo/potencial do sinal quantitativo do
+    Comitê - extraído de dentro de `_render_cabecalho_decisao` (ver
+    docstring lá) pra virar a COLUNA DIREITA do cabeçalho de decisão, ao
+    lado da narrativa, em vez de um bloco empilhado abaixo dela. Mesmos
+    6 campos de sempre, nenhum valor recalculado."""
+    if not sinal:
+        return
+    alvo_modelo = sinal.get("preco_alvo_modelo")
+    alvo_pl = sinal.get("preco_alvo_pl_setorial")
+    alvo_consenso = sinal.get("preco_alvo_consenso")
+    upside_modelo = sinal.get("upside_modelo_pct")
+    moeda_modelo = sinal.get("moeda_preco_alvo_modelo") or "R$"
+    # Preço atual + data de referência (campo pedido explicitamente,
+    # achado real auditoria 2026-11-11: o dado já existia em
+    # fundamentos/sinal_comite, mas nenhuma tela mostrava o preço
+    # atual da cotação usada como base de todos os upsides acima).
+    preco_atual = sinal.get("preco_atual")
+    data_referencia = _fmt_data(sinal.get("preco_atual_consultado_em"))
+    rotulo_preco_atual = "Preço atual" + (f" · {data_referencia}" if data_referencia != "—" else "")
     st.markdown(
-        f"<div style='display:flex; align-items:baseline; gap:0.6rem; flex-wrap:wrap; margin-bottom:0.2rem;'>"
-        f"<span style='font-size:0.68rem; color:var(--cinza); letter-spacing:0.05em; text-transform:uppercase;'>RECOMENDAÇÃO DO COMITÊ</span>"
-        f"<span style='font-size:1.3rem; font-weight:700; color:{_cor_recomendacao(recomendacao)};'>{html.escape(recomendacao)}</span>"
-        f"{_badge_confianca(confianca.get('categoria'))}"
+        f"<div class='coord-metricas'>"
+        f"<div class='coord-metrica'><div class='coord-metrica-valor'>{_moeda_html(preco_atual, moeda_modelo, fallback='dado insuficiente')}</div><div class='coord-metrica-rotulo'>{html.escape(rotulo_preco_atual)}</div></div>"
+        f"<div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('score') if sinal.get('score') is not None else '—'))}</div><div class='coord-metrica-rotulo'>Score do sinal quantitativo</div></div>"
+        f"<div class='coord-metrica'><div class='coord-metrica-valor'>{_moeda_html(alvo_modelo, moeda_modelo, fallback='não calculado')}</div><div class='coord-metrica-rotulo'>Alvo — Model Builder (DCF)</div></div>"
+        f"<div class='coord-metrica'><div class='coord-metrica-valor'>{variacao_html(upside_modelo) if isinstance(upside_modelo, (int, float)) else '—'}</div><div class='coord-metrica-rotulo'>Potencial sobre a cotação</div></div>"
+        f"<div class='coord-metrica'><div class='coord-metrica-valor'>{_moeda_html(alvo_pl, moeda_modelo, fallback='não calculado')}</div><div class='coord-metrica-rotulo'>Alvo — P/L setorial</div></div>"
+        f"<div class='coord-metrica'><div class='coord-metrica-valor'>{_moeda_html(alvo_consenso, moeda_modelo, fallback='não disponível')}</div><div class='coord-metrica-rotulo'>Consenso das casas de research</div></div>"
         "</div>",
         unsafe_allow_html=True,
     )
-    st.markdown(
-        f"<div style='font-size:0.78rem; margin-bottom:0.4rem;'>{html.escape(str(consolidado.get('resumo_executivo') or ''))}</div>"
-        f"<div class='coord-nota' style='margin-bottom:0.6rem;'>{html.escape(confianca.get('justificativa') or '')}</div>",
-        unsafe_allow_html=True,
-    )
-
-    if sinal:
-        alvo_modelo = sinal.get("preco_alvo_modelo")
-        alvo_pl = sinal.get("preco_alvo_pl_setorial")
-        alvo_consenso = sinal.get("preco_alvo_consenso")
-        upside_modelo = sinal.get("upside_modelo_pct")
-        moeda_modelo = sinal.get("moeda_preco_alvo_modelo") or "R$"
-        # Preço atual + data de referência (campo pedido explicitamente,
-        # achado real auditoria 2026-11-11: o dado já existia em
-        # fundamentos/sinal_comite, mas nenhuma tela mostrava o preço
-        # atual da cotação usada como base de todos os upsides acima).
-        preco_atual = sinal.get("preco_atual")
-        data_referencia = _fmt_data(sinal.get("preco_atual_consultado_em"))
-        rotulo_preco_atual = "Preço atual" + (f" · {data_referencia}" if data_referencia != "—" else "")
-        st.markdown(
-            f"<div class='coord-metricas'>"
-            f"<div class='coord-metrica'><div class='coord-metrica-valor'>{_moeda_html(preco_atual, moeda_modelo, fallback='dado insuficiente')}</div><div class='coord-metrica-rotulo'>{html.escape(rotulo_preco_atual)}</div></div>"
-            f"<div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('score') if sinal.get('score') is not None else '—'))}</div><div class='coord-metrica-rotulo'>Score do sinal quantitativo</div></div>"
-            f"<div class='coord-metrica'><div class='coord-metrica-valor'>{_moeda_html(alvo_modelo, moeda_modelo, fallback='não calculado')}</div><div class='coord-metrica-rotulo'>Alvo — Model Builder (DCF)</div></div>"
-            f"<div class='coord-metrica'><div class='coord-metrica-valor'>{variacao_html(upside_modelo) if isinstance(upside_modelo, (int, float)) else '—'}</div><div class='coord-metrica-rotulo'>Potencial sobre a cotação</div></div>"
-            f"<div class='coord-metrica'><div class='coord-metrica-valor'>{_moeda_html(alvo_pl, moeda_modelo, fallback='não calculado')}</div><div class='coord-metrica-rotulo'>Alvo — P/L setorial</div></div>"
-            f"<div class='coord-metrica'><div class='coord-metrica-valor'>{_moeda_html(alvo_consenso, moeda_modelo, fallback='não disponível')}</div><div class='coord-metrica-rotulo'>Consenso das casas de research</div></div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f"<div class='coord-nota'>{html.escape(str(sinal.get('justificativa') or ''))}</div>"
-            "<div class='coord-nota'>Cálculo independente do parecer de Valuation (aba abaixo): este sinal "
-            "pontua ROE, margem, dívida, FCF, crescimento e P/L relativo (sem usar DCF), enquanto a "
-            "recomendação do parecer de Valuation vem do upside do DCF oficial. Os dois podem divergir "
-            "para o mesmo ticker.</div>",
-            unsafe_allow_html=True,
-        )
 
 
 def _render_parecer_model_builder(analista: dict, recomendacao: str):

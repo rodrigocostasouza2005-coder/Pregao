@@ -45,12 +45,13 @@ with patch.object(execucoes_agendadas, "listar_ultimas_execucoes", return_value=
     at = AppTest.from_string(script, default_timeout=30).run()
     assert not at.exception
 
-    # Título fica no label do st.expander (widget próprio, não aparece
-    # em at.markdown) - o conteúdo interno (tabela/avisos) sim.
-    rotulos_expander = [e.label for e in at.expander]
-    assert "ÚLTIMAS EXECUÇÕES AGENDADAS" in rotulos_expander
-
     textos = " ".join(m.value for m in at.markdown)
+    # Redesign estrutural (2026-11-12, Agente D): a seção deixou de ser um
+    # st.expander (fechável, título no widget) e virou um painel sempre
+    # visível lado a lado com "Análises sob demanda recentes" (grade de
+    # 2 colunas, ver render_visao_geral) - título agora é um <div
+    # class="painel-titulo"> normal, aparece em at.markdown como o resto.
+    assert "ÚLTIMAS EXECUÇÕES AGENDADAS" in textos
     # Backoffice: OK, ~12min, 850ms, resumo.
     assert "Backoffice (achados)" in textos
     assert "há 12min" in textos

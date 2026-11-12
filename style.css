@@ -1373,13 +1373,20 @@ button[data-testid^="stBaseButton"] {
    chave (Visao Geral, Mercado > Painel, Research) - colunas aninhadas
    dentro de um painel e as do header ficam como estao. (O seletor por
    borda nao serve: no Streamlit 1.64 o container com borda nao expoe mais
-   data-testid="stVerticalBlockBorderWrapper", medido no DOM real.) */
+   data-testid="stVerticalBlockBorderWrapper", medido no DOM real.)
+
+   coord_grid_/radar_grid_ (redesign estrutural 2026-11-12, Agente D):
+   mesmos prefixos wildcard de vg_grid_, adicionados pras grades novas de
+   COORDENADOR (Visão Geral/Histórico/Analisar) e RADAR (Alertas/
+   Carteiras/Oportunidades/Acompanhamento) - sem isso as colunas dessas
+   telas ficariam permanentemente lado a lado em iPad/celular, mesmo bug
+   que motivou esta regra existir pras grades anteriores. */
 @media (max-width: 900px) {
-    :is([class*="st-key-vg_grid_"], .st-key-painel_grid_linha1, .st-key-painel_grid_linha2, .st-key-research_grid_watchlist_radar)
+    :is([class*="st-key-vg_grid_"], [class*="st-key-coord_grid_"], [class*="st-key-radar_grid_"], .st-key-painel_grid_linha1, .st-key-painel_grid_linha2, .st-key-research_grid_watchlist_radar)
         [data-testid="stHorizontalBlock"]:not([data-testid="stHorizontalBlock"] [data-testid="stHorizontalBlock"]) {
         flex-wrap: wrap !important;
     }
-    :is([class*="st-key-vg_grid_"], .st-key-painel_grid_linha1, .st-key-painel_grid_linha2, .st-key-research_grid_watchlist_radar)
+    :is([class*="st-key-vg_grid_"], [class*="st-key-coord_grid_"], [class*="st-key-radar_grid_"], .st-key-painel_grid_linha1, .st-key-painel_grid_linha2, .st-key-research_grid_watchlist_radar)
         [data-testid="stHorizontalBlock"]:not([data-testid="stHorizontalBlock"] [data-testid="stHorizontalBlock"]) > [data-testid="stColumn"] {
         flex: 1 1 100% !important;
         min-width: 100% !important;
@@ -1388,12 +1395,12 @@ button[data-testid^="stBaseButton"] {
 }
 @media (max-width: 1200px) {
     div[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="true"])
-        :is([class*="st-key-vg_grid_"], .st-key-painel_grid_linha1, .st-key-painel_grid_linha2, .st-key-research_grid_watchlist_radar)
+        :is([class*="st-key-vg_grid_"], [class*="st-key-coord_grid_"], [class*="st-key-radar_grid_"], .st-key-painel_grid_linha1, .st-key-painel_grid_linha2, .st-key-research_grid_watchlist_radar)
         [data-testid="stHorizontalBlock"]:not([data-testid="stHorizontalBlock"] [data-testid="stHorizontalBlock"]) {
         flex-wrap: wrap !important;
     }
     div[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="true"])
-        :is([class*="st-key-vg_grid_"], .st-key-painel_grid_linha1, .st-key-painel_grid_linha2, .st-key-research_grid_watchlist_radar)
+        :is([class*="st-key-vg_grid_"], [class*="st-key-coord_grid_"], [class*="st-key-radar_grid_"], .st-key-painel_grid_linha1, .st-key-painel_grid_linha2, .st-key-research_grid_watchlist_radar)
         [data-testid="stHorizontalBlock"]:not([data-testid="stHorizontalBlock"] [data-testid="stHorizontalBlock"]) > [data-testid="stColumn"] {
         flex: 1 1 100% !important;
         min-width: 100% !important;
