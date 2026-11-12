@@ -1,0 +1,18 @@
+{
+  "sidebar_visivel": true,
+  "botao_achado": true,
+  "debug_botoes_group": 15,
+  "box": {
+    "x": 99.40625,
+    "y": 178.34375,
+    "width": 210.40625,
+    "height": 44
+  },
+  "elemento_no_ponto_do_toque": {
+    "tag": "P",
+    "texto": "Carteiras Recomendadas",
+    "classe": ""
+  },
+  "url_apos_toque": "http://127.0.0.1:8778/?aba=radar&sub=carteiras",
+  "mudou_para_carteiras": true
+}
