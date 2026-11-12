@@ -87,7 +87,7 @@ import streamlit as st
 from data.coletores_status import obter_status, registrar_tentativa
 
 from . import bankofamerica, btg, citi, genial, genial_lives, jpmorgan, montebravo, morgan_stanley, nord, store, xp
-from .base import TEMPO_MAX_COLETA_S
+from .base import TEMPO_MAX_COLETA_S, CooldownPorChave
 
 # nao tenta recoletar a mesma casa antes desse tempo desde a ULTIMA
 # TENTATIVA (sucesso ou falha) - existe pra nao martelar uma fonte que
@@ -516,7 +516,18 @@ def coletar_casa(casa: dict) -> tuple[int, bool]:
     Print() de proposito (nao logging): Streamlit Cloud captura stdout no
     painel de Logs - da pra conferir dali se a fonte esta respondendo a
     partir do servidor do Cloud (pode se comportar diferente do ambiente
-    local, ex: bloqueio de WAF por IP/regiao)."""
+    local, ex: bloqueio de WAF por IP/regiao).
+
+    Metricas de resiliencia (auditoria de arquitetura 2026-11-12, pedido
+    Rodrigo): `tempo_s` (duracao real desta chamada), `publicacoes_
+    encontradas` (quantas obter_relatorios() devolveu), `documentos_
+    extraidos` (quantas de fato foram SALVAS - 0 se a persistencia
+    falhar, nunca conta como "extraido" so' por ter sido encontrado) e
+    `duplicidades` (links repetidos dentro do MESMO lote, ver
+    store.contar_duplicados) vao pra registrar_tentativa, que so' SOMA
+    aos contadores cumulativos (coletores_status.taxa_sucesso/
+    tempo_medio_s) - nunca inventa um numero que esta funcao nao mediu de
+    verdade."""
     inicio = time.monotonic()
     itens = casa["obter_relatorios"]()
     duracao = time.monotonic() - inicio
@@ -540,13 +551,17 @@ def coletar_casa(casa: dict) -> tuple[int, bool]:
         registrar_tentativa(
             casa["nome"], casa.get("fonte", casa["nome"]), execucao_ok=False,
             erro=erro, categoria="Research",
+            tempo_s=duracao, publicacoes_encontradas=0, documentos_extraidos=0, duplicidades=0,
         )
         return 0, False
+    duplicidades = store.contar_duplicados(itens)
     ok = store.salvar_itens(itens)
     print(f"[research] coleta {casa['nome']}: {len(itens)} itens em {duracao:.1f}s (salvou={ok})")
     registrar_tentativa(
         casa["nome"], casa.get("fonte", casa["nome"]), execucao_ok=True,
         persistencia_ok=ok, registros_novos=len(itens), categoria="Research",
+        tempo_s=duracao, publicacoes_encontradas=len(itens),
+        documentos_extraidos=len(itens) if ok else 0, duplicidades=duplicidades,
     )
     return len(itens), ok
 
@@ -740,12 +755,21 @@ def ultimas_coletas_formatadas(casas_ativas: list) -> str:
 
 
 @st.cache_resource(show_spinner=False)
-def _ultimas_tentativas() -> dict:
-    """casa_id -> time.monotonic() da ultima tentativa de coleta (sucesso
-    OU falha). st.cache_resource = estado compartilhado entre sessoes e
-    reruns no MESMO processo do servidor (reseta em redeploy) - e' o
-    cooldown de _COOLDOWN_FALHA_S."""
-    return {}
+def _cooldown_coleta() -> CooldownPorChave:
+    """Cooldown de PROCESSO por casa_id (mais a chave especial
+    '_limpeza', ver coletar_pendentes) - st.cache_resource = estado
+    compartilhado entre sessoes e reruns no MESMO processo do servidor
+    (reseta em redeploy).
+
+    Generalizado em data/research/base.py:CooldownPorChave (auditoria de
+    arquitetura 2026-11-12) - antes vivia so' aqui como um dict cru
+    (`_ultimas_tentativas`). A janela padrao da instancia e'
+    _COOLDOWN_FALHA_S (cooldown por casa); a chave '_limpeza' usa uma
+    janela DIFERENTE e maior (_INTERVALO_LIMPEZA_S), passada
+    explicitamente em cada chamada (CooldownPorChave.em_cooldown aceita
+    `janela_s` por chamada) - mesma estrutura compartilhada, sem precisar
+    de 2 caches/dicts separados."""
+    return CooldownPorChave(_COOLDOWN_FALHA_S)
 
 
 _INTERVALO_LIMPEZA_S = 60 * 60  # limpeza de itens antigos roda no maximo 1x por hora
@@ -763,27 +787,24 @@ def coletar_pendentes(casas: list) -> list:
 
     Tambem aproveita esse ponto de atividade pra rodar a limpeza de itens
     com mais de store.RETENCAO_DIAS (store.apagar_itens_antigos),
-    throttled a 1x por hora (_INTERVALO_LIMPEZA_S) via o mesmo cache de
-    tentativas - nao vale a pena bater no banco toda vez so' pra isso."""
-    tentativas = _ultimas_tentativas()
-    ultima_limpeza = tentativas.get("_limpeza")
-    if ultima_limpeza is None or (time.monotonic() - ultima_limpeza) >= _INTERVALO_LIMPEZA_S:
+    throttled a 1x por hora (_INTERVALO_LIMPEZA_S) via a mesma instancia
+    de cooldown - nao vale a pena bater no banco toda vez so' pra isso."""
+    cooldown = _cooldown_coleta()
+    if not cooldown.em_cooldown("_limpeza", janela_s=_INTERVALO_LIMPEZA_S):
         store.apagar_itens_antigos()
-        tentativas["_limpeza"] = time.monotonic()
+        cooldown.marcar_tentativa("_limpeza")
 
     falhas = []
     limite = time.monotonic() + TEMPO_MAX_COLETA_S
     for casa in casas:
-        agora = time.monotonic()
-        ultima_tentativa = tentativas.get(casa["id"])
-        if ultima_tentativa is not None and (agora - ultima_tentativa) < _COOLDOWN_FALHA_S:
+        if cooldown.em_cooldown(casa["id"]):
             falhas.append(f"{casa['nome']} (tentativa recente, aguardando)")
             continue
-        if agora > limite:
+        if time.monotonic() > limite:
             falhas.append(f"{casa['nome']} (tempo esgotado)")
             continue
         _, ok = coletar_casa(casa)
-        tentativas[casa["id"]] = time.monotonic()
+        cooldown.marcar_tentativa(casa["id"])
         if not ok:
             falhas.append(casa["nome"])
     return falhas
