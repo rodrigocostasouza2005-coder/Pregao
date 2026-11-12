@@ -94,10 +94,23 @@ def _evidencias(resultados: dict) -> list:
 
 
 # ============================================================
-# 4. Divergências - cross-check entre comparador e memoria_research
-# (mesmo tipo de dado: recomendação/preço-alvo por casa) - reaproveita a
+# 4. Divergências - duas checagens independentes, nunca misturadas:
+#
+# 4a. cross_comparador_memoria: cross-check entre comparador e
+# memoria_research (MESMO tipo de dado - recomendação/preço-alvo por
+# casa - vindo de DUAS fontes externas diferentes) - reaproveita a
 # normalização de recomendação de data/research/comparador.py, nunca
 # duplicada aqui.
+#
+# 4b. entre_analistas_comite: os PRÓPRIOS especialistas do Comitê
+# (market_researcher/earnings_reviewer/valuation_comparables) podem
+# chegar a recomendações opostas a partir dos MESMOS dados - isso nunca
+# era exposto antes (cada parecer era só lido isoladamente na UI); essa
+# checagem é puramente aritmética sobre o que montar_pareceres já
+# calculou (nenhum novo dado, nenhuma IA), nunca decide qual
+# especialista está certo, só torna a discordância visível e alimenta
+# _confianca (ver abaixo) - um Comitê que discorda internamente não
+# deveria soar "ALTA confiança" só porque todos responderam com dado.
 # ============================================================
 
 def _divergencia_cross_comparador_memoria(resultados: dict) -> dict | None:
@@ -152,11 +165,46 @@ def _divergencias(resultados: dict) -> dict:
     return {"cross_comparador_memoria": _divergencia_cross_comparador_memoria(resultados)}
 
 
+# Recomendações numa escala comparável de direção (comprar/vender/neutro).
+# Analistas fora dessa escala (ex: model_builder="MODELADO",
+# valuation_reviewer="APROVADO"/"COM RESSALVAS") respondem perguntas
+# diferentes (modelou? a revisão passou?) e nunca entram nesta checagem -
+# comparar maçãs com laranjas produziria falso positivo de divergência.
+_RECOMENDACOES_COMPARAVEIS = {"COMPRA", "VENDA", "NEUTRO"}
+
+
+def _divergencia_entre_analistas_comite(pareceres: dict) -> dict | None:
+    """Compara a recomendação dos especialistas do Comitê entre si (não
+    contra fonte externa). None quando há menos de 2 analistas com
+    recomendação na escala comparável - não há o que comparar. Nunca
+    aponta quem está certo; só expõe a discordância com atribuição."""
+    analistas = (pareceres or {}).get("analistas") or []
+    comparaveis = [a for a in analistas if a.get("recomendacao") in _RECOMENDACOES_COMPARAVEIS]
+    if len(comparaveis) < 2:
+        return None
+
+    categorias = {a["id"]: a["recomendacao"] for a in comparaveis}
+    distintas = sorted(set(categorias.values()))
+    divergente = len(distintas) > 1
+    atribuicao = "; ".join(f"{id_}={rec}" for id_, rec in sorted(categorias.items()))
+    resumo = (
+        f"{len(comparaveis)} especialista(s) com recomendação comparável DIVERGEM entre si ({atribuicao})."
+        if divergente else
+        f"{len(comparaveis)} especialista(s) com recomendação comparável concordam em {distintas[0]} ({atribuicao})."
+    )
+    return {
+        "n_analistas_comparados": len(comparaveis),
+        "categorias": categorias,
+        "divergente": divergente,
+        "resumo": resumo,
+    }
+
+
 # ============================================================
 # 5. Pontos de atenção - determinístico, nunca interpretação
 # ============================================================
 
-def _pontos_atencao(resultados: dict) -> list:
+def _pontos_atencao(resultados: dict, divergencia_comite: dict | None = None) -> list:
     avisos = []
     for especialista_id, r in sorted(resultados.items()):
         if r.get("pulado"):
@@ -171,6 +219,9 @@ def _pontos_atencao(resultados: dict) -> list:
     if dispersao and dispersao.get("amostra_insuficiente"):
         avisos.append(f"comparador: {dispersao.get('resumo')}")
 
+    if divergencia_comite and divergencia_comite.get("divergente"):
+        avisos.append(f"comitê: {divergencia_comite['resumo']}")
+
     return avisos
 
 
@@ -180,7 +231,12 @@ def _pontos_atencao(resultados: dict) -> list:
 # Nunca força uma conclusão quando os dados não permitem.
 # ============================================================
 
-def _conclusao(resultados: dict, divergencia_cross: dict | None, confianca: dict) -> list:
+def _conclusao(
+    resultados: dict,
+    divergencia_cross: dict | None,
+    confianca: dict,
+    divergencia_comite: dict | None = None,
+) -> list:
     acionados = [r for r in resultados.values() if not r.get("pulado")]
     n_total = len(acionados)
     n_disponiveis = sum(1 for r in acionados if r.get("disponivel"))
@@ -197,6 +253,13 @@ def _conclusao(resultados: dict, divergencia_cross: dict | None, confianca: dict
             "infere qual fonte está correta."
         )
 
+    if divergencia_comite and divergencia_comite.get("divergente"):
+        linhas.append(
+            f"[{_rotulo(TIPO_FATO)}] Os próprios especialistas do Comitê divergem entre si "
+            f"({divergencia_comite['resumo']}) - ver 'divergencias.entre_analistas_comite'; este módulo não "
+            "decide qual especialista está certo."
+        )
+
     if confianca["categoria"] == CONFIANCA_INSUFICIENTE:
         linhas.append(f"[{_rotulo(TIPO_INSUFICIENTE)}] Evidência insuficiente para uma conclusão de investimento - ver 'pontos_atencao'.")
     else:
@@ -210,9 +273,19 @@ def _conclusao(resultados: dict, divergencia_cross: dict | None, confianca: dict
 # ============================================================
 # 7. Confiança - categórico, NUNCA número de probabilidade sem
 # calibração (proibido explicitamente pelo Rodrigo).
+#
+# Volume de evidência (quantos especialistas responderam com dado) e
+# consenso de leitura (os especialistas concordam na direção) são
+# perguntas DIFERENTES - antes só a primeira entrava na conta, então um
+# Comitê onde todos responderam mas discordam entre si (ex:
+# market_researcher=COMPRA, valuation_comparables=VENDA) podia soar
+# "ALTA confiança" só por volume de resposta. Discordância real nunca
+# some do cálculo agora: rebaixa ALTA para MEDIA explicitamente (nunca
+# vira número, nunca decide quem está certo - só impede uma leitura de
+# confiança que o próprio Comitê contradiz).
 # ============================================================
 
-def _confianca(resultados: dict) -> dict:
+def _confianca(resultados: dict, divergencia_comite: dict | None = None) -> dict:
     acionados = [r for r in resultados.values() if not r.get("pulado")]
     n_total = len(acionados)
     if n_total == 0:
@@ -231,6 +304,14 @@ def _confianca(resultados: dict) -> dict:
         categoria = CONFIANCA_INSUFICIENTE
 
     justificativa = f"{n_com_evidencia} de {n_total} especialista(s) acionado(s) trouxeram evidência real (não só resposta vazia)."
+
+    if divergencia_comite and divergencia_comite.get("divergente") and categoria == CONFIANCA_ALTA:
+        categoria = CONFIANCA_MEDIA
+        justificativa += (
+            " Rebaixada de ALTA para MEDIA: os próprios especialistas do Comitê divergem entre si "
+            "(ver 'divergencias.entre_analistas_comite') - volume de evidência não substitui consenso de leitura."
+        )
+
     return {"categoria": categoria, "justificativa": justificativa}
 
 
@@ -248,8 +329,9 @@ def consolidar(resultados: dict, ticker: str = None) -> dict:
     `resultados` está vazio (todas as seções degradam pra um estado
     explícito de "sem dado", nunca omitidas)."""
     divergencia_cross = _divergencia_cross_comparador_memoria(resultados)
-    confianca = _confianca(resultados)
     pareceres = montar_pareceres(resultados, ticker=ticker)
+    divergencia_comite = _divergencia_entre_analistas_comite(pareceres)
+    confianca = _confianca(resultados, divergencia_comite)
     sinal_comite = montar_sinal_comite(resultados)
     analista_valuation = next(
         (a for a in pareceres.get("analistas", []) if a.get("id") == "valuation_comparables"), {}
@@ -291,9 +373,12 @@ def consolidar(resultados: dict, ticker: str = None) -> dict:
         "resumo_executivo": _resumo_executivo(resultados, ticker),
         "visao_especialistas": _visao_especialistas(resultados),
         "evidencias": _evidencias(resultados),
-        "divergencias": {"cross_comparador_memoria": divergencia_cross},
-        "pontos_atencao": _pontos_atencao(resultados),
-        "conclusao": _conclusao(resultados, divergencia_cross, confianca),
+        "divergencias": {
+            "cross_comparador_memoria": divergencia_cross,
+            "entre_analistas_comite": divergencia_comite,
+        },
+        "pontos_atencao": _pontos_atencao(resultados, divergencia_comite),
+        "conclusao": _conclusao(resultados, divergencia_cross, confianca, divergencia_comite),
         "confianca": confianca,
         "pareceres_analistas": pareceres,
         "sinal_comite": sinal_comite,
