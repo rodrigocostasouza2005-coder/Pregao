@@ -17,6 +17,30 @@
       "fonte": "nordinvestimentos.com.br (sitemap do blog, posts de resultado por ticker)",
       "id": "nord",
       "nome": "Nord Research"
+    },
+    {
+      "ativa_por_padrao": true,
+      "fonte": "jpmorgan.com/insights/global-research (conteudo publico; research completo e' client-only)",
+      "id": "jpmorgan",
+      "nome": "J.P. Morgan Global Research"
+    },
+    {
+      "ativa_por_padrao": true,
+      "fonte": "institute.bankofamerica.com (sitemap, secao Economic Insights; nao e' BofA Global Research)",
+      "id": "bankofamerica",
+      "nome": "BofA Institute"
+    },
+    {
+      "ativa_por_padrao": true,
+      "fonte": "morganstanley.com/insights/articles (conteudo publico; research completo e' client-only)",
+      "id": "morgan_stanley",
+      "nome": "Morgan Stanley Insights"
+    },
+    {
+      "ativa_por_padrao": true,
+      "fonte": "citigroup.com/global/insights (conteudo publico; research completo e' client-only)",
+      "id": "citi",
+      "nome": "Citi Global Insights"
     }
   ]
 }

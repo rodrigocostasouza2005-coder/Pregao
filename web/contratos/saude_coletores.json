@@ -201,6 +201,38 @@
       "nome": "Nord Research"
     },
     {
+      "categoria": "Research",
+      "fonte": "jpmorgan.com/insights/global-research (conteudo publico)",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 120,
+      "instrumentado": true,
+      "nome": "J.P. Morgan Global Research"
+    },
+    {
+      "categoria": "Research",
+      "fonte": "institute.bankofamerica.com (secao Economic Insights)",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 96,
+      "instrumentado": true,
+      "nome": "BofA Institute"
+    },
+    {
+      "categoria": "Research",
+      "fonte": "morganstanley.com/insights/articles (conteudo publico)",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 96,
+      "instrumentado": true,
+      "nome": "Morgan Stanley Insights"
+    },
+    {
+      "categoria": "Research",
+      "fonte": "citigroup.com/global/insights (conteudo publico)",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 48,
+      "instrumentado": true,
+      "nome": "Citi Global Insights"
+    },
+    {
       "categoria": "Calendario",
       "fonte": "RI das empresas + NEWS + prazo CVM",
       "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
