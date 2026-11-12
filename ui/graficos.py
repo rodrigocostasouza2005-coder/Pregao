@@ -14,12 +14,14 @@ Plotly. Duplo clique continua funcionando sozinho: é comportamento
 padrão do Plotly (`doubleClick: 'reset+autosize'`), independente de
 `displayModeBar`."""
 
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
 import config
 from data.prices import dias_sem_pregao, obter_historico, obter_historico_intraday
+from ui import design_system
 
 
 def _rgba(cor_hex: str, alfa: float) -> str:
@@ -29,6 +31,64 @@ def _rgba(cor_hex: str, alfa: float) -> str:
     if len(c) != 6:
         return cor_hex
     return f"rgba({int(c[0:2], 16)},{int(c[2:4], 16)},{int(c[4:6], 16)},{alfa})"
+
+
+# === Indicadores técnicos (RSI/MACD/Bandas de Bollinger) ===================
+#
+# Calculados aqui (não em data/prices.py) de propósito: dependem só da
+# coluna "Close" que obter_historico/obter_historico_intraday já devolvem
+# (mesmo df usado pro candle/linha/volume/MM) - nenhuma requisição nova,
+# nenhum dado novo buscado. São funções puras (só pandas, zero st.*) pra
+# poderem ter teste unitário determinístico sem precisar de uma sessão
+# Streamlit real (ver tests/test_graficos.py).
+
+def calcular_rsi(df: pd.DataFrame, periodo: int = 14) -> pd.Series:
+    """RSI (Índice de Força Relativa) de Wilder sobre o fechamento (Close).
+    A suavização clássica de Wilder é matematicamente equivalente a uma
+    média móvel exponencial com alfa=1/periodo (adjust=False) - é o que
+    `.ewm(alpha=1/periodo, adjust=False)` calcula abaixo, sem precisar
+    reimplementar a recursão à mão.
+
+    Casos de borda (sem eles o RSI teria 0/0 = NaN espalhado pela série):
+    - só ganhos na janela (nenhuma perda) -> RSI = 100 (força máxima);
+    - nenhum movimento na janela (ganho E perda = 0) -> RSI = 50 (neutro,
+      não "máxima força" nem "mínima força")."""
+    delta = df["Close"].diff()
+    ganho = delta.clip(lower=0)
+    perda = -delta.clip(upper=0)
+    media_ganho = ganho.ewm(alpha=1 / periodo, min_periods=periodo, adjust=False).mean()
+    media_perda = perda.ewm(alpha=1 / periodo, min_periods=periodo, adjust=False).mean()
+
+    sem_perda = media_perda == 0
+    rs = media_ganho / media_perda.where(~sem_perda, other=pd.NA)
+    rsi = 100 - (100 / (1 + rs))
+    rsi = rsi.astype(float)
+    rsi = rsi.where(~sem_perda, 100.0)
+    rsi = rsi.where(~(sem_perda & (media_ganho == 0)), 50.0)
+    return rsi
+
+
+def calcular_macd(df: pd.DataFrame, rapida: int = 12, lenta: int = 26, sinal: int = 9) -> pd.DataFrame:
+    """MACD clássico (12/26/9): EMA rápida - EMA lenta = linha MACD; EMA da
+    própria linha MACD = linha de sinal; MACD - sinal = histograma."""
+    ema_rapida = df["Close"].ewm(span=rapida, adjust=False).mean()
+    ema_lenta = df["Close"].ewm(span=lenta, adjust=False).mean()
+    macd = ema_rapida - ema_lenta
+    linha_sinal = macd.ewm(span=sinal, adjust=False).mean()
+    return pd.DataFrame({"MACD": macd, "MACD_SINAL": linha_sinal, "MACD_HIST": macd - linha_sinal})
+
+
+def calcular_bollinger(df: pd.DataFrame, periodo: int = 20, n_desvios: float = 2.0) -> pd.DataFrame:
+    """Bandas de Bollinger: média móvel simples +/- N desvios-padrão
+    (população, ddof=0 - mesmo critério do indicador clássico de Bollinger,
+    não a amostra) do próprio fechamento, na janela `periodo`."""
+    media = df["Close"].rolling(window=periodo).mean()
+    desvio = df["Close"].rolling(window=periodo).std(ddof=0)
+    return pd.DataFrame({
+        "BB_MEDIA": media,
+        "BB_SUPERIOR": media + n_desvios * desvio,
+        "BB_INFERIOR": media - n_desvios * desvio,
+    })
 
 
 def estilo_terminal(fig, tema: dict, altura: int, legenda: bool = True, serie_temporal: bool = True) -> None:
@@ -116,7 +176,14 @@ def renderizar_grafico_preco(
     zero lógica duplicada entre as duas telas. `permitir_comparar_ibov`/
     `permitir_mm` desligados por padrão (telas mais compactas, tipo
     VISÃO GERAL, não precisam desses controles extras - EQUITY liga os
-    dois explicitamente)."""
+    dois explicitamente).
+
+    Indicadores técnicos (RSI/MACD/Bandas de Bollinger, 2026-11-11):
+    disponíveis em QUALQUER chamador, sem flag nova - é um controle
+    inline do próprio gráfico (`st.pills`, efeito imediato), não um
+    parâmetro de configuração de tela. Desligados por padrão (nenhum
+    dos três aparece sem o usuário escolher) - não existia nenhum
+    indicador real além das médias móveis antes disso."""
     chave_memoria_periodo = f"{key_prefix}_periodo_valido"
     padrao = st.session_state.get(chave_memoria_periodo, periodo_padrao)
     if padrao not in periodos:
@@ -174,16 +241,56 @@ def renderizar_grafico_preco(
     if permitir_comparar_ibov and comparar_ibov and eh_intraday:
         st.info("Comparação com Ibovespa não disponível para períodos intradiários (1D/1S).")
 
+    # Indicadores técnicos (RSI/MACD/Bandas de Bollinger) - controle inline,
+    # efeito imediato (pedido explícito do Rodrigo: ajuste no próprio
+    # elemento, nunca num formulário à parte), todos DESLIGADOS por padrão
+    # pra não poluir o gráfico de quem só quer ver preço/volume. `st.pills`
+    # (mesmo widget já usado pro filtro de SETOR em ui/mercado_tab.py) em
+    # vez de 3 checkboxes separadas - mais compacto numa única linha.
+    sel_indicadores = st.pills(
+        "Indicadores técnicos", ["BANDAS DE BOLLINGER", "RSI", "MACD"], selection_mode="multi",
+        default=[], label_visibility="collapsed", key=f"{key_prefix}_indicadores",
+    ) or []
+    # len(df) >= 5 (não 0): com poucas barras (ex: início de um papel recém-
+    # listado) um indicador de janela 14/20/26 períodos não tem dado
+    # suficiente pra dizer nada - mostrar a linha vazia só confundiria.
+    dado_suficiente = len(df) >= 5
+    mostrar_boll = "BANDAS DE BOLLINGER" in sel_indicadores and dado_suficiente
+    mostrar_rsi = "RSI" in sel_indicadores and dado_suficiente
+    mostrar_macd = "MACD" in sel_indicadores and dado_suficiente
+
     tem_ohlc = {"Open", "High", "Low"}.issubset(df.columns) and df[["Open", "High", "Low"]].notna().all(axis=None)
     tipo_grafico = prefs.get("grafico_tipo", "LINHA")
     if tipo_grafico == "CANDLE" and not tem_ohlc:
         tipo_grafico = "LINHA"
 
     tem_volume = "Volume" in df.columns and df["Volume"].notna().any()
+
+    # Estrutura de subplots MONTADA DINAMICAMENTE: preço sempre na linha 1;
+    # volume/RSI/MACD entram como linhas extras só quando aplicável. Sem
+    # nenhum indicador de subplot ligado, isto reproduz EXATAMENTE o layout
+    # de antes (1 ou 2 linhas, 0.75/0.25) - mudança aditiva, zero regressão
+    # pros callers que não tocam nos novos controles (EQUITY/VISÃO GERAL).
+    linhas = ["preco"]
+    alturas_px = {"preco": altura * 0.75 if tem_volume else altura}
     if tem_volume:
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.06)
-    else:
-        fig = make_subplots(rows=1, cols=1)
+        linhas.append("volume")
+        alturas_px["volume"] = altura * 0.25
+    if mostrar_rsi:
+        linhas.append("rsi")
+        alturas_px["rsi"] = 90.0
+    if mostrar_macd:
+        linhas.append("macd")
+        alturas_px["macd"] = 110.0
+
+    altura_total = sum(alturas_px.values())
+    row_heights = [alturas_px[nome] / altura_total for nome in linhas]
+    row_idx = {nome: i + 1 for i, nome in enumerate(linhas)}
+    row_preco = row_idx["preco"]
+
+    fig = make_subplots(
+        rows=len(linhas), cols=1, shared_xaxes=True, row_heights=row_heights, vertical_spacing=0.045,
+    )
 
     if tipo_grafico == "CANDLE":
         fig.add_trace(
@@ -191,19 +298,36 @@ def renderizar_grafico_preco(
                 x=df["Data"], open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name=ticker,
                 increasing_line_color=tema["alta"], decreasing_line_color=tema["baixa"],
             ),
-            row=1, col=1,
+            row=row_preco, col=1,
         )
     elif tipo_grafico == "AREA":
         fig.add_trace(
             go.Scatter(x=df["Data"], y=df["Close"], name=ticker, fill="tozeroy",
                        line=dict(color=tema["destaque"], width=1.5)),
-            row=1, col=1,
+            row=row_preco, col=1,
         )
     else:
         fig.add_trace(
             go.Scatter(x=df["Data"], y=df["Close"], name=ticker, line=dict(color=tema["destaque"], width=1.5)),
-            row=1, col=1,
+            row=row_preco, col=1,
         )
+
+    if mostrar_boll:
+        bb = calcular_bollinger(df)
+        if bb["BB_SUPERIOR"].notna().any():
+            cor_banda = _rgba(tema["cinza"], 0.75)
+            # ordem importa: SUPERIOR primeiro (sem fill), INFERIOR depois
+            # com fill="tonexty" - preenche a área ENTRE as duas (semântica
+            # do Plotly: tonexty fecha contra a trace anterior no mesmo
+            # eixo). MÉDIA por último, sem fill, só a linha pontilhada.
+            fig.add_trace(go.Scatter(x=df["Data"], y=bb["BB_SUPERIOR"], name="BB SUPERIOR", showlegend=False,
+                                      line=dict(color=cor_banda, width=1, dash="dot")), row=row_preco, col=1)
+            fig.add_trace(go.Scatter(x=df["Data"], y=bb["BB_INFERIOR"], name="BANDAS DE BOLLINGER",
+                                      line=dict(color=cor_banda, width=1, dash="dot"),
+                                      fill="tonexty", fillcolor=_rgba(tema["cinza"], 0.08)), row=row_preco, col=1)
+            fig.add_trace(go.Scatter(x=df["Data"], y=bb["BB_MEDIA"], name="BB MÉDIA", showlegend=False,
+                                      line=dict(color=_rgba(tema["destaque"], 0.55), width=1, dash="dash")),
+                          row=row_preco, col=1)
 
     if permitir_mm:
         sufixo_mm = ""
@@ -212,13 +336,13 @@ def renderizar_grafico_preco(
         cor_mm20 = tema["neutro"] if tipo_grafico in ("LINHA", "AREA") else tema["destaque"]
         if prefs.get("mm20") and "MM20" in df.columns and df["MM20"].notna().any():
             fig.add_trace(go.Scatter(x=df["Data"], y=df["MM20"], name=f"MM20{sufixo_mm}",
-                                      line=dict(color=cor_mm20, width=1)), row=1, col=1)
+                                      line=dict(color=cor_mm20, width=1)), row=row_preco, col=1)
         if prefs.get("mm50") and "MM50" in df.columns and df["MM50"].notna().any():
             fig.add_trace(go.Scatter(x=df["Data"], y=df["MM50"], name=f"MM50{sufixo_mm}",
-                                      line=dict(color=tema["ciano"], width=1)), row=1, col=1)
+                                      line=dict(color=tema["ciano"], width=1)), row=row_preco, col=1)
         if prefs.get("mm200") and "MM200" in df.columns and df["MM200"].notna().any():
             fig.add_trace(go.Scatter(x=df["Data"], y=df["MM200"], name=f"MM200{sufixo_mm}",
-                                      line=dict(color=tema["cinza"], width=1)), row=1, col=1)
+                                      line=dict(color=tema["cinza"], width=1)), row=row_preco, col=1)
 
     if tem_volume:
         if tem_ohlc:
@@ -227,10 +351,39 @@ def renderizar_grafico_preco(
             cores_volume = tema["destaque"]
         fig.add_trace(
             go.Bar(x=df["Data"], y=df["Volume"], name="Volume", marker_color=cores_volume, opacity=0.6),
-            row=2, col=1,
+            row=row_idx["volume"], col=1,
         )
 
-    _layout_grafico_escuro(fig)
+    if mostrar_rsi:
+        rsi = calcular_rsi(df)
+        if rsi.notna().any():
+            row_rsi = row_idx["rsi"]
+            fig.add_trace(go.Scatter(x=df["Data"], y=rsi, name="RSI", line=dict(color=tema["destaque"], width=1.2)),
+                          row=row_rsi, col=1)
+            fig.add_hline(y=70, line_dash="dot", line_width=1, line_color=_rgba(tema["baixa"], 0.45),
+                          row=row_rsi, col=1)
+            fig.add_hline(y=30, line_dash="dot", line_width=1, line_color=_rgba(tema["alta"], 0.45),
+                          row=row_rsi, col=1)
+            fig.update_yaxes(range=[0, 100], title=dict(text="RSI", font=dict(size=9)), row=row_rsi, col=1)
+
+    if mostrar_macd:
+        macd_df = calcular_macd(df)
+        if macd_df["MACD"].notna().any():
+            row_macd = row_idx["macd"]
+            cores_hist = [tema["alta"] if v >= 0 else tema["baixa"] for v in macd_df["MACD_HIST"].fillna(0)]
+            fig.add_trace(go.Bar(x=df["Data"], y=macd_df["MACD_HIST"], name="HISTOGRAMA MACD",
+                                  marker_color=cores_hist, opacity=0.5), row=row_macd, col=1)
+            fig.add_trace(go.Scatter(x=df["Data"], y=macd_df["MACD"], name="MACD",
+                                      line=dict(color=tema["destaque"], width=1.2)), row=row_macd, col=1)
+            fig.add_trace(go.Scatter(x=df["Data"], y=macd_df["MACD_SINAL"], name="SINAL",
+                                      line=dict(color=tema["ciano"], width=1.2)), row=row_macd, col=1)
+            fig.update_yaxes(title=dict(text="MACD", font=dict(size=9)), row=row_macd, col=1)
+
+    # legenda liga sozinha quando ha' mais de 1 serie pra distinguir (MMs
+    # OU qualquer indicador novo ligado) - mesmo criterio de antes, so'
+    # estendido aos indicadores novos.
+    legenda_grafico = permitir_mm or mostrar_boll or mostrar_rsi or mostrar_macd
+    estilo_terminal(fig, tema, altura_total, legenda=legenda_grafico)
     ultimo_preco = float(df["Close"].iloc[-1])
     primeiro_preco = float(df["Close"].iloc[0])
     marcar_ultimo(
@@ -238,6 +391,7 @@ def renderizar_grafico_preco(
         # sem centavos acima de mil (mesmo critério do eixo): etiqueta curta nunca corta
         config.formatar_numero(ultimo_preco, 0 if abs(ultimo_preco) >= 1000 else 2, prefs.get("formato_numerico")),
         tema["alta"] if ultimo_preco >= primeiro_preco else tema["baixa"], tema["fundo"],
+        linha=row_preco,
     )
     fig.update_layout(margin=dict(l=6, r=84, t=8, b=6))
 
@@ -248,7 +402,9 @@ def renderizar_grafico_preco(
         if intervalo_periodo == "1d":
             fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"]), dict(values=dias_sem_pregao(df))])
 
-    chave_zoom = zoom_key(f"{key_prefix}_grafico", ticker, periodo, tipo_grafico, comparar_ibov)
+    chave_zoom = zoom_key(
+        f"{key_prefix}_grafico", ticker, periodo, tipo_grafico, comparar_ibov, mostrar_boll, mostrar_rsi, mostrar_macd,
+    )
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=chave_zoom)
 
     if not mostrar_stats_periodo:
@@ -260,18 +416,25 @@ def renderizar_grafico_preco(
     maxima = float(df["High"].max()) if tem_ohlc else float(df["Close"].max())
     minima = float(df["Low"].min()) if tem_ohlc else float(df["Close"].min())
     var_periodo = (fechamento - abertura) / abertura * 100 if abertura else None
-    cls_var = "alta" if (var_periodo or 0) >= 0 else "baixa"
+    # numero_financeiro_html (design_system) em vez do numero formatado +
+    # classe na mao - mesma fundacao do design system ja usada no resto do
+    # app (ver docstring de ui/design_system.py). ÚLTIMO/MÁXIMA/MÍNIMA
+    # continuam sem cor de sinal (nao sao uma variacao, sao um preco em si -
+    # mesmo criterio documentado em numero_financeiro_html).
     stats = [
-        ("ÚLTIMO", config.formatar_numero(fechamento, 2, fmt), "neutro"),
-        ("MÁXIMA DO PERÍODO", config.formatar_numero(maxima, 2, fmt), "neutro"),
-        ("MÍNIMA DO PERÍODO", config.formatar_numero(minima, 2, fmt), "neutro"),
+        ("ÚLTIMO", design_system.numero_financeiro_html(fechamento, 2, fmt), None),
+        ("MÁXIMA DO PERÍODO", design_system.numero_financeiro_html(maxima, 2, fmt), None),
+        ("MÍNIMA DO PERÍODO", design_system.numero_financeiro_html(minima, 2, fmt), None),
     ]
     if var_periodo is not None:
-        sinal = "+" if var_periodo >= 0 else ""
-        stats.append(("VARIAÇÃO NO PERÍODO", f"{sinal}{config.formatar_numero(var_periodo, 2, fmt)}%", cls_var))
+        cls_var = design_system.classe_sinal(var_periodo)
+        stats.append((
+            "VARIAÇÃO NO PERÍODO",
+            design_system.numero_financeiro_html(var_periodo, 2, fmt, sufixo="%", com_sinal=True), cls_var,
+        ))
     blocos = [
         f"<div style='margin-right:1.3rem;'><div class='cinza' style='font-size:0.6rem;'>{rot}</div>"
-        f"<div class='{cls}' style='font-size:0.76rem; font-weight:700; margin-top:0.1rem;'>{val}</div></div>"
+        f"<div class='{cls or 'neutro'}' style='font-size:0.76rem; font-weight:700; margin-top:0.1rem;'>{val}</div></div>"
         for rot, val, cls in stats
     ]
     st.markdown(
