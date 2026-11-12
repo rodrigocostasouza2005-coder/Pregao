@@ -134,6 +134,24 @@ def _parecer_market(dados):
         vies = "MISTO"
 
     recomendacao = {"POSITIVO": "COMPRA", "NEGATIVO": "VENDA", "MISTO": "NEUTRO"}.get(vies, "INSUFICIENTE")
+    # Indicadores financeiros estruturados (ROE/margem/dívida/FCF/P-L/ROIC) -
+    # os MESMOS números já usados nas sentenças de pros/contras/fatos acima,
+    # só expostos também como tabela (antes só existiam como texto corrido
+    # dentro da tese, sem 1 ponto único pra consultar o indicador bruto).
+    roic_ultimo = roic_validos[-1] if roic_validos else None
+    receita_yoy_ultimo = receita_validada[-1] if receita_validada else None
+    _valores_indicadores = (roe, margem, divida, fcf, pl, pl_setor, roic_ultimo, receita_yoy_ultimo)
+    indicadores = {
+        "moeda": fundamentos.get("moeda") or "R$",
+        "roe_pct": roe,
+        "margem_liquida_pct": margem,
+        "divida_liquida_ebitda_x": divida,
+        "fluxo_caixa_livre": fcf,
+        "pl_x": pl,
+        "pl_mediana_setor_x": pl_setor,
+        "roic_trimestral_pct": roic_ultimo,
+        "receita_liquida_yoy_pct": receita_yoy_ultimo,
+    } if any(v is not None for v in _valores_indicadores) else {}
     return {
         "id": "market_researcher", "nome": "Market Researcher — Analista de Empresas",
         "recomendacao": recomendacao,
@@ -144,6 +162,7 @@ def _parecer_market(dados):
         "pros": positivos, "contras": negativos,
         "preco_alvo": None, "preco_alvo_rotulo": "Não calculado por este analista nesta versão.",
         "preco_atual": preco,
+        "indicadores": indicadores,
         "fontes": ["Market Researcher", "Valuation Radar", "Earnings Reviewer/CVM"],
     }
 
@@ -411,7 +430,8 @@ def montar_pareceres(resultados, ticker=None):
     modelo = (resultados.get("model_builder") or {}).get("dados") or {}
     revisao = (resultados.get("valuation_reviewer") or {}).get("dados") or {}
     cenarios = modelo.get("cenarios") or {}
-    alvo_base = _numero((cenarios.get("base") or {}).get("preco_alvo"))
+    cenario_base_modelo = cenarios.get("base") or {}
+    alvo_base = _numero(cenario_base_modelo.get("preco_alvo"))
     analistas.append({
         "id": "model_builder", "nome": "Model Builder",
         "especialidade": "Projeção financeira e DCF em três cenários",
@@ -425,14 +445,59 @@ def montar_pareceres(resultados, ticker=None):
         "campos_faltantes": modelo.get("campos_faltantes") or [],
         "fontes": [modelo.get("fonte_premissas")] if modelo.get("fonte_premissas") else [],
     })
+    # Revisão independente: reaproveita os MESMOS cenários/premissas do DCF
+    # do Model Builder (é o que está sendo auditado - nunca um 2o cálculo
+    # com premissas próprias) e expõe os achados/limitações reais da
+    # auditoria (revisar_valuation, data/coordenador_central/modelagem.py)
+    # como pontos favoráveis/contrários do parecer - antes (achado real,
+    # auditoria 2026-11-11) esses achados existiam no pipeline mas eram
+    # descartados: _render_parecer_valuation_reviewer sempre lia
+    # analista["dcf"], uma chave que esta função nunca preenchia, então a
+    # aba sempre mostrava "DCF indisponível" mesmo quando o Model Builder
+    # tinha um DCF completo e a revisão tinha achados reais de qualidade.
+    revisao_disponivel = bool(revisao.get("disponivel")) and bool(modelo.get("disponivel"))
+    achados = revisao.get("achados") or []
+    limitacoes = revisao.get("limitacoes") or []
+    aprovado = bool(revisao.get("aprovado"))
+    upside_base_modelo = _numero(cenario_base_modelo.get("upside_pct"))
+    if revisao_disponivel:
+        tese_revisor = (
+            "Revisão concluída: nenhuma inconsistência encontrada nos cenários do Model Builder."
+            if aprovado else
+            f"Revisão concluída com {len(achados)} achado(s) de auditoria - ver pontos contrários."
+        )
+    else:
+        tese_revisor = revisao.get("motivo") or "Revisão indisponível."
     analistas.append({
         "id": "valuation_reviewer", "nome": "Valuation Reviewer",
         "especialidade": "Revisão independente de cenários, premissas e sensibilidade",
-        "recomendacao": "APROVADO" if revisao.get("disponivel") and revisao.get("aprovado") else "COM RESSALVAS" if revisao.get("disponivel") else "INSUFICIENTE",
-        "vies": "APROVADO" if revisao.get("disponivel") and revisao.get("aprovado") else "REVISÃO COM RESSALVAS" if revisao.get("disponivel") else "REVISÃO INDISPONÍVEL",
-        "tese": revisao.get("motivo") or ("Revisão concluída; ver achados e limitações." if revisao.get("disponivel") else "Revisão indisponível."),
-        "preco_alvo": alvo_base, "preco_alvo_rotulo": "Referência do cenário-base do Model Builder; não é um cálculo independente.",
-        "achados": revisao.get("achados") or [], "limitacoes": revisao.get("limitacoes") or [],
+        "metodo": "Reexecuta a auditoria sobre o DCF já calculado pelo Model Builder: confere a ordem "
+                  "pessimista ≤ base ≤ otimista, a rastreabilidade das premissas (fonte/data-base) e a "
+                  "disponibilidade da matriz de sensibilidade - nunca recalcula com premissas próprias.",
+        "recomendacao": "APROVADO" if revisao_disponivel and aprovado else "COM RESSALVAS" if revisao_disponivel else "INSUFICIENTE",
+        "vies": "APROVADO" if revisao_disponivel and aprovado else "REVISÃO COM RESSALVAS" if revisao_disponivel else "REVISÃO INDISPONÍVEL",
+        "tese": tese_revisor,
+        "pros": ["Nenhuma inconsistência encontrada na revisão independente."] if revisao_disponivel and not achados else [],
+        "contras": [f"{a.get('tipo')}: {a.get('descricao')}" for a in achados if isinstance(a, dict)],
+        "preco_alvo": alvo_base,
+        "preco_alvo_rotulo": "Mesmo preço-alvo do cenário-base do Model Builder, sob revisão independente - não é um novo cálculo.",
+        "preco_atual": preco, "upside_pct": upside_base_modelo,
+        "moeda": modelo.get("moeda"),
+        "achados": achados, "limitacoes": limitacoes,
+        "dcf": (
+            {
+                "disponivel": True,
+                "moeda": modelo.get("moeda"),
+                "fonte_premissas": modelo.get("fonte_premissas"),
+                "data_base": modelo.get("data_base"),
+                "cenarios": cenarios,
+                "premissas": modelo.get("premissas") or {},
+            } if revisao_disponivel else {
+                "disponivel": False,
+                "campos_faltantes": modelo.get("campos_faltantes") or [],
+                "motivo": revisao.get("motivo") or modelo.get("motivo") or "DCF do Model Builder indisponível para revisão.",
+            }
+        ),
     })
     alvos = [_numero(item.get("preco_alvo")) for item in research]
     alvos = [x for x in alvos if x is not None and x > 0]

@@ -38,9 +38,11 @@ from datetime import datetime, timezone
 
 import streamlit as st
 
+import config
 from data.coordenador_central import execucoes_agendadas, fluxos, persistencia
 from data.coordenador_central.dcf import calcular_sensibilidade_dcf
 from data.coordenador_central.registro import listar_especialistas
+from data.prices import obter_nome_yf
 from ui.design_system import (
     divisor, lista_compacta, numero_financeiro_html, subtitulo, variacao_html,
 )
@@ -156,6 +158,24 @@ def _idade_formatada(iso_ts: str | None) -> str:
     if horas < 48:
         return f"há {horas:.0f}h"
     return f"há {horas / 24:.0f}d"
+
+
+def _nome_empresa_exibicao(ticker: str | None) -> str | None:
+    """Nome de exibição da empresa pro ticker - mesma cascata já usada em
+    ui/radar_tab.py (config.TICKER_NOME primeiro - cadastro manual,
+    gratuito -, fallback obter_nome_yf - cacheado 24h em data/prices.py);
+    nunca duplica essa lógica nem inventa nome novo. Usado só pro
+    cabeçalho da análise consolidada (achado real, auditoria 2026-11-11:
+    o cabeçalho identificava a análise só pelo ticker, nunca pelo nome da
+    empresa - campo pedido explicitamente)."""
+    ticker = (ticker or "").strip().upper()
+    if not ticker:
+        return None
+    try:
+        nome = config.TICKER_NOME.get(ticker) or obter_nome_yf(ticker)
+    except Exception:
+        return None
+    return nome or None
 
 
 def _duracao_formatada(duracao_ms) -> str:
@@ -496,6 +516,23 @@ def _render_cabecalho_decisao(consolidado: dict):
     confianca = consolidado.get("confianca") or {}
     recomendacao = str(sinal.get("sinal") or "INSUFICIENTE")
 
+    # Empresa + ticker no topo - achado real (auditoria 2026-11-11): a
+    # análise consolidada nunca identificava QUAL empresa estava sendo
+    # analisada no próprio cabeçalho (só aparecia em texto corrido no
+    # resumo executivo, ou fora desta função, no cabeçalho de
+    # render_historico - render_analisar não mostrava nada). ticker vem
+    # de consolidado["ticker"] (consolidacao.consolidar) com fallback pro
+    # campo legado em pareceres_analistas, pra não quebrar consolidados
+    # antigos/fixtures de teste que só tinham o campo lá.
+    ticker = consolidado.get("ticker") or (consolidado.get("pareceres_analistas") or {}).get("ticker")
+    if ticker:
+        nome_empresa = _nome_empresa_exibicao(ticker)
+        rotulo_empresa = f"{nome_empresa} ({ticker})" if nome_empresa and nome_empresa.upper() != ticker else ticker
+        st.markdown(
+            f"<div style='font-size:0.95rem; font-weight:600; margin-bottom:0.25rem;'>{html.escape(rotulo_empresa)}</div>",
+            unsafe_allow_html=True,
+        )
+
     st.markdown(
         f"<div style='display:flex; align-items:baseline; gap:0.6rem; flex-wrap:wrap; margin-bottom:0.2rem;'>"
         f"<span style='font-size:0.68rem; color:var(--cinza); letter-spacing:0.05em; text-transform:uppercase;'>RECOMENDAÇÃO DO COMITÊ</span>"
@@ -516,8 +553,16 @@ def _render_cabecalho_decisao(consolidado: dict):
         alvo_consenso = sinal.get("preco_alvo_consenso")
         upside_modelo = sinal.get("upside_modelo_pct")
         moeda_modelo = sinal.get("moeda_preco_alvo_modelo") or "R$"
+        # Preço atual + data de referência (campo pedido explicitamente,
+        # achado real auditoria 2026-11-11: o dado já existia em
+        # fundamentos/sinal_comite, mas nenhuma tela mostrava o preço
+        # atual da cotação usada como base de todos os upsides acima).
+        preco_atual = sinal.get("preco_atual")
+        data_referencia = _fmt_data(sinal.get("preco_atual_consultado_em"))
+        rotulo_preco_atual = "Preço atual" + (f" · {data_referencia}" if data_referencia != "—" else "")
         st.markdown(
             f"<div class='coord-metricas'>"
+            f"<div class='coord-metrica'><div class='coord-metrica-valor'>{_moeda_html(preco_atual, moeda_modelo, fallback='dado insuficiente')}</div><div class='coord-metrica-rotulo'>{html.escape(rotulo_preco_atual)}</div></div>"
             f"<div class='coord-metrica'><div class='coord-metrica-valor'>{html.escape(str(sinal.get('score') if sinal.get('score') is not None else '—'))}</div><div class='coord-metrica-rotulo'>Score do sinal quantitativo</div></div>"
             f"<div class='coord-metrica'><div class='coord-metrica-valor'>{_moeda_html(alvo_modelo, moeda_modelo, fallback='não calculado')}</div><div class='coord-metrica-rotulo'>Alvo — Model Builder (DCF)</div></div>"
             f"<div class='coord-metrica'><div class='coord-metrica-valor'>{variacao_html(upside_modelo) if isinstance(upside_modelo, (int, float)) else '—'}</div><div class='coord-metrica-rotulo'>Potencial sobre a cotação</div></div>"
@@ -730,6 +775,52 @@ def _render_parecer_valuation_reviewer(analista: dict):
         st.caption("Sensibilidade indisponível: " + str(sensibilidade.get("motivo") or "não calculada."))
 
 
+_ROTULOS_INDICADORES = (
+    ("roe_pct", "ROE"),
+    ("margem_liquida_pct", "Margem líquida"),
+    ("divida_liquida_ebitda_x", "Dívida líquida/EBITDA"),
+    ("fluxo_caixa_livre", "Fluxo de caixa livre (FCF)"),
+    ("pl_x", "P/L"),
+    ("pl_mediana_setor_x", "P/L — mediana do setor"),
+    ("roic_trimestral_pct", "ROIC trimestral (não anualizado)"),
+    ("receita_liquida_yoy_pct", "Receita líquida — variação YoY"),
+)
+
+
+def _render_indicadores_financeiros(indicadores: dict):
+    """Tabela de indicadores financeiros reais (pareceres.py:_parecer_market)
+    - os MESMOS números já citados em prosa na tese/pros/contras do Market
+    Researcher, só expostos também num ponto único e estruturado (campo
+    pedido explicitamente: "indicadores financeiros" e "ROIC" - antes só
+    existiam como texto corrido, achado real da auditoria 2026-11-11).
+    Nunca recalcula nada; indicador ausente aparece como "—", nunca 0."""
+    if not indicadores:
+        return
+    moeda = indicadores.get("moeda") or "R$"
+    subtitulo("Indicadores financeiros")
+    linhas = []
+    for chave, rotulo in _ROTULOS_INDICADORES:
+        valor = indicadores.get(chave)
+        if valor is None:
+            exibicao = "—"
+        elif chave.endswith("_pct"):
+            # Variação (sinal importa - usa a cor de alta/baixa real);
+            # os demais percentuais (ROE/margem/ROIC) são nível, não
+            # variação, mas aqui também usam a mesma formatação sem cor
+            # (nenhum dos dois é uma comparação explícita de 2 pontos).
+            exibicao = variacao_html(valor) if chave == "receita_liquida_yoy_pct" else _pct_html(valor, escala=1.0)
+        elif chave.endswith("_x"):
+            exibicao = numero_financeiro_html(valor, casas=2, formato="BR", sufixo="x")
+        else:
+            exibicao = _moeda_html(valor, moeda)
+        linhas.append(f"<tr><td>{html.escape(rotulo)}</td><td>{exibicao}</td></tr>")
+    st.markdown(
+        "<div class='coord-tabela-wrap'><table class='coord-tabela coord-tabela-premissas'><tbody>"
+        + "".join(linhas) + "</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _render_parecer_analista(analista: dict):
     """Conteúdo de 1 aba da seção "Pareceres por especialista": método/
     dados usados, premissas (quando houver), tese e pontos favoráveis/
@@ -744,14 +835,36 @@ def _render_parecer_analista(analista: dict):
     especialidade = html.escape(str(analista.get("especialidade") or ""))
     metodo_analista = html.escape(str(analista.get("metodo") or ""))
 
+    # Fontes utilizadas - campo pedido explicitamente; existia nos dados
+    # de pareceres.py (market_researcher/earnings_reviewer/model_builder)
+    # mas esta função genérica nunca exibia (achado real, auditoria
+    # 2026-11-11) - só o bloco especial do Model Builder mostrava "Fonte:"
+    # embutido no texto. Aqui vira 1 linha por analista, sempre que houver.
+    fontes_analista = [str(f) for f in (analista.get("fontes") or []) if f]
+    fontes_html = (
+        f"<div class='coord-nota'>Fontes: {html.escape(', '.join(fontes_analista))}</div>"
+        if fontes_analista else ""
+    )
     st.markdown(
         f"<div style='margin-bottom:0.3rem;'>{_badge_recomendacao(recomendacao)} "
         f"<span class='coord-nota' style='margin:0;'>viés: {vies}</span></div>"
         f"<div class='coord-nota'>Especialidade: {especialidade}</div>"
         f"<div class='coord-nota'>Método/dados utilizados: {metodo_analista}</div>"
+        f"{fontes_html}"
         f"<b>Tese</b><div class='coord-conclusao-linha'>{tese}</div>",
         unsafe_allow_html=True,
     )
+
+    # Indicadores financeiros estruturados (ROE, margem líquida, dívida
+    # líquida/EBITDA, FCF, P/L vs. mediana setorial, ROIC trimestral) -
+    # hoje só o Market Researcher carrega esse bloco (ver
+    # pareceres.py:_parecer_market); antes esses números só existiam como
+    # texto corrido dentro da tese/pros/contras, sem 1 tabela só com o
+    # indicador bruto (campo pedido explicitamente: "indicadores
+    # financeiros" e "ROIC").
+    if analista.get("indicadores"):
+        _render_indicadores_financeiros(analista["indicadores"])
+
     pros = analista.get("pros") or []
     contras = analista.get("contras") or []
     col_pro, col_con = st.columns(2)
@@ -761,6 +874,13 @@ def _render_parecer_analista(analista: dict):
     with col_con:
         st.markdown("**Pontos contrários**")
         lista_compacta(html.escape(str(x)) for x in contras) if contras else st.caption("Sem evidência contrária estruturada.")
+
+    # Limitações declaradas pelo próprio especialista (ex.: Earnings
+    # Reviewer/Valuation Reviewer) - achado real (auditoria 2026-11-11):
+    # existiam em pareceres.py mas nunca eram mostradas em nenhuma tela.
+    limitacoes_analista = [str(x) for x in (analista.get("limitacoes") or []) if x]
+    if limitacoes_analista:
+        st.caption("Limitações declaradas: " + " · ".join(limitacoes_analista))
 
     # Modelo consultável: o DCF pertence ao Model Builder. Exibir aqui
     # evita depender de um campo legado do Reviewer.

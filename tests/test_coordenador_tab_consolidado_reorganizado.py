@@ -31,6 +31,7 @@ def _consolidado_completo() -> dict:
             "upside_modelo_pct": 15.3,
             "preco_alvo_pl_setorial": 39.0, "upside_pl_setorial_pct": 6.0,
             "preco_alvo_consenso": 40.0, "upside_consenso_pct": 8.1,
+            "preco_atual": 36.90, "preco_atual_consultado_em": "2026-11-11T14:00:00-03:00",
         },
         "confianca": {"categoria": "ALTA", "justificativa": "4 de 5 especialista(s) acionado(s) trouxeram evidência real."},
         "visao_especialistas": {
@@ -64,6 +65,13 @@ def _consolidado_completo() -> dict:
                     "tese": "Leitura construtiva: ROE positivo de 18,0%.",
                     "pros": ["ROE positivo de 18,0%."], "contras": [],
                     "preco_alvo": None, "preco_atual": 36.90,
+                    "fontes": ["Market Researcher", "Valuation Radar", "Earnings Reviewer/CVM"],
+                    "indicadores": {
+                        "moeda": "R$", "roe_pct": 18.0, "margem_liquida_pct": 12.5,
+                        "divida_liquida_ebitda_x": 1.2, "fluxo_caixa_livre": 500000.0,
+                        "pl_x": 9.0, "pl_mediana_setor_x": 9.5,
+                        "roic_trimestral_pct": 4.1, "receita_liquida_yoy_pct": 6.5,
+                    },
                 },
                 {
                     "id": "earnings_reviewer", "nome": "Analista de Resultados",
@@ -74,6 +82,8 @@ def _consolidado_completo() -> dict:
                     "pros": ["Receita líquida avançou 4,0% YoY."],
                     "contras": ["Margem bruta contraiu 1,0 p.p."],
                     "preco_alvo": None,
+                    "fontes": ["CVM — ITR 3T26"],
+                    "limitacoes": ["Margem bruta sem comparável do mesmo trimestre do ano anterior."],
                 },
                 {
                     "id": "valuation_comparables", "nome": "Valuation por Múltiplos e Research",
@@ -182,6 +192,20 @@ def test_cabecalho_mostra_recomendacao_confianca_e_resumo():
     assert "Análise consolidada para PETR4" in textos
 
 
+def test_cabecalho_mostra_empresa_ticker_e_preco_atual():
+    """Achado real (auditoria 2026-11-11): o cabeçalho da análise nunca
+    identificava a EMPRESA (só o ticker, de forma indireta, no resumo
+    executivo em prosa) nem mostrava o preço atual/data de referência da
+    cotação usada como base de todos os upsides exibidos abaixo."""
+    at = _rodar_render_historico(_consolidado_completo())
+    assert not at.exception
+    textos = " ".join(m.value for m in at.markdown)
+    assert "Petrobras" in textos
+    assert "PETR4" in textos
+    assert "Preço atual" in textos
+    assert "2026-11-11" in textos
+
+
 def test_pareceres_viram_abas_uma_por_analista():
     at = _rodar_render_historico(_consolidado_completo())
     assert not at.exception
@@ -191,6 +215,31 @@ def test_pareceres_viram_abas_uma_por_analista():
     assert "Valuation por Múltiplos e Research" in rotulos
     assert "Model Builder" in rotulos
     assert "Valuation Reviewer" in rotulos
+
+
+def test_aba_market_researcher_mostra_fontes_e_indicadores_financeiros():
+    """Achado real (auditoria 2026-11-11): fontes/indicadores (ROE, margem,
+    dívida líquida/EBITDA, FCF, P/L, ROIC) já existiam no dado do parecer
+    mas nunca eram exibidos - só apareciam em prosa dentro da tese."""
+    at = _rodar_render_historico(_consolidado_completo())
+    assert not at.exception
+    aba = next(t for t in at.tabs if t.label == "Market Researcher — Analista de Empresas")
+    textos = " ".join(m.value for m in aba.markdown)
+    assert "Fontes: Market Researcher, Valuation Radar, Earnings Reviewer/CVM" in textos
+    assert "Indicadores financeiros" in textos
+    assert "ROIC trimestral" in textos
+    assert "Dívida líquida/EBITDA" in textos
+
+
+def test_aba_earnings_reviewer_mostra_fontes_e_limitacoes():
+    at = _rodar_render_historico(_consolidado_completo())
+    assert not at.exception
+    aba = next(t for t in at.tabs if t.label == "Analista de Resultados")
+    textos = " ".join(m.value for m in aba.markdown)
+    assert "Fontes: CVM — ITR 3T26" in textos
+    captions = " ".join(c.value for c in aba.caption)
+    assert "Limitações declaradas" in captions
+    assert "Margem bruta sem comparável" in captions
 
 
 def test_aba_model_builder_mostra_cenarios_premissas_e_sensibilidade():
