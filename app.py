@@ -574,9 +574,10 @@ with st.sidebar:
             if cot.get("erro"):
                 var_html = "<span class='cinza'>--</span>"
             else:
-                cls = "alta" if cot["variacao_pct"] >= 0 else "baixa"
-                sinal = "+" if cot["variacao_pct"] >= 0 else ""
-                var_html = f"<span class='{cls}'>{sinal}{config.formatar_numero(cot['variacao_pct'], 2, prefs['formato_numerico'])}%</span>"
+                # variacao_html (design_system) em vez do cls/sinal manual
+                # que se repetia aqui - mesmo padrao ja' usado no ticker
+                # tape acima e nas abas migradas (ver docstring do modulo).
+                var_html = design_system.variacao_html(cot["variacao_pct"], prefs["formato_numerico"])
 
             col_info, col_remover = st.columns([4, 1])
             col_info.markdown(
