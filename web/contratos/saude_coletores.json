@@ -233,6 +233,38 @@
       "nome": "Citi Global Insights"
     },
     {
+      "categoria": "Research",
+      "fonte": "goldmansachs.com/insights/articles (conteudo publico)",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 96,
+      "instrumentado": true,
+      "nome": "Goldman Sachs Insights"
+    },
+    {
+      "categoria": "Research",
+      "fonte": "jefferies.com/insights (conteudo publico)",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 96,
+      "instrumentado": true,
+      "nome": "Jefferies Insights"
+    },
+    {
+      "categoria": "Research",
+      "fonte": "dbresearch.com/PROD/IE-PROD (secao Macro, conteudo publico)",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 48,
+      "instrumentado": true,
+      "nome": "Deutsche Bank Research Institute"
+    },
+    {
+      "categoria": "Research",
+      "fonte": "levanteideias.com.br (feed RSS, itens com ticker B3 ou categoria de research)",
+      "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+      "idade_maxima_horas": 120,
+      "instrumentado": true,
+      "nome": "Levante Ideias de Investimentos"
+    },
+    {
       "categoria": "Calendario",
       "fonte": "RI das empresas + NEWS + prazo CVM",
       "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",

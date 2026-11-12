@@ -41,6 +41,30 @@
       "fonte": "citigroup.com/global/insights (conteudo publico; research completo e' client-only)",
       "id": "citi",
       "nome": "Citi Global Insights"
+    },
+    {
+      "ativa_por_padrao": true,
+      "fonte": "goldmansachs.com/insights/articles (conteudo publico; research completo e' client-only)",
+      "id": "goldman_sachs",
+      "nome": "Goldman Sachs Insights"
+    },
+    {
+      "ativa_por_padrao": true,
+      "fonte": "jefferies.com/insights (conteudo publico; research completo e' client-only)",
+      "id": "jefferies",
+      "nome": "Jefferies Insights"
+    },
+    {
+      "ativa_por_padrao": true,
+      "fonte": "dbresearch.com/PROD/IE-PROD (secao Macro; conteudo publico, research completo e' client-only)",
+      "id": "dbresearch",
+      "nome": "Deutsche Bank Research Institute"
+    },
+    {
+      "ativa_por_padrao": true,
+      "fonte": "levanteideias.com.br (feed RSS do blog, itens com ticker B3 ou categoria de research)",
+      "id": "levante",
+      "nome": "Levante Ideias de Investimentos"
     }
   ]
 }
