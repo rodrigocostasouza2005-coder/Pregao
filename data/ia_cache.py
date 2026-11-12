@@ -193,7 +193,12 @@ def _buscar_linha(cliente, chave: str) -> dict | None:
     try:
         resp = cliente.table(_TABELA).select("*").eq("chave_documento", chave).limit(1).execute()
         return resp.data[0] if resp.data else None
-    except Exception:
+    except Exception as e:
+        # so' print (nunca lanca - quem chama degrada pro gerar_fn() direto),
+        # mas com contexto suficiente pra distinguir "sem linha ainda" (None
+        # sem excecao) de uma falha real de leitura - achado na auditoria de
+        # infra 2026-11-11: antes, os dois casos eram indistinguiveis no log.
+        print(f"[ia_cache] _buscar_linha({chave[:12]}...) falhou: {e!r}")
         return None
 
 
@@ -256,8 +261,14 @@ def _liberar_reserva(cliente, chave: str):
     vai terminar."""
     try:
         cliente.table(_TABELA).delete().eq("chave_documento", chave).execute()
-    except Exception:
-        pass
+    except Exception as e:
+        # best-effort de proposito (nunca lanca - a reserva que ficaria presa
+        # e' so' uma linha de cache, nao dado real do usuario), mas achado na
+        # auditoria de infra 2026-11-11: sem log nenhum aqui, uma reserva
+        # 'gerando' que falha ao ser liberada fica presa em silencio ate'
+        # _ABANDONO_SEGUNDOS expirar, sem nenhum rastro de que a tentativa de
+        # liberar aconteceu e falhou.
+        print(f"[ia_cache] _liberar_reserva({chave[:12]}...) falhou ao apagar a reserva: {e!r}")
 
 
 def _esperar_geracao_concorrente(cliente, chave: str) -> dict | None:

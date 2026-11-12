@@ -51,7 +51,8 @@ def ultimo_snapshot(casa: str, ticker: str) -> dict | None:
             .execute()
         )
         return resp.data[0] if resp.data else None
-    except Exception:
+    except Exception as exc:
+        print(f"[research.historico] ultimo_snapshot({casa!r}, {ticker!r}) falhou: {exc!r}")
         return None
 
 
@@ -72,7 +73,8 @@ def historico_ticker(casa: str, ticker: str, limite: int = 10) -> list:
             .execute()
         )
         return resp.data
-    except Exception:
+    except Exception as exc:
+        print(f"[research.historico] historico_ticker({casa!r}, {ticker!r}) falhou: {exc!r}")
         return []
 
 
@@ -101,37 +103,105 @@ def registrar_se_mudou(casa: str, ticker: str, recomendacao, preco_alvo, potenci
             "casa": casa, "ticker": ticker, "recomendacao": recomendacao,
             "preco_alvo": preco_alvo, "potencial_pct": potencial_pct,
         }).execute()
-    except Exception:
+    except Exception as exc:
+        print(f"[research.historico] registrar_se_mudou({casa!r}, {ticker!r}) falhou ao gravar: {exc!r}")
         return None
     return anterior
 
 
+def _ultimo_snapshot_por_ticker(casa: str, tickers: list) -> dict:
+    """Mesmo dado de ultimo_snapshot(casa, ticker), mas pra VARIOS tickers
+    de uma vez (1 unica query com `in_`, nao 1 por ticker) - correcao de
+    N+1 real encontrada na auditoria de infra (2026-11-11):
+    processar_recomendacoes fazia 1 SELECT por item da lista (watchlist
+    inteira, pode ser dezenas de tickers) so' pra achar o snapshot
+    anterior de cada um, antes mesmo de considerar os INSERTs de quem
+    mudou. Devolve {ticker: linha-mais-recente-ou-None} - None explicito
+    pros tickers pedidos que nao tem nenhum snapshot ainda (1o registro).
+    {} (todos None implicitamente) se o banco estiver fora do ar."""
+    tickers = sorted({t for t in tickers if t})
+    if not tickers:
+        return {}
+    cliente = obter_cliente()
+    if cliente is None:
+        return {}
+    try:
+        resp = (
+            cliente.table("research_recomendacoes_historico")
+            .select("*")
+            .eq("casa", casa).in_("ticker", tickers)
+            .order("capturado_em", desc=True)
+            .execute()
+        )
+    except Exception as exc:
+        print(f"[research.historico] _ultimo_snapshot_por_ticker({casa!r}, {len(tickers)} ticker(s)) falhou: {exc!r}")
+        return {}
+    por_ticker = {}
+    for linha in resp.data or []:
+        # ordenado desc por capturado_em - a PRIMEIRA linha vista pra um
+        # ticker e' sempre a mais recente; ignora as demais.
+        por_ticker.setdefault(linha["ticker"], linha)
+    return por_ticker
+
+
 @st.cache_data(ttl=TTL_COLETA, show_spinner=False)
 def processar_recomendacoes(casa: str, recomendacoes: list) -> list:
-    """Chama registrar_se_mudou pra cada recomendacao da lista (st.cache_data
-    hashea o CONTEUDO da lista/dict, nao precisa ser tupla) e retorna só
-    as MUDANÇAS de verdade detectadas (lista de {ticker, casa, de, para} -
-    'de'/'para' = {recomendacao, preco_alvo}) - pra UI de 'O QUE MUDOU'.
+    """Compara cada recomendacao da lista com o ultimo snapshot salvo e
+    retorna so' as MUDANÇAS de verdade detectadas (lista de {ticker,
+    casa, de, para} - 'de'/'para' = {recomendacao, preco_alvo}) - pra UI
+    de 'O QUE MUDOU'. Quem mudou (ou nunca teve snapshot) grava uma linha
+    NOVA - mesma regra de registrar_se_mudou/_mudou, so' que em lote: 1
+    SELECT pra todos os tickers (_ultimo_snapshot_por_ticker, via `in_`)
+    + 1 INSERT so' com as linhas que de fato mudaram, em vez de 1
+    SELECT+INSERT por ticker (correcao de N+1, auditoria 2026-11-11 -
+    com a watchlist inteira, era 1 + 2*N idas ao Supabase; agora e'
+    sempre 1 + (0 ou 1), independente de N).
 
     @st.cache_data(ttl=TTL_COLETA) de proposito: sem isso, toda vez que a
     aba RESEARCH renderiza de novo (qualquer interacao, nao so' quando o
-    dado de verdade mudou), isso bateria no Supabase (1 select + talvez 1
-    insert por ticker da watchlist) a toa - o cache garante que so' roda
-    de verdade uma vez por janela de atualizacao (mesma janela que
-    obter_recomendacoes() ja usa pra nao rebuscar da fonte)."""
-    mudancas = []
+    dado de verdade mudou), isso bateria no Supabase a toa - o cache
+    garante que so' roda de verdade uma vez por janela de atualizacao
+    (mesma janela que obter_recomendacoes() ja usa pra nao rebuscar da
+    fonte)."""
+    if not recomendacoes:
+        return []
+    tickers = [rec["ticker"] for rec in recomendacoes]
+    anteriores = _ultimo_snapshot_por_ticker(casa, tickers)
+
+    mudancas, linhas_novas = [], []
     for rec in recomendacoes:
-        anterior = registrar_se_mudou(
-            casa, rec["ticker"], rec.get("recomendacao"), rec.get("preco_alvo"),
-            potencial_pct=rec.get("potencial_pct"),
-        )
+        ticker = rec["ticker"]
+        recomendacao, preco_alvo = rec.get("recomendacao"), rec.get("preco_alvo")
+        anterior = anteriores.get(ticker)
+        if not _mudou(anterior, recomendacao, preco_alvo):
+            continue
+        linhas_novas.append({
+            "casa": casa, "ticker": ticker, "recomendacao": recomendacao,
+            "preco_alvo": preco_alvo, "potencial_pct": rec.get("potencial_pct"),
+        })
         if anterior is not None:
             mudancas.append({
-                "ticker": rec["ticker"],
+                "ticker": ticker,
                 "casa": casa,
                 "de": {"recomendacao": anterior.get("recomendacao"), "preco_alvo": anterior.get("preco_alvo")},
-                "para": {"recomendacao": rec.get("recomendacao"), "preco_alvo": rec.get("preco_alvo")},
+                "para": {"recomendacao": recomendacao, "preco_alvo": preco_alvo},
             })
+
+    if not linhas_novas:
+        return mudancas
+
+    cliente = obter_cliente()
+    if cliente is None:
+        return []  # nada foi (nem pode ser) persistido - nunca reporta mudanca nao gravada
+    try:
+        cliente.table("research_recomendacoes_historico").insert(linhas_novas).execute()
+    except Exception as exc:
+        print(
+            f"[research.historico] processar_recomendacoes({casa!r}) falhou ao gravar "
+            f"{len(linhas_novas)} snapshot(s) novo(s) em lote: {exc!r} - nenhuma mudanca "
+            "sera reportada (mesma regra de registrar_se_mudou: so' reporta o que foi gravado de verdade)"
+        )
+        return []  # mesmo padrao de registrar_se_mudou: falha ao gravar -> None/nao reporta
     return mudancas
 
 
@@ -155,8 +225,46 @@ def _tickers_capturados_hoje(casa: str) -> list:
             .execute()
         )
         return sorted({linha["ticker"] for linha in resp.data})
-    except Exception:
+    except Exception as exc:
+        print(f"[research.historico] _tickers_capturados_hoje({casa!r}) falhou: {exc!r}")
         return []
+
+
+def _ultimos_dois_por_ticker(casa: str, tickers: list) -> dict:
+    """Pros tickers dados, devolve {ticker: [snapshot_mais_recente,
+    snapshot_anterior]} (so' os 2 ultimos, mesmo recorte de
+    historico_ticker(casa, ticker, limite=2)) - numa UNICA query (`in_`),
+    nao 1 por ticker. Correcao de N+1 real encontrada na auditoria de
+    infra (2026-11-11): mudancas_hoje chamava historico_ticker (1 SELECT)
+    pra CADA ticker capturado no dia - com M tickers, eram 1+M idas ao
+    Supabase; agora e' sempre 1+1, independente de M. Ticker sem nenhum
+    snapshot nao aparece no dict (equivalente a historico_ticker
+    devolver [])."""
+    tickers = sorted({t for t in tickers if t})
+    if not tickers:
+        return {}
+    cliente = obter_cliente()
+    if cliente is None:
+        return {}
+    try:
+        resp = (
+            cliente.table("research_recomendacoes_historico")
+            .select("*")
+            .eq("casa", casa).in_("ticker", tickers)
+            .order("capturado_em", desc=True)
+            .execute()
+        )
+    except Exception as exc:
+        print(f"[research.historico] _ultimos_dois_por_ticker({casa!r}, {len(tickers)} ticker(s)) falhou: {exc!r}")
+        return {}
+    por_ticker = {}
+    for linha in resp.data or []:
+        # ordenado desc por capturado_em - as 2 PRIMEIRAS linhas vistas
+        # pra um ticker sao sempre as 2 mais recentes; ignora o resto.
+        lista = por_ticker.setdefault(linha["ticker"], [])
+        if len(lista) < 2:
+            lista.append(linha)
+    return por_ticker
 
 
 @st.cache_data(ttl=TTL_COLETA, show_spinner=False)
@@ -180,9 +288,14 @@ def mudancas_hoje(casa: str) -> list:
     mudanca se os 2 existirem e diferirem (1 snapshot so' = primeiro
     registro conhecido, nunca "mudou" - mesma regra de _mudou). []
     se nao houver nenhuma mudanca hoje ou o banco estiver fora do ar."""
+    tickers_hoje = _tickers_capturados_hoje(casa)
+    if not tickers_hoje:
+        return []
+    por_ticker = _ultimos_dois_por_ticker(casa, tickers_hoje)
+
     mudancas = []
-    for ticker in _tickers_capturados_hoje(casa):
-        ultimos = historico_ticker(casa, ticker, limite=2)
+    for ticker in tickers_hoje:
+        ultimos = por_ticker.get(ticker, [])
         if len(ultimos) < 2:
             continue
         atual, anterior = ultimos[0], ultimos[1]

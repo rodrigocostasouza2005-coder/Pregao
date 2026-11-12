@@ -244,15 +244,16 @@ def test_genial_obter_recomendacoes_preserva_preco_alvo_e_recomendacao_por_ticke
 # ============================================================
 
 def test_mudancas_hoje_usa_historico_persistido_sem_live():
-    """Nucleo do bug: mudancas_hoje precisa funcionar usando SO' o que
-    ja' esta' no banco (historico_ticker), nunca uma chamada ao vivo a'
+    """Nucleo do bug original (2026-10-09): mudancas_hoje precisa
+    funcionar usando SO' o que ja' esta' no banco
+    (_ultimos_dois_por_ticker, em lote), nunca uma chamada ao vivo a'
     Genial - exatamente o caminho que fica disponivel em producao."""
     historico.mudancas_hoje.clear()
     with patch.object(historico, "_tickers_capturados_hoje", return_value=["PETR4", "VALE3"]), \
-         patch.object(historico, "historico_ticker", side_effect=lambda casa, ticker, limite=10: {
+         patch.object(historico, "_ultimos_dois_por_ticker", return_value={
              "PETR4": [{"recomendacao": "COMPRA", "preco_alvo": 52.0}, {"recomendacao": "MANTER", "preco_alvo": 48.0}],
              "VALE3": [{"recomendacao": "MANTER", "preco_alvo": 70.0}, {"recomendacao": "MANTER", "preco_alvo": 70.0}],
-         }[ticker]):
+         }):
         mudancas = historico.mudancas_hoje("Genial Analisa")
     _checar("so' PETR4 (teve diff real) aparece, VALE3 (sem diff) nao", [m["ticker"] for m in mudancas] == ["PETR4"],
             f"(mudancas={mudancas})")
@@ -264,7 +265,9 @@ def test_mudancas_hoje_usa_historico_persistido_sem_live():
 def test_mudancas_hoje_ticker_com_1_so_snapshot_nao_e_mudanca():
     historico.mudancas_hoje.clear()
     with patch.object(historico, "_tickers_capturados_hoje", return_value=["PETR4"]), \
-         patch.object(historico, "historico_ticker", return_value=[{"recomendacao": "COMPRA", "preco_alvo": 52.0}]):
+         patch.object(historico, "_ultimos_dois_por_ticker", return_value={
+             "PETR4": [{"recomendacao": "COMPRA", "preco_alvo": 52.0}],
+         }):
         mudancas = historico.mudancas_hoje("Genial Analisa")
     _checar("1 snapshot so' (primeiro registro) nunca e' reportado como mudanca", mudancas == [], f"(mudancas={mudancas})")
 
@@ -280,6 +283,97 @@ def test_tickers_capturados_hoje_banco_fora_do_ar_retorna_vazio():
     with patch.object(historico, "obter_cliente", return_value=None):
         tickers = historico._tickers_capturados_hoje("Genial Analisa")
     _checar("Supabase fora do ar -> [] (nunca quebra, nunca finge dado)", tickers == [])
+
+
+# ============================================================
+# N+1 real encontrado na auditoria de infra/persistencia (2026-11-11):
+# mudancas_hoje fazia 1 query pra achar os tickers capturados hoje + 1
+# query POR TICKER (historico_ticker) pra comparar os 2 ultimos
+# snapshots - com M tickers capturados no dia, eram 1+M idas ao
+# Supabase. processar_recomendacoes tinha o mesmo padrao (1 SELECT +
+# ate' 1 INSERT por item da lista, watchlist inteira). Ambos agora usam
+# 1 unica query em lote (via `in_`) pra todos os tickers, independente
+# de quantos sejam - estes testes travam isso como contrato: o numero
+# de chamadas a cliente.table(...) nao pode crescer com o numero de
+# tickers.
+# ============================================================
+
+def _cliente_mock_batch(linhas: list):
+    """Mock do client Supabase so' pra chamadas em lote (.select().eq()
+    .in_().order().execute() e .select().eq().gte().execute()) - usado
+    pra confirmar que mudancas_hoje/processar_recomendacoes fazem UMA
+    query por tipo de consulta, nao uma por ticker."""
+    cliente = MagicMock()
+    resp = MagicMock()
+    resp.data = linhas
+    cliente.table.return_value.select.return_value.eq.return_value.in_.return_value.order.return_value.execute.return_value = resp
+    cliente.table.return_value.select.return_value.eq.return_value.gte.return_value.execute.return_value = resp
+    return cliente
+
+
+def test_mudancas_hoje_busca_todos_os_tickers_em_1_unica_query_batch():
+    """Red antes da correcao: cliente.table(...) era chamado 1 vez pra
+    achar os tickers do dia + 1 vez POR TICKER (5, no caso) = 6 chamadas
+    no total. Green depois: sempre 2 chamadas (1 pros tickers do dia, 1
+    pros snapshots em lote via `in_`), nao importa quantos tickers."""
+    historico.mudancas_hoje.clear()
+    tickers_hoje = [f"T{i}4" for i in range(5)]
+    linhas = []
+    for t in tickers_hoje:
+        linhas.append({"ticker": t, "recomendacao": "COMPRA", "preco_alvo": 52.0, "capturado_em": "2026-11-11T12:00:00+00:00"})
+        linhas.append({"ticker": t, "recomendacao": "MANTER", "preco_alvo": 48.0, "capturado_em": "2026-11-11T09:00:00+00:00"})
+    cliente = _cliente_mock_batch(linhas)
+
+    with patch.object(historico, "_tickers_capturados_hoje", return_value=tickers_hoje), \
+         patch.object(historico, "obter_cliente", return_value=cliente):
+        mudancas = historico.mudancas_hoje("Genial Analisa")
+
+    _checar("cliente.table foi chamado so' 1 VEZ pro batch de snapshots (nao 1 por ticker)",
+            cliente.table.call_count == 1, f"(call_count={cliente.table.call_count})")
+    _checar("todos os 5 tickers (COMPRA<-MANTER) reportam mudanca real",
+            sorted(m["ticker"] for m in mudancas) == sorted(tickers_hoje), f"(mudancas={mudancas})")
+
+
+def test_ultimos_dois_por_ticker_agrupa_e_limita_a_2_por_ticker():
+    linhas = [
+        {"ticker": "PETR4", "recomendacao": "COMPRA", "preco_alvo": 52.0, "capturado_em": "2026-11-11T12:00:00+00:00"},
+        {"ticker": "PETR4", "recomendacao": "MANTER", "preco_alvo": 48.0, "capturado_em": "2026-11-11T09:00:00+00:00"},
+        {"ticker": "PETR4", "recomendacao": "MANTER", "preco_alvo": 40.0, "capturado_em": "2026-11-10T09:00:00+00:00"},
+        {"ticker": "VALE3", "recomendacao": "MANTER", "preco_alvo": 70.0, "capturado_em": "2026-11-11T10:00:00+00:00"},
+    ]
+    cliente = _cliente_mock_batch(linhas)
+    with patch.object(historico, "obter_cliente", return_value=cliente):
+        resultado = historico._ultimos_dois_por_ticker("Genial Analisa", ["PETR4", "VALE3"])
+    _checar("PETR4 tem so' os 2 mais recentes (3o ignorado)",
+            resultado["PETR4"] == linhas[:2], f"(resultado={resultado})")
+    _checar("VALE3 tem 1 so' (nao tem 2o pra comparar)", resultado["VALE3"] == [linhas[3]], f"(resultado={resultado})")
+
+
+def test_processar_recomendacoes_busca_anteriores_em_1_unica_query_batch():
+    """Mesmo contrato de N+1 pro outro lado do fluxo (watchlist ao vivo,
+    ui/research_tab.py): 1 SELECT em lote pra todos os tickers da lista,
+    nao 1 por item."""
+    historico.processar_recomendacoes.clear()
+    recomendacoes = [
+        {"ticker": "PETR4", "recomendacao": "COMPRA", "preco_alvo": 52.0, "potencial_pct": 10.0},
+        {"ticker": "VALE3", "recomendacao": "MANTER", "preco_alvo": 70.0, "potencial_pct": 1.0},
+    ]
+    linhas_anteriores = [
+        {"ticker": "PETR4", "recomendacao": "MANTER", "preco_alvo": 48.0, "capturado_em": "2026-11-11T09:00:00+00:00"},
+        {"ticker": "VALE3", "recomendacao": "MANTER", "preco_alvo": 70.0, "capturado_em": "2026-11-11T09:00:00+00:00"},
+    ]
+    cliente = _cliente_mock_batch(linhas_anteriores)
+    inserts = []
+    cliente.table.return_value.insert.side_effect = lambda payload: (inserts.append(payload), MagicMock())[1]
+
+    with patch.object(historico, "obter_cliente", return_value=cliente):
+        mudancas = historico.processar_recomendacoes("Genial Analisa", recomendacoes)
+
+    _checar("cliente.table foi chamado so' 2 vezes no total (1 select em lote + 1 insert em lote, nao por ticker)",
+            cliente.table.call_count == 2, f"(call_count={cliente.table.call_count})")
+    _checar("so' PETR4 (teve diff real) e' reportado", [m["ticker"] for m in mudancas] == ["PETR4"], f"(mudancas={mudancas})")
+    _checar("o INSERT em lote grava so' PETR4 (VALE3 nao mudou, nao precisa gravar de novo)",
+            len(inserts) == 1 and [l["ticker"] for l in inserts[0]] == ["PETR4"], f"(inserts={inserts})")
 
 
 def test_tickers_capturados_hoje_filtra_pela_casa_e_pelo_dia():

@@ -92,19 +92,27 @@ def _persistir_e_comparar_resultados_corporativos(nota: dict) -> dict:
     não duplicar o insert append-only nem a leitura do histórico."""
     if not nota.get("disponivel"):
         return nota
+    ticker, periodo = nota.get("ticker"), nota.get("periodo_label")
     try:
         earnings_reviewer.salvar_versao(nota)
-    except Exception:
-        pass
+    except Exception as exc:
+        # best-effort de proposito (a nota ja' calculada com sucesso segue
+        # pro Comite mesmo se isto falhar), mas achado na auditoria de
+        # infra 2026-11-11: sem log, uma falha aqui fica indistinguivel de
+        # "gravou normalmente" - earnings_reviews e' append-only, perder um
+        # INSERT em silencio quebra o diff da proxima rodada sem rastro.
+        print(f"[coordenador_central.registro] salvar_versao({ticker!r}, {periodo!r}) falhou: {exc!r}")
     try:
         anterior = earnings_reviewer.obter_ultima_versao(
-            nota["ticker"], nota["pais"], excluir_periodo=nota.get("periodo_label"),
+            ticker, nota["pais"], excluir_periodo=periodo,
         )
-    except Exception:
+    except Exception as exc:
+        print(f"[coordenador_central.registro] obter_ultima_versao({ticker!r}) falhou: {exc!r}")
         anterior = None
     try:
         mudancas = earnings_reviewer.comparar_com_versao_anterior(nota, anterior)
-    except Exception:
+    except Exception as exc:
+        print(f"[coordenador_central.registro] comparar_com_versao_anterior({ticker!r}, {periodo!r}) falhou: {exc!r}")
         mudancas = []
     return {**nota, "mudancas_desde_ultima_versao": mudancas}
 

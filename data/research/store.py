@@ -49,7 +49,8 @@ def listar_itens(casas: list) -> list | None:
             .execute()
         )
         return [_linha_para_item(r) for r in resp.data]
-    except Exception:
+    except Exception as exc:
+        print(f"[research.store] listar_itens({casas!r}) falhou: {exc!r}")
         return None
 
 
@@ -71,7 +72,8 @@ def ultima_coleta_em(casa: str) -> datetime | None:
         if not resp.data:
             return None
         return datetime.fromisoformat(resp.data[0]["coletado_em"])
-    except Exception:
+    except Exception as exc:
+        print(f"[research.store] ultima_coleta_em({casa!r}) falhou: {exc!r}")
         return None
 
 
@@ -126,14 +128,20 @@ def salvar_itens(itens: list) -> bool:
     try:
         cliente.table("research_itens").upsert(linhas, on_conflict="link").execute()
         return True
-    except Exception:
+    except Exception as exc:
         if not tem_publicado_em:
+            print(f"[research.store] salvar_itens falhou ({len(linhas)} linha(s)): {exc!r}")
             return False
+        print(
+            f"[research.store] salvar_itens falhou com 'publicado_em' presente "
+            f"({len(linhas)} linha(s)): {exc!r} - tentando de novo sem essa coluna"
+        )
         linhas_sem_publicado = [{k: v for k, v in linha.items() if k != "publicado_em"} for linha in linhas]
         try:
             cliente.table("research_itens").upsert(linhas_sem_publicado, on_conflict="link").execute()
             return True
-        except Exception:
+        except Exception as exc2:
+            print(f"[research.store] salvar_itens falhou mesmo sem 'publicado_em': {exc2!r}")
             return False
 
 
@@ -159,12 +167,14 @@ def apagar_itens_antigos(dias: int = RETENCAO_DIAS) -> int:
     try:
         resp = cliente.table("research_itens").delete().neq("data", "").lt("data", limite_data).execute()
         total += len(resp.data)
-    except Exception:
+    except Exception as exc:
+        print(f"[research.store] apagar_itens_antigos (filtro 'data' < {limite_data!r}) falhou: {exc!r}")
         return -1
     try:
         resp = cliente.table("research_itens").delete().lt("coletado_em", limite_coletado).execute()
         total += len(resp.data)
-    except Exception:
+    except Exception as exc:
+        print(f"[research.store] apagar_itens_antigos (filtro 'coletado_em' < {limite_coletado!r}) falhou: {exc!r}")
         return -1
     return total
 
@@ -206,15 +216,21 @@ def salvar_premissas(
     try:
         cliente.table("research_premissas").upsert(linha, on_conflict="link").execute()
         return True
-    except Exception:
+    except Exception as exc:
         if riscos is None:
+            print(f"[research.store] salvar_premissas({link!r}) falhou: {exc!r}")
             return False
+        print(
+            f"[research.store] salvar_premissas({link!r}) falhou com 'riscos' presente: "
+            f"{exc!r} - tentando de novo sem essa coluna"
+        )
         try:
             cliente.table("research_premissas").upsert(
                 {k: v for k, v in linha.items() if k != "riscos"}, on_conflict="link",
             ).execute()
             return True
-        except Exception:
+        except Exception as exc2:
+            print(f"[research.store] salvar_premissas({link!r}) falhou mesmo sem 'riscos': {exc2!r}")
             return False
 
 
@@ -241,7 +257,8 @@ def listar_premissas(tickers: list = None, casa=None) -> list | None:
             consulta = consulta.eq("casa", casa)
         resp = consulta.order("extraido_em", desc=True).execute()
         return resp.data
-    except Exception:
+    except Exception as exc:
+        print(f"[research.store] listar_premissas(tickers={tickers!r}, casa={casa!r}) falhou: {exc!r}")
         return None
 
 
@@ -260,5 +277,6 @@ def salvar_resumo(link: str, resumo: str, modelo: str, preco_alvo: float = None,
             {"resumo": resumo, "modelo_resumo": modelo, "preco_alvo": preco_alvo, "recomendacao": recomendacao}
         ).eq("link", link).execute()
         return True
-    except Exception:
+    except Exception as exc:
+        print(f"[research.store] salvar_resumo({link!r}) falhou: {exc!r}")
         return False
