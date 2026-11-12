@@ -552,6 +552,20 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
     color: var(--destaque) !important;
 }
 
+/* rotulo de widget (label do st.text_input/number_input/selectbox/
+   multiselect/date_input/text_area/slider/etc - achado real, missao
+   "experiencia/design system" 2026-11-11, confirmado por screenshot
+   Playwright em ui/top_mercado_tab.py e ui/busca.py): o VALOR dentro do
+   widget ja' tinha font-size 0.8rem (regras acima), mas o ROTULO acima
+   dele (ex: "Região", "Setor", "Buscar ativo") ficava no tamanho/peso
+   PADRAO do Streamlit (maior, branco puro) - exatamente o problema que
+   ui/design_system.py:subtitulo ja resolvia pra texto solto, so' que
+   nunca tinha sido estendido pro <label> nativo de widget. data-testid
+   "stWidgetLabel" e' estavel (mesmo padrao de stSelectbox/stMultiSelect
+   acima) e cobre QUALQUER widget com rotulo visivel (checkbox/radio
+   continuam com a regra propria deles, ja existente, abaixo). */
+[data-testid="stWidgetLabel"] p { color: var(--neutro) !important; font-size: 0.8rem !important; }
+
 /* checkbox --------------------------------------------------------------------- */
 .stCheckbox label p { color: var(--neutro) !important; font-size: 0.8rem !important; }
 
