@@ -26,7 +26,7 @@ from zoneinfo import ZoneInfo
 import feedparser
 import requests
 
-from .base import HEADERS, permitido
+from .base import HEADERS, permitido, testar_conexao_url
 
 FEED_URL = "https://www.montebravo.com.br/feed/"
 _NOME_CASA = "Monte Bravo"
@@ -106,6 +106,19 @@ def parse_feed(conteudo: bytes) -> list | None:
             vistos.add(item["link"])
             itens.append(item)
     return itens
+
+
+def testar_conexao(timeout: float = 5) -> tuple:
+    """So testa se o feed responde - usado pelo painel DIAGNOSTICO DE
+    FONTES. Retorna (ok, detalhe).
+
+    Gap real corrigido (auditoria de arquitetura 2026-11-12): montebravo.py
+    nunca teve este `testar_conexao` desde que a casa foi adicionada
+    (22/10/2026) - e data/diagnostico.py tambem nao tinha a casa
+    cadastrada em FONTES/_TESTES_ESPECIFICOS (corrigido na mesma
+    auditoria), entao a ausencia nunca apareceu no painel DIAGNOSTICO DE
+    FONTES."""
+    return testar_conexao_url(FEED_URL, permitido, timeout)
 
 
 def obter_relatorios() -> list | None:

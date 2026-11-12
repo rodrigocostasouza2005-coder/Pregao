@@ -88,6 +88,43 @@ def precisa_recoletar(casa: str, minutos: int = TTL_RECOLETA_MIN) -> bool:
     return (datetime.now(timezone.utc) - ultima) > timedelta(minutes=minutos)
 
 
+# Colunas ADITIVAS do contrato ampliado (auditoria de arquitetura
+# 2026-11-12 - ver data/research/base.py, topo do modulo, pra que' serve
+# cada uma) - podem nao existir ainda no banco de quem esta rodando (ver
+# sql/research_itens_contrato_padrao.sql, PROPOSTO mas nunca aplicado por
+# este agente). 'publicado_em' (fase 3) e' a mais antiga do grupo, mesmo
+# padrao defensivo desde entao: so' entram no payload quando pelo menos 1
+# item do LOTE realmente tiver o campo, e se o UPSERT falhar por causa
+# delas, salvar_itens tenta de novo SEM elas antes de desistir - nunca
+# quebra a coleta de TODAS as casas so' porque uma coluna nova ainda nao
+# existe no banco de quem esta rodando.
+_CAMPOS_AMPLIADOS_CONTRATO = (
+    "publicado_em", "empresa", "setor", "preco_referencia", "horizonte",
+    "texto_integral_disponivel",
+)
+
+# Campos que, se DIFERENTES do que ja' esta' salvo pro mesmo link,
+# caracterizam uma "nova versao" do relatorio (ex: fonte corrigiu o
+# titulo, ou repetiu o mesmo link com data de republicacao diferente) -
+# usado so' por _arquivar_versao_anterior (ver docstring la'). Nao inclui
+# 'autor'/'tickers' de proposito: variam menos e mudanca isolada neles
+# tende a ser normalizacao de parsing, nao uma nova versao de conteudo.
+_CAMPOS_VERSAO = ("titulo", "data")
+
+
+def contar_duplicados(itens: list) -> int:
+    """Quantos itens de `itens` tem um link JA' visto antes na MESMA
+    lista (len(itens) - numero de links UNICOS) - metrica pura (ver
+    data/research/__init__.py:coletar_casa), nunca usada pra decisao de
+    persistencia (salvar_itens abaixo faz o dedup de verdade, por conta
+    propria). Item sem 'link' e' ignorado (nunca lanca KeyError so' pra
+    contar). [] -> 0."""
+    if not itens:
+        return 0
+    links = [it.get("link") for it in itens if it.get("link")]
+    return len(links) - len(set(links))
+
+
 def salvar_itens(itens: list) -> bool:
     """Upsert em lote por link. So envia as colunas de metadado (nunca
     resumo/modelo_resumo) - o upsert do PostgREST so mexe nas colunas
@@ -100,13 +137,20 @@ def salvar_itens(itens: list) -> bool:
     second time"); pode acontecer se a fonte listar o mesmo relatorio em
     mais de uma categoria (confirmado em teste com a XP).
 
-    'publicado_em' (fase 3, coluna nova - ver sql/research.sql) so' vai
-    no payload quando pelo menos 1 item do lote tiver o campo (hoje so'
-    genial_lives.py preenche) - e se o UPSERT falhar por causa dela (ex:
-    Supabase do usuario ainda sem rodar a migracao), tenta de novo SEM
-    essa coluna antes de desistir: nunca quebra a coleta de TODAS as
-    casas so' porque uma coluna nova ainda nao existe no banco de quem
-    esta rodando."""
+    Colunas ADITIVAS do contrato ampliado (ver _CAMPOS_AMPLIADOS_CONTRATO)
+    so' vao no payload quando pelo menos 1 item do lote tiver o campo - e
+    se o UPSERT falhar por causa delas (Supabase do usuario ainda sem
+    rodar a migracao proposta), tenta de novo SEM elas antes de desistir:
+    nunca quebra a coleta de TODAS as casas so' porque uma coluna nova
+    ainda nao existe no banco de quem esta rodando.
+
+    Versionamento (auditoria de arquitetura 2026-11-12): ANTES do upsert,
+    arquiva em research_itens_historico (tabela PROPOSTA, melhor esforco -
+    ver _versionar_antes_do_upsert abaixo) a linha anterior de todo link
+    cujo titulo/data vai mudar nesta coleta - uma nova versao de
+    relatorio nunca mais sobrescreve a anterior em silencio total, mesmo
+    antes da migracao ser aplicada (degrada pra 'sem historico', nunca
+    pra 'upsert falhou')."""
     cliente = obter_cliente()
     if cliente is None:
         return False
@@ -114,14 +158,20 @@ def salvar_itens(itens: list) -> bool:
         return True
     itens = list({it["link"]: it for it in itens}.values())
     agora = datetime.now(timezone.utc).isoformat()
-    tem_publicado_em = any(it.get("publicado_em") for it in itens)
+
+    _versionar_antes_do_upsert(cliente, itens)
+
+    campos_presentes = [
+        campo for campo in _CAMPOS_AMPLIADOS_CONTRATO
+        if any(it.get(campo) not in (None, "") for it in itens)
+    ]
     linhas = [
         {
             "link": it["link"], "casa": it["casa"], "titulo": it["titulo"],
             "data": it.get("data") or None, "autor": it.get("autor") or None,
             "tipo": it["tipo"], "tickers": it.get("tickers") or [],
             "coletado_em": agora,
-            **({"publicado_em": it.get("publicado_em")} if tem_publicado_em else {}),
+            **{campo: it.get(campo) for campo in campos_presentes},
         }
         for it in itens
     ]
@@ -129,20 +179,67 @@ def salvar_itens(itens: list) -> bool:
         cliente.table("research_itens").upsert(linhas, on_conflict="link").execute()
         return True
     except Exception as exc:
-        if not tem_publicado_em:
+        if not campos_presentes:
             print(f"[research.store] salvar_itens falhou ({len(linhas)} linha(s)): {exc!r}")
             return False
         print(
-            f"[research.store] salvar_itens falhou com 'publicado_em' presente "
-            f"({len(linhas)} linha(s)): {exc!r} - tentando de novo sem essa coluna"
+            f"[research.store] salvar_itens falhou com {campos_presentes!r} presente(s) "
+            f"({len(linhas)} linha(s)): {exc!r} - tentando de novo sem essas colunas"
         )
-        linhas_sem_publicado = [{k: v for k, v in linha.items() if k != "publicado_em"} for linha in linhas]
+        linhas_legado = [{k: v for k, v in linha.items() if k not in campos_presentes} for linha in linhas]
         try:
-            cliente.table("research_itens").upsert(linhas_sem_publicado, on_conflict="link").execute()
+            cliente.table("research_itens").upsert(linhas_legado, on_conflict="link").execute()
             return True
         except Exception as exc2:
-            print(f"[research.store] salvar_itens falhou mesmo sem 'publicado_em': {exc2!r}")
+            print(f"[research.store] salvar_itens falhou mesmo sem {campos_presentes!r}: {exc2!r}")
             return False
+
+
+def _versionar_antes_do_upsert(cliente, itens: list) -> None:
+    """Implementacao real de _arquivar_versao_anterior (ver docstring de
+    salvar_itens) - funcao separada (nao inline) pra poder ser testada
+    isolada, mockando so' `cliente`. Melhor esforco SEMPRE: qualquer
+    excecao (leitura OU escrita) so' loga e retorna, nunca propaga -
+    quem chama (salvar_itens) sempre segue pro upsert principal."""
+    links = [it["link"] for it in itens if it.get("link")]
+    if not links:
+        return
+    try:
+        resp = cliente.table("research_itens").select("*").in_("link", links).execute()
+        existentes = resp.data or []
+    except Exception as exc:
+        print(f"[research.store] versionamento: leitura das versoes atuais falhou (ignorado): {exc!r}")
+        return
+    if not existentes:
+        return
+    por_link_novo = {it["link"]: it for it in itens}
+    agora = datetime.now(timezone.utc).isoformat()
+    linhas_historico = []
+    for anterior in existentes:
+        novo = por_link_novo.get(anterior["link"])
+        if novo is None:
+            continue
+        mudou = any((anterior.get(c) or None) != (novo.get(c) or None) for c in _CAMPOS_VERSAO)
+        if not mudou:
+            continue
+        linhas_historico.append({
+            "link": anterior["link"], "casa": anterior.get("casa"), "titulo": anterior.get("titulo"),
+            "data": anterior.get("data"), "autor": anterior.get("autor"), "tipo": anterior.get("tipo"),
+            "tickers": anterior.get("tickers") or [], "resumo": anterior.get("resumo"),
+            "modelo_resumo": anterior.get("modelo_resumo"), "preco_alvo": anterior.get("preco_alvo"),
+            "recomendacao": anterior.get("recomendacao"), "coletado_em": anterior.get("coletado_em"),
+            "substituido_em": agora,
+        })
+    if not linhas_historico:
+        return
+    try:
+        cliente.table("research_itens_historico").insert(linhas_historico).execute()
+        print(f"[research.store] versionamento: {len(linhas_historico)} versao(oes) anterior(es) arquivada(s)")
+    except Exception as exc:
+        # tabela PROPOSTA (sql/research_itens_historico.sql) pode nao
+        # existir ainda no banco de quem esta rodando - versionamento e'
+        # aditivo/melhor-esforco, nunca bloqueia o upsert principal.
+        print(f"[research.store] versionamento: insert no historico falhou (tabela pode nao existir ainda, ignorado): {exc!r}")
 
 
 def apagar_itens_antigos(dias: int = RETENCAO_DIAS) -> int:
