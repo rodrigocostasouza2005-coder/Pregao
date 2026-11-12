@@ -240,9 +240,13 @@ def _confianca(resultados: dict) -> dict:
 
 def consolidar(resultados: dict, ticker: str = None) -> dict:
     """Consolida os resultados (dict especialista_id -> resultado padrão
-    de executor.py) nas 7 seções pedidas. Sempre devolve as 7 chaves,
-    mesmo quando `resultados` está vazio (todas as seções degradam pra
-    um estado explícito de "sem dado", nunca omitidas)."""
+    de executor.py) nas 7 seções pedidas + o `ticker` da análise (chave
+    de conveniência pro cabeçalho da UI - ver ui/coordenador_tab.py,
+    achado real 2026-11-11: o ticker só existia dentro de
+    pareceres_analistas, a análise consolidada nunca identificava a
+    empresa no próprio topo). Sempre devolve essas 8 chaves, mesmo quando
+    `resultados` está vazio (todas as seções degradam pra um estado
+    explícito de "sem dado", nunca omitidas)."""
     divergencia_cross = _divergencia_cross_comparador_memoria(resultados)
     confianca = _confianca(resultados)
     pareceres = montar_pareceres(resultados, ticker=ticker)
@@ -276,7 +280,14 @@ def consolidar(resultados: dict, ticker: str = None) -> dict:
     sinal_comite["upside_pl_setorial_pct"] = analista_valuation.get("upside_pl_setorial_pct")
     sinal_comite["preco_alvo_consenso"] = alvo_consenso.get("mediana")
     sinal_comite["upside_consenso_pct"] = alvo_consenso.get("upside_pct")
+    # Preço atual + data de referência da cotação (data/radar.py:linha_valuation)
+    # - campo pedido explicitamente pro cabeçalho da análise (ui/coordenador_tab.py);
+    # já existia em fundamentos_sinal, só nunca tinha sido propagado pro
+    # consolidado (achado real, auditoria 2026-11-11).
+    sinal_comite["preco_atual"] = _numero(fundamentos_sinal.get("preco"))
+    sinal_comite["preco_atual_consultado_em"] = fundamentos_sinal.get("consultado_em")
     return {
+        "ticker": ticker,
         "resumo_executivo": _resumo_executivo(resultados, ticker),
         "visao_especialistas": _visao_especialistas(resultados),
         "evidencias": _evidencias(resultados),

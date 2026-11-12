@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data.coordenador_central import consolidacao
 
 _SECOES_OBRIGATORIAS = {
-    "resumo_executivo", "visao_especialistas", "evidencias",
+    "ticker", "resumo_executivo", "visao_especialistas", "evidencias",
     "divergencias", "pontos_atencao", "conclusao", "confianca", "pareceres_analistas", "sinal_comite",
 }
 
@@ -25,13 +25,14 @@ def _resultado(especialista_id, disponivel=True, resumo="ok", evidencias=None, m
     }
 
 
-def test_consolidar_dict_vazio_ainda_tem_as_7_secoes():
+def test_consolidar_dict_vazio_ainda_tem_as_8_secoes():
     consolidado = consolidacao.consolidar({}, ticker="PETR4")
     assert set(consolidado.keys()) == _SECOES_OBRIGATORIAS
     assert consolidado["confianca"]["categoria"] == consolidacao.CONFIANCA_INSUFICIENTE
+    assert consolidado["ticker"] == "PETR4"
 
 
-def test_consolidar_com_resultados_tem_as_7_secoes():
+def test_consolidar_com_resultados_tem_as_8_secoes():
     resultados = {
         "comparador": _resultado("comparador", evidencias=[{"fonte": "Genial", "data": "2026-10-01", "link": "l", "titulo": "t"}]),
         "noticias": _resultado("noticias", disponivel=False, resumo=None, motivo="fonte indisponível"),
@@ -280,6 +281,59 @@ def test_model_builder_e_valuation_reviewer_aparecem_com_pareceres_distintos():
     assert por_id["valuation_reviewer"]["recomendacao"] == "APROVADO"
 
 
+def test_valuation_reviewer_expoe_dcf_e_achados_reais_para_a_ui():
+    """Achado real (auditoria 2026-11-11): ui/coordenador_tab.py:
+    _render_parecer_valuation_reviewer sempre lê analista["dcf"], mas
+    montar_pareceres nunca preenchia essa chave para o parecer do
+    Valuation Reviewer - a aba sempre caía no ramo "DCF indisponível",
+    mesmo quando o Model Builder tinha DCF completo, e os achados reais
+    da auditoria (revisar_valuation) eram descartados sem nunca aparecer
+    na UI. Este teste fixa o contrato: dcf.cenarios/premissas reaproveitam
+    o Model Builder, e achados de auditoria viram pontos contrários."""
+    resultados = {
+        "model_builder": _resultado("model_builder", dados={
+            "disponivel": True, "metodo": "DCF de 5 anos",
+            "fonte_premissas": "CVM + premissas manuais", "data_base": "2026-09-30",
+            "moeda": "R$",
+            "cenarios": {
+                "pessimista": {"preco_alvo": 20.0, "upside_pct": -20.0},
+                "base": {"preco_alvo": 30.0, "upside_pct": 20.0},
+                "otimista": {"preco_alvo": 40.0, "upside_pct": 60.0},
+            },
+            "premissas": {"wacc": 0.12, "g_terminal": 0.03},
+            "sensibilidade": {"disponivel": True, "linhas": []},
+        }),
+        "valuation_reviewer": _resultado("valuation_reviewer", dados={
+            "disponivel": True, "aprovado": False,
+            "precos_alvo_revisados": {"pessimista": 20.0, "base": 30.0, "otimista": 40.0},
+            "achados": [{"tipo": "RASTREABILIDADE", "descricao": "Data-base do modelo não identificada."}],
+            "limitacoes": ["Revisão determinística; não substitui validação humana."],
+        }),
+    }
+    consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
+    reviewer = next(a for a in consolidado["pareceres_analistas"]["analistas"] if a["id"] == "valuation_reviewer")
+    assert reviewer["recomendacao"] == "COM RESSALVAS"
+    assert reviewer["dcf"]["disponivel"] is True
+    assert reviewer["dcf"]["cenarios"]["base"]["preco_alvo"] == 30.0
+    assert reviewer["dcf"]["premissas"]["wacc"] == 0.12
+    assert reviewer["upside_pct"] == 20.0
+    assert any("RASTREABILIDADE" in c for c in reviewer["contras"])
+    assert reviewer["limitacoes"] == ["Revisão determinística; não substitui validação humana."]
+
+
+def test_valuation_reviewer_sem_model_builder_disponivel_declara_dcf_indisponivel():
+    resultados = {
+        "valuation_reviewer": _resultado("valuation_reviewer", dados={
+            "disponivel": False, "motivo": "Model Builder não entregou um DCF válido; revisão independente bloqueada.",
+            "achados": [], "limitacoes": [],
+        }),
+    }
+    consolidado = consolidacao.consolidar(resultados, ticker="PETR4")
+    reviewer = next(a for a in consolidado["pareceres_analistas"]["analistas"] if a["id"] == "valuation_reviewer")
+    assert reviewer["recomendacao"] == "INSUFICIENTE"
+    assert reviewer["dcf"]["disponivel"] is False
+
+
 def test_sinal_comite_usa_preco_alvo_e_upside_do_model_builder():
     resultados = {
         "analise_ticker": _resultado("analise_ticker", dados={
@@ -302,3 +356,26 @@ def test_sinal_comite_usa_preco_alvo_e_upside_do_model_builder():
     sinal = consolidacao.consolidar(resultados, ticker="PETR4")["sinal_comite"]
     assert sinal["preco_alvo_modelo"] == 30.0
     assert sinal["upside_modelo_pct"] == 20.0
+
+
+def test_sinal_comite_expoe_preco_atual_e_data_de_referencia():
+    """Achado real (auditoria 2026-11-11): o cabeçalho da análise
+    (ui/coordenador_tab.py:_render_cabecalho_decisao) não mostrava o
+    preço atual nem a data de referência da cotação em lugar nenhum,
+    apesar do dado já existir em fundamentos (data/radar.py:linha_valuation).
+    sinal_comite agora propaga os dois - consolidacao.py nunca recalcula
+    preço, só repassa o que já veio de analise_ticker."""
+    resultados = {
+        "analise_ticker": _resultado("analise_ticker", dados={
+            "fundamentos": {"preco": 36.9, "moeda": "R$", "consultado_em": "2026-11-11T14:00:00-03:00"},
+        }),
+    }
+    sinal = consolidacao.consolidar(resultados, ticker="PETR4")["sinal_comite"]
+    assert sinal["preco_atual"] == 36.9
+    assert sinal["preco_atual_consultado_em"] == "2026-11-11T14:00:00-03:00"
+
+
+def test_sinal_comite_sem_fundamentos_declara_preco_atual_ausente():
+    sinal = consolidacao.consolidar({}, ticker="PETR4")["sinal_comite"]
+    assert sinal["preco_atual"] is None
+    assert sinal["preco_atual_consultado_em"] is None
