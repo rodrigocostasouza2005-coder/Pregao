@@ -1659,6 +1659,16 @@ def render_radar_carteiras(prefs: dict):
 
 @st.fragment
 def render_radar_oportunidades(prefs: dict):
+    """REDESIGN ESTRUTURAL (2026-11-12, Agente D): "Próximos Catalisadores"
+    e "Research com Evidências" eram 2 `st.expander` sequenciais, um
+    aberto por padrão e o outro FECHADO - a segunda pergunta ("o que tem
+    evidência de research?") ficava escondida atrás de 1 clique por
+    padrão, e as duas listas nunca apareciam ao mesmo tempo lado a lado
+    (cada uma ocupava a largura toda, uma embaixo da outra). Viram 2
+    colunas lado a lado sempre visíveis (mesmo mecanismo de grade
+    responsiva de VISÃO GERAL/MERCADO - `st.container(key="radar_grid_
+    ...")`, empilha em telas estreitas via style.css) - zero dado novo,
+    zero função de cálculo tocada, só a composição."""
     _injetar_css()
     st.markdown('<div class="radar-pergunta">ONDE VALE INVESTIGAR</div>', unsafe_allow_html=True)
     # BUG REAL confirmado em screenshot (Playwright, 2026-11-06): mesmo
@@ -1683,10 +1693,16 @@ def render_radar_oportunidades(prefs: dict):
         return
     tickers, janela, watchlist = escopo
     _secao_mudancas_tese(tickers, janela, prefs)
-    with st.expander("PRÓXIMOS CATALISADORES", expanded=True):
-        _secao_catalisadores(tickers)
-    with st.expander("RESEARCH COM EVIDÊNCIAS", expanded=False):
-        _secao_evidencias(tickers, watchlist)
+    with st.container(key="radar_grid_oportunidades"):
+        col_catalisadores, col_evidencias = st.columns(2, gap="small")
+        with col_catalisadores:
+            with st.container(border=True):
+                st.markdown('<div class="painel-titulo" style="font-size:0.74rem;">PRÓXIMOS CATALISADORES</div>', unsafe_allow_html=True)
+                _secao_catalisadores(tickers)
+        with col_evidencias:
+            with st.container(border=True):
+                st.markdown('<div class="painel-titulo" style="font-size:0.74rem;">RESEARCH COM EVIDÊNCIAS</div>', unsafe_allow_html=True)
+                _secao_evidencias(tickers, watchlist)
 
 
 @st.fragment
