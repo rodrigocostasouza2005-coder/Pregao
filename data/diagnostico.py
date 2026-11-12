@@ -14,7 +14,10 @@ from curl_cffi import requests as cffi_requests
 from .cvm import testar_conexao as testar_conexao_cvm
 from .ibovespa import _montar_url as _url_b3_ibov
 from .prices import testar_conexao_indicadores
-from .research import btg, genial, genial_lives, xp
+from .research import (
+    bankofamerica, btg, citi, genial, genial_lives, jpmorgan, montebravo,
+    morgan_stanley, nord, xp,
+)
 
 _HEADERS = {"User-Agent": "PregaoApp/0.1 (uso pessoal, nao comercial; contato via github)"}
 _TIMEOUT = 10
@@ -64,11 +67,26 @@ def _testar_trafilatura(url: str):
 # Times testam o pipeline de resumo de noticias (decode + download +
 # extracao), separado da fonte de dados da noticia em si (RSS, ja testado
 # implicitamente por qualquer noticia aparecer na aba NEWS).
+#
+# Gap real corrigido (auditoria de arquitetura 2026-11-12): Monte Bravo
+# (22/10), Nord (24/10) e os 4 bancos globais (11/11) sao casas ATIVAS de
+# research (CASAS[*]["ativa_por_padrao"]=True em data/research/__init__.py)
+# com seu proprio testar_conexao() (nord.py/montebravo.py nao tinham essa
+# funcao ainda - adicionada na mesma auditoria), mas NENHUMA das 6 estava
+# registrada aqui - o painel DIAGNOSTICO DE FONTES (aba CONFIG) testava
+# so' as 4 casas mais antigas (3 delas ja' DESATIVADAS por bloqueio
+# conhecido) e nunca as 6 que de fato alimentam a aba RESEARCH hoje.
 _TESTES_ESPECIFICOS = {
     "Genial Analisa": genial.testar_conexao,
     "XP Investimentos": xp.testar_conexao,
     "Genial (Lives)": genial_lives.testar_conexao,
     "BTG Pactual Research": btg.testar_conexao,
+    "Monte Bravo": montebravo.testar_conexao,
+    "Nord Research": nord.testar_conexao,
+    "J.P. Morgan Global Research": jpmorgan.testar_conexao,
+    "BofA Institute": bankofamerica.testar_conexao,
+    "Morgan Stanley Insights": morgan_stanley.testar_conexao,
+    "Citi Global Insights": citi.testar_conexao,
     "Yahoo Finance (indicadores)": testar_conexao_indicadores,
     "CVM (dados abertos)": testar_conexao_cvm,
     "Google News (decode+extração)": _testar_gnews_decode,
@@ -88,6 +106,12 @@ FONTES = [
     {"nome": "CVM (dados abertos)", "url": "https://dados.cvm.gov.br/dataset/cia_aberta-doc-ipe"},
     {"nome": "B3 (composição Ibovespa)", "url": _url_b3_ibov()},
     {"nome": "BTG Pactual Research", "url": f"{btg.FILTER_URL}?pageNumber=1&pageSize=1"},
+    {"nome": "Monte Bravo", "url": montebravo.FEED_URL},
+    {"nome": "Nord Research", "url": nord.SITEMAP_URL},
+    {"nome": "J.P. Morgan Global Research", "url": jpmorgan.SITEMAP_URL},
+    {"nome": "BofA Institute", "url": bankofamerica.SITEMAP_URL},
+    {"nome": "Morgan Stanley Insights", "url": morgan_stanley.SITEMAP_URL},
+    {"nome": "Citi Global Insights", "url": citi.SITEMAP_URL},
     {"nome": "Itaú BBA", "url": "https://www.itau.com.br/itaubba-pt/analises-economicas"},
     {"nome": "Santander", "url": "https://www.santandercorretora.com.br/corretora/home/nossos-servicos/relatorios.html"},
     {"nome": "BB Investimentos", "url": "https://investalk.bb.com.br/relatorios-e-analises"},

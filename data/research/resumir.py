@@ -18,7 +18,7 @@ from curl_cffi import requests as cffi_requests
 
 import config
 from data import ia_cache
-from . import qualidade, store
+from . import classificacao, qualidade, store
 from .base import HEADERS, TIMEOUT, permitido
 
 _PROMPT_SISTEMA = (
@@ -425,7 +425,10 @@ def _extrair_texto_html(html: str) -> str:
     return "\n".join(linhas)
 
 
-def _extrair_texto_pdf(conteudo: bytes) -> str | None:
+def _extrair_texto_pdf_pypdf(conteudo: bytes) -> str | None:
+    """1a tentativa: pypdf (ja usado antes desta mudanca, mantido exatamente
+    igual). None (nunca excecao) se a biblioteca estiver ausente, o PDF for
+    protegido/corrompido, ou nao houver texto extraivel (PDF so' de imagem)."""
     try:
         import pypdf
     except ImportError:
@@ -437,6 +440,108 @@ def _extrair_texto_pdf(conteudo: bytes) -> str | None:
         return texto or None
     except Exception:
         return None
+
+
+def _extrair_texto_pdf_pdfplumber(conteudo: bytes) -> str | None:
+    """2a tentativa (so' roda se pypdf nao extraiu nada): pdfplumber usa
+    um parser de layout diferente (pdfminer.six por baixo) - cobre PDFs
+    com fontes/encoding/estrutura que fazem pypdf devolver string vazia
+    silenciosamente mesmo com texto real embutido (achado da auditoria de
+    extracao, 2026-11-12: nenhum PDF real testado neste repo precisou
+    deste fallback pra ja' funcionar, mas e' um gap conhecido de pypdf
+    documentado pela comunidade - fallback preventivo, nao especulativo:
+    mesma categoria de arquivo que pypdf as vezes falha em ler). Mesmo
+    contrato: None (nunca excecao) se a biblioteca estiver ausente ou nao
+    houver texto extraivel."""
+    try:
+        import pdfplumber
+    except ImportError:
+        return None
+    try:
+        with pdfplumber.open(BytesIO(conteudo)) as pdf:
+            paginas = [(pagina.extract_text() or "") for pagina in pdf.pages[:15]]
+        texto = "\n".join(paginas).strip()
+        return texto or None
+    except Exception:
+        return None
+
+
+_ocr_disponivel_cache: bool | None = None  # cache de 1 checagem por processo
+
+
+def _ocr_disponivel() -> bool:
+    """True SO' se pytesseract + pdf2image estiverem instalados E o
+    binario real do Tesseract responder - checagem ATIVA (nunca so' "o
+    import funcionou"): pytesseract importa sem erro mesmo sem o binario
+    do Tesseract instalado no sistema, so' falha na HORA de chamar. Nunca
+    finge que OCR esta disponivel quando na verdade nao esta.
+
+    LIMITACAO HONESTA (validada 2026-11-12, nao um "TODO" escondido): o
+    ambiente de desenvolvimento/CI deste repositorio NAO TEM Tesseract
+    instalado (nem pytesseract/pdf2image no requirements.txt) - esta
+    funcao retorna False aqui, e _extrair_texto_pdf_ocr abaixo so' e'
+    exercitado por teste com mock, nunca com OCR real rodando. Pra
+    habilitar de verdade: instalar o binario Tesseract no sistema (ex:
+    apt.txt com tesseract-ocr + poppler-utils no Streamlit Community
+    Cloud) e adicionar pytesseract+pdf2image ao requirements.txt - nenhum
+    dos dois foi feito aqui (dependencia de infra do servidor, fora do
+    escopo desta mudanca e nao validavel sem acesso a esse ambiente)."""
+    global _ocr_disponivel_cache
+    if _ocr_disponivel_cache is not None:
+        return _ocr_disponivel_cache
+    try:
+        import pytesseract
+        pytesseract.get_tesseract_version()
+        import pdf2image  # noqa: F401 - so' confirma que o pacote existe
+        _ocr_disponivel_cache = True
+    except Exception:
+        _ocr_disponivel_cache = False
+    return _ocr_disponivel_cache
+
+
+def _extrair_texto_pdf_ocr(conteudo: bytes) -> str | None:
+    """Ultimo recurso, so' pra PDF de imagem escaneada (pypdf E pdfplumber
+    nao acharam nenhum texto real) - rasteriza cada pagina (pdf2image,
+    precisa do binario poppler) e roda OCR (pytesseract, precisa do
+    binario Tesseract). So' tenta se _ocr_disponivel() confirmar os
+    binarios reais presentes - nunca lanca excecao pra quem chama (mesmo
+    padrao dos dois extratores acima). Ver limitacao em _ocr_disponivel:
+    nao exercitado com OCR real neste ambiente, so' com mock em teste."""
+    if not _ocr_disponivel():
+        return None
+    try:
+        import pytesseract
+        from pdf2image import convert_from_bytes
+        imagens = convert_from_bytes(conteudo, dpi=200)[:15]
+        textos = [pytesseract.image_to_string(imagem, lang="por+eng") for imagem in imagens]
+        texto = "\n".join(textos).strip()
+        return texto or None
+    except Exception:
+        return None
+
+
+def _extrair_texto_pdf(conteudo: bytes) -> tuple:
+    """(texto, motivo_se_falhou) - tenta pypdf -> pdfplumber -> OCR, nessa
+    ordem (do mais rapido/confiavel pro mais custoso), cada um so' roda se
+    o anterior nao extraiu nada. `motivo` distingue "tentou tudo e nao
+    achou texto, OCR indisponivel neste ambiente" de "tentou tudo
+    (incluindo OCR real) e nao achou texto mesmo assim" - pra log/UI nunca
+    confundir os dois casos."""
+    texto = _extrair_texto_pdf_pypdf(conteudo)
+    if texto:
+        return texto, None
+    texto = _extrair_texto_pdf_pdfplumber(conteudo)
+    if texto:
+        return texto, None
+    if not _ocr_disponivel():
+        return None, (
+            "PDF sem texto extraivel por pypdf/pdfplumber (provavelmente escaneado) - "
+            "OCR indisponivel neste ambiente (Tesseract/pytesseract/pdf2image nao instalados)"
+        )
+    texto = _extrair_texto_pdf_ocr(conteudo)
+    if texto:
+        return texto, None
+    return None, "PDF sem texto extraivel mesmo com OCR (imagem ilegivel, pagina vazia ou PDF protegido)"
 
 
 def obter_texto_relatorio(link: str) -> tuple:
@@ -459,9 +564,9 @@ def obter_texto_relatorio(link: str) -> tuple:
 
     ctype = r.headers.get("Content-Type", "")
     if "pdf" in ctype or link.lower().endswith(".pdf"):
-        texto = _extrair_texto_pdf(r.content)
+        texto, motivo_pdf = _extrair_texto_pdf(r.content)
         if texto is None:
-            return None, "PDF nao pode ser lido (biblioteca pypdf ausente ou arquivo protegido/escaneado)"
+            return None, motivo_pdf
         return texto, None
 
     texto = _extrair_texto_html(r.text)
@@ -727,8 +832,18 @@ def _gerar_resumo(
     projecoes = dados_estruturados.get("projecoes") or {}
     riscos = dados_estruturados.get("riscos") or []
     if tipo_documento or premissas or projecoes or riscos or preco_alvo or recomendacao:
+        # Mencoes cruzadas (Agente C, 2026-11-12, item 2 do pedido de
+        # processamento): `tickers` aqui e' SO' o metadado da fonte (o que
+        # o coletor da casa categorizou) - uniao com o que o CORPO do
+        # texto de fato menciona (ver data/research/classificacao.py),
+        # enquanto `texto` ainda existe em memoria (unica janela possivel,
+        # ver docstring desta funcao). Sem isso, um relatorio categorizado
+        # so' sob um ticker mas que comenta outro de passagem nunca seria
+        # achado filtrando pelo segundo - nunca o contrario (nunca REMOVE
+        # um ticker do metadado por nao aparecer no texto).
+        tickers_todos = classificacao.classificar_documento(tickers, texto)["tickers_todos"]
         store.salvar_premissas(
-            link, casa=casa, titulo=titulo, tickers=tickers or [],
+            link, casa=casa, titulo=titulo, tickers=tickers_todos,
             data_publicacao=data_publicacao, tipo_documento=tipo_documento,
             premissas=premissas, projecoes=projecoes, riscos=riscos,
             recomendacao=recomendacao, preco_alvo=preco_alvo, modelo=modelo_usado,

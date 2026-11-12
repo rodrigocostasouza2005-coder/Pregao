@@ -39,14 +39,15 @@ só entrega metadado (ver _item)."""
 
 import json
 import re
-import time
 from datetime import datetime
 from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
-import requests
+import requests  # noqa: F401 - mantido pra tests/test_research_nord.py poder
+# patchar nord_mod.requests.get (mesmo objeto global usado por
+# base.coletar_via_sitemap/testar_conexao_url).
 
-from .base import HEADERS, permitido
+from .base import coletar_via_sitemap, permitido, testar_conexao_url
 
 SITEMAP_URL = "https://www.nordinvestimentos.com.br/blog/sitemap.xml"
 _NOME_CASA = "Nord Research"
@@ -140,59 +141,41 @@ def _item(html: str, loc: str) -> dict | None:
     }
 
 
+def testar_conexao(timeout: float = 5) -> tuple:
+    """So testa se o sitemap responde - usado pelo painel DIAGNOSTICO DE
+    FONTES. Retorna (ok, detalhe).
+
+    Gap real corrigido (auditoria de arquitetura 2026-11-12): nord.py era
+    a UNICA das 5 casas "sitemap + N paginas" sem este `testar_conexao` -
+    nao existia na copia original desta casa (24/10/2026) e passou
+    despercebido porque data/diagnostico.py tambem nao tinha NENHUMA das
+    5 casas cadastrada (ver FONTES/_TESTES_ESPECIFICOS la', corrigido na
+    mesma auditoria) - o painel DIAGNOSTICO DE FONTES nunca teria notado
+    a falta."""
+    return testar_conexao_url(SITEMAP_URL, permitido, timeout)
+
+
 def obter_relatorios() -> list | None:
     """Análises de resultado trimestral por ticker B3 recentes da Nord.
     None se o sitemap falhar ou nenhum dos candidatos encontrados puder
     ser lido; [] se o sitemap respondeu mas não há nenhum post de
-    resultado no momento (normal fora de temporada de balanços)."""
+    resultado no momento (normal fora de temporada de balanços).
+
+    Orquestracao extraida pra base.coletar_via_sitemap (auditoria de
+    arquitetura 2026-11-12, mesmo padrao de jpmorgan.py/bankofamerica.py/
+    citi.py/morgan_stanley.py)."""
     global _ultimo_motivo_falha
-    if not permitido(SITEMAP_URL):
-        _ultimo_motivo_falha = "sitemap bloqueado pelo robots.txt"
-        return None
-    try:
-        r = requests.get(SITEMAP_URL, headers=HEADERS, timeout=_SITEMAP_TIMEOUT)
-    except Exception as exc:
-        _ultimo_motivo_falha = f"sitemap indisponível: {type(exc).__name__}"
-        print(f"[nord] {_ultimo_motivo_falha}: {exc}")
-        return None
-    if r.status_code != 200:
-        tipo = (r.headers.get("content-type") or "").split(";")[0]
-        _ultimo_motivo_falha = f"sitemap respondeu HTTP {r.status_code} ({tipo})"
-        print(f"[nord] {_ultimo_motivo_falha}")
-        return None
-    try:
-        candidatos = _candidatos_do_sitemap(r.content)
-    except ET.ParseError as exc:
-        _ultimo_motivo_falha = f"sitemap não é XML válido: {exc}"
-        print(f"[nord] {_ultimo_motivo_falha}")
-        return None
-    if not candidatos:
-        _ultimo_motivo_falha = None
-        return []
-
-    itens, tentativas, limite = [], 0, time.monotonic() + _ORCAMENTO_TOTAL_S
-    for _, link in candidatos[:_MAX_ITENS]:
-        if time.monotonic() > limite:
-            print(f"[nord] orçamento de tempo esgotado após {tentativas} tentativa(s)")
-            break
-        if not permitido(link):
-            continue
-        tentativas += 1
-        try:
-            resp = requests.get(link, headers=HEADERS, timeout=_POST_TIMEOUT)
-            if resp.status_code != 200:
-                print(f"[nord] post respondeu HTTP {resp.status_code}: {link}")
-                continue
-            item = _item(resp.text, link)
-        except Exception as exc:
-            print(f"[nord] falha ao buscar post ({type(exc).__name__}): {link}")
-            continue
-        if item:
-            itens.append(item)
-
-    if tentativas > 0 and not itens:
-        _ultimo_motivo_falha = f"{tentativas} candidato(s) no sitemap, nenhuma página individual respondeu"
-        print(f"[nord] {_ultimo_motivo_falha}")
-        return None
-    _ultimo_motivo_falha = None
+    itens, motivo = coletar_via_sitemap(
+        sitemap_url=SITEMAP_URL,
+        candidatos_do_sitemap=_candidatos_do_sitemap,
+        parser_item=_item,
+        permitido_fn=permitido,
+        sitemap_timeout=_SITEMAP_TIMEOUT,
+        pagina_timeout=_POST_TIMEOUT,
+        orcamento_total_s=_ORCAMENTO_TOTAL_S,
+        max_itens=_MAX_ITENS,
+        descricao_esperada="",
+        log_prefixo="nord",
+    )
+    _ultimo_motivo_falha = motivo
     return itens

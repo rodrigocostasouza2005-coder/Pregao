@@ -81,6 +81,20 @@ def _classificar_erro_tabela(erro: Exception) -> str:
     return TABELA_ERRO_DESCONHECIDO
 
 
+# Contadores CUMULATIVOS (auditoria de arquitetura 2026-11-12 - ver
+# sql/coletores_status_metricas.sql, PROPOSTO mas nunca aplicado por este
+# agente) - coletores_status so' guarda a ULTIMA tentativa por nome
+# (upsert), entao "taxa de sucesso"/"tempo medio" (pedido Rodrigo) nao
+# davam pra calcular so' com as colunas antigas, sem manter um LOG
+# (cresceria sem limite). Em vez de log, estes contadores so' SOMAM a
+# cada tentativa (mesmo espirito de ultimo_sucesso_em: nunca reseta, so'
+# avanca) - ver _somar_metrica/taxa_sucesso/tempo_medio_s abaixo.
+_CAMPOS_METRICAS_CUMULATIVAS = (
+    "total_tentativas", "total_sucessos", "total_falhas", "total_tempo_s",
+    "total_publicacoes_encontradas", "total_documentos_extraidos", "total_duplicidades",
+)
+
+
 def registrar_tentativa(
     nome: str,
     fonte: str,
@@ -90,13 +104,29 @@ def registrar_tentativa(
     erro: str = None,
     categoria: str = "",
     parcial: bool = False,
+    tempo_s: float = None,
+    publicacoes_encontradas: int = None,
+    documentos_extraidos: int = None,
+    duplicidades: int = None,
 ) -> bool:
     """Grava o resultado de UMA tentativa de coleta (upsert por `nome`).
     `ultimo_sucesso_em` so' avanca quando execucao_ok E persistencia_ok -
     uma falha pontual nunca apaga o ultimo sucesso real, so deixa de
     atualiza-lo (mesmo espirito de salvar_snapshot_calendario). Nunca
     lanca excecao - banco fora do ar/lib ausente degrada pra False, quem
-    chama (o proprio coletor) nunca deve travar por causa disso."""
+    chama (o proprio coletor) nunca deve travar por causa disso.
+
+    `tempo_s`/`publicacoes_encontradas`/`documentos_extraidos`/
+    `duplicidades` (auditoria de arquitetura 2026-11-12, pedido Rodrigo:
+    metricas de resiliencia por coletor) sao OPCIONAIS e so' SOMAM aos
+    contadores cumulativos ja existentes (ver _CAMPOS_METRICAS_CUMULATIVAS)
+    - None em qualquer um deles so' nao incrementa aquele contador nesta
+    tentativa (nunca grava None/zera o total acumulado). Colunas
+    cumulativas sao ADITIVAS (sql/coletores_status_metricas.sql, PROPOSTO) -
+    se o UPSERT falhar por causa delas (banco ainda sem a migracao),
+    tenta de novo so' com as colunas originais antes de desistir, mesmo
+    padrao defensivo ja usado em data/research/store.py pra
+    'publicado_em'/colunas do contrato ampliado."""
     cliente = obter_cliente()
     if cliente is None:
         return False
@@ -104,17 +134,23 @@ def registrar_tentativa(
         agora = datetime.now(timezone.utc).isoformat()
         sucesso_agora = bool(execucao_ok and persistencia_ok)
         ultimo_sucesso_em = agora if sucesso_agora else None
-        if not sucesso_agora:
-            existente = (
-                cliente.table(_TABELA)
-                .select("ultimo_sucesso_em")
-                .eq("nome", nome)
-                .limit(1)
-                .execute()
-            )
-            if existente.data:
-                ultimo_sucesso_em = existente.data[0].get("ultimo_sucesso_em")
-        cliente.table(_TABELA).upsert({
+
+        existente = None
+        try:
+            resp_existente = cliente.table(_TABELA).select("*").eq("nome", nome).limit(1).execute()
+            if resp_existente.data:
+                existente = resp_existente.data[0]
+        except Exception:
+            existente = None  # leitura de melhor-esforco - segue sem base pra somar/preservar
+
+        if not sucesso_agora and existente:
+            ultimo_sucesso_em = existente.get("ultimo_sucesso_em")
+
+        def _somar(campo: str, incremento) -> int | float:
+            base = (existente or {}).get(campo) or 0
+            return base + (incremento or 0)
+
+        payload = {
             "nome": nome,
             "fonte": fonte,
             "categoria": categoria,
@@ -125,7 +161,27 @@ def registrar_tentativa(
             "ultimo_erro": ((erro or "coleta parcial") if parcial else None) if sucesso_agora else (erro or "erro nao especificado"),
             "ultima_tentativa_em": agora,
             "ultimo_sucesso_em": ultimo_sucesso_em,
-        }).execute()
+            "tempo_ultima_execucao_s": tempo_s,
+            "total_tentativas": _somar("total_tentativas", 1),
+            "total_sucessos": _somar("total_sucessos", 1 if sucesso_agora else 0),
+            "total_falhas": _somar("total_falhas", 0 if sucesso_agora else 1),
+            "total_tempo_s": _somar("total_tempo_s", tempo_s),
+            "total_publicacoes_encontradas": _somar("total_publicacoes_encontradas", publicacoes_encontradas),
+            "total_documentos_extraidos": _somar("total_documentos_extraidos", documentos_extraidos),
+            "total_duplicidades": _somar("total_duplicidades", duplicidades),
+        }
+        try:
+            cliente.table(_TABELA).upsert(payload).execute()
+        except Exception as exc_colunas_novas:
+            print(
+                f"[coletores_status] registrar_tentativa({nome!r}) falhou com metricas novas presentes: "
+                f"{exc_colunas_novas!r} - tentando de novo sem elas"
+            )
+            payload_legado = {
+                k: v for k, v in payload.items()
+                if k not in _CAMPOS_METRICAS_CUMULATIVAS and k != "tempo_ultima_execucao_s"
+            }
+            cliente.table(_TABELA).upsert(payload_legado).execute()
         return True
     except Exception as e:
         # log (nunca excecao pro chamador) - visivel no log do Streamlit
@@ -135,6 +191,39 @@ def registrar_tentativa(
         # mostra NUNCA_EXECUTADO, indistinguivel de "coletor nunca rodou".
         print(f"[coletores_status] registrar_tentativa({nome!r}) falhou: {e!r}")
         return False
+
+
+def taxa_sucesso(nome: str) -> float | None:
+    """Fracao (0.0-1.0) de tentativas bem-sucedidas (execucao_ok E
+    persistencia_ok) desde que total_tentativas comecou a ser contado
+    (ver registrar_tentativa) - None se o coletor nunca registrou
+    nenhuma tentativa, se o banco esta fora do ar, ou se o banco de quem
+    esta rodando ainda nao tem as colunas cumulativas (migracao proposta
+    nao aplicada, ver sql/coletores_status_metricas.sql) - NUNCA finge
+    uma taxa com dado que nao existe."""
+    status = obter_status(nome)
+    if not status:
+        return None
+    total = status.get("total_tentativas") or 0
+    if not total:
+        return None
+    sucessos = status.get("total_sucessos") or 0
+    return round(sucessos / total, 4)
+
+
+def tempo_medio_s(nome: str) -> float | None:
+    """Tempo medio (segundos) por tentativa de coleta, calculado de
+    total_tempo_s/total_tentativas (ver registrar_tentativa) - None nos
+    mesmos casos de taxa_sucesso (sem tentativa registrada, banco fora
+    do ar, ou colunas cumulativas ainda nao migradas)."""
+    status = obter_status(nome)
+    if not status:
+        return None
+    total = status.get("total_tentativas") or 0
+    if not total:
+        return None
+    soma = status.get("total_tempo_s") or 0
+    return round(soma / total, 3)
 
 
 _NOME_DIAGNOSTICO = "_DIAGNOSTICO_PERSISTENCIA"
