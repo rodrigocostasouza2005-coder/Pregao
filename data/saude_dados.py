@@ -391,6 +391,47 @@ REGISTRO_COLETORES = [
         "leitor": _leitor_hibrido("Nord Research", _leitor_research("Nord Research")),
     },
     {
+        # linha nova (11/11/2026): "J.P. Morgan Global Research" e' casa
+        # ativa_por_padrao=True em data/research/__init__.py:CASAS (coleta
+        # de verdade, registro em research_itens com casa="J.P. Morgan
+        # Global Research" - ver data/research/jpmorgan.py:_NOME_CASA) -
+        # mesmo gap do BTG/Monte Bravo/Nord acima se essa linha nao
+        # existisse. idade_maxima_horas mais alta (120h = 5 dias): a
+        # secao publica observada na sondagem real publica em cadencia
+        # irregular (dias sem nenhum item novo sao normais, nao e' sinal
+        # de coletor quebrado).
+        "nome": "J.P. Morgan Global Research", "fonte": "jpmorgan.com/insights/global-research (conteudo publico)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 120, "instrumentado": True,
+        "leitor": _leitor_hibrido("J.P. Morgan Global Research", _leitor_research("J.P. Morgan Global Research")),
+    },
+    {
+        # linha nova (11/11/2026): mesmo gap acima pra "BofA Institute"
+        # (ver data/research/bankofamerica.py:_NOME_CASA).
+        "nome": "BofA Institute", "fonte": "institute.bankofamerica.com (secao Economic Insights)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 96, "instrumentado": True,
+        "leitor": _leitor_hibrido("BofA Institute", _leitor_research("BofA Institute")),
+    },
+    {
+        # linha nova (11/11/2026): mesmo gap acima pra "Morgan Stanley
+        # Insights" (ver data/research/morgan_stanley.py:_NOME_CASA).
+        "nome": "Morgan Stanley Insights", "fonte": "morganstanley.com/insights/articles (conteudo publico)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 96, "instrumentado": True,
+        "leitor": _leitor_hibrido("Morgan Stanley Insights", _leitor_research("Morgan Stanley Insights")),
+    },
+    {
+        # linha nova (11/11/2026): mesmo gap acima pra "Citi Global
+        # Insights" (ver data/research/citi.py:_NOME_CASA).
+        # idade_maxima_horas mais baixa que as outras casas novas: cadencia
+        # observada na sondagem real foi bem mais alta (varios itens/dia).
+        "nome": "Citi Global Insights", "fonte": "citigroup.com/global/insights (conteudo publico)",
+        "categoria": "Research", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
+        "idade_maxima_horas": 48, "instrumentado": True,
+        "leitor": _leitor_hibrido("Citi Global Insights", _leitor_research("Citi Global Insights")),
+    },
+    {
         "nome": "CALENDARIO", "fonte": "RI das empresas + NEWS + prazo CVM",
         "categoria": "Calendario", "frequencia_esperada": "coletor_local.py, ~30min (seg-sex 07-20h)",
         "idade_maxima_horas": 48, "instrumentado": True,

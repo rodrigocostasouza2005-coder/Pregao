@@ -50,6 +50,27 @@ Estado atual das fontes (revisado em 2026-11-04):
     sem excecao.
   Itau BBA reconfirmado na mesma rodada (403 de novo, sem mudanca desde
   29/10/2026).
+- J.P. Morgan, BofA, Morgan Stanley, Citi: adicionadas em 2026-11-11
+  (pedido explicito do Rodrigo, bancos globais prioritarios). Pra todos os
+  4, o research institucional completo (rating/preco-alvo por ativo) e'
+  client-only (JP Morgan Markets, portal de research da BofA, Morgan
+  Stanley Research, Citi Velocity/ICG) - NUNCA coletado por este projeto.
+  Os 4 bancos tambem publicam, sem login, um hub editorial proprio com
+  conteudo macro/tematico real e atual (confirmado com requisicao real
+  deste ambiente, nao WebSearch/suposicao): J.P. Morgan "Global Research"
+  (jpmorgan.com/insights/global-research), "Bank of America Institute"
+  (institute.bankofamerica.com), Morgan Stanley "Insights"
+  (morganstanley.com/insights/articles) e Citi "Global Insights"
+  (citigroup.com/global/insights) - todos com nome de casa deliberadamente
+  diferente de "<Banco> Research" pra nunca sugerir que e' a mesma coisa
+  que o research institucional pago (ver docstring de cada
+  data/research/<banco>.py pro detalhe completo da investigacao e da
+  limitacao). Itau BBA permanece so' com carteiras recomendadas
+  (data/research/itau_carteiras.py) - reconfirmado nesta mesma rodada
+  (HTTP 403 de novo na pagina institucional de research, sem mudanca
+  desde 29/10/2026); Bradesco BBI permanece sem nenhum canal publico
+  (reconfirmado: pagina institucional carrega, mas continua sem nenhum
+  link de relatorio/RSS/API).
 
 Os itens coletados sao persistidos no Supabase (tabela research_itens,
 ver data/research/store.py) - a aba RESEARCH sempre le do banco primeiro
@@ -65,7 +86,7 @@ import streamlit as st
 
 from data.coletores_status import obter_status, registrar_tentativa
 
-from . import btg, genial, genial_lives, montebravo, nord, store, xp
+from . import bankofamerica, btg, citi, genial, genial_lives, jpmorgan, montebravo, morgan_stanley, nord, store, xp
 from .base import TEMPO_MAX_COLETA_S
 
 # nao tenta recoletar a mesma casa antes desse tempo desde a ULTIMA
@@ -245,6 +266,102 @@ CASAS = [
         "obter_relatorios": nord.obter_relatorios,
         "extrator_texto": None,
         "motivo_falha": nord.motivo_ultima_falha,
+    },
+    {
+        # Adicionada em 11/11/2026 (pedido explicito do Rodrigo - lista de
+        # bancos globais prioritarios: JPM, Bradesco BBI, BofA, Morgan
+        # Stanley, Citi). Sondagem real (deste ambiente, rede disponivel):
+        # o research institucional completo do J.P. Morgan (rating/preco-
+        # alvo por ativo) e' client-only via J.P. Morgan Markets - NUNCA
+        # coletado aqui. O banco tambem publica, sem login, uma secao com
+        # marca propria "Global Research" (eyebrow "Global Research" em
+        # cada artigo, pagina-indice "Global Research & Market Insights
+        # from J.P. Morgan") - mais perto de research macro/tematico
+        # publico do que de cobertura formal de 1 acao (ver docstring de
+        # data/research/jpmorgan.py pro detalhe completo, inclusive a
+        # limitacao). Descoberta via sitemap real (US/en/sitemap.xml,
+        # confirmado com 2 paginas reais, datas de 19/10 e 06/11/2026, sem
+        # nenhuma simulada); robots.txt permite /insights e /sitemap.xml.
+        "id": "jpmorgan",
+        "nome": "J.P. Morgan Global Research",
+        "fonte": "jpmorgan.com/insights/global-research (conteudo publico; research completo e' client-only)",
+        "ativa_por_padrao": True,
+        "disponivel": True,
+        "obter_relatorios": jpmorgan.obter_relatorios,
+        "extrator_texto": None,
+        "motivo_falha": jpmorgan.motivo_ultima_falha,
+    },
+    {
+        # Adicionada em 11/11/2026 (mesmo pedido acima). Sondagem real:
+        # "BofA Global Research" (sell-side, rating/preco-alvo) e'
+        # client-only - NUNCA coletado aqui. O "Bank of America Institute"
+        # (institute.bankofamerica.com) e' uma publicacao PUBLICA separada,
+        # sem login, com analises macro/de consumo a partir de dados
+        # agregados do proprio banco (ex: "Consumer Checkpoint",
+        # "Economic Insights") - instituicao e publicacao reais, nome
+        # deliberadamente "BofA Institute" (nunca "BofA Research") pra nao
+        # confundir as duas coisas (ver docstring de
+        # data/research/bankofamerica.py). As paginas nao expoem uma data
+        # de publicacao confiavel no HTML - a 'data' usada vem do lastmod
+        # real do sitemap oficial do site (nunca inventada, so' com essa
+        # ressalva documentada). robots.txt do dominio permite tudo
+        # relevante aqui.
+        "id": "bankofamerica",
+        "nome": "BofA Institute",
+        "fonte": "institute.bankofamerica.com (sitemap, secao Economic Insights; nao e' BofA Global Research)",
+        "ativa_por_padrao": True,
+        "disponivel": True,
+        "obter_relatorios": bankofamerica.obter_relatorios,
+        "extrator_texto": None,
+        "motivo_falha": bankofamerica.motivo_ultima_falha,
+    },
+    {
+        # Adicionada em 11/11/2026 (mesmo pedido acima). Sondagem real:
+        # Morgan Stanley Research institucional (client-only) NUNCA e'
+        # coletado aqui. O hub publico e' hoje morganstanley.com/insights
+        # (a URL antiga /ideas redireciona pra la') - alguns artigos
+        # resumem achados do proprio Morgan Stanley Research em linguagem
+        # publica (confirmado com og:description real: "Morgan Stanley
+        # Research assesses..."), mas o coletor nunca chama isso de nota
+        # de research completa (ver docstring de
+        # data/research/morgan_stanley.py). Descoberta via sitemap oficial
+        # (sitemapindex.xml -> sitemap.xml, ~4600 URLs reais, lastmod
+        # confirmado na mesma semana da sondagem); filtra so'
+        # /insights/articles/ (exclui podcasts/videos/press-releases, sem
+        # o metadado de data usado aqui). robots.txt permite esse path.
+        "id": "morgan_stanley",
+        "nome": "Morgan Stanley Insights",
+        "fonte": "morganstanley.com/insights/articles (conteudo publico; research completo e' client-only)",
+        "ativa_por_padrao": True,
+        "disponivel": True,
+        "obter_relatorios": morgan_stanley.obter_relatorios,
+        "extrator_texto": None,
+        "motivo_falha": morgan_stanley.motivo_ultima_falha,
+    },
+    {
+        # Adicionada em 11/11/2026 (mesmo pedido acima). Sondagem real:
+        # "Citi Research" institucional (Citi Velocity/ICG, client-only)
+        # NUNCA e' coletado aqui. O hub publico "Insights"
+        # (citigroup.com/global/insights) tem conteudo de mercado/
+        # estrategia muitas vezes assinado por analista nomeado NO PROPRIO
+        # TEXTO (confirmado com nota real de 10/11/2026: "Beata Manthey
+        # and David Groman assess..."); o coletor nunca chama isso de
+        # "Citi Research" por esse motivo (ver docstring de
+        # data/research/citi.py). Descoberta via sitemap oficial
+        # (declarado no proprio robots.txt, ~3600 URLs reais, lastmod do
+        # mesmo dia da sondagem - cadencia bem mais alta que as outras
+        # casas novas); filtra so' "/global/insights/" (exclui
+        # "/global/news/perspectives/", que e' conteudo institucional
+        # sobre a propria Citi, nao mercado). Cada pagina tem um bloco
+        # ld+json real (nao inferido) com headline/datePublished.
+        "id": "citi",
+        "nome": "Citi Global Insights",
+        "fonte": "citigroup.com/global/insights (conteudo publico; research completo e' client-only)",
+        "ativa_por_padrao": True,
+        "disponivel": True,
+        "obter_relatorios": citi.obter_relatorios,
+        "extrator_texto": None,
+        "motivo_falha": citi.motivo_ultima_falha,
     },
     {
         # Investigada em 2026-10-29 (pedido explicito do Rodrigo): pagina
