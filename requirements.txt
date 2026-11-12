@@ -19,6 +19,15 @@ supabase==2.31.0
 tzdata>=2024.1
 curl_cffi==0.16.3
 pypdf>=4.0
+# pdfplumber: 2a tentativa de extracao de texto de PDF (ver data/research/
+# resumir.py:_extrair_texto_pdf_pdfplumber), so' roda quando pypdf extrai
+# string vazia de um PDF que pypdf as vezes nao consegue ler direito
+# (fontes/encoding incomuns) - cobertura adicional, auditoria de
+# extracao 2026-11-12. NAO inclui OCR (pytesseract/pdf2image): exige o
+# binario Tesseract instalado no servidor, que nao esta' disponivel nem
+# validado neste ambiente - ver limitacao documentada em
+# _ocr_disponivel() no mesmo arquivo.
+pdfplumber>=0.11
 # reportlab: autoria do PDF editorial do Morning Call (jobs/morning_call_pdf.py) -
 # pypdf acima só lê/manipula PDF existente, não tem API de layout/tipografia
 # pra montar um documento do zero. Fontes base-14 (Times-Roman/Helvetica,
