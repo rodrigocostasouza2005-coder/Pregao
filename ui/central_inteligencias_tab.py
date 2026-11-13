@@ -45,6 +45,15 @@ _CSS_CENTRAL = """
 }
 .central-tabela td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--borda); vertical-align: top; white-space: nowrap; }
 .central-tabela td:nth-child(1), .central-tabela th:nth-child(1) { white-space: normal; }
+/* Função (2ª coluna) é a descrição completa do especialista (texto livre,
+   pode passar de 150 caracteres) - sem isto ela forçava a linha inteira
+   pra 1 só, empurrando Motor/Status/Execuções/Última execução/Erro pra
+   fora da viewport (só visíveis rolando horizontalmente, mesmo em
+   1440px) - achado real via screenshot Playwright nesta missão. Quebra
+   em várias linhas dentro de uma largura máxima, as colunas de status
+   (o que a maioria dos usuários realmente precisa ver de cara) ficam
+   sempre visíveis sem rolagem. */
+.central-tabela td:nth-child(2) { white-space: normal; max-width: 360px; }
 .central-nome { color: var(--destaque); font-weight: 600; }
 .central-badge {
     display: inline-block; border: 1px solid var(--borda); border-radius: 3px; padding: 0 6px;
