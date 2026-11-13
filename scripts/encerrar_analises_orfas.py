@@ -58,6 +58,11 @@ execução real, mesmo com margem generosa.
    status novo"): usa o `ERRO` que já existe no contrato de status
    (EM_ANDAMENTO/CONCLUIDA/PARCIAL/ERRO, ver sql/coordenador_central.sql)
    e deixa o motivo detalhado na coluna `erro`, já existente.
+5. Rejeita `--limiar-horas` abaixo de `_LIMIAR_HORAS_MINIMO_SEGURO`
+   (0.5h) ANTES de consultar ou escrever qualquer coisa - proteção
+   contra erro de operador (ex.: `--limiar-horas 0`) que classificaria
+   uma análise genuinamente em andamento como órfã (revisão de
+   PR #309).
 
 ## IMPORTANTE - autorização
 
@@ -82,6 +87,18 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 _LIMIAR_HORAS_DEFAULT = 2.0
+# Piso de segurança contra falso positivo por erro de operador: a
+# duração real mais longa plausível de um fluxo (ver data/
+# coordenador_central/fluxos.py:analisar_ticker - pior caso sequencial
+# com todos os timeouts de 30s somados: executar_varios + model_builder
+# + valuation_reviewer + sintese_ia, 2 chamadas) fica em torno de 150s
+# (2.5min). Qualquer --limiar-horas abaixo deste piso arrisca classificar
+# como "órfã" uma análise que está genuinamente em andamento (falso
+# positivo) - bloqueado ANTES de qualquer SELECT/escrita, nunca só um
+# aviso (revisão de PR #305/#309, achado: nada impedia `--limiar-horas 0`
+# ou negativo, que teria tratado qualquer linha EM_ANDAMENTO, mesmo uma
+# iniciada há 1 segundo, como órfã).
+_LIMIAR_HORAS_MINIMO_SEGURO = 0.5
 _FRASE_CONFIRMACAO = "EXECUTAR-EM-PRODUCAO"
 _MOTIVO_FECHAMENTO = (
     "FECHAMENTO_RETROATIVO: linha travada em EM_ANDAMENTO além de qualquer "
@@ -128,6 +145,15 @@ def main():
     parser.add_argument("--confirmo", default="",
                          help=f"Obrigatório junto com --aplicar: precisa ser exatamente '{_FRASE_CONFIRMACAO}'.")
     args = parser.parse_args()
+
+    if args.limiar_horas < _LIMIAR_HORAS_MINIMO_SEGURO:
+        print(
+            f"[encerrar_analises_orfas] --limiar-horas={args.limiar_horas} abaixo do piso de segurança "
+            f"({_LIMIAR_HORAS_MINIMO_SEGURO}h, bem acima do pior caso real plausível de ~2.5min) - "
+            "ABORTANDO antes de consultar ou escrever qualquer coisa, por segurança contra falso positivo "
+            "(classificar uma análise genuinamente em andamento como órfã)."
+        )
+        return 1
 
     from data.supabase_client import obter_cliente
     cliente = obter_cliente()
