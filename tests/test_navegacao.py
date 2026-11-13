@@ -11,6 +11,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import config
@@ -233,3 +235,236 @@ def test_appteste_vinculo_contextual():
     at.button(key="vinculo_teste").click().run()
     assert _rota(at) == "setores/setor"
     assert at.query_params["aba"] == ["setores"]
+
+
+# --- link() dentro de um st.form ---------------------------------------------
+#
+# Streamlit 1.64 (ver requirements.txt / pip show streamlit) proibe QUALQUER
+# st.button que nao seja st.form_submit_button dentro de um st.form - com
+# on_click (StreamlitInvalidFormCallbackError, reproduzido isolado antes desta
+# correcao) OU mesmo sem on_click (StreamlitInvalidLayoutContextError; "capturar
+# so' o retorno do st.button sem on_click" NAO escapa da regra nesta versao).
+# navegacao.link() cai pra um link HTML puro (?aba=X&sub=Y, mesmo mecanismo de
+# rota_da_url/aplicar_url_de_entrada e do <a href='?ticker=X'> que
+# ui/secoes.py:_tabela_watchlist_comparativa ja usa em producao) quando
+# detecta que esta' dentro de um form - ver ui/navegacao.py:link().
+_SCRIPT_NAV_FORM = '''
+import streamlit as st
+import config
+from ui import navegacao
+areas = navegacao.disponiveis(config.ABAS_DISPONIVEIS, eh_admin=False)
+navegacao.aplicar_url_de_entrada(areas)
+area = navegacao.render_nav_principal(areas)
+area_obj = next(a for a in areas if a.id == area)
+sub = navegacao.render_subnav(area_obj)
+navegacao.publicar_url(area, sub)
+st.markdown(f"ROTA={area}/{sub}")
+with st.form("form_teste_vinculo"):
+    st.text_input("Nome", key="form_nome")
+    st.number_input("Idade", key="form_idade", value=0)
+    clicou_link = navegacao.link(
+        "Ir pro setor (form)", "setores", "setor", chave="vinculo_form_teste",
+    )
+    st.markdown(f"CLICOU_LINK={clicou_link}")
+    enviado = st.form_submit_button("Enviar")
+    if enviado:
+        st.session_state["form_foi_enviado"] = True
+        st.session_state["form_nome_recebido"] = st.session_state["form_nome"]
+        st.session_state["form_idade_recebida"] = st.session_state["form_idade"]
+'''
+
+
+def _app_form(query=None):
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_string(_SCRIPT_NAV_FORM, default_timeout=30)
+    for k, v in (query or {}).items():
+        at.query_params[k] = v
+    return at.run()
+
+
+def _href_do_link_form(at):
+    md = next(m.value for m in at.markdown if m.value.startswith("<a href="))
+    return re.search(r"href='([^']+)'", md).group(1).replace("&amp;", "&")
+
+
+def test_link_dentro_de_formulario_nao_levanta_mais_excecao():
+    """Bug original: StreamlitInvalidFormCallbackError derrubava a tela
+    inteira. Reproduzido isolado (fora deste teste, com AppTest.from_string
+    chamando navegacao.link() direto dentro de um st.form) ANTES da correção
+    - traceback real:
+        streamlit.errors.StreamlitInvalidFormCallbackError: Within a form,
+        callbacks can only be defined on `st.form_submit_button`. ...
+    Depois da correção: zero exceção, o form inteiro (inclusive os outros
+    campos) renderiza normalmente."""
+    at = _app_form()
+    assert not at.exception, f"AppTest lançou exceção: {at.exception}"
+    assert _rota(at) == "mercado/visao-geral"
+
+
+def test_link_dentro_de_formulario_nao_e_mais_um_st_button_real():
+    """Streamlit 1.64 proíbe qualquer st.button (com ou sem on_click) que
+    não seja form_submit_button dentro de um form - não existe widget de
+    clique "de verdade" aqui; o fallback é um link HTML puro (<a href=...>),
+    não um widget com key= registrado.
+
+    at.button(key=...) por uma key ausente levanta KeyError (comportamento
+    de WidgetList.__call__ do próprio AppTest pra lookup por chave, não algo
+    específico desta correção - confirmado isolado, fora deste teste). Mas a
+    prova real não é o tipo da exceção (que uma troca de versão do Streamlit
+    poderia mudar sem reintroduzir o bug) - é inspecionar at.button
+    diretamente e confirmar que NENHUM widget com essa key existe: a única
+    key presente tem que ser a do form_submit_button ("Enviar"), nunca a do
+    link ("vinculo_form_teste")."""
+    at = _app_form()
+    with pytest.raises(KeyError):
+        at.button(key="vinculo_form_teste")
+    chaves_dos_botoes = [b.key for b in at.button]
+    assert "vinculo_form_teste" not in chaves_dos_botoes
+    assert chaves_dos_botoes == ["FormSubmitter:form_teste_vinculo-Enviar"]
+    assert any(m.value.startswith("<a href=") for m in at.markdown)
+    assert "CLICOU_LINK=False" in [m.value for m in at.markdown]
+
+
+def test_link_dentro_de_formulario_gera_href_da_rota_certa():
+    at = _app_form()
+    href = _href_do_link_form(at)
+    assert href == "?aba=setores&sub=setor"
+
+
+def test_link_fora_de_formulario_continua_sendo_st_button_real_on_click():
+    """Comportamento de quem chama link() FORA de um form (ex:
+    ui/secoes.py:render_mercados_globais, ui/analises_tab.py linha ~2057/2059)
+    tem que continuar IDÊNTICO: st.button real, clicável, navega via
+    on_click/ir_para - nenhum fallback de markdown aparece."""
+    at = _app()
+    assert not any(m.value.startswith("<a href=") for m in at.markdown)
+    at.button(key="vinculo_teste").click().run()
+    assert _rota(at) == "setores/setor"
+
+
+def test_formulario_com_multiplos_campos_nao_perde_dado_so_por_ter_link():
+    """O link dentro do form não pode impedir os OUTROS campos do mesmo
+    form de renderizar/funcionar - preenche nome e idade, confirma que os
+    dois widgets continuam lá (nenhuma exceção interrompeu o form no meio)."""
+    at = _app_form()
+    at.text_input(key="form_nome").set_value("Rodrigo").run()
+    at.number_input(key="form_idade").set_value(42).run()
+    assert not at.exception
+    assert at.text_input(key="form_nome").value == "Rodrigo"
+    assert at.number_input(key="form_idade").value == 42
+    # nada foi submetido ainda - draft de form so' vai pro session_state
+    # "oficial" quando o form_submit_button e' pressionado (comportamento
+    # padrao de st.form, nao alterado por esta correcao)
+    assert "form_foi_enviado" not in at.session_state
+
+
+def test_submissao_do_formulario_continua_funcionando_com_o_link_dentro():
+    at = _app_form()
+    at.text_input(key="form_nome").set_value("Rodrigo").run()
+    at.number_input(key="form_idade").set_value(42).run()
+    at.button(key="FormSubmitter:form_teste_vinculo-Enviar").click().run()
+    assert not at.exception
+    assert at.session_state["form_foi_enviado"] is True
+    assert at.session_state["form_nome_recebido"] == "Rodrigo"
+    assert at.session_state["form_idade_recebida"] == 42
+
+
+def test_navegacao_apos_submissao_nao_e_afetada_pelo_link_do_form():
+    """Enviar o form (form_submit_button) não navega pra lugar nenhum - o
+    link dentro dele é um <a> independente, só o clique real (pelo
+    navegador) nessa URL navegaria. A rota continua intocada após o
+    submit."""
+    at = _app_form()
+    at.button(key="FormSubmitter:form_teste_vinculo-Enviar").click().run()
+    assert not at.exception
+    assert at.session_state["form_foi_enviado"] is True
+    assert _rota(at) == "mercado/visao-geral"
+
+
+def test_navegacao_sem_submissao_via_href_do_link_do_form():
+    """'Clicar' o link de navegação dentro do form, sem enviar o form, é
+    literalmente navegar pra URL do href (?aba=X&sub=Y) - como o fallback
+    não é um widget Streamlit, a forma real de testar o clique é a mesma
+    usada por test_appteste_link_direto_pela_url (mesmo mecanismo:
+    aplicar_url_de_entrada): abrir uma sessão nova direto nessa URL,
+    SEM qualquer submissão do form, e confirmar que a rota muda."""
+    at_form = _app_form()
+    href = _href_do_link_form(at_form)
+    assert "aba=" in href and "form_foi_enviado" not in at_form.session_state
+
+    aba, sub = href.lstrip("?").split("&")
+    query = dict(p.split("=") for p in [aba, sub])
+    at_destino = _app(query)
+    assert not at_destino.exception
+    assert _rota(at_destino) == "setores/setor"
+
+
+def test_persistencia_de_session_state_apos_rerun_do_form():
+    """Preencher campos, rerodar (clicar em outro widget sem ser o submit -
+    aqui, o próprio nav) e confirmar que os valores digitados sobrevivem ao
+    rerun (comportamento herdado do st.form, não quebrado por link() estar
+    dentro)."""
+    at = _app_form()
+    at.text_input(key="form_nome").set_value("Rodrigo").run()
+    at.number_input(key="form_idade").set_value(42).run()
+    # rerun disparado por outro widget (troca de subaba), nao pelo submit
+    at.button_group(key=navegacao.key_sub("mercado")).set_value("painel").run()
+    assert not at.exception
+    assert at.text_input(key="form_nome").value == "Rodrigo"
+    assert at.number_input(key="form_idade").value == 42
+    assert "form_foi_enviado" not in at.session_state
+
+
+def test_idempotencia_rerun_multiplo_sem_clique_nao_duplica_efeito():
+    """Rodar o mesmo script 2x sem interação nenhuma (nenhum clique, nenhum
+    submit) tem que ficar estável: nenhuma navegação nova, nenhum
+    form_foi_enviado criado do nada, nenhuma exceção na 2a rodada."""
+    at = _app_form()
+    rota_1 = _rota(at)
+    href_1 = _href_do_link_form(at)
+    at.run()
+    assert not at.exception
+    assert _rota(at) == rota_1
+    assert _href_do_link_form(at) == href_1
+    assert "form_foi_enviado" not in at.session_state
+
+
+def test_href_rota_funcao_pura():
+    """_href_rota isolada (sem Streamlit) - mesma função usada no fallback
+    de link(); cobre os 3 formatos (area só, area+sub, area+sub+ticker)."""
+    assert navegacao._href_rota("setores", None, None) == "?aba=setores"
+    assert navegacao._href_rota("setores", "setor", None) == "?aba=setores&sub=setor"
+    assert navegacao._href_rota("analises", "empresas", "PETR4") == "?aba=analises&sub=empresas&ticker=PETR4"
+
+
+def test_compatibilidade_render_mercados_globais_e_render_research_e_fatores():
+    """Os 2 call-sites reais apontados pela missão (ui/secoes.py:
+    render_mercados_globais, ui/analises_tab.py:_render_research_e_fatores)
+    não estão hoje dentro de nenhum st.form (confirmado lendo app.py: nenhum
+    dos 2 dispatches - rota == ("mercado","globais") e rota ==
+    ("analises","fundamentos") - está dentro de um `with st.form(...)`) - o
+    smoke test real (tests/test_smoke_todas_abas.py) já cobre os dois sem
+    exceção; este teste fixa essa garantia aqui também, direto pelo módulo,
+    sem depender só do smoke."""
+    from streamlit.testing.v1 import AppTest
+
+    script_globais = '''
+import sys
+sys.path.insert(0, r"{raiz}")
+from ui import secoes
+prefs = {{"formato_numerico": "BR", "watchlist": ["PETR4"]}}
+secoes.render_mercados_globais(prefs)
+'''.format(raiz=str(RAIZ).replace("\\", "\\\\"))
+    at_globais = AppTest.from_string(script_globais, default_timeout=30).run()
+    assert not at_globais.exception, f"AppTest lançou exceção: {at_globais.exception}"
+
+    script_fund = '''
+import sys
+sys.path.insert(0, r"{raiz}")
+from ui import analises_tab
+prefs = {{"formato_numerico": "BR", "watchlist": ["PETR4", "VALE3"]}}
+analises_tab.render_fundamentos(prefs)
+'''.format(raiz=str(RAIZ).replace("\\", "\\\\"))
+    at_fund = AppTest.from_string(script_fund, default_timeout=30).run()
+    assert not at_fund.exception, f"AppTest lançou exceção: {at_fund.exception}"
