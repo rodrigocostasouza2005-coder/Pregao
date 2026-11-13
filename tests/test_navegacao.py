@@ -11,6 +11,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import config
@@ -304,10 +306,22 @@ def test_link_dentro_de_formulario_nao_e_mais_um_st_button_real():
     """Streamlit 1.64 proíbe qualquer st.button (com ou sem on_click) que
     não seja form_submit_button dentro de um form - não existe widget de
     clique "de verdade" aqui; o fallback é um link HTML puro (<a href=...>),
-    não um widget com key= registrado."""
+    não um widget com key= registrado.
+
+    at.button(key=...) por uma key ausente levanta KeyError (comportamento
+    de WidgetList.__call__ do próprio AppTest pra lookup por chave, não algo
+    específico desta correção - confirmado isolado, fora deste teste). Mas a
+    prova real não é o tipo da exceção (que uma troca de versão do Streamlit
+    poderia mudar sem reintroduzir o bug) - é inspecionar at.button
+    diretamente e confirmar que NENHUM widget com essa key existe: a única
+    key presente tem que ser a do form_submit_button ("Enviar"), nunca a do
+    link ("vinculo_form_teste")."""
     at = _app_form()
-    with __import__("pytest").raises(Exception):
+    with pytest.raises(KeyError):
         at.button(key="vinculo_form_teste")
+    chaves_dos_botoes = [b.key for b in at.button]
+    assert "vinculo_form_teste" not in chaves_dos_botoes
+    assert chaves_dos_botoes == ["FormSubmitter:form_teste_vinculo-Enviar"]
     assert any(m.value.startswith("<a href=") for m in at.markdown)
     assert "CLICOU_LINK=False" in [m.value for m in at.markdown]
 
