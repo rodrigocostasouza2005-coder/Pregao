@@ -278,3 +278,140 @@ def test_salvar_carteira_upsert_por_ticker_nunca_delete_em_massa():
     assert ok is True
     assert len(chamadas) == 1
     assert chamadas[0][1] == "ticker"  # upsert pelo próprio ticker, nunca delete-all antes
+
+
+def test_registrar_acompanhamento_usa_upsert_por_ticker_e_data_nunca_insert_simples():
+    chamadas = []
+
+    class _TabelaFake:
+        def upsert(self, payload, on_conflict=None):
+            chamadas.append((payload, on_conflict))
+            return self
+
+        def execute(self):
+            return None
+
+    class _ClienteFake:
+        def table(self, nome):
+            assert nome == cr.TABELA_ACOMPANHAMENTO
+            return _TabelaFake()
+
+    with patch("data.carteira_recomendada._cliente_ou_none", return_value=_ClienteFake()):
+        ok = cr.registrar_acompanhamento("2026-11-13", [{"ticker": "PETR4", "peso_pct": 10.0,
+                                                           "preco_referencia": 100.0,
+                                                           "preco_atual": 110.0, "retorno_pct": 10.0}])
+    assert ok is True
+    assert len(chamadas) == 1
+    # idempotente: reexecução no mesmo dia sobrescreve a checagem em vez de
+    # lançar erro de unicidade (chave composta, nunca só o ticker).
+    assert chamadas[0][1] == "ticker,data_referencia"
+
+
+# ---------------------------------------------------------------------
+# comparar_carteira_persistida_com_atual - fecha o ciclo: snapshot
+# persistido (recomendação de X dias atrás) x preço ATUAL, com
+# persistência automática em carteira_recomendada_acompanhamento.
+# ---------------------------------------------------------------------
+
+def test_comparar_none_quando_tabela_de_itens_ausente_ou_supabase_indisponivel():
+    with patch("data.carteira_recomendada.obter_ultima_carteira_persistida", return_value=None):
+        assert cr.comparar_carteira_persistida_com_atual() is None
+
+
+def test_comparar_lista_vazia_quando_nunca_houve_snapshot_salvo():
+    with patch("data.carteira_recomendada.obter_ultima_carteira_persistida", return_value=[]):
+        assert cr.comparar_carteira_persistida_com_atual() == []
+
+
+def test_comparar_calcula_retorno_pct_a_partir_do_snapshot_e_da_cotacao_atual():
+    snapshot = [{"ticker": "PETR4", "peso_pct": 10.0, "preco_referencia": 100.0}]
+    with patch("data.carteira_recomendada.obter_ultima_carteira_persistida", return_value=snapshot), \
+         patch("data.carteira_recomendada.registrar_acompanhamento", return_value=True) as mock_registrar:
+        resultado = cr.comparar_carteira_persistida_com_atual(
+            data_referencia="2026-11-20",
+            provedor_cotacao=lambda ticker: {"preco": 115.0},
+        )
+    assert resultado == [{
+        "ticker": "PETR4", "peso_pct": 10.0, "preco_referencia": 100.0,
+        "preco_atual": 115.0, "retorno_pct": 15.0, "data_referencia": "2026-11-20",
+    }]
+    mock_registrar.assert_called_once_with("2026-11-20", resultado)
+
+
+def test_comparar_cotacao_indisponivel_entra_com_none_sem_derrubar_os_demais():
+    snapshot = [
+        {"ticker": "PETR4", "peso_pct": 10.0, "preco_referencia": 100.0},
+        {"ticker": "VALE3", "peso_pct": 10.0, "preco_referencia": 60.0},
+    ]
+
+    def _cotacao(ticker):
+        if ticker == "PETR4":
+            raise ConnectionError("sem rede")
+        return {"preco": 66.0}
+
+    with patch("data.carteira_recomendada.obter_ultima_carteira_persistida", return_value=snapshot), \
+         patch("data.carteira_recomendada.registrar_acompanhamento", return_value=True):
+        resultado = cr.comparar_carteira_persistida_com_atual(
+            data_referencia="2026-11-20", provedor_cotacao=_cotacao,
+        )
+    petr4, vale3 = resultado
+    assert petr4["preco_atual"] is None and petr4["retorno_pct"] is None
+    assert vale3["preco_atual"] == 66.0 and vale3["retorno_pct"] == 10.0
+
+
+def test_comparar_persistir_false_nunca_chama_registrar_acompanhamento():
+    snapshot = [{"ticker": "PETR4", "peso_pct": 10.0, "preco_referencia": 100.0}]
+    with patch("data.carteira_recomendada.obter_ultima_carteira_persistida", return_value=snapshot), \
+         patch("data.carteira_recomendada.registrar_acompanhamento") as mock_registrar:
+        cr.comparar_carteira_persistida_com_atual(
+            data_referencia="2026-11-20", provedor_cotacao=lambda t: {"preco": 110.0},
+            persistir=False,
+        )
+    mock_registrar.assert_not_called()
+
+
+def test_comparar_integra_fim_a_fim_com_tabela_de_acompanhamento_fake():
+    """Fluxo completo: snapshot persistido + cotação atual -> comparação
+    calculada -> gravada em carteira_recomendada_acompanhamento via upsert
+    (ticker, data_referencia) - exatamente o ciclo "persistir histórico,
+    acompanhar recomendações e comparar resultados" pedido pela missão,
+    validado com mock de tabela (migration ainda não aplicada)."""
+    gravados = []
+
+    class _TabelaItens:
+        def select(self, _):
+            return self
+
+        def order(self, *a, **k):
+            return self
+
+        def execute(self):
+            class _Resp:
+                data = [{"ticker": "PETR4", "peso_pct": 10.0, "preco_referencia": 100.0}]
+            return _Resp()
+
+    class _TabelaAcompanhamento:
+        def upsert(self, payload, on_conflict=None):
+            gravados.append((payload, on_conflict))
+            return self
+
+        def execute(self):
+            return None
+
+    class _ClienteFake:
+        def table(self, nome):
+            if nome == cr.TABELA_ITENS:
+                return _TabelaItens()
+            if nome == cr.TABELA_ACOMPANHAMENTO:
+                return _TabelaAcompanhamento()
+            raise AssertionError(f"tabela inesperada: {nome}")
+
+    with patch("data.carteira_recomendada._cliente_ou_none", return_value=_ClienteFake()):
+        resultado = cr.comparar_carteira_persistida_com_atual(
+            data_referencia="2026-11-20", provedor_cotacao=lambda t: {"preco": 120.0},
+        )
+    assert resultado[0]["retorno_pct"] == 20.0
+    assert len(gravados) == 1
+    assert gravados[0][0][0]["ticker"] == "PETR4"
+    assert gravados[0][0][0]["retorno_pct"] == 20.0
+    assert gravados[0][1] == "ticker,data_referencia"
