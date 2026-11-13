@@ -30,6 +30,7 @@ from ui import (
     radar_tab, secoes, setores_tab,
 )
 from ui import coordenador_tab
+from ui.central_inteligencias_tab import render_central
 from ui.cvm_tab import render_cvm, render_cvm_ticker
 from ui.macro_tab import REGISTRO_PAINEIS as _REGISTRO_PAINEIS_MACRO
 from ui.macro_tab import render_macro
@@ -691,6 +692,9 @@ if rota == ("coordenador", "historico"):
 if rota == ("coordenador", "analisar"):
     with st.container():
         coordenador_tab.render_analisar(prefs)
+if rota == ("coordenador", "central"):
+    with st.container():
+        render_central(prefs)
 
 # --- MACRO (Indicadores = workspace completo da antiga aba MACRO) -------------
 if rota == ("macro", "indicadores"):
