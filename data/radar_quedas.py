@@ -198,12 +198,26 @@ def _carteira_expirada(linha, agora=None):
         return False
 
 
+@st.cache_data(ttl=60, show_spinner=False)
 def listar_carteiras():
     """Recomendações vigentes (todas as casas), excluindo as EXPIRADAS
     (ver _carteira_expirada) - uma carteira mensal cuja fonte parou de
     confirmar há tempo demais não é apresentada como atual, mesmo que a
     flag `vigente` no banco ainda esteja True (ela só vira False quando a
-    PRÓPRIA fonte confirma uma mudança - ver salvar_carteiras)."""
+    PRÓPRIA fonte confirma uma mudança - ver salvar_carteiras).
+
+    @st.cache_data ttl=60 (auditoria de performance, missão noturna
+    2026-11-12, Agente A): SEM cache, cada render de RADAR › Carteiras
+    Recomendadas disparava 3 round-trips idênticos ao Supabase na MESMA
+    execução do script (_bloco_cobertura -> resumo_fontes_vigentes ->
+    listar_carteiras; _bloco_carteiras_detalhadas chamando listar_carteiras
+    de novo DIRETO; e resumo_fontes_vigentes de novo, que chama
+    listar_carteiras uma 3ª vez) - e de novo em TODO rerun do fragment
+    (@st.fragment), inclusive ao só digitar num filtro. Mesmo TTL já usado
+    por alertas_periodo/painel_monitorados neste mesmo módulo (dado que já
+    tolera até 60s de atraso nessas duas funções); nenhum chamador depende
+    de leitura imediatamente após escrita (salvar_carteiras roda só no job
+    agendado, nunca na mesma request que lê)."""
     cliente = obter_cliente()
     if cliente is None:
         return None
