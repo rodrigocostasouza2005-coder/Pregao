@@ -319,12 +319,67 @@ def causalidade_sem_evidencia(resumo: str, texto_original: str) -> str | None:
     return None
 
 
+# Recomendação EXPLÍCITA de compra/venda no resumo (achado real, auditoria
+# Lives Genial 2026-11-13, pedido explícito do Rodrigo: "se o sistema
+# atribuir recomendação que não foi de fato dita, isso é um bug crítico -
+# falsa atribuição"). Por que esta checagem faltava: pra tipo "ACOES",
+# preço-alvo/recomendação vêm de uma chamada ESTRUTURADA separada
+# (resumir.py:_extrair_dados_estruturados, prompt que já exige o texto
+# EXATO ou NAO_IDENTIFICADO) - mas isso só roda pra tipo in
+# _TIPOS_COM_DADOS_ESTRUTURADOS = {"ACOES"} (ver resumir.py). Uma live da
+# Genial (tipo "LIVE") NUNCA passa por ali - o único lugar onde uma
+# recomendação de compra/venda pode aparecer pra um vídeo é dentro da
+# PROSA livre do resumo narrativo. O prompt (_PROMPT_SISTEMA e o foco
+# MORNING_CALL em resumir.py) já instrui o modelo a nunca inventar isso,
+# mas, diferente de número/ticker/causalidade acima, nenhum gate
+# determinístico conferia essa instrução - o resumo era cacheado mesmo que
+# o modelo tivesse alucinado uma recomendação que ninguém no programa
+# disse. Mesma classe de proteção, agora também pra isso.
+_TERMOS_RECOMENDACAO_ACAO = (
+    "recomenda compra", "recomenda venda", "recomendacao de compra", "recomendacao de venda",
+    "recomendou compra", "recomendou venda", "indica compra", "indica venda",
+    "sugere compra", "sugere venda", "orienta compra", "orienta venda",
+)
+
+# qualquer uma dessas raízes aparecendo em QUALQUER lugar do texto original
+# já conta como "há algum indício textual" (checagem deliberadamente
+# tolerante - não exige o mesmo verbo exato, só a família semântica de
+# recomendação/compra/venda) - o objetivo não é policiar paráfrase legítima
+# (ex: transcrição informal que o resumo organiza em linguagem melhor),
+# só pegar uma recomendação 100% inventada, sem NENHUMA base no que foi
+# falado/escrito.
+_RAIZES_EVIDENCIA_RECOMENDACAO = ("recomend", "compra", "comprar", "venda", "vender", "indic", "suger")
+
+
+def recomendacao_sem_evidencia(resumo: str, texto_original: str) -> str | None:
+    """Primeira recomendação EXPLÍCITA de compra/venda citada no resumo
+    (ver _TERMOS_RECOMENDACAO_ACAO) sem NENHUM indício textual dela no
+    texto original (ver _RAIZES_EVIDENCIA_RECOMENDACAO) - None se o resumo
+    não fizer nenhuma recomendação desse tipo, ou se o texto original
+    tiver pelo menos algum traço dela. Pensado sobretudo pra conteúdo tipo
+    LIVE (transcrição de Morning Call/Fechamento de Mercado da Genial),
+    onde recomendação nunca vem de um campo estruturado validado - mas
+    roda pra qualquer tipo de documento, defesa em profundidade."""
+    resumo_norm = _sem_acento(resumo or "")
+    original_norm = _sem_acento(texto_original or "")
+    for termo in _TERMOS_RECOMENDACAO_ACAO:
+        if termo not in resumo_norm:
+            continue
+        if not any(raiz in original_norm for raiz in _RAIZES_EVIDENCIA_RECOMENDACAO):
+            return (
+                f"recomendação de compra/venda mencionada no resumo (\"{termo}\") sem "
+                "nenhum indício no texto original"
+            )
+    return None
+
+
 def validar_fidelidade(resumo: str, texto_original: str, titulo: str = "") -> str | None:
     """Motivo de reprovação (primeiro problema encontrado, nesta ordem:
     números sem base -> número com métrica trocada -> tickers sem base
-    -> causalidade sem evidência), ou None se o resumo passou nas 4
-    checagens. Usada por resumir.py:_gerar_resumo antes de cachear/
-    persistir qualquer resumo novo."""
+    -> causalidade sem evidência -> recomendação de compra/venda sem
+    evidência), ou None se o resumo passou em todas as checagens. Usada
+    por resumir.py:_gerar_resumo antes de cachear/persistir qualquer
+    resumo novo."""
     nums = numeros_sem_base(resumo, texto_original)
     if nums:
         return f"número(s) sem base no texto original: {', '.join(nums)}"
@@ -334,4 +389,7 @@ def validar_fidelidade(resumo: str, texto_original: str, titulo: str = "") -> st
     tickers = tickers_sem_base(resumo, texto_original, titulo)
     if tickers:
         return f"ticker(s) sem base no texto original: {', '.join(tickers)}"
-    return causalidade_sem_evidencia(resumo, texto_original)
+    causal = causalidade_sem_evidencia(resumo, texto_original)
+    if causal:
+        return causal
+    return recomendacao_sem_evidencia(resumo, texto_original)
