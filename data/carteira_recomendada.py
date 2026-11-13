@@ -68,7 +68,7 @@ para a UI (Agente A) consumir (aba nova em ui/navegacao.py, área
       "criterio_saida": "texto determinístico (ver _criterio_saida)",
       "data_revisao": "2026-12-13" (cadência padrão; ver _CADENCIA_REVISAO_DIAS),
       "liquidez": {"volume": 1234567, "consultado_em": "..."} | None,
-      "confianca_comite": "ALTA" | "MÉDIA" | "BAIXA",
+      "confianca_comite": "ALTA" | "MEDIA" | "BAIXA",
       "sinal_comite": "COMPRA",
       "score_comite": 6,
       "origem_analise_id": "uuid-hex",
@@ -124,7 +124,7 @@ _CRITERIOS_EXPLICITOS = {
         "verdade divergentes sobre o mesmo ativo."
     ),
     "risco": (
-        "Confiança do Comitê (ALTA/MÉDIA/BAIXA/INSUFICIENTE) + lista de "
+        "Confiança do Comitê (ALTA/MEDIA/BAIXA/INSUFICIENTE) + lista de "
         "critérios 'contrários' (pontos negativos) da própria análise. "
         "INSUFICIENTE nunca entra na carteira."
     ),
