@@ -260,3 +260,65 @@ def test_texto_original_vazio_reprova_qualquer_numero_do_resumo():
     resumo = "O preço-alvo foi fixado em R$ 48,00."
     motivo = qualidade.validar_fidelidade(resumo, "")
     assert motivo is not None
+
+
+# ---------------------------------------------------------------------
+# Recomendação de compra/venda sem evidência (auditoria Lives Genial,
+# 2026-11-13, pedido explícito do Rodrigo: falsa atribuição de
+# recomendação é bug crítico). Cenário real: tipo "LIVE" nunca passa pela
+# extração estruturada de recomendação (só tipo "ACOES" passa, ver
+# resumir.py:_TIPOS_COM_DADOS_ESTRUTURADOS) - o único lugar onde uma
+# recomendação pode "escapar" pra um vídeo é dentro da prosa do resumo
+# narrativo, sem nenhum gate determinístico até esta correção.
+# ---------------------------------------------------------------------
+
+_TRANSCRICAO_LIVE_SEM_RECOMENDACAO = (
+    "[00:22] bom dia, hoje é quinta-feira. o mercado reage ao CPI americano que veio "
+    "acima do esperado, pressionando as bolsas. [05:10] a Genial comenta que o "
+    "petróleo subiu 1,2% no pregão de ontem, favorecendo as petroleiras."
+)
+
+_TRANSCRICAO_LIVE_COM_RECOMENDACAO_REAL = (
+    "[00:22] bom dia. [10:40] sobre PETR4, a Genial recomenda compra do papel, "
+    "destacando o potencial de valorização com o novo plano de investimentos."
+)
+
+
+def test_recomendacao_inventada_em_live_e_rejeitada():
+    """Caso crítico: o resumo atribui 'a Genial recomenda compra de PETR4'
+    mas a transcrição real do programa nunca mencionou nenhuma
+    recomendação de compra/venda - falsa atribuição, tem que ser pega."""
+    resumo = "Sobre PETR4, a Genial recomenda compra do papel após o resultado do CPI."
+    motivo = qualidade.recomendacao_sem_evidencia(resumo, _TRANSCRICAO_LIVE_SEM_RECOMENDACAO)
+    assert motivo is not None
+    assert "recomenda compra" in motivo
+
+
+def test_recomendacao_realmente_dita_na_live_nao_e_rejeitada():
+    """Positivo: a recomendação citada no resumo tem base real na
+    transcrição (a Genial de fato disse isso no programa) - nunca pode
+    ser bloqueada."""
+    resumo = "A Genial recomenda compra de PETR4, citando o novo plano de investimentos."
+    assert qualidade.recomendacao_sem_evidencia(resumo, _TRANSCRICAO_LIVE_COM_RECOMENDACAO_REAL) is None
+
+
+def test_resumo_sem_nenhuma_recomendacao_explicita_nao_e_avaliado():
+    """Resumo que so' narra fatos/opiniões sem usar nenhuma das frases de
+    recomendação explícita de compra/venda nunca é afetado por esta
+    checagem (mesmo sem nenhuma base, porque simplesmente não há
+    recomendação nenhuma pra confirmar ou desmentir)."""
+    resumo = "O mercado reagiu ao CPI americano, pressionando as bolsas."
+    assert qualidade.recomendacao_sem_evidencia(resumo, _TRANSCRICAO_LIVE_SEM_RECOMENDACAO) is None
+
+
+def test_validar_fidelidade_tambem_pega_recomendacao_inventada_em_live():
+    """Integração: validar_fidelidade (o gate de fato usado por
+    resumir.py:_gerar_resumo antes de cachear) também reprova pela
+    recomendação inventada, não só a função isolada (ticker PETR4
+    presente nos dois lados de propósito, pra garantir que é a checagem
+    de RECOMENDAÇÃO - não a de ticker - que reprova aqui)."""
+    transcricao = _TRANSCRICAO_LIVE_SEM_RECOMENDACAO + " PETR4 também foi citada de passagem."
+    resumo = "Sobre PETR4, a Genial recomenda venda do papel após o resultado do CPI."
+    motivo = qualidade.validar_fidelidade(resumo, transcricao, "Morning Call Genial")
+    assert motivo is not None
+    assert "recomenda" in motivo.lower() or "recomendação" in motivo.lower()
