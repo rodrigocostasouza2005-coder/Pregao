@@ -1,0 +1,56 @@
+{
+  "desktop_1440": {
+    "normal": {
+      "color": "rgb(230, 230, 230)",
+      "textDecorationLine": "none",
+      "outline": "rgb(230, 230, 230) none 3px",
+      "outlineOffset": "0px"
+    },
+    "hover": {
+      "color": "rgb(255, 160, 40)",
+      "textDecorationLine": "underline",
+      "outline": "rgb(255, 160, 40) none 3px",
+      "outlineOffset": "0px"
+    },
+    "focus_via_tab_alcancado": true,
+    "focus": {
+      "color": "rgb(230, 230, 230)",
+      "textDecorationLine": "none",
+      "outline": "rgb(255, 160, 40) solid 1px",
+      "outlineOffset": "2px"
+    },
+    "externo_normal": {
+      "color": "rgb(61, 157, 243)",
+      "textDecorationLine": "underline",
+      "outline": "rgb(61, 157, 243) none 3px",
+      "outlineOffset": "0px"
+    }
+  },
+  "ipad_1024x768": {
+    "normal": {
+      "color": "rgb(230, 230, 230)",
+      "textDecorationLine": "none",
+      "outline": "rgb(230, 230, 230) none 3px",
+      "outlineOffset": "0px"
+    },
+    "hover": {
+      "color": "rgb(255, 160, 40)",
+      "textDecorationLine": "underline",
+      "outline": "rgb(255, 160, 40) none 3px",
+      "outlineOffset": "0px"
+    },
+    "focus_via_tab_alcancado": true,
+    "focus": {
+      "color": "rgb(230, 230, 230)",
+      "textDecorationLine": "none",
+      "outline": "rgb(255, 160, 40) solid 1px",
+      "outlineOffset": "2px"
+    },
+    "externo_normal": {
+      "color": "rgb(61, 157, 243)",
+      "textDecorationLine": "underline",
+      "outline": "rgb(61, 157, 243) none 3px",
+      "outlineOffset": "0px"
+    }
+  }
+}
