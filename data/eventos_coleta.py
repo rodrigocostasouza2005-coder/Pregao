@@ -576,10 +576,16 @@ def coletar_evento(ticker: str, hoje: date = None) -> dict | None:
         and not _confirmado_precisa_reverificar(salvo, hoje_efetivo)
     ):
         try:
-            return _montar_evento(
+            evento_salvo = _montar_evento(
                 ticker, obter_nome_yf(ticker) or ticker, ano, trimestre, STATUS_CONFIRMADO,
                 date.fromisoformat(str(salvo["data_evento"])[:10]), salvo["fonte"], salvo.get("url_fonte"),
             )
+            # historico de mudanca de data (ver _historico_atualizado) -
+            # so' entra no dict quando ha' algo a mostrar, pra nao mudar o
+            # formato pro caso comum (ticker sem nenhuma correcao de data).
+            if salvo.get("historico"):
+                evento_salvo["historico"] = salvo["historico"]
+            return evento_salvo
         except (KeyError, ValueError, TypeError):
             pass  # linha salva malformada - ignora o atalho, segue o pipeline normal (RI/NEWS/PRAZO_CVM)
 
@@ -641,6 +647,36 @@ def _buscar_evento_salvo(ticker: str, periodo: str) -> dict | None:
         return None
 
 
+_MAX_HISTORICO = 10  # ultimas N mudancas de data guardadas por (ticker,periodo) - suficiente pra auditoria, sem crescer sem limite
+
+
+def _historico_atualizado(anterior: dict, evento: dict) -> list:
+    """Historico de mudanca de data (missao 2026-11-12/13, frente
+    CALENDARIO): se a empresa ja' tinha uma data CONFIRMADA/ESTIMADA
+    salva (`anterior`) e a nova coleta (`evento`) traz uma DATA
+    DIFERENTE pro mesmo (ticker,periodo), a data antiga nunca e'
+    descartada em silencio - entra como 1 item no fim da lista
+    `historico` (mais antigo primeiro, no maximo _MAX_HISTORICO
+    itens - os mais antigos saem primeiro se passar do limite). Sem
+    mudanca real de data (mesmo valor, so' uma reverificacao que
+    confirmou o que ja' se sabia) o historico nao ganha item novo -
+    reverificacao de rotina nao e' 'mudanca'. `anterior` pode nao ter a
+    coluna 'historico' ainda (migracao sql/eventos_historico.sql nao
+    rodada em produção) - trata como lista vazia, nunca quebra."""
+    bruto = anterior.get("historico") if anterior else None
+    historico = list(bruto) if isinstance(bruto, list) else []
+    if not anterior or anterior.get("data_evento") == evento["data"].isoformat():
+        return historico
+    historico.append({
+        "data_evento": anterior.get("data_evento"),
+        "status": anterior.get("status"),
+        "fonte": anterior.get("fonte"),
+        "url_fonte": anterior.get("url_fonte"),
+        "verificado_em": anterior.get("coletado_em"),
+    })
+    return historico[-_MAX_HISTORICO:]
+
+
 def salvar_evento_se_mais_confiavel(evento: dict) -> bool:
     """Upsert em eventos_resultados SO' quando o novo status tem
     confiabilidade >= a' do que ja estava salvo pro mesmo
@@ -648,9 +684,11 @@ def salvar_evento_se_mais_confiavel(evento: dict) -> bool:
     um status pior so' porque uma coleta pontual nao achou nada melhor
     (mesma regra de data.eventos.PRIORIDADE_STATUS). PRAZO_CVM nunca e'
     persistido aqui (so' CONFIRMADO/ESTIMADO - ver docstring do modulo).
-    Retorna True se gravou algo NOVO de verdade, False se manteve o que
-    ja' estava, o status nao e' persistivel (PRAZO_CVM), ou o banco
-    falhou."""
+    Quando a data realmente muda em relacao ao que estava salvo, a data
+    antiga vai pro campo 'historico' antes de ser sobrescrita (ver
+    _historico_atualizado) - nunca perdida em silencio. Retorna True se
+    gravou algo NOVO de verdade, False se manteve o que ja' estava, o
+    status nao e' persistivel (PRAZO_CVM), ou o banco falhou."""
     if evento["status"] not in (STATUS_CONFIRMADO, STATUS_ESTIMADO):
         return False
     cliente = obter_cliente()
@@ -671,6 +709,7 @@ def salvar_evento_se_mais_confiavel(evento: dict) -> bool:
                 "data_evento": evento["data"].isoformat(), "status": evento["status"],
                 "fonte": evento["fonte"], "url_fonte": evento.get("origem_url"),
                 "coletado_em": evento["coletado_em"].isoformat() if evento.get("coletado_em") else None,
+                "historico": _historico_atualizado(anterior, evento),
             },
             on_conflict="ticker,periodo",
         ).execute()
