@@ -480,48 +480,60 @@ def render_macro_juros(prefs):
 def render_macro_cambio_commodities(prefs):
     """Dolar e moedas vem do letreiro/MERCADO; aqui o painel de
     commodities/Treasuries/VIX (config.CENARIO_GLOBAL) + dolar do
-    proprio ticker tape (config.INDICES_TICKER_TAPE), mesma fonte."""
-    with st.container(border=True):
-        st.markdown('<div class="painel-titulo">CÂMBIO</div>', unsafe_allow_html=True)
-        cambio = {nome: simbolo for nome, simbolo in config.INDICES_TICKER_TAPE.items() if simbolo.endswith("=X")}
-        partes = []
-        for nome, simbolo in cambio.items():
-            cot = _cotacao_cambio(nome, simbolo)
-            if cot.get("erro"):
-                partes.append(f"<div style='min-width:9rem;'><span class='cinza' style='font-size:0.7rem;'>{nome}</span><br>"
-                              f"<span class='cinza'>indisponível</span></div>")
-                continue
-            em_cache = rotulo_cotacao_em_cache(cot)
-            # cor de sinal via design_system: cotacao EM CACHE nunca usa
-            # classe_sinal/variacao_html (ficaria colorida como se fosse um
-            # movimento real desta tentativa) - fica cinza de proposito,
-            # so' com tabular-nums (numero_financeiro_html sem colorir).
-            # Mesmo criterio que ja existia aqui antes da fundacao do
-            # design system (ver teste tests/test_cotacao_em_cache_
-            # sinalizada.py:test_appteste_cambio_mostra_rotulo_e_sem_cor_
-            # de_movimento), so' trocando a montagem manual pelos helpers.
-            if em_cache:
-                var_html = (
-                    f"<span class='cinza'>"
-                    f"{design_system.numero_financeiro_html(cot['variacao_pct'], 2, prefs['formato_numerico'], sufixo='%', com_sinal=True)}"
-                    f"</span>"
+    proprio ticker tape (config.INDICES_TICKER_TAPE), mesma fonte.
+
+    CÂMBIO (sempre 2 pares - config.INDICES_TICKER_TAPE so' tem DOLAR/
+    EURO terminados em "=X") e CENÁRIO GLOBAL (sempre 6 itens fixos,
+    config.CENARIO_GLOBAL) lado a lado em grade (nao mais 2 paineis de
+    largura total empilhados): cada um sozinho ocupava uma linha inteira
+    de ~1440px pra 2-6 cartoes compactos, sobrando tela vazia abaixo dos
+    2 paineis - achado real desta auditoria (contagem de itens e' fixa
+    nos 2 dicts de config.py, nao cresce com dado do usuario, entao a
+    proporcao 1:2 das colunas fica estavel)."""
+    col_cambio, col_global = st.columns([1, 2], gap="medium")
+    with col_cambio:
+        with st.container(border=True):
+            st.markdown('<div class="painel-titulo">CÂMBIO</div>', unsafe_allow_html=True)
+            cambio = {nome: simbolo for nome, simbolo in config.INDICES_TICKER_TAPE.items() if simbolo.endswith("=X")}
+            partes = []
+            for nome, simbolo in cambio.items():
+                cot = _cotacao_cambio(nome, simbolo)
+                if cot.get("erro"):
+                    partes.append(f"<div style='min-width:9rem;'><span class='cinza' style='font-size:0.7rem;'>{nome}</span><br>"
+                                  f"<span class='cinza'>indisponível</span></div>")
+                    continue
+                em_cache = rotulo_cotacao_em_cache(cot)
+                # cor de sinal via design_system: cotacao EM CACHE nunca usa
+                # classe_sinal/variacao_html (ficaria colorida como se fosse um
+                # movimento real desta tentativa) - fica cinza de proposito,
+                # so' com tabular-nums (numero_financeiro_html sem colorir).
+                # Mesmo criterio que ja existia aqui antes da fundacao do
+                # design system (ver teste tests/test_cotacao_em_cache_
+                # sinalizada.py:test_appteste_cambio_mostra_rotulo_e_sem_cor_
+                # de_movimento), so' trocando a montagem manual pelos helpers.
+                if em_cache:
+                    var_html = (
+                        f"<span class='cinza'>"
+                        f"{design_system.numero_financeiro_html(cot['variacao_pct'], 2, prefs['formato_numerico'], sufixo='%', com_sinal=True)}"
+                        f"</span>"
+                    )
+                else:
+                    var_html = design_system.variacao_html(cot["variacao_pct"], prefs["formato_numerico"])
+                partes.append(
+                    f"<div style='min-width:9rem;'><span class='cinza' style='font-size:0.7rem;'>{nome}</span><br>"
+                    f"<span class='neutro' style='font-size:0.85rem;'>"
+                    f"{design_system.numero_financeiro_html(cot['preco'], 4, prefs['formato_numerico'])}</span> "
+                    f"<span style='font-size:0.78rem;'>{var_html}</span>"
+                    + (f"<br><span class='cinza' style='font-size:0.6rem;'>{em_cache}</span>" if em_cache else "")
+                    + "</div>"
                 )
-            else:
-                var_html = design_system.variacao_html(cot["variacao_pct"], prefs["formato_numerico"])
-            partes.append(
-                f"<div style='min-width:9rem;'><span class='cinza' style='font-size:0.7rem;'>{nome}</span><br>"
-                f"<span class='neutro' style='font-size:0.85rem;'>"
-                f"{design_system.numero_financeiro_html(cot['preco'], 4, prefs['formato_numerico'])}</span> "
-                f"<span style='font-size:0.78rem;'>{var_html}</span>"
-                + (f"<br><span class='cinza' style='font-size:0.6rem;'>{em_cache}</span>" if em_cache else "")
-                + "</div>"
-            )
-        if partes:
-            st.markdown("<div style='display:flex; flex-wrap:wrap; gap:1rem;'>" + "".join(partes) + "</div>",
-                        unsafe_allow_html=True)
-            st.caption("Fonte: Yahoo Finance — cotação com atraso típico de mercado.")
-    with st.container(border=True):
-        _painel_cenario_global(prefs)
+            if partes:
+                st.markdown("<div style='display:flex; flex-wrap:wrap; gap:1rem;'>" + "".join(partes) + "</div>",
+                            unsafe_allow_html=True)
+                st.caption("Fonte: Yahoo Finance — cotação com atraso típico de mercado.")
+    with col_global:
+        with st.container(border=True):
+            _painel_cenario_global(prefs)
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -592,40 +604,50 @@ def render_macro_calendario(prefs):
     parecido com MERCADO > Agenda (ui/calendario_tab.py), mas e' fonte
     DIFERENTE - aqui e' agenda de bancos centrais/indicadores macro
     (Copom/Focus/IPCA), nunca resultado de empresa/CVM (isso fica em
-    MERCADO > Agenda). So' texto, sem mudar rota nem dado."""
+    MERCADO > Agenda). So' texto, sem mudar rota nem dado.
+
+    ÚLTIMA DECISÃO DO COPOM e PRÓXIMAS DIVULGAÇÕES lado a lado (auditoria
+    desta missão): os 2 sao blocos curtos (1-2 linhas de texto cada) que
+    antes ocupavam, sozinhos, uma linha inteira de ~1440px cada - sobrava
+    tela vazia abaixo dos 3 paineis empilhados. EXPECTATIVAS DE MERCADO
+    (tabela com 6 linhas x 4 colunas) continua em largura total porque
+    precisa do espaço de verdade, diferente dos outros 2."""
     st.markdown(
         "<div class='cinza' style='font-size:0.68rem; margin-bottom:0.5rem;'>Agenda de bancos centrais e "
         "indicadores macro (Copom, Focus, IPCA) — não é resultado de empresa. Para resultados corporativos "
         "e prazos CVM, veja <b>MERCADO › Agenda</b>.</div>",
         unsafe_allow_html=True,
     )
-    with st.container(border=True):
-        st.markdown('<div class="painel-titulo">ÚLTIMA DECISÃO DO COPOM (REALIZADO)</div>', unsafe_allow_html=True)
-        copom = _copom_vigente()
-        if copom is None:
-            # motivo tecnico (excecao crua) fica no log/SAUDE DOS DADOS, nao na tela
+    col_copom, col_proximas = st.columns(2, gap="medium")
+    with col_copom:
+        with st.container(border=True):
+            st.markdown('<div class="painel-titulo">ÚLTIMA DECISÃO DO COPOM (REALIZADO)</div>', unsafe_allow_html=True)
+            copom = _copom_vigente()
+            if copom is None:
+                # motivo tecnico (excecao crua) fica no log/SAUDE DOS DADOS, nao na tela
+                st.markdown(
+                    "<div class='cinza' style='font-size:0.78rem;'>Indisponível no momento: o histórico de "
+                    "decisões do Copom (bcb.gov.br) não respondeu. Nenhum valor anterior é exibido como atual.</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                reuniao = f"{copom['reuniao']}ª reunião · " if copom.get("reuniao") else ""
+                st.markdown(
+                    f"<div style='font-size:1.05rem; font-weight:600; color:var(--destaque);'>"
+                    f"Meta Selic {design_system.numero_financeiro_html(copom['valor'], 2, prefs['formato_numerico'], sufixo='%')} a.a.</div>"
+                    f"<div class='cinza' style='font-size:0.7rem;'>{reuniao}vigente desde "
+                    f"{copom['vigente_desde'].strftime('%d/%m/%Y')} · fonte: histórico de taxas do Copom (bcb.gov.br)</div>",
+                    unsafe_allow_html=True,
+                )
+    with col_proximas:
+        with st.container(border=True):
+            st.markdown('<div class="painel-titulo">PRÓXIMAS DIVULGAÇÕES</div>', unsafe_allow_html=True)
             st.markdown(
-                "<div class='cinza' style='font-size:0.78rem;'>Indisponível no momento: o histórico de "
-                "decisões do Copom (bcb.gov.br) não respondeu. Nenhum valor anterior é exibido como atual.</div>",
-                unsafe_allow_html=True,
-            )
-        else:
-            reuniao = f"{copom['reuniao']}ª reunião · " if copom.get("reuniao") else ""
-            st.markdown(
-                f"<div style='font-size:1.05rem; font-weight:600; color:var(--destaque);'>"
-                f"Meta Selic {design_system.numero_financeiro_html(copom['valor'], 2, prefs['formato_numerico'], sufixo='%')} a.a.</div>"
-                f"<div class='cinza' style='font-size:0.7rem;'>{reuniao}vigente desde "
-                f"{copom['vigente_desde'].strftime('%d/%m/%Y')} · fonte: histórico de taxas do Copom (bcb.gov.br)</div>",
+                "<div class='cinza' style='font-size:0.78rem;'>Agenda de divulgações (IPCA, PIB, payroll, "
+                "decisões futuras do Copom/Fed) <b>indisponível</b>: o PREGÃO ainda não tem uma fonte confiável "
+                "integrada para datas de divulgação — nenhuma data é estimada aqui. Resultados corporativos "
+                "ficam em MERCADO › Agenda.</div>",
                 unsafe_allow_html=True,
             )
     with st.container(border=True):
         _painel_expectativas(prefs)
-    with st.container(border=True):
-        st.markdown('<div class="painel-titulo">PRÓXIMAS DIVULGAÇÕES</div>', unsafe_allow_html=True)
-        st.markdown(
-            "<div class='cinza' style='font-size:0.78rem;'>Agenda de divulgações (IPCA, PIB, payroll, "
-            "decisões futuras do Copom/Fed) <b>indisponível</b>: o PREGÃO ainda não tem uma fonte confiável "
-            "integrada para datas de divulgação — nenhuma data é estimada aqui. Resultados corporativos "
-            "ficam em MERCADO › Agenda.</div>",
-            unsafe_allow_html=True,
-        )
