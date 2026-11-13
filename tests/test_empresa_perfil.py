@@ -317,8 +317,17 @@ def test_research_indisponivel_nao_quebra_perfil_so_marca_perguntas_dependentes(
     assert perfil["research"]["disponivel"] is False
     assert perfil["research"]["motivo"] == "banco indisponivel"
     # perguntas que dependem SO' de research ficam indisponiveis...
-    for chave in ("concorrentes", "riscos", "drivers_de_receita"):
+    for chave in ("concorrentes", "riscos", "drivers_de_receita", "o_que_quebraria_a_tese"):
         assert perfil["perguntas"][chave]["disponivel"] is False
+        # Achado real (missao "PREGAO 2.1", 2026-11-13): motivo_indisponivel
+        # NUNCA pode ficar None quando disponivel=False - violaria o
+        # proprio principio deste modulo (ver docstring: "nunca preenchida
+        # com texto vago/generico"). Regressao real: o fallback antigo de
+        # riscos_por_casa descartava o motivo real ("banco indisponivel")
+        # e usava None pras perguntas 16 (riscos) e 18
+        # (o_que_quebraria_a_tese) quando comparar_ticker falhava no nivel
+        # raiz (sem a chave "riscos" nenhuma).
+        assert perfil["perguntas"][chave]["motivo_indisponivel"] is not None
     # ...mas as que vem de yfinance continuam disponiveis normalmente
     assert perfil["perguntas"]["o_que_a_empresa_faz"]["disponivel"] is True
     assert perfil["perguntas"]["divida"]["disponivel"] is True

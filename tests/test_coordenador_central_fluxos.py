@@ -388,3 +388,57 @@ def test_finalizacao_marca_parcial_quando_resultado_final_nao_persiste():
     concluir.assert_called_once()
     assert consolidado["persistencia_analise_ok"] is False
     assert consolidado["status_execucao"] == "PARCIAL"
+
+
+# ============================================================
+# Camada híbrida OPT-IN (sintese_ia, missão "PREGÃO 2.1", 2026-11-13) -
+# default False preserva o comportamento de sempre (zero IA real nos
+# testes acima, exatamente como a docstring do módulo documenta);
+# True aciona as 2 sínteses novas e as anexa ADITIVAMENTE ao
+# consolidado, sem tocar em nenhuma chave já existente.
+# ============================================================
+
+def test_sintese_ia_default_false_nunca_chama_as_sinteses_novas(persistencia_mockada):
+    with patch.object(fluxos.executor, "executar_varios", return_value={
+        "analise_ticker": _resultado("analise_ticker"), "comparador": _resultado("comparador"),
+        "memoria_research": _resultado("memoria_research"), "noticias": _resultado("noticias"),
+        "catalisadores": _resultado("catalisadores"),
+    }), \
+         patch.object(fluxos.market_researcher, "sintese_qualitativa_research") as mr_mock, \
+         patch.object(fluxos.sintese_ia_comite, "sintetizar_leitura_comite") as si_mock:
+        consolidado = fluxos.analisar_ticker("PETR4")
+    mr_mock.assert_not_called()
+    si_mock.assert_not_called()
+    assert "sintese_qualitativa_research_ia" not in consolidado
+    assert "sintese_divergencia_comite_ia" not in consolidado
+
+
+def test_sintese_ia_true_aciona_as_2_sinteses_e_anexa_ao_consolidado(persistencia_mockada):
+    with patch.object(fluxos.executor, "executar_varios", return_value={
+        "analise_ticker": _resultado("analise_ticker"), "comparador": _resultado("comparador"),
+        "memoria_research": _resultado("memoria_research"), "noticias": _resultado("noticias"),
+        "catalisadores": _resultado("catalisadores"),
+    }), \
+         patch.object(fluxos.market_researcher, "sintese_qualitativa_research",
+                      return_value={"disponivel": True, "sintese": "fake"}) as mr_mock, \
+         patch.object(fluxos.sintese_ia_comite, "sintetizar_leitura_comite",
+                      return_value={"disponivel": True, "leitura": "fake"}) as si_mock:
+        consolidado = fluxos.analisar_ticker("PETR4", sintese_ia=True)
+    mr_mock.assert_called_once_with("PETR4")
+    si_mock.assert_called_once_with(consolidado)
+    assert consolidado["sintese_qualitativa_research_ia"] == {"disponivel": True, "sintese": "fake"}
+    assert consolidado["sintese_divergencia_comite_ia"] == {"disponivel": True, "leitura": "fake"}
+
+
+def test_sintese_ia_falha_inesperada_nunca_derruba_o_fluxo(persistencia_mockada):
+    with patch.object(fluxos.executor, "executar_varios", return_value={
+        "analise_ticker": _resultado("analise_ticker"), "comparador": _resultado("comparador"),
+        "memoria_research": _resultado("memoria_research"), "noticias": _resultado("noticias"),
+        "catalisadores": _resultado("catalisadores"),
+    }), \
+         patch.object(fluxos.market_researcher, "sintese_qualitativa_research", side_effect=RuntimeError("boom")), \
+         patch.object(fluxos.sintese_ia_comite, "sintetizar_leitura_comite", side_effect=RuntimeError("boom")):
+        consolidado = fluxos.analisar_ticker("PETR4", sintese_ia=True)
+    assert consolidado["sintese_qualitativa_research_ia"]["disponivel"] is False
+    assert consolidado["sintese_divergencia_comite_ia"]["disponivel"] is False
+    assert consolidado["status_execucao"] in {"CONCLUIDA", "PARCIAL"}  # fluxo concluiu normalmente, nunca lançou

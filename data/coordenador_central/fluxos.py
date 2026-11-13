@@ -17,7 +17,9 @@ fonte de dado do comparador) e só gastaria uma chamada sem benefício."""
 
 import time
 
+from data import market_researcher
 from data.coordenador_central import consolidacao, executor, persistencia
+from data.coordenador_central import sintese_ia as sintese_ia_comite
 
 
 def _especialista_pulado(especialista_id: str, motivo: str) -> dict:
@@ -162,12 +164,51 @@ def _anexar_premissas_dcf(resultados: dict, premissas_usuario: dict | None) -> N
     resultados["analise_ticker"] = analise
 
 
-def analisar_ticker(ticker: str, premissas_dcf: dict | None = None) -> dict:
+def _anexar_sintese_ia(consolidado: dict, ticker: str) -> None:
+    """Camada híbrida OPT-IN (missão "PREGÃO 2.1", 2026-11-13) - chamada
+    de IA real (Groq) só quando `sintese_ia=True` é explicitamente
+    pedido (ver analisar_ticker). Anexa 2 chaves novas e ADITIVAS ao
+    consolidado (nunca substitui nem recalcula nada que já exista nele -
+    consolidacao.consolidar() continua 100% determinístico):
+
+    - 'sintese_qualitativa_research_ia': o que as casas de research
+      monitoradas estão dizendo sobre o ticker (data/market_researcher.py:
+      sintese_qualitativa_research) - lê research_itens/research_premissas
+      JÁ coletados, nunca uma fonte nova.
+    - 'sintese_divergencia_comite_ia': o porquê da convergência/
+      divergência entre os especialistas do próprio Comitê (data/
+      coordenador_central/sintese_ia.py:sintetizar_leitura_comite) - lê
+      os pareceres/números JÁ calculados por este módulo, nunca os
+      recalcula.
+
+    Qualquer falha (Groq indisponível, Supabase fora do ar, exceção
+    inesperada) nunca derruba o fluxo - vira {'disponivel': False,
+    'motivo': ...} explícito, exatamente como as demais seções do
+    consolidado quando uma fonte falha."""
+    try:
+        consolidado["sintese_qualitativa_research_ia"] = market_researcher.sintese_qualitativa_research(ticker)
+    except Exception as exc:
+        print(f"[fluxos] _anexar_sintese_ia: sintese_qualitativa_research falhou: {exc!r}")
+        consolidado["sintese_qualitativa_research_ia"] = {"disponivel": False, "motivo": f"falha inesperada: {exc!r}"}
+    try:
+        consolidado["sintese_divergencia_comite_ia"] = sintese_ia_comite.sintetizar_leitura_comite(consolidado)
+    except Exception as exc:
+        print(f"[fluxos] _anexar_sintese_ia: sintetizar_leitura_comite falhou: {exc!r}")
+        consolidado["sintese_divergencia_comite_ia"] = {"disponivel": False, "motivo": f"falha inesperada: {exc!r}"}
+
+
+def analisar_ticker(ticker: str, premissas_dcf: dict | None = None, sintese_ia: bool = False) -> dict:
     """Fluxo A: fundamentos/catalisadores/cobertura (analise_ticker) +
     comparação entre casas (comparador) + publicações originais
     (memoria_research) + notícias + catalisadores de calendário - tudo
     em paralelo via executor.executar_varios.
-    premissas_dcf é opcional e nunca recebe defaults silenciosos."""
+    premissas_dcf é opcional e nunca recebe defaults silenciosos.
+
+    sintese_ia=True (opt-in, default False - nenhum chamador existente
+    muda de comportamento) aciona a camada híbrida real de IA (ver
+    _anexar_sintese_ia) depois que o consolidado determinístico já está
+    pronto - quem decide gastar essa chamada é explicitamente quem
+    invoca este fluxo, nunca um padrão silencioso."""
     ticker = (ticker or "").strip().upper()
     analise_id = persistencia.iniciar_analise(f"Analisar {ticker}", "analise_ticker", ticker)
     inicio = time.monotonic()
@@ -211,6 +252,8 @@ def analisar_ticker(ticker: str, premissas_dcf: dict | None = None) -> dict:
         resultados['valuation_reviewer'] = resultado_valor
         telemetria_ok = _registrar_execucoes(analise_id, resultados)
         consolidado = consolidacao.consolidar(resultados, ticker=ticker)
+        if sintese_ia:
+            _anexar_sintese_ia(consolidado, ticker)
         duracao_ms = int((time.monotonic() - inicio) * 1000)
         _concluir_fluxo(analise_id, consolidado, resultados, telemetria_ok, duracao_ms)
         consolidado["_analise_id"] = analise_id
