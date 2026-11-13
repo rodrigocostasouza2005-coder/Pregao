@@ -245,6 +245,35 @@ def test_3b_detectar_foco_ainda_aponta_genial_lives_pro_morning_call():
              _detectar_foco("Genial (Lives)", "LIVE") == "MORNING_CALL")
 
 
+# ============================================================
+# 3h-3k (missao noturna 2026-11-12/13, frente LIVES GENIAL): reforco do
+# foco MORNING_CALL pra citar marcador de tempo e distinguir estimativa/
+# projecao de uma visao generica - acompanha data/research/genial_lives.py
+# passar a preservar timestamps na transcricao (ver test_genial_lives.py).
+# ============================================================
+
+def test_3h_foco_morning_call_pede_para_citar_marcador_de_tempo():
+    foco = _FOCO_POR_TIPO["MORNING_CALL"]
+    _checar("3h1 foco explica o formato do marcador [MM:SS]/[HH:MM:SS] presente no texto", "[MM:SS]" in foco)
+    _checar("3h2 foco pede pra citar o horario quando houver marcador proximo", "marcador proximo" in foco.lower())
+    _checar("3h3 foco proibe copiar o marcador bruto pra dentro da frase (precisa reescrever em portugues)",
+            "nunca copie o marcador bruto" in foco.lower())
+
+
+def test_3i_foco_morning_call_distingue_estimativa_projecao_de_visao_generica():
+    foco = _FOCO_POR_TIPO["MORNING_CALL"]
+    _checar("3i1 foco reconhece ESTIMATIVA/PROJECAO como categoria propria", "ESTIMATIVA/PROJECAO" in foco.upper())
+    _checar("3i2 foco exige identificar o numero E quem projetou", "identifique o numero" in foco.lower())
+    _checar("3i3 foco proibe apresentar estimativa como dado ja confirmado",
+            "nunca apresente como um dado ja" in foco.lower())
+
+
+def test_3j_foco_morning_call_pede_risco_perspectiva_junto_do_ativo_em_destaques():
+    foco = _FOCO_POR_TIPO["MORNING_CALL"]
+    _checar("3j foco pede incluir risco/perspectiva do ativo na mesma frase de DESTAQUES, quando mencionado",
+            "risco ou uma perspectiva especifica" in foco.lower())
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):

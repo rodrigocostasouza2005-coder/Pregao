@@ -261,14 +261,42 @@ def _extrair_video_id(link: str) -> str | None:
     return m.group(1) if m else None
 
 
+# 1 marcador [MM:SS]/[HH:MM:SS] por intervalo de conteudo falado - NAO por
+# segmento de legenda (a legenda automatica do YouTube costuma vir em
+# pedacos de 1-3 palavras; um marcador por segmento poluiria o texto a
+# ponto de prejudicar o resumo). Suficiente pra localizar EM QUE PONTO do
+# video um tema foi discutido (pedido da missao 2026-11-12/13, frente
+# LIVES GENIAL: "principais assuntos por tema com timestamp") sem
+# fragmentar demais - um Morning Call de ~30min gera ~30 marcadores.
+_INTERVALO_MARCADOR_S = 60.0
+
+
+def _formatar_timestamp(segundos: float) -> str:
+    """MM:SS pra videos com menos de 1h (o caso comum - Morning Call,
+    Resumo da Manha, Fechamento de Mercado), HH:MM:SS a partir dai (ex:
+    uma live mais longa) - nunca omite a hora quando ela importa."""
+    total = max(0, int(segundos))
+    horas, resto = divmod(total, 3600)
+    minutos, seg = divmod(resto, 60)
+    return f"{horas:02d}:{minutos:02d}:{seg:02d}" if horas else f"{minutos:02d}:{seg:02d}"
+
+
 def obter_texto_transcricao(link: str) -> tuple:
     """Extrator de texto pro link de um video (usado no lugar do 'baixa a
     pagina publica' generico - ver CASAS['genial_lives']['extrator_texto']
     em data/research/__init__.py). Busca a legenda automatica em
     portugues gerada pelo proprio YouTube (nunca baixa audio/video, nao
-    faz transcricao propria) e junta os segmentos num texto corrido.
-    Retorna (texto, motivo_falha) - texto=None se o video nao tiver
-    legenda em pt disponivel ou a lib falhar."""
+    faz transcricao propria) e junta os segmentos num texto corrido, com
+    marcadores [MM:SS] inseridos a cada _INTERVALO_MARCADOR_S de video
+    (ver _formatar_timestamp) - antes desta mudanca (missao 2026-11-12/
+    13, frente LIVES GENIAL) os segmentos eram concatenados SEM nenhuma
+    referencia de tempo, tornando impossivel pro resumo (Groq, ver
+    data/research/resumir.py) citar EM QUE PONTO do episodio um assunto
+    foi discutido. Retorna (texto, motivo_falha) - texto=None se o video
+    nao tiver legenda em pt disponivel, a fala real for curta demais ou a
+    lib falhar. O limiar de tamanho minimo e' calculado sobre o texto
+    FALADO (sem os marcadores) - um video com poucas legendas reais nunca
+    passa so' por causa dos "[MM:SS]" adicionados."""
     video_id = _extrair_video_id(link)
     if not video_id:
         return None, "link sem id de vídeo reconhecível"
@@ -288,10 +316,22 @@ def obter_texto_transcricao(link: str) -> tuple:
     except Exception as e:
         return None, f"erro ao buscar legenda: {e}"
 
-    texto = " ".join(seg.text for seg in transcript).strip()
-    if len(texto) < 200:
+    segmentos = [(seg.text or "").strip() for seg in transcript]
+    texto_falado = " ".join(s for s in segmentos if s).strip()
+    if len(texto_falado) < 200:
         return None, "legenda muito curta (provavelmente vídeo sem fala relevante)"
-    return texto, None
+
+    partes = []
+    proximo_marcador = 0.0
+    for seg, texto_seg in zip(transcript, segmentos):
+        if not texto_seg:
+            continue
+        inicio = getattr(seg, "start", None)
+        if inicio is not None and inicio >= proximo_marcador:
+            partes.append(f"[{_formatar_timestamp(inicio)}]")
+            proximo_marcador = inicio + _INTERVALO_MARCADOR_S
+        partes.append(texto_seg)
+    return " ".join(partes).strip(), None
 
 
 def testar_conexao() -> tuple:
