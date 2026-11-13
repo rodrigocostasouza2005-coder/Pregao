@@ -167,7 +167,19 @@ def chave_research(link: str) -> str:
 # blocos (prompt antigo nem pedia) - bump de versao forca reprocessamento
 # 1x por grupo, mesmo padrao v1->v2->v3->v4 acima; nenhuma linha e'
 # apagada da tabela.
-_VERSAO_CHAVE_NEWS = "v5"
+#
+# v6 (missao noturna 2026-11-12/13, frente NOTICIAS - auditoria apontou
+# que o resumo nao distinguia explicitamente FATO de DECLARACAO (fala
+# atribuida a uma pessoa/empresa especifica) de ESTIMATIVA (projecao de
+# um analista/banco especifico), e que o bloco LEITURA DE MERCADO
+# discutia impacto em prosa livre sem nomear a DIRECAO (positivo/
+# negativo/neutro/misto) nem o HORIZONTE (curto vs medio/longo prazo)
+# quando a propria fonte sustentava isso. Prompt reforcado (ver
+# data/news.py:_PROMPT_SISTEMA_RESUMO/_PROMPT_SISTEMA_RESUMO_MANCHETES)
+# pra exigir essa classificacao SO quando a fonte sustentar - nunca
+# inventada. Resumo v5 ja' cacheado nunca teve essa instrucao - bump de
+# versao forca reprocessamento 1x por grupo; nenhuma linha e' apagada.
+_VERSAO_CHAVE_NEWS = "v6"
 
 
 def chave_news(titulo: str, links: tuple) -> str:

@@ -286,8 +286,12 @@ def test_4c_fallback_manchetes_tambem_passa_pela_sanitizacao():
 # ============================================================
 
 def test_5a_versao_da_chave_de_cache_foi_atualizada():
-    _checar("5a _VERSAO_CHAVE_NEWS é 'v5' (novo formato editorial)",
-            ia_cache_mod._VERSAO_CHAVE_NEWS == "v5", f"(valor atual={ia_cache_mod._VERSAO_CHAVE_NEWS!r})")
+    # bump seguinte (v6, missao noturna 2026-11-12/13, frente NOTICIAS -
+    # ver data/ia_cache.py) - este teste so' confirma que a versao NUNCA
+    # regride pra uma anterior ja' coberta por test_5b, nao trava um
+    # numero exato que precisaria ser reeditado em todo bump futuro.
+    _checar("5a _VERSAO_CHAVE_NEWS esta' no formato editorial atual (v6, pos-correcao/estimativa/impacto/horizonte)",
+            ia_cache_mod._VERSAO_CHAVE_NEWS == "v6", f"(valor atual={ia_cache_mod._VERSAO_CHAVE_NEWS!r})")
 
 
 def test_5b_chave_muda_em_relacao_a_versao_anterior():
@@ -307,6 +311,77 @@ def hashlib_sha256_v4(titulo: str, links: tuple) -> str:
     import hashlib
     identidade = "v4" + "|" + titulo.strip().lower() + "|" + "|".join(sorted(links))
     return hashlib.sha256(identidade.encode("utf-8")).hexdigest()
+
+
+# ============================================================
+# 6. REFORCO v6 (missao noturna 2026-11-12/13, frente NOTICIAS): o
+# prompt passou a exigir, DENTRO da prosa existente (sem novo marcador/
+# sem mudar o parser), que o modelo (a) identifique explicitamente quem
+# declarou/estimou quando o texto atribuir uma afirmacao a uma pessoa/
+# instituicao especifica (declaracao) ou a um analista/banco especifico
+# (estimativa) - nunca apresentando isso como fato confirmado - e (b)
+# classifique a DIRECAO do impacto (positivo/negativo/neutro/misto) e o
+# HORIZONTE (curto vs medio/longo prazo) dentro do bloco LEITURA DE
+# MERCADO, so' quando a propria fonte sustentar. Guarda de regressao:
+# confirma que a INSTRUCAO continua no prompt (texto enviado ao Groq) -
+# nao testa o comportamento do modelo em si (isso dependeria de rede/IA
+# real, fora do escopo de teste unitario).
+# ============================================================
+
+def test_6a_prompt_resumo_exige_identificar_declarante_e_estimador():
+    _checar("6a1 prompt RESUMO pede pra identificar declaracao (fala atribuida a pessoa/instituicao)",
+            "DECLARAÇÃO" in news_mod._PROMPT_SISTEMA_RESUMO)
+    _checar("6a2 prompt RESUMO pede pra identificar estimativa (projecao de analista/banco)",
+            "ESTIMATIVA" in news_mod._PROMPT_SISTEMA_RESUMO)
+    _checar("6a3 prompt RESUMO proibe tratar declaracao/estimativa como fato confirmado independente",
+            "fato já confirmado de forma independente" in news_mod._PROMPT_SISTEMA_RESUMO)
+
+
+def test_6b_prompt_leitura_exige_classificar_direcao_do_impacto():
+    _checar("6b1 prompt LEITURA DE MERCADO pede classificacao positivo/negativo/neutro/misto",
+            "positivo, negativo, neutro ou misto" in news_mod._PROMPT_SISTEMA_RESUMO)
+    _checar("6b2 prompt LEITURA DE MERCADO continua exigindo dizer 'incerta' quando a direcao nao for clara",
+            "diga explicitamente que é incerta" in news_mod._PROMPT_SISTEMA_RESUMO)
+
+
+def test_6c_prompt_leitura_exige_horizonte_quando_a_fonte_der():
+    _checar("6c1 prompt LEITURA DE MERCADO pede horizonte curto vs medio/longo prazo",
+            "curto prazo ou médio/longo prazo" in news_mod._PROMPT_SISTEMA_RESUMO)
+    _checar("6c2 prompt proibe inventar horizonte que a fonte nao deu",
+            "nunca invente um horizonte que a fonte não mencionou" in news_mod._PROMPT_SISTEMA_RESUMO)
+
+
+def test_6d_prompt_manchetes_tambem_reforcado_para_consistencia():
+    """O fallback so'-manchetes (_PROMPT_SISTEMA_RESUMO_MANCHETES) e' um
+    prompt SEPARADO (sem acesso ao texto completo) - precisa da mesma
+    disciplina de direcao/declarante, senao o grupo que cai nesse
+    fallback (todas as fontes bloquearam o download) fica com um padrao
+    editorial inferior ao caminho normal."""
+    _checar("6d1 prompt MANCHETES tambem pede classificar positivo/negativo/neutro/misto",
+            "positivo/negativo/neutro/misto" in news_mod._PROMPT_SISTEMA_RESUMO_MANCHETES)
+    _checar("6d2 prompt MANCHETES tambem pede identificar declarante/estimador",
+            "declarante/estimador" in news_mod._PROMPT_SISTEMA_RESUMO_MANCHETES)
+
+
+def test_6e_resumo_formato_novo_ainda_passa_por_todos_os_gates_existentes():
+    """Integracao: um resumo que JA' segue o reforco v6 (classifica
+    direcao e identifica o declarante) continua passando normalmente
+    pelos gates existentes (generico/consistencia) - o reforco e'
+    aditivo na INSTRUCAO, nunca exige um formato de saida novo que os
+    gates atuais nao reconheceriam."""
+    resumo_v6 = (
+        "RESUMO:\nA empresa Alfa anunciou corte de 15% no capex de 2027, "
+        "segundo comunicado ao mercado divulgado nesta terça.\n\n"
+        "LEITURA DE MERCADO:\nImpacto negativo pra Alfa no curto prazo: o "
+        "corte reduz o investimento planejado, segundo o próprio comunicado "
+        "da empresa."
+    )
+    _checar("6e1 _resumo_e_generico nao reprova um resumo que segue o reforco v6",
+            not news_mod._resumo_e_generico(resumo_v6, "Alfa anuncia corte no capex de 2027"))
+    paragrafos, leitura = news_mod.separar_secoes_resumo(resumo_v6)
+    _checar("6e2 separar_secoes_resumo continua extraindo corpo/leitura normalmente", len(paragrafos) == 1)
+    _checar("6e3 leitura extraida preserva a classificacao de direcao/horizonte escrita pelo modelo",
+            leitura is not None and "Impacto negativo" in leitura and "curto prazo" in leitura, f"(leitura={leitura!r})")
 
 
 if __name__ == "__main__":
