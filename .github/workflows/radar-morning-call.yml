@@ -14,18 +14,25 @@ on:
     # Radar - B3 10:00-17:00 BRT = 13:00-20:00 UTC, dias uteis, a cada 15min.
     - cron: "4,19,34,49 13-19 * * 1-5"
     - cron: "4 20 * * 1-5"
-    # Morning Call - 08:03 BRT (UTC-3, sem horario de verao desde 2019)
-    # + 7 disparos de reserva ate' 09:47 BRT (PR #112). O envio e' idempotente por dia e por
-    # destinatario (jobs/morning_call.py:_ja_enviado_hoje): o primeiro que
-    # o GitHub entregar envia, os seguintes so' confirmam "ja enviado".
-    - cron: "3 11 * * 1-5"
-    - cron: "17 11 * * 1-5"
-    - cron: "27 11 * * 1-5"
-    - cron: "38 11 * * 1-5"
-    - cron: "52 11 * * 1-5"
-    - cron: "7 12 * * 1-5"
-    - cron: "27 12 * * 1-5"
-    - cron: "47 12 * * 1-5"
+    # Morning Call - 06:03 BRT (UTC-3, sem horario de verao desde 2019;
+    # confirmado de novo nesta missao, 2026-11-12: Brasil nao tem mais
+    # horario de verao desde 2019, BRT e' fixo UTC-3 o ano todo) + 7
+    # disparos de reserva ate' 07:47 BRT (retargeting da missao
+    # "Frente 1" 2026-11-12: Rodrigo precisa ler antes da abertura da B3,
+    # nao as 15h como vinha chegando por atraso do agendador do GitHub -
+    # ver MANUAL.md, "Disparo externo dos agendamentos", para os atrasos
+    # medidos de 4h30+ que motivaram a antecipacao e o fallback externo
+    # recomendado). O envio e' idempotente por dia e por destinatario
+    # (jobs/morning_call.py:_ja_enviado_hoje): o primeiro que o GitHub
+    # entregar envia, os seguintes so' confirmam "ja enviado".
+    - cron: "3 9 * * 1-5"
+    - cron: "17 9 * * 1-5"
+    - cron: "27 9 * * 1-5"
+    - cron: "38 9 * * 1-5"
+    - cron: "52 9 * * 1-5"
+    - cron: "7 10 * * 1-5"
+    - cron: "27 10 * * 1-5"
+    - cron: "47 10 * * 1-5"
   workflow_dispatch:
     inputs:
       job:
@@ -95,7 +102,7 @@ jobs:
         run: python -m jobs.radar_quedas
   morning-call:
     if: >-
-      github.event_name == 'schedule' && contains(fromJSON('["3 11 * * 1-5", "17 11 * * 1-5", "27 11 * * 1-5", "38 11 * * 1-5", "52 11 * * 1-5", "7 12 * * 1-5", "27 12 * * 1-5", "47 12 * * 1-5"]'), github.event.schedule)
+      github.event_name == 'schedule' && contains(fromJSON('["3 9 * * 1-5", "17 9 * * 1-5", "27 9 * * 1-5", "38 9 * * 1-5", "52 9 * * 1-5", "7 10 * * 1-5", "27 10 * * 1-5", "47 10 * * 1-5"]'), github.event.schedule)
       || github.event_name == 'workflow_dispatch' && (inputs.job == 'morning_call' || inputs.job == 'ambos')
     runs-on: ubuntu-latest
     timeout-minutes: 12

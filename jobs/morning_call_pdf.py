@@ -22,7 +22,7 @@ páginas decorre do conteúdo (a camada de dados já limita a extensão).
 """
 import io
 import re
-from datetime import datetime, time
+from datetime import datetime
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -48,6 +48,8 @@ try:
     from PIL import Image
 except Exception:  # pragma: no cover - Pillow já é dependência transitiva (streamlit)
     Image = None
+
+from data.morning_call_editorial import _LIMITE_HORARIO_PREVISTO
 
 PAGINA_LARGURA, PAGINA_ALTURA = A4
 MM = 2.834645669
@@ -1170,14 +1172,16 @@ def _desenhar_masthead(c, agora):
     c.drawString(MARGEM_X, y_regua - 13, _data_extenso_pt_br(agora))
     c.setFont(F["PregaoSans"], 7.2)
     c.setFillColor(CINZA)
-    # edição fora do horário previsto (mesmo limite de jobs/morning_call.py):
-    # o leitor precisa saber que as cotações não são da pré-abertura
-    atrasada = agora.time() > time(9, 30)
+    # edição fora do horário previsto (mesmo limite de
+    # data/morning_call_editorial.py:_LIMITE_HORARIO_PREVISTO, fonte única -
+    # ver comentário lá): o leitor precisa saber que as cotações não são da
+    # pré-abertura
+    atrasada = agora.time() > _LIMITE_HORARIO_PREVISTO
     if atrasada:
         c.setFillColor(BAIXA)
     c.drawRightString(PAGINA_LARGURA - MARGEM_X, y_regua - 12.5,
                       f"PDF gerado às {agora.strftime('%H:%M')}, horário de Brasília"
-                      + (" · fora do horário previsto (08h)" if atrasada else ""))
+                      + (" · fora do horário previsto (06h30)" if atrasada else ""))
     c.setStrokeColor(TINTA)
     c.setLineWidth(0.5)
     c.line(MARGEM_X, y_regua - 19, PAGINA_LARGURA - MARGEM_X, y_regua - 19)
