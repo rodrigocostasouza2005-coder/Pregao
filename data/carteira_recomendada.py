@@ -92,7 +92,14 @@ para a UI (Agente A) consumir (aba nova em ui/navegacao.py, área
     "concentracao_maxima_pct": 15.0,
     "horizonte": "texto",
     "correlacao": None,  # GAP documentado - ver _CRITERIOS_EXPLICITOS
-    "cenario_macro": {...Selic/CDI/Focus, mesmas fontes do Morning Call},
+    "cenario_macro": {  # valor MAIS RECENTE de cada série, nunca a série
+                         # histórica inteira (ver _contexto_macro) -
+                         # mesmo contrato de _linha_macro em
+                         # data/morning_call_editorial.py
+      "Selic meta": {"valor": 13.75, "unidade": "% a.a.", "referencia": "...",
+                      "detalhe": None, "erro": None},
+      "CDI": {...}, "Focus IPCA 2026": {...}, "Focus Selic 2026": {...}, ...
+    },
   },
   "avisos": [...disclaimers: nunca garantido, fonte do universo, gaps...],
   "fonte_universo": "texto",
@@ -333,17 +340,41 @@ def _liquidez(ticker: str, provedor_cotacao=None) -> dict | None:
 
 def _contexto_macro() -> dict:
     """Mesmas fontes (Selic/CDI/Focus) do Morning Call - nunca uma leitura
-    nova. Melhor esforço: cada fonte que falhar vira None, nunca derruba
-    o resto da carteira."""
+    nova. Reaproveita data/morning_call_editorial.py:_macro_rows (já
+    reduz cada série ao valor MAIS RECENTE, com o mesmo fallback Selic
+    via Copom que o Morning Call usa) em vez de reimplementar a extração
+    aqui.
+
+    BUG corrigido nesta validação (2026-11-13): a versão anterior
+    guardava o retorno CRU de obter_selic_meta/obter_cdi/obter_focus_ipca
+    em cada chave - um DataFrame de até ~400 linhas de histórico, não um
+    "contexto da rodada". Isso nunca quebrou a montagem da carteira em si
+    (o shape não é validado por schema), mas tornava `resumo` não
+    serializável em JSON e inútil pra qualquer UI/consumidor que espere
+    um valor atual (ex.: 'Selic meta: 13,75% a.a.'), não uma série. Agora
+    cada indicador vira {"valor", "unidade", "referencia", "detalhe",
+    "erro"} - mesmo contrato de _linha_macro.
+
+    Melhor esforço: indicador que falhar entra com valor=None + motivo em
+    "erro" (nunca derruba o resto da carteira)."""
+    try:
+        from data.morning_call_editorial import _macro_rows
+    except Exception as exc:
+        print(f"[carteira_recomendada] contexto macro indisponível: {exc!r}")
+        return {}
     contexto = {}
     try:
-        from data.macro import obter_cdi, obter_focus_ipca, obter_selic_meta
-        for nome, fn in (("selic_meta", obter_selic_meta), ("cdi", obter_cdi), ("focus_ipca", obter_focus_ipca)):
-            try:
-                contexto[nome] = fn()
-            except Exception as exc:
-                print(f"[carteira_recomendada] contexto macro ({nome}) indisponível: {exc!r}")
-                contexto[nome] = None
+        for linha in _macro_rows():
+            nome = linha.get("indicador")
+            if not nome:
+                continue
+            contexto[nome] = {
+                "valor": linha.get("valor"),
+                "unidade": linha.get("unidade"),
+                "referencia": linha.get("referencia"),
+                "detalhe": linha.get("detalhe"),
+                "erro": linha.get("erro"),
+            }
     except Exception as exc:
         print(f"[carteira_recomendada] contexto macro indisponível: {exc!r}")
     return contexto
