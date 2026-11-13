@@ -721,6 +721,47 @@ if rota == ("morning-call", "historico"):
 if rota == ("morning-call", "preferencias"):
     morning_call_tab.render_preferencias(prefs, usuario, _persistir_prefs)
 
+# --- CARTEIRA RECOMENDADA (módulo novo, missão "Frente 4" 2026-11-12/13;
+# camada de dados em data/carteira_recomendada.py). Render MÍNIMO
+# funcional direto aqui (sem ui/carteira_recomendada_tab.py de propósito
+# - a interface completa é tarefa do Agente A, ver documentação do shape
+# em data/carteira_recomendada.py): só evita a rota apontar pra página
+# vazia (ver tests/test_navegacao.py:test_app_despacha_todas_as_rotas).
+if rota == ("carteira-recomendada", "visao-geral"):
+    with st.container():
+        from data.carteira_recomendada import montar_carteira_recomendada
+        st.title("Carteira Recomendada")
+        st.caption("Construída a partir do Comitê de Investimentos (coordenador_analises) - "
+                   "informativa, não é recomendação personalizada nem garante rentabilidade.")
+        carteira = montar_carteira_recomendada()
+        for aviso in carteira.get("avisos") or []:
+            st.warning(aviso)
+        itens = carteira.get("itens") or []
+        if not itens:
+            st.info("Nenhum ativo elegível no momento (ver avisos acima).")
+        for item in itens:
+            with st.expander(f"{item['ticker']} · {item.get('peso_pct')}% · sinal {item.get('sinal_comite')}"):
+                st.write(f"Setor: {item.get('setor') or 'não classificado'}")
+                st.write(f"Preço de referência: {item.get('preco_referencia')} · Preço-alvo: {item.get('preco_alvo')} ({item.get('metodo_preco_alvo')})")
+                st.write(f"Tese: {item.get('tese') or 'sem resumo disponível'}")
+                if item.get("riscos"):
+                    st.write("Riscos: " + "; ".join(item["riscos"]))
+                st.write(f"Critério de saída: {item.get('criterio_saida')}")
+                st.write(f"Próxima revisão: {item.get('data_revisao')}")
+if rota == ("carteira-recomendada", "historico"):
+    with st.container():
+        from data.carteira_recomendada import listar_historico_alteracoes
+        st.title("Carteira Recomendada — Histórico")
+        historico = listar_historico_alteracoes()
+        if historico is None:
+            st.info("Histórico ainda não disponível (persistência proposta em "
+                     "sql/carteira_recomendada.sql, não aplicada em produção).")
+        elif not historico:
+            st.info("Nenhuma alteração registrada ainda.")
+        else:
+            for linha in historico:
+                st.write(linha)
+
 # --- MAIS › Watchlist -------------------------------------------------------------
 if rota == ("mais", "watchlist"):
     secoes.render_watchlist(prefs)

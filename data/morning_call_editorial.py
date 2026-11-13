@@ -51,6 +51,22 @@ from data.market_makers import inteligencia_mercado
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
 
+# Horário previsto da edição: 06h30 BRT (missão "Frente 1" 2026-11-12 -
+# Rodrigo precisa ler o Morning Call ANTES da abertura da B3, não às 15h
+# como vinha chegando por atraso do agendador do GitHub Actions - ver
+# .github/workflows/radar-morning-call.yml e MANUAL.md, "Disparo externo
+# dos agendamentos"). Tolerância até 07:30 (mesmo espaçamento proporcional
+# do horário anterior: 08h03 principal + reservas, tolerância até 09:30 -
+# só a ÚLTIMA reserva cruzava o limite). FONTE ÚNICA deste valor: antes
+# havia 3 cópias hardcoded (jobs/morning_call.py, jobs/morning_call_pdf.py,
+# ui/morning_call_tab.py) que podiam divergir silenciosamente - agora as
+# duas primeiras importam daqui; ui/morning_call_tab.py é mantida (fora do
+# escopo desta missão) e deve ser atualizada para importar daqui também.
+_LIMITE_HORARIO_PREVISTO = time(7, 30)
+# Disparo AGENDADO (cron) que chega depois do fechamento da B3 não envia -
+# ver jobs/morning_call.py:_CORTE_ENVIO_AGENDADO (não mudou nesta missão).
+_CORTE_ENVIO_AGENDADO = time(17, 0)
+
 TAG_FATO = "FATO"
 TAG_ACOMPANHAR = "ACOMPANHAR"
 

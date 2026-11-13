@@ -290,9 +290,25 @@ O painel RADAR mostra alertas persistidos em `radar_alertas_queda`, consolidados
 
 A primeira fonte estruturada conectada é a seção pública de recomendações da Genial. O coletor da Genial pode falhar no Streamlit/GitHub Actions por bloqueio de rede; uma falha não significa carteira vazia. XP, BTG e outras casas não são marcadas como coletadas sem fonte pública estruturada acessível. Datas/validade ficam nulas quando a fonte não as fornece; recomendações não devem ser tratadas como vigentes além da evidência disponível.
 
+## CARTEIRA RECOMENDADA (PREGÃO)
+
+Módulo novo (missão "Frente 4", 2026-11-12/13): carteira recomendada **institucional do PREGÃO**, construída a partir das análises reais do Comitê de Investimentos (`data/coordenador_central/*`, alimentado pela execução noturna `jobs/comite_noturno.py`) - nunca gera um sinal/score próprio, só seleciona (sinal COMPRA, confiança suficiente), pesa (igual entre os selecionados, com teto por ativo e por setor) e apresenta o que o Comitê já concluiu. Camada de dados em `data/carteira_recomendada.py` (shape completo documentado no topo do arquivo); aba nova em `ui/navegacao.py` (área `carteira-recomendada`, entre MORNING CALL e MAIS) com render **mínimo funcional** direto em `app.py` (sem `ui/carteira_recomendada_tab.py` ainda - interface completa é tarefa de outra frente da missão).
+
+**Três conceitos de "carteira" DELIBERADAMENTE separados, nunca confundidos:**
+
+1. **Carteira Recomendada (este módulo)** - recomendação institucional do PREGÃO, baseada no Comitê.
+2. **RADAR › Carteiras Recomendadas** (seção acima) - monitoramento de carteiras **públicas de terceiros** (Genial/Itaú/Safra), só pra alertar queda.
+3. **Posições reais do Rodrigo** (`data/posicoes.py`, tabela `posicoes_carteira`) - dados pessoais, nunca lidos nem escritos por este módulo.
+
+Critérios explícitos aplicados (ver `_CRITERIOS_EXPLICITOS` no código para o texto completo exibido ao usuário): qualidade da empresa/valuation/potencial (proxy único: sinal e score do Comitê - `data/research/sinal.py:calcular_sinal_comite`), risco (confiança do Comitê + pontos contrários), diversificação setorial e concentração (teto por setor e por ativo, parametrizáveis), liquidez (volume mais recente, best-effort via yfinance, informativo nesta versão), horizonte (suposição declarada - o Comitê não define horizonte por ativo hoje) e cenário macro (Selic/CDI/Focus, mesmas fontes do Morning Call). **Correlação entre ativos é um GAP conhecido e documentado** (sem motor de correlação no projeto hoje) - aparece como `None`, nunca um número inventado.
+
+Cada item traz: peso, justificativa, preço de referência, preço-alvo (consenso dos especialistas ou modelo interno do Comitê), 3 cenários de desempenho (conservador/base/otimista, **sempre condicionais, nunca garantidos** - derivados de números que o próprio Comitê já calculou, nunca um valor novo), tese (resumo executivo do Comitê), riscos, critério de saída (texto determinístico), data de revisão (cadência padrão de 30 dias) e histórico de alteração (vazio até a 1ª revisão persistida).
+
+**Persistência (acompanhamento ao longo do tempo e histórico de alteração):** proposta em `sql/carteira_recomendada.sql` (3 tabelas: `carteira_recomendada_itens`, `carteira_recomendada_historico`, `carteira_recomendada_acompanhamento`) - **NÃO aplicada em produção nesta missão** (regra do projeto: SQL em produção exige revisão humana antes de rodar). Até a aplicação, a carteira é recalculada em tempo real a cada acesso (sem memória de revisões passadas) e as funções de persistência (`salvar_carteira`/`registrar_revisao`/`listar_historico_alteracoes`/`registrar_acompanhamento`/`obter_acompanhamento`) degradam para `None`/`False` sem lançar, como qualquer outra tabela opcional do projeto.
+
 ## MORNING CALL POR E-MAIL
 
-Job independente `python -m jobs.morning_call`, no workflow `.github/workflows/radar-morning-call.yml`. O horário principal configurado é **08:03 BRT em dias úteis**, com tentativas de reserva às **08:17, 08:27, 08:38, 08:52, 09:07, 09:27 e 09:47 BRT**. Edição gerada depois das 09:30 sai marcada como atrasada (assunto, texto e HTML dizem a hora real); disparo agendado que chega depois das 17h não envia (fica registrado como falha no painel SAÚDE DOS DADOS). Disparo manual envia sempre. Esses horários são gatilhos do GitHub Actions, não garantia de entrega pontual: o GitHub pode atrasar ou descartar eventos agendados. Para reduzir esse risco, configure o disparo externo descrito em **Disparo externo dos agendamentos** abaixo.
+Job independente `python -m jobs.morning_call`, no workflow `.github/workflows/radar-morning-call.yml`. O horário principal configurado é **06:03 BRT em dias úteis** (retargeting da missão "Frente 1" 2026-11-12 - o objetivo é o leitor ter o PDF pronto antes da abertura da B3, não ao longo da tarde), com tentativas de reserva às **06:17, 06:27, 06:38, 06:52, 07:07, 07:27 e 07:47 BRT**. Edição gerada depois das 07:30 sai marcada como atrasada (assunto, texto e HTML dizem a hora real); disparo agendado que chega depois das 17h não envia (fica registrado como falha no painel SAÚDE DOS DADOS). Disparo manual envia sempre. Esses horários são gatilhos do GitHub Actions, não garantia de entrega pontual: o GitHub pode atrasar ou descartar eventos agendados - é exatamente esse atraso (ver "Disparo externo dos agendamentos" abaixo, com casos medidos de 4h30+) que vinha fazendo o Morning Call chegar à tarde em vez de de manhã. Para reduzir esse risco, configure o disparo externo descrito em **Disparo externo dos agendamentos** abaixo.
 
 O conteúdo consolida os dados disponíveis; indisponibilidades devem ser identificadas como tal. Os cenários são condicionais e não representam previsão garantida. O conteúdo não depende de carteiras recomendadas nem de alertas.
 
@@ -332,7 +348,8 @@ Diagnóstico das execuções de 14 a 17/10/2026 (verificado no histórico do Act
 - **As duas execuções que chegaram falharam por configuração de e-mail** (`EMAIL_FROM e EMAIL_TO precisam estar configurados`), já corrigida em 17/10 (envio por assinante opt-in + Brevo). Os envios de teste de 18/10, com os mesmos secrets, saíram com `ok=True`.
 - **21/10/2026 (verificado nos logs):** os quatro disparos do Morning Call (08:03–09:07 BRT) só foram entregues pelo GitHub entre 12:55 e 14:06 BRT. O primeiro falhou no SMTP (`The read operation timed out`, depois do STARTTLS) e o segundo enviou às ~12:58 BRT. Cada execução leva ~1 min: o atraso é do agendador, não do pipeline. Desde 22/10 o erro de SMTP informa a etapa (conexão/STARTTLS/login/envio) e o timeout é de 60 s.
 - **22/10/2026 (verificado no histórico do Actions):** nenhum dos 4 disparos agendados do Morning Call foi entregue até as 11h40 BRT, e nenhum dos ~9 disparos do Coletores desde as 07h11 BRT — a edição de 22/10 não saiu.
-- **Hoje:** o Morning Call está em `3 11 * * 1-5` (08h03 de Brasília) com 7 reservas até 09h47. Edição depois das 09h30 sai marcada como atrasada; disparo **agendado** depois das 17h não envia (um "Morning Call" à noite não serve ao leitor); disparo manual (`workflow_dispatch`, inclusive o externo abaixo) envia sempre.
+- **22/10 a 11/11/2026:** o Morning Call ficou em `3 11 * * 1-5` (08h03 de Brasília) com 7 reservas até 09h47 - e mesmo assim o atraso do agendador (ver diagnóstico acima) seguiu empurrando a entrega real para o meio da tarde em dias de carga alta, o oposto do propósito do produto (ler antes da abertura da B3).
+- **Hoje (2026-11-12, missão "Frente 1"):** o Morning Call foi antecipado para `3 9 * * 1-5` (06h03 de Brasília; BRT = UTC-3 fixo, sem horário de verão desde 2019 - reconfirmado nesta missão) com 7 reservas até 07h47. Edição depois das 07h30 sai marcada como atrasada; disparo **agendado** depois das 17h não envia (um "Morning Call" à noite não serve ao leitor); disparo manual (`workflow_dispatch`, inclusive o externo abaixo) envia sempre.
 - **Sem e-mail duplicado:** as execuções do Morning Call rodam em série (`concurrency: pregao-morning-call`) e cada uma pula quem já tem registro `ENVIADO` no dia em `morning_call_execucoes`. Um disparo externo extra (abaixo) cai nessa mesma checagem. Exceção documentada no código: se a consulta a essa tabela falhar, o envio segue (prefere-se um duplicado raro a nenhum e-mail).
 
 Passo a passo (gratuito, ~10 min):
@@ -346,7 +363,7 @@ Passo a passo (gratuito, ~10 min):
    | Job | URL | Body | Horário |
    |---|---|---|---|
    | Radar | `https://api.github.com/repos/rodrigocostasouza2005-coder/Pregao/actions/workflows/radar-morning-call.yml/dispatches` | `{"ref":"main","inputs":{"job":"radar"}}` | a cada 15 min, seg–sex, 10h–17h |
-   | Morning Call | mesma URL acima | `{"ref":"main","inputs":{"job":"morning_call"}}` | 08:00, seg–sex |
+   | Morning Call | mesma URL acima | `{"ref":"main","inputs":{"job":"morning_call"}}` | 06:00, seg–sex |
    | Coletores | `https://api.github.com/repos/rodrigocostasouza2005-coder/Pregao/actions/workflows/coletores-nuvem.yml/dispatches` | `{"ref":"main"}` | a cada 30 min, seg–sex, 07h–20h |
 
 3. Teste um job com *Run now*: a resposta esperada é **HTTP 204** e um run novo aparece em Actions.

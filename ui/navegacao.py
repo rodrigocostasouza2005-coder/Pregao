@@ -139,6 +139,21 @@ AREAS = (
         Subaba("historico", "Histórico"),
         Subaba("preferencias", "Preferências"),
     )),
+    # CARTEIRA RECOMENDADA (módulo novo, missão "Frente 4" 2026-11-12/13):
+    # adicionada isolada no final da lista de áreas DE CONTEÚDO, antes de
+    # "mais" (que é de propósito o menu de overflow/admin e precisa
+    # continuar sendo a última - minimiza risco de conflito com outro
+    # trabalho em ui/navegacao.py, ex. PR #297). Conteúdo novo, sem aba
+    # antiga, sempre visível (mesmo padrão de "casas"/"radar-x" em
+    # RESEARCH). Camada de dados em data/carteira_recomendada.py; esta
+    # área é SEPARADA de RADAR > "Carteiras Recomendadas" (que monitora
+    # carteiras PÚBLICAS de terceiros - Genial/Itaú/Safra - data/
+    # radar_quedas.py) e de posições reais do Rodrigo (data/posicoes.py) -
+    # nunca misturar as três.
+    Area("carteira-recomendada", "CARTEIRA RECOMENDADA", ":material/pie_chart:", (
+        Subaba("visao-geral", "Visão Geral"),
+        Subaba("historico", "Histórico"),
+    )),
     Area("mais", "MAIS", ":material/more_horiz:", (
         Subaba("watchlist", "Watchlist"),
         Subaba("config", "Configurações"),

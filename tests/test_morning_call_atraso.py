@@ -21,7 +21,7 @@ _TEXTO = (
 
 
 def test_edicao_no_horario_nao_tem_aviso():
-    agora = datetime(2026, 10, 22, 8, 3, tzinfo=TZ_SP)
+    agora = datetime(2026, 10, 22, 6, 3, tzinfo=TZ_SP)
     assert mc._assunto(agora) == "[PREGÃO] Morning Call — 22/10/2026"
     assert mc._com_aviso_atraso(_TEXTO, agora) == _TEXTO
     assert "ATRASADA" not in mc.montar_morning_call_html(_TEXTO)
@@ -115,5 +115,5 @@ def test_pdf_marca_edicao_fora_do_horario_no_masthead():
         edicao["agora"] = edicao["agora"].replace(hour=hora, minute=minuto)
         return PdfReader(io.BytesIO(gerar_pdf(edicao))).pages[0].extract_text()
 
-    assert "fora do horário previsto" not in _capa(8, 3)
+    assert "fora do horário previsto" not in _capa(6, 3)
     assert "fora do horário previsto" in _capa(13, 5)

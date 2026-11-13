@@ -8,11 +8,14 @@ no `if:` do job precisam ser IDÊNTICAS (o GitHub Actions compara
 sem rodar nunca, sem erro nenhum)."""
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 _CAMINHO = Path(__file__).parent.parent / ".github" / "workflows" / "radar-morning-call.yml"
+_TZ_SP = ZoneInfo("America/Sao_Paulo")
 
 
 def _conteudo():
@@ -33,18 +36,20 @@ def _crons_do_if(texto, job):
     return re.findall(r'"([^"]+)"', m.group(1))
 
 
-def test_morning_call_dispara_as_08h_brasilia_com_reservas():
-    """Missão explícita: envio às 08h de Brasília (UTC-3, sem horário de
-    verão desde 2019) - primeiro disparo 08:03 (= 11:03 UTC) e reservas
-    até 09:47, porque o GitHub descarta schedule sob carga (medido:
-    nenhum disparo em 17/10). Idempotência diária evita envio duplo."""
+def test_morning_call_dispara_as_06h30_brasilia_com_reservas():
+    """Missão explícita "Frente 1" (2026-11-12): envio às 06h30 de
+    Brasília (UTC-3, sem horário de verão desde 2019) - primeiro disparo
+    06:03 (= 09:03 UTC) e reservas até 07:47, pra chegar ANTES da
+    abertura da B3 (antes vinha chegando à tarde por atraso do agendador
+    do GitHub sob carga - ver MANUAL.md, "Disparo externo dos
+    agendamentos"). Idempotência diária evita envio duplo."""
     texto = _conteudo()
     crons_mc = _crons_do_if(texto, "morning-call")
-    assert crons_mc[0] == "3 11 * * 1-5"
+    assert crons_mc[0] == "3 9 * * 1-5"
     assert len(crons_mc) >= 2
     for cron in crons_mc:
         minuto, hora = cron.split()[:2]
-        assert hora in ("11", "12"), f"{cron!r} fora da janela 08h-09h BRT"
+        assert hora in ("9", "10"), f"{cron!r} fora da janela 06h-07h BRT"
     assert "07:00 BRT" not in texto
 
 
@@ -95,6 +100,61 @@ def test_email_provider_fallback_bate_com_os_secrets_ja_configurados():
     assert len(ocorrencias) == 3, "esperado 1 fallback por step que envia e-mail (radar + validação + envio MC)"
     assert set(ocorrencias) == {"smtp"}, (
         f"fallback do workflow é {ocorrencias!r}, deveria ser 'smtp' (bate com SMTP_* já configurados nos secrets)"
+    )
+
+
+def test_cron_utc_converte_para_06h30_brasilia_o_ano_todo():
+    """Teste REAL de conversão (não aritmética manual): cada cron
+    `minuto hora * * 1-5` do job morning-call é interpretado como um
+    horário UTC de um disparo do GitHub Actions e convertido com
+    zoneinfo (America/Sao_Paulo, fonte oficial de regras de fuso - a
+    mesma lib usada em produção por jobs/morning_call.py e
+    data/morning_call_editorial.py) para horário de Brasília. Roda em 4
+    datas do ano (incluindo janeiro e julho, verão/inverno no
+    hemisfério sul) pra confirmar que o Brasil não tem horário de verão
+    desde 2019 - BRT é UTC-3 fixo o ano todo, a conversão não pode
+    variar por data."""
+    texto = _conteudo()
+    crons_mc = _crons_do_if(texto, "morning-call")
+    datas_do_ano = [
+        datetime(2026, 1, 14, tzinfo=timezone.utc),   # verão no Brasil
+        datetime(2026, 7, 15, tzinfo=timezone.utc),   # inverno no Brasil
+        datetime(2026, 11, 12, tzinfo=timezone.utc),  # data da missão
+        datetime(2027, 3, 3, tzinfo=timezone.utc),    # outro ano, pra não depender de 2026
+    ]
+    esperado_brt = ["06:03", "06:17", "06:27", "06:38", "06:52", "07:07", "07:27", "07:47"]
+    for base in datas_do_ano:
+        obtido_brt = []
+        for cron in crons_mc:
+            minuto, hora = (int(x) for x in cron.split()[:2])
+            momento_utc = base.replace(hour=hora, minute=minuto, second=0, microsecond=0)
+            momento_brt = momento_utc.astimezone(_TZ_SP)
+            assert momento_brt.utcoffset().total_seconds() == -3 * 3600, (
+                f"{base.date()}: offset BRT != UTC-3 (horário de verão inesperado)"
+            )
+            obtido_brt.append(momento_brt.strftime("%H:%M"))
+        assert obtido_brt == esperado_brt, f"{base.date()}: {obtido_brt!r} != {esperado_brt!r}"
+
+
+def test_primeiro_disparo_chega_antes_da_abertura_da_b3():
+    """O propósito da Frente 1: o Morning Call pronto ANTES do pregão
+    abrir (B3 abre 10h BRT). Confirma com conversão real (zoneinfo) que
+    mesmo a ÚLTIMA reserva (07:47 BRT) ainda deixa margem robusta antes
+    da abertura, e que o primeiro disparo (06:03 BRT) cumpre a meta
+    explícita de 06:30 da missão."""
+    texto = _conteudo()
+    crons_mc = _crons_do_if(texto, "morning-call")
+    base = datetime(2026, 11, 12, tzinfo=timezone.utc)
+    minuto, hora = (int(x) for x in crons_mc[0].split()[:2])
+    primeiro_brt = base.replace(hour=hora, minute=minuto).astimezone(_TZ_SP)
+    assert primeiro_brt.strftime("%H:%M") <= "06:30", (
+        f"primeiro disparo às {primeiro_brt:%H:%M} BRT, depois da meta de 06:30"
+    )
+    minuto, hora = (int(x) for x in crons_mc[-1].split()[:2])
+    ultima_reserva_brt = base.replace(hour=hora, minute=minuto).astimezone(_TZ_SP)
+    abertura_b3 = base.replace(hour=13, minute=0).astimezone(_TZ_SP)  # 10h BRT = 13h UTC
+    assert ultima_reserva_brt < abertura_b3, (
+        f"última reserva ({ultima_reserva_brt:%H:%M} BRT) não deixa margem antes da abertura da B3 (10h BRT)"
     )
 
 

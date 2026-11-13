@@ -22,7 +22,7 @@ from ui.navegacao import AREAS, ROTA_LEGADO
 RAIZ = Path(__file__).parent.parent
 
 ORDEM_ESPERADA = ["mercado", "noticias", "radar", "research", "analises", "coordenador", "macro", "setores",
-                  "morning-call", "mais"]
+                  "morning-call", "carteira-recomendada", "mais"]
 
 
 def _todas_rotas():
@@ -48,6 +48,7 @@ def test_subabas_exigidas_pela_arquitetura():
     assert subs["macro"] == ["Indicadores", "Juros", "Câmbio e Commodities", "Calendário Econômico"]
     assert subs["setores"] == ["Mapa Setorial", "Visão por Setor", "Catalisadores"]
     assert subs["morning-call"] == ["Edição Atual", "Relatório Completo", "Histórico", "Preferências"]
+    assert subs["carteira-recomendada"] == ["Visão Geral", "Histórico"]
 
 
 def test_ids_unicos_e_seguros_pra_url():
@@ -90,7 +91,9 @@ def test_preferencia_antiga_de_abas_esconde_subabas():
     minimas = navegacao.disponiveis([], eh_admin=False)
     # "coordenador" sobrevive tambem (nenhuma subaba depende de aba antiga,
     # mesmo padrao de "casas"/"radar-x"/"memoria" em research acima).
-    assert [a.id for a in minimas] == ["radar", "research", "coordenador", "setores", "morning-call", "mais"]
+    # "carteira-recomendada" tambem (conteudo novo, sem legado, mesmo padrao).
+    assert [a.id for a in minimas] == ["radar", "research", "coordenador", "setores", "morning-call",
+                                        "carteira-recomendada", "mais"]
     radar_minimo = next(a for a in minimas if a.id == "radar")
     assert [s.id for s in radar_minimo.subabas] == ["preferencias"]
     pesquisa_minima = next(a for a in minimas if a.id == "research")

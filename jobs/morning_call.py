@@ -20,6 +20,7 @@ from data.macro import (
     obter_selic_meta, obter_selic_meta_copom,
 )
 from data.morning_call_editorial import (
+    _CORTE_ENVIO_AGENDADO, _LIMITE_HORARIO_PREVISTO,
     _com_fonte_preferida, _macro_rows, _ordem_editorial, _referencia_cotacao, e_noticia_de_empresa,
     editoria_por_assunto, filtrar_noticias, montar_edicao, nota_sessao,
 )
@@ -684,16 +685,10 @@ def montar_morning_call_html(texto: str) -> str:
     )
 
 
-# Horário previsto da edição: 08h BRT, com tolerância até 09:30 (mesmo
-# limite de ui/morning_call_tab.py:_LIMITE_HORARIO_PREVISTO). Depois disso a
-# edição sai marcada como atrasada no assunto e no corpo - em 21/10 o
-# GitHub entregou o disparo das 08h às 12:55 e o e-mail saiu sem nenhum
-# aviso, com cotações já do meio do pregão.
-_LIMITE_HORARIO_PREVISTO = time(9, 30)
-# Disparo AGENDADO (cron) que chega depois do fechamento da B3 não envia:
-# um "Morning Call" às 21h não serve a ninguém e só confunde. Disparo
-# manual (workflow_dispatch) envia sempre - quem disparou decidiu.
-_CORTE_ENVIO_AGENDADO = time(17, 0)
+# _LIMITE_HORARIO_PREVISTO e _CORTE_ENVIO_AGENDADO agora vêm de
+# data/morning_call_editorial.py (fonte única - ver comentário lá). Eram
+# definidos aqui antes (missão 2026-11-12: retargeting de 08h03 para 06h30
+# BRT, ver .github/workflows/radar-morning-call.yml e MANUAL.md).
 
 
 def _edicao_atrasada(agora) -> bool:
@@ -712,7 +707,7 @@ def _com_aviso_atraso(texto, agora):
     if not _edicao_atrasada(agora):
         return texto
     aviso = (f"[AVISO] Edição gerada às {agora.strftime('%H:%M')} (horário de Brasília), depois do "
-             "horário previsto (08h): cotações e notícias refletem esse momento, não a pré-abertura.")
+             "horário previsto (06h30): cotações e notícias refletem esse momento, não a pré-abertura.")
     linhas = texto.split("\n")
     for i, linha in enumerate(linhas):
         if linha.startswith("Gerado em "):
@@ -1045,7 +1040,7 @@ def executar(agora=None):
     assunto = _assunto(agora)
     if _edicao_atrasada(agora):
         print(f"::warning::Morning Call gerado às {agora.strftime('%H:%M')} BRT, depois do horário previsto "
-              "(08h) - disparo do agendador do GitHub atrasado; edição marcada como atrasada.")
+              "(06h30) - disparo do agendador do GitHub atrasado; edição marcada como atrasada.")
 
     enviados = 0
     falhas = 0
