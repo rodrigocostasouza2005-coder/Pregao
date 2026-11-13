@@ -33,6 +33,14 @@ def _sem_rede(**overrides):
         obter_resumos_news_por_link=lambda *_a, **_k: {},
         obter_resumo_grupo=lambda *_a, **_k: {"resumo": None},
         _noticias_do_setor=lambda _setor: [],
+        # consulta real ao painel de saúde dos dados (Supabase) - sem mock
+        # aqui, o resultado da suíte dependeria do estado real da tabela
+        # coletores_status no momento em que os testes rodam (achado real,
+        # 2026-11-13: test_macro_rows_usa_motivo_registrado_pelo_sgs falhava
+        # sempre que a Selic já tinha tido pelo menos 1 sucesso real
+        # registrado, porque o texto de erro ganhava o sufixo "última
+        # coleta válida registrada em..." que o teste não esperava).
+        ultima_coleta_valida=lambda _chave: None,
     )
     base.update(overrides)
     return base
@@ -290,6 +298,27 @@ def test_macro_rows_usa_motivo_registrado_pelo_sgs():
     with _MultiPatch(motivo_indisponivel=lambda chave: "SGS 432: página de erro HTML" if chave == "selic" else None):
         linhas = ed._macro_rows()
     assert next(l for l in linhas if l["indicador"] == "Selic meta")["erro"] == "SGS 432: página de erro HTML"
+
+
+def test_macro_rows_anexa_ultima_coleta_valida_quando_painel_tem_historico():
+    """Quando o painel de saúde dos dados (data/coletores_status.py) tem um
+    sucesso real registrado pra essa série, o motivo de indisponibilidade
+    ganha o sufixo "última coleta válida registrada em ..." (achado real,
+    2026-11-13, execução contra o Supabase de produção deste worktree: a
+    Selic já tinha sucesso registrado, e o texto de erro realmente vem com
+    esse sufixo - comportamento intencional de data/morning_call_editorial.py,
+    agora coberto por teste determinístico em vez de depender do estado
+    real da tabela)."""
+    with _MultiPatch(
+        motivo_indisponivel=lambda chave: "SGS 432: página de erro HTML" if chave == "selic" else None,
+        ultima_coleta_valida=lambda chave: "12/11/2026 18:40" if chave == "selic" else None,
+    ):
+        linhas = ed._macro_rows()
+    erro = next(l for l in linhas if l["indicador"] == "Selic meta")["erro"]
+    assert erro == (
+        "SGS 432: página de erro HTML; última coleta válida registrada em "
+        "12/11/2026 18:40 (horário de Brasília)"
+    )
 
 
 def test_coletar_noticias_classifica_por_regiao_e_ticker():
