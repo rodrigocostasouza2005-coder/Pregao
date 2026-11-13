@@ -74,3 +74,59 @@ create index if not exists idx_carteira_recomendada_acompanhamento_data on carte
 alter table carteira_recomendada_itens enable row level security;
 alter table carteira_recomendada_historico enable row level security;
 alter table carteira_recomendada_acompanhamento enable row level security;
+
+-- ===========================================================================
+-- STATUS CONFIRMADO NA VALIDAÇÃO DE PONTA A PONTA (2026-11-13,
+-- feat/validacao-carteira-recomendada-20261113): consultado o Supabase REAL
+-- de produção e as 3 tabelas abaixo NÃO EXISTEM (PGRST205: "Could not find
+-- the table 'public.carteira_recomendada_itens'/'..._historico'/
+-- '..._acompanhamento' in the schema cache"). Esta migration continua
+-- PROPOSTA, NÃO APLICADA - a validação NÃO rodou este arquivo em produção
+-- (regra do projeto e da missão: SQL em produção exige revisão humana
+-- antes de rodar). Consequência prática confirmada nesta validação: toda
+-- a camada de persistência (salvar_carteira/registrar_revisao/
+-- listar_historico_alteracoes/registrar_acompanhamento/
+-- obter_acompanhamento/comparar_carteira_persistida_com_atual) degrada
+-- para None/False em produção hoje - a carteira recomendada só existe em
+-- tempo real (montar_carteira_recomendada), sem histórico persistido, sem
+-- acompanhamento de desempenho realizado e sem histórico de alteração.
+--
+-- AGUARDANDO APROVAÇÃO DO RODRIGO - não aplicar sem autorização explícita.
+--
+-- IMPACTO de aplicar esta migration:
+--   - 3 tabelas NOVAS, sem FK formal com nenhuma tabela existente (mesmo
+--     padrão de desacoplamento já usado no resto do projeto) - zero risco
+--     de quebrar dado/consulta já em produção.
+--   - RLS habilitado SEM policies (igual a toda outra tabela do projeto):
+--     só a service role key do backend Python lê/escreve; nenhuma policy
+--     anon/authenticated é criada, então o PostgREST exposto ao público
+--     (se houver) continua bloqueado por padrão.
+--   - Índices cobrem as consultas já usadas pelo código (ticker e
+--     registrado_em/data_referencia desc) - sem índice ausente identificado
+--     nesta revisão.
+--   - carteira_recomendada_itens.ticker é PRIMARY KEY: cada ticker só pode
+--     ter 1 linha vigente (consistente com salvar_carteira, que faz upsert
+--     on_conflict="ticker" - nunca um INSERT simples que duplicaria).
+--   - carteira_recomendada_acompanhamento tem UNIQUE(ticker, data_referencia):
+--     impede duplicidade de checagem no mesmo dia; reexecução no mesmo dia
+--     sobrescreve a checagem daquele dia por design (idempotência), não é
+--     um histórico diário duplicado.
+--   - Nenhum DEFAULT/trigger popula carteira_recomendada_historico
+--     automaticamente: hoje NENHUM caller do projeto chama
+--     registrar_revisao (confirmado por busca no código - só os testes
+--     chamam) - aplicar a migration sozinha NÃO passa a preencher o
+--     histórico de alteração; falta ainda o código que compara snapshot
+--     anterior x novo a cada rodada e decide o que registrar (fora do
+--     escopo desta migration).
+--
+-- ROLLBACK (reverte esta migration - NÃO EXECUTAR sem necessidade; preserve
+-- um dump/export dos dados antes de rodar, mesmo sendo tabelas novas sem
+-- histórico anterior a perder):
+--
+-- drop table if exists carteira_recomendada_acompanhamento;
+-- drop table if exists carteira_recomendada_historico;
+-- drop table if exists carteira_recomendada_itens;
+--
+-- (os índices e policies de RLS são removidos automaticamente pelo DROP
+-- TABLE - não precisam de DROP INDEX/DROP POLICY separado)
+-- ===========================================================================
