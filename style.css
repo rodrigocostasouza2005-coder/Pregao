@@ -1243,6 +1243,37 @@ button[data-testid^="stBaseButton"] {
     }
 }
 
+/* BUG REAL confirmado por Playwright (2026-11-13, auditoria "revisão de
+   interface Bloomberg"): a grade semanal do CALENDÁRIO (ui/calendario_tab.py,
+   MERCADO > Agenda - 7 `st.columns(7)`, um por semana, dentro de
+   `st.container(key="cal_grade_area")`) usava a regra GENÉRICA de mobile
+   acima (linha ~1028: empilha QUALQUER st.columns em 100% de largura) -
+   mesmo sintoma já corrigido para `.st-key-mercado_ranking_lista` logo
+   acima (ver comentário ali). O próprio CSS do módulo já reduzia fonte/
+   padding da célula especificamente para caber numa coluna estreita
+   (ver `@media (max-width:640px)` em ui/calendario_tab.py:_CSS_CALENDARIO,
+   "bug real corrigido 2026-10-10") - ou seja, a intenção sempre foi manter
+   as 7 colunas lado a lado no celular; só faltava esta regra. Sem ela, a
+   tela 390px virava uma lista vertical de ~35 células cheias (26 a 31 do
+   mês anterior + todo o mês + início do seguinte), cada uma ocupando a
+   largura inteira, perdendo todo o sentido de calendário (dia da semana
+   deixava de corresponder à posição) - confirmado em
+   docs/evidencias/revisao-interface-bloomberg-20261113/calendario_390.png
+   (antes do fix). Mesma técnica da correção do ranking: mantém as 7
+   colunas lado a lado, só encolhe gap - o restante do ajuste de
+   legibilidade (fonte/padding da célula) já existia. */
+@media (max-width: 640px) {
+    .st-key-cal_grade_area div[data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        column-gap: 4px !important;
+    }
+    .st-key-cal_grade_area div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        flex: 1 1 0 !important;
+        width: auto !important;
+        min-width: 0 !important;
+    }
+}
+
 /* Celulares muito estreitos: reduzir apenas espaçamentos, nunca os dados. */
 @media (max-width: 380px) {
     .block-container {
