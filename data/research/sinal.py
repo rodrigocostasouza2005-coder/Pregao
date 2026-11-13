@@ -157,7 +157,13 @@ def calcular_sinal_comite(analise: dict) -> dict:
     elif len(dimensoes) >= 5 and historico.get("disponivel") is True:
         confianca = "ALTA"
     else:
-        confianca = "MÉDIA"
+        # Sem acento - mesma grafia usada em data/coordenador_central/
+        # consolidacao.py:CONFIANCA_MEDIA, data/research/embeddings.py e
+        # data/research/tese.py (achado real, auditoria noturna
+        # 2026-11-12: "MÉDIA" acentuado aqui nunca batia com nenhum badge/
+        # mapa de cor da UI, que só reconhece "MEDIA" sem acento - caía
+        # sempre no estado padrão "indisponível" quando comparado).
+        confianca = "MEDIA"
 
     favoraveis = [c["justificativa"] for c in criterios if c["pontos"] > 0]
     contrarios = [c["justificativa"] for c in criterios if c["pontos"] < 0]

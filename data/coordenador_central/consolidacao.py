@@ -13,6 +13,7 @@ Rótulos de tipo de evidência (FATO/CALCULO_INTERNO/ESTIMATIVA_TERCEIRO/
 HIPOTESE_ANALISTA/DADO_INSUFICIENTE) são os MESMOS já usados em
 data/radar.py - importados, nunca reinventados com nomes novos."""
 
+from datetime import datetime, timezone
 from math import isfinite
 
 from data.radar import TIPO_CALCULO, TIPO_FATO, TIPO_INSUFICIENTE
@@ -368,6 +369,24 @@ def consolidar(resultados: dict, ticker: str = None) -> dict:
     # consolidado (achado real, auditoria 2026-11-11).
     sinal_comite["preco_atual"] = _numero(fundamentos_sinal.get("preco"))
     sinal_comite["preco_atual_consultado_em"] = fundamentos_sinal.get("consultado_em")
+    # Campos pedidos na auditoria noturna 2026-11-12 (Rodrigo: recomendação
+    # final precisa trazer data da análise e horizonte explícitos, não só
+    # implícitos em texto corrido) - nenhum dado novo inventado, só
+    # expostos como campos estruturados dentro de sinal_comite (nunca no
+    # nível raiz do consolidado, pra não alterar o contrato das 8 seções
+    # já fixado em testes - ver test_coordenador_central_consolidacao.py).
+    # data_analise = quando ESTA consolidação rodou (não é a data dos
+    # dados em si, que varia por fonte e já aparece em cada evidência/
+    # parecer individualmente - ex.: preco_atual_consultado_em acima).
+    sinal_comite["data_analise"] = datetime.now(timezone.utc).isoformat()
+    # horizonte_dcf só é preenchido quando o Model Builder de fato calculou
+    # (cenario_base_modelo não vazio) - None nunca é confundido com "5
+    # anos" quando o DCF foi pulado/indisponível (ver fluxos.py:
+    # analisar_ticker, model_builder só roda com premissas_dcf explícitas).
+    sinal_comite["horizonte_dcf"] = (
+        "5 anos de fluxo de caixa explícito + valor terminal (Gordon Growth)"
+        if cenario_base_modelo else None
+    )
     return {
         "ticker": ticker,
         "resumo_executivo": _resumo_executivo(resultados, ticker),
