@@ -368,7 +368,20 @@ def obter_perfil_empresa(ticker: str) -> dict:
         comparacao = {"disponivel": False, "motivo": "falha ao consultar research consolidado"}
 
     estado_atual_por_casa = comparacao.get("estado_atual_por_casa") or {}
-    riscos_por_casa = comparacao.get("riscos") or {"disponivel": False, "por_casa": {}, "motivo": None}
+    # Achado real (missão "PREGÃO 2.1", auditoria de qualidade do Perfil de
+    # Empresa, 2026-11-13): quando comparar_ticker falha no nível raiz (banco
+    # de research indisponível/exceção - comparacao vem SEM a chave "riscos"
+    # de propósito, ver data/research/comparador.py), o fallback antigo
+    # {"motivo": None} descartava o motivo REAL já disponível em
+    # comparacao["motivo"] (ex: "banco indisponivel") - as perguntas 16
+    # ("riscos") e 18 ("o_que_quebraria_a_tese") ficavam com
+    # disponivel=False mas motivo_indisponivel=None, violando o próprio
+    # princípio deste módulo ("pergunta sem informação... vem com
+    # disponível=False e um motivo explícito - nunca None/vago").
+    riscos_por_casa = comparacao.get("riscos") or {
+        "disponivel": False, "por_casa": {},
+        "motivo": comparacao.get("motivo") or "research consolidado indisponível",
+    }
     divergencia_premissas = comparacao.get("divergencia_premissas") or {}
 
     try:
