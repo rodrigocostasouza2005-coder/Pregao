@@ -169,9 +169,13 @@ def test_8_data_referencia_invalida_nao_quebra_nem_conta_como_entregue():
 
 # --- 9: duplicidade do mesmo evento (ticker repetido na lista) ------------
 def test_9_duplicidade_mesmo_ticker_gera_1_evento_so():
+    # obter_cliente mockado por consistencia/isolamento (ver fix de
+    # test_5_6/test_v2_3 acima - calcular_calendario le o Supabase via
+    # _buscar_eventos_persistidos_lote, nao _buscar_evento_persistido).
     with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
          patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
-         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None), \
+         patch.object(eventos_mod, "obter_cliente", return_value=None):
         eventos = calcular_calendario(["PETR4", "PETR4", "PETR4"], hoje=date(2026, 10, 1))
     _checar("9 ticker duplicado na lista de entrada gera so' 1 evento", len(eventos) == 1, f"(qtd={len(eventos)})")
 
@@ -187,7 +191,8 @@ def test_10_fonte_cvm_indisponivel_nao_inventa_evento():
 
     with patch.object(eventos_mod, "obter_documentos_cvm", side_effect=lambda t: None if t == "PETR4" else []), \
          patch.object(eventos_mod, "obter_nome_yf", return_value="VALE"), \
-         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None), \
+         patch.object(eventos_mod, "obter_cliente", return_value=None):
         eventos = calcular_calendario(["PETR4", "VALE3"], hoje=date(2026, 10, 1))
     _checar("10b calendario com 1 fonte falhando nao quebra os outros tickers",
              len(eventos) == 1 and eventos[0]["ticker"] == "VALE3", f"(eventos={[e['ticker'] for e in eventos]})")
@@ -203,9 +208,18 @@ def test_5_6_so_processa_os_tickers_recebidos():
         chamadas.append(ticker)
         return []
 
+    # obter_cliente precisa ser mockado (nao so' _buscar_evento_persistido,
+    # que calcular_calendario nem usa - ver _buscar_eventos_persistidos_lote):
+    # achado real nesta auditoria - sem isso, este teste faz uma consulta
+    # REAL ao Supabase pro par (PETR4,3T26) e, por ser @st.cache_data,
+    # deixa esse resultado real cacheado pra qualquer teste seguinte que
+    # peca o MESMO par (ex: test_v2_3_somente_prazo_cvm_quando_sem_fonte_melhor),
+    # ignorando os mocks dele e vazando dado de producao pro teste.
+    eventos_mod._buscar_eventos_persistidos_lote.clear()
     with patch.object(eventos_mod, "obter_documentos_cvm", side_effect=_fake), \
          patch.object(eventos_mod, "obter_nome_yf", return_value="X"), \
-         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None), \
+         patch.object(eventos_mod, "obter_cliente", return_value=None):
         calcular_calendario(["PETR4"], hoje=date(2026, 10, 1))
     _checar("5 ticker da watchlist (unico passado) e' processado", chamadas == ["PETR4"])
     _checar("6 nenhum ticker 'fora da lista' e' buscado por conta propria", len(chamadas) == 1)
@@ -256,9 +270,20 @@ def test_v2_2_fonte_externa_confiavel_vira_estimado():
 
 
 def test_v2_3_somente_prazo_cvm_quando_sem_fonte_melhor():
+    # Regressao de isolamento (achado nesta auditoria, mesma causa de
+    # snap_7/linha 617 acima): calcular_calendario usa
+    # _buscar_eventos_persistidos_lote (NAO _buscar_evento_persistido,
+    # que este teste mockava) pra ler o Supabase - sem limpar o
+    # @st.cache_data dela e sem mockar obter_cliente, um resultado REAL
+    # cacheado por outro teste/execucao anterior com o MESMO par
+    # (PETR4,3T26) (ex: test_5_6_so_processa_os_tickers_recebidos, que
+    # tambem foi corrigido) sobrevivia entre testes e podia devolver um
+    # CONFIRMADO/ESTIMADO de producao em vez do PRAZO_CVM esperado aqui.
+    eventos_mod._buscar_eventos_persistidos_lote.clear()
     with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
          patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
-         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None):
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=None), \
+         patch.object(eventos_mod, "obter_cliente", return_value=None):
         eventos = calcular_calendario(["PETR4"], hoje=date(2026, 10, 1))
     _checar("v2.3 pipeline real (sem fonte oficial integrada) so' produz PRAZO_CVM, nunca inventa CONFIRMADO/ESTIMADO",
              len(eventos) == 1 and eventos[0]["status"] == STATUS_PRAZO_CVM)
@@ -395,6 +420,34 @@ def test_leitura_2_estimado_persistido_e_usado_em_vez_do_prazo_cvm():
         evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
     _checar("leitura2 ESTIMADO persistido pelo coletor e' usado (nao PRAZO_CVM)",
              evento["status"] == STATUS_ESTIMADO and evento["data"] == date(2026, 10, 25))
+
+
+def test_leitura_2b_historico_de_mudanca_de_data_e_exposto_quando_existe():
+    """Missao 2026-11-12/13 (frente CALENDARIO): quando a linha
+    persistida ja' teve a data corrigida pelo coletor (ver
+    data/eventos_coleta.py:_historico_atualizado), calcular_proximo_resultado
+    propaga o campo 'historico' pro dict retornado - a UI/consumidor
+    consegue mostrar "data mudou de X para Y", nunca so' a data final
+    como se nunca tivesse mudado."""
+    linha = _linha_persistida(STATUS_CONFIRMADO, "2026-10-27", "Petrobras RI", "https://ri.petrobras.com.br")
+    linha["historico"] = [{"data_evento": "2026-10-20", "status": STATUS_CONFIRMADO, "fonte": "Petrobras RI",
+                           "url_fonte": "https://ri.petrobras.com.br", "verificado_em": "2026-09-01T00:00:00+00:00"}]
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=linha):
+        evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
+    _checar("leitura2b historico da linha persistida e' propagado pro evento retornado",
+            evento.get("historico") == linha["historico"], f"(evento={evento})")
+
+
+def test_leitura_2c_sem_historico_persistido_nao_adiciona_chave_vazia():
+    linha = _linha_persistida(STATUS_CONFIRMADO, "2026-10-20", "Petrobras RI")
+    with patch.object(eventos_mod, "obter_documentos_cvm", return_value=[]), \
+         patch.object(eventos_mod, "obter_nome_yf", return_value="PETROBRAS"), \
+         patch.object(eventos_mod, "_buscar_evento_persistido", return_value=linha):
+        evento = calcular_proximo_resultado("PETR4", hoje=date(2026, 10, 1))
+    _checar("leitura2c sem historico na linha persistida -> chave 'historico' nem aparece (formato preservado)",
+            "historico" not in evento, f"(evento={evento})")
 
 
 def test_leitura_3_nada_persistido_cai_pro_prazo_cvm():

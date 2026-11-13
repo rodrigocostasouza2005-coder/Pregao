@@ -108,3 +108,54 @@ def test_tipo_sem_dados_estruturados_nunca_chama_salvar_premissas():
         )
 
     assert chamadas_premissas == []
+
+
+# ============================================================
+# tipo LIVE (missao noturna 2026-11-12/13, frente LIVES GENIAL): uma
+# live (Genial (Lives)/genial_lives.py) nunca passa pelo caminho ACOES
+# (nunca tem tipo_documento/premissas/projecoes/riscos/preco_alvo/
+# recomendacao extraidos - ver _TIPOS_COM_DADOS_ESTRUTURADOS em
+# data/research/resumir.py), entao sem o OR explicito pra tipo=="LIVE"
+# as empresas/ativos mencionados numa live nunca entravam na biblioteca
+# PERMANENTE, mesmo quando a transcricao citava tickers reais - pedido
+# explicito do relatorio de live ("Empresas/ativos mencionados").
+# ============================================================
+
+def test_live_com_mencao_no_corpo_grava_premissas_so_com_tickers():
+    chamadas_premissas = []
+    with patch.object(resumir_mod, "obter_texto_relatorio", return_value=(_TEXTO_COM_MENCAO_CRUZADA, None)), \
+         patch.object(resumir_mod, "resumir_com_groq",
+                       return_value=("A Vale foi comentada no programa.", None, {"modelo": "modelo-teste"})), \
+         patch.object(resumir_mod.store, "salvar_resumo"), \
+         patch.object(resumir_mod.store, "salvar_premissas",
+                       side_effect=lambda *a, **k: chamadas_premissas.append(k)), \
+         patch.object(resumir_mod.ia_cache, "obter_cliente", return_value=None):
+        obter_resumo(
+            "https://youtube.com/watch?v=abc123", "Morning Call 12/11", casa="Genial (Lives)", tipo="LIVE",
+            tickers=[],  # genial_lives.py SEMPRE registra [] no metadado - so' o corpo tem os tickers
+        )
+
+    assert len(chamadas_premissas) == 1
+    chamada = chamadas_premissas[0]
+    assert chamada["tickers"] == ["CSNA3", "VALE3"], f"(tickers={chamada['tickers']})"
+    assert chamada["tipo_documento"] is None
+    assert chamada["premissas"] == [] and chamada["projecoes"] == {} and chamada["riscos"] == []
+    assert chamada["preco_alvo"] is None and chamada["recomendacao"] is None
+
+
+def test_live_sem_nenhum_ticker_identificado_nunca_grava_linha_vazia():
+    chamadas_premissas = []
+    texto_sem_ticker = "O programa comentou o cenario macro sem citar nenhuma empresa especifica."
+    with patch.object(resumir_mod, "obter_texto_relatorio", return_value=(texto_sem_ticker, None)), \
+         patch.object(resumir_mod, "resumir_com_groq",
+                       return_value=("Comentario macro geral.", None, {"modelo": "modelo-teste"})), \
+         patch.object(resumir_mod.store, "salvar_resumo"), \
+         patch.object(resumir_mod.store, "salvar_premissas",
+                       side_effect=lambda *a, **k: chamadas_premissas.append(k)), \
+         patch.object(resumir_mod.ia_cache, "obter_cliente", return_value=None):
+        obter_resumo(
+            "https://youtube.com/watch?v=def456", "Resumo da Manha 12/11", casa="Genial (Lives)", tipo="LIVE",
+            tickers=[],
+        )
+
+    assert chamadas_premissas == []

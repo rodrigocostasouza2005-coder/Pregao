@@ -235,8 +235,16 @@ def test_news_exception_preserva_fallback_prazo_cvm():
         "horario": None, "status": STATUS_PRAZO_CVM, "fonte": "CVM — prazo regulatório",
         "origem_url": None, "tipo_evento": "RESULTADO", "coletado_em": datetime.now(timezone.utc),
     }
+    # _buscar_evento_salvo precisa ser mockado (achado real desta
+    # auditoria): sem isso, coletar_evento faz uma consulta REAL ao
+    # Supabase pro (PETR4,3T26) - se ja' houver um CONFIRMADO persistido
+    # de producao (bem provavel, o coletor roda de verdade), o atalho de
+    # coletar_evento retorna esse CONFIRMADO direto, pulando RI/NEWS e o
+    # fallback que este teste quer exercitar, e o teste falha dependendo
+    # de dado real de producao em vez do comportamento mockado.
     with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
          patch.object(coleta_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(coleta_mod, "_buscar_evento_salvo", return_value=None), \
          patch.object(coleta_mod, "tentar_ri", return_value=None), \
          patch.object(coleta_mod, "_buscar_feed", side_effect=RuntimeError("RSS indisponivel")), \
          patch.object(coleta_mod, "_calcular_proximo_resultado", return_value=prazo_evento):
@@ -261,8 +269,14 @@ def test_3_nenhuma_fonte_mantem_prazo_cvm():
         "horario": None, "status": STATUS_PRAZO_CVM, "fonte": "CVM — prazo regulatório",
         "origem_url": None, "tipo_evento": "RESULTADO", "coletado_em": datetime.now(timezone.utc),
     }
+    # mesmo motivo do teste acima: _buscar_evento_salvo precisa ser
+    # mockado pra nao depender de dado REAL persistido em producao pro
+    # mesmo (ticker,periodo) - sem isso o atalho de CONFIRMADO persistido
+    # (ver docstring de coletar_evento) pode disparar e pular RI/NEWS
+    # inteiramente, devolvendo um status diferente do PRAZO_CVM esperado.
     with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
          patch.object(coleta_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(coleta_mod, "_buscar_evento_salvo", return_value=None), \
          patch.object(coleta_mod, "tentar_ri", return_value=None), \
          patch.object(coleta_mod, "tentar_news", return_value=None), \
          patch.object(coleta_mod, "_calcular_proximo_resultado", return_value=prazo_evento):
@@ -275,8 +289,11 @@ def test_ri_tem_prioridade_sobre_news():
                  "empresa": "Petrobras", "horario": None, "fonte": "Petrobras RI", "origem_url": "https://ri.example.com",
                  "tipo_evento": "RESULTADO", "coletado_em": datetime.now(timezone.utc)}
     chamou_news = []
+    # _buscar_evento_salvo mockado por consistencia com os testes acima -
+    # mesma brecha pro atalho de CONFIRMADO persistido real.
     with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
          patch.object(coleta_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(coleta_mod, "_buscar_evento_salvo", return_value=None), \
          patch.object(coleta_mod, "tentar_ri", return_value=evento_ri), \
          patch.object(coleta_mod, "tentar_news", side_effect=lambda *a: chamou_news.append(1)):
         evento = coleta_mod.coletar_evento("PETR4")
@@ -523,6 +540,110 @@ def test_8_fonte_indisponivel_na_persistencia_nao_quebra():
     with patch.object(coleta_mod, "obter_cliente", return_value=None):
         gravou = coleta_mod.salvar_evento_se_mais_confiavel(_evento(STATUS_CONFIRMADO))
     _checar("8 Supabase indisponivel (obter_cliente=None) -> retorna False sem excecao", gravou is False)
+
+
+# ============================================================
+# HISTORICO DE MUDANCA DE DATA (missao noturna 2026-11-12/13, frente
+# CALENDARIO - pedido explicito: "histórico de mudança de data" por
+# divulgacao). Antes desta mudanca, uma empresa adiando/corrigindo a
+# data de divulgacao fazia o upsert SOBRESCREVER a linha antiga em
+# silencio - sem nenhum registro de que a data mudou. Ver
+# data/eventos_coleta.py:_historico_atualizado/sql/eventos_historico.sql.
+# ============================================================
+
+def test_historico_1_sem_anterior_nao_cria_historico():
+    historico = coleta_mod._historico_atualizado(None, _evento(STATUS_CONFIRMADO, data_evento=date(2026, 10, 20)))
+    _checar("historico1 1a descoberta (sem linha anterior) -> historico vazio", historico == [])
+
+
+def test_historico_2_mesma_data_nao_adiciona_item():
+    anterior = {"ticker": "PETR4", "periodo": "3T26", "status": STATUS_CONFIRMADO,
+                "data_evento": "2026-10-20", "fonte": "Petrobras RI", "historico": []}
+    novo = _evento(STATUS_CONFIRMADO, data_evento=date(2026, 10, 20), fonte="Petrobras RI")
+    historico = coleta_mod._historico_atualizado(anterior, novo)
+    _checar("historico2 reverificacao que confirma a MESMA data -> nenhum item novo (nao e' mudanca)",
+            historico == [], f"(historico={historico})")
+
+
+def test_historico_3_data_diferente_registra_a_antiga_no_historico():
+    anterior = {"ticker": "PETR4", "periodo": "3T26", "status": STATUS_CONFIRMADO,
+                "data_evento": "2026-11-05", "fonte": "Petrobras RI", "url_fonte": "https://ri.example.com",
+                "coletado_em": "2026-09-01T00:00:00+00:00", "historico": []}
+    novo = _evento(STATUS_CONFIRMADO, data_evento=date(2026, 11, 20), fonte="Petrobras RI")
+    historico = coleta_mod._historico_atualizado(anterior, novo)
+    _checar("historico3a data mudou -> 1 item novo no historico", len(historico) == 1, f"(historico={historico})")
+    _checar("historico3b item preserva a DATA ANTIGA (nao a nova)", historico[0]["data_evento"] == "2026-11-05")
+    _checar("historico3c item preserva fonte/url/verificado_em de quando a data antiga foi valida",
+            historico[0]["fonte"] == "Petrobras RI" and historico[0]["url_fonte"] == "https://ri.example.com"
+            and historico[0]["verificado_em"] == "2026-09-01T00:00:00+00:00")
+
+
+def test_historico_4_sem_coluna_historico_na_linha_antiga_nao_quebra():
+    """Linha persistida ANTES da migracao sql/eventos_historico.sql (sem
+    a coluna 'historico') - trata como lista vazia, nunca KeyError."""
+    anterior = {"ticker": "PETR4", "periodo": "3T26", "status": STATUS_CONFIRMADO, "data_evento": "2026-11-05"}
+    novo = _evento(STATUS_CONFIRMADO, data_evento=date(2026, 11, 20))
+    historico = coleta_mod._historico_atualizado(anterior, novo)
+    _checar("historico4 linha antiga sem coluna 'historico' -> comeca do zero, sem quebrar",
+            len(historico) == 1, f"(historico={historico})")
+
+
+def test_historico_5_limite_maximo_de_itens_guardados():
+    historico_grande = [{"data_evento": f"2026-01-{i:02d}"} for i in range(1, coleta_mod._MAX_HISTORICO + 1)]
+    anterior = {"ticker": "PETR4", "periodo": "3T26", "status": STATUS_CONFIRMADO,
+                "data_evento": "2026-11-05", "historico": historico_grande}
+    novo = _evento(STATUS_CONFIRMADO, data_evento=date(2026, 11, 20))
+    historico = coleta_mod._historico_atualizado(anterior, novo)
+    _checar(f"historico5a nunca passa de {coleta_mod._MAX_HISTORICO} itens",
+            len(historico) == coleta_mod._MAX_HISTORICO, f"(len={len(historico)})")
+    _checar("historico5b o item mais ANTIGO e' descartado primeiro (fila), o mais recente (05/11) e' mantido",
+            historico[-1]["data_evento"] == "2026-11-05", f"(historico={historico})")
+
+
+def test_historico_6_salvar_evento_grava_historico_no_upsert_quando_data_muda():
+    anterior = {"ticker": "PETR4", "periodo": "3T26", "status": STATUS_CONFIRMADO,
+                "data_evento": "2026-10-20", "fonte": "Petrobras RI", "url_fonte": "https://ri.example.com",
+                "coletado_em": "2026-09-01T00:00:00+00:00", "historico": []}
+    cliente, upserts = _cliente_mock(anterior)
+    novo = _evento(STATUS_CONFIRMADO, data_evento=date(2026, 10, 27), fonte="Petrobras RI")
+    with patch.object(coleta_mod, "obter_cliente", return_value=cliente):
+        gravou = coleta_mod.salvar_evento_se_mais_confiavel(novo)
+    _checar("historico6a correcao de data e' gravada normalmente", gravou is True)
+    _checar("historico6b o upsert inclui a data ANTIGA (20/10) no campo historico, nao perdida",
+            len(upserts) == 1 and upserts[0]["historico"] and upserts[0]["historico"][0]["data_evento"] == "2026-10-20",
+            f"(upserts={upserts})")
+
+
+def test_historico_7_coletar_evento_atalho_expoe_historico_quando_existe():
+    salvo = {
+        "ticker": "PETR4", "periodo": "3T26", "status": STATUS_CONFIRMADO,
+        "data_evento": "2026-11-20", "fonte": "Petrobras RI", "url_fonte": "https://ri.example.com",
+        "coletado_em": datetime.now(timezone.utc).isoformat(),
+        "historico": [{"data_evento": "2026-10-20", "status": STATUS_CONFIRMADO, "fonte": "Petrobras RI",
+                       "url_fonte": "https://ri.example.com", "verificado_em": "2026-09-01T00:00:00+00:00"}],
+    }
+    with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
+         patch.object(coleta_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(coleta_mod, "_buscar_evento_salvo", return_value=salvo):
+        evento = coleta_mod.coletar_evento("PETR4")
+    _checar("historico7a evento do atalho CONFIRMADO expoe o campo historico quando a linha salva tem 1",
+            evento.get("historico") == salvo["historico"], f"(evento={evento})")
+
+
+def test_historico_8_coletar_evento_atalho_sem_historico_nao_adiciona_chave_vazia():
+    """Formato do dict preservado pro caso comum (ticker sem nenhuma
+    correcao de data ainda) - nao adiciona 'historico': [] por padrao."""
+    salvo = {
+        "ticker": "PETR4", "periodo": "3T26", "status": STATUS_CONFIRMADO,
+        "data_evento": "2026-11-20", "fonte": "Petrobras RI", "url_fonte": "https://ri.example.com",
+        "coletado_em": datetime.now(timezone.utc).isoformat(),
+    }
+    with patch.object(coleta_mod, "periodo_pendente", return_value=(2026, 3)), \
+         patch.object(coleta_mod, "obter_nome_yf", return_value="Petrobras"), \
+         patch.object(coleta_mod, "_buscar_evento_salvo", return_value=salvo):
+        evento = coleta_mod.coletar_evento("PETR4")
+    _checar("historico8 sem historico salvo -> chave 'historico' nem aparece no dict",
+            "historico" not in evento, f"(evento={evento})")
 
 
 # ============================================================

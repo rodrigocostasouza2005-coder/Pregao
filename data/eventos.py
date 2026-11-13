@@ -367,7 +367,7 @@ def calcular_proximo_resultado(
                 data_persistida >= hoje_efetivo
                 and status_persistido in (STATUS_CONFIRMADO, STATUS_ESTIMADO)
             ):
-                return {
+                resultado = {
                     "ticker": ticker,
                     "empresa": empresa,
                     "periodo": rotulo,
@@ -379,6 +379,13 @@ def calcular_proximo_resultado(
                     "tipo_evento": "RESULTADO",
                     "coletado_em": datetime.now(timezone.utc),
                 }
+                # historico de mudanca de data (ver
+                # data/eventos_coleta.py:_historico_atualizado) - exposto
+                # so' quando existe pelo menos 1 correcao registrada, pra
+                # nao mudar o formato do dict pro caso comum (sem historico).
+                if persistido.get("historico"):
+                    resultado["historico"] = persistido["historico"]
+                return resultado
         except (KeyError, ValueError, TypeError):
             pass  # linha salva malformada - cai pro PRAZO_CVM, nunca quebra
 

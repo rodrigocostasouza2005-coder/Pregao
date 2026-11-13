@@ -348,22 +348,38 @@ _FOCO_POR_TIPO = {
         "(movimentos/destaques especificos de empresas). Nao force um tema sem base no "
         "conteudo - um episodio que so falou de juros e cambio tem so esses 2 pontos, nao os "
         "6.\n\n"
+        "MARCADORES DE TEMPO: o texto da transcricao traz marcadores '[MM:SS]' (ou "
+        "'[HH:MM:SS]' pra episodios mais longos) indicando em que ponto do video cada trecho "
+        "foi falado - quando um tema especifico em O QUE IMPORTA HOJE tiver um marcador "
+        "proximo no texto fornecido, cite-o entre parenteses logo apos o ponto (ex: 'o "
+        "episodio discutiu a reacao do petroleo a tensao no Oriente Medio (por volta de "
+        "05:30)'). Nunca invente um horario que nao esteja marcado no texto, e nunca copie o "
+        "marcador bruto '[MM:SS]' pra dentro da sua frase - reescreva como 'por volta de "
+        "MM:SS' ou equivalente em portugues natural.\n\n"
         "DESTAQUES - texto corrido curto (nao lista) citando os tickers/ativos especificos "
         "REALMENTE nomeados no episodio e o que foi dito sobre cada um (ex: '<b>PETR4</b>: "
         "Genial cita possivel revisao de guidance'), nunca 'as acoes em geral' ou 'o "
-        "Ibovespa' sozinho (indices/moeda ja aparecem em O QUE IMPORTA HOJE). Omita este "
-        "bloco inteiro se nenhum ativo especifico foi nomeado.\n\n"
+        "Ibovespa' sozinho (indices/moeda ja aparecem em O QUE IMPORTA HOJE). Quando o "
+        "episodio tambem mencionar um risco ou uma perspectiva especifica pra esse mesmo "
+        "ativo (ex: 'mas alerta pro risco de uma safra mais fraca'), inclua isso na mesma "
+        "frase do ativo - nunca invente um risco/perspectiva que o episodio nao tenha "
+        "mencionado pra aquele ativo especifico. Omita este bloco inteiro se nenhum ativo "
+        "especifico foi nomeado.\n\n"
         "Se o episodio nao tiver conteudo real o bastante pra preencher nem O QUE IMPORTA "
         "HOJE com um tema especifico (ex: saudacao/intro/tecnico sem fala de mercado), use o "
         "formato narrativo generico (sem esses 2 titulos) em vez de forcar a estrutura vazia.\n\n"
-        "FATO vs VISAO DA CASA/ANALISTA vs SUA LEITURA (reforcando a regra geral, ainda mais "
-        "importante aqui por ser um programa com varias vozes): dentro de cada ponto, deixe "
-        "explicito QUEM no programa disse o que (apresentador/economista/analista pelo nome). "
-        "Um numero/resultado/evento divulgado e' FATO - escreva direto. Uma expectativa, "
-        "projecao ou opiniao de quem esta falando ('a Genial acredita...', 'o economista "
-        "espera...') e' VISAO DA CASA/ANALISTA - atribua sempre a essa pessoa/casa, nunca "
-        "apresente como fato de mercado. Se VOCE precisar conectar pontos que o programa nao "
-        "conectou explicitamente, isso e' SUA LEITURA - sinalize com 'o que sugere...' ou "
+        "FATO vs VISAO DA CASA/ANALISTA vs ESTIMATIVA/PROJECAO vs SUA LEITURA (reforcando a "
+        "regra geral, ainda mais importante aqui por ser um programa com varias vozes): "
+        "dentro de cada ponto, deixe explicito QUEM no programa disse o que (apresentador/"
+        "economista/analista pelo nome). Um numero/resultado/evento divulgado e' FATO - "
+        "escreva direto. Uma expectativa ou opiniao de quem esta falando ('a Genial acredita"
+        "...', 'o economista espera...') e' VISAO DA CASA/ANALISTA - atribua sempre a essa "
+        "pessoa/casa. Quando essa pessoa/casa der um NUMERO especifico de projecao (ex: 'a "
+        "Genial projeta Selic a 11% no fim do ano', 'o economista estima inflacao de 4,2%') "
+        "isso e' uma ESTIMATIVA/PROJECAO - identifique o numero E quem projetou, nunca "
+        "apresente como um dado ja' confirmado. Nenhuma dessas duas (visao ou estimativa) "
+        "pode aparecer como fato de mercado. Se VOCE precisar conectar pontos que o programa "
+        "nao conectou explicitamente, isso e' SUA LEITURA - sinalize com 'o que sugere...' ou "
         "equivalente, nunca como se fosse dito no programa.\n\n"
         "NUNCA invente: uma tese de investimento que o programa nao defendeu; um impacto ou "
         "consequencia que o programa nao mencionou; um 'consenso de mercado' que ninguem no "
@@ -826,12 +842,22 @@ def _gerar_resumo(
     # grava quando a extracao achou PELO MENOS um campo real (nunca uma
     # linha vazia so' pra marcar "foi analisado"). So' roda pra tipo
     # ACOES (ver _TIPOS_COM_DADOS_ESTRUTURADOS/resumir_com_groq) - as
-    # chaves abaixo so' existem em dados_estruturados nesse caso.
+    # chaves abaixo so' existem em dados_estruturados nesse caso -
+    # OU pra tipo LIVE (missao noturna 2026-11-12/13, frente LIVES
+    # GENIAL): uma live NUNCA passa pelo caminho ACOES (generial_lives.py
+    # sempre registra "tickers": [] no metadado - nao ha' estrutura pra
+    # categorizar isso na coleta), entao sem este OR explicito as
+    # empresas/ativos mencionados numa live (pedido explicito: "Empresas/
+    # ativos mencionados" no relatorio da live) NUNCA eram identificados
+    # nem persistidos, mesmo quando a transcricao citava tickers reais -
+    # a mesma uniao metadado+corpo abaixo (classificacao.py) resolve isso
+    # sem exigir nenhuma estrutura ACOES-especifica que uma live nao tem.
     tipo_documento = dados_estruturados.get("tipo_documento")
     premissas = dados_estruturados.get("premissas") or []
     projecoes = dados_estruturados.get("projecoes") or {}
     riscos = dados_estruturados.get("riscos") or []
-    if tipo_documento or premissas or projecoes or riscos or preco_alvo or recomendacao:
+    tem_estrutura_acoes = bool(tipo_documento or premissas or projecoes or riscos or preco_alvo or recomendacao)
+    if tem_estrutura_acoes or tipo == "LIVE":
         # Mencoes cruzadas (Agente C, 2026-11-12, item 2 do pedido de
         # processamento): `tickers` aqui e' SO' o metadado da fonte (o que
         # o coletor da casa categorizou) - uniao com o que o CORPO do
@@ -842,12 +868,16 @@ def _gerar_resumo(
         # achado filtrando pelo segundo - nunca o contrario (nunca REMOVE
         # um ticker do metadado por nao aparecer no texto).
         tickers_todos = classificacao.classificar_documento(tickers, texto)["tickers_todos"]
-        store.salvar_premissas(
-            link, casa=casa, titulo=titulo, tickers=tickers_todos,
-            data_publicacao=data_publicacao, tipo_documento=tipo_documento,
-            premissas=premissas, projecoes=projecoes, riscos=riscos,
-            recomendacao=recomendacao, preco_alvo=preco_alvo, modelo=modelo_usado,
-        )
+        if tem_estrutura_acoes or tickers_todos:
+            # LIVE sem NENHUM ticker identificado (nem no metadado nem no
+            # corpo) nunca grava uma linha vazia - mesmo principio "nunca
+            # grava so' pra marcar 'foi analisado'" do caso ACOES acima.
+            store.salvar_premissas(
+                link, casa=casa, titulo=titulo, tickers=tickers_todos,
+                data_publicacao=data_publicacao, tipo_documento=tipo_documento,
+                premissas=premissas, projecoes=projecoes, riscos=riscos,
+                recomendacao=recomendacao, preco_alvo=preco_alvo, modelo=modelo_usado,
+            )
 
     return {
         "resumo": resumo, "motivo_indisponivel": None, "preco_alvo": preco_alvo,
