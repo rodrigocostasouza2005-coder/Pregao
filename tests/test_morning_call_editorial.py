@@ -287,7 +287,20 @@ def test_macro_rows_indisponivel_com_motivo_quando_provedor_falha():
 
 
 def test_macro_rows_usa_motivo_registrado_pelo_sgs():
-    with _MultiPatch(motivo_indisponivel=lambda chave: "SGS 432: página de erro HTML" if chave == "selic" else None):
+    # ultima_coleta_valida precisa ser patcheado (mesma convenção de todo
+    # outro teste neste arquivo que toca _macro_rows/erro do SGS) - sem
+    # isso, este teste batia na função real (data/coletores_status.py via
+    # Supabase) e o resultado dependia do estado de verdade do painel de
+    # SAUDE DOS DADOS: com credenciais reais configuradas (.streamlit/
+    # secrets.toml) e um sucesso real já registrado pra "MACRO (BCB -
+    # Selic)", a função devolvia uma data de verdade em vez de None, e o
+    # código sob teste (_macro_rows) anexa "; última coleta válida
+    # registrada em ..." ao erro - quebrando a asserção de igualdade
+    # exata. Achado real (auditoria de estabilidade, 2026-11-13): teste
+    # não-hermético, passava por acidente só quando rodado sem acesso a
+    # um Supabase com aquele registro.
+    with _MultiPatch(motivo_indisponivel=lambda chave: "SGS 432: página de erro HTML" if chave == "selic" else None,
+                      ultima_coleta_valida=lambda _c: None):
         linhas = ed._macro_rows()
     assert next(l for l in linhas if l["indicador"] == "Selic meta")["erro"] == "SGS 432: página de erro HTML"
 
