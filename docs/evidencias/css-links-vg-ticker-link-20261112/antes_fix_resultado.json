@@ -1,0 +1,188 @@
+{
+  "desktop_1440": {
+    "normal": {
+      "color": "rgb(61, 157, 243)",
+      "textDecorationLine": "underline",
+      "textDecoration": "underline",
+      "outline": "rgb(61, 157, 243) none 3px",
+      "outlineOffset": "0px",
+      "ancestorClasses": [
+        "A.vg-ticker-link",
+        "P.",
+        "DIV.st-emotion-cache-1cnr85b ewutnf10",
+        "DIV.st-emotion-cache-k2h9z6 e1o1x6gp2",
+        "DIV.stMarkdown",
+        "DIV.stElementContainer element-container st-emotion-cache-3pwa5w ep3ma5o1"
+      ]
+    },
+    "regras_que_batem_normal": [
+      {
+        "selector": "*",
+        "color": null,
+        "textDecoration": null,
+        "href": null,
+        "cssText": "box-sizing: border-box;"
+      },
+      {
+        "selector": ".st-emotion-cache-1cnr85b a",
+        "color": "rgb(61, 157, 243)",
+        "textDecoration": "underline",
+        "href": null,
+        "cssText": "color: rgb(61, 157, 243); text-decoration: underline;"
+      },
+      {
+        "selector": ".vg-ticker-link",
+        "color": "var(--destaque)",
+        "textDecoration": "none",
+        "href": null,
+        "cssText": "color: var(--destaque); font-weight: 700; text-decoration: none;"
+      },
+      {
+        "selector": "*",
+        "color": null,
+        "textDecoration": null,
+        "href": null,
+        "cssText": "scrollbar-color: var(--borda) var(--bg); scrollbar-width: thin;"
+      }
+    ],
+    "hover": {
+      "color": "rgb(61, 157, 243)",
+      "textDecorationLine": "underline",
+      "textDecoration": "underline",
+      "outline": "rgb(61, 157, 243) none 3px",
+      "outlineOffset": "0px",
+      "ancestorClasses": [
+        "A.vg-ticker-link",
+        "P.",
+        "DIV.st-emotion-cache-1cnr85b ewutnf10",
+        "DIV.st-emotion-cache-k2h9z6 e1o1x6gp2",
+        "DIV.stMarkdown",
+        "DIV.stElementContainer element-container st-emotion-cache-3pwa5w ep3ma5o1"
+      ]
+    },
+    "focus_via_tab_alcancado": true,
+    "focus": {
+      "color": "rgb(61, 157, 243)",
+      "textDecorationLine": "underline",
+      "textDecoration": "underline",
+      "outline": "rgb(255, 160, 40) solid 1px",
+      "outlineOffset": "2px",
+      "ancestorClasses": [
+        "A.vg-ticker-link",
+        "P.",
+        "DIV.st-emotion-cache-1cnr85b ewutnf10",
+        "DIV.st-emotion-cache-k2h9z6 e1o1x6gp2",
+        "DIV.stMarkdown",
+        "DIV.stElementContainer element-container st-emotion-cache-3pwa5w ep3ma5o1"
+      ]
+    },
+    "externo_normal": {
+      "color": "rgb(61, 157, 243)",
+      "textDecorationLine": "underline",
+      "textDecoration": "underline",
+      "outline": "rgb(61, 157, 243) none 3px",
+      "outlineOffset": "0px",
+      "ancestorClasses": [
+        "A.",
+        "P.",
+        "DIV.st-emotion-cache-1cnr85b ewutnf10",
+        "DIV.st-emotion-cache-k2h9z6 e1o1x6gp2",
+        "DIV.stMarkdown",
+        "DIV.stElementContainer element-container st-emotion-cache-3pwa5w ep3ma5o1"
+      ]
+    }
+  },
+  "ipad_1024x768": {
+    "normal": {
+      "color": "rgb(61, 157, 243)",
+      "textDecorationLine": "underline",
+      "textDecoration": "underline",
+      "outline": "rgb(61, 157, 243) none 3px",
+      "outlineOffset": "0px",
+      "ancestorClasses": [
+        "A.vg-ticker-link",
+        "P.",
+        "DIV.st-emotion-cache-1cnr85b ewutnf10",
+        "DIV.st-emotion-cache-k2h9z6 e1o1x6gp2",
+        "DIV.stMarkdown",
+        "DIV.stElementContainer element-container st-emotion-cache-3pwa5w ep3ma5o1"
+      ]
+    },
+    "regras_que_batem_normal": [
+      {
+        "selector": "*",
+        "color": null,
+        "textDecoration": null,
+        "href": null,
+        "cssText": "box-sizing: border-box;"
+      },
+      {
+        "selector": ".st-emotion-cache-1cnr85b a",
+        "color": "rgb(61, 157, 243)",
+        "textDecoration": "underline",
+        "href": null,
+        "cssText": "color: rgb(61, 157, 243); text-decoration: underline;"
+      },
+      {
+        "selector": ".vg-ticker-link",
+        "color": "var(--destaque)",
+        "textDecoration": "none",
+        "href": null,
+        "cssText": "color: var(--destaque); font-weight: 700; text-decoration: none;"
+      },
+      {
+        "selector": "*",
+        "color": null,
+        "textDecoration": null,
+        "href": null,
+        "cssText": "scrollbar-color: var(--borda) var(--bg); scrollbar-width: thin;"
+      }
+    ],
+    "hover": {
+      "color": "rgb(61, 157, 243)",
+      "textDecorationLine": "underline",
+      "textDecoration": "underline",
+      "outline": "rgb(61, 157, 243) none 3px",
+      "outlineOffset": "0px",
+      "ancestorClasses": [
+        "A.vg-ticker-link",
+        "P.",
+        "DIV.st-emotion-cache-1cnr85b ewutnf10",
+        "DIV.st-emotion-cache-k2h9z6 e1o1x6gp2",
+        "DIV.stMarkdown",
+        "DIV.stElementContainer element-container st-emotion-cache-3pwa5w ep3ma5o1"
+      ]
+    },
+    "focus_via_tab_alcancado": true,
+    "focus": {
+      "color": "rgb(61, 157, 243)",
+      "textDecorationLine": "underline",
+      "textDecoration": "underline",
+      "outline": "rgb(255, 160, 40) solid 1px",
+      "outlineOffset": "2px",
+      "ancestorClasses": [
+        "A.vg-ticker-link",
+        "P.",
+        "DIV.st-emotion-cache-1cnr85b ewutnf10",
+        "DIV.st-emotion-cache-k2h9z6 e1o1x6gp2",
+        "DIV.stMarkdown",
+        "DIV.stElementContainer element-container st-emotion-cache-3pwa5w ep3ma5o1"
+      ]
+    },
+    "externo_normal": {
+      "color": "rgb(61, 157, 243)",
+      "textDecorationLine": "underline",
+      "textDecoration": "underline",
+      "outline": "rgb(61, 157, 243) none 3px",
+      "outlineOffset": "0px",
+      "ancestorClasses": [
+        "A.",
+        "P.",
+        "DIV.st-emotion-cache-1cnr85b ewutnf10",
+        "DIV.st-emotion-cache-k2h9z6 e1o1x6gp2",
+        "DIV.stMarkdown",
+        "DIV.stElementContainer element-container st-emotion-cache-3pwa5w ep3ma5o1"
+      ]
+    }
+  }
+}

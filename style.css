@@ -286,9 +286,39 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 /* ticker clicavel (link direto "?ticker=X" pra ANALISES > Empresas, lido
    via ui.navegacao.ticker_da_url) - mesmo tratamento visual que
    ui/radar_tab.py ja usa (.rq-ticker), promovido pra global porque
-   VISAO GERAL (watchlist/rankings) tambem precisa dele. */
-.vg-ticker-link { color: var(--destaque); font-weight: 700; text-decoration: none; }
-.vg-ticker-link:hover { text-decoration: underline; }
+   VISAO GERAL (watchlist/rankings) tambem precisa dele.
+
+   BUG REAL confirmado por Playwright (2026-11-12, harness isolado em
+   docs/evidencias/css-links-vg-ticker-link-20261112/): todo link
+   .vg-ticker-link renderizava AZUL e SUBLINHADO (estilo padrao de link
+   de navegador), nunca na cor do tema. Causa raiz exata, capturada via
+   getComputedStyle + varredura de document.styleSheets (nao suposta):
+   o proprio Streamlit injeta uma regra ".st-emotion-cache-XXXXXX a"
+   (hash de classe gerado a cada build, variavel - confirmado o valor
+   atual ser ".st-emotion-cache-1cnr85b a", mas NAO depender dele) com
+   "color: rgb(61,157,243); text-decoration: underline;" - especificidade
+   (0,1,1: 1 classe + 1 elemento) MAIOR que a regra original do projeto
+   aqui (0,1,0: so' 1 classe), entao o Streamlit vencia a cascata mesmo
+   vindo ANTES no arquivo. !important abaixo e' a correcao deliberada
+   (nao e' preferencia estetica): a alternativa seria copiar o seletor
+   com hash pra aumentar especificidade, mas esse hash muda a cada build/
+   versao do Streamlit (mesmo padrao documentado no comentario do
+   selectbox/multiselect mais abaixo neste arquivo) - !important garante
+   a vitoria independente do hash. Mudanca de visual pedida junto (2026-
+   11-12): estado normal passa a usar --neutro (texto claro do tema, nao
+   mais --destaque o tempo todo) e hover passa a usar --destaque (ambar) -
+   reserva o ambar como indicador de interacao, nao como cor base de todo
+   link. :focus-visible usa a regra global (:focus-visible no fim deste
+   arquivo), que ja tem outline proprio e nao depende desta regra. */
+.vg-ticker-link {
+    color: var(--neutro) !important;
+    font-weight: 700;
+    text-decoration: none !important;
+}
+.vg-ticker-link:hover {
+    color: var(--destaque) !important;
+    text-decoration: underline !important;
+}
 
 /* sidebar -------------------------------------------------------------------- */
 section[data-testid="stSidebar"] {
