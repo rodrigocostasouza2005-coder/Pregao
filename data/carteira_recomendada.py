@@ -31,12 +31,19 @@ Duas camadas:
    (já existente) e monta a carteira do momento. histórico_alteracao vem
    vazio aqui ([]) até a 1a revisão persistida.
 2. PERSISTÊNCIA (registrar_revisao/salvar_carteira/listar_historico_*/
-   obter_ultima_carteira_persistida/registrar_acompanhamento) - segue o
-   padrão "TABELA_AUSENTE" do resto do projeto (ex.: data/posicoes.py):
-   nenhuma função aqui lança se as tabelas novas (sql/
-   carteira_recomendada.sql, proposto mas NÃO aplicado nesta missão - ver
-   MANUAL.md) ainda não existirem; elas degradam para None/False com o
-   motivo, exatamente como qualquer outra tabela opcional do projeto.
+   obter_ultima_carteira_persistida/registrar_acompanhamento/
+   comparar_carteira_persistida_com_atual) - segue o padrão
+   "TABELA_AUSENTE" do resto do projeto (ex.: data/posicoes.py): nenhuma
+   função aqui lança se as tabelas novas (sql/carteira_recomendada.sql,
+   proposto mas NÃO aplicado nesta missão - ver MANUAL.md) ainda não
+   existirem; elas degradam para None/False com o motivo, exatamente como
+   qualquer outra tabela opcional do projeto.
+   comparar_carteira_persistida_com_atual é o elo que fecha o ciclo
+   "persistir histórico, acompanhar recomendações e comparar resultados":
+   pega o snapshot salvo por salvar_carteira, busca o preço ATUAL de cada
+   ticker e grava a checagem via registrar_acompanhamento - pronto pra
+   rodar periodicamente (job futuro, fora do escopo desta missão) assim
+   que a migration for aplicada.
 
 Shape devolvido por montar_carteira_recomendada() - ESTÁVEL, documentado
 para a UI (Agente A) consumir (aba nova em ui/navegacao.py, área
@@ -588,9 +595,13 @@ def registrar_acompanhamento(data_referencia, itens_com_preco_atual: list) -> bo
     recomendado (peso/preço de referência na data da recomendação, já
     conhecidos) vs. efetivo (preço atual em `data_referencia`, informado
     por quem chama) pra permitir comparar desempenho esperado x realizado
-    ao longo do tempo. Pensado pra rodar periodicamente (job futuro,
-    fora do escopo desta missão) - aqui só a gravação. False sem lançar
-    se a tabela não existir ainda."""
+    ao longo do tempo. Pensado pra rodar periodicamente (job futuro, fora
+    do escopo desta missão) - aqui só a gravação. UPSERT por
+    (ticker, data_referencia) - mesma chave unique de sql/
+    carteira_recomendada.sql - nunca um INSERT simples: uma reexecução no
+    mesmo dia (retry de job, chamada manual 2x) sobrescreve a checagem do
+    dia em vez de lançar erro de unicidade; nunca apaga checagens de
+    outras datas. False sem lançar se a tabela não existir ainda."""
     cliente = _cliente_ou_none()
     if cliente is None or not itens_com_preco_atual:
         return False
@@ -603,7 +614,7 @@ def registrar_acompanhamento(data_referencia, itens_com_preco_atual: list) -> bo
             "preco_atual": item.get("preco_atual"),
             "retorno_pct": item.get("retorno_pct"),
         } for item in itens_com_preco_atual]
-        cliente.table(TABELA_ACOMPANHAMENTO).insert(linhas).execute()
+        cliente.table(TABELA_ACOMPANHAMENTO).upsert(linhas, on_conflict="ticker,data_referencia").execute()
         return True
     except Exception as exc:
         print(f"[carteira_recomendada] registrar_acompanhamento falhou (tabela ainda não existe?): {exc!r}")
@@ -625,3 +636,68 @@ def obter_acompanhamento(ticker: str | None = None, limite: int = 200) -> list |
     except Exception as exc:
         print(f"[carteira_recomendada] obter_acompanhamento indisponível: {exc!r}")
         return None
+
+
+def comparar_carteira_persistida_com_atual(
+    data_referencia=None,
+    provedor_cotacao=None,
+    persistir: bool = True,
+    agora=None,
+) -> list | None:
+    """Compara a recomendação de X dias atrás (snapshot PERSISTIDO em
+    carteira_recomendada_itens - peso/preço no momento em que
+    salvar_carteira rodou) com o preço ATUAL de cada ticker, calculando
+    retorno_pct = (preco_atual - preco_referencia) / preco_referencia *
+    100. É o elo que faltava entre salvar_carteira (grava o snapshot de
+    hoje) e registrar_acompanhamento (grava 1 checagem já calculada):
+    aqui a checagem é CALCULADA a partir do snapshot vigente + cotação
+    real, e persistida automaticamente se `persistir=True` (padrão -
+    UPSERT por (ticker, data_referencia), seguro reexecutar no mesmo dia).
+
+    None se obter_ultima_carteira_persistida() retornar None (tabela
+    ausente OU Supabase indisponível - NUNCA finge sucesso); [] se não há
+    snapshot persistido ainda (salvar_carteira nunca rodou - estado normal
+    antes da 1a rodada). Cotação que falhar entra na comparação com
+    preco_atual/retorno_pct = None (melhor esforço por ticker - nunca
+    derruba a comparação dos demais, mesmo padrão de _liquidez)."""
+    itens = obter_ultima_carteira_persistida()
+    if itens is None:
+        return None
+    if not itens:
+        return []
+    if provedor_cotacao is None:
+        from data.prices import obter_cotacao
+        provedor_cotacao = obter_cotacao
+    agora = agora or _agora_utc()
+    data_referencia = data_referencia or agora.date()
+    data_referencia_iso = data_referencia.isoformat() if hasattr(data_referencia, "isoformat") else data_referencia
+
+    comparacoes = []
+    for item in itens:
+        ticker = item.get("ticker")
+        preco_referencia = _numero(item.get("preco_referencia"))
+        preco_atual = None
+        try:
+            cotacao = provedor_cotacao(ticker) or {}
+            preco_atual = _numero(cotacao.get("preco"))
+        except Exception as exc:
+            print(f"[carteira_recomendada] cotação atual indisponível para {ticker}: {exc!r}")
+        retorno_pct = None
+        if preco_referencia is not None and preco_referencia > 0 and preco_atual is not None:
+            retorno_pct = round(((preco_atual - preco_referencia) / preco_referencia) * 100, 2)
+        comparacoes.append({
+            "ticker": ticker,
+            "peso_pct": item.get("peso_pct"),
+            "preco_referencia": preco_referencia,
+            "preco_atual": preco_atual,
+            "retorno_pct": retorno_pct,
+            "data_referencia": data_referencia_iso,
+        })
+
+    if persistir:
+        ok = registrar_acompanhamento(data_referencia, comparacoes)
+        if not ok:
+            print("[carteira_recomendada] comparar_carteira_persistida_com_atual: "
+                  "registrar_acompanhamento falhou (tabela ainda não existe?) - "
+                  "comparação calculada mas não persistida.")
+    return comparacoes
