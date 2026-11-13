@@ -368,7 +368,16 @@ def test_sem_carteira_vigente_para_comparar_nao_quebra_e_avisa():
 def test_banco_fora_do_ar_na_composicao_nao_quebra_mesmo_com_cobertura_mockada():
     """resumo_fontes_vigentes mockado (cobertura OK), mas listar_carteiras()
     real (sem Supabase no teste) retorna None - a composição avisa
-    'banco fora do ar' em vez de lançar excecao ou fingir dado vazio."""
+    'banco fora do ar' em vez de lançar excecao ou fingir dado vazio.
+
+    listar_carteiras.clear(): desde que listar_carteiras() ganhou
+    @st.cache_data (ttl=60, auditoria de performance, missão 2026-11-12),
+    este teste - que depende de uma chamada REAL e FRESCA (sem Supabase no
+    ambiente de teste, deve dar None) - podia herdar um resultado não-None
+    cacheado por outro teste deste MESMO processo pytest que chama a
+    função real com obter_cliente mockado (ver tests/test_radar_quedas.py).
+    Mesma convenção já usada por alertas_periodo.clear() nesta suíte."""
+    radar_quedas_mod.listar_carteiras.clear()
     html_render = _capturar_carteiras(_RESUMO_DUAS_CASAS)  # linhas_carteiras não mockado = chamada real
     assert "Composição indisponível: banco fora do ar" in html_render
     assert "COMPARAR CARTEIRAS" not in html_render

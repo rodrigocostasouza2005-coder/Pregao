@@ -295,6 +295,7 @@ def test_listar_carteiras_exclui_carteira_expirada():
     resposta.data = [linha_fresca, linha_expirada]
     cliente.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = resposta
     with patch.object(radar, "obter_cliente", return_value=cliente):
+        radar.listar_carteiras.clear()
         resultado = radar.listar_carteiras()
     assert resultado == [linha_fresca]
 
@@ -307,6 +308,7 @@ def test_listar_carteiras_sem_verificado_em_nao_quebra():
     resposta.data = [linha_sem_campo]
     cliente.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = resposta
     with patch.object(radar, "obter_cliente", return_value=cliente):
+        radar.listar_carteiras.clear()
         resultado = radar.listar_carteiras()
     assert resultado == [linha_sem_campo]
 
@@ -325,6 +327,7 @@ def test_listar_carteiras_verificado_em_sem_timezone_nao_quebra_a_listagem_intei
     resposta.data = [linha_naive, linha_ok]
     cliente.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = resposta
     with patch.object(radar, "obter_cliente", return_value=cliente):
+        radar.listar_carteiras.clear()
         resultado = radar.listar_carteiras()
     assert resultado == [linha_naive, linha_ok]
 

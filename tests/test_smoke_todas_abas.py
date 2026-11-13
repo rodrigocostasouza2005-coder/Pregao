@@ -139,6 +139,27 @@ with patch.object(execucoes_agendadas, "listar_ultimas_execucoes", return_value=
     assert "COORDENADOR CENTRAL" in textos
 
 
+# --- COORDENADOR › Central de Inteligências (ui/central_inteligencias_tab.py,
+# missão noturna 2026-11-12, Agente A) ---------------------------------------
+
+def test_smoke_coordenador_central_inteligencias():
+    script = '''
+from unittest.mock import patch
+import ui.central_inteligencias_tab as central
+from data.coordenador_central import persistencia
+from data import ia_cache
+
+with patch.object(persistencia, "listar_analises_recentes", return_value=[]), \\
+     patch.object(persistencia, "metricas_especialistas", return_value={}), \\
+     patch.object(ia_cache, "estatisticas_modelos", return_value=[]):
+    central.render_central({})
+'''
+    at = _roda(script)
+    textos = " ".join(m.value for m in at.markdown)
+    assert "CENTRAL DE INTELIGÊNCIAS" in textos
+    assert "ESPECIALISTAS DO COMITÊ" in textos
+
+
 # --- MACRO › Juros (macro_tab.py) -------------------------------------------
 
 def test_smoke_macro_juros():

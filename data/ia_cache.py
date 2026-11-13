@@ -359,6 +359,47 @@ def obter_mais_recente_concluido(origem: str) -> dict | None:
         return None
 
 
+def estatisticas_modelos() -> list | None:
+    """Agregado por (origem, modelo): total de resumos cacheados, quantos
+    `status='concluido'`, e o `atualizado_em` mais recente - leitura
+    read-only sobre o que já está persistido, pra telas de observabilidade
+    (ver ui/central_inteligencias_tab.py, missão noturna 2026-11-12) que
+    precisam mostrar QUAL modelo de IA gerou cada tipo de resumo sem
+    expor nenhum conteúdo/credencial. `modelo` vazio/None agrupa como
+    "—" (resumo salvo antes do campo `modelo` existir, ou geração de
+    imagem via salvar_registro_imagem, que sempre grava modelo=""). None
+    só quando o Supabase está indisponível (mesmo contrato das demais
+    funções deste módulo); [] quando a tabela está vazia."""
+    cliente = obter_cliente()
+    if cliente is None:
+        return None
+    try:
+        resp = cliente.table(_TABELA).select("origem,modelo,status,atualizado_em").execute()
+        linhas = resp.data or []
+    except Exception as e:
+        print(f"[ia_cache] estatisticas_modelos falhou: {e!r}")
+        return None
+
+    agregados = {}
+    for linha in linhas:
+        chave = (linha.get("origem") or "—", linha.get("modelo") or "—")
+        info = agregados.setdefault(chave, {"total": 0, "concluidos": 0, "ultimo_atualizado_em": None})
+        info["total"] += 1
+        if linha.get("status") == "concluido":
+            info["concluidos"] += 1
+        atualizado = linha.get("atualizado_em")
+        if atualizado and (info["ultimo_atualizado_em"] is None or str(atualizado) > str(info["ultimo_atualizado_em"])):
+            info["ultimo_atualizado_em"] = atualizado
+
+    return sorted(
+        (
+            {"origem": origem, "modelo": modelo, **info}
+            for (origem, modelo), info in agregados.items()
+        ),
+        key=lambda d: (d["origem"], d["modelo"]),
+    )
+
+
 def obter_resumos_news_por_link(links: list, desde_iso: str) -> dict:
     """Leitura em LOTE (sem reservar nem gerar) dos resumos de NEWS ja'
     concluidos cuja URL principal (link_principal = a materia de onde o

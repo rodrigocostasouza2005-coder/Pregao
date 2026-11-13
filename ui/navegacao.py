@@ -121,6 +121,14 @@ AREAS = (
         Subaba("execucoes", "Execuções"),
         Subaba("historico", "Histórico"),
         Subaba("analisar", "Analisar"),
+        # CENTRAL DE INTELIGÊNCIAS (missão noturna 2026-11-12, Agente A):
+        # console READ-ONLY que cruza o cadastro de especialistas (ver
+        # "Especialistas" acima) com métricas/histórico já persistidos -
+        # conteúdo novo, sem aba antiga, sempre visível (mesmo padrão de
+        # "casas"/"radar-x" em RESEARCH). Não substitui nenhuma subaba
+        # existente: Especialistas/Execuções/Histórico continuam servindo
+        # consulta pontual; esta é a visão consolidada de observabilidade.
+        Subaba("central", "Central de Inteligências"),
     )),
     Area("macro", "MACRO", ":material/public:", (
         Subaba("indicadores", "Indicadores", ("MACRO",)),

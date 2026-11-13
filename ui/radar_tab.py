@@ -800,12 +800,46 @@ def _tabela_alertas_html(alertas, prefs) -> str:
     )
 
 
-def _bloco_regra_quedas():
+def _titulo_radar_quedas():
     st.markdown('<div class="radar-pergunta">RADAR DE QUEDAS — CARTEIRAS RECOMENDADAS</div>', unsafe_allow_html=True)
+
+
+def _bloco_regra_quedas():
     st.markdown(
         "<div class='rq-regra'>Alerta quando um ativo de carteira recomendada cai <b>mais de 4,00% no dia</b> "
         "(preço atual vs. fechamento do pregão anterior; −4,00% exato não alerta). Um alerta por ativo e pregão, "
         "mesmo que esteja em várias carteiras. Cotação Yahoo Finance, com atraso.</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _bloco_resumo_alertas():
+    """REDESIGN ESTRUTURAL (2026-11-12, Agente A): antes desta mudança a
+    tela abria com um parágrafo de metodologia (regra do alerta) ANTES de
+    qualquer número - o sinal que de fato importa pra decisão (quantos
+    ativos estão abaixo do gatilho AGORA, quantos alertas no período)
+    ficava abaixo da dobra, atrás da tabela de alertas inteira. Esta
+    faixa (mesmo padrão `.rq-bloco`/`.rq-bloco-meta` já usado por
+    COBERTURA/MONITORADOS ACIMA, nenhuma classe nova) sobe pro topo -
+    zero chamada de rede nova: painel_monitorados()/alertas_periodo(7) já
+    são cacheados (ttl=60, ver data/radar_quedas.py) e os mesmos blocos
+    abaixo (_bloco_alertas/_bloco_monitorados) os chamam de novo sem
+    custo extra."""
+    from data import radar_quedas as rq
+
+    monitorados = rq.painel_monitorados() or []
+    alertas_7d = rq.alertas_periodo(7) or []
+    n_alerta_agora = sum(1 for l in monitorados if l["estado"] == "ALERTA")
+    n_atencao_agora = sum(1 for l in monitorados if l["estado"] == "ATENCAO")
+    partes = []
+    if n_alerta_agora:
+        partes.append(f"<span class='rq-baixa'>{n_alerta_agora} abaixo do gatilho agora</span>")
+    if n_atencao_agora:
+        partes.append(f"<span style='color:var(--destaque)'>{n_atencao_agora} em atenção agora</span>")
+    partes.append(f"{len(alertas_7d)} alerta(s) nos últimos 7 dias")
+    partes.append(f"{len(monitorados)} ativo(s) monitorado(s)")
+    st.markdown(
+        f"<div class='rq-bloco'><span>RESUMO</span><span class='rq-bloco-meta'>{' · '.join(partes)}</span></div>",
         unsafe_allow_html=True,
     )
 
@@ -832,14 +866,20 @@ def _bloco_cobertura(prefs: dict) -> bool:
         unsafe_allow_html=True,
     )
     st.markdown(_tabela_cobertura_html(resumo_fontes, casas), unsafe_allow_html=True)
-    st.markdown(
-        "<div class='rq-nota'>ATUALIZADA = fonte confirmou a carteira nas últimas "
-        f"{rq.IDADE_FRESCA_HORAS}h · DESATUALIZADA = carteira ainda vigente, mas sem confirmação recente · "
-        f"INDISPONÍVEL = sem carteira vigente (fonte bloqueada, nunca coletada ou expirada após "
-        f"{rq.IDADE_MAXIMA_CARTEIRA_DIAS} dias). XP, BTG e outras casas não entram: não há carteira "
-        "recomendada pública acessível.</div>",
-        unsafe_allow_html=True,
-    )
+    # REDESIGN ESTRUTURAL (2026-11-12, Agente A): a legenda dos 3 estados
+    # era texto corrido sempre visível entre a tabela de cobertura e o
+    # bloco de comparação de carteiras - demovida pra um expander fechado
+    # (referência, não decisão) pra tabela de comparação ficar mais perto
+    # do título. Mesmo texto, zero dado novo.
+    with st.expander("O que significa ATUALIZADA/DESATUALIZADA/INDISPONÍVEL"):
+        st.markdown(
+            "<div class='rq-nota'>ATUALIZADA = fonte confirmou a carteira nas últimas "
+            f"{rq.IDADE_FRESCA_HORAS}h · DESATUALIZADA = carteira ainda vigente, mas sem confirmação recente · "
+            f"INDISPONÍVEL = sem carteira vigente (fonte bloqueada, nunca coletada ou expirada após "
+            f"{rq.IDADE_MAXIMA_CARTEIRA_DIAS} dias). XP, BTG e outras casas não entram: não há carteira "
+            "recomendada pública acessível.</div>",
+            unsafe_allow_html=True,
+        )
 
     return True
 
@@ -1614,13 +1654,22 @@ def _escopo_watchlist(prefs: dict, com_janela: bool = True):
 
 @st.fragment
 def render_radar_alertas(prefs: dict):
+    """REDESIGN ESTRUTURAL (2026-11-12, Agente A): hierarquia invertida -
+    o sinal (quantos ativos estão em alerta/atenção AGORA, ver
+    _bloco_resumo_alertas) sobe pro topo, a metodologia completa (regra
+    do gatilho) desce pra um expander fechado por padrão no fim. Ordem
+    de conteúdo (alertas antes de monitorados) não mudou - já priorizava
+    o mais acionável; zero função de cálculo tocada."""
     _injetar_css()
-    _bloco_regra_quedas()
+    _titulo_radar_quedas()
     if not _bloco_cobertura_compacta():
         return
+    _bloco_resumo_alertas()
     _bloco_alertas(prefs)
     _bloco_monitorados(prefs)
-    st.markdown(_AVISO_SINAL, unsafe_allow_html=True)
+    with st.expander("Metodologia do Radar de Quedas"):
+        _bloco_regra_quedas()
+        st.markdown(_AVISO_SINAL, unsafe_allow_html=True)
 
 
 def _bloco_cobertura_compacta() -> bool:
@@ -1710,12 +1759,20 @@ def render_radar_acompanhamento(prefs: dict, usuario: dict):
     """Historico de alertas dos ativos DA WATCHLIST + cadastro de posicoes
     e risco real da carteira (ver data/posicoes.py, data/radar.py:
     risco_carteira). Itens salvos/anotacoes pessoais nao existem no banco
-    hoje (exigiria tabela nova - fora do escopo desta feature)."""
+    hoje (exigiria tabela nova - fora do escopo desta feature).
+
+    REDESIGN ESTRUTURAL (2026-11-12, Agente A): risco DA PRÓPRIA carteira
+    (o que pode dar errado, pessoal, pede ação) subiu pra ANTES do
+    histórico de alertas (referência passada, não pede ação nenhuma) -
+    ordem antiga era puramente cronológica de implementação, não de
+    importância pra decisão. Zero função de cálculo tocada."""
     from data import radar_quedas as rq
 
     _injetar_css()
     st.markdown('<div class="radar-pergunta">ACOMPANHAMENTO DA WATCHLIST</div>', unsafe_allow_html=True)
     watchlist = prefs.get("watchlist") or []
+    with st.expander("O QUE PODE DAR ERRADO — RISCO DA CARTEIRA", expanded=True):
+        _secao_risco(prefs, usuario["sub"])
     alertas = rq.alertas_periodo(90)
     st.markdown("<div class='rq-bloco'><span>ALERTAS ANTERIORES — ATIVOS DA WATCHLIST (90 DIAS)</span></div>",
                 unsafe_allow_html=True)
@@ -1731,8 +1788,6 @@ def render_radar_acompanhamento(prefs: dict, usuario: dict):
                 "últimos 90 dias (o monitor só cobre ativos de carteiras recomendadas).</div>",
                 unsafe_allow_html=True,
             )
-    with st.expander("O QUE PODE DAR ERRADO — RISCO DA CARTEIRA", expanded=True):
-        _secao_risco(prefs, usuario["sub"])
     st.markdown(
         "<div class='rq-nota'>Itens salvos e anotações pessoais ainda não existem: exigem uma tabela nova no "
         "banco (desenvolvimento posterior, ver docs/arquitetura-pregao-2.md).</div>",
@@ -1761,22 +1816,26 @@ def render_valuation(prefs: dict):
     # quebra em várias linhas, sobrepondo o próximo elemento - aqui, os
     # pills de escopo). Regra escopada só a esta classe nova (não mexe em
     # ".rq-nota" nem em nenhum outro uso compartilhado da classe).
-    st.markdown(
-        "<style>div[data-testid='stElementContainer']:has(.valrad-nota) + "
-        "div { margin-top: 1.3rem; }</style>"
-        "<div class='rq-nota valrad-nota'>"
-        f"{_selo_evidencia(radar.TIPO_FATO)} múltiplo/preço reportado pela fonte (Yahoo Finance) "
-        f"&nbsp;·&nbsp; {_selo_evidencia(radar.TIPO_CALCULO)} mediana do setor, calculada agora, "
-        "sob demanda (botão \"Comparar ... com o setor\" abaixo)"
-        "<br>Isto é leitura rápida de múltiplos comparáveis - não é preço-alvo. DCF com premissas "
-        "auditáveis, projeção de 5 anos, WACC, crescimento na perpetuidade, sensibilidade, cenários "
-        "(otimista/base/pessimista) e margem de segurança vivem na aba COORDENADOR CENTRAL: o "
-        "parecer oficial do comitê (fundamentos coletados automaticamente, em ANALISAR) e o "
-        "simulador manual de DCF operacional (suas próprias premissas, mesma rota) são cálculos "
-        "independentes e podem apontar preços-alvo diferentes para o mesmo papel."
-        "</div>",
-        unsafe_allow_html=True,
-    )
+    # REDESIGN ESTRUTURAL (2026-11-12, Agente A): a legenda de proveniência
+    # (FATO vs CÁLCULO INTERNO + o parágrafo "isto não é preço-alvo...")
+    # era texto sempre visível ANTES da tabela de valuation em si -
+    # demovida pra expander fechado por padrão, mesmo texto, zero cálculo
+    # tocado; o escopo/tabela sobem pra logo abaixo do título.
+    with st.expander("Como ler esta tabela (proveniência do dado)"):
+        st.markdown(
+            "<div class='rq-nota valrad-nota'>"
+            f"{_selo_evidencia(radar.TIPO_FATO)} múltiplo/preço reportado pela fonte (Yahoo Finance) "
+            f"&nbsp;·&nbsp; {_selo_evidencia(radar.TIPO_CALCULO)} mediana do setor, calculada agora, "
+            "sob demanda (botão \"Comparar ... com o setor\" abaixo)"
+            "<br>Isto é leitura rápida de múltiplos comparáveis - não é preço-alvo. DCF com premissas "
+            "auditáveis, projeção de 5 anos, WACC, crescimento na perpetuidade, sensibilidade, cenários "
+            "(otimista/base/pessimista) e margem de segurança vivem na aba COORDENADOR CENTRAL: o "
+            "parecer oficial do comitê (fundamentos coletados automaticamente, em ANALISAR) e o "
+            "simulador manual de DCF operacional (suas próprias premissas, mesma rota) são cálculos "
+            "independentes e podem apontar preços-alvo diferentes para o mesmo papel."
+            "</div>",
+            unsafe_allow_html=True,
+        )
     escopo = _escopo_watchlist(prefs, com_janela=False)
     if escopo is None:
         return
@@ -1785,27 +1844,37 @@ def render_valuation(prefs: dict):
 
 @st.fragment
 def render_teses(prefs: dict, usuario: dict):
+    """REDESIGN ESTRUTURAL (2026-11-12, Agente A): as 3 seções (Minha
+    Tese/Research com Evidências/Copiloto) eram 3 `st.expander`
+    sequenciais - a tese própria (o CONTEÚDO principal desta rota, por
+    isso "TESES" no plural é o nome da subaba) ficava escondida atrás de
+    1 clique igual às 2 seções de APOIO (evidências/copiloto), sem
+    distinção de hierarquia. Agora "Minha Tese" é conteúdo direto (sem
+    expander), e as 2 seções de apoio viram 2 colunas lado a lado (mesmo
+    mecanismo de grade responsiva de RADAR › Oportunidades -
+    `st.container(key="radar_grid_...")`, empilha em telas estreitas via
+    style.css) - zero dado novo, zero função de cálculo tocada."""
     _injetar_css()
     # radar-pergunta, nao painel-titulo (ver comentario na definicao da
     # classe em _CSS_RADAR, acima: titulo solto, sem st.container(
     # border=True) pai pra painel-titulo sangrar contra).
     st.markdown('<div class="radar-pergunta">TESES</div>', unsafe_allow_html=True)
-    st.markdown(
-        "<div class='rq-nota'>Base de evidências e copiloto de research já existentes. Registro persistente "
-        "de tese própria (premissas, riscos, catalisadores, convicção) com histórico de versões — pessoal, "
-        "não compartilhado entre usuários.</div>",
-        unsafe_allow_html=True,
-    )
     escopo = _escopo_watchlist(prefs, com_janela=False)
     if escopo is None:
         return
     tickers, _janela, watchlist = escopo
-    with st.expander("MINHA TESE", expanded=True):
-        _secao_tese(tickers, usuario["sub"], prefs)
-    with st.expander("RESEARCH COM EVIDÊNCIAS", expanded=False):
-        _secao_evidencias(tickers, watchlist)
-    with st.expander("COPILOTO DE RESEARCH", expanded=False):
-        _secao_copiloto(tickers)
+    st.markdown('<div class="painel-titulo" style="font-size:0.74rem;">MINHA TESE</div>', unsafe_allow_html=True)
+    _secao_tese(tickers, usuario["sub"], prefs)
+    with st.container(key="radar_grid_teses"):
+        col_evidencias, col_copiloto = st.columns(2, gap="small")
+        with col_evidencias:
+            with st.container(border=True):
+                st.markdown('<div class="painel-titulo" style="font-size:0.74rem;">RESEARCH COM EVIDÊNCIAS</div>', unsafe_allow_html=True)
+                _secao_evidencias(tickers, watchlist)
+        with col_copiloto:
+            with st.container(border=True):
+                st.markdown('<div class="painel-titulo" style="font-size:0.74rem;">COPILOTO DE RESEARCH</div>', unsafe_allow_html=True)
+                _secao_copiloto(tickers)
 
 
 def render_preferencias(prefs: dict, usuario: dict, persistir_fn):

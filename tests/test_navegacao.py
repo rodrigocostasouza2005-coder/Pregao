@@ -44,7 +44,9 @@ def test_subabas_exigidas_pela_arquitetura():
     assert subs["radar"] == ["Alertas", "Carteiras Recomendadas", "Oportunidades", "Acompanhamento", "Preferências"]
     assert subs["research"] == ["Feed", "Casas de Análise", "Radar X", "Minha Tese", "Memória de Research"]
     assert subs["analises"] == ["Empresas", "Fundamentos", "Valuation"]
-    assert subs["coordenador"] == ["Visão Geral", "Especialistas", "Execuções", "Histórico", "Analisar"]
+    assert subs["coordenador"] == [
+        "Visão Geral", "Especialistas", "Execuções", "Histórico", "Analisar", "Central de Inteligências",
+    ]
     assert subs["macro"] == ["Indicadores", "Juros", "Câmbio e Commodities", "Calendário Econômico"]
     assert subs["setores"] == ["Mapa Setorial", "Visão por Setor", "Catalisadores"]
     assert subs["morning-call"] == ["Edição Atual", "Relatório Completo", "Histórico", "Preferências"]
