@@ -1,0 +1,44 @@
+name: DIAG temporario - Genial Lives 404 (somente leitura)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnosticar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: IP de saida deste runner
+        run: curl -s https://api.ipify.org
+
+      - name: Testar feed RSS da Genial (sem salvar nada)
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python -c "
+          from data.research import genial_lives
+          ok, detalhe = genial_lives.testar_conexao()
+          print('testar_conexao:', ok, detalhe)
+          itens = genial_lives.obter_relatorios()
+          print('obter_relatorios:', None if itens is None else len(itens))
+          print('motivo_ultima_falha:', genial_lives.motivo_ultima_falha())
+          print('categoria_ultima_falha:', genial_lives.categoria_ultima_falha())
+          "
