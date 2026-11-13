@@ -260,6 +260,25 @@ def test_3h_foco_morning_call_pede_para_citar_marcador_de_tempo():
             "nunca copie o marcador bruto" in foco.lower())
 
 
+# 3h4 (missao de validacao 2026-11-13, chamada REAL a Groq com transcricao
+# real de um Morning Call de 13/11): a instrucao original (3h) era
+# condicional demais ("quando um tema especifico tiver um marcador
+# proximo") - contra o modelo real (openai/gpt-oss-20b, ja documentado
+# neste projeto como pouco obediente a regra de formatacao), o resumo
+# gerado nao citou NENHUM marcador de tempo em nenhum dos temas, mesmo
+# com marcadores [MM:SS] a cada ~60s disponiveis pertinho de cada trecho
+# discutido. Reforcada pra tornar EXPLICITO que a citacao vale pra TODOS
+# os temas do bloco (nao so' o primeiro) - revalidado com chamada real
+# nova apos a mudanca: toda frase de O QUE IMPORTA HOJE e todo item de
+# DESTAQUES passou a citar "(por volta de MM:SS)" corretamente formatado.
+def test_3h4_foco_morning_call_marcador_de_tempo_vale_pra_todos_os_temas():
+    foco = _FOCO_POR_TIPO["MORNING_CALL"]
+    _checar("3h4a foco deixa explicito que a citacao de marcador nao e' opcional feito o resto da estrutura",
+            "obrigatorio" in foco.lower())
+    _checar("3h4b foco deixa explicito que vale pra TODOS os temas do bloco, nao so' o primeiro",
+            "todos os temas" in foco.lower())
+
+
 def test_3i_foco_morning_call_distingue_estimativa_projecao_de_visao_generica():
     foco = _FOCO_POR_TIPO["MORNING_CALL"]
     _checar("3i1 foco reconhece ESTIMATIVA/PROJECAO como categoria propria", "ESTIMATIVA/PROJECAO" in foco.upper())
