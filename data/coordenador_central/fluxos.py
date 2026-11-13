@@ -21,6 +21,52 @@ from data import market_researcher
 from data.coordenador_central import consolidacao, executor, persistencia
 from data.coordenador_central import sintese_ia as sintese_ia_comite
 
+# Achado real (auditoria híbrida 2026-11-13, teste ponta a ponta com
+# PETR4 sem mock de rede): o timeout PADRÃO do executor (30s, ver
+# executor.py:_TIMEOUT_PADRAO_SEG) é curto demais pra 2 dos 6
+# especialistas deste grupo em cache frio - analise_ticker (via
+# market_researcher.historico_fundamentos -> earnings_reviewer.
+# serie_historica_br) e resultados_corporativos (via earnings_reviewer.
+# montar_nota_br) baixam o ZIP consolidado ITR/DFP/DFC da CVM (todas as
+# companhias de 1 ano, não só o ticker pedido) quando o ano ainda não
+# está no cache de @st.cache_data do processo - medido em 138,7s
+# ISOLADO (sem concorrência) nesta auditoria, bem acima de 30s; a
+# soma sequencial dos 5 sub-blocos de analise_ticker (linha_valuation +
+# contexto_ticker + cobertura_cruzada_casas + historico_fundamentos +
+# comparaveis_setor) isolada ficou perto de 176s, e rodando em
+# PARALELO com resultados_corporativos/comparador de verdade (mesma
+# rodada do executor, contenção real de CPU no parsing do ZIP/CSV da
+# CVM via pandas) excedeu 180s numa 2a medição - a contenção entre
+# threads de Python num parse pesado de CSV (GIL) é real, não só
+# espera de rede. Com o timeout padrão (ou mesmo um teto justo com a
+# pior medição isolada), analise_ticker e resultados_corporativos
+# timeoutam quase sempre em cache frio (ex: 1a execução do dia, ou
+# primeiro ticker de um ano fiscal ainda não baixado na rodada do
+# Comitê Noturno) - não é falha real da fonte, é o timeout cortando
+# uma chamada que terminaria com sucesso. 240s dá margem sobre a pior
+# medição (176s isolado + contenção real observada) sem comprometer o
+# orçamento da rodada noturna (até 20 tickers sequenciais, 120min de
+# limite no workflow - ver .github/workflows/comite-noturno.yml).
+# Os outros 4 especialistas deste grupo (comparador/memoria_research/
+# noticias/catalisadores) retornam em segundos quando NÃO há
+# contenção de CPU concorrente (medido isoladamente: <14s cada) - dar
+# a eles o mesmo teto maior não os atrasa (o teto só importa pra quem
+# de fato demora ou for afetado pela contenção), só evita que um
+# especialista lento-mas-saudável seja classificado como indisponível.
+# Teto por GRUPO (não por especialista individual) porque todos rodam
+# em paralelo no mesmo ThreadPoolExecutor (ver executor.
+# executar_varios) - o teto mais alto nunca soma tempo de espera
+# quando todos respondem rápido.
+#
+# Limitação residual, documentada (não escondida): mesmo com 240s,
+# contenção de CPU real entre threads concorrentes (parsing pesado de
+# CSV da CVM) pode em tese ainda empurrar analise_ticker/comparador
+# além do teto num ambiente com CPU muito restrita - este ajuste
+# resolve o caso medido (timeout cortando uma chamada que terminaria
+# com sucesso em cache frio comum), não garante sucesso sob qualquer
+# contenção de CPU extrema do host.
+_TIMEOUT_GRUPO_PRINCIPAL_SEG = 240
+
 
 def _especialista_pulado(especialista_id: str, motivo: str) -> dict:
     """Resultado no mesmo formato de executor.py, mas sem rodar nada -
@@ -214,7 +260,8 @@ def analisar_ticker(ticker: str, premissas_dcf: dict | None = None, sintese_ia: 
     inicio = time.monotonic()
     try:
         resultados = executor.executar_varios(
-            ["analise_ticker", "comparador", "memoria_research", "noticias", "catalisadores", "resultados_corporativos"], ticker=ticker,
+            ["analise_ticker", "comparador", "memoria_research", "noticias", "catalisadores", "resultados_corporativos"],
+            ticker=ticker, timeout_seg=_TIMEOUT_GRUPO_PRINCIPAL_SEG,
         )
         _anexar_premissas_dcf(resultados, premissas_dcf)
         dados_analise = (resultados.get('analise_ticker') or {}).get('dados') or {}

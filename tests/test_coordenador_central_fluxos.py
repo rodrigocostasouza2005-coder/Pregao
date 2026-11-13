@@ -59,6 +59,32 @@ def test_analisar_ticker_registra_inicio_antes_de_rodar_especialistas(persistenc
     assert "valuation_reviewer" in consolidado["visao_especialistas"]
 
 
+def test_analisar_ticker_usa_timeout_maior_pro_grupo_principal(persistencia_mockada):
+    """Achado real (auditoria híbrida 2026-11-13, teste e2e com PETR4 sem
+    mock de rede): analise_ticker (via historico_fundamentos) e
+    resultados_corporativos baixam o ZIP consolidado ITR/DFP/DFC da CVM
+    em cache frio - medido em 138,7s isolado, bem acima do timeout
+    padrão do executor (30s, ver executor.py:_TIMEOUT_PADRAO_SEG). Sem
+    um timeout_seg explícito maior pra este grupo, os dois especialistas
+    timeoutam quase sempre na 1a execução do dia - não é falha real da
+    fonte, é o timeout cortando uma chamada que terminaria com sucesso.
+    Esta regressão trava o teto explícito (ver fluxos.py:
+    _TIMEOUT_GRUPO_PRINCIPAL_SEG) pra ele nunca voltar a cair
+    silenciosamente pro default de 30s."""
+    with patch.object(fluxos.executor, "executar_varios", return_value={
+        "analise_ticker": _resultado("analise_ticker"),
+        "comparador": _resultado("comparador"),
+        "memoria_research": _resultado("memoria_research"),
+        "noticias": _resultado("noticias"),
+        "catalisadores": _resultado("catalisadores"),
+        "resultados_corporativos": _resultado("resultados_corporativos"),
+    }) as mock_varios:
+        fluxos.analisar_ticker("petr4")
+
+    assert mock_varios.call_args[1]["timeout_seg"] == fluxos._TIMEOUT_GRUPO_PRINCIPAL_SEG
+    assert fluxos._TIMEOUT_GRUPO_PRINCIPAL_SEG >= 200  # margem real sobre os ~176s medidos (isolado) + contenção observada
+
+
 def test_analisar_ticker_pula_model_builder_e_reviewer_sem_premissas_dcf(persistencia_mockada):
     """Caminho real de jobs/comite_noturno.py (nunca passa premissas_dcf)
     e da UI quando o analista não marca "Calcular DCF" em
