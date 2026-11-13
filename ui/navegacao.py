@@ -20,9 +20,15 @@ que fornece o conteudo dela - continua respeitando a preferencia
 escondeu nao aparece). Subaba sem `legado` (conteudo novo, ou CONFIG)
 aparece sempre."""
 
+import html
 from dataclasses import dataclass, field
+from urllib.parse import quote
 
 import streamlit as st
+from streamlit.errors import (
+    StreamlitInvalidFormCallbackError,
+    StreamlitInvalidLayoutContextError,
+)
 
 KEY_AREA = "nav_area"
 KEY_TICKER_EXTERNO = "empresa_ticker_externo"
@@ -348,11 +354,54 @@ def consumir_aviso() -> str | None:
     return st.session_state.pop(_KEY_AVISO, None)
 
 
+def _href_rota(area_id: str, sub_id: str | None, ticker: str | None) -> str:
+    """URL de navegacao direta pra esta rota (?aba=X&sub=Y[&ticker=Z]) -
+    mesmo mecanismo que rota_da_url/ticker_da_url + aplicar_url_de_entrada
+    ja consomem em producao, e mesmo padrao de link puro em HTML que
+    ui/secoes.py:_tabela_watchlist_comparativa ja usa pra ticker
+    (`<a href='?ticker=X'>`). Usado como saida de emergencia por link()
+    (ver docstring dela) quando um st.button real nao e' permitido."""
+    partes = [f"aba={quote(area_id)}"]
+    if sub_id:
+        partes.append(f"sub={quote(sub_id)}")
+    if ticker:
+        partes.append(f"ticker={quote(ticker)}")
+    return "?" + "&".join(partes)
+
+
 def link(rotulo: str, area_id: str, sub_id: str | None = None, *, chave: str, ticker: str | None = None,
          ajuda: str | None = None, **kwargs):
     """Botao de vinculo contextual (noticia -> empresa, empresa -> setor,
-    ...). on_click (nunca escrita direta) pelo motivo de ir_para."""
-    return st.button(
-        rotulo, key=chave, on_click=ir_para, args=(area_id, sub_id, ticker),
-        help=ajuda or f"Abrir em {rotulo_rota(area_id, sub_id)}", **kwargs,
-    )
+    ...). on_click (nunca escrita direta) pelo motivo de ir_para.
+
+    Dentro de um st.form, o Streamlit instalado (1.64, ver
+    streamlit/elements/widgets/button.py:_button) proibe QUALQUER botao
+    que nao seja st.form_submit_button - com on_click (
+    StreamlitInvalidFormCallbackError) ou mesmo sem (
+    StreamlitInvalidLayoutContextError, "st.button() nao pode ser usado
+    num st.form()"). Nao existe widget de clique independente do submit
+    que o Streamlit deixe renderizar literalmente dentro de um form nesta
+    versao - entao nao da pra "corrigir" so' tirando o on_click (confirmado
+    na pratica; ver PR desta correcao). A saida e' nunca derrubar a tela:
+    tenta o botao real (comportamento IDENTICO de sempre fora de form) e,
+    se Streamlit recusar por estarmos dentro de um form, cai pra um link
+    HTML puro (?aba=X&sub=Y, mesmo mecanismo de navegacao por URL que
+    aplicar_url_de_entrada/ticker_da_url ja atendem) - continua clicavel
+    e navega sem precisar enviar o formulario, sem duplo-submit (e' so'
+    markdown, nao escreve em nenhuma chave de widget) e sem apagar os
+    outros campos do form (eles so' vao pra st.session_state quando o
+    form e' de fato enviado - igual qualquer st.form, com ou sem este
+    link dentro)."""
+    ajuda_final = ajuda or f"Abrir em {rotulo_rota(area_id, sub_id)}"
+    try:
+        return st.button(
+            rotulo, key=chave, on_click=ir_para, args=(area_id, sub_id, ticker),
+            help=ajuda_final, **kwargs,
+        )
+    except (StreamlitInvalidFormCallbackError, StreamlitInvalidLayoutContextError):
+        st.markdown(
+            f"<a href='{html.escape(_href_rota(area_id, sub_id, ticker))}' "
+            f"class='vg-ticker-link' title='{html.escape(ajuda_final)}'>{html.escape(rotulo)}</a>",
+            unsafe_allow_html=True,
+        )
+        return False
