@@ -670,6 +670,48 @@ def obter_indicadores(ticker: str) -> dict:
     return resultado
 
 
+# descricao institucional muda raramente (setor/negocio da empresa, nao
+# um indicador de mercado) - TTL bem mais longo que _TTL_INDICADORES,
+# reduz ainda mais quanto bate no Yahoo pro mesmo tk.info
+_TTL_PERFIL_INSTITUCIONAL = 24 * 60 * 60  # 24h
+
+
+@st.cache_data(ttl=_TTL_PERFIL_INSTITUCIONAL, show_spinner=False)
+def obter_perfil_institucional(ticker: str) -> dict:
+    """Descricao institucional da empresa via yfinance (mesmo tk.info ja'
+    usado em obter_indicadores, reaproveitando _tk_info_com_retry - zero
+    requisicao nova de rede alem da que obter_indicadores ja faria, so'
+    com TTL proprio mais longo). Usado pela camada de Perfil de Empresa
+    (ver data/empresa_perfil.py, missao 2026-11-12/13) pra responder "o
+    que a empresa faz"/"onde atua"/"produtos e segmentos" com uma fonte
+    REAL (o proprio resumo que a empresa registra publicamente, nao um
+    texto generico inventado).
+
+    Campos ausentes viram None (nunca inventados) - 'disponivel'=False
+    so' quando o tk.info em si veio vazio (Yahoo bloqueado/sem dado
+    nenhum pro ticker), nunca quando so' 1 campo individual falta (ex:
+    funcionarios ausente pra uma empresa estrangeira/BDR) - mesmo
+    principio de obter_indicadores."""
+    symbol = _para_symbol_yf(ticker)
+    info = _tk_info_com_retry(symbol)
+    if not info:
+        return {
+            "disponivel": False, "resumo_negocio": None, "setor": None, "industria": None,
+            "pais": None, "website": None, "funcionarios": None, "fonte": None, "consultado_em": None,
+        }
+    return {
+        "disponivel": True,
+        "resumo_negocio": info.get("longBusinessSummary"),
+        "setor": info.get("sector"),
+        "industria": info.get("industry"),
+        "pais": info.get("country"),
+        "website": info.get("website"),
+        "funcionarios": info.get("fullTimeEmployees"),
+        "fonte": "yfinance (tk.info - mesmo dado que a empresa registra publicamente)",
+        "consultado_em": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def testar_conexao_indicadores(ticker: str = "PETR4") -> tuple:
     """So' testa se tk.info retorna dado de verdade pra um ticker
     conhecido - usado pelo painel DIAGNOSTICO DE FONTES. Retorna

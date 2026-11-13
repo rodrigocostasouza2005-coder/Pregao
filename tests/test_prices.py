@@ -27,7 +27,8 @@ import ui.graficos as graficos_mod
 import ui.visao_geral as visao_geral_mod
 from data.prices import (
     _TIMEOUT_YF, _calcular_beta, _historico_semanal_indice, obter_cotacao,
-    obter_cotacao_indice, obter_historico, obter_historico_intraday, obter_indicadores, validar_ticker,
+    obter_cotacao_indice, obter_historico, obter_historico_intraday, obter_indicadores,
+    obter_perfil_institucional, validar_ticker,
 )
 
 _FALHAS = []
@@ -863,3 +864,54 @@ def test_obter_indicadores_fallback_para_ultimo_valor_valido_continua_intacto():
     # AGORA funcionou so' porque havia um valor antigo bom.
     assert mock_reg.call_count == 1
     assert mock_reg.call_args.kwargs.get("execucao_ok") is False
+
+
+# ============================================================
+# obter_perfil_institucional (missao noturna 2026-11-12/13, frente
+# PERFIL DE EMPRESA): descricao institucional via yfinance, reaproveita
+# _tk_info_com_retry (mesma resiliencia/retry de obter_indicadores,
+# zero chamada de rede nova) - usado por data/empresa_perfil.py.
+# ============================================================
+
+def test_perfil_institucional_sem_info_retorna_indisponivel_sem_inventar():
+    obter_perfil_institucional.clear()
+    with patch.object(prices_mod, "_tk_info_com_retry", return_value={}):
+        resultado = obter_perfil_institucional("TESTE_PERFIL_SEM_INFO")
+    assert resultado["disponivel"] is False
+    assert all(resultado[campo] is None for campo in
+               ("resumo_negocio", "setor", "industria", "pais", "website", "funcionarios"))
+
+
+def test_perfil_institucional_com_info_real_extrai_campos_corretos():
+    obter_perfil_institucional.clear()
+    info_fake = {
+        "longBusinessSummary": "A Empresa Teste atua na producao e distribuicao de commodities.",
+        "sector": "Basic Materials", "industry": "Agricultural Inputs",
+        "country": "Brazil", "website": "https://exemplo.com", "fullTimeEmployees": 12345,
+    }
+    with patch.object(prices_mod, "_tk_info_com_retry", return_value=info_fake):
+        resultado = obter_perfil_institucional("TESTE_PERFIL_COM_INFO")
+    assert resultado["disponivel"] is True
+    assert resultado["resumo_negocio"] == info_fake["longBusinessSummary"]
+    assert resultado["setor"] == "Basic Materials"
+    assert resultado["industria"] == "Agricultural Inputs"
+    assert resultado["pais"] == "Brazil"
+    assert resultado["website"] == "https://exemplo.com"
+    assert resultado["funcionarios"] == 12345
+    assert resultado["fonte"] is not None
+    assert datetime.fromisoformat(resultado["consultado_em"]) is not None
+
+
+def test_perfil_institucional_campo_individual_ausente_vira_none_nao_quebra():
+    obter_perfil_institucional.clear()
+    # info respondeu (nao vazio) mas sem alguns campos - ticker real sem
+    # website cadastrado, por exemplo. disponivel continua True (o
+    # tk.info em si funcionou), so' os campos individuais faltantes
+    # viram None (nunca inventados).
+    with patch.object(prices_mod, "_tk_info_com_retry", return_value={"sector": "Energy"}):
+        resultado = obter_perfil_institucional("TESTE_PERFIL_PARCIAL")
+    assert resultado["disponivel"] is True
+    assert resultado["setor"] == "Energy"
+    assert resultado["resumo_negocio"] is None
+    assert resultado["website"] is None
+    assert resultado["funcionarios"] is None
