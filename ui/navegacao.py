@@ -18,7 +18,12 @@ que permite link direto/recarregar a pagina sem perder o lugar.
 que fornece o conteudo dela - continua respeitando a preferencia
 "abas_visiveis" que o usuario ja tinha (subaba cuja aba antiga ele
 escondeu nao aparece). Subaba sem `legado` (conteudo novo, ou CONFIG)
-aparece sempre."""
+aparece sempre.
+
+Auditoria de uso do design system (ui/design_system.py, missao rollout A,
+2026-11-14): este arquivo nao importa o modulo de proposito - e' roteamento
+puro (dataclasses, resolucao de URL, link de navegacao), nunca lida com
+numero financeiro, sinal de alta/baixa ou divisor visual."""
 
 import html
 from dataclasses import dataclass, field

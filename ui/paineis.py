@@ -29,7 +29,13 @@ NEWS, RESEARCH, TOP MERCADO, VISÃO GERAL) renderizam do jeito
 monolítico de sempre e não têm reordenar/visibilidade/tamanho
 configurável. Migrar todas pra esse sistema é um trabalho maior à parte
 (redesenhar cada painel de cada aba pra funcionar dentro de uma coluna
-mais estreita) - fora do escopo desta rodada."""
+mais estreita) - fora do escopo desta rodada.
+
+Auditoria de uso do design system (ui/design_system.py, missão rollout A,
+2026-11-14): este arquivo não importa o módulo de propósito - é um
+sistema de layout/tamanho de painel (não um painel de dado de mercado em
+si), sem número financeiro, sinal de alta/baixa ou divisor manual pra
+migrar."""
 
 import streamlit as st
 
