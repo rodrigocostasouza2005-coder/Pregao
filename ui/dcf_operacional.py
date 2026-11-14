@@ -31,6 +31,7 @@ from data.coordenador_central.dcf_operacional import (
     calcular_dcf_operacional,
     calcular_sensibilidade_dcf_operacional,
 )
+from ui import design_system
 
 _CSS_DCF_OPERACIONAL = """
 .dcfop-nota { color: var(--cinza); font-size: 0.7rem; margin: 0.1rem 0 0.7rem 0; line-height: 1.55; }
@@ -137,9 +138,13 @@ def _tabela_sensibilidade_html(sens: dict) -> str:
                 celulas_html.append(f"<td class='{classe_td} dcfop-sens-indisponivel'>—</td>")
                 continue
             upside = cel.get("upside_pct")
-            estilo = f" style='color:{'var(--alta)' if upside >= 0 else 'var(--baixa)'};'" if upside is not None else ""
+            # classe_sinal (design_system) em vez do ternário var(--alta)/
+            # var(--baixa) reimplementado na mão - mesmo critério (>=0 é
+            # alta), só troca o inline style por classe CSS global
+            # .alta/.baixa (mesmas cores, ver style.css).
+            classe_upside = f" {design_system.classe_sinal(upside)}" if upside is not None else ""
             celulas_html.append(
-                f"<td class='{classe_td}'{estilo}>R$ {_fmt(cel['preco_alvo'], 2)}</td>"
+                f"<td class='{classe_td}{classe_upside}'>R$ {_fmt(cel['preco_alvo'], 2)}</td>"
             )
         linhas_html.append(f"<tr><td>{linha['wacc']*100:.2f}%</td>{''.join(celulas_html)}</tr>")
     return f"<table class='dcfop-sens-tabela'>{cabecalho}{''.join(linhas_html)}</table>"
