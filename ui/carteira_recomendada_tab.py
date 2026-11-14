@@ -144,34 +144,18 @@ def _resumo(resumo: dict, fmt: str):
 
     cenario_macro = resumo.get("cenario_macro") or {}
 
-    def _valor_na_posicao(df, coluna, posicao):
-        """`cenario_macro` guarda o retorno CRU de data/macro.py (sempre
-        um DataFrame, ou None se a fonte falhou) - mesmo shape que
-        MACRO/MORNING CALL já consomem, nunca recalculado aqui. Melhor
-        esforço (nunca derruba o resto do resumo se a coluna/linha não
-        existir)."""
-        try:
-            serie = df[coluna]
-            if len(serie):
-                return float(serie.iloc[posicao])
-        except Exception:
-            pass
-        return None
-
-    linhas_macro = []
-    # Selic/CDI: série diária crescente - o valor vigente é a ÚLTIMA linha.
-    selic_valor = _valor_na_posicao(cenario_macro.get("selic_meta"), "selic_meta_pct", -1)
-    if selic_valor is not None:
-        linhas_macro.append(f"<span><span class='cart-macro-rotulo'>SELIC META</span>{config.formatar_numero(selic_valor, 2, fmt)}%</span>")
-    cdi_valor = _valor_na_posicao(cenario_macro.get("cdi"), "cdi_anualizado_pct", -1)
-    if cdi_valor is not None:
-        linhas_macro.append(f"<span><span class='cart-macro-rotulo'>CDI</span>{config.formatar_numero(cdi_valor, 2, fmt)}%</span>")
-    # Focus IPCA: 1 linha por ano (atual + 2 seguintes), em ordem crescente
-    # de ano - o ano corrente (mais relevante pro cenário de curto prazo
-    # desta carteira) é a PRIMEIRA linha, não a última.
-    focus_valor = _valor_na_posicao(cenario_macro.get("focus_ipca"), "mediana_pct", 0)
-    if focus_valor is not None:
-        linhas_macro.append(f"<span><span class='cart-macro-rotulo'>FOCUS IPCA</span>{config.formatar_numero(focus_valor, 2, fmt)}%</span>")
+    # `cenario_macro` é um dict {nome_indicador: {"valor","unidade",
+    # "referencia","detalhe","erro"}} - já o valor MAIS RECENTE de cada
+    # série (ver data/carteira_recomendada.py:_contexto_macro, corrigido
+    # na PR #313), nunca um DataFrame cru. Indicador que falhou na coleta
+    # entra com valor=None (motivo em "erro") e é simplesmente omitido
+    # aqui - melhor esforço, nunca derruba o resto do resumo.
+    linhas_macro = [
+        f"<span><span class='cart-macro-rotulo'>{html.escape(nome.upper())}</span>"
+        f"{config.formatar_numero(dado['valor'], 2, fmt)}{html.escape(dado.get('unidade') or '')}</span>"
+        for nome, dado in cenario_macro.items()
+        if isinstance(dado, dict) and dado.get("valor") is not None
+    ]
     if linhas_macro:
         st.markdown('<div class="painel-titulo" style="font-size:0.68rem;">CENÁRIO MACRO</div>', unsafe_allow_html=True)
         st.markdown(f"<div class='cart-macro'>{''.join(linhas_macro)}</div>", unsafe_allow_html=True)

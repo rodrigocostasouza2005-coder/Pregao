@@ -105,6 +105,38 @@ def test_visao_geral_preco_alvo_ausente_mostra_traco_sem_quebrar():
     assert "—" in html
 
 
+def test_visao_geral_cenario_macro_mostra_indicadores_do_shape_atual():
+    """Regressão (2026-11-14): `_resumo` lia `cenario_macro` como se fosse
+    o shape ANTIGO (DataFrame indexado por coluna, pré-PR #313, chaves
+    'selic_meta'/'cdi'/'focus_ipca') - desde que data/carteira_recomendada.py
+    passou a usar _contexto_macro() (PR #313), o shape real é
+    {nome_indicador: {"valor","unidade","referencia","detalhe","erro"}}
+    com chaves como 'Selic meta'/'CDI'/'Focus IPCA 2026'. A seção CENÁRIO
+    MACRO nunca aparecia na tela, sem nenhum erro visível - nenhuma
+    fixture anterior populava `cenario_macro` de verdade (ver `_carteira()`,
+    que usa `{}`), por isso nenhum teste pegava."""
+    carteira = _carteira()
+    carteira["resumo"]["cenario_macro"] = {
+        "Selic meta": {"valor": 13.75, "unidade": "% a.a.", "referencia": "18ª reunião do Copom",
+                        "detalhe": None, "erro": None},
+        "CDI": {"valor": 13.65, "unidade": "% a.a.", "referencia": "16/11/2026",
+                 "detalhe": None, "erro": None},
+        "Focus IPCA 2026": {"valor": None, "unidade": "%", "referencia": None,
+                              "detalhe": None, "erro": "Boletim Focus sem dado nesta execução"},
+    }
+    html, _, _ = _capturar(tab.render_visao_geral, carteira, PREFS)
+    assert "CENÁRIO MACRO" in html
+    assert "SELIC META" in html and "13,75" in html
+    assert "CDI" in html and "13,65" in html
+    # indicador com valor=None (erro de coleta) é omitido, nunca quebra o resto
+    assert "Boletim Focus" not in html
+
+
+def test_visao_geral_cenario_macro_vazio_nao_mostra_secao():
+    html, _, _ = _capturar(tab.render_visao_geral, _carteira(), PREFS)
+    assert "CENÁRIO MACRO" not in html
+
+
 def test_historico_none_mostra_mensagem_de_persistencia_nao_aplicada():
     _, _, infos = _capturar(tab.render_historico, None)
     assert infos and "sql/carteira_recomendada.sql" in infos[0]
