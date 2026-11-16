@@ -196,6 +196,20 @@ def executar(agora=None, limite=None):
     if not log_ok:
         print("[comite_noturno] aviso: a rodada terminou, mas o resumo não foi persistido.")
         return 1
+
+    # Persistência diária da Carteira Recomendada (snapshot + histórico de
+    # revisão + acompanhamento) - reaproveita esta mesma rodada noturna em
+    # vez de propor um cron novo. Isolado em try/except por segurança
+    # extra: jobs.carteira_recomendada_job.executar() já nunca lança por
+    # si só, mas uma falha de import ou algo inesperado aqui nunca deve
+    # derrubar o status/retorno do Comitê, que já foi decidido acima.
+    try:
+        from jobs.carteira_recomendada_job import executar as executar_carteira_recomendada
+        executar_carteira_recomendada()
+    except Exception as exc:
+        print(f"[comite_noturno] persistência da carteira recomendada falhou "
+              f"(rodada principal do Comitê não é afetada): {exc!r}")
+
     print(f"[comite_noturno] status={status} {resumo}")
     return 0 if status == "OK" else (1 if status == "ERRO" else 0)
 
