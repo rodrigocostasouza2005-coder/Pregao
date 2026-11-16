@@ -14,7 +14,22 @@ import streamlit as st
 
 from data import coletores_status, saude_dados
 from data import market_researcher as mr
+from ui import design_system
 
+# Cor por estado de SAUDE DE COLETOR (nao migrado para design_system.classe_sinal):
+# classe_sinal() decide "alta"/"baixa" por SINAL NUMERICO (valor >= 0), a
+# mesma semantica de "preco subiu ou caiu" usada em todo o resto do app
+# (ver docstring de ui/design_system.py, secao "Indicador positivo/
+# negativo"). O estado de um coletor nao e' um numero com sinal - e' uma
+# categoria (SUCESSO/PARCIAL/FALHA/NAO_COMPROVADO, 4 grupos, nao 2) que já
+# vem pronta de data/saude_dados.py (codigo_estado). Forcar isso em
+# classe_sinal() exigiria inventar um "valor numerico" fake so' pra
+# escolher alta/baixa, perdendo os estados intermediarios (alerta/cinza)
+# que esta tela depende de distinguir (ex: "parcial"/"desatualizado" !=
+# "falhou" != "nunca rodou" - ver docstring do modulo). As classes CSS em
+# si (.alta/.baixa/.alerta/.cinza/.neutro) sao as MESMAS do design system
+# (style.css, compartilhadas por todo o app) - só o mapeamento
+# estado->classe é específico desta tela, por ser uma semântica diferente.
 _COR_POR_ESTADO = {
     "SUCESSO_COM_NOVIDADE": "alta",
     "SUCESSO_SEM_NOVIDADE": "alta",
@@ -27,6 +42,8 @@ _COR_POR_ESTADO = {
     "NUNCA_EXECUTADO": "cinza",
 }
 
+# Mesma razão acima (estado categórico, não sinal numérico) - não migrado
+# para classe_sinal().
 _COR_POR_ESTADO_CONSUMO = {
     "CONSUMO_COM_ITENS": "alta",
     "CONSUMO_SEM_ITENS": "alerta",
@@ -191,7 +208,16 @@ def render_saude_dados():
                     if item["instrumentado"] else "não instrumentado"
                 )
                 registros = status_bruto.get("registros_novos")
-                registros_fmt = "—" if registros is None else str(registros)
+                # numero_financeiro_html (design_system): mesmo tratamento
+                # visual (tabular-nums + alinhado a' direita) ja' usado em
+                # toda coluna numerica de tabela no resto do app (ver
+                # docstring de ui/design_system.py, item 3) - so' o VISUAL
+                # do numero muda aqui, o valor em si (registros_novos,
+                # vindo de data/saude_dados.py) continua intocado.
+                registros_fmt = (
+                    "—" if registros is None
+                    else design_system.numero_financeiro_html(registros, casas=0)
+                )
                 linhas_html += (
                     "<tr>"
                     f"<td style='text-align:left;' class='neutro'>{item['nome']}</td>"
