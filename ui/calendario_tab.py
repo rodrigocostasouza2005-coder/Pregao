@@ -36,6 +36,7 @@ from data.eventos import (
 from data.news import obter_noticias
 from data.research import CASAS
 from data.research.store import listar_itens
+from ui import design_system
 
 _TZ_SP = ZoneInfo("America/Sao_Paulo")
 
@@ -542,7 +543,10 @@ def _painel_lateral(eventos_por_data: dict, dia_selecionado: date):
     if evento_selecionado is None:
         evento_selecionado = eventos_dia[0]
 
-    st.markdown("<div style='border-top:1px solid var(--borda); margin:0.9rem 0 0.3rem 0;'></div>", unsafe_allow_html=True)
+    # divisor via design_system.divisor_html() (em vez do border-top avulso
+    # reimplementado na mão - mesma linha fina var(--borda), ver docstring
+    # de ui/design_system.py, item 4).
+    st.markdown(design_system.divisor_html(), unsafe_allow_html=True)
     _detalhe_evento(evento_selecionado)
     _painel_contexto(evento_selecionado)
 
