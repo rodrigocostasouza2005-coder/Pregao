@@ -1,10 +1,15 @@
 -- PREGÃO — persistência da CARTEIRA RECOMENDADA (módulo novo, missão
 -- "Frente 4", 2026-11-12/13 - agente D da missão noturna).
 --
--- PROPOSTO NESTA MISSÃO, NÃO APLICADO: a missão autoriza camada de dados
--- e PR, mas não aplicação de SQL em produção sem revisão. Rode isto no
--- SQL Editor do Supabase SÓ depois de revisar - mesmo fluxo de qualquer
--- outro arquivo em sql/ (ver MANUAL.md).
+-- STATUS (2026-11-14): APLICADO em produção, com aprovação explícita do
+-- Rodrigo - migration 100% aditiva (3 tabelas novas, sem FK formal com
+-- tabela existente, idempotente via "if not exists"). Ver status
+-- detalhado da camada de persistência no bloco de comentário mais abaixo
+-- (escrito na validação de 2026-11-13, antes da aplicação - mantido como
+-- registro histórico do que foi confirmado até então) e em
+-- jobs/carteira_recomendada_job.py, que agora fecha o ciclo "persistir
+-- snapshot, revisar o que mudou e acompanhar o desempenho" 1x/dia dentro
+-- do Comitê de Investimentos noturno.
 --
 -- Três tabelas NOVAS, sem nenhuma relação com posicoes_carteira (posição
 -- REAL do Rodrigo, data/posicoes.py) nem com as tabelas do Radar de
@@ -91,7 +96,21 @@ alter table carteira_recomendada_acompanhamento enable row level security;
 -- tempo real (montar_carteira_recomendada), sem histórico persistido, sem
 -- acompanhamento de desempenho realizado e sem histórico de alteração.
 --
--- AGUARDANDO APROVAÇÃO DO RODRIGO - não aplicar sem autorização explícita.
+-- ATUALIZAÇÃO (2026-11-14): migration APLICADA em produção com aprovação
+-- explícita do Rodrigo - o parágrafo abaixo ("AGUARDANDO APROVAÇÃO...")
+-- descreve o estado ANTES da aplicação, mantido como registro histórico.
+-- O ponto "nenhum caller chama registrar_revisao" também mudou nesta
+-- missão: jobs/carteira_recomendada_job.py agora chama
+-- montar_carteira_recomendada -> salvar_carteira -> (diff do que mudou) ->
+-- registrar_revisao -> registrar_acompanhamento 1x/dia, plugado no mesmo
+-- workflow noturno do Comitê de Investimentos (.github/workflows/
+-- comite-noturno.yml) - essa mudança de código É NOVA (missão de
+-- 2026-11-14) e passa a escrever em produção automaticamente, por isso
+-- teve PR própria revisada e aprovada separadamente da aplicação desta
+-- migration.
+--
+-- AGUARDANDO APROVAÇÃO DO RODRIGO (histórico, já concedida) - não aplicar
+-- sem autorização explícita.
 --
 -- IMPACTO de aplicar esta migration:
 --   - 3 tabelas NOVAS, sem FK formal com nenhuma tabela existente (mesmo

@@ -34,16 +34,20 @@ Duas camadas:
    obter_ultima_carteira_persistida/registrar_acompanhamento/
    comparar_carteira_persistida_com_atual) - segue o padrão
    "TABELA_AUSENTE" do resto do projeto (ex.: data/posicoes.py): nenhuma
-   função aqui lança se as tabelas novas (sql/carteira_recomendada.sql,
-   proposto mas NÃO aplicado nesta missão - ver MANUAL.md) ainda não
-   existirem; elas degradam para None/False com o motivo, exatamente como
-   qualquer outra tabela opcional do projeto.
+   função aqui lança se as tabelas (sql/carteira_recomendada.sql,
+   APLICADAS em produção em 2026-11-14, com aprovação explícita) ficarem
+   indisponíveis por qualquer motivo; elas degradam para None/False com o
+   motivo, exatamente como qualquer outra tabela opcional do projeto.
    comparar_carteira_persistida_com_atual é o elo que fecha o ciclo
    "persistir histórico, acompanhar recomendações e comparar resultados":
    pega o snapshot salvo por salvar_carteira, busca o preço ATUAL de cada
-   ticker e grava a checagem via registrar_acompanhamento - pronto pra
-   rodar periodicamente (job futuro, fora do escopo desta missão) assim
-   que a migration for aplicada.
+   ticker e grava a checagem via registrar_acompanhamento.
+   O job que roda este ciclo 1x/dia (monta -> compara com o snapshot
+   anterior -> salva -> registra só o que mudou no histórico -> grava o
+   acompanhamento do dia) é jobs/carteira_recomendada_job.py, plugado no
+   mesmo agendamento noturno do Comitê de Investimentos
+   (jobs/comite_noturno.py via .github/workflows/comite-noturno.yml) -
+   missão de 2026-11-14.
 
 Shape devolvido por montar_carteira_recomendada() - ESTÁVEL, documentado
 para a UI (Agente A) consumir (aba nova em ui/navegacao.py, área
@@ -519,9 +523,10 @@ _FONTE_UNIVERSO = (
 
 
 # ---------------------------------------------------------------------------
-# 4. Persistência (tabelas PROPOSTAS, NÃO aplicadas nesta missão - ver
+# 4. Persistência (tabelas APLICADAS em produção em 2026-11-14 - ver
 #    sql/carteira_recomendada.sql). Segue o padrão "degrada sem lançar"
-#    de data/posicoes.py: tabela ausente -> None/False, nunca exceção.
+#    de data/posicoes.py: tabela ausente/Supabase indisponível -> None/
+#    False, nunca exceção. Chamadas 1x/dia por jobs/carteira_recomendada_job.py.
 # ---------------------------------------------------------------------------
 
 def _cliente_ou_none():
