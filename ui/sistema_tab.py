@@ -3,7 +3,13 @@
 ultimas entradas do CHANGELOG, status da fila de trabalho (PROGRESSO.md)
 e o manual do app (MANUAL.md). Le os arquivos direto do disco - nao tem
 tabela no banco, e' documentacao de desenvolvimento, nao dado de
-produto."""
+produto.
+
+Auditoria de uso do design system (ui/design_system.py, missao rollout A,
+2026-11-14): este arquivo nao importa o modulo de proposito - renderiza
+texto markdown de arquivos de documentacao (sem numero financeiro, sinal
+de alta/baixa ou divisor manual; o border-bottom em _CSS_DOC e' estilo
+estatico de cabecalho de markdown, nao um divisor dinamico entre secoes)."""
 
 from pathlib import Path
 

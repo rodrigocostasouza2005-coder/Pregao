@@ -7,7 +7,14 @@ visual da aba NEWS.
 
 Seletor de regiao BRASIL/INTERNACIONAL/TUDO e filtro de setor
 (data/news_setores.py). TUDO junta os dois pools num ranking so' (tag
-BR/INT em cada linha, ver ui/news_tab.py:_bloco_rank_coluna)."""
+BR/INT em cada linha, ver ui/news_tab.py:_bloco_rank_coluna).
+
+Auditoria de uso do design system (ui/design_system.py, missao rollout A,
+2026-11-14): este arquivo nao importa o modulo de proposito - e' ranking
+de noticias (sem preco/variacao), e a renderizacao da lista em si e'
+toda delegada a ui/news_tab.py (_renderizar_lista/_injetar_css); nao ha
+numero financeiro, sinal de alta/baixa ou divisor manual aqui pra
+migrar."""
 
 import streamlit as st
 

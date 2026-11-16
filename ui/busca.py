@@ -20,7 +20,12 @@ fonte local/cacheada pra isso, e buscar isso ao vivo a cada tecla
 violaria a regra de não bater em API por tecla). Ticker fora dessa lista
 continua funcionando normalmente via validação direta (ver app.py, ainda
 oferece um campo de texto solto pra esse caso - a busca aqui é um atalho
-pros mais comuns, não uma restrição do que pode ser adicionado)."""
+pros mais comuns, não uma restrição do que pode ser adicionado).
+
+Auditoria de uso do design system (ui/design_system.py, missão rollout A,
+2026-11-14): este arquivo não importa o módulo de propósito - não há
+nenhum número financeiro/percentual, sinal de alta/baixa ou divisor manual
+aqui pra migrar (é só um selectbox com busca sobre um dict de opções)."""
 
 import streamlit as st
 
