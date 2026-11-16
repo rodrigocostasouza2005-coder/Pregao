@@ -75,6 +75,19 @@ def test_classificar_setor_ticker_desconhecido_retorna_none_nunca_outros():
     assert classificar_setor("XXXX9") is None
 
 
+def test_classificar_setor_alpa4_classificado_como_varejo():
+    """Regressao (achado real 2026-11-16, auditoria CARTEIRA RECOMENDADA):
+    ALPA4 (Alpargatas/Havaianas) aparecia "nao classificado" na tela
+    enquanto PETR4/EMBJ3/VIVA3 (mesma carteira) tinham setor normal -
+    causa raiz era so' a ausencia de ALPA4 em config.IBOVESPA_SETORES
+    (nunca um problema de sufixo de ticker ou de fonte de dado). Mesmo
+    setor "Varejo" de AZZA3 (Arezzo&Co, mesmo segmento calcados/
+    vestuario) e consistente com data/news_setores.py, que ja agrupa
+    ALPA4 junto de AZZA3/CEAB3/VIVA3 no setor VAREJO."""
+    assert classificar_setor("ALPA4") == "Varejo"
+    assert classificar_setor("alpa4") == "Varejo"  # normaliza case
+
+
 def test_classificar_setor_vazio_retorna_none():
     assert classificar_setor("") is None
     assert classificar_setor(None) is None
