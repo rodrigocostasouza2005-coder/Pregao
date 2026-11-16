@@ -1,5 +1,39 @@
 # CHANGELOG — PREGÃO
 
+## 2026-11-16 — CARTEIRA RECOMENDADA: ALPA4 "não classificado" + auditoria de dados/formatação
+
+Investigação de 2 problemas reais reportados pelo Rodrigo direto da tela de produção (4 ativos: PETR4, ALPA4, EMBJ3, VIVA3, todos COMPRA/ALTA confiança).
+
+- **ALPA4 "não classificado" (corrigido)**: causa raiz confirmada — ALPA4
+  (Alpargatas/Havaianas) simplesmente nunca tinha entrada em
+  `config.IBOVESPA_SETORES` (não era problema de sufixo de ticker nem de
+  fonte de dado). Adicionado como `"Varejo"`, mesma categoria de AZZA3
+  (Arezzo&Co, mesmo segmento calçados/vestuário) e consistente com
+  `data/news_setores.py`, que já agrupa ALPA4 junto de AZZA3/CEAB3/VIVA3
+  no setor VAREJO. `web/contratos/ibovespa.json` reexportado
+  (`scripts/exportar_contratos_web.py`).
+- **EMBJ3 sem Preço Ref./Preço-alvo/Retorno (investigado, não é bug de
+  código)**: cotação via yfinance testada em tempo real pra EMBJ3 e
+  funciona normalmente (não é problema de lookup de ticker, nem resquício
+  do antigo EMBR3). O caminho que propaga preço pro `sinal_comite`
+  (`data/coordenador_central/consolidacao.py`) é idêntico pra todos os
+  tickers. Explicação mais provável, sem acesso a credenciais reais do
+  Supabase nesta sessão pra confirmar: a análise CONCLUIDA mais recente
+  de EMBJ3 é anterior à propagação de preço pro `sinal_comite` (achado
+  real documentado no próprio código, 2026-11-11) e/ou o Model Builder
+  nunca recebeu premissas de DCF pra esse ticker (gap conhecido,
+  documentado, não um bug) — ambas causas legítimas de ausência honesta
+  de dado, não um valor a inventar. Teste de regressão adicionado
+  documentando que `_extrair_sinal`/`_preco_alvo_e_metodo`/`_cenarios`
+  degradam graciosamente (nunca lançam, nunca inventam número) quando o
+  `sinal_comite` persistido não tem os campos de preço.
+- **Formatação da tela (`ui/carteira_recomendada_tab.py`)**: revisão
+  completa — alinhamento de colunas, uso de `numero_financeiro_html`/
+  `variacao_html`/`painel-titulo` (`ui/design_system.py`) e fallback de
+  valor ausente já consistentes com o resto do app; nenhum HTML malformado
+  encontrado. Nada corrigido aqui por não haver problema real (não
+  validado visualmente via Playwright nesta sessão).
+
 ## 2026-11-02 — Responsividade touch real (iPad/celular): sidebar, botões, checkbox e modal
 
 - **Causa raiz**: o breakpoint da sidebar (`style.css`) usava só LARGURA

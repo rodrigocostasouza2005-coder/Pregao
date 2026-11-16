@@ -89,6 +89,48 @@ def test_extrair_sinal_le_campos_do_sinal_comite():
     assert sinal["preco_alvo_pl_setorial"] == 130.0
 
 
+def test_extrair_sinal_graceful_quando_sinal_comite_sem_campos_de_preco():
+    """Regressao/documentacao (achado real 2026-11-16, auditoria CARTEIRA
+    RECOMENDADA, caso EMBJ3): a analise CONCLUIDA mais recente de um
+    ticker pode ter sinal_comite com "sinal"/"score"/"confianca"
+    preenchidos mas SEM nenhum campo de preco (preco_atual/
+    preco_alvo_consenso/preco_alvo_modelo ausentes, nao None) - ex: linha
+    persistida antes da propagacao de preco pro sinal_comite
+    (data/coordenador_central/consolidacao.py, achado real 2026-11-11) ou
+    ticker cujo Model Builder nunca recebeu premissas de DCF (gap
+    conhecido e documentado, nao bug - ver data/coordenador_central/
+    fluxos.py:analisar_ticker). _extrair_sinal nunca lanca exececao nesse
+    caso - o item ainda entra na carteira pelo sinal/score/confianca, so'
+    com os campos de preco em None (consumido graciosamente por
+    _preco_alvo_e_metodo/_cenarios e exibido como "-" na UI, nunca
+    inventado)."""
+    linha_sem_preco = {
+        "id": "id-embj3", "ticker": "EMBJ3", "status": "CONCLUIDA",
+        "iniciado_em": "2026-10-01T03:00:00+00:00",
+        "resultado": {
+            "resumo_executivo": "Tese resumida.",
+            "sinal_comite": {
+                "sinal": "COMPRA", "score": 6, "confianca": "ALTA",
+                "justificativa": "Sinal COMPRA com score 6.",
+                "favoraveis": ["ROE forte"], "contrarios": [],
+                # preco_atual/preco_alvo_consenso/preco_alvo_modelo/
+                # preco_alvo_pl_setorial propositalmente ausentes.
+            },
+        },
+    }
+    sinal = cr._extrair_sinal(linha_sem_preco)
+    assert sinal is not None
+    assert sinal["ticker"] == "EMBJ3"
+    assert sinal["sinal"] == "COMPRA"
+    assert sinal["confianca"] == "ALTA"
+    assert sinal["preco_atual"] is None
+    assert sinal["preco_alvo_consenso"] is None
+    assert sinal["preco_alvo_modelo"] is None
+    preco_alvo, metodo = cr._preco_alvo_e_metodo(sinal)
+    assert preco_alvo is None and metodo is None
+    assert cr._cenarios(sinal.get("preco_atual"), preco_alvo, sinal.get("preco_alvo_pl_setorial")) is None
+
+
 # ---------------------------------------------------------------------
 # cenários / critério de saída
 # ---------------------------------------------------------------------

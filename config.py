@@ -174,6 +174,14 @@ IBOVESPA_SETORES = {
     "BBSE3": "Seguros", "PSSA3": "Seguros", "CXSE3": "Seguros",
     "MGLU3": "Varejo", "LREN3": "Varejo", "RENT3": "Varejo", "ASAI3": "Varejo",
     "AZZA3": "Varejo", "PCAR3": "Varejo", "CEAB3": "Varejo", "VIVA3": "Varejo",
+    # ALPA4 (Alpargatas/Havaianas) - achado real 2026-11-16: ausente aqui
+    # enquanto PETR4/EMBJ3/VIVA3 (mesma Carteira Recomendada) tinham setor
+    # normal, única causa raiz: faltava entrada neste dict (nunca um
+    # problema de sufixo de ticker ou de fonte de dado). Classificado como
+    # "Varejo" pra manter consistência com AZZA3 (Arezzo&Co, mesmo
+    # segmento calçados/vestuário) e com data/news_setores.py, que já
+    # agrupa ALPA4 junto de AZZA3/CEAB3/VIVA3 no setor "VAREJO".
+    "ALPA4": "Varejo",
     "AXIA3": "Energia Elétrica", "EQTL3": "Energia Elétrica",
     "CMIG4": "Energia Elétrica", "CPLE3": "Energia Elétrica", "ENEV3": "Energia Elétrica",
     "SBSP3": "Saneamento", "CPFE3": "Energia Elétrica", "AURE3": "Energia Elétrica",
