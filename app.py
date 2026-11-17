@@ -169,7 +169,7 @@ def _escolha_estavel(chave_widget: str, opcoes: list, padrao):
 tema = config.TEMAS.get(prefs["tema"], config.TEMAS["AMBAR"])
 _css_vars = (
     f":root {{"
-    f"--bg:{tema['fundo']}; --painel-bg:{tema['painel']}; --borda:{tema['borda']}; "
+    f"--bg:{tema['fundo']}; --grafite:{tema['grafite']}; --painel-bg:{tema['painel']}; --borda:{tema['borda']}; "
     f"--destaque:{tema['destaque']}; --alta:{tema['alta']}; --baixa:{tema['baixa']}; "
     f"--neutro:{tema['neutro']}; --cinza:{tema['cinza']}; --ciano:{tema['ciano']}; "
     f"--padding-painel:{config.DENSIDADES.get(prefs['densidade'], '0.4rem')}; "
