@@ -113,23 +113,35 @@ TICKER_ALIASES = {
 # --- Temas visuais (estetica terminal financeiro) -----------------------
 # cada tema define as mesmas chaves; viram variaveis CSS (:root) em runtime
 TEMAS = {
+    # AMBAR: paleta Bloomberg revisada (missao de reformulacao, 2026-11-17)
+    # - destaque/ambar e' bit-a-bit o mesmo de antes (#FFA028), o resto
+    # ganhou um vies frio-azulado (fundo/texto) e sinal dessaturado
+    # (alta/baixa saem do "neon de terminal" pra tom mais sobrio, tipo
+    # Tailwind green-500/red-500) + uma 3a camada tonal ("grafite") que
+    # antes nao existia - fundo e painel eram quase indistinguiveis
+    # (#000000 vs #0A0A0A). "grafite" fica entre fundo e painel (sidebar,
+    # metricas, header fixo - ver app.py/style.css).
     "AMBAR": {
-        "fundo": "#000000", "painel": "#0A0A0A", "borda": "#333333",
-        "destaque": "#FFA028", "alta": "#00D26A", "baixa": "#FF3B3B",
-        "neutro": "#E6E6E6", "cinza": "#8C8C8C", "ciano": "#3FC1FF",
+        "fundo": "#080A0D", "grafite": "#11151A", "painel": "#171C22", "borda": "#262D36",
+        "destaque": "#FFA028", "alta": "#22C55E", "baixa": "#EF4444",
+        "neutro": "#E6EAF0", "cinza": "#89929E", "ciano": "#3FC1FF",
     },
+    # FOSFORO/AZUL/CLARO: só ganharam a chave "grafite" nova (camada
+    # intermediaria consistente com a propria tonalidade de cada tema) -
+    # fundo/painel/destaque/alta/baixa de cada um NAO foram tocados, a
+    # reformulacao pedida era so' pro tema AMBAR (padrao).
     "FOSFORO": {
-        "fundo": "#000000", "painel": "#0A0A0A", "borda": "#1F3320",
+        "fundo": "#000000", "grafite": "#0D1A0F", "painel": "#0A0A0A", "borda": "#1F3320",
         "destaque": "#33FF66", "alta": "#33FF66", "baixa": "#FF3B3B",
         "neutro": "#CFFFDA", "cinza": "#6FA37B", "ciano": "#33FF66",
     },
     "AZUL": {
-        "fundo": "#00111A", "painel": "#001826", "borda": "#123044",
+        "fundo": "#00111A", "grafite": "#001420", "painel": "#001826", "borda": "#123044",
         "destaque": "#4FC3F7", "alta": "#00D26A", "baixa": "#FF3B3B",
         "neutro": "#DCEEFB", "cinza": "#5C8AA3", "ciano": "#4FC3F7",
     },
     "CLARO": {
-        "fundo": "#F5F5F0", "painel": "#FFFFFF", "borda": "#CCCCCC",
+        "fundo": "#F5F5F0", "grafite": "#EDEDE6", "painel": "#FFFFFF", "borda": "#CCCCCC",
         "destaque": "#B36B00", "alta": "#0A8F4C", "baixa": "#C4291C",
         "neutro": "#111111", "cinza": "#555555", "ciano": "#0072B2",
     },
