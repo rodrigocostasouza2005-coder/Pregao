@@ -1,13 +1,19 @@
-# Validação visual real (C) — WORKSPACE, DCF, SAÚDE DOS DADOS, BUSCA/NAVEGAÇÃO (2026-11-17)
+# Validação visual real — 2026-11-17
 
-Missão de **captura de evidência**, não de correção — nenhum arquivo de produção
-(`ui/*.py`, `data/*.py`, `jobs/*.py`, `app.py`, `style.css`) foi alterado. Só harnesses
-novos/copiados e screenshots dentro deste diretório.
+Missão de **captura de evidência** (Playwright real, Chromium, não `AppTest`) rodada em
+paralelo por 2 frentes nesta mesma pasta compartilhada — zero correção de código de
+produção aplicada em nenhuma das duas (`ui/*.py`, `data/*.py`, `jobs/*.py`, `app.py`,
+`style.css` sem diff).
 
-Todos os screenshots em 2 larguras (`desktop-1440` e `ipad-1024`), via Playwright real
-(Chromium), não `AppTest`.
+Regra do projeto (`CLAUDE.md`, regra 7: "sem auditoria repetida") seguida à risca nas
+duas frentes: antes de capturar qualquer coisa, confirmado via `git log -1 --format=%ci`
+se o arquivo de UI real de cada área mudou depois da última captura existente em
+`docs/evidencias/` — reaproveita quando não mudou (ou só mudou cosmético/docs), recaptura
+fresco quando mudou de verdade ou nunca teve captura.
 
-## WORKSPACE — reaproveitado
+## Frente — WORKSPACE, DCF OPERACIONAL, SAÚDE DOS DADOS, BUSCA/NAVEGAÇÃO
+
+### WORKSPACE — reaproveitado
 
 `ui/workspace.py` não muda desde `2026-10-19` (commit `0dda4b8`), bem antes da captura
 de `2026-11-11` (`docs/evidencias/experiencia-design-system-20261111/`). `style.css`
@@ -21,7 +27,7 @@ nenhuma das 2 larguras capturadas. Reaproveitado sem recaptura:
 título em âmbar, borda sutil, instrução de drag/resize em cinza/ciano). Nenhuma
 sobreposição ou corte em nenhuma das 2 larguras.
 
-## BUSCA/NAVEGAÇÃO — reaproveitado
+### BUSCA/NAVEGAÇÃO — reaproveitado
 
 `ui/busca.py` e `ui/navegacao.py` mudaram em `2026-11-16` (commit `933633d`, PR #318) —
 depois da captura de `2026-11-11`/`2026-11-12`. Diff conferido: a mudança é **só
@@ -40,7 +46,7 @@ limpos nas 2 larguras. Navegação: abas principais + subabas corretas, quebra p
 em 1024px (MORNING CALL/MAIS descem) sem cortar nenhum rótulo. Sidebar watchlist:
 verde/vermelho/cinza (alta/baixa/sem variação) corretos, botões "x" alinhados.
 
-## DCF OPERACIONAL — capturado agora (nunca tinha harness/screenshot)
+### DCF OPERACIONAL — capturado agora (nunca tinha harness/screenshot)
 
 Harness novo: `harness_dcf.py`. Chama `ui/dcf_operacional.py:render_dcf_operacional()`
 de verdade, com premissas **100% mockadas e ficticias** (WACC 12%, crescimento perpétuo
@@ -76,7 +82,7 @@ Screenshots: `dcf_desktop-1440.png`, `dcf_ipad-1024.png`.
   sensibilidade WACC×g (célula base contornada em âmbar, verde/vermelho corretos em
   ambos os sentidos), chip "PREMISSA" tracejado.
 
-## SAÚDE DOS DADOS — capturado agora (nunca tinha harness/screenshot)
+### SAÚDE DOS DADOS — capturado agora (nunca tinha harness/screenshot)
 
 Harness novo: `harness_saude_dados.py`. Chama `ui/saude_dados_tab.py:render_saude_dados()`
 de verdade; só as 3 funções de LEITURA de `data/saude_dados.py`
@@ -111,8 +117,73 @@ Screenshots: `saude_dados_desktop-1440.png`, `saude_dados_ipad-1024.png`.
   quebram em 2 linhas e as linhas ficam mais altas, mas nada corta, sobrepõe ou perde
   alinhamento — layout responsivo funcionando.
 
-## O que não foi validado
+### O que não foi validado (frente WORKSPACE/DCF/SAÚDE/BUSCA)
 
 Walkthrough autenticado (login real, Supabase/Groq de produção) não é viável neste
 ambiente — mesma limitação já registrada nas capturas anteriores. Cobertura real: harness
 Playwright local por módulo (acima) com dados mockados explícitos.
+
+## Frente — HOME, MERCADO, MACRO, CALENDÁRIO
+
+### Decisão por área
+
+- **HOME** (`ui/visao_geral.py`, última mudança 2026-11-12) — screenshot mais
+  recente é de 2026-11-13 15:02 (`revisao-interface-bloomberg-20261113/`),
+  POSTERIOR à última mudança do arquivo. Reaproveitado sem recaptura
+  (`home_1440.png`, `home_1024.png`).
+- **MERCADO** (`ui/mercado_tab.py`, última mudança 2026-11-06) — mesma lógica,
+  screenshot de 2026-11-13 é posterior. Reaproveitado (`mercado_1440.png`,
+  `mercado_1024.png`).
+- **MACRO** (`ui/macro_tab.py`) — arquivo mudou em 2026-11-13 11:15 (PR #306),
+  mas o diff real (`git show 7dab345`) toca SÓ as sub-abas Câmbio e Calendário
+  Econômico (reorganização `st.container` → `st.columns`, zero dado novo).
+  Indicadores e Juros não foram tocados por aquele PR nem depois.
+  - Câmbio e Calendário Econômico: reaproveitados das screenshots "depois"
+    já tiradas NO MESMO COMMIT do PR #306
+    (`macro_cambio_1440/1024.png`, `macro_calendario_economico_1440/1024.png`).
+  - Indicadores e Juros: só existia screenshot 1440 (2026-11-06, código
+    inalterado desde então) — capturado FRESCO só para completar o par
+    1024, reaproveitando o harness existente sem alteração
+    (`macro_indicadores_1440/1024.png`, `macro_juros_1440/1024.png`).
+- **CALENDÁRIO** (`ui/calendario_tab.py`, rota MERCADO > Agenda) — arquivo
+  mudou em 2026-11-16 10:36 (PR #320, migração do divisor lateral pra
+  `design_system.divisor_html()`), DEPOIS da última captura (2026-11-13
+  15:02). Recapturado fresco (`calendario_1440.png`, `calendario_1024.png`)
+  adaptando o harness já existente (`harness_calendario.py`, cópia exata de
+  `revisao-interface-bloomberg-20261113/`, sem alteração — a API mockada
+  continua idêntica).
+
+### Avaliação visual (olhando cada imagem)
+
+- **HOME / MERCADO**: identidade Bloomberg preto/âmbar consistente, tipografia
+  monoespaçada, tabelas bem alinhadas, nada sobreposto/cortado de forma
+  funcionalmente quebrada. Achado pré-existente (já presente nas screenshots
+  reaproveitadas, não é regressão): no painel "MAPA DO MERCADO" (treemap),
+  os rótulos dos setores menores ("Bancos e Serviços Financeiros", "Bens de
+  Capital e Industrial") ficam cortados sem reticências nas bordas direita
+  dos retângulos, em 1440 e 1024 — MÉDIO.
+- **MACRO > Indicadores**: achado pré-existente (confirmado comparando com
+  `macro-bloomberg-20261106/harness_macro_indicadores.png` — já existia antes,
+  não é regressão): o título do eixo Y secundário dos gráficos "CURVA PRÉ" e
+  "IPCA" renderiza sobreposto/ilegível (texto rotacionado de "% a.a." e
+  "IPCA 12 meses (%)" embaralhados um sobre o outro) — MÉDIO.
+- **MACRO > Juros**: nenhum problema visível.
+- **MACRO > Câmbio / Calendário Econômico**: layout lado a lado confirmado
+  (fix do PR #306 funcionando, sem espaço vazio desperdiçado). Nenhum
+  problema visível.
+- **CALENDÁRIO**: visualmente equivalente à captura anterior ao PR #320 (a
+  mudança era cosmética — trocar um border-top avulso pelo helper do design
+  system — zero diferença perceptível). Achado pré-existente (já presente na
+  captura de 2026-11-13, não é regressão do #320): o rótulo de status
+  ("CONFIRMADO"/"ESTIMADO") de alguns dias no grid mensal encosta/é cortado
+  pela borda inferior da célula quando o dia tem evento (visível em 1440 e
+  1024) — MENOR.
+
+Nenhum problema CRÍTICO encontrado em nenhuma das 4 áreas desta frente.
+
+## Resumo dos achados CRÍTICOS desta sessão (todas as frentes)
+
+Único CRÍTICO novo encontrado em toda a sessão: a tabela "PROJEÇÃO" do DCF OPERACIONAL
+(`st.dataframe` com fundo branco quebrando a identidade preto/âmbar) — ver seção acima.
+Todos os outros achados (HOME/MERCADO treemap, MACRO Indicadores eixo Y, CALENDÁRIO
+rótulo de status, DCF métricas cortadas em 1024px) são MÉDIO/MENOR.
