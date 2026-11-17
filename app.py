@@ -617,9 +617,6 @@ if rota == ("mercado", "painel"):
     with st.container():
         render_mercado(prefs, persistir_fn=_persistir_prefs)
 
-if rota == ("mercado", "agenda"):
-    secoes.render_agenda(prefs)
-
 if rota == ("mercado", "globais"):
     secoes.render_mercados_globais(prefs)
 
@@ -672,29 +669,35 @@ if rota == ("research", "memoria"):
     with st.container():
         render_memoria_research(prefs)
 
-# --- ANÁLISES › Fundamentos/Valuation ------------------------------------------
+# --- ANÁLISES › Fundamentos --------------------------------------------------
 if rota == ("analises", "fundamentos"):
     analises_tab.render_fundamentos(prefs)
-if rota == ("analises", "valuation"):
-    radar_tab.render_valuation(prefs)
 
-# --- COORDENADOR CENTRAL (ver ui/coordenador_tab.py) - Fase E, 2026-10-31 -----
-if rota == ("coordenador", "visao-geral"):
-    with st.container():
-        coordenador_tab.render_visao_geral(prefs)
-if rota == ("coordenador", "especialistas"):
-    with st.container():
-        coordenador_tab.render_especialistas(prefs)
-if rota == ("coordenador", "execucoes"):
-    with st.container():
-        coordenador_tab.render_execucoes(prefs)
-if rota == ("coordenador", "historico"):
-    with st.container():
-        coordenador_tab.render_historico(prefs)
-if rota == ("coordenador", "analisar"):
+# --- VALUATION (ver ui/radar_tab.py + ui/coordenador_tab.py) - Fase 2a, 2026-11-17:
+# parecer automatizado do Comite e simulador manual de DCF, antes em areas
+# separadas (ANALISES > Valuation / COORDENADOR > Analisar) - mesmas
+# funcoes de sempre, so' reagrupadas numa area propria. ------------------------
+if rota == ("valuation", "parecer"):
+    radar_tab.render_valuation(prefs)
+if rota == ("valuation", "simulador"):
     with st.container():
         coordenador_tab.render_analisar(prefs)
-if rota == ("coordenador", "central"):
+
+# --- COMITÊ (ex-COORDENADOR CENTRAL, ver ui/coordenador_tab.py) - Fase E, 2026-10-31,
+# renomeado na Fase 2a (2026-11-17) ---------------------------------------------
+if rota == ("comite", "visao-geral"):
+    with st.container():
+        coordenador_tab.render_visao_geral(prefs)
+if rota == ("comite", "especialistas"):
+    with st.container():
+        coordenador_tab.render_especialistas(prefs)
+if rota == ("comite", "execucoes"):
+    with st.container():
+        coordenador_tab.render_execucoes(prefs)
+if rota == ("comite", "historico"):
+    with st.container():
+        coordenador_tab.render_historico(prefs)
+if rota == ("comite", "central"):
     with st.container():
         render_central(prefs)
 
@@ -706,7 +709,13 @@ if rota == ("macro", "juros"):
     macro_tab.render_macro_juros(prefs)
 if rota == ("macro", "cambio"):
     macro_tab.render_macro_cambio_commodities(prefs)
-if rota == ("macro", "calendario"):
+
+# --- CALENDÁRIO (ver ui/secoes.py + ui/macro_tab.py) - Fase 2a, 2026-11-17:
+# consolida MERCADO > Agenda + MACRO > Calendario Economico numa area
+# propria - mesmas funcoes de sempre, so' reagrupadas. ------------------------
+if rota == ("calendario", "corporativo"):
+    secoes.render_agenda(prefs)
+if rota == ("calendario", "economico"):
     macro_tab.render_macro_calendario(prefs)
 
 # --- SETORES (ver ui/setores_tab.py) -------------------------------------------

@@ -21,8 +21,8 @@ from ui.navegacao import AREAS, ROTA_LEGADO
 
 RAIZ = Path(__file__).parent.parent
 
-ORDEM_ESPERADA = ["mercado", "noticias", "radar", "research", "analises", "coordenador", "macro", "setores",
-                  "morning-call", "carteira-recomendada", "mais"]
+ORDEM_ESPERADA = ["mercado", "noticias", "radar", "research", "analises", "valuation", "comite", "macro",
+                  "calendario", "setores", "morning-call", "carteira-recomendada", "mais"]
 
 
 def _todas_rotas():
@@ -31,23 +31,25 @@ def _todas_rotas():
 
 def test_ordem_das_areas_principais():
     assert [a.id for a in AREAS] == ORDEM_ESPERADA
-    assert [a.rotulo for a in AREAS][:9] == [
-        "MERCADO", "NOTÍCIAS", "RADAR", "RESEARCH", "ANÁLISES", "COORDENADOR", "MACRO", "SETORES",
-        "MORNING CALL",
+    assert [a.rotulo for a in AREAS][:11] == [
+        "MERCADO", "NOTÍCIAS", "RADAR", "RESEARCH", "ANÁLISES", "VALUATION", "COMITÊ", "MACRO",
+        "CALENDÁRIO", "SETORES", "MORNING CALL",
     ]
 
 
 def test_subabas_exigidas_pela_arquitetura():
     subs = {a.id: [s.rotulo for s in a.subabas] for a in AREAS}
-    assert subs["mercado"] == ["Visão Geral", "Painel", "Agenda", "Mercados Globais"]
+    assert subs["mercado"] == ["Visão Geral", "Painel", "Mercados Globais"]
     assert subs["noticias"][:4] == ["Destaques", "Brasil", "Internacional", "Empresas"]
     assert subs["radar"] == ["Alertas", "Carteiras Recomendadas", "Oportunidades", "Acompanhamento", "Preferências"]
     assert subs["research"] == ["Feed", "Casas de Análise", "Radar X", "Minha Tese", "Memória de Research"]
-    assert subs["analises"] == ["Empresas", "Fundamentos", "Valuation"]
-    assert subs["coordenador"] == [
-        "Visão Geral", "Especialistas", "Execuções", "Histórico", "Analisar", "Central de Inteligências",
+    assert subs["analises"] == ["Empresas", "Fundamentos"]
+    assert subs["valuation"] == ["Parecer do Comitê", "Simulador DCF"]
+    assert subs["comite"] == [
+        "Visão Geral", "Especialistas", "Execuções", "Histórico", "Central de Inteligências",
     ]
-    assert subs["macro"] == ["Indicadores", "Juros", "Câmbio e Commodities", "Calendário Econômico"]
+    assert subs["macro"] == ["Indicadores", "Juros", "Câmbio e Commodities"]
+    assert subs["calendario"] == ["Eventos Corporativos", "Calendário Econômico"]
     assert subs["setores"] == ["Mapa Setorial", "Visão por Setor", "Catalisadores"]
     assert subs["morning-call"] == ["Edição Atual", "Relatório Completo", "Histórico", "Preferências"]
     assert subs["carteira-recomendada"] == ["Visão Geral", "Histórico"]
@@ -91,11 +93,17 @@ def test_preferencia_antiga_de_abas_esconde_subabas():
     # sobrevive so' com 1 subaba, "research" com 3 (casas/radar-x/
     # memoria), mesmo sem nenhuma aba antiga visivel)
     minimas = navegacao.disponiveis([], eh_admin=False)
-    # "coordenador" sobrevive tambem (nenhuma subaba depende de aba antiga,
+    # "comite" sobrevive tambem (nenhuma subaba depende de aba antiga,
     # mesmo padrao de "casas"/"radar-x"/"memoria" em research acima).
     # "carteira-recomendada" tambem (conteudo novo, sem legado, mesmo padrao).
-    assert [a.id for a in minimas] == ["radar", "research", "coordenador", "setores", "morning-call",
+    # "valuation" sobrevive só com "Simulador DCF" (sem legado) - "Parecer
+    # do Comitê" depende de RADAR, que não está visível aqui.
+    # "calendario" NAO sobrevive - as 2 subabas dependem de legado
+    # (CALENDÁRIO/MACRO), nenhuma e' sempre-visivel.
+    assert [a.id for a in minimas] == ["radar", "research", "valuation", "comite", "setores", "morning-call",
                                         "carteira-recomendada", "mais"]
+    valuation_minimo = next(a for a in minimas if a.id == "valuation")
+    assert [s.id for s in valuation_minimo.subabas] == ["simulador"]
     radar_minimo = next(a for a in minimas if a.id == "radar")
     assert [s.id for s in radar_minimo.subabas] == ["preferencias"]
     pesquisa_minima = next(a for a in minimas if a.id == "research")

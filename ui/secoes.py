@@ -27,7 +27,7 @@ def render_atalhos_visao_geral():
     Visao Geral (que continua personalizavel e intocado)."""
     atalhos = [
         ("Alertas do Radar", "radar", "alertas"), ("Notícias em destaque", "noticias", "destaques"),
-        ("Agenda", "mercado", "agenda"), ("Mapa setorial", "setores", "mapa"),
+        ("Agenda", "calendario", "corporativo"), ("Mapa setorial", "setores", "mapa"),
         ("Morning Call", "morning-call", "edicao"),
     ]
     with st.container(key="vg_atalhos"):
