@@ -61,7 +61,6 @@ AREAS = (
     Area("mercado", "MERCADO", ":material/bar_chart:", (
         Subaba("visao-geral", "Visão Geral", ("VISÃO GERAL",)),
         Subaba("painel", "Painel", ("MERCADO",)),
-        Subaba("agenda", "Agenda", ("CALENDÁRIO",)),
         Subaba("globais", "Mercados Globais", ("MERCADO",)),
     )),
     Area("noticias", "NOTÍCIAS", ":material/feed:", (
@@ -113,19 +112,35 @@ AREAS = (
     Area("analises", "ANÁLISES", ":material/query_stats:", (
         Subaba("empresas", "Empresas", ("EQUITY",)),
         Subaba("fundamentos", "Fundamentos", ("EQUITY",)),
-        Subaba("valuation", "Valuation", ("RADAR",)),
     )),
-    # COORDENADOR CENTRAL (Fase E, pedido do Rodrigo, 2026-10-31): orquestra
-    # especialistas (inteligências Python já existentes, ver data/
-    # coordenador_central/registro.py) com execução paralela/isolada,
-    # consolidação e persistência - conteúdo novo, sem aba antiga, sempre
-    # visível (mesmo padrão de "casas"/"radar-x" em RESEARCH acima).
-    Area("coordenador", "COORDENADOR", ":material/hub:", (
+    # VALUATION (missão "reformulação Pregão Terminal Experience", Fase 2a,
+    # 2026-11-17): antes fragmentado em 2 areas sem relacao visual entre si
+    # - ANALISES > Valuation (parecer automatizado do Comite, calculado a
+    # partir dos fundamentos coletados - ui/radar_tab.render_valuation) e
+    # COORDENADOR > Analisar (simulador manual de DCF operacional - ui/
+    # dcf_operacional.py, via coordenador_tab.render_analisar). Os dois
+    # continuam sendo motores DISTINTOS por desenho (podem apontar
+    # precos-alvo diferentes pro mesmo papel - nao e' bug, ver docstring de
+    # ui/dcf_operacional.py) - esta area so' os aproxima fisicamente na
+    # navegacao, nao funde a logica.
+    Area("valuation", "VALUATION", ":material/calculate:", (
+        Subaba("parecer", "Parecer do Comitê", ("RADAR",)),
+        Subaba("simulador", "Simulador DCF"),
+    )),
+    # COMITÊ (ex-"COORDENADOR CENTRAL", renomeado na Fase 2a - o proprio
+    # codigo ja chamava isso de "comite" em comentarios internos, ex.
+    # "parecer de Valuation do comite"; Fase E, pedido do Rodrigo,
+    # 2026-10-31): orquestra especialistas (inteligências Python já
+    # existentes, ver data/coordenador_central/registro.py) com execução
+    # paralela/isolada, consolidação e persistência - conteúdo novo, sem
+    # aba antiga, sempre visível (mesmo padrão de "casas"/"radar-x" em
+    # RESEARCH acima). "Analisar" (simulador DCF) mudou de lugar pra
+    # VALUATION acima - mesma funcao, so' outra area.
+    Area("comite", "COMITÊ", ":material/hub:", (
         Subaba("visao-geral", "Visão Geral"),
         Subaba("especialistas", "Especialistas"),
         Subaba("execucoes", "Execuções"),
         Subaba("historico", "Histórico"),
-        Subaba("analisar", "Analisar"),
         # CENTRAL DE INTELIGÊNCIAS (missão noturna 2026-11-12, Agente A):
         # console READ-ONLY que cruza o cadastro de especialistas (ver
         # "Especialistas" acima) com métricas/histórico já persistidos -
@@ -139,7 +154,17 @@ AREAS = (
         Subaba("indicadores", "Indicadores", ("MACRO",)),
         Subaba("juros", "Juros", ("MACRO",)),
         Subaba("cambio", "Câmbio e Commodities", ("MACRO",)),
-        Subaba("calendario", "Calendário Econômico", ("MACRO",)),
+    )),
+    # CALENDÁRIO (missão "reformulação Pregão Terminal Experience", Fase
+    # 2a, 2026-11-17): consolida os 2 calendarios que antes viviam
+    # escondidos em areas de negocio diferentes - MERCADO > Agenda (eventos
+    # corporativos: resultados/proventos/assembleias da watchlist, ver
+    # ui/secoes.render_agenda) e MACRO > Calendario Economico (indicadores
+    # macro, ver ui/macro_tab.render_macro_calendario). Conteudo/logica
+    # identicos, so' a area que hospeda cada subaba mudou.
+    Area("calendario", "CALENDÁRIO", ":material/calendar_month:", (
+        Subaba("corporativo", "Eventos Corporativos", ("CALENDÁRIO",)),
+        Subaba("economico", "Calendário Econômico", ("MACRO",)),
     )),
     Area("setores", "SETORES", ":material/category:", (
         Subaba("mapa", "Mapa Setorial"),
@@ -181,7 +206,7 @@ AREAS = (
 ROTA_LEGADO = {
     "VISÃO GERAL": ("mercado", "visao-geral"),
     "MERCADO": ("mercado", "painel"),
-    "CALENDÁRIO": ("mercado", "agenda"),
+    "CALENDÁRIO": ("calendario", "corporativo"),
     "TOP MERCADO": ("noticias", "destaques"),
     "NEWS": ("noticias", "empresas"),
     "CVM": ("noticias", "documentos"),

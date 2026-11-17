@@ -86,7 +86,7 @@ def barra_contexto_empresa(ticker: str, prefs: dict):
     botoes = [("Notícias ↗", _ir_noticias_do_ticker, (ticker, tuple(prefs.get("watchlist") or [])), "Notícias desta empresa (NOTÍCIAS › Empresas)"),
               ("Radar ↗", _ir_radar_do_ticker, (ticker,), "Alertas de queda deste ativo (RADAR › Alertas)"),
               ("Fundamentos ↗", navegacao.ir_para, ("analises", "fundamentos"), "ANÁLISES › Fundamentos"),
-              ("Valuation ↗", navegacao.ir_para, ("analises", "valuation"), "ANÁLISES › Valuation")]
+              ("Valuation ↗", navegacao.ir_para, ("valuation", "parecer"), "VALUATION › Parecer do Comitê")]
     botoes += [(f"Setor: {s} ↗", ir_para_setor, (s,), "SETORES › Visão por Setor") for s in setores]
     with st.container(key="empresa_contexto"):
         cols = st.columns(len(botoes))
@@ -1902,8 +1902,8 @@ def _render_research_e_fatores(ticker: str, fmt: str):
             st.info("O registro mais recente não contém preço-alvo positivo válido. Um alvo histórico anterior não será apresentado como se fosse o atual.")
         st.caption("Fonte estruturada disponível nesta tela: Genial. Não há consenso multi-casa calculado enquanto os alvos comparáveis das demais casas não estiverem integrados.")
         navegacao.link(
-            "Ver DCF proprietário com cenários (COORDENADOR CENTRAL) ↗", "coordenador", "analisar",
-            chave=f"research_dcf_{ticker}", ajuda="Preço-alvo por DCF (otimista/base/pessimista) calculado pelo Coordenador Central, não listado aqui.",
+            "Ver DCF proprietário com cenários (VALUATION) ↗", "valuation", "simulador",
+            chave=f"research_dcf_{ticker}", ajuda="Preço-alvo por DCF (otimista/base/pessimista) calculado pelo Comitê, não listado aqui.",
         )
         if validos:
             subtitulo("Histórico recente de preço-alvo e recomendação")
@@ -2056,7 +2056,7 @@ def render_fundamentos(prefs: dict):
     with cols[0]:
         navegacao.link("Documentos de resultado (CVM) ↗", "noticias", "documentos", chave="fund_cvm", width="stretch")
     with cols[1]:
-        navegacao.link("Valuation por múltiplos ↗", "analises", "valuation", chave="fund_val", width="stretch")
+        navegacao.link("Valuation por múltiplos ↗", "valuation", "parecer", chave="fund_val", width="stretch")
 
 
 # ============================================================
