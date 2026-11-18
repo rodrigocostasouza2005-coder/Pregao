@@ -22,7 +22,7 @@ from ui.navegacao import AREAS, ROTA_LEGADO
 RAIZ = Path(__file__).parent.parent
 
 ORDEM_ESPERADA = ["mercado", "noticias", "radar", "research", "analises", "valuation", "comite", "macro",
-                  "calendario", "morning-call", "carteira-recomendada", "mais"]
+                  "calendario", "carteira-recomendada", "mais"]
 
 
 def _todas_rotas():
@@ -31,9 +31,9 @@ def _todas_rotas():
 
 def test_ordem_das_areas_principais():
     assert [a.id for a in AREAS] == ORDEM_ESPERADA
-    assert [a.rotulo for a in AREAS][:10] == [
+    assert [a.rotulo for a in AREAS][:9] == [
         "MERCADO", "NOTÍCIAS", "RADAR", "RESEARCH", "ANÁLISES", "VALUATION", "COMITÊ", "MACRO",
-        "CALENDÁRIO", "MORNING CALL",
+        "CALENDÁRIO",
     ]
 
 
@@ -43,7 +43,9 @@ def test_subabas_exigidas_pela_arquitetura():
     assert subs["noticias"] == ["Destaques", "Brasil", "Internacional", "Empresas", "Documentos CVM",
                                  "Visão por Setor", "Catalisadores Setoriais"]
     assert subs["radar"] == ["Alertas", "Carteiras Recomendadas", "Oportunidades", "Acompanhamento", "Preferências"]
-    assert subs["research"] == ["Feed", "Casas de Análise", "Radar X", "Minha Tese", "Memória de Research"]
+    assert subs["research"] == ["Feed", "Casas de Análise", "Radar X", "Minha Tese", "Memória de Research",
+                                 "Morning Call: Edição Atual", "Morning Call: Relatório Completo",
+                                 "Morning Call: Histórico", "Morning Call: Preferências"]
     assert subs["analises"] == ["Empresas", "Fundamentos"]
     assert subs["valuation"] == ["Parecer do Comitê", "Simulador DCF"]
     assert subs["comite"] == [
@@ -51,7 +53,6 @@ def test_subabas_exigidas_pela_arquitetura():
     ]
     assert subs["macro"] == ["Indicadores", "Juros", "Câmbio e Commodities"]
     assert subs["calendario"] == ["Eventos Corporativos", "Calendário Econômico"]
-    assert subs["morning-call"] == ["Edição Atual", "Relatório Completo", "Histórico", "Preferências"]
     assert subs["carteira-recomendada"] == ["Visão Geral", "Histórico"]
 
 
@@ -104,7 +105,7 @@ def test_preferencia_antiga_de_abas_esconde_subabas():
     # Setor"/"Catalisadores Setoriais" nao tem legado, vieram da extinta
     # area SETORES) - destaques/brasil/internacional/empresas/documentos
     # dependem todos de aba antiga, somem.
-    assert [a.id for a in minimas] == ["noticias", "radar", "research", "valuation", "comite", "morning-call",
+    assert [a.id for a in minimas] == ["noticias", "radar", "research", "valuation", "comite",
                                         "carteira-recomendada", "mais"]
     noticias_minima = next(a for a in minimas if a.id == "noticias")
     assert [s.id for s in noticias_minima.subabas] == ["setor", "catalisadores-setor"]
@@ -113,7 +114,11 @@ def test_preferencia_antiga_de_abas_esconde_subabas():
     radar_minimo = next(a for a in minimas if a.id == "radar")
     assert [s.id for s in radar_minimo.subabas] == ["preferencias"]
     pesquisa_minima = next(a for a in minimas if a.id == "research")
-    assert [s.id for s in pesquisa_minima.subabas] == ["casas", "radar-x", "memoria"]
+    # Morning Call (Fase 2b) sobrevive tambem aqui - as 4 subabas nunca
+    # dependeram de aba antiga, mesmo quando MORNING CALL era area propria.
+    assert [s.id for s in pesquisa_minima.subabas] == [
+        "casas", "radar-x", "memoria", "mc-edicao", "mc-relatorio", "mc-historico", "mc-preferencias",
+    ]
     assert "config" in [s.id for s in minimas[-1].subabas]
 
 

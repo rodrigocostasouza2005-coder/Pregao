@@ -674,6 +674,16 @@ if rota == ("research", "teses"):
 if rota == ("research", "memoria"):
     with st.container():
         render_memoria_research(prefs)
+# --- MORNING CALL (ex-area propria, absorvida em RESEARCH na Fase 2b,
+# 2026-11-18 - ver ui/morning_call_tab.py, nunca envia e-mail) ---------------
+if rota == ("research", "mc-edicao"):
+    morning_call_tab.render_edicao_atual(prefs)
+if rota == ("research", "mc-relatorio"):
+    morning_call_tab.render_relatorio_completo(prefs)
+if rota == ("research", "mc-historico"):
+    morning_call_tab.render_historico(prefs)
+if rota == ("research", "mc-preferencias"):
+    morning_call_tab.render_preferencias(prefs, usuario, _persistir_prefs)
 
 # --- ANÁLISES › Fundamentos --------------------------------------------------
 if rota == ("analises", "fundamentos"):
@@ -723,16 +733,6 @@ if rota == ("calendario", "corporativo"):
     secoes.render_agenda(prefs)
 if rota == ("calendario", "economico"):
     macro_tab.render_macro_calendario(prefs)
-
-# --- MORNING CALL (ver ui/morning_call_tab.py - nunca envia e-mail) -------------
-if rota == ("morning-call", "edicao"):
-    morning_call_tab.render_edicao_atual(prefs)
-if rota == ("morning-call", "relatorio"):
-    morning_call_tab.render_relatorio_completo(prefs)
-if rota == ("morning-call", "historico"):
-    morning_call_tab.render_historico(prefs)
-if rota == ("morning-call", "preferencias"):
-    morning_call_tab.render_preferencias(prefs, usuario, _persistir_prefs)
 
 # --- CARTEIRA RECOMENDADA (módulo novo, missão "Frente 4" 2026-11-12/13;
 # camada de dados em data/carteira_recomendada.py). Apresentação em
@@ -1107,7 +1107,7 @@ if rota == ("mais", "config"):
         navegacao.link(
             "MORNING CALL POR E-MAIL: "
             + ("ATIVADO" if prefs.get("morning_call_email_ativo", False) else "DESATIVADO") + " — ALTERAR ↗",
-            "morning-call", "preferencias", chave="config_ir_mc_prefs",
+            "research", "mc-preferencias", chave="config_ir_mc_prefs",
         )
 
         design_system.divisor()
