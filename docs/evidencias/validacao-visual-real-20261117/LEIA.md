@@ -1,17 +1,109 @@
 # Validação visual real — 2026-11-17
 
-Missão de **captura de evidência** (Playwright real, Chromium, não `AppTest`) rodada em
-paralelo por 2 frentes nesta mesma pasta compartilhada — zero correção de código de
-produção aplicada em nenhuma das duas (`ui/*.py`, `data/*.py`, `jobs/*.py`, `app.py`,
+Missão de **captura de evidência** (Playwright real, Chromium, não
+`AppTest`) rodada em paralelo por 3 frentes nesta mesma pasta
+compartilhada — zero correção de código de produção aplicada em
+nenhuma das três (`ui/*.py`, `data/*.py`, `jobs/*.py`, `app.py`,
 `style.css` sem diff).
 
-Regra do projeto (`CLAUDE.md`, regra 7: "sem auditoria repetida") seguida à risca nas
-duas frentes: antes de capturar qualquer coisa, confirmado via `git log -1 --format=%ci`
-se o arquivo de UI real de cada área mudou depois da última captura existente em
-`docs/evidencias/` — reaproveita quando não mudou (ou só mudou cosmético/docs), recaptura
-fresco quando mudou de verdade ou nunca teve captura.
+Regra do projeto (`CLAUDE.md`, regra 7: "sem auditoria repetida")
+seguida à risca nas três frentes: antes de capturar qualquer coisa,
+confirmado via `git log -1 --format=%ci` se o arquivo de UI real de
+cada área mudou depois da última captura existente em
+`docs/evidencias/` — reaproveita quando não mudou (ou só mudou
+cosmético/docs), recaptura fresco quando mudou de verdade ou nunca teve
+captura.
 
-## Frente — WORKSPACE, DCF OPERACIONAL, SAÚDE DOS DADOS, BUSCA/NAVEGAÇÃO
+---
+
+# Frente B — RESEARCH / NOTÍCIAS / COMITÊ / RADAR
+
+## RESEARCH (`ui/research_tab.py`, subaba Casas de Análise)
+
+**Fresco.** `research_1440.png` / `research_1024.png`, via
+`harness_research.py` (novo — não existia harness salvo pra RESEARCH
+antes, só os screenshots soltos em
+`docs/evidencias/research-area-20261023/`, sem o `.py`). Recapturado
+porque `ui/research_tab.py` mudou em 2026-11-06 (commit `773f827`),
+depois da última captura (2026-10-23). Chama `render_casas_analise`
+direto, com `preparar_leitura`/`ultimas_coletas_formatadas`/
+`obter_status_casas`/`cobertura_cruzada_casas`/
+`_premissas_por_tickers_cacheado`/`obter_noticias` monkeypatchados com
+dado mockado plausível (nunca dado real).
+
+Achados: nenhum problema real. Pills de filtro (Casa/Tipo/Ticker/
+Recomendação/Período), busca textual, cards de tese (badge de
+disponibilidade, recomendação/preço-alvo, resumo gerado por IA) e o
+expander fechado "COBERTURA E SAÚDE DAS CASAS" renderizam limpos, sem
+sobreposição/corte, em 1440px e 1024px. Monoespaçado e paleta âmbar/preto
+consistentes com o resto do app.
+
+## NOTÍCIAS (`ui/news_tab.py`, subaba Empresas — feed editorial)
+
+**Fresco.** `noticias_1440.png` / `noticias_1024.png`, via
+`harness_news.py` (novo, adaptado de
+`docs/evidencias/news-card-redesign-20261019/harness_cards.py` — aquele
+só exercitava o componente de card isolado; este chama o PONTO DE
+ENTRADA real, `render_news`, pro mesmo padrão de captura "landing" usado
+nas outras 3 áreas). Recapturado porque `ui/news_tab.py` mudou em
+2026-11-06 (commit `3e33101`), depois da última captura (2026-10-19).
+
+Achado de harness (não é bug de produção): `render_news` é
+`@st.fragment` e chama `_renderizar_feed_editorial` internamente, que
+TAMBÉM é `@st.fragment` — em bare mode (sem sessão real do Streamlit),
+uma função `@st.fragment` chamada "normal" não executa o corpo (mesmo
+achado já documentado em `feedback_streamlit_fragment_bare_mode.md`).
+Resolvido no harness substituindo a referência interna pela versão
+`.__wrapped__` antes de chamar `render_news.__wrapped__`.
+
+Achados de UI: nenhum problema real. Cards (selo/score, veículo, data,
+tickers, resumo "gerado por IA", link "abrir") alinhados e sem
+sobreposição em 1440px e 1024px; pills de Ticker/Selo responsivos.
+
+## COMITÊ (`ui/coordenador_tab.py`, Visão Geral)
+
+**Reaproveitado** de
+`docs/evidencias/agente-d-redesign-estrutural-20261112/
+visao_geral_1440_depois.png` e `visao_geral_1024_depois.png` →
+`comite_1440.png` / `comite_1024.png`. Justificativa: `ui/
+coordenador_tab.py` não mudou depois do commit que gerou essa captura
+(`c16029b`, 2026-11-12 20:35) — é a mesma versão de código.
+
+Achado (já documentado na missão original, não é regressão desta
+validação): em 1024px, a coluna "RESUMO/ERRO" (tabela ÚLTIMAS EXECUÇÕES
+AGENDADAS) e a tabela ANÁLISES SOB DEMANDA RECENTES truncam texto na
+borda direita sem indicação de rolagem horizontal visível no
+screenshot estático — mesmo padrão de degradação aceito em outras
+tabelas do app (`.coord-tabela-wrap`), confirmado no LEIA.md original.
+MENOR, nada novo encontrado.
+
+## RADAR (`ui/radar_tab.py`, subaba Alertas)
+
+**Reaproveitado** de
+`docs/evidencias/agente-a-redesign-estrutural-20261112/
+depois_alertas_1440.png` e `depois_alertas_1024.png` →
+`radar_1440.png` / `radar_1024.png`. Justificativa: `ui/radar_tab.py`
+teve sua última mudança no commit que gerou essa mesma captura
+(`41ad09b`, 2026-11-13 02:16) — é a mesma versão de código. As demais
+subabas de RADAR (Oportunidades, Carteiras Recomendadas, Acompanhamento)
+também já têm captura corrente nas mesmas duas pastas de origem — não
+duplicadas aqui pra não repetir auditoria já feita.
+
+Achados: nenhum problema real. Faixa RESUMO, tabela de alertas e tabela
+MONITORADOS AGORA alinhadas, sem sobreposição/corte em 1440px e 1024px.
+
+### Resumo — Frente B
+
+| Área | Estado | Fresco/Reaproveitado |
+|---|---|---|
+| RESEARCH | nenhum problema real | fresco |
+| NOTÍCIAS | nenhum problema real | fresco |
+| COMITÊ | MENOR (truncamento já documentado, não é regressão) | reaproveitado |
+| RADAR | nenhum problema real | reaproveitado |
+
+---
+
+# Frente C — WORKSPACE / DCF OPERACIONAL / SAÚDE DOS DADOS / BUSCA-NAVEGAÇÃO
 
 ### WORKSPACE — reaproveitado
 
@@ -117,15 +209,17 @@ Screenshots: `saude_dados_desktop-1440.png`, `saude_dados_ipad-1024.png`.
   quebram em 2 linhas e as linhas ficam mais altas, mas nada corta, sobrepõe ou perde
   alinhamento — layout responsivo funcionando.
 
-### O que não foi validado (frente WORKSPACE/DCF/SAÚDE/BUSCA)
+### O que não foi validado (Frente C)
 
 Walkthrough autenticado (login real, Supabase/Groq de produção) não é viável neste
 ambiente — mesma limitação já registrada nas capturas anteriores. Cobertura real: harness
 Playwright local por módulo (acima) com dados mockados explícitos.
 
-## Frente — HOME, MERCADO, MACRO, CALENDÁRIO
+---
 
-### Decisão por área
+# Frente A — HOME / MERCADO / MACRO / CALENDÁRIO
+
+## Decisão por área
 
 - **HOME** (`ui/visao_geral.py`, última mudança 2026-11-12) — screenshot mais
   recente é de 2026-11-13 15:02 (`revisao-interface-bloomberg-20261113/`),
@@ -153,7 +247,7 @@ Playwright local por módulo (acima) com dados mockados explícitos.
   `revisao-interface-bloomberg-20261113/`, sem alteração — a API mockada
   continua idêntica).
 
-### Avaliação visual (olhando cada imagem)
+## Avaliação visual (olhando cada imagem)
 
 - **HOME / MERCADO**: identidade Bloomberg preto/âmbar consistente, tipografia
   monoespaçada, tabelas bem alinhadas, nada sobreposto/cortado de forma
@@ -179,11 +273,24 @@ Playwright local por módulo (acima) com dados mockados explícitos.
   pela borda inferior da célula quando o dia tem evento (visível em 1440 e
   1024) — MENOR.
 
+### Resumo — Frente A
+
 Nenhum problema CRÍTICO encontrado em nenhuma das 4 áreas desta frente.
 
-## Resumo dos achados CRÍTICOS desta sessão (todas as frentes)
+---
 
-Único CRÍTICO novo encontrado em toda a sessão: a tabela "PROJEÇÃO" do DCF OPERACIONAL
-(`st.dataframe` com fundo branco quebrando a identidade preto/âmbar) — ver seção acima.
-Todos os outros achados (HOME/MERCADO treemap, MACRO Indicadores eixo Y, CALENDÁRIO
-rótulo de status, DCF métricas cortadas em 1024px) são MÉDIO/MENOR.
+## Consolidado — todas as 12 áreas (Frentes A + B + C)
+
+Único **CRÍTICO** encontrado em toda a sessão (as 3 frentes somadas):
+a tabela "PROJEÇÃO" do DCF OPERACIONAL (`st.dataframe` com fundo branco
+quebrando a identidade preto/âmbar — ver Frente C). Todos os outros
+achados (HOME/MERCADO treemap, MACRO Indicadores eixo Y, CALENDÁRIO
+rótulo de status, DCF métricas cortadas em 1024px, COMITÊ truncamento de
+coluna em 1024px) são MÉDIO/MENOR e, onde já havia missão anterior
+cobrindo a mesma tela, pré-existentes — não introduzidos por nenhuma das
+3 frentes desta sessão. RESEARCH, NOTÍCIAS, RADAR, WORKSPACE e
+BUSCA/NAVEGAÇÃO não tiveram nenhum problema encontrado.
+
+Nenhum arquivo de produção foi tocado por nenhuma das três frentes —
+diff de todas restrito a
+`docs/evidencias/validacao-visual-real-20261117/`.
