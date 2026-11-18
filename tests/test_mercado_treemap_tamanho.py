@@ -79,11 +79,14 @@ def test_altura_da_figura_e_razoavel_pra_coluna_estreita():
     _checar("altura da figura no Painel está entre 300 e 520px", 300 <= figura_px <= 520, f"(figura={figura_px}px)")
 
 
-def test_altura_default_do_treemap_nao_regride_para_setores():
-    """_painel_treemap é COMPARTILHADO com ui/setores_tab.py (importada
-    direto, renderizada em largura cheia lá) - a altura DEFAULT não pode
-    encolher pro tamanho calibrado pro Painel, senão regride o fix de
-    "mapa pequeno" já validado em SETORES (2026-10-26)."""
+def test_altura_default_do_treemap_nao_regride():
+    """_painel_treemap - a altura DEFAULT não pode encolher pro tamanho
+    calibrado pro Painel, senão regride o fix de "mapa pequeno" já
+    validado em 2026-10-26. (Até a Fase 2b/2026-11-17 esta função era
+    COMPARTILHADA com ui/setores_tab.py, área dissolvida por ser
+    duplicata literal deste mesmo painel - ver docstring de
+    ui/setores_tab.py; a altura default continua a mesma, só não serve
+    mais um 2º consumidor.)"""
     _checar(
         "altura default (_ALTURA_TREEMAP_PX) continua a mesma de antes do redesign do Painel (580px)",
         mercado_tab_mod._ALTURA_TREEMAP_PX == 580, f"(obtido: {mercado_tab_mod._ALTURA_TREEMAP_PX})",
@@ -93,7 +96,7 @@ def test_altura_default_do_treemap_nao_regride_para_setores():
          patch.object(mercado_tab_mod, "obter_momento_panorama", return_value=datetime.now(timezone.utc)), \
          patch.object(mercado_tab_mod.st, "plotly_chart", side_effect=lambda fig, **k: figuras.append(fig)):
         mercado_tab_mod._painel_treemap(_PREFS)
-    _checar("sem altura_px explícito, usa a altura default compartilhada com SETORES",
+    _checar("sem altura_px explícito, usa a altura default",
             figuras[0].layout.height == mercado_tab_mod._ALTURA_TREEMAP_PX, f"(obtido: {figuras[0].layout.height})")
 
 

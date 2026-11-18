@@ -22,7 +22,7 @@ from ui.navegacao import AREAS, ROTA_LEGADO
 RAIZ = Path(__file__).parent.parent
 
 ORDEM_ESPERADA = ["mercado", "noticias", "radar", "research", "analises", "valuation", "comite", "macro",
-                  "calendario", "setores", "morning-call", "carteira-recomendada", "mais"]
+                  "calendario", "morning-call", "carteira-recomendada", "mais"]
 
 
 def _todas_rotas():
@@ -31,16 +31,17 @@ def _todas_rotas():
 
 def test_ordem_das_areas_principais():
     assert [a.id for a in AREAS] == ORDEM_ESPERADA
-    assert [a.rotulo for a in AREAS][:11] == [
+    assert [a.rotulo for a in AREAS][:10] == [
         "MERCADO", "NOTÍCIAS", "RADAR", "RESEARCH", "ANÁLISES", "VALUATION", "COMITÊ", "MACRO",
-        "CALENDÁRIO", "SETORES", "MORNING CALL",
+        "CALENDÁRIO", "MORNING CALL",
     ]
 
 
 def test_subabas_exigidas_pela_arquitetura():
     subs = {a.id: [s.rotulo for s in a.subabas] for a in AREAS}
     assert subs["mercado"] == ["Visão Geral", "Painel", "Mercados Globais"]
-    assert subs["noticias"][:4] == ["Destaques", "Brasil", "Internacional", "Empresas"]
+    assert subs["noticias"] == ["Destaques", "Brasil", "Internacional", "Empresas", "Documentos CVM",
+                                 "Visão por Setor", "Catalisadores Setoriais"]
     assert subs["radar"] == ["Alertas", "Carteiras Recomendadas", "Oportunidades", "Acompanhamento", "Preferências"]
     assert subs["research"] == ["Feed", "Casas de Análise", "Radar X", "Minha Tese", "Memória de Research"]
     assert subs["analises"] == ["Empresas", "Fundamentos"]
@@ -50,7 +51,6 @@ def test_subabas_exigidas_pela_arquitetura():
     ]
     assert subs["macro"] == ["Indicadores", "Juros", "Câmbio e Commodities"]
     assert subs["calendario"] == ["Eventos Corporativos", "Calendário Econômico"]
-    assert subs["setores"] == ["Mapa Setorial", "Visão por Setor", "Catalisadores"]
     assert subs["morning-call"] == ["Edição Atual", "Relatório Completo", "Histórico", "Preferências"]
     assert subs["carteira-recomendada"] == ["Visão Geral", "Histórico"]
 
@@ -100,8 +100,14 @@ def test_preferencia_antiga_de_abas_esconde_subabas():
     # do Comitê" depende de RADAR, que não está visível aqui.
     # "calendario" NAO sobrevive - as 2 subabas dependem de legado
     # (CALENDÁRIO/MACRO), nenhuma e' sempre-visivel.
-    assert [a.id for a in minimas] == ["radar", "research", "valuation", "comite", "setores", "morning-call",
+    # "noticias" sobrevive so' com a lente setorial (Fase 2b: "Visão por
+    # Setor"/"Catalisadores Setoriais" nao tem legado, vieram da extinta
+    # area SETORES) - destaques/brasil/internacional/empresas/documentos
+    # dependem todos de aba antiga, somem.
+    assert [a.id for a in minimas] == ["noticias", "radar", "research", "valuation", "comite", "morning-call",
                                         "carteira-recomendada", "mais"]
+    noticias_minima = next(a for a in minimas if a.id == "noticias")
+    assert [s.id for s in noticias_minima.subabas] == ["setor", "catalisadores-setor"]
     valuation_minimo = next(a for a in minimas if a.id == "valuation")
     assert [s.id for s in valuation_minimo.subabas] == ["simulador"]
     radar_minimo = next(a for a in minimas if a.id == "radar")
@@ -193,7 +199,7 @@ aviso = navegacao.consumir_aviso()
 if aviso:
     st.info(aviso)
 st.markdown(f"ROTA={area}/{sub}")
-navegacao.link("Ir pro setor", "setores", "setor", chave="vinculo_teste")
+navegacao.link("Ir pro setor", "noticias", "setor", chave="vinculo_teste")
 '''
 
 
@@ -246,8 +252,8 @@ def test_appteste_troca_de_area_e_memoria_da_subaba():
 def test_appteste_vinculo_contextual():
     at = _app()
     at.button(key="vinculo_teste").click().run()
-    assert _rota(at) == "setores/setor"
-    assert at.query_params["aba"] == ["setores"]
+    assert _rota(at) == "noticias/setor"
+    assert at.query_params["aba"] == ["noticias"]
 
 
 # --- link() dentro de um st.form ---------------------------------------------
@@ -276,7 +282,7 @@ with st.form("form_teste_vinculo"):
     st.text_input("Nome", key="form_nome")
     st.number_input("Idade", key="form_idade", value=0)
     clicou_link = navegacao.link(
-        "Ir pro setor (form)", "setores", "setor", chave="vinculo_form_teste",
+        "Ir pro setor (form)", "noticias", "setor", chave="vinculo_form_teste",
     )
     st.markdown(f"CLICOU_LINK={clicou_link}")
     enviado = st.form_submit_button("Enviar")
@@ -342,7 +348,7 @@ def test_link_dentro_de_formulario_nao_e_mais_um_st_button_real():
 def test_link_dentro_de_formulario_gera_href_da_rota_certa():
     at = _app_form()
     href = _href_do_link_form(at)
-    assert href == "?aba=setores&sub=setor"
+    assert href == "?aba=noticias&sub=setor"
 
 
 def test_link_fora_de_formulario_continua_sendo_st_button_real_on_click():
@@ -353,7 +359,7 @@ def test_link_fora_de_formulario_continua_sendo_st_button_real_on_click():
     at = _app()
     assert not any(m.value.startswith("<a href=") for m in at.markdown)
     at.button(key="vinculo_teste").click().run()
-    assert _rota(at) == "setores/setor"
+    assert _rota(at) == "noticias/setor"
 
 
 def test_formulario_com_multiplos_campos_nao_perde_dado_so_por_ter_link():
@@ -410,7 +416,7 @@ def test_navegacao_sem_submissao_via_href_do_link_do_form():
     query = dict(p.split("=") for p in [aba, sub])
     at_destino = _app(query)
     assert not at_destino.exception
-    assert _rota(at_destino) == "setores/setor"
+    assert _rota(at_destino) == "noticias/setor"
 
 
 def test_persistencia_de_session_state_apos_rerun_do_form():
@@ -446,8 +452,8 @@ def test_idempotencia_rerun_multiplo_sem_clique_nao_duplica_efeito():
 def test_href_rota_funcao_pura():
     """_href_rota isolada (sem Streamlit) - mesma função usada no fallback
     de link(); cobre os 3 formatos (area só, area+sub, area+sub+ticker)."""
-    assert navegacao._href_rota("setores", None, None) == "?aba=setores"
-    assert navegacao._href_rota("setores", "setor", None) == "?aba=setores&sub=setor"
+    assert navegacao._href_rota("noticias", None, None) == "?aba=noticias"
+    assert navegacao._href_rota("noticias", "setor", None) == "?aba=noticias&sub=setor"
     assert navegacao._href_rota("analises", "empresas", "PETR4") == "?aba=analises&sub=empresas&ticker=PETR4"
 
 

@@ -178,20 +178,13 @@ with patch.object(mt, "_painel_selic_cdi", lambda p: None), \\
     _roda(script)
 
 
-# --- SETORES › Mapa Setorial (setores_tab.py) -------------------------------
-
-def test_smoke_setores_mapa():
-    script = '''
-import config
-from unittest.mock import patch
-import ui.setores_tab as setores_tab
-
-prefs = dict(config.PREFS_PADRAO)
-with patch.object(setores_tab, "_painel_setorial", lambda p: None), \\
-     patch.object(setores_tab, "_painel_treemap", lambda p: None):
-    setores_tab.render_mapa_setorial(prefs)
-'''
-    _roda(script)
+# NOTA (Fase 2b, 2026-11-17): o smoke de "SETORES › Mapa Setorial" foi
+# removido daqui - a area SETORES foi dissolvida (render_mapa_setorial
+# era duplicata literal de MERCADO > Painel, ja coberto pelo smoke dessa
+# aba). "Visão por Setor"/"Catalisadores Setoriais" (as 2 subabas reais
+# que sobraram, agora em NOTÍCIAS) continuam cobertas por
+# tests/test_navegacao.py (rota/despacho) e pelos testes proprios de
+# ui/setores_tab.py, se existirem.
 
 
 # --- MORNING CALL › Histórico (morning_call_tab.py, mesmo mock de test_pregao2_modulos.py)
