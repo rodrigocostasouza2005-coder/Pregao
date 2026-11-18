@@ -907,13 +907,58 @@ def _render_indicadores_financeiros(indicadores: dict):
     )
 
 
+def _render_achados_revisao(analista: dict):
+    """Bloco próprio do Valuation Reviewer: achados estruturados da
+    revisão independente (lista de {tipo, descricao}) + limitações
+    declaradas - NUNCA os genéricos "Pontos favoráveis"/"Pontos
+    contrários" usados pelos demais especialistas (reformulação de
+    apresentação por especialista, achado real de auditoria anterior).
+
+    Esses 2 campos (achados/limitacoes) são os que pareceres.py de fato
+    devolve pra este especialista (ver montar_pareceres) - "contras" do
+    parecer já é só achados reformatado em texto corrido
+    (f"{tipo}: {descricao}"), e "pros" é só a frase fixa de "nenhuma
+    inconsistência" quando não há achado; mostrar os dois ao lado de um
+    bloco de achados estruturado duplicaria a mesma informação 2x sob
+    rótulos diferentes. Achados vazios + revisão disponível é um
+    resultado REAL (revisão concluída, nada encontrado) - nunca tratado
+    como ausência de dado."""
+    dcf = analista.get("dcf") or {}
+    achados = [a for a in (analista.get("achados") or []) if isinstance(a, dict)]
+    subtitulo("Achados da revisão independente")
+    if achados:
+        lista_compacta(
+            f"<b>{html.escape(str(a.get('tipo') or 'ACHADO'))}</b>: {html.escape(str(a.get('descricao') or ''))}"
+            for a in achados
+        )
+    elif dcf.get("disponivel"):
+        st.caption("Revisão concluída: nenhuma inconsistência encontrada nos cenários do Model Builder.")
+    else:
+        st.caption("Revisão ainda não disponível para esta análise.")
+
+
 def _render_parecer_analista(analista: dict):
     """Conteúdo de 1 aba da seção "Pareceres por especialista": método/
     dados usados, premissas (quando houver), tese e pontos favoráveis/
     contrários - mesmo conteúdo que antes ficava num st.expander
     sequencial por analista; aqui vira o corpo de 1 aba (st.tabs), pra
     deixar claro que cada analista é uma visão independente, lida em
-    paralelo (não uma lista vertical só de texto)."""
+    paralelo (não uma lista vertical só de texto).
+
+    REFORMULAÇÃO POR ESPECIALISTA (cards claros, achado real de auditoria
+    anterior): "Pontos favoráveis"/"Pontos contrários" só é exibido pros
+    especialistas cujo schema real tem esses campos (market_researcher/
+    earnings_reviewer/valuation_comparables - ver
+    data/coordenador_central/pareceres.py:montar_pareceres). model_builder
+    NUNCA teve pros/contras no próprio dict (chave ausente, não lista
+    vazia) - antes esta função ainda assim mostrava "Sem evidência
+    favorável/contrária estruturada" pra ele, um placeholder que sugeria
+    dado ausente quando na verdade esse campo nunca existiu pra este
+    especialista (o que ele de fato produz - cenários/premissas - já
+    aparece abaixo, via _render_parecer_model_builder). valuation_reviewer
+    tem pros/contras no dict, mas são só achados/motivo reformatados em
+    texto corrido; mostra-se em vez disso o campo real e mais rico
+    (achados estruturados + limitações), via _render_achados_revisao."""
     analista_id = str(analista.get("id") or "")
     recomendacao = str(analista.get("recomendacao") or "INSUFICIENTE")
     vies = html.escape(str(analista.get("vies") or "SEM BASE"))
@@ -951,15 +996,22 @@ def _render_parecer_analista(analista: dict):
     if analista.get("indicadores"):
         _render_indicadores_financeiros(analista["indicadores"])
 
-    pros = analista.get("pros") or []
-    contras = analista.get("contras") or []
-    col_pro, col_con = st.columns(2)
-    with col_pro:
-        st.markdown("**Pontos favoráveis**")
-        lista_compacta(html.escape(str(x)) for x in pros) if pros else st.caption("Sem evidência favorável estruturada.")
-    with col_con:
-        st.markdown("**Pontos contrários**")
-        lista_compacta(html.escape(str(x)) for x in contras) if contras else st.caption("Sem evidência contrária estruturada.")
+    if analista_id == "model_builder":
+        # Sem bloco de pros/contras aqui - o schema real deste
+        # especialista não tem esses campos (ver docstring da função).
+        pass
+    elif analista_id == "valuation_reviewer":
+        _render_achados_revisao(analista)
+    else:
+        pros = analista.get("pros") or []
+        contras = analista.get("contras") or []
+        col_pro, col_con = st.columns(2)
+        with col_pro:
+            st.markdown("**Pontos favoráveis**")
+            lista_compacta(html.escape(str(x)) for x in pros) if pros else st.caption("Sem evidência favorável estruturada.")
+        with col_con:
+            st.markdown("**Pontos contrários**")
+            lista_compacta(html.escape(str(x)) for x in contras) if contras else st.caption("Sem evidência contrária estruturada.")
 
     # Limitações declaradas pelo próprio especialista (ex.: Earnings
     # Reviewer/Valuation Reviewer) - achado real (auditoria 2026-11-11):
