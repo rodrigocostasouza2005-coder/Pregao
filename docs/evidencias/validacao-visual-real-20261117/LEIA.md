@@ -294,3 +294,67 @@ BUSCA/NAVEGAÇÃO não tiveram nenhum problema encontrado.
 Nenhum arquivo de produção foi tocado por nenhuma das três frentes —
 diff de todas restrito a
 `docs/evidencias/validacao-visual-real-20261117/`.
+
+---
+
+# Revalidação pós-reestruturação (Fase 4 — MISSÃO MASTER)
+
+Depois da reconstrução completa (navegação/design system/Comitê/DCF/camada
+analítica, Fases 1-3), recaptura visual de 17 telas (34 PNGs, 1440+1024px)
+pra confirmar que nada regrediu com a mudança de paleta e a reorganização
+de rotas (SETORES dissolvida, MORNING CALL absorvida por RESEARCH,
+CALENDÁRIO/VALUATION/COMITÊ novas áreas).
+
+## Revisão feita (olhando cada imagem, não só rodando o harness)
+
+- **comite_especialistas**, **comite_historico_divergencia**,
+  **comite_pos_reestruturacao**: OK. `comite_historico_divergencia` (PETR4)
+  já mostra, numa tela só, preço + recomendação/confiança do Comitê + alvo
+  de DCF + consenso das casas de research + tese + indicadores financeiros
+  + prós/contras + o novo painel de divergência entre especialistas — é a
+  tela que mais se aproxima do que foi pedido depois (opinião do analista +
+  contexto da empresa junto do preço).
+- **research_mc_edicao**, **valuation_simulador_dcf**: OK, nenhuma
+  regressão (consistente com o fix de truncamento de métrica já validado
+  na Fase 1).
+- **saude_dados_pos_reestruturacao**: o par original estava quebrado — era
+  uma tela de erro do Streamlit ("Script execution error") de um worktree
+  morto, não uma captura real. Recapturado do zero (`harness_saude_dados.py`,
+  porta 19200, a partir da raiz do projeto) — confirma as 4 cores de status
+  distintas corretas na paleta nova.
+- **home_pos_reestruturacao_1440** e **calendario_pos_reestruturacao_1440**:
+  ambos vieram 100% pretos (nenhum pixel não-preto) no lote original — não
+  é regressão de produto, é flake de captura (`shot.py` tira o screenshot
+  logo após redimensionar o viewport pra altura real; o 1024 do mesmo
+  harness, mesmos dados, veio perfeito). Recapturados isoladamente
+  (portas 19301/19303) e confirmados corretos antes de substituir o PNG.
+  Varredura automatizada (brilho máximo de pixel) rodada em todos os 30
+  PNGs 1440 e todos os 1024 do diretório pra garantir que não sobrou
+  nenhum outro caso igual — não sobrou.
+- **valuation_parecer** (WATCHLIST + pills de ticker visíveis, mas sem
+  tabela abaixo): investigado a fundo, NÃO é bug. `render_valuation` chama
+  `radar.valuation_radar(...)`, que bate em yfinance ao vivo e não está
+  mockado em `harness_radar_fase4.py --valuation` (diferente das outras
+  seções do mesmo harness, que mockam tudo). Reproduzido isolado: a chamada
+  trava além de 25s neste sandbox (mesma instabilidade de rede já
+  documentada pro teste
+  `test_compatibilidade_render_mercados_globais_e_render_research_e_fatores`,
+  que falha isolado por "VALE3.SA possibly delisted"). Nenhum PR desta
+  missão tocou `_secao_valuation`/`radar.valuation_radar` — só a ROTA
+  mudou (de ANÁLISES/COMITÊ pra VALUATION). Limitação de harness/ambiente,
+  não defeito de código; sem alteração de produção feita por causa disto.
+- Demais telas do lote (**carteiras_visao_geral**, **mercado**,
+  **macro_indicadores**, **macro_juros**, **noticias_destaques**,
+  **noticias_setor**, **radar_pos_reestruturacao**, **research_feed**):
+  revisadas, sem problema novo. `carteiras_visao_geral` confirma o
+  gap de correlação entre ativos declarado explicitamente ("GAP conhecido")
+  em vez de qualquer número inventado.
+
+## Resultado
+
+Nenhum CRÍTICO ou defeito de produto novo encontrado nesta revalidação.
+Suíte completa (`pytest`) rodada 2x em paralelo nesta mesma worktree:
+2679 passed cada vez; a única falha observada em execução isolada
+(`test_compatibilidade_render_mercados_globais_e_render_research_e_fatores`)
+é a mesma flakiness de rede/yfinance já documentada em missões anteriores,
+não uma regressão desta.
