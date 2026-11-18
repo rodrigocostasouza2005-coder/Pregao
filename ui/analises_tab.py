@@ -46,6 +46,7 @@ import streamlit as st
 
 import config
 from data.coordenador_central import persistencia as coordenador_persistencia
+from data.coordenador_central.dcf import calcular_dcf, calcular_sensibilidade_dcf
 from data.earnings import reviewer as earnings_reviewer
 from data.market_researcher import analise_ticker, consenso_research
 from data.prices import obter_cotacao, obter_indicadores
@@ -698,59 +699,6 @@ _MOTIVO_FONTE_INDISPONIVEL = {
 }
 
 
-def _dcf_calculo(fcf_atual, taxa_crescimento_pct, taxa_desconto_pct, anos_projecao: int = 5,
-                  valor_mercado=None) -> dict:
-    """Fluxo de caixa descontado - TODAS as premissas (fcf_atual,
-    taxa_crescimento_pct, taxa_desconto_pct) vêm de fora, nunca um
-    padrão interno; None em qualquer uma bloqueia o cálculo com `motivo`
-    explícito dizendo QUAL está faltando (nunca aproxima). Perpetuidade
-    de Gordon pro valor terminal - exige taxa_desconto > taxa_crescimento
-    (senão o denominador inverte de sinal, premissa inválida, não
-    calculado). Função pura, testável isoladamente - chamada por
-    _controle_dcf_inline (abaixo) sempre que _fcf_para_dcf encontra FCF
-    (ponto do yfinance OU, na ausência dele, acumulado no ano via CVM -
-    corrigido na auditoria 2026-11-05, este docstring dizia erradamente
-    que fcf_atual nunca estava disponível). Quando nenhuma das duas
-    fontes tem FCF, a seção de Valuation cai pra _TEXTOS_LACUNA['dcf']
-    e _controle_dcf_inline nem renderiza o controle."""
-    faltando = []
-    if fcf_atual is None:
-        faltando.append("fluxo de caixa livre atual")
-    if taxa_crescimento_pct is None:
-        faltando.append("taxa de crescimento esperada (premissa do usuário)")
-    if taxa_desconto_pct is None:
-        faltando.append("taxa de desconto / WACC (premissa do usuário)")
-    if faltando:
-        return {"calculavel": False, "motivo": f"faltando: {', '.join(faltando)}."}
-
-    g, wacc = taxa_crescimento_pct / 100, taxa_desconto_pct / 100
-    if wacc <= g:
-        return {"calculavel": False,
-                "motivo": "taxa de desconto precisa ser maior que a taxa de crescimento para o "
-                          "valor terminal (perpetuidade de Gordon) ser matematicamente válido."}
-
-    valor_presente_fluxos = 0.0
-    fcf_projetado = fcf_atual
-    for ano in range(1, anos_projecao + 1):
-        fcf_projetado *= (1 + g)
-        valor_presente_fluxos += fcf_projetado / ((1 + wacc) ** ano)
-    valor_terminal = fcf_projetado * (1 + g) / (wacc - g)
-    valor_presente_terminal = valor_terminal / ((1 + wacc) ** anos_projecao)
-    valor_justo_estimado = valor_presente_fluxos + valor_presente_terminal
-
-    resultado = {
-        "calculavel": True,
-        "premissas": {"fcf_atual": fcf_atual, "taxa_crescimento_pct": taxa_crescimento_pct,
-                       "taxa_desconto_pct": taxa_desconto_pct, "anos_projecao": anos_projecao},
-        "valor_presente_fluxos": valor_presente_fluxos,
-        "valor_presente_terminal": valor_presente_terminal,
-        "valor_justo_estimado": valor_justo_estimado,
-    }
-    if valor_mercado:
-        resultado["potencial_pct"] = (valor_justo_estimado / valor_mercado - 1) * 100
-    return resultado
-
-
 def _secao_qualidade_negocio(historico: dict, lacunas_ativas: set) -> dict:
     if not (historico or {}).get("disponivel"):
         motivo = (historico or {}).get("motivo", "histórico trimestral indisponível nesta checagem.")
@@ -1377,6 +1325,18 @@ _ROTULO_EVIDENCIA = {
 }
 
 
+_ROTULOS_CAMPOS_DCF_INLINE = {
+    "fcf_base": "fluxo de caixa livre atual",
+    "wacc": "taxa de desconto / WACC",
+    "g_terminal": "taxa de crescimento perpétuo",
+    "divida_liquida": "dívida líquida (yfinance)",
+    "acoes": "número de ações implícito (valor de mercado ÷ preço atual)",
+    "crescimento_fcf_otimista": "taxa de crescimento (cenário otimista)",
+    "crescimento_fcf_base": "taxa de crescimento (cenário base)",
+    "crescimento_fcf_pessimista": "taxa de crescimento (cenário pessimista)",
+}
+
+
 def _controle_dcf_inline(ticker: str, fundamentos: dict | None, historico: dict | None):
     """Controle INLINE (efeito imediato, no próprio painel - nunca um
     formulário separado) pra calcular o DCF só quando o usuário informar
@@ -1384,7 +1344,36 @@ def _controle_dcf_inline(ticker: str, fundamentos: dict | None, historico: dict 
     taxa de desconto por padrão (number_input sem `value` fixo, começa
     vazio/None). Só aparece quando há fluxo de caixa livre pra descontar
     - ponto atual (yfinance) ou, na ausência dele, acumulado no ano
-    (CVM) - ver _fcf_para_dcf/_secao_valuation/_TEXTOS_LACUNA['dcf']."""
+    (CVM) - ver _fcf_para_dcf/_secao_valuation/_TEXTOS_LACUNA['dcf'].
+
+    Dedup 2026-11-18 (auditoria de lógica duplicada): este painel tinha
+    um 3º motor de DCF embutido (_dcf_calculo, removido aqui) que
+    resolvia o MESMO problema do motor #1 do Model Builder
+    (data/coordenador_central/dcf.py:calcular_dcf - FCF + crescimento +
+    WACC -> preço justo via Gordon Growth), só que de forma mais pobre:
+    1 único cenário, sem matriz de sensibilidade, e comparando o valor
+    presente total do FCF direto contra o valor de mercado (equity) SEM
+    nunca subtrair a dívida líquida - metodologicamente inconsistente
+    sempre que o FCF usado não é já líquido de dívida. Agora chama
+    calcular_dcf/calcular_sensibilidade_dcf diretamente - zero lógica de
+    desconto duplicada - e ganha de graça: (1) dívida líquida de fato
+    subtraída (yfinance - já buscada, só não estava exposta até
+    aqui, ver linha_valuation em data/radar.py) pra chegar num preço-
+    alvo POR AÇÃO comparável à cotação atual, em vez de comparar valor
+    total a valor de mercado; (2) a matriz de sensibilidade (WACC x
+    crescimento) que o motor #1 já calculava e esta tela nunca mostrou.
+
+    Esta tela continua coletando só 2 premissas (crescimento e
+    desconto, nunca um intervalo otimista/pessimista) - nunca inventa um
+    terceiro número. Por isso os cenários otimista/base/pessimista do
+    motor #1 recebem a MESMA taxa de crescimento informada (o motor
+    exige os 3, tudo-ou-nada; preencher com valores diferentes sem o
+    usuário ter informado um intervalo seria inventar dado) - resultado
+    idêntico nos 3, o que é esperado e fica dito explicitamente no
+    rodapé. O crescimento perpétuo (g_terminal) também reaproveita a
+    mesma taxa - preserva o comportamento numérico do motor antigo, que
+    já usava um único "g" tanto na projeção de 5 anos quanto no valor
+    terminal."""
     fcf, fonte_fcf = _fcf_para_dcf(fundamentos, historico)
     if fcf is None:
         return
@@ -1401,23 +1390,79 @@ def _controle_dcf_inline(ticker: str, fundamentos: dict | None, historico: dict 
         if crescimento is None or desconto is None:
             st.caption("Informe as duas premissas acima para calcular o valor justo por DCF.")
             return
-        resultado = _dcf_calculo(fcf, crescimento, desconto, valor_mercado=fundamentos.get("valor_mercado"))
-        if not resultado["calculavel"]:
-            st.warning(f"DCF não calculado: {resultado['motivo']}")
+
+        fundamentos = fundamentos or {}
+        preco_atual = _numero_finito(fundamentos.get("preco"))
+        valor_mercado = _numero_finito(fundamentos.get("valor_mercado"))
+        acoes = (
+            valor_mercado / preco_atual
+            if valor_mercado is not None and preco_atual is not None and preco_atual > 0 else None
+        )
+        g = crescimento / 100
+        premissas = {
+            "fcf_base": fcf,
+            "wacc": desconto / 100,
+            "g_terminal": g,
+            "crescimento_fcf_otimista": g,
+            "crescimento_fcf_base": g,
+            "crescimento_fcf_pessimista": g,
+            "divida_liquida": fundamentos.get("divida_liquida"),
+            "acoes": acoes,
+            "moeda": fundamentos.get("moeda"),
+            "origem_divida_liquida": "yfinance — dívida líquida reportada (totalDebt - totalCash)",
+            "fonte_divida_liquida": "yfinance",
+            "fonte_premissas": (
+                f"FCF: {fonte_fcf}; dívida líquida e ações implícitas (valor de mercado ÷ preço): "
+                "yfinance; crescimento e WACC: premissa sua, aplicada igualmente aos 3 cenários "
+                "(esta tela coleta uma única taxa, não um intervalo)."
+            ),
+        }
+        resultado = calcular_dcf(premissas, preco_atual=preco_atual)
+        if not resultado["disponivel"]:
+            motivo = resultado["motivo"]
+            faltantes = [_ROTULOS_CAMPOS_DCF_INLINE.get(c, c) for c in (resultado.get("campos_faltantes") or [])]
+            if faltantes:
+                motivo += " Campos ausentes: " + ", ".join(faltantes) + "."
+            st.warning(f"DCF não calculado: {motivo}")
             return
+
+        base = resultado["cenarios"]["base"]
+        alvo = base["preco_alvo"]
+        upside = base.get("upside_pct")
         st.markdown(
             f"<span style='font-size:0.62rem; letter-spacing:0.04em; color:var(--ciano);'>"
             f"[CÁLCULO INTERNO sobre HIPÓTESE DO ANALISTA - informado por você]</span> "
-            f"Valor justo estimado (DCF, 5 anos de projeção): {_fmt_reais(resultado['valor_justo_estimado'], 'BR')}"
-            + (f" (potencial indicativo {resultado['potencial_pct']:+.1f}% vs. valor de mercado atual)."
-               if resultado.get("potencial_pct") is not None else "."),
+            f"Preço-alvo estimado (DCF, 5 anos de projeção + Gordon Growth, líquido de dívida): "
+            f"{_fmt_reais(alvo, 'BR')}"
+            + (f" (potencial indicativo {upside:+.1f}% vs. preço atual)."
+               if isinstance(upside, (int, float)) else "."),
             unsafe_allow_html=True,
         )
         st.caption(
             f"Premissas: {fonte_fcf} = {_fmt_reais(fcf, 'BR')} · "
-            f"crescimento {crescimento:.1f}% a.a. e desconto {desconto:.1f}% a.a. informados por você · "
-            "projeção simplificada de 5 anos + perpetuidade de Gordon. Não é recomendação de compra ou venda."
+            f"crescimento {crescimento:.1f}% a.a. e desconto {desconto:.1f}% a.a. informados por você "
+            "(mesma taxa usada no crescimento perpétuo e nos cenários otimista/base/pessimista - esta "
+            "tela não coleta um intervalo) · dívida líquida e ações implícitas via yfinance. "
+            "Não é recomendação de compra ou venda."
         )
+
+        sensibilidade = calcular_sensibilidade_dcf(premissas, preco_atual=preco_atual)
+        if sensibilidade.get("disponivel"):
+            with st.expander("Sensibilidade do preço-alvo (WACC × crescimento)"):
+                st.caption(
+                    "Preço-alvo por ação variando WACC (linhas) e a taxa de crescimento informada "
+                    "(colunas), em pontos percentuais - demais premissas constantes."
+                )
+                linhas_tabela = []
+                for linha in sensibilidade["linhas"]:
+                    linha_tab = {"WACC": f"{linha['wacc'] * 100:.1f}%"}
+                    for celula in linha["celulas"]:
+                        rotulo_coluna = f"cresc. {celula['crescimento_fcf'] * 100:.1f}%"
+                        linha_tab[rotulo_coluna] = (
+                            _fmt_reais(celula["preco_alvo"], "BR") if celula.get("disponivel") else "—"
+                        )
+                    linhas_tabela.append(linha_tab)
+                st.dataframe(linhas_tabela, hide_index=True, width="stretch")
 
 
 def render_conclusao_investimento(ticker: str, prefs: dict, usuario: dict):
