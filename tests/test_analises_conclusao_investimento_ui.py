@@ -17,8 +17,13 @@ usuário quando existir.
    explícito, que lacunas estruturais nunca são repetidas por extenso em
    mais de uma seção (só citadas por nome, texto completo só em "Lacunas
    de informação"), e que nunca aparece uma recomendação de compra/venda.
-2. `_dcf_calculo`, `_calcular_confianca`, `_montar_cenarios` isoladas -
-   cálculos puros usados pela conclusão.
+2. `_calcular_confianca`, `_montar_cenarios` isoladas - cálculos puros
+   usados pela conclusão. O DCF inline (`_controle_dcf_inline`) chama
+   diretamente o motor único data/coordenador_central/dcf.py:
+   calcular_dcf (dedup 2026-11-18 - ver docstring de
+   _controle_dcf_inline em ui/analises_tab.py: este painel tinha um 3º
+   motor de DCF embutido, redundante com o motor #1 do Model Builder,
+   removido em favor de reusar calcular_dcf/calcular_sensibilidade_dcf).
 3. `render_conclusao_investimento` em bare mode - mesmo padrão de
    tests/test_analises_equity_research_ui.py (patch de st.markdown/
    caption/warning/container, sem ScriptRunContext real)."""
@@ -458,33 +463,106 @@ def test_cenarios_dado_insuficiente_sem_nenhum_insumo():
     assert cenarios["tipo_evidencia"] == at_mod.TIPO_INSUFICIENTE
 
 
-# --- _dcf_calculo (pura) -----------------------------------------------------
+# --- _controle_dcf_inline (dedup 2026-11-18: chama calcular_dcf/
+#     calcular_sensibilidade_dcf de data/coordenador_central/dcf.py
+#     diretamente - motor único, mesmo usado pelo Model Builder do
+#     Comitê; o 3º motor embutido (_dcf_calculo) foi removido) ---------------
 
-def test_dcf_bloqueado_sem_premissa_do_usuario():
-    resultado = at_mod._dcf_calculo(fcf_atual=1_000_000, taxa_crescimento_pct=None, taxa_desconto_pct=10)
-    assert resultado["calculavel"] is False
-    assert "taxa de crescimento" in resultado["motivo"]
-
-
-def test_dcf_bloqueado_sem_fluxo_de_caixa_livre():
-    resultado = at_mod._dcf_calculo(fcf_atual=None, taxa_crescimento_pct=5, taxa_desconto_pct=10)
-    assert resultado["calculavel"] is False
-    assert "fluxo de caixa livre" in resultado["motivo"]
+_FUNDAMENTOS_DCF_COMPLETO = {
+    "preco": 40.0, "valor_mercado": 150_000_000_000.0, "divida_liquida": 10_000_000_000.0,
+    "fluxo_caixa_livre": 3_000_000_000.0, "moeda": "BRL",
+}
 
 
-def test_dcf_rejeita_desconto_menor_ou_igual_crescimento():
-    resultado = at_mod._dcf_calculo(fcf_atual=1_000_000, taxa_crescimento_pct=10, taxa_desconto_pct=8)
-    assert resultado["calculavel"] is False
-    assert "maior que a taxa de crescimento" in resultado["motivo"]
+class _ColMock:
+    """Substitui a coluna devolvida por st.columns(2) - number_input
+    devolve um valor fixo (o que o usuário teria digitado), igual ao
+    padrão já usado em _capturar_render (number_input sempre None lá;
+    aqui parametrizável pra exercitar o cálculo de verdade)."""
+
+    def __init__(self, valor):
+        self.valor = valor
+
+    def number_input(self, *args, **kwargs):
+        return self.valor
 
 
-def test_dcf_calcula_com_premissas_completas():
-    resultado = at_mod._dcf_calculo(fcf_atual=1_000_000, taxa_crescimento_pct=5, taxa_desconto_pct=12,
-                                     valor_mercado=8_000_000)
-    assert resultado["calculavel"] is True
-    assert resultado["valor_justo_estimado"] > 0
-    assert resultado["premissas"]["taxa_crescimento_pct"] == 5
-    assert "potencial_pct" in resultado
+def _capturar_dcf_inline(fundamentos, historico=None, crescimento=None, desconto=None):
+    textos = []
+    tabelas_sensibilidade = []
+
+    def _container_cm():
+        cm = MagicMock()
+        cm.__enter__ = lambda self: self
+        cm.__exit__ = lambda *a: False
+        return cm
+
+    with patch.object(at_mod.st, "container", side_effect=lambda **_k: _container_cm()), \
+         patch.object(at_mod.st, "columns", return_value=[_ColMock(crescimento), _ColMock(desconto)]), \
+         patch.object(at_mod.st, "markdown", side_effect=lambda texto, **_k: textos.append(str(texto))), \
+         patch.object(at_mod.st, "caption", side_effect=lambda texto, **_k: textos.append(str(texto))), \
+         patch.object(at_mod.st, "warning", side_effect=lambda texto, **_k: textos.append(str(texto))), \
+         patch.object(at_mod.st, "expander", side_effect=lambda *_a, **_k: _container_cm()), \
+         patch.object(at_mod.st, "dataframe", side_effect=lambda linhas, **_k: tabelas_sensibilidade.append(linhas)):
+        at_mod._controle_dcf_inline("WEGE3", fundamentos, historico)
+    return "\n".join(textos), tabelas_sensibilidade
+
+
+def test_dcf_inline_sem_fluxo_de_caixa_livre_nao_renderiza_nada():
+    # nem _fcf_para_dcf encontra FCF (yfinance e CVM ausentes) -> painel
+    # nem chega a mostrar os number_input, muito menos calcular.
+    textos, tabelas = _capturar_dcf_inline({"preco": 40.0}, historico=None, crescimento=5, desconto=12)
+    assert textos == ""
+    assert tabelas == []
+
+
+def test_dcf_inline_sem_premissas_do_usuario_pede_as_duas():
+    textos, _ = _capturar_dcf_inline(_FUNDAMENTOS_DCF_COMPLETO, crescimento=None, desconto=None)
+    assert "Informe as duas premissas" in textos
+
+
+def test_dcf_inline_bloqueado_sem_divida_liquida_nunca_assume_zero():
+    """Zero invenção: se a dívida líquida (yfinance) não está disponível,
+    o motor #1 bloqueia o cálculo inteiro em vez de assumir dívida zero
+    silenciosamente - diferença real de rigor vs. o motor antigo
+    removido, que nunca subtraía dívida nenhuma."""
+    fundamentos = dict(_FUNDAMENTOS_DCF_COMPLETO, divida_liquida=None)
+    textos, tabelas = _capturar_dcf_inline(fundamentos, crescimento=5, desconto=12)
+    assert "DCF não calculado" in textos
+    assert "dívida líquida" in textos
+    assert tabelas == []
+
+
+def test_dcf_inline_rejeita_wacc_menor_ou_igual_crescimento():
+    textos, _ = _capturar_dcf_inline(_FUNDAMENTOS_DCF_COMPLETO, crescimento=10, desconto=8)
+    assert "DCF não calculado" in textos
+    assert "crescimento perpétuo" in textos.lower() or "WACC" in textos
+
+
+def test_dcf_inline_calcula_com_premissas_completas_e_mostra_sensibilidade():
+    textos, tabelas = _capturar_dcf_inline(_FUNDAMENTOS_DCF_COMPLETO, crescimento=5, desconto=12)
+    assert "Preço-alvo estimado" in textos
+    assert "potencial indicativo" in textos
+    # as premissas otimista/base/pessimista usam a MESMA taxa informada -
+    # a tela deixa isso explícito, nunca finge um intervalo que não existe.
+    assert "mesma taxa usada no crescimento perpétuo" in textos
+    assert len(tabelas) == 1
+    linhas_sensibilidade = tabelas[0]
+    assert len(linhas_sensibilidade) == 5  # 5 passos de WACC (-2pp..+2pp)
+    primeira_linha = linhas_sensibilidade[0]
+    assert "WACC" in primeira_linha
+    assert any(chave.startswith("cresc.") for chave in primeira_linha)
+
+
+def test_dcf_inline_acoes_implicitas_vem_de_valor_mercado_sobre_preco_nunca_invenca():
+    """acoes (número de ações implícito) é derivado de valor_mercado/preco
+    - contrato documentado no próprio calcular_dcf - nunca um número
+    fabricado; sem valor_mercado OU preco, o motor bloqueia por
+    'acoes' ausente em vez de aproximar."""
+    fundamentos = dict(_FUNDAMENTOS_DCF_COMPLETO, valor_mercado=None)
+    textos, _ = _capturar_dcf_inline(fundamentos, crescimento=5, desconto=12)
+    assert "DCF não calculado" in textos
+    assert "número de ações implícito" in textos
 
 
 # --- render_conclusao_investimento (bare mode, mesmo padrão de

@@ -304,9 +304,16 @@ def linha_valuation(ticker: str) -> dict:
         "valor_mercado": ind.get("valor_mercado"),
         "ebitda": ind.get("ebitda"),
         "ev_ebitda": _ev_ebitda(ind.get("valor_mercado"), ind.get("divida_liquida"), ind.get("ebitda")),
+        # dedup 2026-11-18: ja' buscada por obter_indicadores so' pra calcular
+        # divida_liquida_ebitda acima - expor o valor absoluto (nao so' a razao)
+        # permite o DCF da Conclusao de Investimento (ui/analises_tab.py:
+        # _controle_dcf_inline, que chama data/coordenador_central/dcf.py:
+        # calcular_dcf) subtrair a divida liquida de verdade do valor da firma
+        # em vez de assumir divida zero - zero chamada nova ao yfinance.
+        "divida_liquida": ind.get("divida_liquida"),
         # ponto atual (yfinance), sem serie historica - habilita o DCF da
-        # Conclusao de Investimento (ui/analises_tab.py:_dcf_calculo) so'
-        # quando o usuario tambem informar taxa de crescimento/desconto;
+        # Conclusao de Investimento (ui/analises_tab.py:_controle_dcf_inline)
+        # so' quando o usuario tambem informar taxa de crescimento/desconto;
         # nunca usado como premissa por si so'.
         "fluxo_caixa_livre": ind.get("fluxo_caixa_livre"),
         "desatualizado": _indicadores_desatualizados(ind),
