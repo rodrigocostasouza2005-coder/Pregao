@@ -474,7 +474,7 @@ def render_macro_juros(prefs):
         for i, setor in enumerate(sensiveis):
             with cols[i % len(cols)]:
                 st.button(f"{setor} ↗", key=f"macro_juros_setor_{i}", on_click=ir_para_setor, args=(setor,),
-                          width="stretch", help="Abrir em SETORES › Visão por Setor")
+                          width="stretch", help="Abrir em NOTÍCIAS › Visão por Setor")
 
 
 def render_macro_cambio_commodities(prefs):

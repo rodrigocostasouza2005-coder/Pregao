@@ -87,7 +87,7 @@ def barra_contexto_empresa(ticker: str, prefs: dict):
               ("Radar ↗", _ir_radar_do_ticker, (ticker,), "Alertas de queda deste ativo (RADAR › Alertas)"),
               ("Fundamentos ↗", navegacao.ir_para, ("analises", "fundamentos"), "ANÁLISES › Fundamentos"),
               ("Valuation ↗", navegacao.ir_para, ("valuation", "parecer"), "VALUATION › Parecer do Comitê")]
-    botoes += [(f"Setor: {s} ↗", ir_para_setor, (s,), "SETORES › Visão por Setor") for s in setores]
+    botoes += [(f"Setor: {s} ↗", ir_para_setor, (s,), "NOTÍCIAS › Visão por Setor") for s in setores]
     with st.container(key="empresa_contexto"):
         cols = st.columns(len(botoes))
         for i, (rotulo, fn, args, ajuda) in enumerate(botoes):

@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
-"""Area SETORES do PREGAO 2.0 (ui/navegacao.py). Sem coleta propria:
+"""Lente setorial de NOTÍCIAS (ui/navegacao.py) - Fase 2b da reformulacao
+("Pregao Terminal Experience", 2026-11-17). Antes era a area SETORES
+propria (3 subabas); dissolvida porque "Mapa Setorial" era duplicata
+literal dos paineis DESEMPENHO SETORIAL/MAPA DO MERCADO de MERCADO >
+Painel (removido deste arquivo, zero funcionalidade perdida - mesmo dado,
+mesma funcao, so' um lugar a menos pra achar). Sem coleta propria:
 
-- Mapa Setorial: paineis DESEMPENHO SETORIAL/MAPA DO MERCADO da aba
-  MERCADO (ui/mercado_tab.py), mesmo dado (composicao oficial do
-  Ibovespa + config.IBOVESPA_SETORES).
 - Visao por Setor / Catalisadores: taxonomia de data/news_setores.SETORES
-  (a MESMA que classifica as noticias), empresas curadas ali, noticias
-  pelo ranking de TOP MERCADO filtrado pelo setor e texto editorial fixo
-  de data/radar_setorial.CATALOGO (o mesmo do Morning Call), sempre
-  marcado como interpretacao - nunca gerado na hora pra "preencher".
+  (a MESMA que classifica as noticias - por isso a lente vive em
+  NOTICIAS agora, nao mais numa area propria), empresas curadas ali,
+  noticias pelo ranking de TOP MERCADO filtrado pelo setor e texto
+  editorial fixo de data/radar_setorial.CATALOGO (o mesmo do Morning
+  Call), sempre marcado como interpretacao - nunca gerado na hora pra
+  "preencher".
 """
 
 import html
@@ -20,7 +24,6 @@ from data.news_setores import NOMES_SETORES, SETORES
 from data.radar_setorial import CATALOGO
 from ui import design_system as ds
 from ui import navegacao
-from ui.mercado_tab import _painel_setorial, _painel_treemap
 from ui.radar_tab import _injetar_css as _css_radar
 from ui.radar_tab import _secao_catalisadores
 from ui.top_mercado_tab import render_top_mercado
@@ -37,7 +40,7 @@ def setores_do_ticker(ticker: str) -> list:
 def ir_para_setor(setor: str, sub_id: str = "setor"):
     """Callback de vinculo (empresa/noticia -> setor)."""
     st.session_state[KEY_SETOR] = setor
-    navegacao.ir_para("setores", sub_id)
+    navegacao.ir_para("noticias", sub_id)
 
 
 def _seletor_setor() -> str:
@@ -52,17 +55,6 @@ def _seletor_setor() -> str:
     )
     st.session_state[KEY_SETOR] = escolha
     return escolha
-
-
-def render_mapa_setorial(prefs: dict):
-    with st.container(border=True):
-        _painel_setorial(prefs)
-    with st.container(border=True):
-        _painel_treemap(prefs)
-    st.caption(
-        "Setores do Ibovespa pela classificação de config.IBOVESPA_SETORES (média simples da variação dos "
-        "papéis). A Visão por Setor usa a taxonomia de notícias, que agrupa alguns setores de forma diferente."
-    )
 
 
 def _tabela_empresas(setor: str, prefs: dict):
@@ -174,4 +166,4 @@ def render_catalisadores_setor(prefs: dict):
                        ajuda="Juros, inflação e expectativas (MACRO › Juros)")
     with col_b:
         st.button("Notícias do setor ↗", key="setor_cat_news", width="stretch",
-                  on_click=ir_para_setor, args=(setor, "setor"), help="Abrir em SETORES › Visão por Setor")
+                  on_click=ir_para_setor, args=(setor, "setor"), help="Abrir em NOTÍCIAS › Visão por Setor")

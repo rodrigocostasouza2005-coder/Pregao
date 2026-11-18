@@ -635,6 +635,12 @@ if rota == ("noticias", "empresas"):
 if rota == ("noticias", "documentos"):
     with st.container():
         render_cvm(prefs)
+# --- lente setorial (ex-area SETORES, dissolvida na Fase 2b - "Mapa
+# Setorial" era duplicata literal de MERCADO > Painel, removido) -------------
+if rota == ("noticias", "setor"):
+    setores_tab.render_visao_setor(prefs)
+if rota == ("noticias", "catalisadores-setor"):
+    setores_tab.render_catalisadores_setor(prefs)
 
 # --- RADAR (ver ui/radar_tab.py) ---------------------------------------------
 if rota == ("radar", "alertas"):
@@ -717,14 +723,6 @@ if rota == ("calendario", "corporativo"):
     secoes.render_agenda(prefs)
 if rota == ("calendario", "economico"):
     macro_tab.render_macro_calendario(prefs)
-
-# --- SETORES (ver ui/setores_tab.py) -------------------------------------------
-if rota == ("setores", "mapa"):
-    setores_tab.render_mapa_setorial(prefs)
-if rota == ("setores", "setor"):
-    setores_tab.render_visao_setor(prefs)
-if rota == ("setores", "catalisadores"):
-    setores_tab.render_catalisadores_setor(prefs)
 
 # --- MORNING CALL (ver ui/morning_call_tab.py - nunca envia e-mail) -------------
 if rota == ("morning-call", "edicao"):

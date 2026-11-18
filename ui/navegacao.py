@@ -72,6 +72,14 @@ AREAS = (
         # da watchlist: destino mais proximo de "cobertura sobre empresas"
         # sem misturar com o feed jornalistico - ver matriz no docs/
         Subaba("documentos", "Documentos CVM", ("CVM",)),
+        # Lente setorial (Fase 2b, 2026-11-17): movida da area SETORES
+        # (dissolvida - "Mapa Setorial" era duplicata literal de MERCADO >
+        # Painel, removido sem perda; estas 2 subabas usam a MESMA
+        # taxonomia que classifica noticia por setor, por isso moram aqui
+        # agora, nao mais numa area propria). Mesmas funcoes de sempre
+        # (ui/setores_tab.py), zero logica nova.
+        Subaba("setor", "Visão por Setor"),
+        Subaba("catalisadores-setor", "Catalisadores Setoriais"),
     )),
     Area("radar", "RADAR", ":material/radar:", (
         Subaba("alertas", "Alertas", ("RADAR",)),
@@ -165,11 +173,6 @@ AREAS = (
     Area("calendario", "CALENDÁRIO", ":material/calendar_month:", (
         Subaba("corporativo", "Eventos Corporativos", ("CALENDÁRIO",)),
         Subaba("economico", "Calendário Econômico", ("MACRO",)),
-    )),
-    Area("setores", "SETORES", ":material/category:", (
-        Subaba("mapa", "Mapa Setorial"),
-        Subaba("setor", "Visão por Setor"),
-        Subaba("catalisadores", "Catalisadores"),
     )),
     Area("morning-call", "MORNING CALL", ":material/wb_twilight:", (
         Subaba("edicao", "Edição Atual"),

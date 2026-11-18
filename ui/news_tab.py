@@ -1287,7 +1287,7 @@ def _vinculos_noticia(n: dict):
     if not tickers and not setores:
         return
     alvos = [(f"{t} ↗", _ir_para_empresa, t, "Abrir a empresa em ANÁLISES › Empresas") for t in tickers]
-    alvos += [(f"Setor: {s} ↗", _ir_para_setor, s, "Abrir em SETORES › Visão por Setor") for s in setores]
+    alvos += [(f"Setor: {s} ↗", _ir_para_setor, s, "Abrir em NOTÍCIAS › Visão por Setor") for s in setores]
     chave_base = abs(hash(n["link"]))
     cols = st.columns(len(alvos))
     for i, (rotulo, fn, arg, ajuda) in enumerate(alvos):
