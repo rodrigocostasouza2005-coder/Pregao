@@ -48,6 +48,12 @@ def _consolidado_completo() -> dict:
                     {"casa": "BTG Pactual", "tipo": "qualitativa", "campo": "recomendacao", "comparador": "COMPRA", "memoria_research": "NEUTRO"},
                 ],
             },
+            "entre_analistas_comite": {
+                "n_analistas_comparados": 2,
+                "categorias": {"earnings_reviewer": "NEUTRO", "valuation_comparables": "NEUTRO"},
+                "divergente": False,
+                "resumo": "2 especialista(s) com recomendação comparável concordam em NEUTRO (earnings_reviewer=NEUTRO; valuation_comparables=NEUTRO).",
+            },
         },
         "pontos_atencao": ["radar_x: indisponível (sem X_BEARER_TOKEN)."],
         "conclusao": [
@@ -295,9 +301,15 @@ def test_sintese_final_mostra_conclusao_divergencias_e_material_de_apoio():
     assert "Material de apoio" in textos
     rotulos_expander = [e.label for e in at.expander]
     assert any("Pontos de atenção" in r for r in rotulos_expander)
-    assert any("Divergências identificadas" in r for r in rotulos_expander)
+    assert any("Divergência: comparador × memória de research" in r for r in rotulos_expander)
     assert any("Evidências" in r for r in rotulos_expander)
     assert any("Visão bruta por especialista acionado" in r for r in rotulos_expander)
+    # Divergência ENTRE especialistas do Comitê - painel separado do de cima
+    # (cross_comparador_memoria), com rótulo próprio e nunca misturado no
+    # mesmo expander (ver _render_divergencia_comite).
+    assert any("Divergência entre especialistas do Comitê" in r for r in rotulos_expander)
+    assert "Divergência entre especialistas do Comitê" in textos
+    assert "2 especialista(s) com recomendação comparável concordam em NEUTRO" in textos
 
 
 def test_consolidado_minimo_sem_nenhuma_secao_opcional_nao_quebra():
