@@ -963,6 +963,20 @@ def _painel_treemap(prefs, altura_px: int = _ALTURA_TREEMAP_PX):
         por_setor.setdefault(p["setor"], []).append(p)
 
     ids, labels, parents, values, colors, textos, hovertextos = [], [], [], [], [], [], []
+    # tamanho de fonte POR NO' (array, nao escalar) - ver `tamanhos_fonte`
+    # abaixo: raiz/setor (cabecalho, mostrado numa faixa estreita no topo
+    # do retangulo) precisa de fonte bem menor que o ticker (mostrado no
+    # meio do bloco, com muito mais espaco) pra' caber nomes de setor
+    # longos tipo "Bancos e Serviços Financeiros" sem cortar sem
+    # reticencias na borda (bug real, confirmado por screenshot em
+    # docs/evidencias/validacao-visual-real-20261117/mercado_1440.png).
+    # Confirmado empiricamente (harness isolado) que e' `insidetextfont`,
+    # NAO `textfont`, quem controla o tamanho do texto de cabecalho no
+    # go.Treemap - `textfont` sozinho (mesmo em array por-no) nao mudava
+    # nada no cabecalho, so' no texto do corpo (ticker).
+    TAMANHO_FONTE_CABECALHO = 7
+    TAMANHO_FONTE_FOLHA = 13
+    tamanhos_fonte = []
     # medias por setor guardadas pra' inteligencia contextual (nota [FATO]
     # no fim da funcao) - mesma media_setor ja calculada abaixo pra' colorir
     # o bloco, nenhuma conta nova.
@@ -971,6 +985,7 @@ def _painel_treemap(prefs, altura_px: int = _ALTURA_TREEMAP_PX):
     ids.append("IBOVESPA"); labels.append("IBOVESPA"); parents.append("")
     values.append(sum(p["volume_financeiro"] for p in papeis))
     colors.append(tema["cinza"]); textos.append("")
+    tamanhos_fonte.append(TAMANHO_FONTE_CABECALHO)
     hovertextos.append(f"<b>IBOVESPA</b><br>{len(papeis)} papéis no mapa")
 
     for setor, papeis_setor in por_setor.items():
@@ -982,6 +997,7 @@ def _painel_treemap(prefs, altura_px: int = _ALTURA_TREEMAP_PX):
         values.append(volume_setor)
         colors.append(_cor_treemap(variacao_media_setor, limite, tema))
         textos.append(setor)
+        tamanhos_fonte.append(TAMANHO_FONTE_CABECALHO)
         hovertextos.append(
             f"<b>{html.escape(setor)}</b><br>{len(papeis_setor)} papel(éis)<br>"
             f"Variação média: {config.formatar_numero(variacao_media_setor, 2, fmt)}%"
@@ -993,6 +1009,7 @@ def _painel_treemap(prefs, altura_px: int = _ALTURA_TREEMAP_PX):
             values.append(p["volume_financeiro"])
             colors.append(_cor_treemap(p["variacao_pct"], limite, tema))
             textos.append(f"{p['ticker']}<br>{_fmt_pct(p['variacao_pct'], prefs)}")
+            tamanhos_fonte.append(TAMANHO_FONTE_FOLHA)
             hovertextos.append(
                 f"<b>{p['ticker']}</b><br>{html.escape(setor)}<br><br>"
                 f"Variação: {_fmt_pct(p['variacao_pct'], prefs)}<br>"
@@ -1006,6 +1023,7 @@ def _painel_treemap(prefs, altura_px: int = _ALTURA_TREEMAP_PX):
         marker=dict(colors=colors, line=dict(width=1.5, color=tema["fundo"]), pad=dict(t=22, l=2, r=2, b=2)),
         text=textos, textinfo="text", textposition="middle center",
         textfont=dict(size=13, family="IBM Plex Mono"),
+        insidetextfont=dict(size=tamanhos_fonte, family="IBM Plex Mono"),
         # texto do bloco (ticker+%) e' SEMPRE o par real coletado (nunca
         # logo/imagem: o projeto nao tem nenhuma fonte legitima de logo
         # de empresa da B3 hoje - ver PROGRESSO.md - e inventar URL de
