@@ -121,6 +121,79 @@ def _tabela_itens_html(itens: list, fmt: str) -> str:
     )
 
 
+# Mesmo limiar já estabelecido em data/radar.py (_LIMIAR_CONCENTRACAO_PCT,
+# usado no RISCO DA CARTEIRA do RADAR pra concentração por ativo/setor da
+# carteira REAL do usuário cadastrada em data/posicoes.py) - reaproveitado
+# aqui pra responder "existe concentração excessiva?" na CARTEIRA
+# RECOMENDADA, não um número novo inventado pra este painel.
+_LIMIAR_CONCENTRACAO_SETOR_PCT = 25.0
+
+
+def _nota_contextual(tag: str, texto: str):
+    """[FATO]/[LEITURA] - mesmo padrão de rótulo explícito já usado em
+    ui/mercado_tab.py:_nota_contextual e ui/macro_tab.py:
+    _nota_contextual_macro (cópia local de propósito, mesma convenção já
+    seguida no projeto pra módulos de UI que não se importam entre si)."""
+    cor = "var(--cinza)" if tag == "FATO" else "var(--destaque)"
+    st.markdown(
+        f"<div style='font-size:0.66rem; color:var(--cinza); margin:0.15rem 0;'>"
+        f"<b style='color:{cor};'>[{tag}]</b> {texto}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _leitura_carteira(carteira: dict, fmt: str):
+    """LEITURA DA CARTEIRA (2026-11-18, missão "camada analítica"):
+    responde "existe concentração ou risco excessivo?" e "qual posição
+    merece atenção?" (pedido explícito do Rodrigo) - reaproveita SÓ dado
+    já computado por montar_carteira_recomendada()
+    (resumo['diversificacao_setorial'] e confianca_comite/riscos de cada
+    item, ver data/carteira_recomendada.py) - zero cálculo novo, zero IA.
+
+    "Merece atenção" usa SÓ confianca_comite == "BAIXA" (categoria já
+    atribuída pelo Comitê, não inferida aqui) - NUNCA a mera presença de
+    'riscos' (quase toda posição tem ao menos 1 "ponto contrário"
+    listado pelo Comitê; tratar isso como sinal de atenção deixaria a
+    nota sempre populada, o que o pedido proíbe - "nunca preenchida com
+    algo genérico só pra não parecer vazia"). Nenhuma nota aparece se não
+    houver concentração setorial acima do limiar nem posição com
+    confiança BAIXA (estado vazio honesto)."""
+    resumo = carteira.get("resumo") or {}
+    itens = carteira.get("itens") or []
+    notas = []
+
+    diversificacao = resumo.get("diversificacao_setorial") or {}
+    concentrados = sorted(
+        ((setor, peso) for setor, peso in diversificacao.items() if peso > _LIMIAR_CONCENTRACAO_SETOR_PCT),
+        key=lambda sp: -sp[1],
+    )
+    if concentrados:
+        partes = ", ".join(
+            f"{html.escape(setor)} ({config.formatar_numero(peso, 1, fmt)}%)" for setor, peso in concentrados
+        )
+        notas.append(("FATO",
+            f"Concentração setorial acima de {_LIMIAR_CONCENTRACAO_SETOR_PCT:g}% da carteira: {partes}."))
+
+    atencao = [item for item in itens if (item.get("confianca_comite") or "").upper() == "BAIXA"]
+    if atencao:
+        partes = []
+        for item in atencao:
+            n_riscos = len(item.get("riscos") or [])
+            riscos_txt = f", {n_riscos} risco(s) listado(s) pelo Comitê" if n_riscos else ""
+            partes.append(f"{html.escape(item.get('ticker') or '—')} (confiança BAIXA{riscos_txt})")
+        notas.append(("FATO", "Posições que merecem atenção: " + "; ".join(partes) + "."))
+
+    if not notas:
+        return
+
+    st.markdown(
+        '<div class="painel-titulo" style="font-size:0.68rem; margin-top:0.6rem;">LEITURA DA CARTEIRA</div>',
+        unsafe_allow_html=True,
+    )
+    for tag, texto in notas:
+        _nota_contextual(tag, texto)
+
+
 def _resumo(resumo: dict, fmt: str):
     st.markdown(
         "<div class='cart-metricas'>"
@@ -252,6 +325,8 @@ def render_visao_geral(carteira: dict, prefs: dict):
 
     if resumo:
         _resumo(resumo, fmt)
+
+    _leitura_carteira(carteira, fmt)
 
     st.markdown(_tabela_itens_html(itens, fmt), unsafe_allow_html=True)
 

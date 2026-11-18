@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Interface da aba MACRO: chamada de render_macro(prefs) pelo app.py."""
 
+import html
 from datetime import datetime, timedelta
 
 import plotly.graph_objects as go
@@ -403,6 +404,140 @@ def _painel_cenario_global(prefs):
     )
 
 
+# ============================================================
+# LEITURA MACRO (2026-11-18, missão "camada analítica") - responde "o que
+# mudou no cenário?" e "quais ativos podem ser afetados?" (pedido
+# explícito do Rodrigo pra MACRO ter sua própria camada analítica, igual
+# MERCADO já tem via ui/mercado_tab.py:_nota_contextual/data/
+# sintese_mercado.py). Auditoria desta missão achou MACRO como a única
+# das 5 áreas pedidas (MERCADO/MACRO/NOTÍCIAS/RADAR/CARTEIRAS) sem
+# NENHUMA camada interpretativa - só números/gráficos crus.
+#
+# Mesma filosofia das notas [FATO]/[LEITURA] de ui/mercado_tab.py (zero
+# chamada de IA, zero coleta nova - reaproveita as MESMAS funções
+# cacheadas já usadas pelos outros painéis desta aba) e zero correlação
+# inventada: a LEITURA que conecta um indicador macro a setores só
+# aparece reaproveitando o catálogo editorial já revisado (ver
+# setores_sensiveis acima, generalização de setores_sensiveis_a_juros) -
+# nunca uma inferência nova feita na hora. Se nenhum indicador mostrou
+# mudança real dentro da janela consultada, a seção inteira fica
+# ausente (nunca um texto genérico só pra não parecer vazia).
+# ============================================================
+
+
+def _nota_contextual_macro(tag: str, texto: str):
+    """Mesmo padrão visual de ui/mercado_tab.py:_nota_contextual (rótulo
+    [FATO]/[LEITURA] explícito) - cópia local de propósito: os dois
+    módulos de UI não se importam entre si (mesma convenção já seguida
+    em data/sintese_mercado.py:_chamar_groq, que documenta por que uma
+    4ª cópia de um helper pequeno é preferível a um acoplamento novo
+    entre módulos de UI que hoje não se conhecem)."""
+    cor = "var(--cinza)" if tag == "FATO" else "var(--destaque)"
+    st.markdown(
+        design_system.divisor_html()
+        + f"<div style='margin-top:-0.15rem; font-size:0.66rem; color:var(--cinza);'>"
+        f"<b style='color:{cor};'>[{tag}]</b> {texto}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _ultima_mudanca_serie(df, coluna: str):
+    """(valor_anterior, valor_atual, data_mudanca) se a série (1 ponto
+    por dia, repete o valor vigente entre uma decisão/leitura e outra -
+    ver obter_selic_meta) mostrar ao menos 1 mudança de valor dentro da
+    janela consultada; None se o valor foi o MESMO do início ao fim da
+    janela (nunca inventa uma mudança que a própria janela não
+    sustenta). `data_mudanca` fica None se a mudança for anterior ao
+    início da janela consultada (só vemos o "depois", não o "antes")."""
+    if df is None or df.empty or coluna not in df.columns:
+        return None
+    atual = df[coluna].iloc[-1]
+    anteriores = df[df[coluna] != atual]
+    if anteriores.empty:
+        return None
+    data_ultimo_diferente = anteriores["data"].iloc[-1]
+    valor_anterior = anteriores[coluna].iloc[-1]
+    posteriores = df[(df["data"] > data_ultimo_diferente) & (df[coluna] == atual)]
+    data_mudanca = posteriores["data"].iloc[0] if not posteriores.empty else None
+    return valor_anterior, atual, data_mudanca
+
+
+# Commodities do CENÁRIO GLOBAL (config.CENARIO_GLOBAL) cujo termo o
+# catálogo setorial (data/radar_setorial.CATALOGO) já cita
+# explicitamente como fator de algum setor - "Ouro"/"Treasuries 10A"/
+# "VIX" ficam de fora de propósito: nenhuma entrada do catálogo os cita,
+# e inventar essa ligação aqui seria a correlação sem base que o pedido
+# proíbe.
+_TERMOS_CENARIO_GLOBAL = {
+    "Brent": ("petróleo", "brent"),
+    "WTI": ("petróleo", "wti"),
+    "Minério de Ferro": ("minério",),
+}
+
+
+def _leitura_macro(prefs):
+    """LEITURA MACRO: [FATO]/[LEITURA] sobre o que mudou no cenário macro
+    e quais setores podem ser afetados - reaproveita os MESMOS dados já
+    buscados pelos painéis desta aba (obter_ipca/obter_selic_meta/
+    obter_cenario_global, todos com cache próprio via st.cache_data) e o
+    catálogo editorial já revisado (setores_sensiveis) - zero chamada de
+    IA, zero correlação inventada. Nenhum painel/container aparece se
+    não houver nenhuma nota (estado vazio honesto)."""
+    fmt = prefs.get("formato_numerico", "BR")
+    notas = []
+
+    ipca_df = obter_ipca(dias_historico=120)
+    if ipca_df is not None:
+        serie = ipca_df["ipca_12m_pct"].dropna()
+        if len(serie) >= 2:
+            atual, anterior = float(serie.iloc[-1]), float(serie.iloc[-2])
+            delta = atual - anterior
+            if abs(delta) >= 0.01:
+                direcao = "subiu" if delta > 0 else "caiu"
+                sinal = "+" if delta > 0 else "-"
+                notas.append(("FATO",
+                    f"IPCA 12 meses {direcao} de {config.formatar_numero(anterior, 2, fmt)}% para "
+                    f"{config.formatar_numero(atual, 2, fmt)}% no último mês consultado (variação de "
+                    f"{sinal}{config.formatar_numero(abs(delta), 2, fmt)} p.p.)."))
+
+    selic_df = obter_selic_meta(dias_historico=400)
+    mudanca_selic = _ultima_mudanca_serie(selic_df, "selic_meta_pct")
+    if mudanca_selic and mudanca_selic[2] is not None:
+        anterior, atual, data_mudanca = mudanca_selic
+        notas.append(("FATO",
+            f"Selic meta mudou de {config.formatar_numero(anterior, 2, fmt)}% para "
+            f"{config.formatar_numero(atual, 2, fmt)}% em {data_mudanca.strftime('%d/%m/%Y')}."))
+        sensiveis = setores_sensiveis_a_juros()
+        if sensiveis:
+            notas.append(("LEITURA",
+                "Setores cujo catálogo editorial cita juros/Selic como fator e podem ser afetados "
+                "por este movimento: " + html.escape(", ".join(sensiveis)) + "."))
+
+    dados_globais = obter_cenario_global() or []
+    com_variacao = [d for d in dados_globais if d.get("variacao_pct") is not None]
+    if com_variacao:
+        maior = max(com_variacao, key=lambda d: abs(d["variacao_pct"]))
+        sinal = "+" if maior["variacao_pct"] >= 0 else ""
+        notas.append(("FATO",
+            f"Maior variação do dia no cenário global: {html.escape(str(maior['nome']))} "
+            f"({sinal}{config.formatar_numero(maior['variacao_pct'], 2, fmt)}%)."))
+        termos = _TERMOS_CENARIO_GLOBAL.get(maior["nome"])
+        if termos:
+            setores = setores_sensiveis(*termos)
+            if setores:
+                notas.append(("LEITURA",
+                    f"Setores cujo catálogo editorial cita {html.escape(str(maior['nome']).lower())} "
+                    "como fator: " + html.escape(", ".join(setores)) + "."))
+
+    if not notas:
+        return
+
+    with st.container(border=True):
+        st.markdown('<div class="painel-titulo" style="color:var(--destaque);">LEITURA MACRO</div>', unsafe_allow_html=True)
+        for tag, texto in notas:
+            _nota_contextual_macro(tag, texto)
+
+
 # paineis registrados (ver ui/paineis.py) - ordem reorganizavel por
 # usuario em CONFIG. RESUMO fica de fora do registro de proposito:
 # funciona como abertura fixa da aba, sempre em primeiro (mesmo padrao
@@ -440,6 +575,8 @@ def render_macro(prefs, persistir_fn=None):
     with st.container(border=True):
         _painel_resumo(prefs)
 
+    _leitura_macro(prefs)
+
     workspace.renderizar_workspace(
         "MACRO", REGISTRO_PAINEIS, prefs, prefs, persistir_fn=persistir_fn, alturas_padrao=_ALTURAS_PADRAO,
     )
@@ -451,15 +588,27 @@ def render_macro(prefs, persistir_fn=None):
 # as demais subabas reaproveitam os MESMOS paineis, sem coleta nova.
 # ============================================================
 
+def setores_sensiveis(*termos: str) -> list:
+    """Setores cujo texto editorial fixo (data/radar_setorial.CATALOGO, o
+    mesmo do Morning Call) cita qualquer um dos `termos` dados como fator
+    - a relação vem de um texto já revisado, não é inferida na hora.
+    Generalização (2026-11-18, camada analítica MACRO) de
+    setores_sensiveis_a_juros (abaixo, termos fixos de juros) - usada
+    também por _leitura_macro pra conectar o maior mover do CENÁRIO
+    GLOBAL (Brent/minério) a setor, sem inventar uma correlação nova:
+    só reaproveita o mesmo catálogo que já cita esses termos."""
+    from data.radar_setorial import CATALOGO
+
+    termos_lower = tuple(t.lower() for t in termos)
+    return [setor for setor, cfg in CATALOGO.items()
+            if any(t in (cfg.get("importa", "") + " " + cfg.get("acompanhar", "")).lower() for t in termos_lower)]
+
+
 def setores_sensiveis_a_juros() -> list:
     """Setores cujo texto editorial fixo (data/radar_setorial.CATALOGO,
     o mesmo do Morning Call) cita juros/Selic como fator - a relacao vem
     de um texto ja' revisado, nao e' inferida na hora."""
-    from data.radar_setorial import CATALOGO
-
-    termos = ("juros", "selic", "copom")
-    return [setor for setor, cfg in CATALOGO.items()
-            if any(t in (cfg.get("importa", "") + " " + cfg.get("acompanhar", "")).lower() for t in termos)]
+    return setores_sensiveis("juros", "selic", "copom")
 
 
 def render_macro_juros(prefs):
