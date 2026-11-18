@@ -116,6 +116,19 @@ AREAS = (
         # conteudo novo, sem aba antiga, sempre visivel (mesmo padrao de
         # "casas" acima).
         Subaba("memoria", "Memória de Research"),
+        # MORNING CALL (Fase 2b, 2026-11-18): antes area propria de 1o
+        # nivel - so' a camada de LEITURA de um job de e-mail/PDF (zero
+        # coleta propria, ver docstring de ui/morning_call_tab.py),
+        # compartilha catalogo com a lente setorial (ver "Catalisadores
+        # Setoriais" em NOTICIAS) e tem sobreposicao tematica direta com
+        # RESEARCH (recomendacoes das casas) - nao justificava ser 1 das
+        # 10 areas de 1o nivel sozinha. Mesmas 4 subabas de sempre,
+        # mesmas funcoes (ui/morning_call_tab.py), so' a area que
+        # hospeda mudou.
+        Subaba("mc-edicao", "Morning Call: Edição Atual"),
+        Subaba("mc-relatorio", "Morning Call: Relatório Completo"),
+        Subaba("mc-historico", "Morning Call: Histórico"),
+        Subaba("mc-preferencias", "Morning Call: Preferências"),
     )),
     Area("analises", "ANÁLISES", ":material/query_stats:", (
         Subaba("empresas", "Empresas", ("EQUITY",)),
@@ -173,12 +186,6 @@ AREAS = (
     Area("calendario", "CALENDÁRIO", ":material/calendar_month:", (
         Subaba("corporativo", "Eventos Corporativos", ("CALENDÁRIO",)),
         Subaba("economico", "Calendário Econômico", ("MACRO",)),
-    )),
-    Area("morning-call", "MORNING CALL", ":material/wb_twilight:", (
-        Subaba("edicao", "Edição Atual"),
-        Subaba("relatorio", "Relatório Completo"),
-        Subaba("historico", "Histórico"),
-        Subaba("preferencias", "Preferências"),
     )),
     # CARTEIRA RECOMENDADA (módulo novo, missão "Frente 4" 2026-11-12/13):
     # adicionada isolada no final da lista de áreas DE CONTEÚDO, antes de
