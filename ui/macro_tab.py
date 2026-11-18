@@ -279,7 +279,15 @@ def _painel_ipca(prefs):
     )
 
     _layout_grafico_escuro(fig, tema)
-    fig.update_yaxes(title_text="Mensal (%)", secondary_y=False, gridcolor=tema["borda"])
+    # _layout_grafico_escuro/estilo_terminal poe TODO eixo Y a direita
+    # (convencao "eixo de preco a direita" dos outros graficos, que tem
+    # so' 1 eixo Y). Com eixo secundario (12m), isso empurra os DOIS
+    # titulos pro mesmo lado direito, sobrepondo um no outro e nos ticks
+    # (bug visual real, confirmado por screenshot - nao mexe em dado
+    # algum, so' faz o mensal (fundo, barras) voltar pro eixo esquerdo
+    # e o 12m (linha de destaque, o que importa pra comparar com a meta)
+    # manter o direito, igual aos outros graficos de 1 eixo so'.
+    fig.update_yaxes(title_text="Mensal (%)", secondary_y=False, gridcolor=tema["borda"], side="left", showgrid=False)
 
     # eixo do 12m com range fixo (nao autorange): sem isso, o shape da
     # meta (1.5 a 4.5) entra no calculo do autorange do Plotly junto com
