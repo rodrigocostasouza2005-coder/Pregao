@@ -1027,6 +1027,42 @@ def _render_casas_research(casas: list, consenso: dict):
         )
 
 
+def _render_divergencia_comite(divergencia_comite: dict | None):
+    """Painel dedicado à divergência ENTRE os próprios especialistas do
+    Comitê (market_researcher/earnings_reviewer/valuation_comparables
+    comparados entre si na escala COMPRA/VENDA/NEUTRO - ver
+    data/coordenador_central/consolidacao.py:
+    _divergencia_entre_analistas_comite). Mostra só os 3 campos que
+    consolidar() já calcula: quantos especialistas comparáveis entraram
+    na checagem (n_analistas_comparados), se divergem (divergente) e o
+    resumo textual pronto (resumo, com a atribuição por especialista
+    embutida) - nenhum texto novo é composto aqui, nenhum "motivo"
+    inventado além do que a própria função devolve. Nunca decide quem
+    está certo (o Coordenador não tem esse mecanismo): só torna visível
+    o que já era calculado e nunca tinha tela."""
+    if not divergencia_comite:
+        return
+    divergente = bool(divergencia_comite.get("divergente"))
+    badge = (
+        "<span class='coord-badge coord-badge-andamento'>DIVERGENTE</span>"
+        if divergente
+        else "<span class='coord-badge coord-badge-ok'>CONVERGENTE</span>"
+    )
+    n_comparados = divergencia_comite.get("n_analistas_comparados")
+    with st.expander("Divergência entre especialistas do Comitê", expanded=divergente):
+        st.markdown(
+            f"<div style='margin-bottom:0.3rem; display:flex; align-items:center; gap:0.5rem;'>{badge}"
+            f"<span class='coord-nota' style='margin:0;'>"
+            f"{html.escape(str(n_comparados if n_comparados is not None else '—'))} especialista(s) "
+            "com recomendação comparável (COMPRA/VENDA/NEUTRO) comparados entre si.</span></div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"<div class='coord-conclusao-linha'>{html.escape(str(divergencia_comite.get('resumo') or ''))}</div>",
+            unsafe_allow_html=True,
+        )
+
+
 def _render_sintese_final(consolidado: dict):
     """Fecho da análise consolidada: conclusão determinística (rotulada
     FATO/CÁLCULO INTERNO/DADO INSUFICIENTE), divergências e pontos que
@@ -1051,13 +1087,33 @@ def _render_sintese_final(consolidado: dict):
             with st.expander(f"Pontos de atenção ({len(pontos_atencao)})"):
                 lista_compacta(html.escape(str(p)) for p in pontos_atencao)
         if tem_divergencias:
-            with st.expander(f"Divergências identificadas ({len(divergencias['divergencias'])})"):
+            # Rótulo explícito (antes só "Divergências identificadas") pra
+            # nunca se confundir com o painel de divergência ENTRE
+            # especialistas do Comitê abaixo - são dois conceitos
+            # diferentes (ver _render_divergencia_comite).
+            with st.expander(f"Divergência: comparador × memória de research ({len(divergencias['divergencias'])})"):
                 lista_compacta(
                     f"<b>{html.escape(d['casa'])}</b> ({html.escape(str(d['tipo']))}, {html.escape(str(d['campo']))}): "
                     f"comparador=<code>{html.escape(str(d['comparador']))}</code> "
                     f"vs memória de research=<code>{html.escape(str(d['memoria_research']))}</code>"
                     for d in divergencias["divergencias"]
                 )
+
+    # Divergência ENTRE os especialistas do Comitê entre si (market_researcher/
+    # earnings_reviewer/valuation_comparables comparados na escala COMPRA/VENDA/
+    # NEUTRO - ver data/coordenador_central/consolidacao.py:
+    # _divergencia_entre_analistas_comite). CONCEITO DIFERENTE do bloco acima
+    # (cross_comparador_memoria compara fonte externa vs. memória de research
+    # interna - mesmo tipo de dado, duas fontes) - por isso é uma seção própria,
+    # com rótulo explícito, nunca misturada no mesmo expander. Antes desta
+    # mudança esse cálculo já existia em consolidar() mas nunca era exibido em
+    # nenhuma tela (achado de auditoria). Exibe só o que consolidar() já
+    # calculou - nunca um "veredito" de quem está certo; o Coordenador não tem
+    # esse mecanismo, só registra convergência/divergência.
+    divergencia_comite = (consolidado.get("divergencias") or {}).get("entre_analistas_comite")
+    if divergencia_comite:
+        subtitulo("Divergência entre especialistas do Comitê")
+        _render_divergencia_comite(divergencia_comite)
 
     evidencias = consolidado.get("evidencias") or []
     visao_especialistas = consolidado.get("visao_especialistas") or {}
