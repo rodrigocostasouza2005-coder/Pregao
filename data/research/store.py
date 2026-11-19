@@ -242,18 +242,38 @@ def _versionar_antes_do_upsert(cliente, itens: list) -> None:
         print(f"[research.store] versionamento: insert no historico falhou (tabela pode nao existir ainda, ignorado): {exc!r}")
 
 
+# Nord (data/research/nord.py) não tem RSS - descoberta é via sitemap/
+# lastmod, com latência real de semanas a meses entre a publicação do
+# post ('data') e o momento em que o coletor o encontra (confirmado com
+# coleta real em 2026-11-02: 8 itens recém-coletados com 'data' 80-90
+# dias atrás - cadência trimestral de resultado, não uma falha). Bug
+# real encontrado na mesma auditoria: a regra de 'data velha' abaixo
+# apagava esses itens na limpeza seguinte à própria coleta que os
+# inseriu - o coletor reportava "8 itens, persistência OK" mas
+# `research_itens` nunca tinha o registro correspondente por mais de
+# ~1h. Pras demais casas (RSS, descoberta próxima da publicação) essa
+# regra nunca pega item recém-coletado de verdade; pra Nord, SEMPRE
+# pegaria - por isso essa casa é excluída da deleção por 'data velha',
+# retendo pelos 5 dias de `coletado_em` normais (mesmo tempo de vida que
+# as demais casas têm na prática).
+_CASAS_RETENCAO_SO_POR_COLETA = {"Nord Research"}
+
+
 def apagar_itens_antigos(dias: int = RETENCAO_DIAS) -> int:
     """Apaga da tabela research_itens os itens cuja DATA DE PUBLICACAO
     ('data') OU cujo COLETADO_EM tenham mais de `dias` dias - research e'
     conteudo perecivel, nao guarda historico longo. E' OR (nao AND)
     porque cobrem casos diferentes: 'data' velha pega um relatorio antigo
     que a fonte continua listando (coletado_em fica sempre fresco a cada
-    recoleta, nunca dispararia sozinho); 'coletado_em' velho pega um item
-    que sumiu da fonte e parou de ser recoletado (poderia nao ter 'data'
-    valida pra comparar). Rodado em duas chamadas separadas (nao um OR
-    so' do PostgREST) pra nao arriscar apagar item com 'data' vazia so'
-    por causa da comparacao textual. Retorna quantas linhas foram
-    removidas ao todo, ou -1 se o banco estiver fora do ar."""
+    recoleta, nunca dispararia sozinho pras casas com descoberta proxima
+    da publicacao); 'coletado_em' velho pega um item que sumiu da fonte e
+    parou de ser recoletado (poderia nao ter 'data' valida pra comparar).
+    Casas em `_CASAS_RETENCAO_SO_POR_COLETA` (ver comentario acima) ficam
+    de fora da deleção por 'data velha' - só saem pela regra de
+    'coletado_em'. Rodado em duas chamadas separadas (nao um OR so' do
+    PostgREST) pra nao arriscar apagar item com 'data' vazia so' por
+    causa da comparacao textual. Retorna quantas linhas foram removidas
+    ao todo, ou -1 se o banco estiver fora do ar."""
     cliente = obter_cliente()
     if cliente is None:
         return -1
@@ -262,7 +282,10 @@ def apagar_itens_antigos(dias: int = RETENCAO_DIAS) -> int:
     limite_coletado = limite.isoformat()
     total = 0
     try:
-        resp = cliente.table("research_itens").delete().neq("data", "").lt("data", limite_data).execute()
+        query = cliente.table("research_itens").delete().neq("data", "").lt("data", limite_data)
+        for casa in _CASAS_RETENCAO_SO_POR_COLETA:
+            query = query.neq("casa", casa)
+        resp = query.execute()
         total += len(resp.data)
     except Exception as exc:
         print(f"[research.store] apagar_itens_antigos (filtro 'data' < {limite_data!r}) falhou: {exc!r}")
