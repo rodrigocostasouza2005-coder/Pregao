@@ -43,7 +43,15 @@ só a altura de FONTE do usuário, que rem já acompanha).
 Performance: a ponte só escreve (e só persiste no Supabase) QUANDO o
 usuário SOLTA o mouse (fim do drag/resize) - durante o gesto, tudo é
 local (JS muda o style inline do elemento direto, sem nenhum round-trip
-com o Python)."""
+com o Python).
+
+Auditoria de uso do design system (ui/design_system.py, missão rollout B,
+2026-11-18): este arquivo não importa o módulo de propósito - mesma
+categoria de ui/paineis.py (sistema de LAYOUT/posicionamento de painel,
+não um painel de dado de mercado em si): zero número financeiro, sinal
+de alta/baixa ou divisor manual aqui pra migrar. As cores usadas no CSS
+(_CSS_BASE) já vêm de var(--borda)/var(--cinza)/var(--destaque), nunca
+hex solto."""
 
 import json
 import math

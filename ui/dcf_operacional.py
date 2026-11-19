@@ -20,7 +20,14 @@ selos (ver ui/radar_tab.py:_selo_evidencia) aqui colapsa pra uma única
 categoria: TUDO é premissa digitada por quem está calculando. O rótulo
 "PREMISSA" (chip âmbar discreto) aparece em cada bloco de entrada e em
 cada número derivado dela, exatamente pra nunca deixar ambíguo que nada
-aqui foi coletado nem inventado automaticamente."""
+aqui foi coletado nem inventado automaticamente.
+
+Auditoria de uso do design system (ui/design_system.py, missão rollout B,
+2026-11-18): este arquivo já importa e usa design_system (classe_sinal, ver
+_tabela_sensibilidade_html) desde a reformulação de 2026-11-06 citada
+acima - o
+achado de "zero uso" registrado em docs/continuidade-pregao-20261114.md
+está desatualizado para este arquivo."""
 import html
 
 import streamlit as st
