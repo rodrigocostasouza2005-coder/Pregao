@@ -282,13 +282,30 @@ def test_15_painel_excecao_num_leitor_nao_derruba_o_painel():
         if not c["instrumentado"]:
             c["leitor"] = _leitor_que_falha
 
+    # Achado real (2026-11-18): obter_painel_saude() busca o status dos
+    # coletores SEM leitor dedicado via coletores_status.obter_todos_status()
+    # (consulta em lote - ver teste 14b), nao via obter_status() (so' usado
+    # pelos leitores individuais/hibridos). Mockar so' obter_status, como
+    # este teste fazia antes, deixava obter_todos_status() rodar de verdade -
+    # bate no Supabase real sempre que houver .streamlit/secrets.toml valido
+    # na maquina (CI nunca tem esse arquivo, por isso o problema so'
+    # aparecia local, nunca no CI). {} e' exatamente o que a funcao real ja
+    # devolve quando o banco esta' fora do ar (data/coletores_status.py:
+    # obter_todos_status - nunca lanca excecao), entao o mock abaixo
+    # reproduz o MESMO degrade real, so' que deterministico em qualquer
+    # maquina (com ou sem secrets.toml).
     with patch.object(
         saude_mod.coletores_status,
         "obter_status",
         side_effect=RuntimeError("banco fora do ar"),
     ):
-        with patch.object(saude_mod, "REGISTRO_COLETORES", registro_modificado):
-            painel = saude_mod.obter_painel_saude()
+        with patch.object(
+            saude_mod.coletores_status,
+            "obter_todos_status",
+            return_value={},
+        ) as m_lote:
+            with patch.object(saude_mod, "REGISTRO_COLETORES", registro_modificado):
+                painel = saude_mod.obter_painel_saude()
 
     _checar(
         "15 painel completo mesmo com todo leitor/obter_status lancando excecao",
@@ -297,6 +314,10 @@ def test_15_painel_excecao_num_leitor_nao_derruba_o_painel():
     _checar(
         "15b todas as entradas ficam NUNCA_EXECUTADO (nao quebra, nao finge sucesso)",
         all(item["codigo_estado"] == "NUNCA_EXECUTADO" for item in painel),
+    )
+    _checar(
+        "15c obter_todos_status foi de fato exercitado (nao so' os leitores dedicados)",
+        m_lote.call_count >= 1,
     )
 
 
