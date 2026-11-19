@@ -111,16 +111,37 @@ def test_snapshot_genial_desativado_nao_tenta_fonte_externa():
     mock_recomendacoes.assert_not_called()
 
 
-def test_coletar_todas_disponiveis_pula_genial_xp_e_lives_desativados():
+def test_coletar_todas_disponiveis_pula_genial_e_xp_desativados():
+    """Genial Analisa e XP continuam disponivel=False (bloqueio
+    persistente) - nunca chamam coletar_casa. Genial (Lives) NAO entra
+    mais aqui: reativada em 2026-11-13 (ver test_research_casas_status.py
+    :: test_genial_lives_reativada_apos_bloqueio_nao_reproduzir) - ver
+    teste seguinte pra confirmar que ela agora E' coletada normalmente."""
     import data.research as research_mod
     casas_desativadas = [
         c for c in research_mod.CASAS
-        if c["id"] in {"genial", "xp", "genial_lives"}
+        if c["id"] in {"genial", "xp"}
     ]
     with patch.object(research_mod, "CASAS", casas_desativadas), \
          patch.object(research_mod, "coletar_casa") as mock_coletar:
         assert research_mod.coletar_todas_disponiveis() == {}
     mock_coletar.assert_not_called()
+
+
+def test_coletar_todas_disponiveis_agora_tenta_genial_lives_reativada():
+    """Regressao direta da reativacao (ver data/research/__init__.py,
+    missao "LIVES GENIAL" 2026-11-13): com disponivel=True, Genial
+    (Lives) passa a entrar no loop normal de coletar_todas_disponiveis -
+    nunca mais pulada so' por causa da flag estatica (categoria_falha
+    continua detectando bloqueio de verdade se ele voltar, mas isso e'
+    tratado em tempo de coleta, nao aqui)."""
+    import data.research as research_mod
+    casas_lives = [c for c in research_mod.CASAS if c["id"] == "genial_lives"]
+    with patch.object(research_mod, "CASAS", casas_lives), \
+         patch.object(research_mod, "coletar_casa", return_value=(3, True)) as mock_coletar:
+        resultado = research_mod.coletar_todas_disponiveis()
+    mock_coletar.assert_called_once()
+    assert resultado == {"Genial (Lives)": {"coletados": 3, "ok": True, "categoria_falha": None}}
 
 def test_historico_primeiro_snapshot_grava_mas_nao_reporta_mudanca():
     cliente, inserts = _cliente_mock([])

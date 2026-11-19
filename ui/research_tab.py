@@ -1111,8 +1111,23 @@ def _secao_cobertura_saude(prefs: dict, contagem_por_casa: dict):
     consulta nova). Dentro de um expander fechado por padrão pra não
     disputar espaço com a área principal."""
     with st.expander("COBERTURA E SAÚDE DAS CASAS", expanded=False):
+        status_casas = obter_status_casas()
+        # nomes montados a partir do status REAL (nunca uma lista fixa no
+        # texto) - achado real (auditoria Lives Genial 2026-11-13): antes
+        # esta frase citava "Genial Analisa, XP e Genial (Lives)" como
+        # desativadas de forma fixa, e continuou dizendo isso mesmo depois
+        # da Genial (Lives) ser reativada (CASAS['genial_lives']
+        # ['disponivel'] = True) - texto estático desatualizado sobre uma
+        # casa que passou a funcionar. Monta a lista aqui, direto do mesmo
+        # `disponivel` que a tabela abaixo usa - nunca pode voltar a
+        # divergir.
+        desativadas = [item["nome"] for item in status_casas if not item.get("disponivel", True)]
+        nota_desativadas = (
+            f"{', '.join(desativadas)} {'estão' if len(desativadas) != 1 else 'está'} desativada(s) por bloqueios externos persistentes; o histórico já salvo permanece preservado. "
+            if desativadas else ""
+        )
         st.markdown(
-            "<div class='casas-nota'>Estado real de cada casa coletada hoje pelo PREGÃO — Genial Analisa, XP e Genial (Lives) estão desativadas por bloqueios externos persistentes; o histórico já salvo permanece preservado. Nunca mostra "
+            f"<div class='casas-nota'>Estado real de cada casa coletada hoje pelo PREGÃO — {nota_desativadas}Nunca mostra "
             "uma fonte como funcionando sem evidência de coleta bem-sucedida. Candidatas investigadas e "
             "bloqueadas (Itaú BBA, Safra, Rico, Ágora, BB Investalk e outras) estão documentadas em "
             "<code>docs/research-fontes-20261022.md</code>, fora desta lista.</div>",
@@ -1120,7 +1135,7 @@ def _secao_cobertura_saude(prefs: dict, contagem_por_casa: dict):
         )
 
         linhas_html = ""
-        for item in obter_status_casas():
+        for item in status_casas:
             cor = _COR_POR_ESTADO.get(item["codigo_estado"], "neutro")
             acesso = (
                 "desativada por decisão do projeto" if not item.get("disponivel", True)

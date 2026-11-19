@@ -194,12 +194,29 @@ CASAS = [
         # excecao unica no projeto, justificada por uso pessoal/nao
         # comercial e volume baixo. Nao copiar esse padrao pra outra
         # fonte sem a mesma decisao explicita.
+        # Reativada em 2026-11-13 (auditoria "LIVES GENIAL"): o bloqueio
+        # HTTP 404 de 2026-10-24 (ver _MARCADOR_BLOQUEIO_YOUTUBE em
+        # genial_lives.py) NAO reproduz mais - testado de verdade contra o
+        # endpoint real, 2 vezes: (1) deste ambiente de desenvolvimento,
+        # feed OK com 15 videos/obter_relatorios com 7 itens reais; (2) do
+        # IP de um runner REAL do GitHub Actions (172.169.255.112, mesma
+        # categoria de IP de nuvem/datacenter que falhou em 24/10) via
+        # workflow temporario dedicado (removido apos capturar a
+        # evidencia, nao faz parte do repositorio) - mesmo resultado, feed
+        # OK, 7 itens reais coletados. disponivel=False tinha ficado
+        # desatualizado: travava preparar_leitura ANTES de ler o banco,
+        # escondendo da UI as 13 linhas reais ja coletadas no Supabase
+        # (coletadas enquanto a flag ja' estava False, via alguma janela
+        # em que a coleta rodou de outro jeito) mesmo com a casa marcada
+        # ativa em CONFIG. categoria_falha (ver abaixo) continua
+        # detectando OUTRA ocorrencia do MESMO marcador automaticamente, se
+        # o bloqueio um dia voltar - nao depende de reviso manual desta
+        # flag de novo.
         "id": "genial_lives",
         "nome": "Genial (Lives)",
         "fonte": "YouTube RSS (canal Genial Analisa)",
         "ativa_por_padrao": False,
-        "disponivel": False,
-        "motivo_indisponivel": "Coleta desativada por decisão do projeto: feed RSS do YouTube retorna HTTP 404; não serão feitas novas tentativas automatizadas.",
+        "disponivel": True,
         "obter_relatorios": genial_lives.obter_relatorios,
         "extrator_texto": genial_lives.obter_texto_transcricao,
         # achado real (2026-10-17): a execucao de producao no GitHub

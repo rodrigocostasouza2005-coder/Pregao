@@ -322,3 +322,76 @@ def test_validar_fidelidade_tambem_pega_recomendacao_inventada_em_live():
     motivo = qualidade.validar_fidelidade(resumo, transcricao, "Morning Call Genial")
     assert motivo is not None
     assert "recomenda" in motivo.lower() or "recomendação" in motivo.lower()
+
+
+# ---------------------------------------------------------------------
+# Achado real (auditoria Lives Genial 2026-11-13, rodado contra as 13
+# transcrições reais já coletadas no Supabase): uma transcrição real de
+# ~25k caracteres de live financeira (Resumo da Manhã Genial, 13/11)
+# menciona "vendas de casa [nos EUA]", "vender título público" e "compras
+# que eu fiz ultimamente" - nenhum relacionado a uma recomendação de ação
+# - mas a checagem antiga ("raiz em QUALQUER lugar do original") bastava
+# pra validar "a Genial recomenda compra da ação XPTO3" como se tivesse
+# base real, mesmo XPTO3 nunca aparecendo na transcrição. Os testes abaixo
+# fixam esse comportamento com um recorte sintético equivalente (sem
+# depender da transcrição real, que não é determinística/versionada).
+# ---------------------------------------------------------------------
+
+_TRANSCRICAO_LIVE_COMPRA_VENDA_SOLTOS_SEM_RELACAO = (
+    "[00:19] bom dia, hoje a minha maior preocupação é o número de vendas "
+    "de casa nos Estados Unidos, que despencou - e a gente voltou a ter "
+    "dificuldade de vender título público por aqui também. [05:40] eu "
+    "comprei em qualquer lugar do mundo e tô até arrependido das compras "
+    "que eu fiz ultimamente, mas vamos ver como fecha o pregão."
+)
+
+
+def test_recomendacao_inventada_nao_e_validada_por_compra_venda_solto_sem_relacao():
+    """Reprodução do achado real: 'compra'/'venda'/'vender'/'comprar'
+    aparecem na transcrição, mas em contextos sem nenhuma relação com uma
+    recomendação de ação (venda de casa nos EUA, título público, compras
+    pessoais do apresentador) - e o ticker da recomendação inventada
+    (XPTO3) nunca é citado. Tem que ser rejeitada mesmo com as raízes
+    presentes em algum lugar do texto."""
+    resumo = "A Genial recomenda compra da ação XPTO3 após a leitura do PPI americano."
+    motivo = qualidade.recomendacao_sem_evidencia(
+        resumo, _TRANSCRICAO_LIVE_COMPRA_VENDA_SOLTOS_SEM_RELACAO
+    )
+    assert motivo is not None
+    assert "XPTO3" in motivo
+
+
+def test_recomendacao_com_ticker_longe_da_raiz_no_original_e_rejeitada():
+    """O ticker e uma raiz de recomendação podem os dois aparecer no
+    original sem relação entre si (ex: ticker citado numa parte, 'compra'
+    citado bem depois, sobre outro assunto) - distância maior que a
+    janela de proximidade (_JANELA_EVIDENCIA_TICKER_CH) não conta como
+    evidência real da recomendação citada no resumo."""
+    enchimento = "o mercado ficou de lado durante toda a sessão de hoje. " * 15
+    transcricao = f"PETR4 foi citada de passagem no começo do programa. {enchimento} depois falamos de compras no varejo, sem relação com nenhuma ação."
+    resumo = "Sobre PETR4, a Genial recomenda compra do papel após o resultado do CPI."
+    motivo = qualidade.recomendacao_sem_evidencia(resumo, transcricao)
+    assert motivo is not None
+    assert "PETR4" in motivo
+
+
+def test_recomendacao_com_ticker_proximo_da_raiz_no_original_nao_e_rejeitada():
+    """Positivo simétrico ao teste anterior: ticker e raiz de recomendação
+    aparecem PRÓXIMOS no original (mesma frase/vizinhança) - evidência
+    real, nunca bloqueada."""
+    transcricao = "sobre PETR4, a Genial recomenda compra do papel, destacando o potencial de valorização."
+    resumo = "A Genial recomenda compra de PETR4, citando o potencial de valorização."
+    assert qualidade.recomendacao_sem_evidencia(resumo, transcricao) is None
+
+
+def test_recomendacao_sem_ticker_na_frase_continua_na_checagem_antiga():
+    """Quando a frase de recomendação não cita nenhum ticker (ex:
+    recomendação só por nome/prosa, sem código do papel), a checagem
+    continua a antiga (raiz em qualquer lugar do original) - limitação
+    conhecida e documentada, não resolvida por este achado (não há como
+    amarrar a evidência a um alvo específico sem extrair o nome da
+    empresa da frase)."""
+    resumo = "A Genial recomenda compra do papel, destacando o resultado do trimestre."
+    assert qualidade.recomendacao_sem_evidencia(
+        resumo, _TRANSCRICAO_LIVE_COMPRA_VENDA_SOLTOS_SEM_RELACAO
+    ) is None

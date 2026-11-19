@@ -348,26 +348,89 @@ _TERMOS_RECOMENDACAO_ACAO = (
 # (ex: transcrição informal que o resumo organiza em linguagem melhor),
 # só pegar uma recomendação 100% inventada, sem NENHUMA base no que foi
 # falado/escrito.
+#
+# USADA SO' quando a frase de recomendacao NAO cita nenhum ticker (ver
+# recomendacao_sem_evidencia abaixo) - quando cita, a checagem e' mais
+# estrita (ticker+raiz PROXIMOS no original, nao em qualquer lugar). Achado
+# real (auditoria Lives Genial 2026-11-13, rodando contra as 13 transcricoes
+# reais ja coletadas): uma transcricao de ~25k caracteres de live financeira
+# quase sempre contem "compra"/"venda"/"vender"/"comprar" em algum contexto
+# TOTALMENTE alheio a uma recomendacao de acao especifica (ex: "vendas de
+# casa [nos EUA]", "vender titulo publico", "compras que eu fiz
+# ultimamente" - nenhum sobre o papel citado no resumo) - a checagem
+# "em qualquer lugar do documento" marcava isso como "evidencia" pra
+# QUALQUER ticker inventado, mesmo um nunca mencionado na live (testado de
+# verdade: "a Genial recomenda compra da acao XPTO3" passava o gate sem
+# nenhum problema contra essa transcricao real, apesar de XPTO3 nunca
+# aparecer nela).
 _RAIZES_EVIDENCIA_RECOMENDACAO = ("recomend", "compra", "comprar", "venda", "vender", "indic", "suger")
+
+# raio (em caracteres, no texto JA normalizado por _sem_acento) em volta de
+# cada ocorrencia do ticker no original que conta como "a recomendacao foi
+# dita PERTO desse ticker" - generoso o suficiente pra cobrir a mesma frase/
+# frase vizinha (a legenda automatica as vezes quebra uma ideia em 2-3
+# "frases" curtas por pontuacao artificial), mas nao o documento inteiro.
+_JANELA_EVIDENCIA_TICKER_CH = 300
+
+
+def _recomendacao_proxima_do_ticker(ticker: str, original_norm: str) -> bool:
+    """True se alguma raiz de recomendacao (ver _RAIZES_EVIDENCIA_
+    RECOMENDACAO) aparece dentro de _JANELA_EVIDENCIA_TICKER_CH caracteres
+    de alguma ocorrencia do `ticker` no texto original - nunca conta
+    ocorrencias distantes/desconexas de cada um isoladamente (ver achado
+    real no comentario de _RAIZES_EVIDENCIA_RECOMENDACAO)."""
+    ticker_norm = ticker.lower()
+    for m in re.finditer(re.escape(ticker_norm), original_norm):
+        inicio = max(0, m.start() - _JANELA_EVIDENCIA_TICKER_CH)
+        fim = m.end() + _JANELA_EVIDENCIA_TICKER_CH
+        janela = original_norm[inicio:fim]
+        if any(raiz in janela for raiz in _RAIZES_EVIDENCIA_RECOMENDACAO):
+            return True
+    return False
 
 
 def recomendacao_sem_evidencia(resumo: str, texto_original: str) -> str | None:
     """Primeira recomendação EXPLÍCITA de compra/venda citada no resumo
     (ver _TERMOS_RECOMENDACAO_ACAO) sem NENHUM indício textual dela no
-    texto original (ver _RAIZES_EVIDENCIA_RECOMENDACAO) - None se o resumo
-    não fizer nenhuma recomendação desse tipo, ou se o texto original
-    tiver pelo menos algum traço dela. Pensado sobretudo pra conteúdo tipo
-    LIVE (transcrição de Morning Call/Fechamento de Mercado da Genial),
-    onde recomendação nunca vem de um campo estruturado validado - mas
-    roda pra qualquer tipo de documento, defesa em profundidade."""
-    resumo_norm = _sem_acento(resumo or "")
+    texto original - None se o resumo não fizer nenhuma recomendação desse
+    tipo, ou se o texto original tiver pelo menos algum traço dela.
+    Pensado sobretudo pra conteúdo tipo LIVE (transcrição de Morning
+    Call/Fechamento de Mercado da Genial), onde recomendação nunca vem de
+    um campo estruturado validado - mas roda pra qualquer tipo de
+    documento, defesa em profundidade.
+
+    Quando a FRASE do resumo que faz a recomendação cita um ticker (ex:
+    "recomenda compra de PETR4"), a checagem é mais estrita: exige uma
+    raiz de recomendação PRÓXIMA (ver _recomendacao_proxima_do_ticker) de
+    alguma ocorrência do MESMO ticker no original - não basta "compra"/
+    "venda" aparecer solto em outra parte do texto, sem relação com esse
+    papel (achado real, ver comentário de _RAIZES_EVIDENCIA_RECOMENDACAO:
+    sem isso, uma transcrição real de live sempre tem ALGUMA menção solta
+    a "comprar"/"vender" em contexto não financeiro-de-ação, o que
+    bastava pra validar uma recomendação 100% inventada pra QUALQUER
+    ticker). Sem ticker na frase (recomendação só por nome da casa/papel
+    citado em prosa, sem o código), cai na checagem antiga (raiz em
+    qualquer lugar do original) - limitação conhecida e documentada, não
+    resolvida aqui: sem extrair o nome da empresa/ativo da frase, não há
+    como amarrar a evidência a um alvo específico nesse caso."""
     original_norm = _sem_acento(texto_original or "")
-    for termo in _TERMOS_RECOMENDACAO_ACAO:
-        if termo not in resumo_norm:
+    for sentenca in re.split(r"(?<=[.!?])\s+", resumo or ""):
+        sentenca_norm = _sem_acento(sentenca)
+        termo = next((t for t in _TERMOS_RECOMENDACAO_ACAO if t in sentenca_norm), None)
+        if termo is None:
             continue
-        if not any(raiz in original_norm for raiz in _RAIZES_EVIDENCIA_RECOMENDACAO):
+        tickers_sentenca = sorted(set(_PADRAO_TICKER.findall(sentenca)) - _FALSOS_POSITIVOS_TICKER)
+        if tickers_sentenca:
+            tem_evidencia = any(
+                _recomendacao_proxima_do_ticker(t, original_norm) for t in tickers_sentenca
+            )
+            alvo = f" para {', '.join(tickers_sentenca)}"
+        else:
+            tem_evidencia = any(raiz in original_norm for raiz in _RAIZES_EVIDENCIA_RECOMENDACAO)
+            alvo = ""
+        if not tem_evidencia:
             return (
-                f"recomendação de compra/venda mencionada no resumo (\"{termo}\") sem "
+                f"recomendação de compra/venda mencionada no resumo (\"{termo}\"){alvo} sem "
                 "nenhum indício no texto original"
             )
     return None
