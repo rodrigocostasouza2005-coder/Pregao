@@ -126,3 +126,111 @@ def test_coletar_carteiras_ponta_a_ponta_com_rede_mockada():
     assert itens == [{"ticker": "PETR4"}]
     mock_parse.assert_called_once()
     assert mock_parse.call_args[0][1] == "https://www.safra.com.br/Outubro_Acoes.pdf"
+
+
+# ---------------------------------------------------------------------
+# motivo_ultima_falha(): regressão real (auditoria SAÚDE DOS DADOS
+# 2026-11-18) - "Safra Corretora (carteiras)" ficou "fonte indisponível"
+# por 20 dias seguidos sem que ninguém soubesse a causa real: QUALQUER
+# falha (rede, robots.txt, PDF do mês ainda não publicado, parsing
+# rejeitado, mudança de layout) colapsava em None, e a causa real só
+# chegava a um print() de log, nunca ao campo `erro` persistido via
+# registrar_tentativa. Estes testes confirmam que, pra cada cenário de
+# falha, motivo_ultima_falha() devolve a causa REAL (nunca um texto
+# genérico tipo "erro desconhecido") - mesmo padrão já usado em
+# data/research/genial.py e data/research/xp.py.
+# ---------------------------------------------------------------------
+
+def test_motivo_ultima_falha_nenhuma_chamada_ainda_e_none():
+    """Sem nenhuma chamada registrada neste processo, não inventa causa."""
+    with patch.object(safra_mod, "_ultimo_motivo_falha", None):
+        assert safra_mod.motivo_ultima_falha() is None
+
+
+def test_motivo_ultima_falha_bloqueio_por_robots_txt():
+    with patch.object(safra_mod, "permitido", return_value=False):
+        assert safra_mod.coletar_carteiras(hoje=_HOJE) is None
+    motivo = safra_mod.motivo_ultima_falha()
+    assert motivo is not None and "robots.txt" in motivo
+
+
+def test_motivo_ultima_falha_excecao_de_rede_propaga_mensagem_real():
+    """Timeout/ConnectionError real - a mensagem da própria exceção chega
+    no motivo, nunca um rótulo fixo genérico."""
+    with patch.object(safra_mod, "permitido", return_value=True), \
+         patch.object(safra_mod.requests, "get",
+                      side_effect=ConnectionError("Failed to establish a new connection: [Errno 110]")):
+        assert safra_mod.coletar_carteiras(hoje=_HOJE) is None
+    motivo = safra_mod.motivo_ultima_falha()
+    assert motivo is not None
+    assert "ConnectionError" in motivo
+    assert "Failed to establish a new connection: [Errno 110]" in motivo
+
+
+def test_motivo_ultima_falha_http_nao_200():
+    resposta = MagicMock(status_code=503, content=b"")
+    with patch.object(safra_mod, "permitido", return_value=True), \
+         patch.object(safra_mod.requests, "get", return_value=resposta):
+        assert safra_mod.coletar_carteiras(hoje=_HOJE) is None
+    motivo = safra_mod.motivo_ultima_falha()
+    assert motivo is not None and "HTTP 503" in motivo
+
+
+def test_motivo_ultima_falha_pdf_do_mes_ainda_nao_publicado():
+    resposta_listagem = MagicMock(
+        status_code=200, content=b"x",
+        text='<a href="/Setembro_Acoes.pdf">Setembro</a>',
+    )
+    with patch.object(safra_mod, "permitido", return_value=True), \
+         patch.object(safra_mod.requests, "get", return_value=resposta_listagem):
+        assert safra_mod.coletar_carteiras(hoje=_HOJE) is None
+    motivo = safra_mod.motivo_ultima_falha()
+    assert motivo is not None and "outubro" in motivo and "não encontrado" in motivo
+
+
+def test_motivo_ultima_falha_pdf_ilegivel_propaga_excecao_real_do_pypdf():
+    with patch.object(safra_mod, "PdfReader", side_effect=ValueError("EOF marker not found")):
+        assert safra_mod.parsear_pdf(b"bytes-invalidos", _URL_PDF, hoje=_HOJE) is None
+    motivo = safra_mod.motivo_ultima_falha()
+    assert motivo is not None and "ValueError" in motivo and "EOF marker not found" in motivo
+
+
+def test_motivo_ultima_falha_parsing_rejeitado_por_poucos_tickers():
+    texto_quebrado = "Código Companhia Setor\nWEGE3 Weg Bens de Capital 49,46 33,1x 12,0% 12,0%"
+    assert safra_mod._parsear_texto(texto_quebrado, _URL_PDF, hoje=_HOJE) is None
+    motivo = safra_mod.motivo_ultima_falha()
+    assert motivo is not None and "tabela rejeitada" in motivo and "1 ticker" in motivo
+
+
+def test_motivo_ultima_falha_excecao_nao_prevista_propaga_str_da_excecao_nunca_generico():
+    """Qualquer falha fora dos pontos já tratados (ex: mudança de
+    estrutura que quebra uma chamada fora dos try/except específicos)
+    precisa propagar str(exc) real - nunca um texto fixo tipo 'erro
+    desconhecido'."""
+    with patch.object(safra_mod, "_url_pdf_mes", side_effect=KeyError("layout inesperado")):
+        with patch.object(safra_mod, "permitido", return_value=True), \
+             patch.object(safra_mod.requests, "get",
+                          return_value=MagicMock(status_code=200, content=b"x", text="<html></html>")):
+            assert safra_mod.coletar_carteiras(hoje=_HOJE) is None
+    motivo = safra_mod.motivo_ultima_falha()
+    assert motivo is not None
+    assert "KeyError" in motivo
+    assert "layout inesperado" in motivo
+    assert "erro desconhecido" not in motivo.lower()
+
+
+def test_motivo_ultima_falha_reseta_para_none_apos_sucesso():
+    """Uma falha anterior não pode continuar "vazando" como causa de uma
+    coleta que, desta vez, teve sucesso pleno."""
+    with patch.object(safra_mod, "permitido", return_value=False):
+        assert safra_mod.coletar_carteiras(hoje=_HOJE) is None
+    assert safra_mod.motivo_ultima_falha() is not None
+
+    resposta_listagem = MagicMock(status_code=200, content=b"x", text='<a href="/Outubro_Acoes.pdf">x</a>')
+    resposta_pdf = MagicMock(status_code=200, content=b"PDF-BYTES-FAKE")
+    with patch.object(safra_mod, "permitido", return_value=True), \
+         patch.object(safra_mod.requests, "get", side_effect=[resposta_listagem, resposta_pdf]), \
+         patch.object(safra_mod, "parsear_pdf", return_value=[{"ticker": "PETR4"}]):
+        itens = safra_mod.coletar_carteiras(hoje=_HOJE)
+    assert itens == [{"ticker": "PETR4"}]
+    assert safra_mod.motivo_ultima_falha() is None

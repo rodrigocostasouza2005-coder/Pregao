@@ -62,7 +62,13 @@ def _registrar_tentativas_por_casa(status_fontes: dict) -> None:
             registrar_tentativa(nome_painel, fonte, execucao_ok=True, persistencia_ok=True,
                                  registros_novos=n, categoria="Radar",
                                  parcial=bool(aviso), erro=aviso)
-        elif status == "fonte indisponível":
+        elif status == "fonte indisponível" or status.startswith("fonte indisponível: "):
+            # O sufixo ": <causa real>" (ver data/radar_quedas.py:
+            # processar_monitoramento e data/research/safra_carteiras.py:
+            # motivo_ultima_falha, achado real auditoria SAUDE DOS DADOS
+            # 2026-11-18) vai inteiro pro campo `erro` - e' exatamente o
+            # texto que o painel exibe (ver data/saude_dados.py:
+            # classificar_estado), antes sempre generico.
             registrar_tentativa(nome_painel, fonte, execucao_ok=False, erro=status, categoria="Radar")
         elif status.startswith("snapshot vazio"):
             registrar_tentativa(nome_painel, fonte, execucao_ok=True, persistencia_ok=True,

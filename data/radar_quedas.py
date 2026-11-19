@@ -18,6 +18,7 @@ from data.prices import obter_cotacao, obter_data_ultimo_pregao
 from data.research.genial_carteiras import coletar_carteiras as _coletar_genial
 from data.research.itau_carteiras import coletar_carteiras as _coletar_itau
 from data.research.safra_carteiras import coletar_carteiras as _coletar_safra
+from data.research.safra_carteiras import motivo_ultima_falha as _motivo_falha_safra
 from data.supabase_client import obter_cliente
 
 TZ_SP = ZoneInfo("America/Sao_Paulo")
@@ -49,6 +50,22 @@ CASAS_MONITORADAS = (CASA_ITAU, CASA_SAFRA, CASA_GENIAL)
 # So' pra UI destacar "chegando perto do gatilho" - nao gera alerta nem
 # e-mail (a regra de alerta continua LIMIAR_VARIACAO, estrita).
 LIMIAR_ATENCAO = -2.5
+
+# Getter de "causa real da ultima falha" por casa (achado real, auditoria
+# SAUDE DOS DADOS 2026-11-18: "Safra Corretora (carteiras)" ficou "fonte
+# indisponivel" 20 dias seguidos - QUALQUER falha (robots.txt, rede, HTTP
+# != 200, PDF do mes nao publicado, parsing rejeitado, excecao nao
+# prevista) colapsava pro mesmo texto generico em processar_monitoramento
+# abaixo, e a causa real so' ia pro print() de log, nunca pro campo `erro`
+# persistido via registrar_tentativa - ver data/research/safra_carteiras.
+# py:motivo_ultima_falha). So' a Safra tem um getter aqui de proposito
+# (escopo desta correcao e' so' o coletor que ficou 20 dias quebrado sem
+# diagnostico - Genial/Itau continuam com o status generico de antes,
+# nenhum comportamento delas muda); outra casa pode ganhar o mesmo getter
+# no futuro, sem precisar mudar a logica abaixo, so' adicionar a entrada.
+_MOTIVO_FALHA_POR_CASA = {
+    CASA_SAFRA: _motivo_falha_safra,
+}
 
 
 def calcular_queda(preco_atual, fechamento_anterior):
@@ -336,7 +353,15 @@ def processar_monitoramento():
     for casa, coletor in ((CASA_GENIAL, coletar_carteiras_genial), (CASA_SAFRA, coletar_carteiras_safra), (CASA_ITAU, coletar_carteiras_itau)):
         snapshot = coletor()
         if snapshot is None:
-            status_fontes[casa] = "fonte indisponível"
+            # Enriquece com a causa REAL quando a casa expoe um getter
+            # (ver _MOTIVO_FALHA_POR_CASA) - nunca muda o bucket "fonte
+            # indisponível" em si (prefixo preservado, classificado do
+            # mesmo jeito em data/saude_dados.py:_TERMOS_INDISPONIBILIDADE
+            # e em jobs/radar_quedas.py:_registrar_tentativas_por_casa),
+            # so' deixa de ser um texto generico sem diagnostico.
+            obter_motivo = _MOTIVO_FALHA_POR_CASA.get(casa)
+            detalhe = obter_motivo() if obter_motivo else None
+            status_fontes[casa] = f"fonte indisponível: {detalhe}" if detalhe else "fonte indisponível"
             continue
         # Uma resposta vazia pode indicar mudança no HTML/PDF ou coleta
         # parcial. Não desativa a última carteira válida DESTA casa até

@@ -120,6 +120,48 @@ def test_monitoramento_para_persistir_uma_fonte_nao_bloqueia_a_outra():
     assert resultado["fontes"]["Safra Corretora"].startswith("ok")
 
 
+def test_monitoramento_enriquece_fonte_indisponivel_da_safra_com_a_causa_real():
+    """Regressão real (auditoria SAÚDE DOS DADOS 2026-11-18): "Safra
+    Corretora (carteiras)" ficou "fonte indisponível" por 20 dias
+    seguidos sem ninguém saber por quê - toda falha de
+    data/research/safra_carteiras.py:coletar_carteiras colapsava pro
+    mesmo texto genérico aqui. Agora o status da Safra inclui a causa
+    real (via motivo_ultima_falha(), ver data/research/safra_carteiras.
+    py) quando o snapshot é None. Genial/Itaú continuam com o status
+    genérico de antes (escopo desta correção é só o coletor da Safra -
+    nenhum comportamento delas muda)."""
+    import data.radar_quedas as radar
+    import data.research.safra_carteiras as safra_mod
+    with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
+         patch.object(radar, "coletar_carteiras_safra", return_value=None), \
+         patch.object(radar, "coletar_carteiras_itau", return_value=None), \
+         patch.object(safra_mod, "_ultimo_motivo_falha",
+                      "HTTP 503 ou corpo vazio: https://www.safra.com.br/investimentos/renda-variavel/carteiras-recomendadas.htm"):
+        resultado = radar.processar_monitoramento()
+    assert resultado["fontes"]["Safra Corretora"] == (
+        "fonte indisponível: HTTP 503 ou corpo vazio: "
+        "https://www.safra.com.br/investimentos/renda-variavel/carteiras-recomendadas.htm"
+    )
+    # Genial/Itaú não têm getter em _MOTIVO_FALHA_POR_CASA - comportamento
+    # inalterado, continuam com o status genérico de sempre.
+    assert resultado["fontes"]["Genial Analisa"] == "fonte indisponível"
+    assert resultado["fontes"]["Itaú Investimentos"] == "fonte indisponível"
+
+
+def test_monitoramento_sem_motivo_registrado_mantem_texto_generico_da_safra():
+    """Se motivo_ultima_falha() não tiver nada registrado (None), o
+    status da Safra continua exatamente "fonte indisponível" - nunca um
+    sufixo vazio tipo "fonte indisponível: None"."""
+    import data.radar_quedas as radar
+    import data.research.safra_carteiras as safra_mod
+    with patch.object(radar, "coletar_carteiras_genial", return_value=None), \
+         patch.object(radar, "coletar_carteiras_safra", return_value=None), \
+         patch.object(radar, "coletar_carteiras_itau", return_value=None), \
+         patch.object(safra_mod, "_ultimo_motivo_falha", None):
+        resultado = radar.processar_monitoramento()
+    assert resultado["fontes"]["Safra Corretora"] == "fonte indisponível"
+
+
 def test_monitoramento_rejeita_snapshot_vazio_e_preserva_carteiras_dessa_casa():
     from unittest.mock import patch
     import data.radar_quedas as radar
