@@ -660,6 +660,19 @@ REGISTRO_COLETORES = [
         "idade_maxima_horas": 1, "instrumentado": True,
     },
     {
+        # linha nova (auditoria 2026-11-02, validação pós-merge da PR
+        # #223): o coletor Itaú Top 5 (data/research/itau_carteiras.py)
+        # já existia e funciona de verdade (confirmado com execução real
+        # contra o espelho hub-conteudo.cloud.itau.com.br, 5 itens reais
+        # da carteira de outubro/2026), mas nunca tinha entrada aqui -
+        # jobs/radar_quedas.py:_NOME_PAINEL_POR_CASA não mapeava "Itaú
+        # Investimentos", então o status real do coletor nunca chegava a
+        # `registrar_tentativa` (corrigido junto nesta mesma auditoria).
+        "nome": "Itaú Investimentos (carteiras)", "fonte": "hub-conteudo.cloud.itau.com.br (carteira Top 5 mensal)",
+        "categoria": "Radar", "frequencia_esperada": ".github/workflows/radar-morning-call.yml, 15min (seg-sex, pregao)",
+        "idade_maxima_horas": 1, "instrumentado": True,
+    },
+    {
         # linha nova (auditoria 2026-10-15): mesmo gap do RADAR - jobs/
         # morning_call.py tinha sua propria tabela (morning_call_execucoes)
         # mas nunca aparecia no painel central.
