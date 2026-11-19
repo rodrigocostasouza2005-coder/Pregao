@@ -62,6 +62,31 @@ _LINHA_TABELA_RE = re.compile(
 )
 MIN_TICKERS = 5  # Top 10 real tem ~10; abaixo disso, parsing suspeito -> rejeita
 
+# Mesmo padrao/motivo de data/research/genial.py:_ultimo_motivo_falha e
+# data/research/xp.py:_ultimo_motivo_falha (achado real, auditoria SAUDE
+# DOS DADOS 2026-11-18: "Safra Corretora (carteiras)" ficou "fonte
+# indisponivel" 20 dias seguidos sem ninguem saber por que - toda falha
+# real (robots.txt, timeout de rede, HTTP != 200, PDF do mes ainda nao
+# publicado, PDF ilegivel, parsing rejeitado por menos de MIN_TICKERS
+# tickers, excecao nao prevista) colapsava em None, e a causa so' ia pro
+# print() de log - nunca chegava no campo `erro` persistido via
+# data/coletores_status.py:registrar_tentativa (ver data/radar_quedas.py:
+# processar_monitoramento e jobs/radar_quedas.py:_registrar_tentativas_
+# por_casa, que agora leem motivo_ultima_falha() pra enriquecer o status
+# generico "fonte indisponivel" com a causa real). Nunca inventa uma
+# causa generica: toda excecao nao prevista aqui propaga str(exc)/
+# type(exc).__name__ de verdade, nunca um texto fixo tipo "erro
+# desconhecido".
+_ultimo_motivo_falha = None
+
+
+def motivo_ultima_falha() -> str | None:
+    """Detalhe real da ultima falha de coletar_carteiras() nesta sessao
+    do processo - None se a ultima chamada teve sucesso ou nenhuma
+    chamada foi feita ainda. Ver nota acima sobre o motivo desta funcao
+    existir."""
+    return _ultimo_motivo_falha
+
 
 def _normalizar(valor):
     texto = unicodedata.normalize("NFKD", str(valor or ""))
@@ -72,18 +97,29 @@ def _get(url, binario=False):
     """GET simples (requests puro basta - fonte confirmada sem bot-
     detection, ver docstring do modulo). None se bloqueado pelo
     robots.txt, HTTP != 200 ou corpo vazio - nunca lanca excecao pra
-    quem chama."""
+    quem chama. Grava a causa real em _ultimo_motivo_falha (ver
+    motivo_ultima_falha) em todo caminho de falha; reseta pra None no
+    sucesso desta requisicao especifica (se uma etapa POSTERIOR falhar,
+    ela sobrescreve com a causa dela - o valor final sempre reflete o
+    ULTIMO ponto que falhou nesta chamada de coletar_carteiras)."""
+    global _ultimo_motivo_falha
     if not permitido(url):
+        _ultimo_motivo_falha = f"bloqueado pelo robots.txt: {url}"
         print(f"[radar_safra] coleta bloqueada pelo robots.txt: {url}")
         return None
     try:
         r = requests.get(url, headers=HEADERS, timeout=TIMEOUT * 2)
     except Exception as exc:
+        # Excecao nao prevista (rede, DNS, SSL etc.) - propaga a mensagem
+        # REAL da excecao, nunca um texto fixo tipo "erro desconhecido".
+        _ultimo_motivo_falha = f"falha de conexão ({type(exc).__name__}): {exc} ({url})"
         print(f"[radar_safra] falha de conexão: {type(exc).__name__}: {exc} ({url})")
         return None
     if r.status_code != 200 or not r.content:
+        _ultimo_motivo_falha = f"HTTP {r.status_code} ou corpo vazio: {url}"
         print(f"[radar_safra] HTTP {r.status_code} ou corpo vazio: {url}")
         return None
+    _ultimo_motivo_falha = None
     return r.content if binario else r.text
 
 
@@ -120,7 +156,9 @@ def _parsear_texto(texto, url, hoje=None):
     carregar bytes de PDF binário no repositório de testes. None se a
     tabela não for encontrada ou tiver menos que MIN_TICKERS linhas
     válidas (parsing suspeito/PDF mudou de layout - rejeita em vez de
-    salvar parcial)."""
+    salvar parcial). Grava a causa real em _ultimo_motivo_falha quando
+    rejeita (ver motivo_ultima_falha)."""
+    global _ultimo_motivo_falha
     hoje = hoje or date.today()
     agora = datetime.now(timezone.utc).isoformat()
     # Nao ha' "Publicado em DD de mes de YYYY" explicito no PDF (diferente
@@ -164,21 +202,27 @@ def _parsear_texto(texto, url, hoje=None):
 
     tickers_unicos = {item["ticker"] for item in itens}
     if len(tickers_unicos) < MIN_TICKERS:
-        print(
-            f"[radar_safra] tabela rejeitada: {len(tickers_unicos)} ticker(s) "
-            f"encontrados (mínimo {MIN_TICKERS}) - layout do PDF pode ter mudado"
+        _ultimo_motivo_falha = (
+            f"tabela rejeitada: {len(tickers_unicos)} ticker(s) encontrados "
+            f"(mínimo {MIN_TICKERS}) - layout do PDF pode ter mudado"
         )
+        print(f"[radar_safra] {_ultimo_motivo_falha}")
         return None
+    _ultimo_motivo_falha = None
     return itens
 
 
 def parsear_pdf(conteudo_pdf, url, hoje=None):
     """Extrai o texto do PDF (bytes) via pypdf e delega o parsing real a
-    _parsear_texto(). None se o PDF não puder ser lido."""
+    _parsear_texto(). None se o PDF não puder ser lido. Grava a causa
+    real (tipo + mensagem da exceção de pypdf) em _ultimo_motivo_falha
+    (ver motivo_ultima_falha) - nunca um texto fixo genérico."""
+    global _ultimo_motivo_falha
     try:
         leitor = PdfReader(BytesIO(conteudo_pdf))
         texto = "\n".join(pagina.extract_text() or "" for pagina in leitor.pages[:2])
     except Exception as exc:
+        _ultimo_motivo_falha = f"PDF ilegível ({type(exc).__name__}): {exc}"
         print(f"[radar_safra] PDF ilegível: {type(exc).__name__}: {exc}")
         return None
     return _parsear_texto(texto, url, hoje=hoje)
@@ -189,16 +233,37 @@ def coletar_carteiras(hoje=None):
     fonte estiver indisponível ou o PDF do mês vigente não for
     encontrado/parseável. Mesmo contrato de coletar_carteiras() em
     genial_carteiras.py - plugável em data/radar_quedas.py como fonte
-    adicional."""
+    adicional.
+
+    Toda falha (robots.txt, rede, HTTP != 200, PDF do mês ainda não
+    publicado, PDF ilegível, parsing rejeitado por poucos tickers, ou
+    qualquer exceção não prevista) grava a causa REAL em
+    _ultimo_motivo_falha (ver motivo_ultima_falha) antes de devolver
+    None - nunca deixa a causa só no print() de log (achado real,
+    auditoria SAÚDE DOS DADOS 2026-11-18: ver nota no topo do módulo)."""
+    global _ultimo_motivo_falha
     hoje = hoje or date.today()
-    html = _get(LISTAGEM_URL)
-    if not html:
+    try:
+        html = _get(LISTAGEM_URL)
+        if not html:
+            return None
+        url_pdf = _url_pdf_mes(html, hoje)
+        if not url_pdf:
+            _ultimo_motivo_falha = (
+                f"PDF do mês vigente ({MESES[hoje.month]}) não encontrado na listagem"
+            )
+            print(f"[radar_safra] {_ultimo_motivo_falha}")
+            return None
+        conteudo = _get(url_pdf, binario=True)
+        if not conteudo:
+            return None
+        return parsear_pdf(conteudo, url_pdf, hoje=hoje)
+    except Exception as exc:
+        # Excecao nao prevista que nenhum dos pontos acima capturou (ex:
+        # mudanca de estrutura HTML que quebra uma chamada fora dos
+        # try/except especificos) - propaga str(exc) de verdade, nunca um
+        # texto fixo tipo "erro desconhecido" (pedido explicito da
+        # investigacao: nunca inventar causa quando nao se sabe qual e').
+        _ultimo_motivo_falha = f"exceção não prevista ({type(exc).__name__}): {exc}"
+        print(f"[radar_safra] {_ultimo_motivo_falha}")
         return None
-    url_pdf = _url_pdf_mes(html, hoje)
-    if not url_pdf:
-        print(f"[radar_safra] PDF do mês vigente ({MESES[hoje.month]}) não encontrado na listagem")
-        return None
-    conteudo = _get(url_pdf, binario=True)
-    if not conteudo:
-        return None
-    return parsear_pdf(conteudo, url_pdf, hoje=hoje)

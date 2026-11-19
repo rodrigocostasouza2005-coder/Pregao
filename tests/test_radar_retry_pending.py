@@ -415,6 +415,42 @@ def test_executar_registra_tentativa_por_casa_quando_uma_falha_e_outra_ok(monkey
     assert "Safra Corretora" not in por_nome
 
 
+def test_executar_registra_fonte_indisponivel_enriquecida_da_safra_com_a_causa_real(monkeypatch):
+    """Regressão real (auditoria SAÚDE DOS DADOS 2026-11-18): o status
+    "fonte indisponível: <causa real>" que data/radar_quedas.py agora
+    produz pra Safra (ver motivo_ultima_falha) precisa continuar
+    reconhecido aqui (antes só o texto EXATO "fonte indisponível" batia
+    no elif) e o texto COMPLETO (com a causa real) precisa chegar
+    intacto no campo `erro` de registrar_tentativa - é esse campo que o
+    painel SAÚDE DOS DADOS exibe (ver data/saude_dados.py:
+    classificar_estado)."""
+    chamadas = []
+    status_detalhado = (
+        "fonte indisponível: HTTP 503 ou corpo vazio: "
+        "https://www.safra.com.br/investimentos/renda-variavel/carteiras-recomendadas.htm"
+    )
+    monkeypatch.setattr(
+        radar_quedas, "processar_monitoramento",
+        lambda: {
+            "coleta_ok": False, "alertas_novos": [], "erro": "todas as fontes falharam",
+            "fontes": {"Genial Analisa": "fonte indisponível", "Safra Corretora": status_detalhado},
+        },
+    )
+    monkeypatch.setattr(radar_quedas, "obter_cliente", lambda: _Cliente([]))
+    monkeypatch.setattr(radar_quedas, "listar_assinantes_radar_quedas", lambda cliente: [])
+    monkeypatch.setattr(radar_quedas, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k)))
+
+    radar_quedas.executar()
+
+    por_nome = {args[0]: kwargs for args, kwargs in chamadas}
+    assert por_nome["Safra Corretora (carteiras)"]["execucao_ok"] is False
+    assert por_nome["Safra Corretora (carteiras)"]["erro"] == status_detalhado
+    assert "HTTP 503" in por_nome["Safra Corretora (carteiras)"]["erro"]
+    # Genial continua reconhecida pelo texto EXATO de sempre (sem causa) -
+    # comportamento inalterado.
+    assert por_nome["Genial Analisa (carteiras)"]["erro"] == "fonte indisponível"
+
+
 def test_executar_registra_snapshot_vazio_como_parcial_nao_falha_nem_sucesso_pleno(monkeypatch):
     chamadas = []
     monkeypatch.setattr(
