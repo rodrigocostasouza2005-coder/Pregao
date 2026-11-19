@@ -19,7 +19,16 @@ evento. Esse conteúdo de contexto agora fica atrás de abas compactas
 mais os 4 de uma vez. Nenhuma chamada de rede nova: a grade/painel só
 leem os eventos já calculados por calcular_calendario (1x por render,
 não por célula/clique) - trocar de dia/evento é só re-leitura de um
-dict em memória."""
+dict em memória.
+
+Auditoria de uso do design system (ui/design_system.py, missão rollout B,
+2026-11-18): este arquivo já importa e usa design_system (divisor_html,
+ver _painel_contexto) desde a reformulação de 2026-11-17 - o achado de
+"zero uso" registrado em docs/continuidade-pregao-20261114.md está
+desatualizado para este arquivo. _cor_status (status CONFIRMADO/ESTIMADO/
+PRAZO_CVM) não é um candidato a classe_sinal: é rótulo de 3 estados sem
+relação com sinal positivo/negativo, e já usa var(--alta)/var(--destaque)/
+var(--cinza) (nunca hex solto)."""
 
 import calendar
 from datetime import date, datetime, timedelta, timezone

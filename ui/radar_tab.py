@@ -14,7 +14,23 @@ persistido/cacheado) e aparecem direto; Valuation Radar mostra só os
 indicadores já cacheados por ticker (nenhuma consulta NOVA), e o
 comparativo setorial (que itera ~10-15 pares) só roda dentro de um
 @st.dialog, aberto por um botão explícito - mesmo mecanismo de "resumo
-por IA sob demanda" que o projeto já usa em RESEARCH/NEWS/CVM."""
+por IA sob demanda" que o projeto já usa em RESEARCH/NEWS/CVM.
+
+Auditoria de uso do design system (ui/design_system.py, missão rollout B,
+2026-11-18): este arquivo já usava var(--alta)/var(--baixa) via classes
+CSS locais (rq-alta/rq-baixa/rq-cinza, mesma cor da classe global
+alta/baixa), mas reimplementava o ternário de decisão (_classe_var) em
+vez de reaproveitar design_system.classe_sinal - exatamente o padrão que
+a docstring de ui/design_system.py (ponto 2) pede pra nunca duplicar.
+Corrigido: _classe_var agora delega a classe_sinal pro caso não-zero,
+preservando intacta a única regra própria desta tela (zero = neutro, não
+colorido - diferente da convenção "zero é alta" do resto do app, mantida
+de propósito aqui). _pct/_pct_simples (sinal "+" só para valor > 0, não
+>= 0, e formatação BR fixa em _pct_simples) não foram tocados: são regras
+de negócio documentadas desta tela específica (RADAR DE QUEDAS), não o
+padrão duplicado que motivou esta auditoria - trocar o threshold mudaria
+texto exibido (ex: "0,00%" -> "+0,00%"), fora do escopo visual desta
+rodada."""
 
 import html
 import urllib.parse
@@ -30,6 +46,7 @@ from data.eventos import STATUS_CONFIRMADO, STATUS_ESTIMADO, STATUS_PRAZO_CVM
 from data.prices import validar_ticker
 from data.research import tese
 from data.research.historico import ultimo_snapshot
+from ui import design_system
 from ui.cvm_tab import abrir_card_documento
 from ui.news_tab import abrir_card_noticia
 
@@ -683,9 +700,20 @@ def _pct(valor, prefs, sinal=True) -> str:
 
 
 def _classe_var(valor) -> str:
+    """Decisão de cor (positivo/negativo) delegada a
+    design_system.classe_sinal (em vez do ternário "alta"/"baixa"
+    reimplementado localmente - ver docstring de ui/design_system.py,
+    ponto 2) - só o PREFIXO "rq-" (CSS local deste arquivo, mesma cor
+    var(--alta)/var(--baixa) da classe global) e a regra pré-existente de
+    "zero é neutro, não colorido" (diferente da convenção "zero é alta"
+    do resto do app - mantida de propósito nesta tela de RADAR DE QUEDAS,
+    ver testes em tests/test_radar_acompanhamento_redesign_ui.py) continuam
+    locais."""
     if valor is None:
         return "rq-cinza"
-    return "rq-baixa" if valor < 0 else ("rq-alta" if valor > 0 else "")
+    if valor == 0:
+        return ""
+    return f"rq-{design_system.classe_sinal(valor)}"
 
 
 def _data_br(valor) -> str:
