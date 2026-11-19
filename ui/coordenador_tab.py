@@ -1377,6 +1377,85 @@ def _render_sintese_final(consolidado: dict):
                 )
 
 
+def _render_sintese_ia(consolidado: dict):
+    """Leitura qualitativa de IA real (Groq) sobre o consolidado -
+    missão "PREGÃO 2.3-B — fiação real da síntese de IA no Comitê"
+    (2026-11-13). Só aparece quando a análise foi executada com
+    sintese_ia=True (hoje, atrás de config.sintese_ia_comite_ativa(),
+    DESLIGADA por padrão em produção - ver config.py e o checkbox em
+    render_analisar) - as 2 chaves lidas aqui
+    ('sintese_divergencia_comite_ia'/'sintese_qualitativa_research_ia')
+    são ADITIVAS (data/coordenador_central/fluxos.py:_anexar_sintese_ia),
+    nunca substituem nem recalculam a recomendação/preço-alvo/confiança
+    já mostrados em _render_cabecalho_decisao/_render_sintese_final (a
+    fonte de verdade numérica continua 100% determinística).
+
+    Cada bloco expõe explicitamente o MODELO usado (nunca caixa-preta) e,
+    quando indisponível (sem GROQ_API_KEY, rate limit, erro de rede,
+    resposta em formato inesperado), mostra o motivo real em vez de
+    esconder a seção - mesmo padrão de transparência das demais fontes
+    deste painel. Toda chamada de IA desta camada é registrada em
+    ia_hibrida_execucoes (ver data/ia_hibrida_telemetria.py) - modelo,
+    provedor, horário, sucesso/motivo de falha, fontes citadas."""
+    sintese_comite = consolidado.get("sintese_divergencia_comite_ia")
+    sintese_research = consolidado.get("sintese_qualitativa_research_ia")
+    if not sintese_comite and not sintese_research:
+        return
+
+    subtitulo("Leitura de IA (Groq) — interpretativa, não recalcula números")
+    st.markdown(
+        "<div class='coord-nota'>Esta seção é gerada por IA para EXPLICAR em prosa o que os pareceres "
+        "e números determinísticos acima já mostram - nunca decide recomendação, preço-alvo ou confiança "
+        "(esses continuam exclusivamente do cálculo determinístico, sempre auditável acima). Cada chamada "
+        "fica registrada (modelo, horário, sucesso/motivo de falha) para auditoria.</div>",
+        unsafe_allow_html=True,
+    )
+
+    if sintese_comite:
+        if sintese_comite.get("disponivel"):
+            modelo = html.escape(str(sintese_comite.get("modelo") or "—"))
+            st.markdown(
+                f"<div class='coord-conclusao-linha'><span class='coord-conclusao-tag'>IA · {modelo}</span>"
+                f"<b>Leitura sobre a convergência/divergência do Comitê:</b> "
+                f"{html.escape(str(sintese_comite.get('leitura') or ''))}</div>",
+                unsafe_allow_html=True,
+            )
+            if sintese_comite.get("fator_decisivo"):
+                st.caption(f"Fator decisivo apontado pela IA: {sintese_comite['fator_decisivo']}")
+            citados = sintese_comite.get("especialistas_citados") or []
+            if citados:
+                st.caption("Especialistas citados nesta leitura: " + ", ".join(citados))
+        else:
+            st.caption(
+                f"Leitura de IA sobre o Comitê indisponível nesta análise: "
+                f"{sintese_comite.get('motivo') or 'motivo não informado'}."
+            )
+
+    if sintese_research:
+        if sintese_research.get("disponivel"):
+            modelo = html.escape(str(sintese_research.get("modelo") or "—"))
+            st.markdown(
+                f"<div class='coord-conclusao-linha'><span class='coord-conclusao-tag'>IA · {modelo}</span>"
+                f"<b>Leitura do research externo monitorado:</b> "
+                f"{html.escape(str(sintese_research.get('sintese') or ''))}</div>",
+                unsafe_allow_html=True,
+            )
+            casas_citadas = sintese_research.get("casas_citadas") or []
+            if casas_citadas:
+                st.caption("Casas citadas nesta leitura: " + ", ".join(str(c) for c in casas_citadas))
+            with st.expander("Convergências, divergências e pontos de atenção apontados pela IA (research externo)"):
+                for rotulo, chave in (("Convergências", "convergencias"), ("Divergências", "divergencias"), ("Pontos de atenção", "pontos_atencao")):
+                    itens = sintese_research.get(chave) or []
+                    if itens:
+                        st.markdown(f"**{rotulo}**")
+                        lista_compacta(html.escape(str(i)) for i in itens)
+        else:
+            st.caption(
+                f"Leitura de IA sobre o research externo indisponível nesta análise: "
+                f"{sintese_research.get('motivo') or 'motivo não informado'}."
+            )
+
+
 def _render_consolidado(consolidado: dict):
     """Monta a análise consolidada em 4 blocos, nesta ordem (reformulação
     visual 2026-11-06, pedido do Rodrigo; perfil da empresa adicionado em
@@ -1419,6 +1498,10 @@ def _render_consolidado(consolidado: dict):
 
     divisor()
     _render_sintese_final(consolidado)
+
+    if consolidado.get("sintese_divergencia_comite_ia") or consolidado.get("sintese_qualitativa_research_ia"):
+        divisor()
+        _render_sintese_ia(consolidado)
 
 
 def render_historico(prefs: dict = None):
@@ -1516,7 +1599,34 @@ def render_analisar(prefs: dict = None):
         )
 
     premissas_dcf = None
+    usar_sintese_ia = False
     if fluxo_escolhido == "analise_ticker":
+        # Checkbox de síntese de IA real (Groq) - missão "PREGÃO 2.3-B",
+        # 2026-11-13. Só aparece quando config.sintese_ia_comite_ativa()
+        # está ligada (hoje, DESLIGADA por padrão em produção - ver
+        # config.py); com a config desligada, o analista nem vê a opção,
+        # pra deixar claro que a ativação é uma decisão de configuração
+        # do Rodrigo, não um toggle qualquer de UI. Mesmo gate que
+        # jobs/comite_noturno.py usa pra decidir se passa sintese_ia=True
+        # pra fluxos.analisar_ticker - um único interruptor pros 2
+        # caminhos de produção.
+        if config.sintese_ia_comite_ativa():
+            usar_sintese_ia = st.checkbox(
+                "Pedir leitura de IA (Groq) sobre este Comitê — chamada real à Groq, custo real",
+                key="coord_sintese_ia_ativar",
+                help=(
+                    "Gera uma leitura em prosa (Groq) do porquê da convergência/divergência entre os "
+                    "especialistas do Comitê e do que o research externo monitorado diz sobre o ticker. "
+                    "Nunca recalcula recomendação, preço-alvo ou confiança - esses continuam exclusivamente "
+                    "do cálculo determinístico. Cada chamada é registrada (modelo/horário/sucesso) para "
+                    "auditoria."
+                ),
+            )
+        else:
+            st.caption(
+                "Leitura de IA (Groq) sobre este Comitê está desligada por configuração "
+                "(SINTESE_IA_COMITE_ATIVA=False) - ativação pendente de decisão do Rodrigo."
+            )
         with st.expander("Premissas do DCF — opcional, sem valores padrão"):
             usar_dcf = st.checkbox("Calcular DCF com premissas informadas", key="coord_dcf_ativar")
             st.caption("As cinco taxas abaixo são premissas do analista, não previsões automáticas do sistema. O Pregão coleta FCF, EBITDA, alavancagem, valor de mercado e cotação nos fundamentos disponíveis; se faltar algum dado-base ou houver incompatibilidade de moeda, o DCF será bloqueado.")
@@ -1567,10 +1677,18 @@ def render_analisar(prefs: dict = None):
         return
 
     nome_fluxo, funcao_fluxo = _FLUXOS[fluxo_id]
+    # usar_sintese_ia só é True quando sugestao_clicada é None (as 3
+    # sugestões abaixo disparam direto, sem passar pelo checkbox acima -
+    # permanecem 100% determinísticas, mesmo padrão de sempre) E o
+    # checkbox foi marcado nesta execução (que só existe quando
+    # config.sintese_ia_comite_ativa() está ligada, ver acima).
     with st.spinner(f"Executando {nome_fluxo} para {ticker_executar} — acionando especialistas em paralelo…"):
         try:
-            if fluxo_id == "analise_ticker" and premissas_dcf is not None:
-                consolidado = funcao_fluxo(ticker_executar, premissas_dcf=premissas_dcf)
+            if fluxo_id == "analise_ticker":
+                kwargs_fluxo = {"sintese_ia": usar_sintese_ia and not sugestao_clicada}
+                if premissas_dcf is not None:
+                    kwargs_fluxo["premissas_dcf"] = premissas_dcf
+                consolidado = funcao_fluxo(ticker_executar, **kwargs_fluxo)
             else:
                 consolidado = funcao_fluxo(ticker_executar)
         except Exception as exc:
