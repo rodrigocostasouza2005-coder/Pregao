@@ -2,8 +2,25 @@ name: Comitê de Investimentos — análise noturna
 
 on:
   schedule:
-    # 19h45 de Brasília (UTC-3), de segunda a sexta.
+    # 19h45 de Brasília (UTC-3), de segunda a sexta + reservas (missao
+    # "agendamento" 2026-11-13: diferente de radar-morning-call.yml, este
+    # workflow so' tinha 1 unico disparo por noite - sem reserva nenhuma,
+    # era o UNICO dos 3 workflows agendados sem fallback se o `schedule`
+    # do GitHub descartasse o disparo (ver MANUAL.md, "Disparo externo
+    # dos agendamentos": o GitHub atrasa/descarta disparos de schedule
+    # sob carga, medido de novo hoje). Reservas ate' 20h49 BRT, minutos
+    # quebrados (mesmo motivo de radar-morning-call.yml/coletores-
+    # nuvem.yml: :00/:30/:45 sao os minutos mais congestionados).
+    # Seguro rodar 2x: jobs/comite_noturno.py pula ticker ja' analisado
+    # nas ultimas 18h (_tickers_com_analise_recente) e o `concurrency`
+    # abaixo serializa (nunca roda 2 rodadas em paralelo) - uma reserva
+    # que chega depois de a rodada principal ja' ter processado o
+    # universo so' confirma "nada pendente", nao duplica analise.
     - cron: "45 22 * * 1-5"
+    - cron: "47 22 * * 1-5"
+    - cron: "7 23 * * 1-5"
+    - cron: "27 23 * * 1-5"
+    - cron: "49 23 * * 1-5"
   workflow_dispatch:
 
 permissions:
