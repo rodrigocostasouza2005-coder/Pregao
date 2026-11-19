@@ -49,9 +49,10 @@ persistido e' um endpoint JSON, nao uma pagina."""
 import re
 
 import requests
+import streamlit as st
 from bs4 import BeautifulSoup
 
-from .base import HEADERS, TIMEOUT, permitido
+from .base import HEADERS, TIMEOUT, TTL_COLETA, permitido
 
 BASE_URL = "https://content.btgpactual.com"
 FILTER_URL = f"{BASE_URL}/api/research/content-hub/analysis/filter"
@@ -159,6 +160,7 @@ def _item_relatorio(item: dict) -> dict:
     }
 
 
+@st.cache_data(ttl=TTL_COLETA, show_spinner=False)
 def obter_relatorios() -> list | None:
     """Itens AREA_PUBLICA das paginas mais recentes do content-hub de
     research (formato comum: casa, titulo, data, autor, tipo, setor,
@@ -166,7 +168,21 @@ def obter_relatorios() -> list | None:
     reconhecido - filtro aplicado aqui, antes de qualquer persistencia.
     None so' se NENHUMA pagina responder; se so' algumas falharem, retorna
     o que as outras trouxerem (mesmo padrao de degradacao gradual que
-    xp.py usa entre categorias)."""
+    xp.py usa entre categorias).
+
+    @st.cache_data(ttl=TTL_COLETA) (achado real, auditoria geral de
+    coletores 2026-10-30): genial.py/xp.py ja cacheiam obter_relatorios()
+    pelo mesmo TTL (30min, data/research/base.py:TTL_COLETA) - este
+    modulo nao tinha o decorator, entao toda chamada (inclusive reruns do
+    Streamlit dentro da mesma janela de 30min) batia de novo na API da
+    BTG, sem motivo real (coletor_local.py/data/research/__init__.py:
+    coletar_casa ja' tem seu proprio gate de 30min - a falta do cache
+    aqui so' causava chamadas de rede REDUNDANTES quando obter_relatorios
+    e' chamado mais de 1x no mesmo ciclo). Mesmo espirito de cache usado
+    pelas outras casas: None (falha total) tambem fica cacheado pelo
+    mesmo TTL - um retry automatico mais frequente que 30min nao traria
+    dado novo mesmo, so' bateria na API sem necessidade (cooldown
+    implicito, identico ao de genial.py/xp.py)."""
     global _ultimo_motivo_falha
     if not permitido(FILTER_URL):
         _ultimo_motivo_falha = "bloqueado pelo robots.txt"
