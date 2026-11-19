@@ -40,6 +40,13 @@ _COR_POR_ESTADO = {
     "FONTE_INDISPONIVEL": "baixa",
     "NAO_COMPROVADO": "cinza",
     "NUNCA_EXECUTADO": "cinza",
+    # AGUARDANDO_USO (investigacao 2026-11-19, data/saude_dados.py:
+    # _COLETORES_SOB_DEMANDA_SEM_CRON) - deliberadamente NEM "alta" (nao
+    # sabemos o estado AGORA, so' que deu certo no passado) NEM "cinza"
+    # (ha' sim evidencia de sucesso real, diferente de NAO_COMPROVADO/
+    # NUNCA_EXECUTADO) - "neutro" e' a cor honesta pra "sem uso recente,
+    # sem alarme".
+    "AGUARDANDO_USO": "neutro",
 }
 
 # Mesma razão acima (estado categórico, não sinal numérico) - não migrado
