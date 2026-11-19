@@ -41,6 +41,8 @@ import re
 import unicodedata
 from datetime import datetime, timezone
 
+import streamlit as st
+
 from data.news import obter_noticias
 from data.prices import obter_indicadores, obter_perfil_institucional
 from data.research.comparador import comparar_ticker
@@ -305,6 +307,16 @@ def _perguntas(estado_atual_por_casa: dict, indicadores: dict, perfil_inst: dict
     return perguntas
 
 
+_TTL_PERFIL_EMPRESA = 60 * 60  # 1h - as fontes internas (indicadores/perfil
+# institucional/noticias) ja tem seu proprio cache (ate 24h); o gargalo
+# sem cache era comparar_ticker/listar_premissas (Supabase, sem
+# @st.cache_data), reconsultado a cada rerun do Streamlit enquanto o
+# painel estiver na tela (achado na revisao independente da missao
+# perfil-empresa-ui-20261118). 1h equilibra carga no Supabase com
+# frescor de research que pode chegar durante o pregao.
+
+
+@st.cache_data(ttl=_TTL_PERFIL_EMPRESA, show_spinner=False)
 def obter_perfil_empresa(ticker: str) -> dict:
     """Perfil de empresa consolidado (ver docstring do modulo pro shape
     completo e a lista de fontes). Funcao PURA: nunca lanca excecao -

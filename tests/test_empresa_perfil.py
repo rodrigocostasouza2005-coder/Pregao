@@ -11,10 +11,22 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import data.empresa_perfil as perfil_mod
 from data.empresa_perfil import obter_perfil_empresa
+
+
+@pytest.fixture(autouse=True)
+def _limpar_cache_perfil_empresa():
+    # obter_perfil_empresa ganhou @st.cache_data (missao
+    # perfil-empresa-ui-20261118); sem limpar entre testes, chamadas
+    # repetidas com o mesmo ticker ("TEST3") devolveriam o resultado
+    # mockado de um teste anterior em vez de rodar com o mock atual.
+    obter_perfil_empresa.clear()
+    yield
 
 _PERFIL_INST_COMPLETO = {
     "disponivel": True,

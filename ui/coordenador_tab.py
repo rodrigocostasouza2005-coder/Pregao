@@ -42,6 +42,7 @@ import config
 from data.coordenador_central import execucoes_agendadas, fluxos, persistencia
 from data.coordenador_central.dcf import calcular_sensibilidade_dcf
 from data.coordenador_central.registro import listar_especialistas
+from data.empresa_perfil import obter_perfil_empresa
 from data.prices import obter_nome_yf
 from ui.design_system import (
     divisor, lista_compacta, numero_financeiro_html, subtitulo, variacao_html,
@@ -667,6 +668,186 @@ def _render_metricas_preco_alvo(sinal: dict):
     )
 
 
+def _linhas_evidencias_perfil(evidencias: list) -> list:
+    """Formata evidências de research (casa/texto/data_publicacao/link -
+    mesmo shape usado em todo data/empresa_perfil.py) como linhas HTML
+    'CASA (data): texto', com link quando houver. Nenhum texto inventado:
+    só reformata trechos verbatim já extraídos pela pipeline de research
+    (ver data/empresa_perfil.py:_evidencias_por_palavras_chave)."""
+    linhas = []
+    for evidencia in evidencias or []:
+        casa = html.escape(str(evidencia.get("casa") or "—"))
+        data_evidencia = html.escape(_fmt_data(evidencia.get("data_publicacao")))
+        texto = html.escape(str(evidencia.get("texto") or ""))
+        link = evidencia.get("link")
+        casa_html = (
+            f"<a href='{html.escape(str(link), quote=True)}' target='_blank' rel='noopener'>{casa}</a>"
+            if link else casa
+        )
+        linhas.append(f"{casa_html} ({data_evidencia}): {texto}")
+    return linhas
+
+
+def _render_pergunta_perfil(pergunta: dict | None, rotulo: str):
+    """1 das 18 perguntas do Perfil da Empresa (ver data/empresa_perfil.py)
+    - disponivel=False mostra o motivo_indisponivel literal que a própria
+    camada de dados já traz (NUNCA um texto genérico de preenchimento,
+    regra explícita do pedido original do Rodrigo); disponivel=True sem
+    evidências estruturadas (ex.: pressões de margem quando só há o dado
+    numérico, já exibido nos indicadores financeiros do parecer do
+    especialista) mostra uma nota honesta em vez de uma lista vazia."""
+    pergunta = pergunta or {}
+    st.markdown(f"**{html.escape(rotulo)}**")
+    if not pergunta.get("disponivel"):
+        st.caption(str(pergunta.get("motivo_indisponivel") or "Dado indisponível para este ticker."))
+        return
+    linhas = _linhas_evidencias_perfil(pergunta.get("evidencias"))
+    if linhas:
+        lista_compacta(linhas)
+    else:
+        st.caption("Disponível, mas sem trecho de research estruturado associado (ver indicadores financeiros do parecer do especialista para o dado numérico).")
+
+
+def _render_pergunta_quebra_tese_perfil(pergunta: dict | None):
+    """Pergunta 18 ('o que quebraria a tese') - repasse de riscos (mesmo
+    shape das demais perguntas de evidência) + divergência entre casas
+    sobre as premissas centrais (dado próprio desta pergunta, calculado
+    em data/research/comparador.py, nunca uma conclusão nova composta
+    aqui)."""
+    pergunta = pergunta or {}
+    st.markdown("**O que quebraria a tese**")
+    if not pergunta.get("disponivel"):
+        st.caption(str(pergunta.get("motivo_indisponivel") or "Dado indisponível para este ticker."))
+        return
+    linhas = _linhas_evidencias_perfil(pergunta.get("evidencias"))
+    for divergencia in (pergunta.get("dado") or {}).get("divergencia_entre_casas") or []:
+        premissa = html.escape(str(divergencia.get("premissa") or ""))
+        mencionam = ", ".join(html.escape(str(c)) for c in (divergencia.get("casas_que_mencionam") or [])) or "—"
+        nao_mencionam = ", ".join(html.escape(str(c)) for c in (divergencia.get("casas_que_nao_mencionam") or [])) or "—"
+        linhas.append(f"Divergência entre casas sobre a premissa \"{premissa}\" — mencionam: {mencionam}; não mencionam: {nao_mencionam}")
+    if linhas:
+        lista_compacta(linhas)
+    else:
+        st.caption("Disponível, mas sem trecho de risco estruturado associado.")
+
+
+def _render_perfil_identificacao(identificacao: dict, perguntas: dict):
+    """Bloco (a) do Perfil da Empresa: 'o que a empresa faz' e 'como
+    ganha dinheiro' são o MESMO resumo institucional repassado pela
+    camada de dados (yfinance não separa as duas perguntas) - mostrado
+    uma vez só, com setor/indústria/país como metadados curtos ao
+    lado (identificacao, não perguntas - já vem separado na origem)."""
+    metadados = []
+    for rotulo, chave in (("Setor", "setor"), ("Indústria", "industria"), ("País", "pais")):
+        valor = (identificacao or {}).get(chave)
+        if valor:
+            metadados.append(f"{html.escape(rotulo)}: {html.escape(str(valor))}")
+    subtitulo("O que a empresa faz / como ganha dinheiro")
+    if metadados:
+        st.markdown(
+            f"<div class='coord-nota' style='margin-top:-0.2rem;'>{' · '.join(metadados)}</div>",
+            unsafe_allow_html=True,
+        )
+    pergunta = (perguntas or {}).get("o_que_a_empresa_faz") or {}
+    if pergunta.get("disponivel"):
+        st.markdown(
+            f"<div style='font-size:0.78rem; line-height:1.5;'>{html.escape(str(pergunta.get('dado') or ''))}</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.caption(str(pergunta.get("motivo_indisponivel") or "Dado indisponível para este ticker."))
+
+
+def _render_perfil_momento_atual(perguntas: dict):
+    """Bloco (b) do Perfil da Empresa: perspectivas, pressões de margem,
+    riscos e o que quebraria a tese - as 4 perguntas que respondem
+    diretamente ao pedido do Rodrigo ('resumo... do momento que ela está
+    passando')."""
+    subtitulo("Momento atual")
+    _render_pergunta_perfil((perguntas or {}).get("perspectivas"), "Perspectivas")
+    _render_pergunta_perfil((perguntas or {}).get("pressoes_de_margem"), "Pressões sobre a margem")
+    _render_pergunta_perfil((perguntas or {}).get("riscos"), "Principais riscos")
+    _render_pergunta_quebra_tese_perfil((perguntas or {}).get("o_que_quebraria_a_tese"))
+
+
+def _render_perfil_posicionamento(perguntas: dict):
+    """Bloco (d) do Perfil da Empresa: posição competitiva, vantagens
+    competitivas e concorrentes - só existem quando algum relatório de
+    research monitorado menciona o assunto explicitamente (ver
+    data/empresa_perfil.py); quando não, cada pergunta mostra seu
+    próprio motivo, nunca omite a seção inteira em silêncio."""
+    subtitulo("Posicionamento competitivo")
+    _render_pergunta_perfil((perguntas or {}).get("posicao_competitiva"), "Posição competitiva")
+    _render_pergunta_perfil((perguntas or {}).get("vantagens_competitivas"), "Vantagens competitivas")
+    _render_pergunta_perfil((perguntas or {}).get("concorrentes"), "Concorrentes")
+
+
+def _render_perfil_noticias(perfil: dict):
+    """Bloco (e) do Perfil da Empresa: até 5 notícias recentes
+    (metadado - título/data/selo/link, nunca resumo editorial, ver
+    docstring de data/empresa_perfil.py) - nenhuma notícia disponível é
+    um resultado real (fonte indisponível ou sem publicação recente),
+    mostrado de forma honesta, nunca omitido."""
+    subtitulo("Notícias recentes")
+    noticias = (perfil.get("noticias_recentes") or []) if perfil.get("noticias_disponivel") else []
+    if not noticias:
+        st.caption("Não há notícia recente disponível para este ticker no momento.")
+        return
+    linhas = []
+    for noticia in noticias[:5]:
+        titulo = html.escape(str(noticia.get("titulo") or ""))
+        data_noticia = html.escape(_fmt_data(noticia.get("data")))
+        selo = noticia.get("selo")
+        link = noticia.get("link")
+        titulo_html = (
+            f"<a href='{html.escape(str(link), quote=True)}' target='_blank' rel='noopener'>{titulo}</a>"
+            if link else titulo
+        )
+        selo_txt = f" · {html.escape(str(selo))}" if selo else ""
+        linhas.append(f"{titulo_html} ({data_noticia}){selo_txt}")
+    lista_compacta(linhas)
+
+
+def _render_perfil_empresa(ticker: str):
+    """Perfil da empresa - história do negócio + momento atual (pedido
+    literal do Rodrigo: 'eu queria que tivesse a opinião do analistas,
+    quando eu fosse ver o preço atual da empresa, gostaria de um resumo
+    da história e do momento que ela está passando' - missão
+    perfil-empresa-ui-20261118). Consome data/empresa_perfil.py:
+    obter_perfil_empresa, camada de consolidação já pronta e testada
+    (tests/test_empresa_perfil.py) que, até esta mudança, nunca era
+    referenciada em nenhuma tela (código morto confirmado por grep).
+    Chamada dentro de _render_consolidado, logo após o cabeçalho de
+    decisão - mesmo lugar onde o preço atual da cotação já aparece
+    (_render_metricas_preco_alvo) - nunca em aba separada.
+
+    obter_perfil_empresa é função pura (nunca deveria lançar: cada
+    fonte que falhar vira disponivel=False só no campo afetado), mas a
+    chamada em si bate em yfinance/Supabase via comparar_ticker/
+    obter_indicadores - o try/except aqui segue o mesmo padrão de
+    resiliência de render_analisar (linha ~1388): nunca deixa uma falha
+    de rede quebrar a página; mostra uma mensagem honesta em vez de
+    `st.error` bloqueante, porque isto é informação complementar ao
+    parecer do Comitê, não o fluxo principal da tela."""
+    if not ticker:
+        return
+    try:
+        perfil = obter_perfil_empresa(ticker)
+    except Exception as exc:
+        with st.expander("Perfil da empresa — resumo do negócio e momento atual", expanded=False):
+            st.caption(f"Perfil da empresa indisponível no momento (falha ao consultar as fontes: {exc!r}).")
+        return
+
+    with st.expander("Perfil da empresa — resumo do negócio e momento atual", expanded=False):
+        _render_perfil_identificacao(perfil.get("identificacao") or {}, perfil.get("perguntas") or {})
+        divisor()
+        _render_perfil_momento_atual(perfil.get("perguntas") or {})
+        divisor()
+        _render_perfil_posicionamento(perfil.get("perguntas") or {})
+        divisor()
+        _render_perfil_noticias(perfil)
+
+
 def _render_parecer_model_builder(analista: dict, recomendacao: str):
     """Bloco do Model Builder (DCF em 3 cenários + premissas +
     sensibilidade) - conteúdo idêntico ao que existia antes da
@@ -1197,17 +1378,24 @@ def _render_sintese_final(consolidado: dict):
 
 
 def _render_consolidado(consolidado: dict):
-    """Monta a análise consolidada em 3 blocos, nesta ordem (reformulação
-    visual 2026-11-06, pedido do Rodrigo): (1) cabeçalho de decisão -
-    recomendação fundamentada do Comitê bem no topo; (2) pareceres por
-    especialista, 1 aba por analista (o que cada um analisou/dados/
-    premissas/tese) + dados externos das casas de research; (3) síntese
-    final - conclusão, divergências, pontos de revisão e material de
-    apoio. A lógica de consolidação real (data/coordenador_central/
-    consolidacao.py + pareceres.py) não muda - só a apresentação; nenhum
-    valor é recalculado ou simplificado aqui."""
+    """Monta a análise consolidada em 4 blocos, nesta ordem (reformulação
+    visual 2026-11-06, pedido do Rodrigo; perfil da empresa adicionado em
+    2026-11-18, missão perfil-empresa-ui-20261118): (1) cabeçalho de
+    decisão - recomendação fundamentada do Comitê bem no topo; (2) perfil
+    da empresa - história do negócio + momento atual, fechado por
+    padrão (_render_perfil_empresa); (3) pareceres por especialista, 1
+    aba por analista (o que cada um analisou/dados/premissas/tese) +
+    dados externos das casas de research; (4) síntese final - conclusão,
+    divergências, pontos de revisão e material de apoio. A lógica de
+    consolidação real (data/coordenador_central/consolidacao.py +
+    pareceres.py) não muda - só a apresentação; nenhum valor é
+    recalculado ou simplificado aqui."""
+    ticker = consolidado.get("ticker") or (consolidado.get("pareceres_analistas") or {}).get("ticker")
     _render_cabecalho_decisao(consolidado)
     divisor()
+    if ticker:
+        _render_perfil_empresa(ticker)
+        divisor()
 
     pareceres = consolidado.get("pareceres_analistas") or {}
     analistas = pareceres.get("analistas") or []
