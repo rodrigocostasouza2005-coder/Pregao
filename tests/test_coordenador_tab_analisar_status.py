@@ -30,7 +30,7 @@ def _rodar_analisar(consolidado_fake: dict):
     script = f'''
 import ui.coordenador_tab as coord
 
-def _fluxo_fake(ticker, premissas_dcf=None):
+def _fluxo_fake(ticker, premissas_dcf=None, sintese_ia=False):
     return {consolidado_fake!r}
 
 coord._FLUXOS["analise_ticker"] = ("Análise de ticker", _fluxo_fake)
