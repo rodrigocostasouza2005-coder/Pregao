@@ -915,3 +915,202 @@ def test_perfil_institucional_campo_individual_ausente_vira_none_nao_quebra():
     assert resultado["resumo_negocio"] is None
     assert resultado["website"] is None
     assert resultado["funcionarios"] is None
+
+
+# ============================================================
+# TIMEOUT EXPLICITO PRA PROPRIEDADES DO YFINANCE (2026-11-18) - pendencia
+# registrada em docs/continuidade-pregao-20261118-missao-master.md:
+# "VALUATION > Parecer" (radar.valuation_radar -> linha_valuation ->
+# obter_cotacao/obter_indicadores) bate em fast_info/.info/.dividends,
+# que nao aceitam parametro timeout= nativo (ja documentado no topo do
+# arquivo) - sem um cap EXPLICITO, uma rede degradada pode travar o
+# render pelo tempo interno (nao configuravel) da lib. Testes aqui
+# cobrem _com_timeout_propriedade isolada (unidade) + a integracao com
+# obter_cotacao/_tk_info_com_retry/_dividend_yield_12m (nunca espera o
+# timeout REAL de 15s - sempre com patch.object em
+# prices_mod._TIMEOUT_PROPRIEDADE_YF por um valor pequeno, pra manter a
+# suite rapida). NAO valida latencia real de yfinance em producao (isso
+# exigiria rede real/usuario final de verdade, fora do alcance deste
+# sandbox) - so' confirma que o MECANISMO de corte funciona e que o
+# motivo devolvido e' literal, nunca generico.
+# ============================================================
+
+def test_timeout_propriedade_devolve_resultado_quando_rapido():
+    resultado = prices_mod._com_timeout_propriedade(lambda: 42, "teste-rapido", timeout_segundos=1)
+    assert resultado == 42
+
+
+def test_timeout_propriedade_repassa_excecao_da_chamada_sem_esconder():
+    def _explode():
+        raise ConnectionError("recusada pelo host")
+
+    try:
+        prices_mod._com_timeout_propriedade(_explode, "teste-excecao", timeout_segundos=1)
+        assert False, "deveria ter propagado a excecao"
+    except ConnectionError as e:
+        assert "recusada pelo host" in str(e)
+
+
+def test_timeout_propriedade_estoura_e_motivo_e_literal_nao_generico():
+    import time
+
+    def _trava():
+        time.sleep(2)
+        return "nunca deveria chegar aqui dentro do timeout"
+
+    try:
+        prices_mod._com_timeout_propriedade(_trava, "yfinance (fast_info)", timeout_segundos=0.05)
+        assert False, "deveria ter estourado o timeout"
+    except TimeoutError as e:
+        motivo = str(e)
+        # motivo LITERAL: identifica a fonte (yfinance/fast_info) e o
+        # tempo exato aplicado - nunca um texto vago como "erro" ou "falha".
+        assert "yfinance (fast_info)" in motivo
+        assert "0.05" in motivo
+        assert "timeout" in motivo.lower()
+
+
+def test_timeout_propriedade_usa_default_do_modulo_quando_nao_especificado():
+    # timeout_segundos=None (default de obter_cotacao/_tk_info_com_retry)
+    # deve ler _TIMEOUT_PROPRIEDADE_YF NA HORA DA CHAMADA (nao um valor
+    # capturado como default do parametro em tempo de definicao) - e' o
+    # que permite este teste (e os de integracao abaixo) sobrescrever
+    # via patch.object sem reiniciar o processo.
+    with patch.object(prices_mod, "_TIMEOUT_PROPRIEDADE_YF", 0.05):
+        import time
+
+        try:
+            prices_mod._com_timeout_propriedade(lambda: time.sleep(2), "teste-default")
+            assert False, "deveria ter estourado com o default sobrescrito"
+        except TimeoutError as e:
+            assert "0.05" in str(e)
+
+
+def test_obter_cotacao_trava_na_rede_cai_em_timeout_honesto_nao_pendura_o_render():
+    """Simula fast_info que nunca retorna (rede degradada, cenario real
+    da pendencia) - com _TIMEOUT_PROPRIEDADE_YF baixo, obter_cotacao
+    DEVE devolver erro honesto (motivo literal) rapido, nunca travar
+    nem inventar preco."""
+    import time
+
+    class _TickerFastInfoTrava:
+        def __init__(self, *_a, **_k):
+            pass
+
+        @property
+        def fast_info(self):
+            time.sleep(2)
+            return {"lastPrice": 99.0, "previousClose": 98.0}
+
+    obter_cotacao.clear()
+    with patch.object(prices_mod, "_TIMEOUT_PROPRIEDADE_YF", 0.05), \
+         patch.object(prices_mod.yf, "Ticker", _TickerFastInfoTrava):
+        inicio = time.monotonic()
+        resultado = obter_cotacao("TESTE_FASTINFO_TRAVA")
+        duracao = time.monotonic() - inicio
+    assert duracao < 1.5, f"obter_cotacao deveria ter desistido perto de 0.05s, levou {duracao:.2f}s"
+    assert "preco" not in resultado
+    erro = (resultado.get("erro") or "")
+    assert "fast_info" in erro
+    assert "0.05" in erro
+
+
+def test_tk_info_com_retry_timeout_na_propriedade_info_registra_motivo_literal():
+    """.info travando (nao so' lancando excecao de imediato) tambem cai
+    no mesmo caminho honesto de _tk_info_com_retry - motivo registrado
+    em SAUDE DOS DADOS precisa citar o timeout aplicado, nunca um texto
+    generico de 'falha' sem explicar o porque."""
+    import time
+
+    class _TickerInfoTrava:
+        def __init__(self, *_a, **_k):
+            pass
+
+        @property
+        def info(self):
+            time.sleep(2)
+            return {"trailingPE": 10.0}
+
+    with patch.object(prices_mod, "_TIMEOUT_PROPRIEDADE_YF", 0.05), \
+         patch.object(prices_mod.yf, "Ticker", _TickerInfoTrava), \
+         patch.object(prices_mod, "registrar_tentativa") as mock_reg:
+        info = prices_mod._tk_info_com_retry("TESTE_INFO_TRAVA.SA")
+    assert info == {}
+    kwargs = mock_reg.call_args.kwargs
+    assert kwargs.get("execucao_ok") is False
+    erro = kwargs.get("erro") or ""
+    assert "tk.info" in erro
+    assert "0.05" in erro
+    # "timeout" precisa aparecer pra data/saude_dados.py:_TERMOS_INDISPONIBILIDADE
+    # classificar corretamente como fonte indisponivel (nao erro generico)
+    assert "timeout" in erro.lower()
+
+
+def test_dividend_yield_12m_trava_retorna_none_sem_quebrar_obter_indicadores():
+    import time
+
+    class _TickerDividendsTrava:
+        @property
+        def dividends(self):
+            time.sleep(2)
+            return pd.Series([1.0], index=pd.DatetimeIndex(["2026-01-01"]))
+
+    with patch.object(prices_mod, "_TIMEOUT_PROPRIEDADE_YF", 0.05):
+        resultado = prices_mod._dividend_yield_12m(_TickerDividendsTrava(), 10.0)
+    assert resultado is None  # _dividend_yield_12m sempre engole excecao -> None (ja existente)
+
+
+def test_obter_cotacao_fast_info_sucesso_normal_continua_intacto_com_o_wrapper():
+    """Garante que envolver fast_info em _com_timeout_propriedade nao
+    mudou nenhum campo do caminho de SUCESSO (regressao do comportamento
+    pre-existente, nao so' do caminho de timeout)."""
+    obter_cotacao.clear()
+
+    class _TickerFastInfoOk:
+        def __init__(self, *_a, **_k):
+            pass
+
+        @property
+        def fast_info(self):
+            return {
+                "lastPrice": 50.0, "previousClose": 48.0, "dayHigh": 51.0,
+                "dayLow": 47.5, "lastVolume": 1000, "yearHigh": 60.0, "yearLow": 40.0,
+            }
+
+    with patch.object(prices_mod.yf, "Ticker", _TickerFastInfoOk):
+        resultado = obter_cotacao("TESTE_FASTINFO_OK")
+    assert resultado["erro"] is None
+    assert resultado["preco"] == 50.0
+    assert resultado["fechamento_anterior"] == 48.0
+    assert resultado["maxima_dia"] == 51.0
+    assert resultado["minima_dia"] == 47.5
+    assert resultado["volume"] == 1000
+    assert resultado["maxima_52s"] == 60.0
+    assert resultado["minima_52s"] == 40.0
+
+
+def test_linha_valuation_cacheada_entre_chamadas_com_mesmo_ticker():
+    """radar.valuation_radar/linha_valuation ja' tinha @st.cache_data
+    (ttl=90s) antes desta missao - este teste so' confirma (regressao)
+    que o cache continua funcionando com o wrapper de timeout adicionado
+    em obter_cotacao/obter_indicadores por baixo."""
+    import data.radar as radar_mod
+
+    chamadas = {"cotacao": 0, "indicadores": 0}
+
+    def _cotacao_fake(ticker):
+        chamadas["cotacao"] += 1
+        return {"preco": 10.0, "erro": None}
+
+    def _indicadores_fake(ticker):
+        chamadas["indicadores"] += 1
+        return {}
+
+    radar_mod.linha_valuation.clear()
+    with patch.object(radar_mod, "obter_cotacao", side_effect=_cotacao_fake), \
+         patch.object(radar_mod, "obter_indicadores", side_effect=_indicadores_fake):
+        primeira = radar_mod.linha_valuation("TESTE_CACHE_VALUATION")
+        segunda = radar_mod.linha_valuation("TESTE_CACHE_VALUATION")
+    assert primeira == segunda
+    assert chamadas["cotacao"] == 1, f"esperava 1 chamada real (cache de linha_valuation), teve {chamadas['cotacao']}"
+    assert chamadas["indicadores"] == 1, f"esperava 1 chamada real (cache de linha_valuation), teve {chamadas['indicadores']}"

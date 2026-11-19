@@ -3,6 +3,7 @@
 
 import math
 import re
+import threading
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -26,6 +27,60 @@ from data.supabase_client import obter_cliente
 # sobrescrever isso sem monkeypatch; documentado em cada chamada abaixo
 # em vez de fingir controle que a lib nao oferece.
 _TIMEOUT_YF = 15
+
+# cap de tempo de PAREDE (wall-clock) pras propriedades do yfinance que
+# nao aceitam parametro de timeout (fast_info/.info/.dividends, ver
+# comentario acima) - gap identificado em auditoria de continuidade
+# anterior (2026-11-18, docs/continuidade-pregao-20261118-missao-
+# master.md: "VALUATION > Parecer" trava >25s neste sandbox quando o
+# yfinance nao responde, e a propriedade nao tem como receber timeout=).
+# Mesmo valor de _TIMEOUT_YF por consistencia - NAO E' uma medicao de
+# latencia real de producao (nao validada; ver _com_timeout_propriedade).
+_TIMEOUT_PROPRIEDADE_YF = _TIMEOUT_YF
+
+
+def _com_timeout_propriedade(obter_valor, descricao: str, timeout_segundos: float | None = None) -> object:
+    """Roda 'obter_valor' (callable sem argumento) numa thread separada e
+    devolve o resultado, ou lanca TimeoutError com motivo LITERAL (nunca
+    um texto generico) se nao voltar dentro de 'timeout_segundos' - unico
+    jeito de aplicar um limite de tempo as propriedades do yfinance que
+    nao aceitam parametro de timeout (fast_info/.info/.dividends, ver
+    _TIMEOUT_YF acima). timeout_segundos=None usa _TIMEOUT_PROPRIEDADE_YF
+    LIDO NA HORA DA CHAMADA (nao capturado como default do parametro) -
+    permite teste/override via monkeypatch do atributo do modulo.
+
+    Usa threading (nao signal.alarm, que so' funciona na thread principal
+    - Streamlit roda cada sessao de usuario numa thread propria) com uma
+    thread DAEMON: se o tempo esgotar, esta funcao desiste de ESPERAR e
+    propaga o erro honesto pro chamador (que ja' trata qualquer Exception
+    sem inventar dado - ver obter_cotacao/_tk_info_com_retry/
+    _dividend_yield_12m), mas a chamada de rede bloqueada na thread pode
+    continuar rodando em segundo plano at'e terminar por conta propria -
+    nao existe forma segura de interromper de fato uma thread no meio de
+    uma chamada de rede em C/libcurl. daemon=True garante que isso nunca
+    impede o processo do Streamlit de encerrar."""
+    if timeout_segundos is None:
+        timeout_segundos = _TIMEOUT_PROPRIEDADE_YF
+    resultado_ok = {}
+    resultado_erro = {}
+
+    def _alvo():
+        try:
+            resultado_ok["valor"] = obter_valor()
+        except Exception as exc:  # repassado integralmente pro chamador, nunca escondido/resumido
+            resultado_erro["exc"] = exc
+
+    thread = threading.Thread(target=_alvo, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout_segundos)
+    if thread.is_alive():
+        raise TimeoutError(
+            f"{descricao} nao respondeu em {timeout_segundos}s "
+            "(timeout aplicado pelo PREGAO - a propriedade do yfinance nao aceita timeout= nativo)"
+        )
+    if "exc" in resultado_erro:
+        raise resultado_erro["exc"]
+    return resultado_ok.get("valor")
 
 # sufixo de classe de acao (ON/PN/PNA/PNB/UNT) + segmento de listagem (N1/N2/NM/MA/MB)
 # no final do nome, ex: "VALE ON NM" -> "VALE". So remove se vier separado
@@ -126,9 +181,23 @@ def obter_cotacao(ticker: str) -> dict:
     symbol = _para_symbol_yf(ticker)
     try:
         # fast_info e' propriedade (sem parametro de timeout exposto) -
-        # ja limitada pelo timeout interno da lib (YfData.get, 30s), ver
-        # comentario de _TIMEOUT_YF no topo do arquivo
-        fi = yf.Ticker(symbol).fast_info
+        # ver comentario de _TIMEOUT_YF no topo do arquivo. Lida dentro
+        # de _com_timeout_propriedade (cap de tempo de parede explicito,
+        # ver comentario de _TIMEOUT_PROPRIEDADE_YF) pra nunca travar o
+        # render alem do limite quando a rede degrada.
+        def _ler_fast_info():
+            fi_bruto = yf.Ticker(symbol).fast_info
+            return {
+                "lastPrice": fi_bruto.get("lastPrice"),
+                "previousClose": fi_bruto.get("previousClose"),
+                "dayHigh": fi_bruto.get("dayHigh"),
+                "dayLow": fi_bruto.get("dayLow"),
+                "lastVolume": fi_bruto.get("lastVolume"),
+                "yearHigh": fi_bruto.get("yearHigh"),
+                "yearLow": fi_bruto.get("yearLow"),
+            }
+
+        fi = _com_timeout_propriedade(_ler_fast_info, "yfinance (fast_info)")
         preco = _numero_finito(fi.get("lastPrice"))
         fechamento_anterior = _numero_finito(fi.get("previousClose"))
         if preco is None or preco <= 0 or fechamento_anterior is None or fechamento_anterior <= 0:
@@ -348,8 +417,9 @@ def _dividend_yield_12m(ticker_obj, preco_atual: float):
     do que realmente foi pago). None se nao houver historico ou preco."""
     try:
         # dividends e' propriedade (sem parametro de timeout exposto) -
-        # mesma observacao de fast_info acima
-        divs = ticker_obj.dividends
+        # mesma observacao de fast_info acima. Lida dentro de
+        # _com_timeout_propriedade (cap de tempo de parede explicito).
+        divs = _com_timeout_propriedade(lambda: ticker_obj.dividends, "yfinance (dividends)")
         if divs.empty or not preco_atual:
             return None
         limite = pd.Timestamp.now(tz=divs.index.tz) - pd.Timedelta(days=365)
@@ -533,8 +603,14 @@ def _tk_info_com_retry(symbol: str) -> dict:
     for sessao in (cffi_requests.Session(impersonate="chrome"), None):
         try:
             # .info e' propriedade (sem parametro de timeout exposto) -
-            # mesma observacao de fast_info/dividends acima
-            info = yf.Ticker(symbol, session=sessao).info
+            # mesma observacao de fast_info/dividends acima. Lida dentro
+            # de _com_timeout_propriedade (cap de tempo de parede
+            # explicito) - sem isso, uma rede degradada pode travar o
+            # render por ate' o default interno da lib (~30s) SEM AVISO.
+            info = _com_timeout_propriedade(
+                lambda s=sessao: yf.Ticker(symbol, session=s).info,
+                "yfinance (tk.info)",
+            )
             if info:
                 registrar_tentativa(_NOME_COLETOR_FUNDAMENTOS, _FONTE_COLETOR_FUNDAMENTOS,
                                      execucao_ok=True, categoria="Fundamentos")
