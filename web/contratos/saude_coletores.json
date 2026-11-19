@@ -321,6 +321,14 @@
       "nome": "Safra Corretora (carteiras)"
     },
     {
+      "categoria": "Radar",
+      "fonte": "hub-conteudo.cloud.itau.com.br (carteira Top 5 mensal)",
+      "frequencia_esperada": ".github/workflows/radar-morning-call.yml, 15min (seg-sex, pregao)",
+      "idade_maxima_horas": 1,
+      "instrumentado": true,
+      "nome": "Itaú Investimentos (carteiras)"
+    },
+    {
       "categoria": "Morning Call",
       "fonte": "Macro+Mercado+NEWS agregados, e-mail (Resend/SMTP)",
       "frequencia_esperada": ".github/workflows/radar-morning-call.yml, diario 07h BRT (seg-sex)",

@@ -24,10 +24,20 @@ TZ_SP = ZoneInfo("America/Sao_Paulo")
 _NOME_PAINEL_POR_CASA = {
     "Genial Analisa": "Genial Analisa (carteiras)",
     "Safra Corretora": "Safra Corretora (carteiras)",
+    # Bug real encontrado em auditoria (2026-11-02, validação da PR #223):
+    # CASA_ITAU ("Itaú Investimentos") nunca tinha entrada aqui - o
+    # coletor roda e persiste de verdade (confirmado com execução real,
+    # 5 itens da carteira Top 5 de outubro/2026), mas como `.get(casa)`
+    # devolvia None pra "Itaú Investimentos", o status dela NUNCA
+    # chegava a `registrar_tentativa` (loop faz `continue` nesse caso) -
+    # ficava permanentemente invisível na SAÚDE DOS DADOS, sem nenhum
+    # jeito de detectar se o coletor parasse de funcionar.
+    "Itaú Investimentos": "Itaú Investimentos (carteiras)",
 }
 _FONTE_POR_CASA = {
     "Genial Analisa (carteiras)": "analisa.genialinvestimentos.com.br (carteiras recomendadas)",
     "Safra Corretora (carteiras)": "safra.com.br (carteiras recomendadas, HTML + PDF mensal)",
+    "Itaú Investimentos (carteiras)": "hub-conteudo.cloud.itau.com.br (carteira Top 5 mensal)",
 }
 
 
