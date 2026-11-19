@@ -51,7 +51,11 @@ def test_casas_bloqueadas_no_cloud_sao_identificadas():
     por_nome = {r["nome"]: r for r in resultado}
     assert por_nome["Genial Analisa"]["coleta_automatica_cloud"] is False
     assert por_nome["XP Investimentos"]["coleta_automatica_cloud"] is False
-    assert por_nome["Genial (Lives)"]["disponivel"] is False
+    # Genial (Lives) reativada em 2026-11-13 (auditoria "LIVES GENIAL") -
+    # bloqueio HTTP 404 de 2026-10-24 nao reproduz mais, testado de
+    # verdade (dev + IP de runner real do GitHub Actions). Ver
+    # test_genial_lives_reativada_apos_bloqueio_nao_reproduzir abaixo.
+    assert por_nome["Genial (Lives)"]["disponivel"] is True
     assert por_nome["Genial Analisa"]["disponivel"] is False
     assert por_nome["XP Investimentos"]["disponivel"] is False
     assert "bloqueio WAF" in por_nome["Genial Analisa"]["motivo_indisponivel"]
@@ -91,14 +95,34 @@ def test_casas_investigadas_em_20261030_registram_motivo_verificavel():
 
 
 def test_fontes_genial_e_xp_desativadas_sem_novas_tentativas():
+    """Genial Analisa e XP continuam desativadas (bloqueio persistente,
+    sem novas tentativas automatizadas) - Genial (Lives) NAO entra mais
+    aqui (reativada, ver test_genial_lives_reativada_apos_bloqueio_nao_
+    reproduzir abaixo)."""
     por_id = {c["id"]: c for c in CASAS}
     motivos = {
         "genial": "bloqueio WAF persistente",
         "xp": "HTTP 403",
-        "genial_lives": "HTTP 404",
     }
     for casa_id, trecho in motivos.items():
         casa = por_id[casa_id]
         assert casa["disponivel"] is False
         assert casa["ativa_por_padrao"] is False
         assert trecho in casa["motivo_indisponivel"]
+
+
+def test_genial_lives_reativada_apos_bloqueio_nao_reproduzir():
+    """Achado real (auditoria "LIVES GENIAL", 2026-11-13): o bloqueio
+    HTTP 404 de 2026-10-24 nao reproduz mais, testado de verdade contra o
+    endpoint real (ambiente de desenvolvimento + IP de um runner real do
+    GitHub Actions, via workflow temporario dedicado - ver PR #316,
+    fechada sem merge apos capturar a evidencia). `disponivel=True` de
+    novo; `ativa_por_padrao` continua False (reativacao de disponibilidade
+    tecnica, nao vira coletor automatico por padrao so' por isso) e
+    `motivo_indisponivel` nao existe mais pra esta casa (nao esta mais
+    indisponivel por decisao do projeto)."""
+    por_id = {c["id"]: c for c in CASAS}
+    genial_lives = por_id["genial_lives"]
+    assert genial_lives["disponivel"] is True
+    assert genial_lives["ativa_por_padrao"] is False
+    assert genial_lives.get("motivo_indisponivel") is None
