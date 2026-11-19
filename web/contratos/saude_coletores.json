@@ -338,6 +338,7 @@
     }
   ],
   "estados": {
+    "AGUARDANDO_USO": "Aguardando uso (sob demanda, sem alarme)",
     "DADOS_DESATUALIZADOS": "Dados desatualizados",
     "FALHA_EXECUCAO": "Falha de execucao",
     "FALHA_PERSISTENCIA": "Falha de persistencia",

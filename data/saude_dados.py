@@ -33,6 +33,26 @@ registrada classifica por execucao_ok/persistencia_ok de verdade.
 Nunca inventa estado "verde" por ausencia de evidencia - ver
 `classificar_estado` abaixo, o caso sem dado nenhum sempre cai em
 NUNCA_EXECUTADO/NAO_COMPROVADO.
+
+Falso-positivo corrigido (investigacao 2026-11-19): coletores "sob
+demanda" de verdade - sem NENHUM job/cron autonomo alimentando-os, nem
+mesmo o `coletor_local.py` local do Rodrigo (ver
+`_COLETORES_SOB_DEMANDA_SEM_CRON` abaixo pra lista exata e a evidencia de
+codigo por tras de cada um) - estavam virando DADOS_DESATUALIZADOS so'
+por ninguem ter aberto a tela que os aciona nas ultimas horas (12-13h de
+silencio a noite/fim de semana e' o comportamento ESPERADO desses
+coletores, nunca falha). `classificar_estado` agora recebe
+`sem_cron_autonomo` - so' pra esse grupo, idade do ultimo sucesso sozinha
+deixa de significar "desatualizado" e vira AGUARDANDO_USO (estado
+neutro, nunca vira achado em data/market_researcher.py). Continua
+reportando falha de verdade (FALHA_EXECUCAO/FONTE_INDISPONIVEL) quando
+existe uma tentativa recente registrada que falhou - nunca esconde
+problema real, so' deixa de inventar um a partir do silencio esperado.
+Coletores com cron regular (MACRO, CVM/CVM (FCA)/CVM (watchlist),
+MERCADO (cotação individual), RADAR DE QUEDAS, etc. - confirmados
+alimentados por jobs/*.py ou coletor_local.py mesmo com frequencia_esperada
+dizendo "sob demanda") continuam usando idade_maxima_horas normalmente,
+sem nenhuma mudanca de comportamento.
 """
 
 from datetime import datetime, timezone
@@ -56,6 +76,7 @@ ESTADOS = {
     "FONTE_INDISPONIVEL": "Fonte indisponivel",
     "NAO_COMPROVADO": "Nao comprovado",
     "NUNCA_EXECUTADO": "Nunca executado",
+    "AGUARDANDO_USO": "Aguardando uso (sob demanda, sem alarme)",
 }
 
 # estados que a UI pinta como alerta (amarelo/vermelho) vs neutro/ok
@@ -64,6 +85,16 @@ _ESTADOS_ALERTA = {
     "DADOS_DESATUALIZADOS", "PARCIAL",
 }
 _ESTADOS_DESCONHECIDO = {"NAO_COMPROVADO", "NUNCA_EXECUTADO"}
+# "AGUARDANDO_USO" (silencio esperado de coletor sob demanda sem cron
+# autonomo - ver _COLETORES_SOB_DEMANDA_SEM_CRON/classificar_estado
+# abaixo) fica de proposito FORA dos dois conjuntos acima: nao e' alerta
+# (silencio por falta de uso nao e' falha) nem "desconhecido" (ha' sim
+# evidencia de um sucesso real passado, so' nao recente - diferente de
+# NAO_COMPROVADO/NUNCA_EXECUTADO, que nao tem evidencia nenhuma). Por nao
+# entrar em nenhum dos dois, nunca vira "achado" em
+# data/market_researcher.py:achados_qualidade_coletores (que so' inclui
+# item com alerta=True OU desconhecido=True) - mesmo tratamento dos
+# estados SUCESSO_*.
 
 
 def _idade_horas(timestamp_iso: str) -> float:
@@ -73,13 +104,27 @@ def _idade_horas(timestamp_iso: str) -> float:
     return (datetime.now(timezone.utc) - ts).total_seconds() / 3600
 
 
-def classificar_estado(status: dict | None, idade_maxima_horas: float | None = None) -> tuple:
+def classificar_estado(
+    status: dict | None,
+    idade_maxima_horas: float | None = None,
+    sem_cron_autonomo: bool = False,
+) -> tuple:
     """Classifica UM coletor num dos estados de ESTADOS, a partir do
     registro de tentativa (dict com execucao_ok/persistencia_ok/parcial/
     registros_novos/ultimo_erro/ultimo_sucesso_em) - mesmo schema tanto
     pra tentativa instrumentada real quanto pra status sintetico
     SOMENTE_LEITURA (ver `_status_somente_leitura`). Retorna
-    (codigo, rotulo_detalhado). Funcao pura - testavel sem rede/banco."""
+    (codigo, rotulo_detalhado). Funcao pura - testavel sem rede/banco.
+
+    `sem_cron_autonomo` (default False, nao muda nenhum comportamento
+    existente): True so' pros coletores confirmados sem NENHUM job/cron
+    alimentando-os (ver _COLETORES_SOB_DEMANDA_SEM_CRON) - nesse caso,
+    "ultimo sucesso antigo" deixa de virar DADOS_DESATUALIZADOS (silencio
+    por falta de uso e' esperado, nao e' sinal de problema) e passa a
+    AGUARDANDO_USO (estado neutro). Falha de verdade continua reportada
+    normalmente (FALHA_EXECUCAO/FONTE_INDISPONIVEL/FALHA_PERSISTENCIA) -
+    esses 3 checks rodam ANTES deste, baseados na tentativa mais recente
+    de verdade, nao na idade do ultimo sucesso."""
     if status is None:
         return "NUNCA_EXECUTADO", ESTADOS["NUNCA_EXECUTADO"] + " (sem evidencia nenhuma)"
 
@@ -116,6 +161,12 @@ def classificar_estado(status: dict | None, idade_maxima_horas: float | None = N
         return "FALHA_PERSISTENCIA", ESTADOS["FALHA_PERSISTENCIA"] + " (coleta OK, gravacao falhou)"
 
     if desatualizado:
+        if sem_cron_autonomo:
+            return (
+                "AGUARDANDO_USO",
+                f"{ESTADOS['AGUARDANDO_USO']} (ultimo sucesso ha {idade_h:.0f}h - "
+                "coletor sob demanda, sem uso recente nao e' falha)",
+            )
         return "DADOS_DESATUALIZADOS", f"{ESTADOS['DADOS_DESATUALIZADOS']} (ultimo sucesso ha {idade_h:.0f}h)"
 
     if parcial:
@@ -180,10 +231,82 @@ def _leitor_hibrido(nome: str, leitor_fallback):
     return _ler
 
 
+# Coletores com frequencia_esperada "sob demanda" (REGISTRO_COLETORES
+# abaixo) confirmados SEM NENHUM job/cron autonomo alimentando-os - nem
+# jobs/*.py (GitHub Actions, roda sempre, independente da maquina do
+# Rodrigo), nem coletor_local.py (Agendador de Tarefas LOCAL, so' roda
+# com a maquina do Rodrigo ligada, seg-sex 07-20h). Investigacao
+# 2026-11-19 (grep de `from data.X import` em todo jobs/*.py e
+# coletor_local.py, um por um):
+#
+# - "NEWS" (Google News BR+INTL agregado, data/news.py:obter_top_mercado_
+#   tudo): so' chamado por ui/visao_geral.py (filtro "TODOS"paginado) -
+#   coletor_local.py pre-gera resumos chamando obter_top_mercado/
+#   obter_top_mercado_internacional SEPARADOS (ver data/news.py:
+#   _coletar_pendentes_pregerar), nunca o agregado "tudo". Por isso
+#   "NEWS (Brasil)"/"NEWS (Internacional)" ficam DE FORA desta lista -
+#   tem cron real via coletor_local.py E jobs/morning_call.py (GitHub
+#   Actions, diario 07h BRT), que importam essas 2 funcoes direto.
+# - "NEWS (watchlist)" (data/news.py:obter_noticias_watchlist): so'
+#   ui/news_tab.py (tela de watchlist, acao do usuario) -
+#   coletor_local.py nunca importa essa funcao.
+# - "NEWS (ticker único)" (data/news.py:obter_noticias(ticker) chamado
+#   DIRETO, fora do agregador): ui/research_tab.py/ui/calendario_tab.py/
+#   ui/news_tab.py (ticker unico) E coletor_local.py (via
+#   pregerar_resumos_news, mas so' quando a maquina do Rodrigo esta'
+#   ligada E dentro do horario comercial seg-sex 07-20h - nunca garantido
+#   como um job em GitHub Actions). Mesmo tratamento conservador de
+#   "NEWS (watchlist)": silencio fora desse horario (toda noite, todo
+#   fim de semana) e' esperado, nunca falha.
+# - "MERCADO" (cotacoes em lote, data/mercado.py:obter_cotacoes_lote):
+#   so' ui/visao_geral.py e data/radar.py (ambos sob acao do usuario) -
+#   nenhum jobs/*.py ou coletor_local.py importa essa funcao. Diferente
+#   de "MERCADO (cotação individual)" (alimentado a cada 15min por
+#   jobs/radar_quedas.py via obter_cotacao por ticker monitorado) - esse
+#   fica DE FORA desta lista, idade fixa continua fazendo sentido.
+# - "MERCADO (Globais)" (indices globais via yfinance, data/mercado.py:
+#   _baixar_lote_bruto): so' ui/mercado_tab.py/ui/visao_geral.py -
+#   jobs/radar_quedas.py usa uma FONTE DIFERENTE pro mesmo tipo de dado
+#   (data/macro.py:obter_cenario_global, linha separada "MACRO (Cenário
+#   Global)" no registro abaixo, que por isso tambem fica de fora).
+# - "CVM (DRE trimestral)"/"SEC EDGAR (XBRL)"/"EARNINGS REVIEWER
+#   (persistencia)": so' rodam quando um usuario abre uma nota de
+#   resultado (earnings review) - nenhum jobs/*.py ou coletor_local.py
+#   importa data/earnings/cvm_dre.py, data/earnings/sec_xbrl.py nem
+#   data/earnings/reviewer.py.
+# - "EQUITY (Fundamentos)" (data/prices.py:obter_indicadores, tk.info):
+#   so' ui/analises_tab.py (aba Fundamentos) - nenhum jobs/*.py ou
+#   coletor_local.py chama obter_indicadores.
+#
+# Os demais coletores com frequencia_esperada "sob demanda" (MACRO (BCB/
+# Selic/CDI/Focus IPCA/Focus Selic/ANBIMA/Cenário Global), CVM/CVM (FCA)/
+# CVM (watchlist), MERCADO (cotação individual), B3 (composição
+# Ibovespa)) TEM alimentacao autonoma real confirmada (jobs/morning_call.py
+# ou jobs/radar_quedas.py em GitHub Actions, ou coletor_local.py) mesmo
+# com o texto "sob demanda" no campo - continuam usando idade_maxima_horas
+# normalmente, SEM NENHUMA MUDANCA de comportamento (ver classificar_estado).
+_COLETORES_SOB_DEMANDA_SEM_CRON = frozenset({
+    "NEWS",
+    "NEWS (watchlist)",
+    "NEWS (ticker único)",
+    "MERCADO",
+    "MERCADO (Globais)",
+    "CVM (DRE trimestral)",
+    "SEC EDGAR (XBRL)",
+    "EARNINGS REVIEWER (persistencia)",
+    "EQUITY (Fundamentos)",
+})
+
+
 # Registro dos coletores conhecidos (auditoria 2026-10-09). `idade_maxima_horas`
 # e' a folga acima da frequencia esperada antes de marcar DADOS_DESATUALIZADOS
 # (nao e' a frequencia em si - um coletor de 30min que atrasa 1h nao e'
-# necessariamente "desatualizado", mas atrasar 24h+ sim).
+# necessariamente "desatualizado", mas atrasar 24h+ sim). Para os
+# coletores em `_COLETORES_SOB_DEMANDA_SEM_CRON` acima, esse mesmo campo
+# deixa de significar "desatualizado" sozinho - vira AGUARDANDO_USO (ver
+# classificar_estado/obter_painel_saude); falha de verdade (tentativa
+# recente com execucao_ok=False) continua reportada normalmente, so' o
+# silencio puro (sem nenhuma tentativa nova) deixa de virar alarme.
 REGISTRO_COLETORES = [
     {
         "nome": "NEWS", "fonte": "Google News + extracao (InfoMoney/Money Times/trafilatura)",
@@ -594,7 +717,13 @@ def obter_painel_saude() -> list:
     outros pontos do app (obter_cotacoes_lote, paralelização de
     data/market_makers.py:_riscos). obter_todos_status() já existia
     como alternativa em lote (1 única consulta, mesmo schema de linha
-    por nome) e não era usada aqui - agora é chamada 1x antes do loop."""
+    por nome) e não era usada aqui - agora é chamada 1x antes do loop.
+
+    Falso-positivo corrigido (investigacao 2026-11-19): coletor em
+    `_COLETORES_SOB_DEMANDA_SEM_CRON` passa `sem_cron_autonomo=True` pra
+    classificar_estado - silencio puro (sem tentativa nova) deixa de
+    virar DADOS_DESATUALIZADOS pra esse grupo (ver docstring da constante
+    e de classificar_estado)."""
     todos_status = coletores_status.obter_todos_status()
     painel = []
     for c in REGISTRO_COLETORES:
@@ -602,7 +731,8 @@ def obter_painel_saude() -> list:
             status = c["leitor"]() if "leitor" in c else todos_status.get(c["nome"])
         except Exception:
             status = None
-        codigo, rotulo = classificar_estado(status, c.get("idade_maxima_horas"))
+        sem_cron_autonomo = c["nome"] in _COLETORES_SOB_DEMANDA_SEM_CRON
+        codigo, rotulo = classificar_estado(status, c.get("idade_maxima_horas"), sem_cron_autonomo=sem_cron_autonomo)
         painel.append({
             "nome": c["nome"], "fonte": c["fonte"], "categoria": c["categoria"],
             "frequencia_esperada": c["frequencia_esperada"],

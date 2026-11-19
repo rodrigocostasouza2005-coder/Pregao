@@ -437,6 +437,145 @@ def test_25_timestamp_nulo_mantem_nao_comprovado():
     _checar("25 timestamp nulo continua NAO_COMPROVADO", codigo == "NAO_COMPROVADO")
 
 
+# ============================================================
+# Falso-positivo corrigido (investigacao 2026-11-19): coletor "sob
+# demanda" de verdade (sem NENHUM job/cron autonomo - ver
+# data/saude_dados.py:_COLETORES_SOB_DEMANDA_SEM_CRON) virava
+# DADOS_DESATUALIZADOS so' por ninguem ter aberto a tela que o aciona
+# nas ultimas horas (12-13h de silencio a noite/fim de semana e'
+# esperado, nao e' falha). Testes abaixo cobrem: (a) sem cron autonomo +
+# silencio -> AGUARDANDO_USO, neutro, nunca vira achado; (b) sem cron
+# autonomo + tentativa recente que falhou -> continua reportando a
+# falha real, nunca escondida; (c) coletor COM cron regular (sem_cron_
+# autonomo=False, o default) -> comportamento 100% inalterado,
+# DADOS_DESATUALIZADOS continua disparando normal.
+# ============================================================
+
+def test_26_sob_demanda_sem_cron_e_silencio_vira_aguardando_uso_neutro():
+    status = {
+        "execucao_ok": True,
+        "persistencia_ok": True,
+        "registros_novos": 0,
+        "ultimo_sucesso_em": _ha(13),  # silencio overnight tipico, nao e' falha
+    }
+    codigo, rotulo = saude_mod.classificar_estado(status, idade_maxima_horas=6, sem_cron_autonomo=True)
+    _checar(
+        "26a sob demanda sem cron + silencio -> AGUARDANDO_USO (nunca DADOS_DESATUALIZADOS)",
+        codigo == "AGUARDANDO_USO",
+        codigo,
+    )
+    _checar("26b rotulo cita a idade e explica que nao e' falha", "13" in rotulo and "nao e' falha" in rotulo, rotulo)
+    _checar(
+        "26c AGUARDANDO_USO nao e' alerta",
+        codigo not in saude_mod._ESTADOS_ALERTA,
+    )
+    _checar(
+        "26d AGUARDANDO_USO tambem nao e' 'desconhecido' (ha evidencia de sucesso real passado)",
+        codigo not in saude_mod._ESTADOS_DESCONHECIDO,
+    )
+
+
+def test_27_sob_demanda_sem_cron_mas_tentativa_recente_falhou_reporta_falha_real():
+    """O silencio e' esperado, mas uma FALHA recentemente registrada
+    (ex: usuario abriu a tela e a coleta quebrou) nunca pode ficar
+    escondida atras do novo estado neutro."""
+    status = {
+        "execucao_ok": False,
+        "persistencia_ok": True,
+        "ultimo_erro": "KeyError inesperado",
+        "ultimo_sucesso_em": _ha(13),
+    }
+    codigo, rotulo = saude_mod.classificar_estado(status, idade_maxima_horas=6, sem_cron_autonomo=True)
+    _checar(
+        "27a tentativa recente falhou -> FALHA_EXECUCAO, nunca AGUARDANDO_USO",
+        codigo == "FALHA_EXECUCAO",
+        codigo,
+    )
+    _checar("27b rotulo cita o erro real", "KeyError" in rotulo, rotulo)
+
+
+def test_28_sob_demanda_sem_cron_fonte_indisponivel_tambem_nao_e_escondida():
+    status = {
+        "execucao_ok": False,
+        "persistencia_ok": True,
+        "ultimo_erro": "timeout ao conectar",
+        "ultimo_sucesso_em": _ha(13),
+    }
+    codigo, _ = saude_mod.classificar_estado(status, idade_maxima_horas=6, sem_cron_autonomo=True)
+    _checar(
+        "28 tentativa recente com termo de indisponibilidade -> FONTE_INDISPONIVEL, nunca escondida",
+        codigo == "FONTE_INDISPONIVEL",
+        codigo,
+    )
+
+
+def test_29_coletor_com_cron_regular_mantem_comportamento_antigo():
+    """sem_cron_autonomo=False (o default, usado por MACRO/CVM/RADAR DE
+    QUEDAS/etc.) nunca muda - mesmo cenario do teste 9 original."""
+    status = {
+        "execucao_ok": True,
+        "persistencia_ok": True,
+        "registros_novos": 0,
+        "ultimo_sucesso_em": _ha(48),
+    }
+    codigo, rotulo = saude_mod.classificar_estado(status, idade_maxima_horas=6)
+    _checar(
+        "29a default sem_cron_autonomo=False -> DADOS_DESATUALIZADOS normal, sem regressao",
+        codigo == "DADOS_DESATUALIZADOS",
+        codigo,
+    )
+    codigo2, _ = saude_mod.classificar_estado(status, idade_maxima_horas=6, sem_cron_autonomo=False)
+    _checar(
+        "29b mesmo passando sem_cron_autonomo=False explicitamente -> identico",
+        codigo2 == "DADOS_DESATUALIZADOS",
+        codigo2,
+    )
+
+
+def test_30_painel_aplica_sem_cron_autonomo_so_pros_coletores_da_lista():
+    """Teste de integracao via obter_painel_saude: injeta o MESMO status
+    (sucesso ha' 2000h - maior que QUALQUER idade_maxima_horas usado no
+    registro, garantindo "desatualizado" pra todo mundo) pra TODOS os
+    coletores sem leitor dedicado - so' os que estao em
+    _COLETORES_SOB_DEMANDA_SEM_CRON devem virar AGUARDANDO_USO; os demais
+    (MACRO/CVM/RADAR DE QUEDAS/etc., cron regular) continuam
+    DADOS_DESATUALIZADOS como antes (prova de regressao zero)."""
+    idade_maxima_usada = max(
+        c.get("idade_maxima_horas", 0) for c in saude_mod.REGISTRO_COLETORES if "leitor" not in c
+    )
+    linhas = {
+        c["nome"]: {
+            "execucao_ok": True, "persistencia_ok": True, "parcial": False,
+            "registros_novos": 0, "ultimo_erro": None,
+            "ultimo_sucesso_em": _ha(idade_maxima_usada + 100),
+        }
+        for c in saude_mod.REGISTRO_COLETORES if "leitor" not in c
+    }
+    with patch.object(saude_mod.coletores_status, "obter_todos_status", return_value=linhas):
+        painel = saude_mod.obter_painel_saude()
+
+    por_nome = {item["nome"]: item for item in painel}
+    for nome in saude_mod._COLETORES_SOB_DEMANDA_SEM_CRON:
+        _checar(
+            f"30a {nome} (sob demanda sem cron) -> AGUARDANDO_USO",
+            por_nome[nome]["codigo_estado"] == "AGUARDANDO_USO",
+            por_nome[nome]["codigo_estado"],
+        )
+        _checar(f"30b {nome} nunca marcado como alerta", not por_nome[nome]["alerta"])
+
+    coletores_com_cron = [
+        c["nome"] for c in saude_mod.REGISTRO_COLETORES
+        if "leitor" not in c and c["nome"] not in saude_mod._COLETORES_SOB_DEMANDA_SEM_CRON
+    ]
+    _checar("30c ha pelo menos 1 coletor com cron regular pra comparar", bool(coletores_com_cron))
+    for nome in coletores_com_cron:
+        _checar(
+            f"30d {nome} (cron regular, sem mudanca) -> continua DADOS_DESATUALIZADOS",
+            por_nome[nome]["codigo_estado"] == "DADOS_DESATUALIZADOS",
+            por_nome[nome]["codigo_estado"],
+        )
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
