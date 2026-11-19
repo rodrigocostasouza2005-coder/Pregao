@@ -1,6 +1,12 @@
 {
   "casas": [
     {
+      "ativa_por_padrao": false,
+      "fonte": "YouTube RSS (canal Genial Analisa)",
+      "id": "genial_lives",
+      "nome": "Genial (Lives)"
+    },
+    {
       "ativa_por_padrao": true,
       "fonte": "content.btgpactual.com (API de research, filtrado por tier publico)",
       "id": "btg",
