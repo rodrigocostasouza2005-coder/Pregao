@@ -87,11 +87,25 @@ def test_conceito_sem_tag_disponivel_fica_none():
     assert all(v["atual"] is None and v["tag_usada"] is None for v in dados["metricas"].values())
 
 
+def _limpar_caches_mapa_ticker_cik():
+    """Reseta os 3 caches envolvidos no mapa ticker->CIK entre testes
+    (ver data/earnings/sec_xbrl.py:_mapa_ticker_cik) - _buscar_mapa_
+    ticker_cik_ok (st.cache_data, caminho de sucesso), _ultimo_mapa_
+    ticker_cik_valido e _ultima_falha_mapa_ticker_cik (st.cache_resource,
+    sem TTL - precisam ser limpos manualmente ou o cooldown/fallback de
+    um teste vaza pro próximo, mesmo padrão de tests/test_cvm.py)."""
+    sec_xbrl._buscar_mapa_ticker_cik_ok.clear()
+    sec_xbrl._ultimo_mapa_ticker_cik_valido().clear()
+    falha = sec_xbrl._ultima_falha_mapa_ticker_cik()
+    falha["quando"] = None
+    falha["erro"] = None
+
+
 def test_mapa_ticker_cik_fonte_indisponivel_devolve_dict_vazio():
-    sec_xbrl._mapa_ticker_cik.clear()
-    with patch.object(sec_xbrl, "_get_json", return_value=None):
+    _limpar_caches_mapa_ticker_cik()
+    with patch.object(sec_xbrl, "_get_json", return_value=(None, "timeout (>30s) ao buscar X: boom")):
         assert sec_xbrl._mapa_ticker_cik() == {}
-    sec_xbrl._mapa_ticker_cik.clear()
+    _limpar_caches_mapa_ticker_cik()
 
 
 # ---------------------------------------------------------------------
@@ -105,12 +119,12 @@ def test_mapa_ticker_cik_fonte_indisponivel_devolve_dict_vazio():
 # ---------------------------------------------------------------------
 
 def test_mapa_ticker_cik_fonte_indisponivel_registra_tentativa_de_falha():
-    sec_xbrl._mapa_ticker_cik.clear()
+    _limpar_caches_mapa_ticker_cik()
     chamadas = []
-    with patch.object(sec_xbrl, "_get_json", return_value=None), \
+    with patch.object(sec_xbrl, "_get_json", return_value=(None, "HTTP 429 ao buscar X: corpo='rate limited'")), \
          patch.object(sec_xbrl, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k))):
         sec_xbrl._mapa_ticker_cik()
-    sec_xbrl._mapa_ticker_cik.clear()
+    _limpar_caches_mapa_ticker_cik()
     assert len(chamadas) == 1
     args, kwargs = chamadas[0]
     assert args[0] == "SEC EDGAR (XBRL)"
@@ -119,14 +133,14 @@ def test_mapa_ticker_cik_fonte_indisponivel_registra_tentativa_de_falha():
 
 
 def test_mapa_ticker_cik_sucesso_registra_tentativa_com_registros_novos():
-    sec_xbrl._mapa_ticker_cik.clear()
+    _limpar_caches_mapa_ticker_cik()
     chamadas = []
     resposta = {"fields": ["cik", "name", "ticker", "exchange"],
                 "data": [[320193, "Apple Inc", "AAPL", "Nasdaq"]]}
-    with patch.object(sec_xbrl, "_get_json", return_value=resposta), \
+    with patch.object(sec_xbrl, "_get_json", return_value=(resposta, None)), \
          patch.object(sec_xbrl, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k))):
         mapa = sec_xbrl._mapa_ticker_cik()
-    sec_xbrl._mapa_ticker_cik.clear()
+    _limpar_caches_mapa_ticker_cik()
     assert mapa == {"AAPL": 320193}
     assert len(chamadas) == 1
     args, kwargs = chamadas[0]
@@ -138,11 +152,132 @@ def test_mapa_ticker_cik_sucesso_registra_tentativa_com_registros_novos():
 def test_mapa_ticker_cik_formato_inesperado_registra_tentativa_de_falha():
     """Mesma proteção já existente (colunas 'cik'/'ticker' ausentes) -
     antes devolvia {} silenciosamente, sem nenhum rastro no painel."""
-    sec_xbrl._mapa_ticker_cik.clear()
+    _limpar_caches_mapa_ticker_cik()
     chamadas = []
     resposta = {"fields": ["name", "ticker", "exchange"], "data": []}
-    with patch.object(sec_xbrl, "_get_json", return_value=resposta), \
+    with patch.object(sec_xbrl, "_get_json", return_value=(resposta, None)), \
          patch.object(sec_xbrl, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k))):
         assert sec_xbrl._mapa_ticker_cik() == {}
-    sec_xbrl._mapa_ticker_cik.clear()
+    _limpar_caches_mapa_ticker_cik()
     assert chamadas and chamadas[0][1]["execucao_ok"] is False
+
+
+# ---------------------------------------------------------------------
+# Regressão (missão isolada SAÚDE DOS DADOS/Earnings, 2026-11-19): causa
+# raiz real do coletor "SEC EDGAR (XBRL)" com 50 falhas seguidas desde
+# 2026-10-29 (~2x/dia), nunca 1 sucesso - ver docstring de _get_json/
+# _mapa_ticker_cik/_TTL_FALHA_TICKERS em data/earnings/sec_xbrl.py.
+# ---------------------------------------------------------------------
+
+def test_get_json_propaga_causa_real_timeout_vs_http_vs_json_invalido():
+    """_get_json tinha que devolver so' None pra QUALQUER falha antes -
+    agora devolve (None, diagnostico) com a causa real, distinguindo
+    timeout, erro de conexão, HTTP != 2xx (com status) e corpo não-JSON
+    (com o corpo da resposta) - nenhum desses textos pode ser genérico
+    tipo 'sem resposta válida'."""
+    import requests as requests_mod
+
+    class _RespostaHTTP:
+        def __init__(self, status_code, texto):
+            self.status_code = status_code
+            self.text = texto
+            self.ok = 200 <= status_code < 300
+
+        def json(self):
+            raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    with patch.object(sec_xbrl.requests, "get", side_effect=requests_mod.exceptions.Timeout("read timed out")):
+        _, diagnostico = sec_xbrl._get_json("https://exemplo/x")
+    assert "timeout" in diagnostico.lower()
+
+    with patch.object(sec_xbrl.requests, "get",
+                       side_effect=requests_mod.exceptions.ConnectionError("Failed to resolve host")):
+        _, diagnostico = sec_xbrl._get_json("https://exemplo/x")
+    assert "conex" in diagnostico.lower()
+    assert "Failed to resolve host" in diagnostico
+
+    with patch.object(sec_xbrl.requests, "get", return_value=_RespostaHTTP(403, "Forbidden - rate limited")):
+        _, diagnostico = sec_xbrl._get_json("https://exemplo/x")
+    assert "403" in diagnostico
+    assert "Forbidden" in diagnostico
+
+    with patch.object(sec_xbrl.requests, "get", return_value=_RespostaHTTP(200, "<html>not json</html>")):
+        _, diagnostico = sec_xbrl._get_json("https://exemplo/x")
+    assert "não-json" in diagnostico.lower() or "nao-json" in diagnostico.lower()
+    assert "not json" in diagnostico
+
+
+def test_mapa_ticker_cik_falha_propaga_causa_real_nao_generica():
+    """registrar_tentativa(erro=...) tem que carregar a causa REAL da
+    falha (ex: 'HTTP 403 ... corpo=...'), não mais o texto genérico fixo
+    'mapa ticker->CIK (company_tickers.json) sem resposta válida' que
+    existia antes desta correção (não dizia nada sobre timeout x bloqueio
+    x formato mudado)."""
+    _limpar_caches_mapa_ticker_cik()
+    chamadas = []
+    diagnostico_real = "HTTP 403 ao buscar https://www.sec.gov/files/company_tickers.json: corpo='Request blocked'"
+    with patch.object(sec_xbrl, "_get_json", return_value=(None, diagnostico_real)), \
+         patch.object(sec_xbrl, "registrar_tentativa", lambda *a, **k: chamadas.append((a, k))):
+        sec_xbrl._mapa_ticker_cik()
+    _limpar_caches_mapa_ticker_cik()
+    assert len(chamadas) == 1
+    erro = chamadas[0][1]["erro"]
+    assert "403" in erro
+    assert "Request blocked" in erro
+    assert erro != "mapa ticker->CIK (company_tickers.json) sem resposta válida"
+
+
+def test_falha_do_mapa_ticker_cik_nao_fica_presa_no_ttl_longo_de_sucesso():
+    """O bug real desta missão: ANTES, sucesso e falha do mapa ticker->CIK
+    compartilhavam o MESMO @st.cache_data(ttl=24h) - uma falha retornando
+    {} ficava cacheada por 24h inteiras, então mesmo que a SEC voltasse a
+    responder normalmente minutos depois, _mapa_ticker_cik continuava
+    devolvendo {} até o TTL de 24h expirar.
+
+    Este teste simula exatamente essa sequência (falha, depois sucesso
+    LOGO em seguida, sem deixar o TTL de 24h expirar) e confirma que o
+    sucesso aparece imediatamente - a falha só é protegida por um
+    cooldown de minutos (_TTL_FALHA_TICKERS), nunca pelas 24h de sucesso."""
+    _limpar_caches_mapa_ticker_cik()
+    resposta_boa = {"fields": ["cik", "name", "ticker", "exchange"],
+                     "data": [[320193, "Apple Inc", "AAPL", "Nasdaq"]]}
+
+    # 1) 1a tentativa falha (SEC fora do ar/bloqueada)
+    with patch.object(sec_xbrl, "_get_json", return_value=(None, "HTTP 503 ao buscar X: corpo='Service Unavailable'")):
+        assert sec_xbrl._mapa_ticker_cik() == {}
+
+    # 2) a SEC volta a responder normalmente poucos segundos depois (bem
+    # ANTES de qualquer TTL de 24h expirar) - como o cooldown de falha
+    # (_TTL_FALHA_TICKERS) ainda não passou, _mapa_ticker_cik ainda NÃO
+    # tenta de novo sozinho (evita martelar a fonte a cada rerun)...
+    with patch.object(sec_xbrl, "_get_json", return_value=(resposta_boa, None)):
+        assert sec_xbrl._mapa_ticker_cik() == {}  # ainda dentro do cooldown curto
+
+        # ...mas assim que o cooldown de falha expira (segundos, não 24h),
+        # a MESMA chamada com a MESMA fonte já respondendo bem tem que
+        # devolver o mapa de verdade - nunca ficar presa até o TTL de 24h.
+        falha = sec_xbrl._ultima_falha_mapa_ticker_cik()
+        falha["quando"] -= sec_xbrl._TTL_FALHA_TICKERS + 1
+        assert sec_xbrl._mapa_ticker_cik() == {"AAPL": 320193}
+
+    _limpar_caches_mapa_ticker_cik()
+
+
+def test_falha_apos_sucesso_reaproveita_ultimo_mapa_valido_nao_zera():
+    """Se o mapa ticker->CIK JÁ teve 1 sucesso nesta sessão do servidor e
+    DEPOIS a SEC falha transitoriamente, _mapa_ticker_cik não pode voltar
+    a {} (derrubaria obter_cik pra TODO ticker) - tem que reaproveitar o
+    último mapa bom conhecido (mesmo padrão de data/cvm.py:
+    _ultimo_mapa_ticker_valido / data/ibovespa.py:_ultima_composicao_valida)."""
+    _limpar_caches_mapa_ticker_cik()
+    resposta_boa = {"fields": ["cik", "name", "ticker", "exchange"],
+                     "data": [[320193, "Apple Inc", "AAPL", "Nasdaq"]]}
+
+    with patch.object(sec_xbrl, "_get_json", return_value=(resposta_boa, None)):
+        assert sec_xbrl._mapa_ticker_cik() == {"AAPL": 320193}
+
+    sec_xbrl._buscar_mapa_ticker_cik_ok.clear()  # simula o TTL de 24h expirando
+    with patch.object(sec_xbrl, "_get_json", return_value=(None, "timeout (>30s) ao buscar X: boom")):
+        assert sec_xbrl._mapa_ticker_cik() == {"AAPL": 320193}  # reaproveita, nunca {}
+
+    _limpar_caches_mapa_ticker_cik()
