@@ -417,6 +417,33 @@ def test_21_empresa_especifica_continua_fundindo_mesmo_internacional():
             len(grupos) == 1, f"(qtd={len(grupos)})")
 
 
+def test_20b_locais_genericos_brasileiros_tambem_nao_fundem_estado_cidade():
+    """Extensao do teste 20 pro caso nacional (achado real ao auditar a
+    mesma correcao, 2026-10-23): PR #146 so' cobriu estados/cidades
+    americanas - o MESMO padrao de bug (3 materias sem relacao nenhuma
+    unidas so' por citarem 'Bahia') reproduz igual com locais
+    brasileiros, mais relevante aqui que o caso americano dado que o
+    projeto e' focado no mercado brasileiro."""
+    casos = [
+        ("Governo da Bahia anuncia programa de infraestrutura", "Agência Brasil",
+         "Chuvas fortes causam estragos na Bahia", "G1"),
+        ("Prefeitura de Salvador libera novo calendário de obras", "Correio",
+         "Museu em Salvador registra recorde de visitantes", "Bahia Notícias"),
+        ("Governo de Sergipe anuncia plano de incentivo fiscal", "Infonet",
+         "Greve de professores afeta escolas em Sergipe", "G1"),
+    ]
+    for titulo_a, veiculo_a, titulo_b, veiculo_b in casos:
+        itens = [
+            _item(titulo_a, veiculo_a, ticker="", data=_AGORA),
+            _item(titulo_b, veiculo_b, ticker="", data=_AGORA - timedelta(hours=2)),
+        ]
+        grupos = _agrupar(itens)
+        _checar(
+            f"20b '{titulo_a}' x '{titulo_b}' (so' local brasileiro em comum) -> 2 grupos",
+            len(grupos) == 2, f"(qtd={len(grupos)})",
+        )
+
+
 def test_22_local_generico_e_entidade_especifica_juntos_ainda_fundem_pela_entidade():
     """Positivo adicional: quando ALEM do local generico tambem ha' uma
     entidade de verdade em comum (empresa), o grupo continua unindo -

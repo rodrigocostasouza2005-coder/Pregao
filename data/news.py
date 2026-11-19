@@ -540,6 +540,21 @@ _LOCAIS_GENERICOS = {
     # capitais/cidades usadas como dateline sem ser o fato em si
     "london", "beijing", "tokyo", "paris", "berlin", "moscow", "madrid",
     "brasilia", "shanghai", "hongkong", "singapore", "dubai",
+    # estados brasileiros (nome unico - "Mato Grosso"/"Rio de Janeiro"/
+    # "São Paulo"/etc ja' formam entidade de 2+ palavras, mesmo motivo
+    # dos estados americanos acima) - achado real ao auditar esta mesma
+    # correcao (2026-10-23): o MESMO padrao de bug (3 materias sem
+    # relacao nenhuma unidas so' por citarem "Bahia") reproduz igual pro
+    # caso nacional - mais relevante aqui que o caso americano, dado que
+    # o projeto e' focado no mercado brasileiro.
+    "acre", "alagoas", "amapa", "amazonas", "bahia", "ceara", "goias",
+    "maranhao", "para", "paraiba", "parana", "pernambuco", "piaui",
+    "rondonia", "roraima", "sergipe", "tocantins",
+    # capitais/cidades brasileiras usadas como dateline sem ser o fato
+    # em si (mesmo raciocinio das internacionais acima)
+    "manaus", "salvador", "recife", "curitiba", "fortaleza", "natal",
+    "vitoria", "cuiaba", "campinas", "santos", "belem", "maceio",
+    "goiania", "florianopolis", "niteroi",
 }
 
 _ENTIDADE_IGNORAR = _PALAVRAS_MERCADO_SCORE | _LOCAIS_GENERICOS | {
