@@ -40,6 +40,7 @@ def _resposta(status_code, json_data=None):
 
 
 def test_obter_relatorios_filtra_area_logada_mantendo_so_area_publica():
+    btg_mod.obter_relatorios.clear()  # @st.cache_data - evita cache de outro teste
     btg_mod._ultimo_motivo_falha = None
     itens_pagina = {
         "paging": {"pageNumber": 1, "pageSize": 25, "totalResults": 2},
@@ -68,6 +69,7 @@ def test_item_sem_tier_reconhecido_nao_e_persistido():
     """Item sem campo 'tier' (ou com valor inesperado) tambem e' descartado
     - so' tier == 'AREA_PUBLICA' explicito entra no resultado, nunca por
     omissao/default."""
+    btg_mod.obter_relatorios.clear()  # @st.cache_data - evita cache de outro teste
     item_sem_tier = _item(None, id_="sem-tier")
     item_sem_tier.pop("tier")
     item_tier_desconhecido = _item("ALGO_NOVO_DA_API", id_="tier-novo")
@@ -88,6 +90,7 @@ def test_item_sem_tier_reconhecido_nao_e_persistido():
 def test_falha_em_1_pagina_nao_derruba_as_outras():
     """Mesmo padrao de degradacao graciosa de xp.py/genial.py - 1 pagina
     com erro de rede nao pode descartar itens que outra pagina trouxe."""
+    btg_mod.obter_relatorios.clear()  # @st.cache_data - evita cache de outro teste
     pagina_ok = {"response": [_item("AREA_PUBLICA", id_="pub-2")]}
     with patch.object(btg_mod, "permitido", return_value=True), \
          patch.object(btg_mod.requests, "post") as mock_post:
@@ -104,6 +107,7 @@ def test_falha_em_1_pagina_nao_derruba_as_outras():
 
 
 def test_obter_relatorios_todas_as_paginas_falham_retorna_none():
+    btg_mod.obter_relatorios.clear()  # @st.cache_data - evita cache de outro teste
     btg_mod._ultimo_motivo_falha = None
     with patch.object(btg_mod, "permitido", return_value=True), \
          patch.object(btg_mod.requests, "post", side_effect=ConnectionError("timeout")):
@@ -114,6 +118,7 @@ def test_obter_relatorios_todas_as_paginas_falham_retorna_none():
 
 
 def test_obter_relatorios_respeita_robots_txt_antes_de_chamar_rede():
+    btg_mod.obter_relatorios.clear()  # @st.cache_data - evita cache de outro teste
     with patch.object(btg_mod, "permitido", return_value=False), \
          patch.object(btg_mod.requests, "post") as mock_post:
         resultado = btg_mod.obter_relatorios()
@@ -122,6 +127,7 @@ def test_obter_relatorios_respeita_robots_txt_antes_de_chamar_rede():
 
 
 def test_1_item_malformado_na_pagina_nao_derruba_os_outros():
+    btg_mod.obter_relatorios.clear()  # @st.cache_data - evita cache de outro teste
     item_bom = _item("AREA_PUBLICA", id_="bom")
     item_ruim = _item("AREA_PUBLICA", id_="ruim")
     del item_ruim["authors"]  # ainda deve funcionar (so' autor vazio) - nao e' esse o caso de quebra
@@ -207,3 +213,51 @@ def test_obter_texto_publico_link_sem_id_nao_chama_rede():
         texto, motivo = btg_mod.obter_texto_publico("")
     assert texto is None
     assert not mock_get.called
+
+
+# --- cache/cooldown de obter_relatorios (auditoria geral de coletores
+# 2026-10-30) -----------------------------------------------------------
+# genial.py/xp.py ja' cacheavam obter_relatorios() por TTL_COLETA (30min,
+# data/research/base.py) - este modulo nao tinha nenhum @st.cache_data,
+# entao uma 2a chamada dentro da mesma janela de 30min batia de novo na
+# API da BTG sem necessidade (coletor_local.py/data/research/__init__.py:
+# coletar_casa so' controla o INTERVALO entre coletas da casa como um
+# todo, nao protege contra chamadas repetidas de obter_relatorios() em si
+# dentro do mesmo ciclo). Os testes abaixo confirmam o cache de verdade
+# (contagem real de chamadas de rede), nao so' que a funcao tem o
+# decorator.
+
+def test_obter_relatorios_segunda_chamada_dentro_do_ttl_nao_bate_na_rede_de_novo():
+    btg_mod.obter_relatorios.clear()  # @st.cache_data - evita cache de outro teste
+    pagina_ok = {"response": [_item("AREA_PUBLICA", id_="cache-1")]}
+    with patch.object(btg_mod, "permitido", return_value=True), \
+         patch.object(btg_mod.requests, "post") as mock_post:
+        mock_post.side_effect = [
+            _resposta(200, pagina_ok),
+            _resposta(200, {"response": []}),
+            _resposta(200, {"response": []}),
+            _resposta(200, {"response": []}),
+        ]
+        primeiro = btg_mod.obter_relatorios()
+        chamadas_apos_primeira = mock_post.call_count
+        segundo = btg_mod.obter_relatorios()
+        chamadas_apos_segunda = mock_post.call_count
+    assert primeiro == segundo
+    assert chamadas_apos_primeira == 4  # as 4 paginas da 1a coleta
+    assert chamadas_apos_segunda == chamadas_apos_primeira  # 2a chamada veio do cache, zero requisicao nova
+
+
+def test_obter_relatorios_falha_total_tambem_fica_em_cooldown_cacheada():
+    """None (falha total) e' cacheado pelo mesmo TTL - mesmo espirito de
+    genial.py/xp.py: um retry mais frequente que 30min nao traria dado
+    novo, so' bateria na API sem necessidade."""
+    btg_mod.obter_relatorios.clear()  # @st.cache_data - evita cache de outro teste
+    with patch.object(btg_mod, "permitido", return_value=True), \
+         patch.object(btg_mod.requests, "post", side_effect=ConnectionError("timeout")) as mock_post:
+        primeiro = btg_mod.obter_relatorios()
+        chamadas_apos_primeira = mock_post.call_count
+        segundo = btg_mod.obter_relatorios()
+        chamadas_apos_segunda = mock_post.call_count
+    assert primeiro is None
+    assert segundo is None
+    assert chamadas_apos_segunda == chamadas_apos_primeira  # None tambem veio do cache
