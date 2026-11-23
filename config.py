@@ -480,6 +480,85 @@ def obter_credenciais_groq() -> tuple:
     return api_key, (modelo or GROQ_MODELO_PADRAO)
 
 
+# --- Sintese de IA (Groq) no Comite de Investimentos - fluxo de producao
+# (missao "PREGAO 2.3-B — fiacao real da sintese de IA no Comite",
+# 2026-11-13). A auditoria anterior (docs/auditoria-comite-20261113.md)
+# confirmou que data/coordenador_central/fluxos.py:analisar_ticker(
+# sintese_ia=True) funciona de verdade (Groq real, nunca inventa numero),
+# mas NENHUM caminho de producao (jobs/comite_noturno.py nem
+# ui/coordenador_tab.py) passava esse parametro - a camada hibrida estava
+# so' dormente.
+#
+# Esta missao fia o caminho de producao completo, mas MANTEM a ativacao
+# real DESLIGADA por padrao (SINTESE_IA_COMITE_ATIVA_PADRAO = False) -
+# ligar isso significa gastar cota real da Groq a cada rodada noturna
+# (ate' 20 tickers/noite, 5 noites/semana) e/ou a cada clique manual do
+# analista em "Analisar"; decisao de custo/produto que cabe ao Rodrigo
+# decidir DEPOIS de ver a estimativa de consumo (ver corpo da PR), nunca
+# a este agente decidir sozinho. Mesmo padrao de todo outro flag/
+# credencial deste arquivo: variavel de ambiente primeiro (tarefas
+# externas, ex: GitHub Actions), com fallback pra st.secrets - nunca
+# lanca excecao, nunca presume "ativo" quando a config nao existe.
+SINTESE_IA_COMITE_ATIVA_PADRAO = False
+# Teto de TICKERS por rodada do Comite Noturno para os quais a sintese de
+# IA e' solicitada (nao o numero de chamadas de rede - cada ticker com
+# sintese_ia=True pode gerar 0, 1 ou 2 chamadas reais a Groq, ver
+# data/coordenador_central/fluxos.py:_anexar_sintese_ia - 0 quando nenhuma
+# das 2 condicoes de opt-in de cada sintese for atendida, ate 2 quando
+# ambas forem). Existe pra limitar o pior caso de custo/latencia por
+# rodada mesmo com a camada ativa, independente do LIMITE_TICKERS_RODADA
+# geral (ver jobs/comite_noturno.py) que controla quantos tickers o
+# Comite analisa no total (com ou sem IA).
+MAX_SINTESES_IA_COMITE_POR_NOITE_PADRAO = 20
+
+
+def sintese_ia_comite_ativa() -> bool:
+    """True so' quando a ativacao real da camada hibrida de IA do Comite
+    foi explicitamente ligada - variavel de ambiente
+    SINTESE_IA_COMITE_ATIVA ("1"/"true"/"sim", case-insensitive) tem
+    prioridade (tarefas externas, ex: GitHub Actions do Comite Noturno),
+    com fallback pra st.secrets["comite"]["sintese_ia_ativa"] (bool, para
+    quem roda via Streamlit Cloud). Padrao (nada configurado em lugar
+    nenhum) e' SINTESE_IA_COMITE_ATIVA_PADRAO = False - jobs/
+    comite_noturno.py e ui/coordenador_tab.py leem esta funcao antes de
+    passar sintese_ia=True pra data/coordenador_central/fluxos.py:
+    analisar_ticker, nunca um default hardcoded espalhado pelo codigo."""
+    valor_env = os.getenv("SINTESE_IA_COMITE_ATIVA", "").strip().lower()
+    if valor_env:
+        return valor_env in ("1", "true", "sim", "yes", "on")
+    try:
+        import streamlit as st
+        valor_secrets = st.secrets.get("comite", {}).get("sintese_ia_ativa")
+        if valor_secrets is not None:
+            return bool(valor_secrets)
+    except Exception:
+        pass
+    return SINTESE_IA_COMITE_ATIVA_PADRAO
+
+
+def limite_sinteses_ia_comite_por_noite() -> int:
+    """Teto de tickers/rodada com sintese_ia solicitada (ver
+    MAX_SINTESES_IA_COMITE_POR_NOITE_PADRAO) - variavel de ambiente
+    MAX_SINTESES_IA_COMITE_POR_NOITE primeiro, st.secrets["comite"]
+    ["max_sinteses_ia_por_noite"] como fallback, MAX_SINTESES_IA_COMITE_
+    POR_NOITE_PADRAO quando nada configurado ou o valor configurado for
+    invalido (nunca lanca por um valor mal formatado)."""
+    valor_env = os.getenv("MAX_SINTESES_IA_COMITE_POR_NOITE", "").strip()
+    if valor_env:
+        try:
+            return max(0, int(valor_env))
+        except ValueError:
+            pass
+    try:
+        import streamlit as st
+        valor_secrets = st.secrets.get("comite", {}).get("max_sinteses_ia_por_noite")
+        if valor_secrets is not None:
+            return max(0, int(valor_secrets))
+    except Exception:
+        pass
+    return MAX_SINTESES_IA_COMITE_POR_NOITE_PADRAO
+
+
 def obter_credencial_x() -> str | None:
     """Bearer token da API do X (data/x_signals.py), lido num lugar so -
     mesmo padrao de obter_credenciais_groq() acima. Variavel de ambiente

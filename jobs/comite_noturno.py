@@ -9,6 +9,7 @@ que registra a análise e a telemetria individual dos especialistas.
 import time
 from datetime import datetime, timedelta, timezone
 
+import config
 from data.coordenador_central.fluxos import analisar_ticker
 from data.radar_quedas import listar_carteiras, normalizar_ticker
 from data.supabase_client import obter_cliente
@@ -19,6 +20,35 @@ LIMITE_TICKERS_RODADA = 20
 JANELA_ANALISE_RECENTE_HORAS = 18
 _TAMANHO_PAGINA = 1000
 _STATUS_QUE_EVITAM_DUPLICIDADE = {"EM_ANDAMENTO", "CONCLUIDA", "PARCIAL"}
+
+
+def _deve_usar_sintese_ia(ticker: str, *, ia_ativa: bool, limite: int, sinteses_usadas: int, tickers_com_sintese_ia: set) -> bool:
+    """Decide, PARA 1 TICKER desta rodada, se a chamada de `analisar_ticker`
+    deve pedir a camada hibrida de IA real (sintese_ia=True) - guard de
+    custo explicito (missao "PREGAO 2.3-B", 2026-11-13), 3 condicoes
+    independentes, qualquer uma False basta pra negar:
+
+    1. `ia_ativa` - config.sintese_ia_comite_ativa() lido 1x por rodada por
+       quem chama (nunca lido aqui dentro, pra manter esta funcao pura e
+       facil de testar sem mockar config/secrets).
+    2. `ticker not in tickers_com_sintese_ia` - nunca pede sintese de IA
+       2x pro MESMO ticker na MESMA rodada (mesmo que `selecionados`
+       viesse com duplicidade por algum motivo futuro - a deduplicacao
+       de `_montar_universo` hoje ja' garante isso na pratica, mas o
+       guard fica aqui tambem, explicito e barato, em vez de confiar so'
+       na deduplicacao de outra funcao).
+    3. `sinteses_usadas < limite` - teto de tickers/rodada com IA pedida
+       (ver config.limite_sinteses_ia_comite_por_noite()); quando o teto
+       e' atingido, os tickers restantes da rodada continuam sendo
+       analisados normalmente - so' caem pro Comite 100% deterministico
+       (sintese_ia=False), nunca sao pulados."""
+    if not ia_ativa:
+        return False
+    if ticker in tickers_com_sintese_ia:
+        return False
+    if sinteses_usadas >= limite:
+        return False
+    return True
 
 
 def _agora_utc(agora=None):
@@ -155,13 +185,37 @@ def executar(agora=None, limite=None):
     excedentes = max(0, len(pendentes) - len(selecionados))
     concluidas = parciais = falhas = 0
 
+    # Camada hibrida de IA real (Groq) - missao "PREGAO 2.3-B", 2026-11-13.
+    # DESLIGADA por padrao (ver config.SINTESE_IA_COMITE_ATIVA_PADRAO /
+    # config.sintese_ia_comite_ativa()) - so' lida 1x por rodada aqui, nunca
+    # dentro do loop, pra nao reler secrets/env a cada ticker. Quando ligada,
+    # `limite_ia` e `tickers_com_sintese_ia`/`sinteses_ia_usadas` garantem o
+    # guard de custo (ver _deve_usar_sintese_ia acima): nunca mais de 1
+    # ticker repetido na mesma rodada, nunca mais tickers-com-IA que o teto
+    # configurado - os tickers excedentes ainda sao analisados, so' sem IA.
+    ia_ativa = config.sintese_ia_comite_ativa()
+    limite_ia = config.limite_sinteses_ia_comite_por_noite() if ia_ativa else 0
+    sinteses_ia_usadas = 0
+    tickers_com_sintese_ia: set = set()
+    print(
+        f"[comite_noturno] sintese_ia: ativa={ia_ativa} "
+        f"limite_tickers_por_noite={limite_ia if ia_ativa else 'n/a (desligada)'}"
+    )
+
     print(
         f"[comite_noturno] universo={len(universo)} recentes_pulados={len(universo) - len(pendentes)} "
         f"selecionados={len(selecionados)} excedentes={excedentes}"
     )
     for ticker in selecionados:
+        usar_sintese_ia = _deve_usar_sintese_ia(
+            ticker, ia_ativa=ia_ativa, limite=limite_ia,
+            sinteses_usadas=sinteses_ia_usadas, tickers_com_sintese_ia=tickers_com_sintese_ia,
+        )
         try:
-            resultado = analisar_ticker(ticker)
+            resultado = analisar_ticker(ticker, sintese_ia=usar_sintese_ia)
+            if usar_sintese_ia:
+                sinteses_ia_usadas += 1
+                tickers_com_sintese_ia.add(ticker)
             status_ticker = (resultado or {}).get("status_execucao")
             if status_ticker == "CONCLUIDA":
                 concluidas += 1
@@ -169,11 +223,12 @@ def executar(agora=None, limite=None):
                 parciais += 1
             print(
                 f"[comite_noturno] ticker={ticker} status={status_ticker or 'SEM_STATUS'} "
+                f"sintese_ia={usar_sintese_ia} "
                 f"analise_id={(resultado or {}).get('_analise_id', 'nao_informado')}"
             )
         except Exception as exc:
             falhas += 1
-            print(f"[comite_noturno] ticker={ticker} falhou: {exc!r}")
+            print(f"[comite_noturno] ticker={ticker} falhou (sintese_ia={usar_sintese_ia}): {exc!r}")
 
     total = len(selecionados)
     if falhas == total and total > 0:
@@ -186,7 +241,7 @@ def executar(agora=None, limite=None):
     resumo = (
         f"universo={len(universo)}; analisados={total}; concluidas={concluidas}; "
         f"parciais={parciais}; falhas={falhas}; recentes_pulados={len(universo) - len(pendentes)}; "
-        f"aguardando_proxima_rodada={excedentes}"
+        f"aguardando_proxima_rodada={excedentes}; sinteses_ia={sinteses_ia_usadas}"
     )
     duracao_ms = int((time.monotonic() - inicio) * 1000)
     log_ok = _concluir_execucao(
