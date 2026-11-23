@@ -121,6 +121,39 @@ with patch.object(at_mod, "obter_indicadores", side_effect=_ind):
     _roda(script)
 
 
+# --- ANÁLISES › Perfil da Empresa (ui/coordenador_tab.py:
+# render_perfil_empresa_tab - extraído do expander dentro de COMITÊ em
+# 2026-11-23, pedido do Rodrigo pra virar aba própria, ver app.py rota
+# ("analises", "perfil") e ui/navegacao.py) -----------------------------------
+
+def test_smoke_analises_perfil_empresa():
+    script = '''
+from unittest.mock import patch
+import ui.coordenador_tab as coord
+
+perfil = {
+    "identificacao": {"setor": "Energy", "industria": "Oil & Gas", "pais": "Brazil",
+                       "resumo_negocio": "resumo", "disponivel": True},
+    "noticias_recentes": [], "noticias_disponivel": False,
+    "perguntas": {
+        "o_que_a_empresa_faz": {"dado": "resumo", "disponivel": True, "motivo_indisponivel": None},
+        "perspectivas": {"disponivel": False, "motivo_indisponivel": "indisponivel"},
+        "pressoes_de_margem": {"disponivel": False, "motivo_indisponivel": "indisponivel"},
+        "riscos": {"disponivel": False, "motivo_indisponivel": "indisponivel"},
+        "o_que_quebraria_a_tese": {"disponivel": False, "motivo_indisponivel": "indisponivel"},
+        "posicao_competitiva": {"disponivel": False, "motivo_indisponivel": "indisponivel"},
+        "vantagens_competitivas": {"disponivel": False, "motivo_indisponivel": "indisponivel"},
+        "concorrentes": {"disponivel": False, "motivo_indisponivel": "indisponivel"},
+    },
+}
+with patch.object(coord, "obter_perfil_empresa", return_value=perfil):
+    coord.render_perfil_empresa_tab("PETR4")
+'''
+    at = _roda(script)
+    textos = " ".join(m.value for m in at.markdown)
+    assert "PERFIL DA EMPRESA" in textos
+
+
 # --- COORDENADOR › Visão Geral (mesmos mocks de test_coordenador_tab_execucoes_agendadas.py)
 
 def test_smoke_coordenador_visao_geral():

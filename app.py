@@ -1054,6 +1054,33 @@ if rota == ("analises", "empresas"):
             analises_tab.render_conclusao_investimento(ticker_selecionado, prefs, usuario)
 
 
+# --- ANÁLISES › Perfil da Empresa (missão "aba própria", pedido explícito
+# do Rodrigo, 2026-11-23): até aqui vivia dentro de um st.expander em
+# COMITÊ > Histórico (ver ui/coordenador_tab.py:_render_consolidado) -
+# extraído pra aba própria/independente em ANÁLISES, ao lado de Empresas/
+# Fundamentos. Mesmo seletor de ticker da watchlist do bloco "Empresas"
+# acima (mesma chave de widget "ticker_selecionado" - os dois blocos nunca
+# executam no mesmo rerun, então reusar a chave só faz o ticker escolhido
+# persistir ao trocar de subaba dentro de ANÁLISES, de propósito). ---------
+if rota == ("analises", "perfil"):
+    with st.container():
+        ticker_externo = st.session_state.get(navegacao.KEY_TICKER_EXTERNO)
+        opcoes_ticker = list(prefs["watchlist"])
+        if ticker_externo and ticker_externo not in opcoes_ticker:
+            opcoes_ticker.append(ticker_externo)
+        if not opcoes_ticker:
+            st.info("Adicione um ticker na barra lateral para começar.")
+        else:
+            padrao_ticker, mem_ticker = _escolha_estavel("ticker_selecionado", opcoes_ticker, opcoes_ticker[0])
+            sel = st.segmented_control(
+                "Ticker", opcoes_ticker, default=padrao_ticker,
+                label_visibility="collapsed", key="ticker_selecionado",
+            )
+            ticker_selecionado = sel or padrao_ticker
+            st.session_state[mem_ticker] = ticker_selecionado
+            coordenador_tab.render_perfil_empresa_tab(ticker_selecionado)
+
+
 # --- MAIS › Sistema / Saúde dos Dados (so admin): _eh_admin reconfirmado
 # aqui (nao so' na nav) - mesmo que a rota chegasse a uma subaba admin por
 # URL ou estado de sessao reaproveitado, quem nao e' admin nunca ve o

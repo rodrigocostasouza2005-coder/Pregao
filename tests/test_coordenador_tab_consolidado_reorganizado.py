@@ -312,6 +312,26 @@ def test_sintese_final_mostra_conclusao_divergencias_e_material_de_apoio():
     assert "2 especialista(s) com recomendação comparável concordam em NEUTRO" in textos
 
 
+def test_historico_nao_mostra_mais_perfil_da_empresa_extraido_para_aba_propria():
+    """Missão "aba própria" (pedido explícito do Rodrigo, 2026-11-23):
+    Perfil da Empresa saiu do expander dentro de COMITÊ > Histórico e
+    virou ANÁLISES > Perfil da Empresa (ver ui/navegacao.py e app.py
+    rota ("analises", "perfil")). COMITÊ > Histórico continua
+    renderizando normalmente (cabeçalho/pareceres/casas/síntese), sem
+    nenhum buraco nem referência ao painel que saiu daqui."""
+    at = _rodar_render_historico(_consolidado_completo())
+    assert not at.exception
+    textos = " ".join(m.value for m in at.markdown)
+    assert "PERFIL DA EMPRESA" not in textos
+    assert "resumo do negócio e momento atual" not in textos
+    rotulos_expander = [e.label for e in at.expander]
+    assert not any("Perfil da empresa" in r for r in rotulos_expander)
+    # o restante da tela continua coerente - cabeçalho de decisão
+    # seguido direto pelos pareceres por especialista, sem buraco.
+    assert "RECOMENDAÇÃO DO COMITÊ" in textos
+    assert "Pareceres por especialista" in textos
+
+
 def test_consolidado_minimo_sem_nenhuma_secao_opcional_nao_quebra():
     """Degradação: quando quase tudo está vazio (análise com pouquíssimo
     dado disponível), a página não deve quebrar nem mostrar seções vazias

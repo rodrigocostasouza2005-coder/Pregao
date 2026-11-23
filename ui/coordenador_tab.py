@@ -808,18 +808,24 @@ def _render_perfil_noticias(perfil: dict):
     lista_compacta(linhas)
 
 
-def _render_perfil_empresa(ticker: str):
-    """Perfil da empresa - história do negócio + momento atual (pedido
-    literal do Rodrigo: 'eu queria que tivesse a opinião do analistas,
-    quando eu fosse ver o preço atual da empresa, gostaria de um resumo
-    da história e do momento que ela está passando' - missão
+def render_perfil_empresa_tab(ticker: str):
+    """ANÁLISES > Perfil da Empresa - história do negócio + momento atual
+    (pedido literal do Rodrigo: 'eu queria que tivesse a opinião do
+    analistas, quando eu fosse ver o preço atual da empresa, gostaria de
+    um resumo da história e do momento que ela está passando' - missão
     perfil-empresa-ui-20261118). Consome data/empresa_perfil.py:
     obter_perfil_empresa, camada de consolidação já pronta e testada
-    (tests/test_empresa_perfil.py) que, até esta mudança, nunca era
-    referenciada em nenhuma tela (código morto confirmado por grep).
-    Chamada dentro de _render_consolidado, logo após o cabeçalho de
-    decisão - mesmo lugar onde o preço atual da cotação já aparece
-    (_render_metricas_preco_alvo) - nunca em aba separada.
+    (tests/test_empresa_perfil.py).
+
+    Extraído do st.expander dentro de COMITÊ > Histórico (via
+    _render_consolidado) em 2026-11-23 - pedido explícito do Rodrigo pra
+    virar aba própria/independente (ANÁLISES > Perfil da Empresa, ver
+    ui/navegacao.py e app.py rota ("analises", "perfil")), revertendo a
+    decisão original de 2026-11-18 ('nunca em aba separada'). Função
+    renomeada de _render_perfil_empresa (privada) pra
+    render_perfil_empresa_tab (pública) nesta mesma mudança; chamada por
+    app.py com o ticker já resolvido pelo seletor da watchlist (mesmo
+    padrão de ANÁLISES > Empresas).
 
     obter_perfil_empresa é função pura (nunca deveria lançar: cada
     fonte que falhar vira disponivel=False só no campo afetado), mas a
@@ -827,18 +833,21 @@ def _render_perfil_empresa(ticker: str):
     obter_indicadores - o try/except aqui segue o mesmo padrão de
     resiliência de render_analisar (linha ~1388): nunca deixa uma falha
     de rede quebrar a página; mostra uma mensagem honesta em vez de
-    `st.error` bloqueante, porque isto é informação complementar ao
-    parecer do Comitê, não o fluxo principal da tela."""
-    if not ticker:
-        return
-    try:
-        perfil = obter_perfil_empresa(ticker)
-    except Exception as exc:
-        with st.expander("Perfil da empresa — resumo do negócio e momento atual", expanded=False):
+    `st.error` bloqueante."""
+    with st.container(border=True):
+        st.markdown(
+            '<div class="painel-titulo">PERFIL DA EMPRESA — RESUMO DO NEGÓCIO E MOMENTO ATUAL</div>',
+            unsafe_allow_html=True,
+        )
+        if not ticker:
+            st.info("Selecione um ticker para ver o perfil da empresa.")
+            return
+        try:
+            perfil = obter_perfil_empresa(ticker)
+        except Exception as exc:
             st.caption(f"Perfil da empresa indisponível no momento (falha ao consultar as fontes: {exc!r}).")
-        return
+            return
 
-    with st.expander("Perfil da empresa — resumo do negócio e momento atual", expanded=False):
         _render_perfil_identificacao(perfil.get("identificacao") or {}, perfil.get("perguntas") or {})
         divisor()
         _render_perfil_momento_atual(perfil.get("perguntas") or {})
@@ -1457,24 +1466,20 @@ def _render_sintese_ia(consolidado: dict):
 
 
 def _render_consolidado(consolidado: dict):
-    """Monta a análise consolidada em 4 blocos, nesta ordem (reformulação
-    visual 2026-11-06, pedido do Rodrigo; perfil da empresa adicionado em
-    2026-11-18, missão perfil-empresa-ui-20261118): (1) cabeçalho de
-    decisão - recomendação fundamentada do Comitê bem no topo; (2) perfil
-    da empresa - história do negócio + momento atual, fechado por
-    padrão (_render_perfil_empresa); (3) pareceres por especialista, 1
-    aba por analista (o que cada um analisou/dados/premissas/tese) +
-    dados externos das casas de research; (4) síntese final - conclusão,
-    divergências, pontos de revisão e material de apoio. A lógica de
-    consolidação real (data/coordenador_central/consolidacao.py +
-    pareceres.py) não muda - só a apresentação; nenhum valor é
-    recalculado ou simplificado aqui."""
-    ticker = consolidado.get("ticker") or (consolidado.get("pareceres_analistas") or {}).get("ticker")
+    """Monta a análise consolidada em 3 blocos, nesta ordem (reformulação
+    visual 2026-11-06, pedido do Rodrigo; perfil da empresa que viveu
+    aqui entre 2026-11-18 e 2026-11-23 foi extraído pra aba própria -
+    ANÁLISES > Perfil da Empresa, ver render_perfil_empresa_tab e
+    app.py rota ("analises", "perfil")): (1) cabeçalho de decisão -
+    recomendação fundamentada do Comitê bem no topo; (2) pareceres por
+    especialista, 1 aba por analista (o que cada um analisou/dados/
+    premissas/tese) + dados externos das casas de research; (3) síntese
+    final - conclusão, divergências, pontos de revisão e material de
+    apoio. A lógica de consolidação real (data/coordenador_central/
+    consolidacao.py + pareceres.py) não muda - só a apresentação; nenhum
+    valor é recalculado ou simplificado aqui."""
     _render_cabecalho_decisao(consolidado)
     divisor()
-    if ticker:
-        _render_perfil_empresa(ticker)
-        divisor()
 
     pareceres = consolidado.get("pareceres_analistas") or {}
     analistas = pareceres.get("analistas") or []
