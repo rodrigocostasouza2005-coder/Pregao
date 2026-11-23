@@ -133,6 +133,18 @@ AREAS = (
     Area("analises", "ANÁLISES", ":material/query_stats:", (
         Subaba("empresas", "Empresas", ("EQUITY",)),
         Subaba("fundamentos", "Fundamentos", ("EQUITY",)),
+        # PERFIL DA EMPRESA (missão "aba própria", pedido explícito do
+        # Rodrigo, 2026-11-23): até aqui vivia dentro de um st.expander
+        # em COMITÊ > Histórico (e, por reuso da mesma função, também em
+        # VALUATION > Simulador DCF) - ver ui/coordenador_tab.py:
+        # render_perfil_empresa_tab (ex-_render_perfil_empresa). Mora em
+        # ANÁLISES, ao lado de Empresas/Fundamentos (mesma unidade de
+        # navegação "por ticker da watchlist", mesmo seletor de ticker -
+        # ver app.py rota ("analises", "perfil")) em vez de virar área
+        # própria de 1o nível só pra 1 painel. Conteúdo novo nesta posição
+        # da navegação, sem aba antiga - sempre visível (mesmo padrão de
+        # "casas"/"radar-x" em RESEARCH acima).
+        Subaba("perfil", "Perfil da Empresa"),
     )),
     # VALUATION (missão "reformulação Pregão Terminal Experience", Fase 2a,
     # 2026-11-17): antes fragmentado em 2 areas sem relacao visual entre si
