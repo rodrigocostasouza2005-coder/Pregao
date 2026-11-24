@@ -101,6 +101,50 @@ def test_especialista_citado_inventado_e_descartado():
     assert resultado["especialistas_citados"] == ["market_researcher"]
 
 
+def test_especialista_fora_do_payload_citado_no_texto_livre_rejeita_sintese_inteira():
+    """Achado real (auditoria de continuação, 2026-11-23): o teste
+    anterior só cobre a lista estruturada 'especialistas_citados' -
+    esta cobre o TEXTO LIVRE ('leitura'/'fator_decisivo'), onde a
+    atribuição de fato aparece pro usuário. 'model_builder' é um id
+    REAL do Coordenador (data/coordenador_central/registro.py), mas NÃO
+    faz parte de _CONSOLIDADO_DIVERGENTE (só market_researcher/
+    valuation_comparables têm parecer nesse payload) - citá-lo na
+    'leitura' é evidência de alucinação de atribuição. A síntese
+    inteira é rejeitada (nunca só o id removido da frase)."""
+    resposta_com_especialista_fora_do_payload = json.dumps({
+        "leitura": "O model_builder calculou um DCF que sustenta a divergência entre os dois especialistas.",
+        "fator_decisivo": "", "especialistas_citados": ["market_researcher", "valuation_comparables"],
+    })
+    with patch.object(si.config, "obter_credenciais_groq", return_value=("fake-key", "modelo-principal")), \
+         patch.object(si.config, "obter_modelo_groq_fallback", return_value="modelo-fallback"), \
+         patch.object(si, "_chamar_groq_coord", return_value=(resposta_com_especialista_fora_do_payload, None)), \
+         patch.object(si.ia_hibrida_telemetria, "registrar_execucao") as telemetria_mock, \
+         _bypass_cache():
+        resultado = si.sintetizar_leitura_comite(_CONSOLIDADO_DIVERGENTE)
+    assert resultado["disponivel"] is False
+    assert telemetria_mock.call_args.kwargs["sucesso"] is False
+
+
+def test_especialista_do_payload_no_texto_livre_e_aceito_normalmente():
+    """Contraste com o teste acima: citar o id 'valuation_comparables'
+    (real E parte do payload desta análise) dentro de 'leitura' é
+    legítimo e não deve disparar a rejeição - o validador só reage a
+    um id FORA do payload, nunca a qualquer menção de id conhecido."""
+    resposta_citando_id_do_payload = json.dumps({
+        "leitura": "A divergência está entre market_researcher (COMPRA, ROE forte) e "
+                   "valuation_comparables (VENDA, P/L acima da mediana).",
+        "fator_decisivo": "", "especialistas_citados": ["market_researcher", "valuation_comparables"],
+    })
+    with patch.object(si.config, "obter_credenciais_groq", return_value=("fake-key", "modelo-principal")), \
+         patch.object(si.config, "obter_modelo_groq_fallback", return_value="modelo-fallback"), \
+         patch.object(si, "_chamar_groq_coord", return_value=(resposta_citando_id_do_payload, None)), \
+         patch.object(si.ia_hibrida_telemetria, "registrar_execucao"), \
+         _bypass_cache():
+        resultado = si.sintetizar_leitura_comite(_CONSOLIDADO_DIVERGENTE)
+    assert resultado["disponivel"] is True
+    assert set(resultado["especialistas_citados"]) == {"market_researcher", "valuation_comparables"}
+
+
 def test_resposta_malformada_nunca_lanca_excecao():
     with patch.object(si.config, "obter_credenciais_groq", return_value=("fake-key", "modelo-principal")), \
          patch.object(si.config, "obter_modelo_groq_fallback", return_value="modelo-fallback"), \

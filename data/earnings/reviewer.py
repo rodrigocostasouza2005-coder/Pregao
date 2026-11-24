@@ -67,6 +67,20 @@ _MOTIVO_ROIC_BALANCO_INDISPONIVEL = (
     "ROIC indisponível neste trimestre: balanço patrimonial (patrimônio "
     "líquido/dívida/caixa) não pôde ser obtido para este ticker/período."
 )
+# Achado real (auditoria de continuação, 2026-11-23): _roic_pct devolve
+# None tanto quando falta um componente do balanço (motivo acima,
+# correto) quanto quando o capital investido calculado é <= 0 (balanço
+# foi obtido, mas patrimônio líquido muito negativo torna o ROIC sem
+# significado econômico - ver docstring de _roic_pct). Antes, os dois
+# casos recebiam a MESMA limitação acima, que afirma "não pôde ser
+# obtido" mesmo quando na verdade foi - texto errado nesse ramo
+# específico, nunca um número inventado (o ROIC em si já era None nos
+# dois casos, só a explicação estava imprecisa).
+_MOTIVO_ROIC_CAPITAL_INVESTIDO_NEGATIVO = (
+    "ROIC indisponível neste trimestre: balanço patrimonial foi obtido, mas o capital "
+    "investido (patrimônio líquido + dívida total - caixa e equivalentes) é zero ou "
+    "negativo - ROIC sem significado econômico nesse caso, nunca calculado por aproximação."
+)
 _MOTIVO_ROIC_ALIQUOTA_INDISPONIVEL = (
     "ROIC indisponível neste trimestre: alíquota efetiva de imposto não "
     "pôde ser calculada (resultado antes dos tributos ausente, zero ou "
@@ -334,12 +348,25 @@ def _montar_balanco_fluxo_caixa(ticker: str, ano: int, trimestre: int, metricas:
             limitacoes.append(_MOTIVO_ROIC_ALIQUOTA_INDISPONIVEL)
         else:
             bloco["aliquota_efetiva_pct"] = aliquota * 100
+            patrimonio_liquido = balanco.get("patrimonio_liquido")
+            divida_total = balanco.get("divida_total")
+            caixa_equivalentes = balanco.get("caixa_equivalentes")
             bloco["roic_pct"] = _roic_pct(
-                ebit_isolado, aliquota,
-                balanco.get("patrimonio_liquido"), balanco.get("divida_total"), balanco.get("caixa_equivalentes"),
+                ebit_isolado, aliquota, patrimonio_liquido, divida_total, caixa_equivalentes,
             )
             if bloco["roic_pct"] is None:
-                limitacoes.append(_MOTIVO_ROIC_BALANCO_INDISPONIVEL)
+                # Mesma distinção de _roic_pct: componente do balanço
+                # ausente é "não pôde ser obtido"; os três presentes com
+                # capital investido <= 0 é um motivo real diferente (ver
+                # _MOTIVO_ROIC_CAPITAL_INVESTIDO_NEGATIVO acima).
+                componentes_presentes = (
+                    patrimonio_liquido is not None and divida_total is not None
+                    and caixa_equivalentes is not None
+                )
+                if componentes_presentes:
+                    limitacoes.append(_MOTIVO_ROIC_CAPITAL_INVESTIDO_NEGATIVO)
+                else:
+                    limitacoes.append(_MOTIVO_ROIC_BALANCO_INDISPONIVEL)
 
     try:
         fluxo = cvm_dfc.obter_fluxo_caixa_trimestral(ticker, ano, trimestre)
@@ -772,7 +799,16 @@ def serie_historica_br(ticker: str, n_trimestres: int = 4) -> dict:
     for ano, tri in reversed(candidatos):  # mais antigo primeiro
         try:
             nota = montar_nota_br(ticker, ano, tri)
-        except Exception:
+        except Exception as exc:
+            # Achado real (auditoria de continuação, 2026-11-23): único
+            # bloco except deste arquivo sem log (os outros 4 sempre
+            # fazem print/registrar_tentativa) - uma falha real dentro
+            # de montar_nota_br (ex: dado malformado da CVM) ficava
+            # indistinguível de "trimestre sem DRE disponível" (caminho
+            # normal, tratado abaixo via disponivel=False). Loga a
+            # causa sem mudar o comportamento - a série continua
+            # pulando o trimestre problemático, nunca interpola.
+            print(f"[earnings_reviewer] serie_historica_br({ticker!r}): montar_nota_br({ano}, {tri}) levantou exceção: {exc!r}")
             continue
         if nota.get("disponivel"):
             notas.append(nota)

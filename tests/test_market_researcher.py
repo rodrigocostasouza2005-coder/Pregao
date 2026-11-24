@@ -405,6 +405,20 @@ def test_analise_ticker_nao_escreve_em_nenhuma_tabela(monkeypatch):
 # historico_fundamentos() - só Brasil nesta versão (ver _pais_code)
 # ============================================================
 
+def test_pais_code_loga_falha_real_antes_de_degradar_pra_br(capsys):
+    """Achado real (auditoria de continuação, 2026-11-23): diferente do
+    resto do módulo, _pais_code engolia a exceção em silêncio - uma
+    falha real de config.info_ativo ficava indistinguível de "sabemos
+    que é BR". Agora loga a causa antes de aplicar o mesmo fallback
+    (comportamento de degradação não muda, só deixa de ser silencioso)."""
+    with patch.object(mr.config, "info_ativo", side_effect=RuntimeError("fonte fora do ar")):
+        resultado = mr._pais_code("WEGE3")
+    assert resultado == "BR"
+    saida = capsys.readouterr().out
+    assert "_pais_code" in saida
+    assert "fonte fora do ar" in saida
+
+
 def test_historico_fundamentos_br_delega_pra_serie_historica_br():
     with patch.object(mr, "_pais_code", return_value="BR"), \
          patch.object(mr.earnings_reviewer, "serie_historica_br", return_value=_HISTORICO_WEGE3) as m:

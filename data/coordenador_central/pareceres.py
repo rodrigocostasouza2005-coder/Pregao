@@ -12,6 +12,20 @@ from statistics import median
 from data.research.sinal import calcular_sinal_comite
 from data.coordenador_central.dcf import calcular_dcf
 
+# Universo COMPLETO de ids de analista que montar_pareceres() pode
+# produzir em 'pareceres_analistas.analistas' (ver cada "id": "..."
+# literal abaixo) - exportado pra quem precisa validar se um id
+# mencionado em texto livre é um analista REAL do Comitê, mesmo que não
+# tenha entrado no payload de UMA análise específica (ver
+# data/coordenador_central/sintese_ia.py:_IDS_ESPECIALISTAS_CONHECIDOS,
+# achado da auditoria de continuação 2026-11-23 - diferente dos ids de
+# ESPECIALISTA de data/coordenador_central/registro.py, que são os
+# nomes das FONTES de dado, não dos analistas do parecer final).
+IDS_ANALISTAS_COMITE = (
+    "market_researcher", "earnings_reviewer", "valuation_comparables",
+    "model_builder", "valuation_reviewer",
+)
+
 
 def _numero(valor):
     if isinstance(valor, bool) or not isinstance(valor, (int, float)):

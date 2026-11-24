@@ -225,6 +225,99 @@ def test_perfil_disponivel_mostra_ate_5_noticias_recentes():
 
 
 # ============================================================
+# Consenso entre casas de research - achado real (auditoria de
+# continuação, 2026-11-23): data/empresa_perfil.py já calculava
+# dispersão/divergência/evolução histórica dentro da chave 'research',
+# mas esta tela nunca lia isso. _render_perfil_research_consenso é o
+# fechamento desse gap - mostra só o que já existe, nunca recalcula.
+# ============================================================
+
+def test_research_disponivel_mostra_dispersao_divergencia_e_mudanca_hoje():
+    perfil = _perfil_disponivel()
+    perfil["research"] = {
+        "disponivel": True, "motivo": None, "casas": ["BTG", "XP"],
+        "indicadores_adicionais": None,
+        "dispersao_precos_alvo": {
+            "moeda": "BRL", "amostra_insuficiente": False,
+            "minimo": 30.0, "mediana": 34.0, "maximo": 40.0,
+            "resumo": "calculado com 2 de 2 casa(s) cobrindo o ticker.",
+        },
+        "divergencia_recomendacao": {
+            "numerica": True, "n_casas_com_preco_alvo": 2, "qualitativa": True,
+            "amostra_insuficiente_qualitativa": False,
+            "casa_mais_otimista": "BTG", "casa_mais_cautelosa": "XP",
+            "criterio_otimismo": "preco_alvo (maior/menor preco-alvo numerico entre as casas com esse dado - BRL)",
+        },
+        "divergencia_premissas": None,
+        "evolucao_historica": {
+            "BTG": {"mudou_recomendacao_ou_alvo_hoje": True},
+            "XP": {"mudou_recomendacao_ou_alvo_hoje": False},
+        },
+    }
+    with patch.object(tab, "obter_perfil_empresa", return_value=perfil):
+        textos = _capturar(tab.render_perfil_empresa_tab, "PETR4")
+    assert "Consenso entre casas de research" in textos
+    assert "mediano" in textos.lower() or "mediana" in textos.lower()
+    assert "calculado com 2 de 2 casa(s)" in textos
+    assert "Mais otimista: BTG" in textos
+    assert "Mais cautelosa: XP" in textos
+    assert "Mudou recomendação ou preço-alvo hoje: BTG." in textos
+
+
+def test_research_amostra_insuficiente_mostra_apenas_resumo_sem_tabela():
+    perfil = _perfil_disponivel()
+    perfil["research"] = {
+        "disponivel": True, "motivo": None, "casas": ["BTG"],
+        "indicadores_adicionais": None,
+        "dispersao_precos_alvo": {
+            "moeda": "BRL", "amostra_insuficiente": True,
+            "minimo": 30.0, "mediana": 30.0, "maximo": 30.0,
+            "resumo": "apenas 1 de 1 casa(s) com preco-alvo numerico - dispersao nao e significativa com 1 dado so'.",
+        },
+        "divergencia_recomendacao": {
+            "numerica": False, "n_casas_com_preco_alvo": 1, "qualitativa": False,
+            "amostra_insuficiente_qualitativa": True,
+            "casa_mais_otimista": None, "casa_mais_cautelosa": None, "criterio_otimismo": None,
+        },
+        "divergencia_premissas": None, "evolucao_historica": {},
+    }
+    with patch.object(tab, "obter_perfil_empresa", return_value=perfil):
+        textos = _capturar(tab.render_perfil_empresa_tab, "PETR4")
+    assert "dispersao nao e significativa com 1 dado so" in textos
+    assert "Mais otimista:" not in textos
+    assert "Mudou recomendação" not in textos
+
+
+def test_research_disponivel_sem_nenhuma_casa_mostra_motivo_em_vez_de_secao_vazia():
+    """disponivel=True com 0 casas (ver data/research/comparador.py:
+    comparar_ticker - banco respondeu, zero publicação estruturada pra
+    esse ticker) - dispersão/divergência/evolução nem existem nesse
+    caso real; a seção precisa mostrar o motivo, nunca ficar vazia em
+    silêncio (pareceria sucesso sem dado)."""
+    perfil = _perfil_disponivel()
+    perfil["research"] = {
+        "disponivel": True, "ticker": "PETR4", "casas": [],
+        "motivo": "sem publicacoes estruturadas para este ticker na biblioteca permanente de research",
+    }
+    with patch.object(tab, "obter_perfil_empresa", return_value=perfil):
+        textos = _capturar(tab.render_perfil_empresa_tab, "PETR4")
+    assert "sem publicacoes estruturadas para este ticker" in textos
+
+
+def test_research_indisponivel_mostra_motivo_literal():
+    perfil = _perfil_disponivel()
+    perfil["research"] = {
+        "disponivel": False, "motivo": "banco de research indisponivel no momento",
+        "casas": [], "indicadores_adicionais": None, "dispersao_precos_alvo": None,
+        "divergencia_recomendacao": None, "divergencia_premissas": None, "evolucao_historica": None,
+    }
+    with patch.object(tab, "obter_perfil_empresa", return_value=perfil):
+        textos = _capturar(tab.render_perfil_empresa_tab, "PETR4")
+    assert "Consenso entre casas de research" in textos
+    assert "banco de research indisponivel no momento" in textos
+
+
+# ============================================================
 # Pergunta indisponível - motivo literal, nunca texto genérico.
 # ============================================================
 
