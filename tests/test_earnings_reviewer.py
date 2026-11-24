@@ -88,6 +88,50 @@ def test_montar_nota_br_propaga_motivo_especifico_sem_cnpj():
     assert nota["motivo"] == cvm_dre.MOTIVO_SEM_CNPJ
 
 
+def test_csna3_nao_fica_mais_bloqueado_por_falta_de_cnpj():
+    """Regressao do bug real achado na auditoria Fase 2/Comite
+    (23/11/2026) e corrigido em data/cvm.py:_CORRECOES_TICKER_CNPJ: antes
+    da correcao, data.cvm.obter_cnpj('CSNA3') SEMPRE retornava None (a
+    CIA SIDERURGICA NACIONAL preenche seu proprio FCA com o codigo legado
+    "4030", nunca "CSNA3" - confirmado contra o FCA real da CVM), o que
+    fazia montar_nota_br('CSNA3', ...) ficar travado em
+    disponivel=False/motivo=MOTIVO_SEM_CNPJ pra sempre, mesmo sendo um
+    ticker liquido do Ibovespa com dado financeiro trimestral real
+    disponivel na CVM.
+
+    Diferente dos outros testes deste arquivo (que mockam
+    cvm_dre.obter_cnpj direto, pulando o bug), aqui mockamos so' a fonte
+    FCA (_baixar_csv_do_zip) pra exercitar a cadeia real: FCA mockado (sem
+    CSNA3, do jeito que a CVM de fato devolve) -> data.cvm._mapa_ticker_cnpj
+    (aplica _CORRECOES_TICKER_CNPJ) -> data.cvm.obter_cnpj (mesma funcao
+    que cvm_dre.obter_cnpj referencia) -> reviewer.montar_nota_br. A fonte
+    ITR/DRE continua mockada como None (sem rede real) so' pra isolar o
+    que este teste prova: o bloqueio deixa de ser POR FALTA DE CNPJ."""
+    import pandas as pd
+
+    import data.cvm as cvm_mod
+
+    cvm_mod._mapa_ticker_cnpj.clear()
+    cvm_mod._ultimo_mapa_ticker_valido.clear()
+    df_fca = pd.DataFrame({
+        "Codigo_Negociacao": ["4030"],  # codigo legado real que a CSN preenche no FCA
+        "CNPJ_Companhia": ["33.042.730/0001-04"],
+    })
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=df_fca), \
+         patch.object(cvm_mod, "registrar_tentativa"), \
+         patch.object(cvm_dre, "_baixar_csv_do_zip", return_value=None):
+        nota = reviewer.montar_nota_br("CSNA3", 2026, 2)
+
+    _checar_cnpj_resolvido = cvm_mod.obter_cnpj("CSNA3")
+    assert _checar_cnpj_resolvido == "33.042.730/0001-04"
+    assert nota["disponivel"] is False  # fonte ITR mockada como indisponivel, nao foi o foco aqui
+    assert nota["motivo"] != cvm_dre.MOTIVO_SEM_CNPJ, f"ainda bloqueado por falta de CNPJ: {nota['motivo']!r}"
+    assert nota["motivo"] == cvm_dre.MOTIVO_FONTE_INDISPONIVEL
+
+    cvm_mod._mapa_ticker_cnpj.clear()
+    cvm_mod._ultimo_mapa_ticker_valido.clear()
+
+
 def test_beef3_minerva_motivo_especifico_propagado_nunca_mensagem_generica_com_ou():
     """Caso real citado na investigação original: BEEF3 (Minerva S.A.)
     teve a DRE indisponível numa checagem e a mensagem antiga era

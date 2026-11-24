@@ -381,6 +381,43 @@ def test_17_documentos_brutos_sem_coluna_tipo_nao_quebra_e_filtra_resultados():
             f"(documentos={documentos})")
 
 
+def test_18_csna3_bpac11_cmin3_corrigidos_mesmo_quando_fca_reporta_codigo_legado():
+    """Bug real (auditoria Fase 2/Comite, 23/11/2026): obter_cnpj('CSNA3')
+    retornava None porque a propria CIA SIDERURGICA NACIONAL preenche seu
+    FCA com o codigo numerico legado "4030" em vez do ticker real "CSNA3"
+    (confirmado baixando o FCA real da CVM - ano 2026 - e cruzando CNPJ
+    por Nome_Empresarial, 24/11/2026) - isso quebrava o Earnings Reviewer
+    (data/earnings/reviewer.py) e qualquer calendario/evento pra esse
+    ticker liquido do Ibovespa. _CORRECOES_TICKER_CNPJ cobre este e mais 2
+    casos confirmados pela mesma varredura (BPAC11, CMIN3) - ver comentario
+    da constante em data/cvm.py pro porque cada um ficava de fora."""
+    _limpar_cache_fca_ipe()
+    import pandas as pd
+    # Simula o FCA REAL: Codigo_Negociacao e' o codigo legado/placeholder
+    # que essas 3 empresas preenchem no proprio cadastro, nunca o ticker
+    # CSNA3/BPAC11/CMIN3 negociado na B3.
+    df_fca = pd.DataFrame({
+        "Codigo_Negociacao": ["PETR4", "4030", "000000", "25585"],
+        "CNPJ_Companhia": ["33.000.167/0001-01", "33.042.730/0001-04",
+                            "30.306.294/0001-45", "08.902.291/0001-15"],
+    })
+    with patch.object(cvm_mod, "_baixar_csv_do_zip", return_value=df_fca), \
+         patch.object(cvm_mod, "registrar_tentativa"):
+        cnpj_csna3 = cvm_mod.obter_cnpj("CSNA3")
+        cnpj_bpac11 = cvm_mod.obter_cnpj("BPAC11")
+        cnpj_cmin3 = cvm_mod.obter_cnpj("CMIN3")
+        cnpj_petr4 = cvm_mod.obter_cnpj("PETR4")  # regressao - resto do mapa intacto
+
+    _checar("18a CSNA3 resolve pro CNPJ real da Cia Siderurgica Nacional (nao mais None)",
+            cnpj_csna3 == "33.042.730/0001-04", f"(cnpj={cnpj_csna3})")
+    _checar("18b BPAC11 resolve pro CNPJ real do Bco BTG Pactual",
+            cnpj_bpac11 == "30.306.294/0001-45", f"(cnpj={cnpj_bpac11})")
+    _checar("18c CMIN3 resolve pro CNPJ real da CSN Mineracao",
+            cnpj_cmin3 == "08.902.291/0001-15", f"(cnpj={cnpj_cmin3})")
+    _checar("18d PETR4 (ja' presente no FCA sem precisar de correcao) continua funcionando",
+            cnpj_petr4 == "33.000.167/0001-01", f"(cnpj={cnpj_petr4})")
+
+
 if __name__ == "__main__":
     for nome, fn in list(globals().items()):
         if nome.startswith("test_") and callable(fn):
