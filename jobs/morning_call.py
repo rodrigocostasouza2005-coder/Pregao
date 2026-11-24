@@ -955,7 +955,7 @@ def executar(agora=None):
         motivo = (f"Disparo agendado do Morning Call chegou às {agora.strftime('%H:%M')} "
                   f"(depois das {_CORTE_ENVIO_AGENDADO.strftime('%H:%M')}) - edição do dia não enviada. "
                   "O agendador do GitHub atrasou; ver MANUAL.md, 'Disparo externo dos agendamentos'.")
-        print(f"::error::{motivo}")
+        print(f"::warning::{motivo}")
         registrar_tentativa(
             "MORNING CALL",
             "Resumo executivo + Brasil/Exterior + Agenda (CVM) + Empresas e Setores "
@@ -965,7 +965,21 @@ def executar(agora=None):
             erro=motivo,
             categoria="Morning Call",
         )
-        return 1
+        # Pulo DELIBERADO (não é falha do pipeline - nenhum envio foi
+        # tentado), continua registrado como não-enviado/atrasado no
+        # painel SAÚDE DOS DADOS/AGENDAMENTOS via registrar_tentativa
+        # acima (execucao_ok=False, lido por data/agendamentos_saude.py).
+        # Mas retorna 0 (não 1) pro job do GitHub Actions: mesma política
+        # já aplicada mais abaixo ("Job do GitHub Actions só fica vermelho
+        # em perda TOTAL") - um disparo agendado que chegou tarde demais
+        # e corretamente decidiu não mandar uma edição velha não é um
+        # "o pipeline quebrou" que precise de alerta vermelho/e-mail de
+        # falha do GitHub a cada uma das reservas atrasadas (achado real,
+        # missão Fase 1 infra 2026-11-23: 8 reservas entregues em lote
+        # pelo GitHub às 18h-19h BRT geraram 8 "failure" consecutivos no
+        # histórico do Actions, todos pela mesma causa já diagnosticada
+        # em MANUAL.md - não 8 problemas novos).
+        return 0
     cliente = obter_cliente()
 
     # Destinatarios dinamicos: todo usuario autenticado com a preferencia
