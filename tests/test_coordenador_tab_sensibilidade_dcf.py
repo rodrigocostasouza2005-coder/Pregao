@@ -77,7 +77,7 @@ def test_render_consolidado_com_dcf_disponivel_nao_quebra_e_mostra_sensibilidade
     script = f'''
 import ui.coordenador_tab as coord
 
-coord._render_consolidado({consolidado!r})
+coord.render_consolidado({consolidado!r})
 '''
     at = AppTest.from_string(script, default_timeout=30).run()
     assert not at.exception

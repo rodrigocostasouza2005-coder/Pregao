@@ -106,21 +106,24 @@ def _badge_ticker(ticker: str, tema: dict) -> str:
 def _ir_para_equity(ticker: str, prefs: dict):
     """Callback (on_click) do botao de ticker do ranking - reaproveita o
     MESMO mecanismo de navegacao da busca global (app.py:_ir_com_ticker,
-    ui/navegacao.py:ir_para): abre ANALISES > Empresas (antiga EQUITY)
-    com esse ticker pre-selecionado.
+    ui/navegacao.py:ir_para): abre ANALISES > Visão 360 (EMPRESA360, ver
+    ui/navegacao.py:ROTA_LEGADO) com esse ticker pre-selecionado - mesmo
+    destino do botao "↗" da busca global (missao visao-360-empresa-
+    20261124, pedido do Rodrigo).
     Precisa ser on_click (nao escrita direta no corpo do script): o
     segmented_control da navegacao (key="secao_ativa") ja foi instanciado
     mais acima no MESMO run (MERCADO/VISAO GERAL renderizam depois do nav
     no app.py) - escrever na chave de um widget depois dele ja ter sido
     instanciado neste run derruba com StreamlitWidgetAlreadyInstantiatedError;
     um callback de on_click roda ANTES do proximo rerun começar, entao o
-    valor novo já está lá quando o nav for instanciado de novo."""
-    if "EQUITY" not in (prefs.get("abas_visiveis") or []):
-        navegacao.avisar("ANÁLISES › Empresas está oculta nas suas preferências (MAIS › Configurações).")
-        return
+    valor novo já está lá quando o nav for instanciado de novo.
+    Sem gate de "abas_visiveis" aqui (antes checava EQUITY): a subaba
+    "panorama" nao tem `legado` (ui/navegacao.py:Subaba) - e' conteudo
+    novo, sempre visivel, mesmo padrao de "casas"/"radar-x" em RESEARCH -
+    entao nao ha preferencia que a esconda."""
     if ticker not in prefs["watchlist"]:
         prefs["watchlist"].append(ticker)
-    navegacao.ir_para_legado("EQUITY", ticker)
+    navegacao.ir_para_legado("EMPRESA360", ticker)
 
 
 def _tema_atual(prefs):

@@ -893,7 +893,7 @@ def _fcf_para_dcf(fundamentos: dict | None, historico: dict | None) -> tuple:
 
     BUG REAL CORRIGIDO (2026-11-23, auditoria Fase 3 Valuation): até
     esta correção, este helper devolvia o FCF YTD da CVM como fallback e
-    ele era usado DIRETO como `fcf_base` (ver _controle_dcf_inline) -
+    ele era usado DIRETO como `fcf_base` (ver controle_dcf_inline) -
     tratado como se já fosse anual, sem nenhuma anualização. Como o DCF
     escala linearmente com `fcf_base`, isso subavaliava o preço-alvo
     sempre que só o YTD estava disponível (medido: FCF anual real
@@ -1358,7 +1358,7 @@ _ROTULOS_CAMPOS_DCF_INLINE = {
 }
 
 
-def _controle_dcf_inline(ticker: str, fundamentos: dict | None, historico: dict | None):
+def controle_dcf_inline(ticker: str, fundamentos: dict | None, historico: dict | None):
     """Controle INLINE (efeito imediato, no próprio painel - nunca um
     formulário separado) pra calcular o DCF só quando o usuário informar
     as duas premissas - o PREGÃO nunca assume taxa de crescimento nem
@@ -1554,7 +1554,7 @@ def render_conclusao_investimento(ticker: str, prefs: dict, usuario: dict):
                     unsafe_allow_html=True,
                 )
             if bloco["pergunta"] == "Valuation":
-                _controle_dcf_inline(ticker, analise.get("fundamentos"), analise.get("fundamentos_historicos"))
+                controle_dcf_inline(ticker, analise.get("fundamentos"), analise.get("fundamentos_historicos"))
         if tese:
             st.caption(
                 f"Você já registrou uma Tese própria para {ticker} em {str(tese['registrado_em'])[:10]} "

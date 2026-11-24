@@ -457,7 +457,7 @@ def test_render_consolidado_nao_renderiza_mais_perfil_da_empresa_extraido_para_a
          patch.object(tab, "_render_sintese_final"), \
          patch.object(tab, "obter_perfil_empresa") as mock_obter, \
          patch.object(tab.st, "markdown"):
-        tab._render_consolidado(_consolidado_minimo(ticker="PETR4", ticker_pareceres="VALE3"))
+        tab.render_consolidado(_consolidado_minimo(ticker="PETR4", ticker_pareceres="VALE3"))
     assert not mock_obter.called
 
 

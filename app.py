@@ -27,7 +27,7 @@ from data.user_prefs import (
 )
 from ui import (
     analises_tab, busca, design_system, graficos, macro_tab, morning_call_tab, navegacao, paineis,
-    radar_tab, secoes, setores_tab,
+    radar_tab, secoes, setores_tab, visao_360_tab,
 )
 from ui import coordenador_tab
 from ui.carteira_recomendada_tab import render_historico as _render_carteira_recomendada_historico
@@ -404,8 +404,8 @@ with st.container(key="header_fixo"):
             st.markdown('<div class="pregao-ctrlk">CTRL K</div>', unsafe_allow_html=True)
         ja_na_watchlist = bool(ticker_busca_global) and ticker_busca_global in prefs["watchlist"]
         with col_eq:
-            if st.button("↗", key="busca_global_eq", width="stretch", disabled=not ticker_busca_global, help="Abrir em ANÁLISES › Empresas"):
-                _ir_com_ticker("EQUITY", ticker_busca_global, None)
+            if st.button("↗", key="busca_global_eq", width="stretch", disabled=not ticker_busca_global, help="Abrir em ANÁLISES › Visão 360"):
+                _ir_com_ticker("EMPRESA360", ticker_busca_global, None)
         with col_news:
             if st.button("▣", key="busca_global_news", width="stretch", disabled=not ticker_busca_global, help="Abrir em NOTÍCIAS › Empresas"):
                 _ir_com_ticker("NEWS", ticker_busca_global, "news_pill_ticker")
@@ -441,14 +441,17 @@ with st.container(key="header_fixo"):
     # link direto por ticker (tabelas HTML densas sem widget real por
     # linha, achado P1 da auditoria 360 - docs/auditoria-redesign-360.md
     # secao 4, ex: ui/radar_tab.py): ?ticker=X na URL abre ANALISES >
-    # Empresas com esse papel, mesma validacao/efeito de _ir_com_ticker
-    # ja usado pela busca global acima. Consumido e removido da URL no
-    # MESMO run - sem isso, qualquer rerun seguinte (clicar em outra
-    # coisa) reabriria o mesmo ticker de novo.
+    # Visão 360 (EMPRESA360, missao visao-360-empresa-20261124 - antes
+    # abria ANALISES > Empresas/EQUITY, migrado a pedido do Rodrigo pra
+    # usar o mesmo destino do botao "↗" da busca global) com esse papel,
+    # mesma validacao/efeito de _ir_com_ticker ja usado pela busca global
+    # acima. Consumido e removido da URL no MESMO run - sem isso, qualquer
+    # rerun seguinte (clicar em outra coisa) reabriria o mesmo ticker de
+    # novo.
     _ticker_url = navegacao.ticker_da_url(st.query_params)
     if _ticker_url:
         del st.query_params["ticker"]
-        _ir_com_ticker("EQUITY", _ticker_url, None)
+        _ir_com_ticker("EMPRESA360", _ticker_url, None)
 
     _ticker_tape()
 
@@ -755,6 +758,33 @@ if rota == ("carteira-recomendada", "historico"):
 if rota == ("mais", "watchlist"):
     secoes.render_watchlist(prefs)
 
+
+# --- ANÁLISES › Visão 360 (missão visao-360-empresa-20261124): 1 tela só
+# por ticker - contexto do negócio, preço atual, valuation/preço-alvo e o
+# que o Comitê acha, hoje espalhado em Empresas/Fundamentos/Perfil da
+# Empresa/VALUATION/COMITÊ. Mesmo seletor "ticker_selecionado" das demais
+# subabas de ANÁLISES abaixo (ver docstring do bloco "perfil" mais adiante
+# - os blocos nunca executam no mesmo rerun, reusar a chave só faz o
+# ticker escolhido persistir ao trocar de subaba dentro de ANÁLISES, de
+# propósito). Composição pura (ui/visao_360_tab.py) - zero cálculo novo
+# aqui. ------------------------------------------------------------------
+if rota == ("analises", "panorama"):
+    with st.container():
+        ticker_externo = st.session_state.get(navegacao.KEY_TICKER_EXTERNO)
+        opcoes_ticker = list(prefs["watchlist"])
+        if ticker_externo and ticker_externo not in opcoes_ticker:
+            opcoes_ticker.append(ticker_externo)
+        if not opcoes_ticker:
+            st.info("Adicione um ticker na barra lateral para começar.")
+        else:
+            padrao_ticker, mem_ticker = _escolha_estavel("ticker_selecionado", opcoes_ticker, opcoes_ticker[0])
+            sel = st.segmented_control(
+                "Ticker", opcoes_ticker, default=padrao_ticker,
+                label_visibility="collapsed", key="ticker_selecionado",
+            )
+            ticker_selecionado = sel or padrao_ticker
+            st.session_state[mem_ticker] = ticker_selecionado
+            visao_360_tab.render_visao_360(ticker_selecionado, prefs)
 
 # --- ANÁLISES › Empresas (antiga aba EQUITY) ----------------------------------
 if rota == ("analises", "empresas"):
