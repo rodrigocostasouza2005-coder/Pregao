@@ -43,3 +43,22 @@ create index if not exists idx_ia_hibrida_execucoes_sucesso on ia_hibrida_execuc
 -- RLS ativado e SEM policies: mesmo padrao de todas as outras tabelas do
 -- projeto (so' a service role key do backend Python le/escreve).
 alter table ia_hibrida_execucoes enable row level security;
+
+-- ===========================================================================
+-- CONFIRMADO AUSENTE EM PRODUCAO (missao "gap real de infraestrutura",
+-- 2026-11-24) - select("*") direto no Supabase REAL devolveu
+-- PGRST205 "Could not find the table 'public.ia_hibrida_execucoes' in the
+-- schema cache". A tabela nunca foi criada desde que esta proposta foi
+-- escrita (2026-11-13) - toda chamada de data/ia_hibrida_telemetria.py
+-- degrada honestamente (print + return False/None, nunca exececao) desde
+-- entao, sem nenhum registro gravado.
+--
+-- ROLLBACK (reverte esta migration, se aplicada - NAO EXECUTAR sem
+-- necessidade; preserve um dump/export antes, mesmo sendo tabela nova
+-- sem historico anterior a perder):
+--
+-- drop table if exists ia_hibrida_execucoes;
+--
+-- (os indices e a policy de RLS sao removidos automaticamente pelo DROP
+-- TABLE - nao precisam de DROP INDEX separado)
+-- ===========================================================================

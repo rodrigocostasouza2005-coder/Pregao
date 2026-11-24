@@ -58,6 +58,30 @@ create index if not exists idx_research_hist_casa_ticker
 
 alter table research_recomendacoes_historico enable row level security;
 
+-- ===========================================================================
+-- CONFIRMADO AUSENTE EM PRODUCAO (missao "gap real de infraestrutura",
+-- 2026-11-24) - select("*") direto no Supabase REAL devolveu PGRST205
+-- "Could not find the table 'public.research_recomendacoes_historico' in
+-- the schema cache". research_itens (incluindo as colunas preco_alvo/
+-- recomendacao/publicado_em acima) JA EXISTE em producao - confirmado por
+-- select direto - so' esta tabela especifica (research_recomendacoes_
+-- historico) nunca foi criada desde que esta proposta foi escrita
+-- (2026-10-01). Todo o codigo que depende dela (data/research/historico.py)
+-- degrada honestamente (None/[] + print, nunca excecao) desde entao - Research
+-- Radar/"O QUE MUDOU" ficam permanentemente vazios, nao por falta de dado
+-- real, mas porque a tabela de historico nunca existiu pra guardar nada.
+--
+-- ROLLBACK (reverte so' esta tabela, se aplicada - NAO EXECUTAR sem
+-- necessidade; preserve um dump/export antes, mesmo sendo tabela nova sem
+-- historico anterior a perder; NUNCA faz drop de research_itens, que ja
+-- esta' em producao com dado real):
+--
+-- drop table if exists research_recomendacoes_historico;
+--
+-- (o indice e a policy de RLS sao removidos automaticamente pelo DROP
+-- TABLE - nao precisam de DROP INDEX separado)
+-- ===========================================================================
+
 -- ============================================================
 -- FASE 3 — feed editorial NEWS+RESEARCH (2026-10-08) — idempotente.
 -- ============================================================
