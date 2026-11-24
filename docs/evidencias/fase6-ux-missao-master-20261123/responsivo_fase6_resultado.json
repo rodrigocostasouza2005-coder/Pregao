@@ -1,0 +1,128 @@
+[
+  {
+    "rota": "mercado_visaogeral",
+    "bp": "1440",
+    "scrollW": 1440,
+    "clientW": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "macro_indicadores",
+    "bp": "1440",
+    "scrollW": 1440,
+    "clientW": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "macro_juros",
+    "bp": "1440",
+    "scrollW": 1440,
+    "clientW": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "macro_cambio",
+    "bp": "1440",
+    "scrollW": 1440,
+    "clientW": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "calendario_corporativo",
+    "bp": "1440",
+    "scrollW": 1440,
+    "clientW": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "calendario_economico",
+    "bp": "1440",
+    "scrollW": 1440,
+    "clientW": 1440,
+    "overflow": false
+  },
+  {
+    "rota": "mercado_visaogeral",
+    "bp": "1024",
+    "scrollW": 1024,
+    "clientW": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "macro_indicadores",
+    "bp": "1024",
+    "scrollW": 1024,
+    "clientW": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "macro_juros",
+    "bp": "1024",
+    "scrollW": 1024,
+    "clientW": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "macro_cambio",
+    "bp": "1024",
+    "scrollW": 1024,
+    "clientW": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "calendario_corporativo",
+    "bp": "1024",
+    "scrollW": 1024,
+    "clientW": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "calendario_economico",
+    "bp": "1024",
+    "scrollW": 1024,
+    "clientW": 1024,
+    "overflow": false
+  },
+  {
+    "rota": "mercado_visaogeral",
+    "bp": "390",
+    "scrollW": 390,
+    "clientW": 390,
+    "overflow": false
+  },
+  {
+    "rota": "macro_indicadores",
+    "bp": "390",
+    "scrollW": 390,
+    "clientW": 390,
+    "overflow": false
+  },
+  {
+    "rota": "macro_juros",
+    "bp": "390",
+    "scrollW": 390,
+    "clientW": 390,
+    "overflow": false
+  },
+  {
+    "rota": "macro_cambio",
+    "bp": "390",
+    "scrollW": 390,
+    "clientW": 390,
+    "overflow": false
+  },
+  {
+    "rota": "calendario_corporativo",
+    "bp": "390",
+    "scrollW": 390,
+    "clientW": 390,
+    "overflow": false
+  },
+  {
+    "rota": "calendario_economico",
+    "bp": "390",
+    "scrollW": 390,
+    "clientW": 390,
+    "overflow": false
+  }
+]

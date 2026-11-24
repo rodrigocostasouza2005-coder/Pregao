@@ -1,0 +1,104 @@
+WATCHLIST
+
+Buscar ativo
+
+ADICIONAR
+
+keyboard_arrow_right
+
+Ticker não está na lista? digite manualmente
+
+PETR4
+-3,21%
+Petrobras
+
+x
+
+VALE3
+-0,12%
+Vale
+
+x
+
+ITUB4
+-0,85%
+Itaú Unibanco
+
+x
+
+Sem conexão com o Supabase — preferências e watchlist valem só para esta sessão.
+
+PREGÃO
+
+Busca global
+
+CTRL K
+
+↗
+
+▣
+
++
+
+qa-fase6-local@pregao.test
+
+SAIR
+
+IBOVESPA 164.796,05 (-0,95%)  ·  DOLAR 5,95 (+0,24%)  ·  EURO 6,47 (-0,87%)  ·  PETR4 41,30 (-3,21%)  ·  VALE3 58,41 (-0,12%)  ·  ITUB4 39,73 (-0,85%)
+IBOVESPA 164.796,05 (-0,95%)  ·  DOLAR 5,95 (+0,24%)  ·  EURO 6,47 (-0,87%)  ·  PETR4 41,30 (-3,21%)  ·  VALE3 58,41 (-0,12%)  ·  ITUB4 39,73 (-0,85%)
+23/11/2026 22:04:34 (Brasília)
+● PREGÃO FECHADO
+cotações com atraso de ~15 min (fonte: Yahoo Finance)
+bar_chart
+
+MERCADO
+
+feed
+
+NOTÍCIAS
+
+radar
+
+RADAR
+
+menu_book
+
+RESEARCH
+
+query_stats
+
+ANÁLISES
+
+calculate
+
+VALUATION
+
+hub
+
+COMITÊ
+
+public
+
+MACRO
+
+calendar_month
+
+CALENDÁRIO
+
+pie_chart
+
+CARTEIRA RECOMENDADA
+
+more_horiz
+
+MAIS
+
+Visão Geral
+
+Painel
+
+Mercados Globais
+
+LEITURA DO PREGÃO
+
+buscando notícias…

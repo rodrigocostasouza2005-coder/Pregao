@@ -82,9 +82,27 @@ _CSS_CALENDARIO = """
    uma grade/planilha de verdade - nao e' um "card"), padding generoso,
    altura minima pra nunca parecer espremida mesmo em dias sem evento */
 [class*="st-key-cal_cel_"] {
-    border: 1px solid var(--borda); padding: 0.4rem 0.45rem 0.55rem 0.45rem;
+    border: 1px solid var(--borda); padding: 0.4rem 0.45rem 1.1rem 0.45rem;
     margin-bottom: 0.45rem; min-height: 4.6rem;
 }
+/* BUG REAL confirmado (achado MENOR da auditoria 2026-11-17, revalidado
+   com harness Playwright real na Fase 6, 2026-11-23): o rotulo de status
+   (ultima linha de cada evento, ex: "CONFIRMADO"/"ESTIMADO"/"PRAZO CVM")
+   ficava com a borda inferior da celula cruzando o meio do texto - nao
+   so' "encostando". Medido via getBoundingClientRect: o wrapper interno
+   que o Streamlit gera pra cada st.markdown (classe st-emotion-cache-*,
+   nao-estavel entre builds, por isso nao mirada diretamente) fica ~16-
+   21px mais baixo que a altura real do conteudo (confirmado em varios
+   `st.markdown` com 3+ divs empilhados dentro da mesma celula flex) -
+   nem `height/min-height/flex-shrink:none !important` (inclusive via
+   JS, bypassando CSS por completo) no proprio wrapper mudam esse
+   numero, entao NAO e' uma altura controlavel por CSS no elemento
+   interno. O padding-bottom AQUI (na celula externa, que responde
+   normalmente a CSS) e' a unica alavanca que funciona de verdade -
+   valor validado empiricamente (harness com 1 e com 4 eventos/dia,
+   1440px) deixa ~2-4px de folga real, sem crescer a celula a toa nos
+   dias sem evento (min-height continua a mesma). Equivalente mobile:
+   ver @media max-width:640px abaixo. */
 /* numero do dia: bem maior e mais legivel que o resto da celula */
 .st-key-cal_grade_area button { padding: 0.1rem 0 !important; min-height: 26px !important; }
 .st-key-cal_grade_area button p { font-size: 1.0rem !important; font-weight: 600 !important; }
@@ -129,7 +147,11 @@ _CSS_CALENDARIO = """
    verdade pro conteudo. */
 @media (max-width: 640px) {
     [class*="st-key-cal_cel_"] {
-        padding: 0.2rem 0.2rem 0.3rem 0.2rem; min-height: 3.6rem;
+        /* padding-bottom 1.0rem (nao 0.3rem): mesmo achado do bloco
+           desktop acima (rotulo de status cortado pela borda) -
+           revalidado neste breakpoint via harness Playwright real
+           (390px, touch) na Fase 6, 2026-11-23. */
+        padding: 0.2rem 0.2rem 1.15rem 0.2rem; min-height: 3.6rem;
     }
     .st-key-cal_grade_area button p { font-size: 0.82rem !important; white-space: nowrap !important; }
     .cal-cel-evento { margin-top: 0.3rem; padding-top: 0.2rem; }

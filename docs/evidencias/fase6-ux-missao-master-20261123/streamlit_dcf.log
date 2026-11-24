@@ -1,0 +1,21 @@
+
+Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
+
+2026-11-23 21:55:05.589 Uvicorn server started on :::19411
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:19411
+  Network URL: http://192.168.68.105:19411
+  External URL: http://200.175.62.200:19411
+
+2026-11-23 21:55:20.460 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-11-23 21:55:35.335 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.

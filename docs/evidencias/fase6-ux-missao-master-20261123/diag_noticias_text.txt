@@ -1,0 +1,142 @@
+Sem conexão com o Supabase — preferências e watchlist valem só para esta sessão.
+
+PREGÃO
+
+Busca global
+
+CTRL K
+
+↗
+
+▣
+
++
+
+qa-fase6-local@pregao.test
+
+SAIR
+
+IBOVESPA 164.796,05 (-0,95%)  ·  DOLAR 5,95 (+0,24%)  ·  EURO 6,47 (-0,87%)  ·  PETR4 41,30 (-3,21%)  ·  VALE3 58,41 (-0,12%)  ·  ITUB4 39,73 (-0,85%)
+IBOVESPA 164.796,05 (-0,95%)  ·  DOLAR 5,95 (+0,24%)  ·  EURO 6,47 (-0,87%)  ·  PETR4 41,30 (-3,21%)  ·  VALE3 58,41 (-0,12%)  ·  ITUB4 39,73 (-0,85%)
+23/11/2026 22:07:54 (Brasília)
+● PREGÃO FECHADO
+cotações com atraso de ~15 min (fonte: Yahoo Finance)
+bar_chart
+
+MERCADO
+
+feed
+
+NOTÍCIAS
+
+radar
+
+RADAR
+
+menu_book
+
+RESEARCH
+
+query_stats
+
+ANÁLISES
+
+calculate
+
+VALUATION
+
+hub
+
+COMITÊ
+
+public
+
+MACRO
+
+calendar_month
+
+CALENDÁRIO
+
+pie_chart
+
+CARTEIRA RECOMENDADA
+
+more_horiz
+
+MAIS
+
+Destaques
+
+Brasil
+
+Internacional
+
+Empresas
+
+Documentos CVM
+
+Visão por Setor
+
+Catalisadores Setoriais
+
+NOTÍCIAS
+
+Últimas 48h (VER MAIS amplia até 5 dias). O selo é calculado por regras (fonte, nº de veículos, linguagem) — não é verificação factual.
+
+Ticker
+
+TODOS
+
+ITUB4
+
+PETR4
+
+VALE3
+
+Selo
+
+TODOS
+
+PROVÁVEL
+
+NÃO CONFIRMADA
+
+4 de 4 item(ns)
+
+Vale (VALE3): Justiça de Minas Gerais autoriza retomada parcial da Mina de Viga
+
+PROV 95
+· Investidor10 · 23/11 20:26 ·
+VALE3
+· 3F ·
+↗ abrir
+
+Fato relevante Petrobras (PETR4): o plano que mira produção recorde e mais diesel
+
+N.CONF 50
+· Ativovirtual · 23/11 19:33 ·
+PETR4
+· 1F ·
+↗ abrir
+
+ITUB4 · Uma empresa bem-sucedida erra ao confiar demais na própria fórmula: CEO do Itaú revela o que aprendeu sobre liderança
+
+N.CONF 50
+· Seu Dinheiro · 23/11 15:03 ·
+ITUB4
+· 1F ·
+↗ abrir
+
+BBAS3, ITUB4, PETR4 e VALE3: ações podem cair mais ou reagir?
+
+N.CONF 60
+· InfoMoney · 23/11 09:29 ·
+BBAS3
+·
+ITUB4
+·
+PETR4
+· 1F ·
+↗ abrir
+
+VER MAIS
