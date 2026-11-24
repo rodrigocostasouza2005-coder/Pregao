@@ -165,7 +165,7 @@ def test_link_direto_por_ticker_consome_antes_da_nav_instanciar():
     assert pos_ticker_url < pos_render_nav
     bloco = fonte[pos_ticker_url:pos_render_nav]
     assert 'del st.query_params["ticker"]' in bloco
-    assert '_ir_com_ticker("EQUITY"' in bloco
+    assert '_ir_com_ticker("EMPRESA360"' in bloco
 
 
 def test_app_despacha_todas_as_rotas():

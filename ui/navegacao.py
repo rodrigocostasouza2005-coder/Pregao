@@ -321,8 +321,10 @@ def ticker_da_url(query_params) -> str | None:
     densas sem widget real por linha (ex: ui/radar_tab.py - embutir
     st.button por linha reintroduziria o problema de largura que motivou
     essas tabelas serem HTML, ver docs/auditoria-redesign-360.md secao 4).
-    Quem consome isto (app.py) sempre abre em ANALISES > Empresas,
-    independente da aba/sub que a mesma URL também carregar."""
+    Quem consome isto (app.py) sempre abre em ANALISES > Visão 360
+    (EMPRESA360, migrado de Empresas/EQUITY na missao
+    visao-360-empresa-20261124), independente da aba/sub que a mesma
+    URL também carregar."""
     return (query_params.get("ticker") or "").strip().upper() or None
 
 

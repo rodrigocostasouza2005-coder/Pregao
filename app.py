@@ -441,14 +441,17 @@ with st.container(key="header_fixo"):
     # link direto por ticker (tabelas HTML densas sem widget real por
     # linha, achado P1 da auditoria 360 - docs/auditoria-redesign-360.md
     # secao 4, ex: ui/radar_tab.py): ?ticker=X na URL abre ANALISES >
-    # Empresas com esse papel, mesma validacao/efeito de _ir_com_ticker
-    # ja usado pela busca global acima. Consumido e removido da URL no
-    # MESMO run - sem isso, qualquer rerun seguinte (clicar em outra
-    # coisa) reabriria o mesmo ticker de novo.
+    # Visão 360 (EMPRESA360, missao visao-360-empresa-20261124 - antes
+    # abria ANALISES > Empresas/EQUITY, migrado a pedido do Rodrigo pra
+    # usar o mesmo destino do botao "↗" da busca global) com esse papel,
+    # mesma validacao/efeito de _ir_com_ticker ja usado pela busca global
+    # acima. Consumido e removido da URL no MESMO run - sem isso, qualquer
+    # rerun seguinte (clicar em outra coisa) reabriria o mesmo ticker de
+    # novo.
     _ticker_url = navegacao.ticker_da_url(st.query_params)
     if _ticker_url:
         del st.query_params["ticker"]
-        _ir_com_ticker("EQUITY", _ticker_url, None)
+        _ir_com_ticker("EMPRESA360", _ticker_url, None)
 
     _ticker_tape()
 
