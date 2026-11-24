@@ -75,6 +75,31 @@ _URL_IPE = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/IPE/DADOS/ipe_cia_aber
 _TTL_MAPA_TICKER = 24 * 60 * 60  # 24h - cadastro de valores mobiliarios muda raramente
 _TTL_DOCUMENTOS = 6 * 60 * 60    # 6h - fonte atualiza ~1x/dia util, nao ha ganho em checar mais que isso
 
+# Correcoes conhecidas ao mapa ticker->CNPJ do FCA (ver _mapa_ticker_cnpj):
+# pra estas empresas, a propria CIA ABERTA preencheu "Codigo_Negociacao" no
+# Formulario Cadastral da CVM com um codigo legado/placeholder, NAO o
+# ticker real negociado na B3 - confirmado baixando o FCA real (ano 2026)
+# e cruzando CNPJ_Companhia por Nome_Empresarial (24/11/2026):
+#   - CSNA3 (CIA SIDERURGICA NACIONAL): FCA traz "4030" (codigo numerico
+#     legado pre-padronizacao) em vez de "CSNA3" - achado real da auditoria
+#     Fase 2/Comite (23/11/2026): obter_cnpj('CSNA3') retornava None,
+#     quebrando o Earnings Reviewer (data/earnings/reviewer.py) e qualquer
+#     calendario/evento pra esse ticker liquido do Ibovespa.
+#   - BPAC11 (BCO BTG PACTUAL S.A., valor mobiliario "Units"): FCA traz
+#     "000000" (placeholder).
+#   - CMIN3 (CSN MINERACAO S.A.): FCA traz "25585" (codigo numerico legado)
+#     em vez de "CMIN3".
+# Varredura cruzando config.IBOVESPA_SETORES contra o mapa tambem achou
+# JBSS32 e MBRF3 faltando, mas esses sao casos mais complexos (JBS virou
+# JBS N.V., sediada na Holanda, sem Codigo_Negociacao algum no FCA; MBRF3
+# e' o ticker pos-fusao Marfrig+BRF, sem CNPJ legado inequivoco no FCA) -
+# registrados como achado pendente, fora do escopo desta correcao pontual.
+_CORRECOES_TICKER_CNPJ = {
+    "CSNA3": "33.042.730/0001-04",
+    "BPAC11": "30.306.294/0001-45",
+    "CMIN3": "08.902.291/0001-15",
+}
+
 RETENCAO_DIAS = 5  # feed "vivo" (cvm_documentos) - nao guarda historico, ver apagar_documentos_antigos
 
 # Categoria oficial da CVM (coluna 'Categoria' do IPE) -> codigo interno
@@ -190,6 +215,10 @@ def _mapa_ticker_cnpj() -> dict:
             mapa = dict(zip(df["Codigo_Negociacao"].astype(str).str.strip(),
                             df["CNPJ_Companhia"].astype(str).str.strip()))
             mapa = {ticker: cnpj for ticker, cnpj in mapa.items() if ticker and cnpj}
+            # Aplicadas DEPOIS do FCA (nao antes): mesmo que a CVM corrija o
+            # Codigo_Negociacao dessas empresas num dump futuro, o valor
+            # correto e' o mesmo CNPJ - sobrescrever nunca piora o mapa.
+            mapa.update(_CORRECOES_TICKER_CNPJ)
             if not mapa:
                 erros_anos.append(f"{tentativa}: mapa ticker-CNPJ vazio")
                 continue
