@@ -532,6 +532,35 @@ def test_executar_com_supabase_indisponivel_nao_mascara_falha_como_sucesso(monke
     assert chamadas_registro[0][1]["erro"]
 
 
+def test_executar_disparo_agendado_tarde_demais_nao_falha_o_job_do_actions(monkeypatch):
+    """Achado real (missão Fase 1 infra, 2026-11-23): o GitHub atrasou as
+    8 reservas do Morning Call por ~12h e entregou todas de uma vez entre
+    18h-19h BRT (depois do corte das 17h) - o pipeline detecta e pula
+    corretamente (não manda uma edição velha), mas até aqui devolvia
+    código 1, derrubando o job do GitHub Actions como "failure" nas 8
+    execuções seguidas (mesma causa, não 8 problemas novos). Continua
+    registrado como não-enviado/atrasado no painel (registrar_tentativa
+    com execucao_ok=False, lido por data/agendamentos_saude.py), mas não
+    deve mais derrubar o job: mesma política já aplicada embaixo em
+    executar() pra falha parcial ("só fica vermelho em perda TOTAL")."""
+    chamadas_envio = []
+    chamadas_registro = []
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "schedule")
+    monkeypatch.setattr(mc, "diagnosticar_persistencia", lambda: {"ok": True, "etapa": "OK", "detalhe": ""})
+    monkeypatch.setattr(mc, "obter_cliente", lambda: (_ for _ in ()).throw(AssertionError("não deveria nem consultar Supabase - deve pular antes")))
+    monkeypatch.setattr(mc, "montar_morning_call", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("não deveria montar texto - disparo tarde demais")))
+    monkeypatch.setattr(mc, "enviar_email", lambda *a, **k: chamadas_envio.append((a, k)) or {"ok": True, "erro": None})
+    monkeypatch.setattr(mc, "registrar_tentativa", lambda *a, **k: chamadas_registro.append((a, k)))
+
+    agora_tarde = datetime(2026, 11, 23, 19, 7, tzinfo=TZ_SP)
+    codigo = mc.executar(agora=agora_tarde)
+
+    assert codigo == 0
+    assert chamadas_envio == []
+    assert chamadas_registro[0][1]["execucao_ok"] is False
+    assert "atrasou" in chamadas_registro[0][1]["erro"]
+
+
 def test_executar_pula_envio_quando_todos_ja_enviados_hoje_regressao_retry_duplicado(monkeypatch):
     """Regressão: um retry manual (ou "Re-run failed jobs" no GitHub
     Actions) rodando executar() de novo no MESMO dia depois de um

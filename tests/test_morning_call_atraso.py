@@ -60,9 +60,18 @@ def _executar_com(monkeypatch, agora, evento):
 
 
 def test_disparo_agendado_depois_do_fechamento_nao_envia(monkeypatch):
+    """Não envia (edição ficaria velha), e fica registrado como FALHA real
+    no painel SAÚDE DOS DADOS/AGENDAMENTOS (execucao_ok=False, lido por
+    data/agendamentos_saude.py) - mas não derruba o job do GitHub Actions
+    (código 0, não 1): achado real da missão Fase 1 infra 2026-11-23, 8
+    reservas do Morning Call entregues em lote pelo GitHub às 18h-19h BRT
+    (mesma causa já diagnosticada em MANUAL.md, não 8 problemas novos)
+    geravam 8 "failure" seguidos no histórico do Actions só por isso -
+    mesma política já usada em executar() pra falha parcial de envio
+    ("job só fica vermelho em perda TOTAL")."""
     codigo, registros, envios = _executar_com(monkeypatch, datetime(2026, 10, 22, 21, 32, tzinfo=TZ_SP), "schedule")
     assert envios == []
-    assert codigo == 1
+    assert codigo == 0
     assert registros[0]["execucao_ok"] is False
     assert "21:32" in registros[0]["erro"]
 
