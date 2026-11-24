@@ -153,3 +153,85 @@ def test_historico_com_linhas_monta_tabela_sem_dict_cru_json():
     html, _, _ = _capturar(tab.render_historico, [linha])
     assert "<table" in html
     assert "PETR4" in html and "peso_pct" in html and "Score subiu." in html
+
+
+# ---------------------------------------------------------------------
+# ESTADO DA TESE (missão "Radar inteligente e acompanhamento de teses",
+# 2026-11-23) - seção dentro do DETALHE POR ATIVO, sobre
+# data/carteira_recomendada.py:estado_tese() (mockado aqui - teste de UI
+# não cobre a lógica de classificação, só a apresentação).
+# ---------------------------------------------------------------------
+
+def _estado_tese_fake(classificacao="PRESERVADA", motivo="Nenhuma mudança registrada.",
+                       retorno_acumulado_pct=12.5, benchmark_retorno=6.0, retorno_relativo=6.5,
+                       eventos=None, avisos=None, tese_original="Tese original.", tese_atual="Tese original."):
+    return {
+        "ticker": "PETR4", "em_carteira": True, "motivo_entrada": "Sinal COMPRA do Comitê.",
+        "data_entrada": "2026-11-13T10:00:00+00:00", "preco_entrada": 36.0,
+        "tese_original": tese_original, "tese_atual": tese_atual,
+        "preco_alvo_atual": 44.0, "riscos_atuais": ["Câmbio"], "criterio_saida_atual": "Rebaixamento do sinal.",
+        "sinal_atual": "COMPRA", "confianca_atual": "ALTA", "score_atual": 7,
+        "eventos": eventos if eventos is not None else [],
+        "preco_atual": 40.0, "retorno_acumulado_pct": retorno_acumulado_pct,
+        "benchmark": {"indice": "IBOVESPA", "retorno_pct": benchmark_retorno, "preco_entrada": 130000.0,
+                      "preco_atual": 137800.0} if benchmark_retorno is not None else None,
+        "retorno_relativo_pct": retorno_relativo,
+        "estado": {"classificacao": classificacao, "motivo": motivo, "baseado_em": []},
+        "avisos": avisos if avisos is not None else [],
+    }
+
+
+def test_estado_tese_none_mostra_mensagem_sem_dado_suficiente():
+    with patch("data.carteira_recomendada.obter_ultima_carteira_persistida", return_value=[]), \
+         patch("data.carteira_recomendada.estado_tese", return_value=None):
+        html, _, _ = _capturar(tab.render_visao_geral, _carteira(), PREFS)
+    assert "sem dado suficiente" in html.lower()
+
+
+def test_estado_tese_preservada_mostra_badge_e_retorno_relativo():
+    with patch("data.carteira_recomendada.obter_ultima_carteira_persistida", return_value=[]), \
+         patch("data.carteira_recomendada.estado_tese", return_value=_estado_tese_fake()):
+        html, _, _ = _capturar(tab.render_visao_geral, _carteira(), PREFS)
+    assert "cart-tese-preservada" in html
+    assert "TESE PRESERVADA" in html
+    assert "+12,5%" in html  # retorno acumulado
+    assert "+6,5%" in html  # retorno relativo
+
+
+def test_estado_tese_invalidada_usa_classe_propria():
+    info = _estado_tese_fake(classificacao="INVALIDADA", motivo="Comitê rebaixou o sinal para VENDA.")
+    with patch("data.carteira_recomendada.obter_ultima_carteira_persistida", return_value=[]), \
+         patch("data.carteira_recomendada.estado_tese", return_value=info):
+        html, _, _ = _capturar(tab.render_visao_geral, _carteira(), PREFS)
+    assert "cart-tese-invalidada" in html
+    assert "Comitê rebaixou o sinal para VENDA." in html
+
+
+def test_estado_tese_mostra_diferenca_entre_tese_original_e_atual():
+    info = _estado_tese_fake(tese_original="Tese original.", tese_atual="Tese revista pelo Comitê.")
+    with patch("data.carteira_recomendada.obter_ultima_carteira_persistida", return_value=[]), \
+         patch("data.carteira_recomendada.estado_tese", return_value=info):
+        html, _, _ = _capturar(tab.render_visao_geral, _carteira(), PREFS)
+    assert "Tese original." in html and "Tese revista pelo Comitê." in html
+
+
+def test_estado_tese_avisos_aparecem_no_html():
+    info = _estado_tese_fake(avisos=["Benchmark (Ibovespa) indisponível para o período desde a entrada."])
+    with patch("data.carteira_recomendada.obter_ultima_carteira_persistida", return_value=[]), \
+         patch("data.carteira_recomendada.estado_tese", return_value=info):
+        html, _, _ = _capturar(tab.render_visao_geral, _carteira(), PREFS)
+    assert "Benchmark (Ibovespa) indisponível" in html
+
+
+def test_estado_tese_busca_itens_atuais_uma_unica_vez_para_varios_ativos():
+    """Achado de performance: render_visao_geral busca
+    obter_ultima_carteira_persistida() 1x fora do loop e repassa pra cada
+    chamada de estado_tese - nunca 1x por ativo."""
+    itens = [_item(ticker="PETR4"), _item(ticker="VALE3"), _item(ticker="ITUB4")]
+    with patch("data.carteira_recomendada.obter_ultima_carteira_persistida", return_value=[]) as obter_itens, \
+         patch("data.carteira_recomendada.estado_tese", return_value=None) as estado_mock:
+        _capturar(tab.render_visao_geral, _carteira(itens=itens), PREFS)
+    obter_itens.assert_called_once()
+    assert estado_mock.call_count == 3
+    for chamada in estado_mock.call_args_list:
+        assert chamada.kwargs.get("itens_atuais") == []

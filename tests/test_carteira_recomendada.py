@@ -705,3 +705,279 @@ def test_contexto_macro_indisponivel_nunca_derruba_a_carteira():
         )
     assert carteira["itens"]  # carteira montada normalmente mesmo com macro indisponível
     assert carteira["resumo"]["cenario_macro"] == {}
+
+
+# ---------------------------------------------------------------------
+# estado_tese e auxiliares (missão "Radar inteligente e acompanhamento de
+# teses", 2026-11-23) - 100% sobre dado já persistido, zero chamada de
+# IA/Comitê nova; sem rede/Supabase real (funções de leitura
+# injetadas/mockadas, mesmo padrão do resto do arquivo).
+# ---------------------------------------------------------------------
+
+def _evento(campo, valor_anterior, valor_novo, registrado_em, ticker="PETR4", motivo="m"):
+    return {"ticker": ticker, "campo": campo, "valor_anterior": valor_anterior,
+            "valor_novo": valor_novo, "motivo": motivo, "registrado_em": registrado_em}
+
+
+def _evento_entrada_fake(ticker="PETR4", registrado_em="2026-11-13T10:00:00+00:00",
+                          preco_referencia=100.0, tese="Tese original.", sinal_comite="COMPRA",
+                          confianca_comite="ALTA"):
+    return _evento(
+        "entrada_na_carteira", None,
+        {"peso_pct": 10.0, "tese": tese, "preco_referencia": preco_referencia,
+         "preco_alvo": 120.0, "sinal_comite": sinal_comite, "confianca_comite": confianca_comite,
+         "score_comite": 6},
+        registrado_em, ticker=ticker, motivo="Ativo incluído na carteira recomendada nesta rodada.",
+    )
+
+
+class TestClassificarEstado:
+    def test_historico_none_e_dados_insuficientes(self):
+        estado = cr._classificar_estado({"ticker": "PETR4"}, None)
+        assert estado["classificacao"] == cr.TESE_DADOS_INSUFICIENTES
+
+    def test_sem_item_e_sem_qualquer_evento_e_dados_insuficientes(self):
+        estado = cr._classificar_estado(None, [])
+        assert estado["classificacao"] == cr.TESE_DADOS_INSUFICIENTES
+
+    def test_recem_entrada_sem_mudanca_e_preservada(self):
+        historico = [_evento_entrada_fake()]
+        estado = cr._classificar_estado({"ticker": "PETR4"}, historico)
+        assert estado["classificacao"] == cr.TESE_PRESERVADA
+
+    def test_sinal_rebaixado_para_venda_e_invalidada(self):
+        historico = [
+            _evento_entrada_fake(),
+            _evento("sinal_comite", "COMPRA", "VENDA", "2026-11-18T10:00:00+00:00"),
+        ]
+        estado = cr._classificar_estado({"ticker": "PETR4"}, historico)
+        assert estado["classificacao"] == cr.TESE_INVALIDADA
+
+    def test_confianca_caiu_e_enfraquecida(self):
+        historico = [
+            _evento_entrada_fake(),
+            _evento("confianca_comite", "ALTA", "BAIXA", "2026-11-18T10:00:00+00:00"),
+        ]
+        estado = cr._classificar_estado({"ticker": "PETR4"}, historico)
+        assert estado["classificacao"] == cr.TESE_ENFRAQUECIDA
+
+    def test_confianca_subiu_e_fortalecida(self):
+        historico = [
+            _evento_entrada_fake(confianca_comite="MEDIA"),
+            _evento("confianca_comite", "MEDIA", "ALTA", "2026-11-18T10:00:00+00:00"),
+        ]
+        estado = cr._classificar_estado({"ticker": "PETR4"}, historico)
+        assert estado["classificacao"] == cr.TESE_FORTALECIDA
+
+    def test_sinal_tem_prioridade_sobre_confianca(self):
+        historico = [
+            _evento_entrada_fake(),
+            _evento("confianca_comite", "ALTA", "BAIXA", "2026-11-17T10:00:00+00:00"),
+            _evento("sinal_comite", "COMPRA", "VENDA", "2026-11-18T10:00:00+00:00"),
+        ]
+        estado = cr._classificar_estado({"ticker": "PETR4"}, historico)
+        assert estado["classificacao"] == cr.TESE_INVALIDADA
+
+    def test_tese_reescrita_sem_mudar_sinal_confianca_e_em_revisao(self):
+        historico = [
+            _evento_entrada_fake(),
+            _evento("tese", "Tese original.", "Tese revista.", "2026-11-18T10:00:00+00:00"),
+        ]
+        estado = cr._classificar_estado({"ticker": "PETR4"}, historico)
+        assert estado["classificacao"] == cr.TESE_EM_REVISAO
+
+    def test_saida_sem_rebaixamento_registrado_e_em_revisao(self):
+        historico = [
+            _evento_entrada_fake(),
+            _evento("saida_da_carteira", {"peso_pct": 10.0}, None, "2026-11-20T10:00:00+00:00"),
+        ]
+        estado = cr._classificar_estado(None, historico)
+        assert estado["classificacao"] == cr.TESE_EM_REVISAO
+
+    def test_saida_apos_rebaixamento_de_sinal_e_invalidada(self):
+        historico = [
+            _evento_entrada_fake(),
+            _evento("sinal_comite", "COMPRA", "VENDA", "2026-11-19T10:00:00+00:00"),
+            _evento("saida_da_carteira", {"peso_pct": 10.0}, None, "2026-11-20T10:00:00+00:00"),
+        ]
+        estado = cr._classificar_estado(None, historico)
+        assert estado["classificacao"] == cr.TESE_INVALIDADA
+
+    def test_item_sem_evento_de_entrada_e_dados_insuficientes(self):
+        """Ativo presente hoje, mas histórico não tem 'entrada_na_carteira'
+        (ex: entrou antes desta missão de histórico existir) - sem
+        baseline, nunca assume PRESERVADA por omissão."""
+        estado = cr._classificar_estado({"ticker": "PETR4"}, [])
+        assert estado["classificacao"] == cr.TESE_DADOS_INSUFICIENTES
+
+
+class TestPrecoEDataEntrada:
+    def test_prioriza_evento_de_entrada_quando_tem_preco(self):
+        historico = [_evento_entrada_fake(preco_referencia=87.5, registrado_em="2026-11-13T10:00:00+00:00")]
+        preco, data = cr._preco_e_data_entrada(historico, [])
+        assert preco == 87.5 and data == "2026-11-13T10:00:00+00:00"
+
+    def test_cai_pro_primeiro_acompanhamento_quando_entrada_sem_preco(self):
+        acompanhamento = [
+            {"ticker": "PETR4", "data_referencia": "2026-11-20", "preco_referencia": 90.0},
+            {"ticker": "PETR4", "data_referencia": "2026-11-13", "preco_referencia": 80.0},
+        ]
+        preco, data = cr._preco_e_data_entrada([], acompanhamento)
+        assert preco == 80.0 and data == "2026-11-13"
+
+    def test_sem_nenhuma_fonte_devolve_none_none(self):
+        assert cr._preco_e_data_entrada([], []) == (None, None)
+
+
+class TestBenchmarkDesde:
+    def test_sem_data_entrada_devolve_none(self):
+        assert cr._benchmark_desde(None) is None
+
+    def test_pregao_proximo_dentro_da_tolerancia_calcula_retorno(self):
+        import pandas as pd
+
+        df = pd.DataFrame({
+            "Data": pd.to_datetime(["2026-11-12", "2026-11-13", "2026-11-23"]),
+            "Close": [130000.0, 131000.0, 140000.0],
+        })
+
+        def _historico_fake(symbol, periodo):
+            assert symbol == cr._BENCHMARK_SYMBOL
+            return df
+
+        resultado = cr._benchmark_desde("2026-11-13T10:00:00+00:00", provedor_historico=_historico_fake)
+        assert resultado is not None
+        assert resultado["indice"] == "IBOVESPA"
+        assert resultado["preco_entrada"] == 131000.0
+        assert resultado["preco_atual"] == 140000.0
+        assert resultado["retorno_pct"] == round((140000.0 - 131000.0) / 131000.0 * 100, 2)
+
+    def test_pregao_mais_proximo_fora_da_tolerancia_devolve_none(self):
+        import pandas as pd
+
+        df = pd.DataFrame({
+            "Data": pd.to_datetime(["2026-09-01", "2026-11-23"]),
+            "Close": [100000.0, 140000.0],
+        })
+        resultado = cr._benchmark_desde("2026-11-13T10:00:00+00:00", provedor_historico=lambda s, p: df)
+        assert resultado is None
+
+    def test_provedor_falha_devolve_none_sem_lancar(self):
+        def _boom(symbol, periodo):
+            raise ConnectionError("sem rede")
+        assert cr._benchmark_desde("2026-11-13T10:00:00+00:00", provedor_historico=_boom) is None
+
+    def test_df_vazio_devolve_none(self):
+        import pandas as pd
+        assert cr._benchmark_desde("2026-11-13T10:00:00+00:00", provedor_historico=lambda s, p: pd.DataFrame()) is None
+
+
+class TestEstadoTese:
+    def test_ticker_nunca_rastreado_devolve_none(self):
+        with patch.object(cr, "listar_historico_alteracoes", return_value=[]), \
+             patch.object(cr, "obter_acompanhamento", return_value=[]), \
+             patch.object(cr, "obter_ultima_carteira_persistida", return_value=[]):
+            assert cr.estado_tese("PETR4") is None
+
+    def test_supabase_indisponivel_nunca_vira_nunca_rastreado(self):
+        """historico/acompanhamento/itens None (Supabase fora do ar) é bem
+        diferente de 'nunca rastreado' - nunca pode degradar pra None."""
+        with patch.object(cr, "listar_historico_alteracoes", return_value=None), \
+             patch.object(cr, "obter_acompanhamento", return_value=None), \
+             patch.object(cr, "obter_ultima_carteira_persistida", return_value=None):
+            resultado = cr.estado_tese("PETR4")
+        assert resultado is not None
+        assert resultado["estado"]["classificacao"] == cr.TESE_DADOS_INSUFICIENTES
+        assert resultado["avisos"]
+
+    def test_ativo_na_carteira_com_historico_completo(self):
+        historico = [_evento_entrada_fake(preco_referencia=100.0, registrado_em="2026-11-13T10:00:00+00:00")]
+        acompanhamento = [
+            {"ticker": "PETR4", "data_referencia": "2026-11-13", "preco_referencia": 100.0,
+             "preco_atual": 100.0, "retorno_pct": 0.0},
+            {"ticker": "PETR4", "data_referencia": "2026-11-20", "preco_referencia": 108.0,
+             "preco_atual": 108.0, "retorno_pct": 0.0},
+        ]
+        item_atual = {
+            "ticker": "PETR4", "tese": "Tese atual.", "preco_alvo": 130.0, "riscos": ["Câmbio"],
+            "criterio_saida": "Rebaixamento do sinal.", "sinal_comite": "COMPRA",
+            "confianca_comite": "ALTA", "score_comite": 7, "preco_referencia": 112.0,
+            "justificativa": "Sinal COMPRA do Comitê.",
+        }
+        with patch.object(cr, "listar_historico_alteracoes", return_value=historico), \
+             patch.object(cr, "obter_acompanhamento", return_value=acompanhamento), \
+             patch.object(cr, "obter_ultima_carteira_persistida", return_value=[item_atual]), \
+             patch.object(cr, "_benchmark_desde", return_value=None):
+            resultado = cr.estado_tese("PETR4")
+        assert resultado["em_carteira"] is True
+        assert resultado["data_entrada"] == "2026-11-13T10:00:00+00:00"
+        assert resultado["preco_entrada"] == 100.0
+        assert resultado["preco_atual"] == 112.0
+        assert resultado["tese_original"] == "Tese original."
+        assert resultado["tese_atual"] == "Tese atual."
+        assert resultado["estado"]["classificacao"] == cr.TESE_PRESERVADA
+        assert resultado["retorno_acumulado_pct"] == round((112.0 - 100.0) / 100.0 * 100, 2)
+        assert len(resultado["eventos"]) == 1
+
+    def test_ativo_fora_da_carteira_usa_preco_do_ultimo_acompanhamento(self):
+        historico = [
+            _evento_entrada_fake(preco_referencia=50.0, registrado_em="2026-11-13T10:00:00+00:00"),
+            _evento("saida_da_carteira", {"peso_pct": 10.0}, None, "2026-11-20T10:00:00+00:00"),
+        ]
+        acompanhamento = [{"ticker": "PETR4", "data_referencia": "2026-11-13",
+                            "preco_referencia": 50.0, "preco_atual": 55.0}]
+        with patch.object(cr, "listar_historico_alteracoes", return_value=historico), \
+             patch.object(cr, "obter_acompanhamento", return_value=acompanhamento), \
+             patch.object(cr, "obter_ultima_carteira_persistida", return_value=[]), \
+             patch.object(cr, "_benchmark_desde", return_value=None):
+            resultado = cr.estado_tese("PETR4")
+        assert resultado["em_carteira"] is False
+        assert resultado["preco_atual"] == 55.0
+        assert resultado["estado"]["classificacao"] == cr.TESE_EM_REVISAO
+
+    def test_retorno_relativo_pct_usa_benchmark_quando_disponivel(self):
+        historico = [_evento_entrada_fake(preco_referencia=100.0)]
+        item_atual = {"ticker": "PETR4", "preco_referencia": 120.0}
+        with patch.object(cr, "listar_historico_alteracoes", return_value=historico), \
+             patch.object(cr, "obter_acompanhamento", return_value=[]), \
+             patch.object(cr, "obter_ultima_carteira_persistida", return_value=[item_atual]), \
+             patch.object(cr, "_benchmark_desde", return_value={"indice": "IBOVESPA", "retorno_pct": 5.0,
+                                                                  "preco_entrada": 1.0, "preco_atual": 1.05}):
+            resultado = cr.estado_tese("PETR4")
+        assert resultado["retorno_acumulado_pct"] == 20.0
+        assert resultado["retorno_relativo_pct"] == 15.0
+
+    def test_cotacao_viva_usada_so_quando_mais_nada_disponivel(self):
+        historico = [_evento_entrada_fake(preco_referencia=100.0)]
+        with patch.object(cr, "listar_historico_alteracoes", return_value=historico), \
+             patch.object(cr, "obter_acompanhamento", return_value=[]), \
+             patch.object(cr, "obter_ultima_carteira_persistida", return_value=[]), \
+             patch.object(cr, "_benchmark_desde", return_value=None):
+            resultado = cr.estado_tese("PETR4", provedor_cotacao=lambda t: {"preco": 115.0})
+        assert resultado["preco_atual"] == 115.0
+
+    def test_nunca_lanca_quando_cotacao_viva_falha(self):
+        historico = [_evento_entrada_fake(preco_referencia=100.0)]
+        with patch.object(cr, "listar_historico_alteracoes", return_value=historico), \
+             patch.object(cr, "obter_acompanhamento", return_value=[]), \
+             patch.object(cr, "obter_ultima_carteira_persistida", return_value=[]), \
+             patch.object(cr, "_benchmark_desde", return_value=None):
+            def _boom(ticker):
+                raise ConnectionError("sem rede")
+            resultado = cr.estado_tese("PETR4", provedor_cotacao=_boom)
+        assert resultado["preco_atual"] is None
+
+    def test_itens_atuais_injetado_evita_buscar_a_tabela_de_novo(self):
+        """UI chamando estado_tese() pra VÁRIOS tickers na mesma
+        renderização deve poder passar itens_atuais pré-buscado uma única
+        vez (achado de performance - mesmo padrão já corrigido em
+        data/radar_quedas.py:listar_carteiras)."""
+        historico = [_evento_entrada_fake(preco_referencia=100.0)]
+        item_atual = {"ticker": "PETR4", "preco_referencia": 110.0}
+        with patch.object(cr, "listar_historico_alteracoes", return_value=historico), \
+             patch.object(cr, "obter_acompanhamento", return_value=[]), \
+             patch.object(cr, "obter_ultima_carteira_persistida") as obter_itens, \
+             patch.object(cr, "_benchmark_desde", return_value=None):
+            resultado = cr.estado_tese("PETR4", itens_atuais=[item_atual])
+        obter_itens.assert_not_called()
+        assert resultado["preco_atual"] == 110.0

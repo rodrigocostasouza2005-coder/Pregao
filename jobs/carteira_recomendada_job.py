@@ -48,11 +48,50 @@ from data.carteira_recomendada import (
 )
 from data.prices import obter_cotacao
 
-# Campos monitorados para o histórico de revisão - mesma lista pedida pela
-# missão: peso do ativo, tese, preço-alvo e critério de saída. Entrada e
-# saída de ticker são tratadas separadamente (não são um "campo" do item).
-_CAMPOS_MONITORADOS = ("peso_pct", "tese", "preco_alvo", "criterio_saida")
+# Campos monitorados para o histórico de revisão - peso do ativo, tese,
+# preço-alvo e critério de saída (lista original da missão 2026-11-14) +
+# riscos (ampliação missão "Radar inteligente e acompanhamento de teses",
+# 2026-11-23). Entrada e saída de ticker continuam tratadas separadamente
+# (não são um "campo" do item).
+#
+# ACHADO REAL (2026-11-23, confirmado consultando o Supabase de PRODUÇÃO
+# com select("*") em carteira_recomendada_itens): a tentativa original
+# desta missão era monitorar TAMBÉM sinal_comite/confianca_comite/
+# score_comite aqui - sem isso, uma mudança de RECOMENDAÇÃO do Comitê (ex:
+# COMPRA -> VENDA) nunca chegava ao histórico. Essa versão foi REVERTIDA
+# antes de qualquer commit chegar a produção: a tabela carteira_
+# recomendada_itens (sql/carteira_recomendada.sql, aplicada em 2026-11-14)
+# NUNCA teve essas 3 colunas - as colunas reais são só ticker/setor/
+# peso_pct/justificativa/preco_referencia/preco_alvo/tese/riscos/
+# criterio_saida/data_revisao/origem_analise_id/atualizado_em (confirmado
+# com uma leitura real, read-only, contra produção - 4 linhas existentes
+# em 2026-11-23). `anterior` (obter_ultima_carteira_persistida, que lê
+# exatamente essa tabela) NUNCA teria sinal_comite/confianca_comite/
+# score_comite, enquanto `novo` (saída fresca de montar_carteira_
+# recomendada, calculada em memória) sempre tem - comparar os dois
+# geraria "mudou de None para COMPRA/ALTA/6" em TODO ticket, em TODA
+# rodada, pra sempre. Monitorar esses 3 campos aqui exigiria antes uma
+# migration ADITIVA (3 colunas novas em carteira_recomendada_itens:
+# sinal_comite text, confianca_comite text, score_comite numeric) +
+# atualizar data/carteira_recomendada.py:salvar_carteira() pra persisti-
+# las - NÃO feito nesta missão (regra do projeto: documentar migration
+# de schema novo e parar, nunca aplicar sem autorização explícita). Ver
+# o SQL proposto, NÃO aplicado, no final de sql/carteira_recomendada.sql
+# e no corpo da PR desta missão.
+#
+# O que SOBREVIVEU dessa tentativa, sem depender de nenhuma coluna nova:
+# o evento 'entrada_na_carteira' (abaixo, em calcular_revisoes) passa a
+# registrar sinal_comite/confianca_comite/score_comite também - mas só
+# ali, dentro do payload JSONB de carteira_recomendada_historico.valor_novo
+# (schema-agnóstico, sem precisar de coluna nova) - um FATO histórico
+# ("qual era o sinal na entrada"), nunca uma comparação dia a dia (essa
+# comparação específica É a que exigiria a migration acima).
+_CAMPOS_MONITORADOS = ("peso_pct", "tese", "preco_alvo", "criterio_saida", "riscos")
 _CAMPOS_NUMERICOS = {"peso_pct", "preco_alvo"}
+# "riscos" é lista (contrarios do Comitê) - comparar como SET (ordem não
+# importa; só a composição) evita "mudou" por reordenação da mesma lista
+# vinda do Supabase (JSONB não garante ordem estável).
+_CAMPOS_LISTA_COMO_SET = {"riscos"}
 
 _MOTIVO_ATUALIZACAO = "Atualização automática da rodada diária da Carteira Recomendada (jobs/carteira_recomendada_job.py)."
 _MOTIVO_ENTRADA = "Ativo incluído na carteira recomendada nesta rodada."
@@ -78,6 +117,8 @@ def _numeros_iguais(a, b, eps=1e-6):
 def _campo_mudou(campo, valor_anterior, valor_novo):
     if campo in _CAMPOS_NUMERICOS:
         return not _numeros_iguais(valor_anterior, valor_novo)
+    if campo in _CAMPOS_LISTA_COMO_SET:
+        return set(valor_anterior or []) != set(valor_novo or [])
     return valor_anterior != valor_novo
 
 
@@ -108,11 +149,29 @@ def calcular_revisoes(anterior: list | None, novo: list) -> list:
     for ticker, item_novo in novo_por_ticker.items():
         item_anterior = anterior_por_ticker.get(ticker)
         if item_anterior is None:
+            # Baseline completa capturada AQUI, uma única vez (achado real
+            # da missão "Radar inteligente e acompanhamento de teses",
+            # 2026-11-23): carteira_recomendada_itens é upsert por ticker
+            # (salvar_carteira) - preco_referencia/sinal_comite/etc desse
+            # ticker são SOBRESCRITOS a cada rodada futura, então sem
+            # capturar o valor de ENTRADA aqui (evento append-only, nunca
+            # editado), "preço/tese/sinal original" ficava irrecuperável
+            # depois da 2a rodada. Ver data/carteira_recomendada.py:
+            # _evento_entrada/_preco_e_data_entrada, que leem exatamente
+            # este payload.
             revisoes.append({
                 "ticker": ticker,
                 "campo": "entrada_na_carteira",
                 "valor_anterior": None,
-                "valor_novo": {"peso_pct": item_novo.get("peso_pct"), "tese": item_novo.get("tese")},
+                "valor_novo": {
+                    "peso_pct": item_novo.get("peso_pct"),
+                    "tese": item_novo.get("tese"),
+                    "preco_referencia": item_novo.get("preco_referencia"),
+                    "preco_alvo": item_novo.get("preco_alvo"),
+                    "sinal_comite": item_novo.get("sinal_comite"),
+                    "confianca_comite": item_novo.get("confianca_comite"),
+                    "score_comite": item_novo.get("score_comite"),
+                },
                 "motivo": _MOTIVO_ENTRADA,
             })
             continue
