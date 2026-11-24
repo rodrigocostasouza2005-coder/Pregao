@@ -695,7 +695,16 @@ def obter_indicadores(ticker: str) -> dict:
         "margem_operacional": _pct_ou_none(info.get("operatingMargins")),
         "margem_ebitda": _pct_ou_none(info.get("ebitdaMargins")),
         "divida_liquida": divida_liquida,
-        "divida_liquida_ebitda": divida_liquida / ebitda if divida_liquida is not None and ebitda else None,
+        # EBITDA <= 0 (ou ausente) -> None, nunca a razão: o mesmo princípio
+        # de _ev_ebitda em data/radar.py - com EBITDA negativo, divida/ebitda
+        # fica negativo e PARECE "dívida baixa" (sinal bom) quando o problema
+        # real é a empresa ter EBITDA negativo (sinal muito mais grave) -
+        # leitura invertida e perigosa achada na auditoria 2026-11-23.
+        "divida_liquida_ebitda": (
+            divida_liquida / ebitda
+            if divida_liquida is not None and ebitda is not None and ebitda > 0
+            else None
+        ),
         # exposto a partir de 2026-10-30 (evolução da Conclusão de Investimento) - já era
         # buscado internamente só pra calcular divida_liquida_ebitda; expor a chave permite
         # EV/EBITDA em data/radar.py:linha_valuation sem nova chamada ao yfinance.
