@@ -63,6 +63,30 @@ _CSS_CARTEIRA = """
                        padding:0.3rem 0.5rem; border-bottom:1px solid var(--borda); white-space:nowrap; }
 .cart-hist-tabela td { text-align:left; padding:0.3rem 0.5rem;
                        border-bottom:1px solid color-mix(in srgb, var(--borda) 60%, transparent); vertical-align:top; }
+
+/* ---- ESTADO DA TESE (missão "Radar inteligente e acompanhamento de
+   teses", 2026-11-23) - badge + grid de acompanhamento + linha do tempo
+   de eventos dentro do DETALHE POR ATIVO já existente. */
+.cart-tese-topo { display:flex; align-items:baseline; gap:0.6rem; flex-wrap:wrap; margin:0.5rem 0 0.3rem 0; }
+.cart-tese-badge { padding:0.1rem 0.5rem; font-size:0.66rem; font-weight:700; letter-spacing:0.03em; white-space:nowrap; }
+.cart-tese-preservada { color:var(--cinza); border:1px solid var(--borda); }
+.cart-tese-fortalecida { color:var(--alta); border:1px solid var(--alta); }
+.cart-tese-enfraquecida { color:var(--destaque); border:1px solid var(--destaque); }
+.cart-tese-em_revisao { color:var(--destaque); border:1px solid var(--destaque); border-style:dashed; }
+.cart-tese-invalidada { color:var(--baixa); border:1px solid var(--baixa); }
+.cart-tese-dados_insuficientes { color:var(--cinza); border:1px dashed var(--borda); }
+.cart-tese-motivo { font-size:0.74rem; color:var(--cinza); margin-bottom:0.5rem; }
+.cart-tese-grid { display:flex; flex-wrap:wrap; gap:0.9rem 1.6rem; font-size:0.74rem; margin:0.3rem 0 0.6rem 0; font-family:'IBM Plex Mono', monospace; }
+.cart-tese-grid .cart-tese-rotulo { color:var(--cinza); display:block; font-size:0.62rem; letter-spacing:0.03em; text-transform:uppercase; font-family:'IBM Plex Mono', monospace; }
+.cart-tese-diff { font-size:0.76rem; margin:0.25rem 0; line-height:1.6; }
+.cart-tese-diff .cinza { color:var(--cinza); }
+.cart-tese-eventos-scroll { overflow-x:auto; }
+.cart-tese-eventos { width:100%; border-collapse:collapse; font-size:0.72rem; font-family:'IBM Plex Mono', monospace; min-width:560px; }
+.cart-tese-eventos th { text-align:left; font-size:0.6rem; color:var(--cinza); letter-spacing:0.04em;
+                        padding:0.25rem 0.45rem; border-bottom:1px solid var(--borda); white-space:nowrap; }
+.cart-tese-eventos td { text-align:left; padding:0.25rem 0.45rem;
+                        border-bottom:1px solid color-mix(in srgb, var(--borda) 60%, transparent); vertical-align:top; }
+.cart-tese-avisos { font-size:0.66rem; color:var(--cinza); margin-top:0.3rem; line-height:1.5; }
 """
 
 
@@ -300,6 +324,131 @@ def _detalhe_item(item: dict, fmt: str):
         )
 
 
+# ============================================================
+# ESTADO DA TESE (missão "Radar inteligente e acompanhamento de teses",
+# 2026-11-23) - responde, por ativo: por que entrou, tese/preço original,
+# o que o Comitê já reavaliou desde então (eventos), como o preço evoluiu
+# x Ibovespa e qual é o ESTADO da tese. 100% sobre
+# data/carteira_recomendada.py:estado_tese() - zero cálculo novo aqui,
+# só apresentação.
+# ============================================================
+
+_ROTULO_ESTADO_TESE = {
+    "PRESERVADA": "TESE PRESERVADA", "FORTALECIDA": "TESE FORTALECIDA",
+    "ENFRAQUECIDA": "TESE ENFRAQUECIDA", "EM_REVISAO": "EM REVISÃO",
+    "INVALIDADA": "TESE INVALIDADA", "DADOS_INSUFICIENTES": "DADOS INSUFICIENTES",
+}
+
+
+def _badge_estado_tese(classificacao: str) -> str:
+    classe = f"cart-tese-{(classificacao or '').lower()}"
+    rotulo = _ROTULO_ESTADO_TESE.get(classificacao, classificacao or "—")
+    return f"<span class='cart-tese-badge {classe}'>{html.escape(rotulo)}</span>"
+
+
+def _linha_evento_tese_html(evento: dict) -> str:
+    quando = html.escape(str(evento.get("registrado_em") or "—")[:10])
+    campo = html.escape(str(evento.get("campo") or "—"))
+    anterior = evento.get("valor_anterior")
+    novo = evento.get("valor_novo")
+    if campo == "entrada_na_carteira":
+        transicao = "Entrou na carteira"
+    elif campo == "saida_da_carteira":
+        transicao = "Saiu da carteira"
+    else:
+        transicao = f"{html.escape(str(anterior) if anterior is not None else '—')} → {html.escape(str(novo) if novo is not None else '—')}"
+    motivo = html.escape(str(evento.get("motivo") or "—"))
+    return f"<tr><td>{quando}</td><td>{campo}</td><td>{transicao}</td><td>{motivo}</td></tr>"
+
+
+def _secao_estado_tese(ticker: str, fmt: str, itens_atuais: list | None):
+    """Seção de ACOMPANHAMENTO DE TESE de um ativo - chamada 1x por item
+    dentro do expander de DETALHE POR ATIVO (ver render_visao_geral).
+    `itens_atuais` pré-buscado uma única vez pelo chamador (não refaz a
+    consulta da tabela inteira pra cada ticker - ver docstring de
+    data.carteira_recomendada.estado_tese)."""
+    from data.carteira_recomendada import estado_tese
+
+    info = estado_tese(ticker, itens_atuais=itens_atuais)
+    st.markdown('<div class="painel-titulo" style="font-size:0.7rem; margin-top:0.7rem;">ESTADO DA TESE</div>', unsafe_allow_html=True)
+    if info is None:
+        st.markdown(
+            "<div class='cinza' style='font-size:0.72rem;'>Este ativo ainda não gerou histórico nem "
+            "acompanhamento persistido (nunca passou por uma rodada completa da Carteira Recomendada "
+            "antes de hoje) - sem dado suficiente pra montar a linha do tempo da tese.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    estado = info.get("estado") or {}
+    st.markdown(
+        "<div class='cart-tese-topo'>" + _badge_estado_tese(estado.get("classificacao")) + "</div>"
+        f"<div class='cart-tese-motivo'>{html.escape(estado.get('motivo') or '—')}</div>",
+        unsafe_allow_html=True,
+    )
+
+    def _campo(rotulo, valor):
+        return f"<div><span class='cart-tese-rotulo'>{html.escape(rotulo)}</span>{valor}</div>"
+
+    data_entrada = html.escape(str(info.get("data_entrada") or "—")[:10])
+    preco_entrada_txt = _preco_html(info.get("preco_entrada"), fmt)
+    preco_atual_txt = _preco_html(info.get("preco_atual"), fmt)
+    retorno_txt = (variacao_html(info["retorno_acumulado_pct"], fmt, 1)
+                   if info.get("retorno_acumulado_pct") is not None else "—")
+    benchmark = info.get("benchmark")
+    benchmark_txt = (variacao_html(benchmark["retorno_pct"], fmt, 1)
+                     if benchmark and benchmark.get("retorno_pct") is not None else "—")
+    relativo_txt = (variacao_html(info["retorno_relativo_pct"], fmt, 1)
+                    if info.get("retorno_relativo_pct") is not None else "—")
+
+    st.markdown(
+        "<div class='cart-tese-grid'>"
+        + _campo("Entrada", data_entrada)
+        + _campo("Preço de entrada", preco_entrada_txt)
+        + _campo("Preço atual", preco_atual_txt)
+        + _campo("Retorno acumulado", retorno_txt)
+        + _campo(f"IBOVESPA (mesmo período)", benchmark_txt)
+        + _campo("Retorno relativo", relativo_txt)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    tese_original = info.get("tese_original")
+    tese_atual = info.get("tese_atual")
+    if tese_original and tese_atual and tese_original != tese_atual:
+        st.markdown(
+            "<div class='cart-tese-diff'>"
+            f"<span class='cinza'>Tese original (na entrada):</span> {html.escape(tese_original)}<br>"
+            f"<span class='cinza'>Tese atual:</span> {html.escape(tese_atual)}"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    elif tese_original and not tese_atual:
+        st.markdown(
+            f"<div class='cart-tese-diff'><span class='cinza'>Tese original (na entrada):</span> "
+            f"{html.escape(tese_original)}</div>",
+            unsafe_allow_html=True,
+        )
+
+    eventos = info.get("eventos") or []
+    if eventos:
+        with st.expander(f"Linha do tempo ({len(eventos)} evento(s) desde a entrada)"):
+            corpo = "".join(_linha_evento_tese_html(e) for e in eventos)
+            st.markdown(
+                "<div class='cart-tese-eventos-scroll'><table class='cart-tese-eventos'><thead><tr>"
+                "<th>DATA</th><th>CAMPO</th><th>TRANSIÇÃO</th><th>MOTIVO</th>"
+                f"</tr></thead><tbody>{corpo}</tbody></table></div>",
+                unsafe_allow_html=True,
+            )
+
+    avisos = info.get("avisos") or []
+    if avisos:
+        st.markdown(
+            "<div class='cart-tese-avisos'>" + "<br>".join(html.escape(a) for a in avisos) + "</div>",
+            unsafe_allow_html=True,
+        )
+
+
 def render_visao_geral(carteira: dict, prefs: dict):
     """Ponto de entrada de CARTEIRA RECOMENDADA › Visão Geral. `carteira`
     é o dict de retorno de data/carteira_recomendada.py:
@@ -330,10 +479,19 @@ def render_visao_geral(carteira: dict, prefs: dict):
 
     st.markdown(_tabela_itens_html(itens, fmt), unsafe_allow_html=True)
 
+    # itens_atuais buscado 1x FORA do loop (achado de performance, ver
+    # docstring de data.carteira_recomendada.estado_tese) - sem isso,
+    # cada ativo da carteira dispararia sua própria consulta da tabela
+    # inteira só pra ler o PRÓPRIO item, repetindo o mesmo round-trip ao
+    # Supabase até len(itens) vezes na mesma renderização.
+    from data.carteira_recomendada import obter_ultima_carteira_persistida
+    itens_atuais = obter_ultima_carteira_persistida()
+
     st.markdown('<div class="painel-titulo" style="font-size:0.68rem; margin-top:0.9rem;">DETALHE POR ATIVO</div>', unsafe_allow_html=True)
     for item in itens:
         with st.expander(f"{item['ticker']} · {html.escape(str(item.get('peso_pct')))}% · {item.get('sinal_comite') or '—'}"):
             _detalhe_item(item, fmt)
+            _secao_estado_tese(item["ticker"], fmt, itens_atuais)
 
 
 def _linha_historico_html(linha: dict) -> str:

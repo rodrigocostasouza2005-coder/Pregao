@@ -111,7 +111,7 @@ para a UI (Agente A) consumir (aba nova em ui/navegacao.py, área
   "universo_elegivel": 14,     # quantas tinham sinal=COMPRA e dado suficiente
 }
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 TABELA_ITENS = "carteira_recomendada_itens"
 TABELA_HISTORICO = "carteira_recomendada_historico"
@@ -737,3 +737,375 @@ def comparar_carteira_persistida_com_atual(
                   "registrar_acompanhamento falhou (tabela ainda não existe?) - "
                   "comparação calculada mas não persistida.")
     return comparacoes
+
+
+# ---------------------------------------------------------------------------
+# 5. ACOMPANHAMENTO DE TESES (missão "Radar inteligente e acompanhamento de
+#    teses", 2026-11-23) - responde, por ativo, "por que entrou, qual era a
+#    tese/preço original, o que o Comitê já reavaliou desde então, como o
+#    preço evoluiu e qual é o ESTADO da tese" - 100% derivado do que já está
+#    persistido (itens/histórico/acompanhamento); NUNCA chama o Comitê/IA de
+#    novo (evita a reanálise cara que a missão pede pra evitar - o único
+#    dado buscado "ao vivo" aqui é cotação atual via data/prices.py, já
+#    cacheada em 30s, e o histórico do Ibovespa pra benchmark, já cacheado
+#    em 5min, ambos reaproveitados do resto do projeto).
+#
+#    Regra inegociável: o ESTADO nunca é decidido a partir de preço/retorno
+#    isolado (ver _classificar_estado) - só a partir do que o PRÓPRIO
+#    Comitê já reavaliou e registrou no histórico (sinal_comite/
+#    confianca_comite/tese, ver _CAMPOS_MONITORADOS em
+#    jobs/carteira_recomendada_job.py). Preço/retorno aparecem só como
+#    CONTEXTO complementar no resultado, nunca como insumo da classificação.
+# ---------------------------------------------------------------------------
+
+TESE_PRESERVADA = "PRESERVADA"
+TESE_FORTALECIDA = "FORTALECIDA"
+TESE_ENFRAQUECIDA = "ENFRAQUECIDA"
+TESE_EM_REVISAO = "EM_REVISAO"
+TESE_INVALIDADA = "INVALIDADA"
+TESE_DADOS_INSUFICIENTES = "DADOS_INSUFICIENTES"
+
+_SINAIS_NAO_COMPRA = {"VENDA", "NEUTRO"}
+_RANKING_CONFIANCA = {"BAIXA": 0, "MEDIA": 1, "ALTA": 2}
+_BENCHMARK_SYMBOL = "^BVSP"
+_BENCHMARK_NOME = "IBOVESPA"
+# Tolerância pra achar o pregão do benchmark mais próximo da data de
+# entrada (fins de semana/feriados nunca batem exato) - acima disso, sem
+# cotação confiável o bastante pra esse ponto de partida, melhor não
+# comparar do que comparar com um pregão distante demais.
+_BENCHMARK_TOLERANCIA_DIAS = 5
+
+
+def _eventos_ordenados_asc(historico: list) -> list:
+    """`historico` vem de listar_historico_alteracoes() - mais recente
+    primeiro (ver ali). Devolve a MESMA lista em ordem cronológica (mais
+    antigo primeiro) - mais natural pra montar uma linha do tempo "o que
+    aconteceu desde a entrada" na UI, sem reordenar nada no banco (só um
+    sorted() em memória)."""
+    return sorted(historico or [], key=lambda h: h.get("registrado_em") or "")
+
+
+def _evento_entrada(historico: list) -> dict | None:
+    """O evento 'entrada_na_carteira' MAIS ANTIGO desse ticker (append-
+    only - nunca sobrescrito) - única fonte confiável de "por que entrou
+    e com que preço/tese/sinal original", mesmo depois que
+    carteira_recomendada_itens (preco_referencia/tese/sinal_comite) já
+    tiver sido sobrescrita por rodadas posteriores (upsert por ticker, ver
+    salvar_carteira). None se o ticker nunca gerou esse evento (ex: entrou
+    antes desta missão de histórico existir, ou histórico indisponível)."""
+    entradas = [h for h in (historico or []) if h.get("campo") == "entrada_na_carteira"]
+    if not entradas:
+        return None
+    return min(entradas, key=lambda h: h.get("registrado_em") or "")
+
+
+def _evento_saida(historico: list) -> dict | None:
+    """O evento 'saida_da_carteira' MAIS RECENTE - um ticker pode sair e
+    voltar a entrar; interessa a saída mais recente pra avaliar o estado
+    de quem está fora hoje."""
+    saidas = [h for h in (historico or []) if h.get("campo") == "saida_da_carteira"]
+    if not saidas:
+        return None
+    return max(saidas, key=lambda h: h.get("registrado_em") or "")
+
+
+def _ultimo_evento_campo(historico: list, campo: str, antes_de: str | None = None) -> dict | None:
+    """Evento MAIS RECENTE de `campo` nesse histórico (opcionalmente só
+    antes de um timestamp `antes_de`, ISO - usado pra olhar 'qual era o
+    sinal bem antes da saída', nunca o estado pós-saída, que nem existe
+    pra esse ticker). None se nunca houve esse campo no histórico."""
+    candidatos = [
+        h for h in (historico or [])
+        if h.get("campo") == campo and (antes_de is None or (h.get("registrado_em") or "") <= antes_de)
+    ]
+    if not candidatos:
+        return None
+    return max(candidatos, key=lambda h: h.get("registrado_em") or "")
+
+
+def _classificar_estado(item_atual: dict | None, historico: list | None) -> dict:
+    """Classifica o ESTADO da tese - NUNCA a partir de preço/retorno
+    isolado (regra da missão: queda/alta de preço nunca é sinal
+    automático de compra/venda nem de tese fortalecida/enfraquecida), só
+    a partir do que o próprio Comitê de Investimentos já reavaliou e
+    registrou no histórico (sinal_comite/confianca_comite/tese - ver
+    _CAMPOS_MONITORADOS em jobs/carteira_recomendada_job.py:
+    calcular_revisoes, que grava esses campos quando mudam).
+
+    Vocabulário fechado (ver TESE_*). Ordem de prioridade determinística
+    quando há mais de 1 sinal: mudança de SINAL do Comitê > mudança de
+    CONFIANÇA > mudança de texto da TESE > nenhuma mudança registrada.
+    `historico=None` (Supabase indisponível) -> DADOS_INSUFICIENTES, nunca
+    assume um estado sem conseguir checar."""
+    if historico is None:
+        return {
+            "classificacao": TESE_DADOS_INSUFICIENTES,
+            "motivo": "Histórico de revisões indisponível (Supabase fora do ar) - estado da "
+                      "tese não pode ser avaliado com segurança agora.",
+            "baseado_em": [],
+        }
+
+    entrada = _evento_entrada(historico)
+
+    if item_atual is None:
+        saida = _evento_saida(historico)
+        if saida is None and entrada is None:
+            return {
+                "classificacao": TESE_DADOS_INSUFICIENTES,
+                "motivo": "Ativo não está na carteira atual e não há histórico de entrada/saída "
+                          "registrado - sem dado suficiente pra avaliar.",
+                "baseado_em": [],
+            }
+        corte = saida.get("registrado_em") if saida else None
+        sinal_antes = _ultimo_evento_campo(historico, "sinal_comite", antes_de=corte)
+        if sinal_antes and str(sinal_antes.get("valor_novo") or "").upper() in _SINAIS_NAO_COMPRA:
+            return {
+                "classificacao": TESE_INVALIDADA,
+                "motivo": f"Comitê rebaixou o sinal para {sinal_antes['valor_novo']} antes da saída da carteira.",
+                "baseado_em": [e for e in (sinal_antes, saida) if e],
+            }
+        return {
+            "classificacao": TESE_EM_REVISAO,
+            "motivo": "Ativo saiu da carteira sem rebaixamento de sinal registrado pelo Comitê "
+                      "(provável redistribuição por concentração/seleção, não invalidação de "
+                      "tese) - merece revisão manual.",
+            "baseado_em": [saida] if saida else [],
+        }
+
+    sinal_evt = _ultimo_evento_campo(historico, "sinal_comite")
+    if sinal_evt and str(sinal_evt.get("valor_novo") or "").upper() in _SINAIS_NAO_COMPRA:
+        return {
+            "classificacao": TESE_INVALIDADA,
+            "motivo": f"Comitê rebaixou o sinal deste ativo para {sinal_evt['valor_novo']} na revisão mais recente.",
+            "baseado_em": [sinal_evt],
+        }
+
+    confianca_evt = _ultimo_evento_campo(historico, "confianca_comite")
+    if confianca_evt:
+        antes = _RANKING_CONFIANCA.get(str(confianca_evt.get("valor_anterior") or "").upper())
+        depois = _RANKING_CONFIANCA.get(str(confianca_evt.get("valor_novo") or "").upper())
+        if antes is not None and depois is not None and depois < antes:
+            return {
+                "classificacao": TESE_ENFRAQUECIDA,
+                "motivo": f"Confiança do Comitê caiu de {confianca_evt['valor_anterior']} para {confianca_evt['valor_novo']}.",
+                "baseado_em": [confianca_evt],
+            }
+        if antes is not None and depois is not None and depois > antes:
+            return {
+                "classificacao": TESE_FORTALECIDA,
+                "motivo": f"Confiança do Comitê subiu de {confianca_evt['valor_anterior']} para {confianca_evt['valor_novo']}.",
+                "baseado_em": [confianca_evt],
+            }
+
+    tese_evt = _ultimo_evento_campo(historico, "tese")
+    if tese_evt:
+        return {
+            "classificacao": TESE_EM_REVISAO,
+            "motivo": "O resumo da tese do Comitê foi reescrito desde a entrada - revisar o que mudou.",
+            "baseado_em": [tese_evt],
+        }
+
+    if entrada is None:
+        return {
+            "classificacao": TESE_DADOS_INSUFICIENTES,
+            "motivo": "Ativo presente na carteira, mas sem evento de entrada registrado no "
+                      "histórico (provavelmente entrou antes do início deste rastreamento) - "
+                      "sem baseline confiável.",
+            "baseado_em": [],
+        }
+
+    return {
+        "classificacao": TESE_PRESERVADA,
+        "motivo": "Nenhuma mudança de sinal, confiança ou tese registrada pelo Comitê desde a entrada.",
+        "baseado_em": [entrada],
+    }
+
+
+def _preco_e_data_entrada(historico: list | None, acompanhamento: list | None) -> tuple:
+    """Preço e data de entrada mais confiáveis disponíveis: prioridade pro
+    evento 'entrada_na_carteira' (append-only, nunca sobrescrito - ver
+    _evento_entrada) quando ele já carrega preco_referencia (captura
+    ampliada em 2026-11-23, ver jobs/carteira_recomendada_job.py); senão
+    cai pro PRIMEIRO registro de carteira_recomendada_acompanhamento
+    (ordenado por data_referencia) desse ticker, que também captura o
+    preço do primeiro dia em que o ativo foi acompanhado. (None, None) se
+    nenhuma das duas fontes tiver dado - nunca inventa um valor."""
+    entrada = _evento_entrada(historico or [])
+    if entrada:
+        valor = entrada.get("valor_novo") or {}
+        preco = _numero(valor.get("preco_referencia"))
+        if preco is not None:
+            return preco, entrada.get("registrado_em")
+    linhas = list(acompanhamento or [])
+    if not linhas:
+        return None, None
+    primeira = min(linhas, key=lambda a: a.get("data_referencia") or "")
+    return _numero(primeira.get("preco_referencia")), primeira.get("data_referencia")
+
+
+def _retorno_pct(preco_de, preco_para):
+    if preco_de is None or preco_para is None or preco_de <= 0:
+        return None
+    return round(((preco_para - preco_de) / preco_de) * 100, 2)
+
+
+def _benchmark_desde(data_entrada_iso: str | None, provedor_historico=None) -> dict | None:
+    """Retorno do Ibovespa entre a data de entrada e o pregão mais recente
+    disponível - mesmo índice já usado no resto do projeto pra ativos de
+    B3 (data/prices.py:_BENCHMARK_POR_MERCADO), nunca uma série nova.
+    data/prices.py:obter_historico já é cacheado (ttl=300s) - chamar esta
+    função várias vezes na mesma renderização (1x por ativo da carteira)
+    não dispara 1 requisição de rede por ativo.
+
+    Melhor esforço: None (nunca 0.0 fabricado) se a data de entrada não
+    tiver cotação do benchmark dentro da tolerância da janela consultada
+    (ex: entrada mais antiga que o histórico disponível) ou o provedor
+    falhar - degrade silencioso, mesmo padrão do resto do módulo."""
+    if not data_entrada_iso:
+        return None
+    try:
+        data_entrada = date.fromisoformat(str(data_entrada_iso)[:10])
+    except ValueError:
+        return None
+    if provedor_historico is None:
+        from data.prices import obter_historico
+        provedor_historico = obter_historico
+    dias_passados = (_agora_utc().date() - data_entrada).days
+    if dias_passados <= 25:
+        periodo = "1M"
+    elif dias_passados <= 85:
+        periodo = "3M"
+    elif dias_passados <= 170:
+        periodo = "6M"
+    else:
+        periodo = "1A"
+    try:
+        df = provedor_historico(_BENCHMARK_SYMBOL, periodo)
+    except Exception as exc:
+        print(f"[carteira_recomendada] benchmark indisponível: {exc!r}")
+        return None
+    if df is None or df.empty:
+        return None
+    try:
+        diffs = (df["Data"].dt.date - data_entrada).apply(lambda d: abs(d.days))
+        idx_entrada = diffs.idxmin()
+        if int(diffs.loc[idx_entrada]) > _BENCHMARK_TOLERANCIA_DIAS:
+            return None
+        preco_entrada = float(df.loc[idx_entrada, "Close"])
+        preco_atual = float(df.iloc[-1]["Close"])
+    except Exception as exc:
+        print(f"[carteira_recomendada] benchmark malformado: {exc!r}")
+        return None
+    return {
+        "indice": _BENCHMARK_NOME,
+        "preco_entrada": round(preco_entrada, 2),
+        "preco_atual": round(preco_atual, 2),
+        "retorno_pct": _retorno_pct(preco_entrada, preco_atual),
+    }
+
+
+def estado_tese(
+    ticker: str,
+    provedor_cotacao=None,
+    provedor_historico_benchmark=None,
+    itens_atuais=None,
+) -> dict | None:
+    """Visão de acompanhamento de UMA tese da Carteira Recomendada - "por
+    que entrou, tese/preço de referência original, riscos, eventos
+    posteriores (mudança de sinal/confiança/tese/preço-alvo), evolução de
+    preço, desempenho acumulado x Ibovespa e ESTADO da tese" (objetivo da
+    missão "Radar inteligente e acompanhamento de teses"). 100% derivado
+    de dado JÁ PERSISTIDO (itens/histórico/acompanhamento) - nunca chama
+    o Comitê/IA de novo; o único dado "vivo" buscado aqui é cotação atual
+    (fallback, já cacheada) e o histórico do Ibovespa pro benchmark
+    (idem) - sem reanálise cara nenhuma.
+
+    `itens_atuais` (opcional): a UI que chama isto pra VÁRIOS tickers na
+    mesma renderização (ex: 1 chamada por ativo da Carteira Recomendada,
+    ver ui/carteira_recomendada_tab.py) deve buscar
+    obter_ultima_carteira_persistida() UMA VEZ e passar aqui - sem isso,
+    cada chamada buscaria a tabela inteira de novo (até 10 round-trips
+    idênticos ao Supabase na mesma renderização, mesmo achado de
+    performance já corrigido em data/radar_quedas.py:listar_carteiras).
+    None (padrão) busca sozinho, pra quem chama isto pra 1 ticker só.
+
+    None só quando NENHUM dado existir pra esse ticker em nenhuma das 3
+    fontes E todas responderam normalmente (nunca esteve na carteira,
+    nunca gerou histórico, nunca foi acompanhado) - "este ticker nunca
+    passou pela Carteira Recomendada". Indisponibilidade de uma fonte
+    (Supabase fora do ar) nunca é confundida com isso - aparece dentro do
+    resultado via estado=DADOS_INSUFICIENTES + avisos, nunca como None."""
+    ticker = (ticker or "").strip().upper()
+    if not ticker:
+        return None
+
+    historico = listar_historico_alteracoes(ticker)
+    acompanhamento = obter_acompanhamento(ticker)
+    if itens_atuais is None:
+        itens_atuais = obter_ultima_carteira_persistida()
+    item_atual = None
+    if itens_atuais is not None:
+        item_atual = next((i for i in itens_atuais if i.get("ticker") == ticker), None)
+
+    nunca_rastreado = item_atual is None and historico == [] and acompanhamento == []
+    if nunca_rastreado:
+        return None
+
+    preco_entrada, data_entrada = _preco_e_data_entrada(historico, acompanhamento)
+
+    preco_atual = _numero((item_atual or {}).get("preco_referencia"))
+    if preco_atual is None and acompanhamento:
+        mais_recente = max(acompanhamento, key=lambda a: a.get("data_referencia") or "")
+        preco_atual = _numero(mais_recente.get("preco_atual"))
+    if preco_atual is None:
+        try:
+            if provedor_cotacao is None:
+                from data.prices import obter_cotacao
+                provedor_cotacao = obter_cotacao
+            cotacao = provedor_cotacao(ticker) or {}
+            preco_atual = _numero(cotacao.get("preco"))
+        except Exception as exc:
+            print(f"[carteira_recomendada] cotação atual indisponível para estado_tese({ticker}): {exc!r}")
+
+    estado = _classificar_estado(item_atual, historico)
+    entrada_evt = _evento_entrada(historico or [])
+    retorno_acumulado_pct = _retorno_pct(preco_entrada, preco_atual)
+    benchmark = _benchmark_desde(data_entrada, provedor_historico_benchmark)
+    retorno_relativo_pct = None
+    if retorno_acumulado_pct is not None and benchmark is not None and benchmark.get("retorno_pct") is not None:
+        retorno_relativo_pct = round(retorno_acumulado_pct - benchmark["retorno_pct"], 2)
+
+    avisos = []
+    if historico is None:
+        avisos.append("Histórico de revisões indisponível (Supabase fora do ar) - eventos podem estar incompletos.")
+    if acompanhamento is None:
+        avisos.append("Acompanhamento diário indisponível (Supabase fora do ar).")
+    elif not acompanhamento:
+        avisos.append("Nenhum acompanhamento diário persistido ainda pra este ativo.")
+    if preco_entrada is None:
+        avisos.append("Preço de entrada não pôde ser recuperado - retorno acumulado indisponível.")
+    if preco_entrada is not None and benchmark is None:
+        avisos.append("Benchmark (Ibovespa) indisponível para o período desde a entrada.")
+
+    return {
+        "ticker": ticker,
+        "em_carteira": item_atual is not None,
+        "motivo_entrada": (item_atual or {}).get("justificativa") or (entrada_evt or {}).get("motivo"),
+        "data_entrada": data_entrada,
+        "preco_entrada": preco_entrada,
+        "tese_original": ((entrada_evt or {}).get("valor_novo") or {}).get("tese"),
+        "tese_atual": (item_atual or {}).get("tese"),
+        "preco_alvo_atual": (item_atual or {}).get("preco_alvo"),
+        "riscos_atuais": (item_atual or {}).get("riscos") or [],
+        "criterio_saida_atual": (item_atual or {}).get("criterio_saida"),
+        "sinal_atual": (item_atual or {}).get("sinal_comite"),
+        "confianca_atual": (item_atual or {}).get("confianca_comite"),
+        "score_atual": (item_atual or {}).get("score_comite"),
+        "eventos": _eventos_ordenados_asc(historico or []),
+        "preco_atual": preco_atual,
+        "retorno_acumulado_pct": retorno_acumulado_pct,
+        "benchmark": benchmark,
+        "retorno_relativo_pct": retorno_relativo_pct,
+        "estado": estado,
+        "avisos": avisos,
+    }

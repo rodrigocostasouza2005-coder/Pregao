@@ -48,11 +48,27 @@ from data.carteira_recomendada import (
 )
 from data.prices import obter_cotacao
 
-# Campos monitorados para o histórico de revisão - mesma lista pedida pela
-# missão: peso do ativo, tese, preço-alvo e critério de saída. Entrada e
-# saída de ticker são tratadas separadamente (não são um "campo" do item).
-_CAMPOS_MONITORADOS = ("peso_pct", "tese", "preco_alvo", "criterio_saida")
-_CAMPOS_NUMERICOS = {"peso_pct", "preco_alvo"}
+# Campos monitorados para o histórico de revisão - peso do ativo, tese,
+# preço-alvo e critério de saída (lista original da missão 2026-11-14) +
+# sinal_comite/confianca_comite/score_comite/riscos (ampliação missão
+# "Radar inteligente e acompanhamento de teses", 2026-11-23): sem estes 4
+# campos, uma mudança de RECOMENDAÇÃO do Comitê (ex: COMPRA -> VENDA,
+# confiança ALTA -> BAIXA) nunca chegava ao histórico - só o peso/tese/
+# preço-alvo/critério de saída eram monitorados, deixando
+# data/carteira_recomendada.py:estado_tese() sem o dado mais importante
+# pra classificar "tese fortalecida/enfraquecida/invalidada" (ver
+# docstring de estado_tese - a classificação nunca usa preço isolado,
+# só o que o PRÓPRIO Comitê já reavaliou). Entrada e saída de ticker
+# continuam tratadas separadamente (não são um "campo" do item).
+_CAMPOS_MONITORADOS = (
+    "peso_pct", "tese", "preco_alvo", "criterio_saida",
+    "sinal_comite", "confianca_comite", "score_comite", "riscos",
+)
+_CAMPOS_NUMERICOS = {"peso_pct", "preco_alvo", "score_comite"}
+# "riscos" é lista (contrarios do Comitê) - comparar como SET (ordem não
+# importa; só a composição) evita "mudou" por reordenação da mesma lista
+# vinda do Supabase (JSONB não garante ordem estável).
+_CAMPOS_LISTA_COMO_SET = {"riscos"}
 
 _MOTIVO_ATUALIZACAO = "Atualização automática da rodada diária da Carteira Recomendada (jobs/carteira_recomendada_job.py)."
 _MOTIVO_ENTRADA = "Ativo incluído na carteira recomendada nesta rodada."
@@ -78,6 +94,8 @@ def _numeros_iguais(a, b, eps=1e-6):
 def _campo_mudou(campo, valor_anterior, valor_novo):
     if campo in _CAMPOS_NUMERICOS:
         return not _numeros_iguais(valor_anterior, valor_novo)
+    if campo in _CAMPOS_LISTA_COMO_SET:
+        return set(valor_anterior or []) != set(valor_novo or [])
     return valor_anterior != valor_novo
 
 
@@ -108,11 +126,29 @@ def calcular_revisoes(anterior: list | None, novo: list) -> list:
     for ticker, item_novo in novo_por_ticker.items():
         item_anterior = anterior_por_ticker.get(ticker)
         if item_anterior is None:
+            # Baseline completa capturada AQUI, uma única vez (achado real
+            # da missão "Radar inteligente e acompanhamento de teses",
+            # 2026-11-23): carteira_recomendada_itens é upsert por ticker
+            # (salvar_carteira) - preco_referencia/sinal_comite/etc desse
+            # ticker são SOBRESCRITOS a cada rodada futura, então sem
+            # capturar o valor de ENTRADA aqui (evento append-only, nunca
+            # editado), "preço/tese/sinal original" ficava irrecuperável
+            # depois da 2a rodada. Ver data/carteira_recomendada.py:
+            # _evento_entrada/_preco_e_data_entrada, que leem exatamente
+            # este payload.
             revisoes.append({
                 "ticker": ticker,
                 "campo": "entrada_na_carteira",
                 "valor_anterior": None,
-                "valor_novo": {"peso_pct": item_novo.get("peso_pct"), "tese": item_novo.get("tese")},
+                "valor_novo": {
+                    "peso_pct": item_novo.get("peso_pct"),
+                    "tese": item_novo.get("tese"),
+                    "preco_referencia": item_novo.get("preco_referencia"),
+                    "preco_alvo": item_novo.get("preco_alvo"),
+                    "sinal_comite": item_novo.get("sinal_comite"),
+                    "confianca_comite": item_novo.get("confianca_comite"),
+                    "score_comite": item_novo.get("score_comite"),
+                },
                 "motivo": _MOTIVO_ENTRADA,
             })
             continue

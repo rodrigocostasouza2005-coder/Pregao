@@ -18,7 +18,8 @@ _AGORA = datetime(2026, 11, 14, 22, 45, tzinfo=timezone.utc)
 
 
 def _item(ticker, peso_pct=10.0, tese="Tese original.", preco_alvo=120.0,
-          criterio_saida="Reavaliar se o sinal cair.", preco_referencia=100.0):
+          criterio_saida="Reavaliar se o sinal cair.", preco_referencia=100.0,
+          sinal_comite=None, confianca_comite=None, score_comite=None, riscos=None):
     return {
         "ticker": ticker,
         "peso_pct": peso_pct,
@@ -26,6 +27,10 @@ def _item(ticker, peso_pct=10.0, tese="Tese original.", preco_alvo=120.0,
         "preco_alvo": preco_alvo,
         "criterio_saida": criterio_saida,
         "preco_referencia": preco_referencia,
+        "sinal_comite": sinal_comite,
+        "confianca_comite": confianca_comite,
+        "score_comite": score_comite,
+        "riscos": riscos,
     }
 
 
@@ -65,6 +70,33 @@ def test_calcular_revisoes_detecta_mudanca_de_tese_preco_alvo_e_criterio_saida_i
     assert len(revisoes) == 2
 
 
+def test_calcular_revisoes_detecta_mudanca_de_recomendacao_do_comite():
+    """Ampliação 2026-11-23: sinal/confiança/score do Comitê agora entram
+    no histórico - sem isso, data/carteira_recomendada.py:estado_tese()
+    nunca saberia que uma tese foi rebaixada/reforçada pelo Comitê."""
+    anterior = [_item("PETR4", sinal_comite="COMPRA", confianca_comite="ALTA", score_comite=6)]
+    novo = [_item("PETR4", sinal_comite="VENDA", confianca_comite="BAIXA", score_comite=-5)]
+    revisoes = job.calcular_revisoes(anterior, novo)
+    campos = {r["campo"] for r in revisoes}
+    assert campos == {"sinal_comite", "confianca_comite", "score_comite"}
+    por_campo = {r["campo"]: r for r in revisoes}
+    assert por_campo["sinal_comite"]["valor_anterior"] == "COMPRA"
+    assert por_campo["sinal_comite"]["valor_novo"] == "VENDA"
+
+
+def test_calcular_revisoes_riscos_reordenados_nao_conta_como_mudanca():
+    anterior = [_item("PETR4", riscos=["Câmbio", "Regulação"])]
+    novo = [_item("PETR4", riscos=["Regulação", "Câmbio"])]
+    assert job.calcular_revisoes(anterior, novo) == []
+
+
+def test_calcular_revisoes_detecta_mudanca_real_de_riscos():
+    anterior = [_item("PETR4", riscos=["Câmbio"])]
+    novo = [_item("PETR4", riscos=["Câmbio", "Novo risco regulatório"])]
+    revisoes = job.calcular_revisoes(anterior, novo)
+    assert len(revisoes) == 1 and revisoes[0]["campo"] == "riscos"
+
+
 def test_calcular_revisoes_marca_entrada_na_carteira_para_ticker_novo():
     anterior = [_item("PETR4")]
     novo = [_item("PETR4"), _item("WEGE3")]
@@ -72,7 +104,11 @@ def test_calcular_revisoes_marca_entrada_na_carteira_para_ticker_novo():
     assert len(revisoes) == 1
     assert revisoes[0] == {
         "ticker": "WEGE3", "campo": "entrada_na_carteira", "valor_anterior": None,
-        "valor_novo": {"peso_pct": 10.0, "tese": "Tese original."},
+        "valor_novo": {
+            "peso_pct": 10.0, "tese": "Tese original.", "preco_referencia": 100.0,
+            "preco_alvo": 120.0, "sinal_comite": None, "confianca_comite": None,
+            "score_comite": None,
+        },
         "motivo": job._MOTIVO_ENTRADA,
     }
 
