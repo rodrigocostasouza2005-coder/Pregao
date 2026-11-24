@@ -516,6 +516,60 @@ def test_dcf_inline_sem_fluxo_de_caixa_livre_nao_renderiza_nada():
     assert tabelas == []
 
 
+def test_fcf_para_dcf_nunca_usa_ytd_da_cvm_como_se_fosse_fcf_anual():
+    """BUG REAL CORRIGIDO (2026-11-23, auditoria Fase 3 Valuation): antes
+    desta correção, _fcf_para_dcf caía pro FCF acumulado no ano (YTD) da
+    CVM quando o yfinance não reportava TTM, e esse YTD alimentava o DCF
+    DIRETO como se já fosse o FCF anual completo. O YTD aqui nunca cobre
+    o 4º trimestre (cvm_dre.py não suporta Q4 isolado nesta integração -
+    mesmo motivo documentado em _TEXTOS_LACUNA['ev_ebit']), então é
+    sempre 3, 6 ou 9 meses - tratar como anual sem anualizar subavalia o
+    preço-alvo (ver test_dcf_inline_fcf_ytd_da_cvm_nunca_alimenta_o_dcf,
+    que mede a diferença: >2x usando o motor de verdade). Agora, sem o
+    ponto anual do yfinance, o DCF fica indisponível - nunca usa o YTD."""
+    historico_com_ytd = {
+        "disponivel": True,
+        "ultima_nota": {"periodo_label": "2T26", "balanco_fluxo_caixa": {"fcf_ytd": 500_000_000.0}},
+    }
+    valor, fonte = at_mod._fcf_para_dcf({"fluxo_caixa_livre": None}, historico_com_ytd)
+    assert valor is None
+    assert fonte is None
+
+
+def test_dcf_inline_fcf_ytd_da_cvm_nunca_alimenta_o_dcf():
+    """Mesmo com o YTD da CVM disponível (3T26, 9 meses acumulados), o
+    painel não renderiza nenhum campo nem calcula nada - zero fallback
+    pro YTD como base anual (ver _fcf_para_dcf). Evidência numérica do
+    tamanho do erro que isso corrigiu: alimentar calcular_dcf com um
+    `fcf_base` de R$500.000.000 (equivalente a 6 meses) em vez do anual
+    real de R$1.000.000.000, nas mesmas premissas de WACC/crescimento/
+    dívida/ações, derruba o preço-alvo de R$119,42 pra R$54,71 - menos da
+    metade, só pela base de tempo errada."""
+    from data.coordenador_central.dcf import calcular_dcf
+
+    premissas_comuns = dict(
+        wacc=0.12, g_terminal=0.03, divida_liquida=1_000_000_000.0, acoes=100_000_000.0,
+        crescimento_fcf_otimista=0.06, crescimento_fcf_base=0.06, crescimento_fcf_pessimista=0.06,
+    )
+    alvo_anual_correto = calcular_dcf(
+        dict(premissas_comuns, fcf_base=1_000_000_000.0), preco_atual=50,
+    )["cenarios"]["base"]["preco_alvo"]
+    alvo_com_ytd_sem_anualizar = calcular_dcf(
+        dict(premissas_comuns, fcf_base=500_000_000.0), preco_atual=50,
+    )["cenarios"]["base"]["preco_alvo"]
+    assert alvo_com_ytd_sem_anualizar < alvo_anual_correto / 2
+
+    historico_com_ytd = {
+        "disponivel": True,
+        "ultima_nota": {"periodo_label": "3T26", "balanco_fluxo_caixa": {"fcf_ytd": 500_000_000.0}},
+    }
+    textos, tabelas = _capturar_dcf_inline(
+        {"preco": 40.0, "fluxo_caixa_livre": None}, historico=historico_com_ytd, crescimento=5, desconto=12,
+    )
+    assert textos == ""
+    assert tabelas == []
+
+
 def test_dcf_inline_sem_premissas_do_usuario_pede_as_duas():
     textos, _ = _capturar_dcf_inline(_FUNDAMENTOS_DCF_COMPLETO, crescimento=None, desconto=None)
     assert "Informe as duas premissas" in textos
@@ -552,6 +606,21 @@ def test_dcf_inline_calcula_com_premissas_completas_e_mostra_sensibilidade():
     primeira_linha = linhas_sensibilidade[0]
     assert "WACC" in primeira_linha
     assert any(chave.startswith("cresc.") for chave in primeira_linha)
+
+
+def test_dcf_inline_mostra_detalhamento_do_calculo_rastreabilidade():
+    """Melhoria 2026-11-23 (auditoria Fase 3 Valuation, rastreabilidade de
+    premissa): antes, a tela só mostrava o preço-alvo final - os números
+    intermediários (VP dos fluxos, valor terminal, valor da firma, dívida
+    subtraída, valor do patrimônio) já eram calculados por calcular_dcf,
+    mas não apareciam aqui (diferente de ui/dcf_operacional.py, que já
+    mostrava esse detalhamento pro motor #2). Agora o motor #1 ganha a
+    mesma rastreabilidade - nenhum número novo é calculado, só exposto."""
+    textos, _ = _capturar_dcf_inline(_FUNDAMENTOS_DCF_COMPLETO, crescimento=5, desconto=12)
+    assert "Valor da firma" in textos
+    assert "Dívida líquida" in textos
+    assert "Valor do patrimônio" in textos
+    assert "Preço-alvo" in textos
 
 
 def test_dcf_inline_acoes_implicitas_vem_de_valor_mercado_sobre_preco_nunca_invenca():

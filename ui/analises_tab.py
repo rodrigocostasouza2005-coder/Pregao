@@ -682,9 +682,12 @@ _TEXTOS_LACUNA = {
             "consolidado ponto a ponto integrado nesta versão - aproximar via margem operacional "
             "seria estimativa, não dado reportado, por isso não foi calculado.",
     "dcf": "Valuation por fluxo de caixa descontado (DCF): bloqueado por falta de fluxo de caixa livre "
-            "(nem o ponto atual do yfinance, nem a série acumulada no ano da CVM estão disponíveis "
-            "nesta checagem) - quando o ponto existe, o DCF ainda depende de você informar taxa de "
-            "crescimento e taxa de desconto no painel (nunca um padrão interno).",
+            "ANUAL (ponto atual do yfinance, TTM) para este ticker - o acumulado no ano (YTD) da CVM "
+            "(ver Geração de caixa, acima) nunca chega ao 4º trimestre nesta integração (mesmo motivo "
+            "do EV/EBIT, abaixo), então é sempre 3/6/9 meses e não serve de base anual sem fabricar uma "
+            "anualização; por isso não alimenta o DCF. Quando o ponto do yfinance existe, o DCF ainda "
+            "depende de você informar taxa de crescimento e taxa de desconto no painel (nunca um "
+            "padrão interno).",
     "historico_internacional": "Série histórica trimestral para empresas internacionais: calendário "
             "fiscal não é detectado automaticamente nesta versão - só empresas brasileiras (CVM) têm "
             "série histórica confiável hoje.",
@@ -878,17 +881,35 @@ def _secao_tese_negativa(fundamentos: dict, divergencia, sem_cobertura: list) ->
 
 
 def _fcf_para_dcf(fundamentos: dict | None, historico: dict | None) -> tuple:
-    """(valor, rotulo_fonte) do FCF a usar no DCF - prefere o ponto atual
-    do yfinance (TTM, qualquer mercado) quando disponível; cai pro
-    acumulado no ano (YTD) da CVM (só Brasil) quando o yfinance não
-    reportar - nunca mistura os dois nem finge que são a mesma base de
-    tempo (o rótulo sempre diz qual foi usado e a base, TTM ou YTD)."""
+    """(valor, rotulo_fonte) do FCF a usar no DCF - SÓ o ponto atual do
+    yfinance (TTM, qualquer mercado): calcular_dcf exige um `fcf_base`
+    JÁ ANUAL ("não anualizar novamente", ver data/coordenador_central/
+    dcf.py), e o acumulado no ano (YTD) da CVM nesta integração NUNCA
+    chega ao 4º trimestre (ver cvm_dre.py - Q4 exigiria subtrair o
+    acumulado anual da DFP pelo YTD do 3º trimestre, fora do escopo
+    desta versão; mesmo motivo já documentado em
+    _TEXTOS_LACUNA['ev_ebit']) - ou seja, o YTD disponível aqui é sempre
+    3, 6 ou 9 meses, nunca o ano completo.
+
+    BUG REAL CORRIGIDO (2026-11-23, auditoria Fase 3 Valuation): até
+    esta correção, este helper devolvia o FCF YTD da CVM como fallback e
+    ele era usado DIRETO como `fcf_base` (ver _controle_dcf_inline) -
+    tratado como se já fosse anual, sem nenhuma anualização. Como o DCF
+    escala linearmente com `fcf_base`, isso subavaliava o preço-alvo
+    sempre que só o YTD estava disponível (medido: FCF anual real
+    R$1.000.000.000 -> preço-alvo R$119,42; o mesmo cálculo com
+    R$500.000.000, equivalente a um YTD de 2º trimestre/metade do ano,
+    usado no lugar do anual -> R$54,71, menos da metade, só pela base
+    errada - ver tests/test_analises_conclusao_investimento_ui.py).
+    Anualizar via multiplicação (x4, x2, x4/3) seria estimativa não
+    reportada pela fonte - mesma razão pela qual o projeto já evita isso
+    pro ROIC (não anualizado, documentado) e pro EV/EBIT (lacuna
+    explícita); por isso o YTD da CVM não alimenta mais o DCF - o motor
+    bloqueia (lacuna 'dcf') em vez de usar uma base de tempo incompatível
+    com a premissa de FCF anual."""
     fcf_ponto = (fundamentos or {}).get("fluxo_caixa_livre")
     if fcf_ponto is not None:
         return fcf_ponto, "fluxo de caixa livre atual (yfinance, TTM)"
-    fcf_ytd = _ultimo_bfc(historico).get("fcf_ytd")
-    if fcf_ytd is not None:
-        return fcf_ytd, "fluxo de caixa livre acumulado no ano (CVM, YTD até o trimestre mais recente)"
     return None, None
 
 
@@ -1342,9 +1363,10 @@ def _controle_dcf_inline(ticker: str, fundamentos: dict | None, historico: dict 
     formulário separado) pra calcular o DCF só quando o usuário informar
     as duas premissas - o PREGÃO nunca assume taxa de crescimento nem
     taxa de desconto por padrão (number_input sem `value` fixo, começa
-    vazio/None). Só aparece quando há fluxo de caixa livre pra descontar
-    - ponto atual (yfinance) ou, na ausência dele, acumulado no ano
-    (CVM) - ver _fcf_para_dcf/_secao_valuation/_TEXTOS_LACUNA['dcf'].
+    vazio/None). Só aparece quando há fluxo de caixa livre ANUAL pra
+    descontar - ponto atual do yfinance (TTM); o acumulado no ano (YTD)
+    da CVM NÃO alimenta este painel (nunca é um ano completo nesta
+    integração - ver _fcf_para_dcf/_TEXTOS_LACUNA['dcf']).
 
     Dedup 2026-11-18 (auditoria de lógica duplicada): este painel tinha
     um 3º motor de DCF embutido (_dcf_calculo, removido aqui) que
@@ -1445,6 +1467,37 @@ def _controle_dcf_inline(ticker: str, fundamentos: dict | None, historico: dict 
             "tela não coleta um intervalo) · dívida líquida e ações implícitas via yfinance. "
             "Não é recomendação de compra ou venda."
         )
+
+        # Rastreabilidade (2026-11-23, auditoria Fase 3 Valuation): até esta
+        # correção, esta tela só mostrava o preço-alvo final - os números
+        # intermediários do motor (VP dos fluxos, valor terminal, valor da
+        # firma, dívida subtraída) já eram calculados em calcular_dcf, só
+        # não apareciam aqui (ui/dcf_operacional.py, simulador do motor #2,
+        # já mostrava esse detalhamento - esta tela do motor #1 não).
+        # Nenhum número novo é calculado - só exposição do que o motor #1
+        # já devolve em resultado["cenarios"]["base"].
+        with st.expander("Como o Pregão chegou nesse preço-alvo (detalhamento do cálculo)"):
+            st.caption(
+                f"VP dos fluxos explícitos (5 anos): {_fmt_reais(base.get('valor_presente_fluxos'), 'BR')}  +  "
+                f"VP do valor terminal: {_fmt_reais(base.get('valor_presente_terminal'), 'BR')}  "
+                f"=  Valor da firma: {_fmt_reais(base.get('valor_empresa'), 'BR')}"
+            )
+            st.caption(
+                f"Valor da firma: {_fmt_reais(base.get('valor_empresa'), 'BR')}  −  "
+                f"Dívida líquida: {_fmt_reais(base.get('divida_liquida'), 'BR')}  "
+                f"=  Valor do patrimônio: {_fmt_reais(base.get('valor_patrimonio'), 'BR')}"
+            )
+            acoes_base = base.get("acoes")
+            st.caption(
+                f"Valor do patrimônio ÷ Ações ({config.formatar_numero(acoes_base, 0, 'BR') if acoes_base else '—'}) "
+                f"=  Preço-alvo: {_fmt_reais(alvo, 'BR')}"
+            )
+            st.caption(
+                "A tabela de sensibilidade abaixo mostra qual das duas premissas que você informou "
+                "(WACC ou crescimento) move mais o preço-alvo - compare a variação ao longo de uma linha "
+                "(WACC fixo, crescimento variando) com a variação ao longo de uma coluna (crescimento fixo, "
+                "WACC variando)."
+            )
 
         sensibilidade = calcular_sensibilidade_dcf(premissas, preco_atual=preco_atual)
         if sensibilidade.get("disponivel"):

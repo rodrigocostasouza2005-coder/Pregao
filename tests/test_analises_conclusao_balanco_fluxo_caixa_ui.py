@@ -162,7 +162,21 @@ def test_geracao_caixa_fco_parcial_ainda_vira_lacuna():
     assert "FCO" in bloco["resposta"]  # o que existe ainda é citado
 
 
-# --- _fcf_para_dcf (fallback yfinance -> CVM YTD) ------------------------
+# --- _fcf_para_dcf (só yfinance TTM; CVM YTD nunca alimenta o DCF) ------
+#
+# BUG REAL CORRIGIDO (2026-11-23, auditoria Fase 3 Valuation): até esta
+# correção, _fcf_para_dcf caía pro FCF acumulado no ano (YTD) da CVM
+# quando o yfinance não reportava, e esse valor alimentava o DCF DIRETO
+# como se já fosse o FCF anual completo - mas o YTD desta integração
+# nunca cobre o 4º trimestre (cvm_dre.py não suporta Q4 isolado; mesmo
+# motivo documentado em _TEXTOS_LACUNA['ev_ebit']), ou seja, é sempre 3,
+# 6 ou 9 meses. Tratar isso como anual sem anualizar subavaliava o
+# preço-alvo (quantificado em
+# tests/test_analises_conclusao_investimento_ui.py:
+# test_dcf_inline_fcf_ytd_da_cvm_nunca_alimenta_o_dcf - mais de 2x de
+# diferença). As duas asserções abaixo que dependiam do fallback antigo
+# foram substituídas: o YTD da CVM agora nunca chega no DCF, mesmo
+# disponível.
 
 def test_fcf_para_dcf_prefere_yfinance_quando_disponivel():
     fundamentos = {"fluxo_caixa_livre": 999.0}
@@ -171,10 +185,10 @@ def test_fcf_para_dcf_prefere_yfinance_quando_disponivel():
     assert "TTM" in fonte
 
 
-def test_fcf_para_dcf_cai_pro_cvm_quando_yfinance_ausente():
+def test_fcf_para_dcf_nunca_usa_cvm_ytd_mesmo_com_yfinance_ausente():
     valor, fonte = at_mod._fcf_para_dcf(_FUNDAMENTOS_SEM_FCF, _HISTORICO_COM_BFC)
-    assert valor == _BFC_COMPLETO["fcf_ytd"]
-    assert "YTD" in fonte
+    assert valor is None
+    assert fonte is None
 
 
 def test_fcf_para_dcf_none_quando_nenhuma_fonte_disponivel():
@@ -183,12 +197,16 @@ def test_fcf_para_dcf_none_quando_nenhuma_fonte_disponivel():
     assert fonte is None
 
 
-# --- _secao_valuation (DCF habilitado via fallback CVM) ------------------
+# --- _secao_valuation (CVM YTD nunca habilita o DCF - só yfinance TTM) --
 
-def test_valuation_dcf_disponivel_via_fallback_cvm():
+def test_valuation_dcf_continua_bloqueado_mesmo_com_cvm_ytd_disponivel():
+    """O FCF acumulado no ano (YTD) da CVM existe em _HISTORICO_COM_BFC,
+    mas nunca é anual completo nesta integração (ver _fcf_para_dcf) - a
+    lacuna 'dcf' precisa continuar sinalizada mesmo com esse dado
+    presente, exatamente como 'ev_ebit' (mesmo motivo estrutural)."""
     lacunas = set()
     bloco = at_mod._secao_valuation(_FUNDAMENTOS_SEM_FCF, _HISTORICO_COM_BFC, None, lacunas)
-    assert "dcf" not in lacunas
+    assert "dcf" in lacunas
     assert "DCF" in bloco["resposta"]
 
 
