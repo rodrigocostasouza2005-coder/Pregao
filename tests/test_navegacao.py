@@ -46,7 +46,7 @@ def test_subabas_exigidas_pela_arquitetura():
     assert subs["research"] == ["Feed", "Casas de Análise", "Radar X", "Minha Tese", "Memória de Research",
                                  "Morning Call: Edição Atual", "Morning Call: Relatório Completo",
                                  "Morning Call: Histórico", "Morning Call: Preferências"]
-    assert subs["analises"] == ["Empresas", "Fundamentos", "Perfil da Empresa"]
+    assert subs["analises"] == ["Visão 360", "Empresas", "Fundamentos", "Perfil da Empresa"]
     assert subs["valuation"] == ["Parecer do Comitê", "Simulador DCF"]
     assert subs["comite"] == [
         "Visão Geral", "Especialistas", "Execuções", "Histórico", "Central de Inteligências",
@@ -97,9 +97,10 @@ def test_preferencia_antiga_de_abas_esconde_subabas():
     # "comite" sobrevive tambem (nenhuma subaba depende de aba antiga,
     # mesmo padrao de "casas"/"radar-x"/"memoria" em research acima).
     # "carteira-recomendada" tambem (conteudo novo, sem legado, mesmo padrao).
-    # "analises" sobrevive so' com "Perfil da Empresa" (missao "aba
-    # propria", 2026-11-23, sem legado) - "Empresas"/"Fundamentos" dependem
-    # de EQUITY, que nao esta visivel aqui.
+    # "analises" sobrevive com "Visão 360" (id "panorama", missao
+    # visao-360-empresa-20261124) e "Perfil da Empresa" (missao "aba
+    # propria", 2026-11-23) - nenhuma das duas tem legado;
+    # "Empresas"/"Fundamentos" dependem de EQUITY, que nao esta visivel aqui.
     # "valuation" sobrevive só com "Simulador DCF" (sem legado) - "Parecer
     # do Comitê" depende de RADAR, que não está visível aqui.
     # "calendario" NAO sobrevive - as 2 subabas dependem de legado
@@ -113,7 +114,7 @@ def test_preferencia_antiga_de_abas_esconde_subabas():
     noticias_minima = next(a for a in minimas if a.id == "noticias")
     assert [s.id for s in noticias_minima.subabas] == ["setor", "catalisadores-setor"]
     analises_minimo = next(a for a in minimas if a.id == "analises")
-    assert [s.id for s in analises_minimo.subabas] == ["perfil"]
+    assert [s.id for s in analises_minimo.subabas] == ["panorama", "perfil"]
     valuation_minimo = next(a for a in minimas if a.id == "valuation")
     assert [s.id for s in valuation_minimo.subabas] == ["simulador"]
     radar_minimo = next(a for a in minimas if a.id == "radar")

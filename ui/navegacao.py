@@ -131,6 +131,21 @@ AREAS = (
         Subaba("mc-preferencias", "Morning Call: Preferências"),
     )),
     Area("analises", "ANÁLISES", ":material/query_stats:", (
+        # VISÃO 360 (missão visao-360-empresa-20261124, resolve o backlog
+        # "EQUITY não é 'Company 360'"): 1 tela só por ticker - contexto do
+        # negócio + preço atual + valuation/preço-alvo + o que o Comitê acha,
+        # hoje espalhado em Empresas/Fundamentos/Perfil da Empresa/Valuation/
+        # Comitê com seletores de ticker desconectados entre si. Posição
+        # INICIAL de propósito (antes de "empresas") - é o ponto de entrada
+        # natural pra quem abre um ticker querendo o panorama completo antes
+        # de ir pro detalhe de cada aba. Conteúdo novo nesta posição da
+        # navegação (orquestra funções já existentes, zero cálculo novo - ver
+        # ui/visao_360_tab.py), sem aba antiga - sempre visível (mesmo padrão
+        # de "casas"/"radar-x" em RESEARCH, "perfil" acima). id="panorama"
+        # (não "visao-360"/"empresa360") de propósito - tests/test_navegacao.py
+        # exige id de subaba em `[a-z-]+` (nunca dígito), mesma regra que
+        # mantém toda rota segura pra URL; rótulo visível continua "Visão 360".
+        Subaba("panorama", "Visão 360"),
         Subaba("empresas", "Empresas", ("EQUITY",)),
         Subaba("fundamentos", "Fundamentos", ("EQUITY",)),
         # PERFIL DA EMPRESA (missão "aba própria", pedido explícito do
@@ -235,6 +250,7 @@ ROTA_LEGADO = {
     "RADAR": ("radar", "alertas"),
     "RESEARCH": ("research", "feed"),
     "EQUITY": ("analises", "empresas"),
+    "EMPRESA360": ("analises", "panorama"),
     "MACRO": ("macro", "indicadores"),
     "CONFIG": ("mais", "config"),
     "SISTEMA": ("mais", "sistema"),
