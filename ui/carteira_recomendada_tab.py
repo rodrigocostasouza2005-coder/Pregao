@@ -401,13 +401,19 @@ def _secao_estado_tese(ticker: str, fmt: str, itens_atuais: list | None):
     relativo_txt = (variacao_html(info["retorno_relativo_pct"], fmt, 1)
                     if info.get("retorno_relativo_pct") is not None else "—")
 
+    sinal_entrada = info.get("sinal_na_entrada")
+    confianca_entrada = info.get("confianca_na_entrada")
+    sinal_entrada_txt = (f"{html.escape(sinal_entrada)} ({html.escape(confianca_entrada)})"
+                         if sinal_entrada else "—")
+
     st.markdown(
         "<div class='cart-tese-grid'>"
         + _campo("Entrada", data_entrada)
+        + _campo("Sinal na entrada", sinal_entrada_txt)
         + _campo("Preço de entrada", preco_entrada_txt)
         + _campo("Preço atual", preco_atual_txt)
         + _campo("Retorno acumulado", retorno_txt)
-        + _campo(f"IBOVESPA (mesmo período)", benchmark_txt)
+        + _campo("IBOVESPA (mesmo período)", benchmark_txt)
         + _campo("Retorno relativo", relativo_txt)
         + "</div>",
         unsafe_allow_html=True,

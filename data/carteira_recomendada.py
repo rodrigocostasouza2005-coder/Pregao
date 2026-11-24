@@ -836,7 +836,27 @@ def _classificar_estado(item_atual: dict | None, historico: list | None) -> dict
     quando há mais de 1 sinal: mudança de SINAL do Comitê > mudança de
     CONFIANÇA > mudança de texto da TESE > nenhuma mudança registrada.
     `historico=None` (Supabase indisponível) -> DADOS_INSUFICIENTES, nunca
-    assume um estado sem conseguir checar."""
+    assume um estado sem conseguir checar.
+
+    LIMITAÇÃO REAL CONHECIDA (2026-11-23, documentada - não corrigida
+    nesta missão): carteira_recomendada_itens NUNCA teve colunas pra
+    sinal_comite/confianca_comite (confirmado contra produção real, ver
+    migration proposta e NÃO aplicada no final de sql/
+    carteira_recomendada.sql) - sem essas colunas,
+    jobs/carteira_recomendada_job.py:calcular_revisoes() NÃO monitora
+    mudança contínua de sinal_comite/confianca_comite (removido de
+    _CAMPOS_MONITORADOS de propósito - monitorar sem a coluna geraria
+    falso positivo em toda rodada, ver comentário lá). Na prática, HOJE
+    os ramos de SINAL/CONFIANÇA abaixo são código morto em produção (o
+    histórico real nunca contém um evento campo="sinal_comite"/
+    "confianca_comite" - só existe no payload JSONB aninhado do evento
+    'entrada_na_carteira', que não bate com o filtro de campo usado
+    aqui) - a classificação cai direto pra mudança de TESE (texto) ou
+    PRESERVADA/DADOS_INSUFICIENTES, nunca finge ter avaliado um sinal
+    que não existe. Os testes destes ramos (TestClassificarEstado) são a
+    ESPECIFICAÇÃO de como a função deve se comportar assim que a
+    migration for autorizada/aplicada e _CAMPOS_MONITORADOS reincluir os
+    3 campos - zero mudança necessária aqui quando esse dia chegar."""
     if historico is None:
         return {
             "classificacao": TESE_DADOS_INSUFICIENTES,
@@ -1098,6 +1118,18 @@ def estado_tese(
         "preco_alvo_atual": (item_atual or {}).get("preco_alvo"),
         "riscos_atuais": (item_atual or {}).get("riscos") or [],
         "criterio_saida_atual": (item_atual or {}).get("criterio_saida"),
+        # sinal/confiança/score "_na_entrada": capturados 1x no evento
+        # JSONB de entrada (sem depender de coluna nova - ver docstring
+        # acima). "_atual": lido de item_atual (carteira_recomendada_itens)
+        # - SEMPRE None hoje, pois essa tabela nunca teve essas 3 colunas
+        # (achado real 2026-11-23, migration proposta e NÃO aplicada em
+        # sql/carteira_recomendada.sql); mantido no shape pra já existir
+        # e virar automaticamente real assim que a migration + salvar_
+        # carteira() forem atualizados - nunca um erro, só um campo vazio
+        # até lá.
+        "sinal_na_entrada": ((entrada_evt or {}).get("valor_novo") or {}).get("sinal_comite"),
+        "confianca_na_entrada": ((entrada_evt or {}).get("valor_novo") or {}).get("confianca_comite"),
+        "score_na_entrada": ((entrada_evt or {}).get("valor_novo") or {}).get("score_comite"),
         "sinal_atual": (item_atual or {}).get("sinal_comite"),
         "confianca_atual": (item_atual or {}).get("confianca_comite"),
         "score_atual": (item_atual or {}).get("score_comite"),

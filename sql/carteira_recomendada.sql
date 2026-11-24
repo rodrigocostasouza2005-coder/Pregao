@@ -149,3 +149,50 @@ alter table carteira_recomendada_acompanhamento enable row level security;
 -- (os índices e policies de RLS são removidos automaticamente pelo DROP
 -- TABLE - não precisam de DROP INDEX/DROP POLICY separado)
 -- ===========================================================================
+
+-- ===========================================================================
+-- MIGRATION PROPOSTA, NÃO APLICADA (missão "Radar inteligente e
+-- acompanhamento de teses", 2026-11-23) - DOCUMENTADA E PARADA aqui,
+-- aguardando autorização explícita do Rodrigo antes de rodar em produção
+-- (regra do projeto: migration de schema novo nunca é executada sozinha).
+--
+-- ACHADO REAL que motiva esta proposta: consultada a produção REAL
+-- (select("*") em carteira_recomendada_itens, 2026-11-23, 4 linhas
+-- existentes) - a tabela nunca teve colunas pra sinal/confiança/score do
+-- Comitê. jobs/carteira_recomendada_job.py:calcular_revisoes() tentou
+-- monitorar esses 3 campos pra detectar quando o Comitê REBAIXA/ELEVA a
+-- recomendação de um ativo já na carteira (não só na entrada) - sem essas
+-- colunas, essa comparação dia-a-dia é IMPOSSÍVEL de fazer de forma
+-- correta (o snapshot "anterior" nunca teria o valor real pra comparar) e
+-- foi por isso REVERTIDA antes de qualquer commit desta missão: hoje
+-- sinal_comite/confianca_comite/score_comite só são capturados 1x, no
+-- evento 'entrada_na_carteira' de carteira_recomendada_historico (JSONB,
+-- sem precisar de coluna nova) - um FATO histórico da entrada, nunca uma
+-- comparação contínua.
+--
+-- Se Rodrigo autorizar, esta migration (aditiva, mesmo padrão "if not
+-- exists" do resto do arquivo - zero risco de quebrar dado existente)
+-- habilita a comparação contínua que falta:
+--
+-- alter table carteira_recomendada_itens
+--   add column if not exists sinal_comite text,
+--   add column if not exists confianca_comite text,
+--   add column if not exists score_comite numeric;
+--
+-- Depois de aplicada, 2 mudanças de código (fora do escopo desta
+-- migration, pra revisão separada):
+--   1. data/carteira_recomendada.py:salvar_carteira() passa a incluir
+--      "sinal_comite"/"confianca_comite"/"score_comite" no dict do
+--      upsert (hoje só grava ticker/setor/peso_pct/justificativa/
+--      preco_referencia/preco_alvo/tese/riscos/criterio_saida/
+--      data_revisao/origem_analise_id/atualizado_em).
+--   2. jobs/carteira_recomendada_job.py:_CAMPOS_MONITORADOS volta a
+--      incluir os 3 campos (código já existe no histórico de commits
+--      desta missão, revertido - fácil de reaplicar).
+--
+-- ROLLBACK (reverte só esta migration, se aplicada):
+-- alter table carteira_recomendada_itens
+--   drop column if exists sinal_comite,
+--   drop column if exists confianca_comite,
+--   drop column if exists score_comite;
+-- ===========================================================================

@@ -70,18 +70,37 @@ def test_calcular_revisoes_detecta_mudanca_de_tese_preco_alvo_e_criterio_saida_i
     assert len(revisoes) == 2
 
 
-def test_calcular_revisoes_detecta_mudanca_de_recomendacao_do_comite():
-    """Ampliação 2026-11-23: sinal/confiança/score do Comitê agora entram
-    no histórico - sem isso, data/carteira_recomendada.py:estado_tese()
-    nunca saberia que uma tese foi rebaixada/reforçada pelo Comitê."""
-    anterior = [_item("PETR4", sinal_comite="COMPRA", confianca_comite="ALTA", score_comite=6)]
+def test_calcular_revisoes_nao_monitora_sinal_confianca_score_do_comite():
+    """ACHADO REAL (2026-11-23, confirmado contra produção): carteira_
+    recomendada_itens NUNCA teve as colunas sinal_comite/confianca_comite/
+    score_comite (schema real só tem ticker/setor/peso_pct/justificativa/
+    preco_referencia/preco_alvo/tese/riscos/criterio_saida/data_revisao/
+    origem_analise_id/atualizado_em). `anterior` vem dessa tabela (sempre
+    sem esses 3 campos) e `novo` vem da montagem em memória (sempre COM
+    eles) - se fossem monitorados aqui, TODO ticker geraria 'mudou de
+    None para COMPRA/ALTA/6' em TODA rodada, pra sempre (falso positivo
+    permanente). Por isso NÃO estão em _CAMPOS_MONITORADOS - exigiria
+    antes uma migration aditiva (documentada, não aplicada) + atualizar
+    salvar_carteira() pra persisti-los. Este teste prova que a ausência
+    desses campos no item anterior nunca gera revisão nenhuma (mesmo
+    quando o item novo os tem, como qualquer saída real de
+    montar_carteira_recomendada)."""
+    anterior = [_item("PETR4")]  # sem sinal_comite/confianca_comite/score_comite - igual à tabela real
     novo = [_item("PETR4", sinal_comite="VENDA", confianca_comite="BAIXA", score_comite=-5)]
+    assert job.calcular_revisoes(anterior, novo) == []
+
+
+def test_calcular_revisoes_entrada_na_carteira_registra_sinal_confianca_score_so_como_fato_historico():
+    """O que sobrevive da tentativa original: capturado 1x, só no evento
+    append-only de entrada (JSONB, sem depender de coluna nova) - nunca
+    comparado dia a dia (essa comparação é a que exigiria a migration)."""
+    anterior = [_item("PETR4")]
+    novo = [_item("PETR4"), _item("WEGE3", sinal_comite="COMPRA", confianca_comite="ALTA", score_comite=6)]
     revisoes = job.calcular_revisoes(anterior, novo)
-    campos = {r["campo"] for r in revisoes}
-    assert campos == {"sinal_comite", "confianca_comite", "score_comite"}
-    por_campo = {r["campo"]: r for r in revisoes}
-    assert por_campo["sinal_comite"]["valor_anterior"] == "COMPRA"
-    assert por_campo["sinal_comite"]["valor_novo"] == "VENDA"
+    entrada = next(r for r in revisoes if r["ticker"] == "WEGE3")
+    assert entrada["valor_novo"]["sinal_comite"] == "COMPRA"
+    assert entrada["valor_novo"]["confianca_comite"] == "ALTA"
+    assert entrada["valor_novo"]["score_comite"] == 6
 
 
 def test_calcular_revisoes_riscos_reordenados_nao_conta_como_mudanca():
