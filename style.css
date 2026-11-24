@@ -390,7 +390,30 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
    aperto do conteudo - por isso o bloco abaixo, que forca a MESMA
    mecanica de sobreposicao do celular em QUALQUER largura quando nao
    ha' mouse. */
-@media (min-width: 641px) and (hover: hover) and (pointer: fine) {
+/* BUG REAL confirmado por Playwright real (tablet-overlap-20261124,
+   harness docs/evidencias/sidebar-tablet-overlap-20261124/): em QUALQUER
+   aba, com touch habilitado e largura >=800px (initial_sidebar_state="auto"
+   decide ABRIR a sidebar nessa faixa - mesmo breakpoint interno do
+   Streamlit ja documentado abaixo), a regra de overlay forcado (bloco
+   seguinte) prendia a sidebar em position:fixed/height:100vh mesmo em
+   tablets LARGOS o bastante pra empurrar o conteudo como desktop faz -
+   medido: em 1024px touch a sidebar cobria 284px (28,6% da largura, mas
+   ALTURA TOTAL, persistente em qualquer posicao de rolagem por ser
+   position:fixed) do bloco de conteudo principal, escondendo logo/busca/
+   ticker (.st-key-header_fixo) e o inicio de qualquer painel. Em
+   1024-1366px SEM touch (mouse) essa mesma largura ja empurra o conteudo
+   sem nenhum aperto (confirmado: 692-1034px de conteudo disponivel,
+   nenhuma reclamacao/bug aberto pra essa faixa com mouse) - entao nao ha'
+   motivo pra tratar touch diferente de mouse quando ha' espaco de sobra.
+   Fix: a partir de 1024px (intervalo real deixado livre entre os
+   tablets em pe' confirmados quebrados - ate' ~900px, ver bloco abaixo -
+   e os tablets deitados, que comecam em 1024px), touch passa a usar a
+   MESMA regra de empurrar o conteudo que o mouse ja usa com seguranca
+   nessa largura (min-width:1024px soma-se a condicao por OR, independente
+   de hover/pointer). Sidebars mais estreitas que 1024px (celular E tablet
+   em pe', ambos confirmados apertando o conteudo se empurrados - ver bloco
+   seguinte) continuam em overlay, sem mudanca. */
+@media (min-width: 641px) and (hover: hover) and (pointer: fine), (min-width: 1024px) {
     section[data-testid="stSidebar"] {
         /* fica ACIMA da faixa fixa do topo (.st-key-header_fixo, z-index 56):
            como essa faixa e' fixed de ponta a ponta da tela, sem isso ela
@@ -408,13 +431,28 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
    (sem isso, position:fixed sem top/height herdaria uma altura de
    conteudo, nao da viewport). z-index nao precisa ser repetido - o
    proprio Streamlit ja aplica 999991 inline neste elemento (maior que
-   qualquer z-index deste arquivo), confirmado por computed style. */
-@media (hover: none), (pointer: coarse) {
+   qualquer z-index deste arquivo), confirmado por computed style.
+
+   Escopo reduzido a <1024px (tablet-overlap-20261124, ver comentario
+   acima): so' nessa faixa o overlay continua sendo necessario (tablet em
+   pe'/celular, onde empurrar 300px aperta demais o conteudo - bug
+   original de 2026-11-01). Acima de 1024px o bloco anterior ja cobre
+   touch junto com mouse. */
+@media (max-width: 1023px) and (hover: none), (max-width: 1023px) and (pointer: coarse) {
     section[data-testid="stSidebar"] {
         position: fixed !important;
         top: 0 !important;
         height: 100vh !important;
     }
+}
+/* Collapse button/alvo de toque/subnav acima da sidebar: ficam SEM
+   restricao de largura (ao contrario do bloco de position:fixed acima) -
+   nenhum dos 3 depende de overlay-vs-empurrar, so' de touch nunca disparar
+   :hover (botao de fechar) ou de alvo de toque minimo (checkbox); em
+   >=1024px a subnav deixa de precisar do z-index (sidebar empurra em vez
+   de sobrepor), mas manter a regra la' e' inocuo (nunca ha' sobreposicao
+   pra "ganhar" nessa largura). */
+@media (hover: none), (pointer: coarse) {
     /* BUG REAL confirmado (Playwright, 2026-11-01): o botao nativo do
        Streamlit que fecha a sidebar (data-testid="stSidebarCollapseButton")
        fica visibility:hidden ate' o mouse passar por cima do cabecalho da
