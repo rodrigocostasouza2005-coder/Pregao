@@ -1114,3 +1114,51 @@ def test_linha_valuation_cacheada_entre_chamadas_com_mesmo_ticker():
     assert primeira == segunda
     assert chamadas["cotacao"] == 1, f"esperava 1 chamada real (cache de linha_valuation), teve {chamadas['cotacao']}"
     assert chamadas["indicadores"] == 1, f"esperava 1 chamada real (cache de linha_valuation), teve {chamadas['indicadores']}"
+
+
+# ============================================================
+# divida_liquida_ebitda com EBITDA <= 0 (achado da auditoria
+# 2026-11-23, missao master Fase 3/Valuation): dividir divida_liquida
+# por um EBITDA negativo produz uma razao negativa que PARECE "divida
+# baixa/negativa" (sinal bom) quando o problema real e' a empresa ter
+# EBITDA negativo (sinal muito mais grave) - leitura invertida e
+# perigosa. Mesmo guard que ja existia em data/radar.py:_ev_ebitda
+# (EBITDA <= 0 -> None) agora tambem em divida_liquida_ebitda.
+# ============================================================
+
+def test_divida_liquida_ebitda_com_ebitda_negativo_nao_calcula_razao():
+    obter_indicadores.clear()
+    info_fake = {"totalDebt": 500.0, "totalCash": 100.0, "ebitda": -50.0}
+    with patch.object(prices_mod, "_tk_info_com_retry", return_value=info_fake), \
+         patch.object(prices_mod, "_calcular_beta", return_value=None), \
+         patch.object(prices_mod, "_dividend_yield_12m", return_value=None):
+        resultado = obter_indicadores("TESTE_DL_EBITDA_NEGATIVO")
+    assert resultado["divida_liquida"] == 400.0, f"(resultado={resultado})"
+    assert resultado["ebitda"] == -50.0
+    assert resultado["divida_liquida_ebitda"] is None, (
+        "EBITDA negativo nunca pode gerar uma razao divida/EBITDA numerica - "
+        f"o numero seria negativo e pareceria 'divida baixa' (resultado={resultado})"
+    )
+
+
+def test_divida_liquida_ebitda_com_ebitda_zero_nao_calcula_razao():
+    obter_indicadores.clear()
+    info_fake = {"totalDebt": 500.0, "totalCash": 100.0, "ebitda": 0.0}
+    with patch.object(prices_mod, "_tk_info_com_retry", return_value=info_fake), \
+         patch.object(prices_mod, "_calcular_beta", return_value=None), \
+         patch.object(prices_mod, "_dividend_yield_12m", return_value=None):
+        resultado = obter_indicadores("TESTE_DL_EBITDA_ZERO")
+    assert resultado["divida_liquida_ebitda"] is None, f"(resultado={resultado})"
+
+
+def test_divida_liquida_ebitda_com_ebitda_positivo_continua_calculando():
+    """Contraste com os 2 testes acima: EBITDA positivo precisa continuar
+    calculando a razao normalmente (nunca regredir o caminho feliz)."""
+    obter_indicadores.clear()
+    info_fake = {"totalDebt": 500.0, "totalCash": 100.0, "ebitda": 200.0}
+    with patch.object(prices_mod, "_tk_info_com_retry", return_value=info_fake), \
+         patch.object(prices_mod, "_calcular_beta", return_value=None), \
+         patch.object(prices_mod, "_dividend_yield_12m", return_value=None):
+        resultado = obter_indicadores("TESTE_DL_EBITDA_POSITIVO")
+    assert resultado["divida_liquida"] == 400.0, f"(resultado={resultado})"
+    assert resultado["divida_liquida_ebitda"] == 2.0, f"(resultado={resultado})"
