@@ -199,3 +199,47 @@ def test_obter_texto_relatorio_pdf_usa_motivo_da_cadeia(monkeypatch):
 
     assert texto is None
     assert motivo == "motivo customizado de teste"
+
+
+def test_obter_texto_relatorio_pdf_com_texto_curto_e_rejeitado_antes_da_ia(monkeypatch):
+    """Gate de qualidade ANTES do resumo (nunca depois) - achado real,
+    investigacao Fase 5 2026-11-23: um PDF so' com capa/pagina de rosto
+    (texto curto, mas tecnicamente "extraivel" - _extrair_texto_pdf nao
+    devolve None) seguia pro Groq como se fosse um relatorio completo.
+    Mesmo limiar ja usado no caminho HTML (_TAMANHO_MIN_TEXTO)."""
+    class _RespostaFalsa:
+        status_code = 200
+        headers = {"Content-Type": "application/pdf"}
+        content = b"pdf-fake"
+
+        def raise_for_status(self):
+            return None
+
+    with patch.object(resumir_mod, "permitido", return_value=True), \
+         patch.object(resumir_mod.cffi_requests, "get", return_value=_RespostaFalsa()), \
+         patch.object(resumir_mod, "_extrair_texto_pdf", return_value=("Carteira Safra TOP 10 Ações", None)):
+        texto, motivo = resumir_mod.obter_texto_relatorio("https://exemplo.com/relatorio.pdf")
+
+    assert texto is None
+    assert "curto" in motivo
+
+
+def test_obter_texto_relatorio_pdf_com_texto_suficiente_passa(monkeypatch):
+    """Contraprova do teste acima: texto >= _TAMANHO_MIN_TEXTO continua
+    passando normalmente (o gate novo nao rejeita documento completo)."""
+    class _RespostaFalsa:
+        status_code = 200
+        headers = {"Content-Type": "application/pdf"}
+        content = b"pdf-fake"
+
+        def raise_for_status(self):
+            return None
+
+    texto_completo = "A" * resumir_mod._TAMANHO_MIN_TEXTO
+    with patch.object(resumir_mod, "permitido", return_value=True), \
+         patch.object(resumir_mod.cffi_requests, "get", return_value=_RespostaFalsa()), \
+         patch.object(resumir_mod, "_extrair_texto_pdf", return_value=(texto_completo, None)):
+        texto, motivo = resumir_mod.obter_texto_relatorio("https://exemplo.com/relatorio.pdf")
+
+    assert texto == texto_completo
+    assert motivo is None
