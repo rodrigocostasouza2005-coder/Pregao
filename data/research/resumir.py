@@ -149,6 +149,19 @@ _PROMPT_SISTEMA = (
 _LIMITE_TEXTO_DIRETO = 12000
 _TAMANHO_CHUNK = 10000
 
+# Gate de qualidade ANTES de chamar a IA (nunca depois) - mesmo limiar ja
+# usado no caminho HTML (ver obter_texto_relatorio abaixo, "conteudo
+# muito curto") desde sempre, estendido pro caminho PDF (achado real,
+# investigacao Fase 5 2026-11-23): _extrair_texto_pdf aceitava QUALQUER
+# texto nao-vazio (ex: so' a capa do PDF, "Carteira Safra TOP 10 Acoes",
+# sem nenhum conteudo analitico real) e mandava direto pro Groq - gastava
+# cota de IA pra gerar um resumo de um documento incompleto, em vez de
+# degradar pra "resumo indisponivel" como o caminho HTML ja fazia. Mesmo
+# limiar (200 chars) nos dois caminhos: documento real de research tem
+# sempre mais que isso; abaixo disso e' capa/pagina vazia/extracao
+# parcial, nunca um relatorio completo de verdade.
+_TAMANHO_MIN_TEXTO = 200
+
 _PROMPT_DADOS_ESTRUTURADOS = (
     "Leia o texto do relatorio e responda EXATAMENTE neste formato, "
     "2 linhas, nada mais, sem nenhum comentario antes ou depois:\n"
@@ -587,10 +600,16 @@ def obter_texto_relatorio(link: str) -> tuple:
         texto, motivo_pdf = _extrair_texto_pdf(r.content)
         if texto is None:
             return None, motivo_pdf
+        if len(texto) < _TAMANHO_MIN_TEXTO:
+            # mesma checagem do caminho HTML abaixo (ver _TAMANHO_MIN_TEXTO) -
+            # sem isso, um PDF so' com capa/pagina de rosto (texto curto,
+            # tecnicamente "extraivel") seguia pro Groq como se fosse um
+            # relatorio completo.
+            return None, "conteudo muito curto (PDF so' com capa/pagina de rosto, sem conteudo analitico extraivel)"
         return texto, None
 
     texto = _extrair_texto_html(r.text)
-    if len(texto) < 200:
+    if len(texto) < _TAMANHO_MIN_TEXTO:
         return None, "conteudo muito curto (provavelmente exige login)"
     return texto, None
 

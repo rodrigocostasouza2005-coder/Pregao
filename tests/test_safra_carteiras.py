@@ -37,6 +37,67 @@ TEXTO_PAGINA_1_REAL = (
 _HOJE = datetime.date(2026, 10, 16)
 _URL_PDF = "https://www.safra.com.br/data/files/xxx/Outubro_Acoes.pdf"
 
+# Fixture real (investigacao Fase 5, 2026-11-23): texto extraido via
+# pypdf do PDF real "Novembro_Acoes.pdf", baixado ao vivo deste
+# ambiente - mesma tabela de outubro, mas com PONTO como separador
+# decimal em vez de VIRGULA (ex: "48.36" em vez de "48,36"). Confirma a
+# causa raiz real de "Safra Corretora (carteiras)" ficar "fonte
+# indisponivel"/"tabela rejeitada: 0 ticker(s) encontrados" por semanas:
+# a fonte mudou o separador decimal do PDF sem aviso e o regex antigo
+# so' aceitava virgula.
+TEXTO_PAGINA_1_REAL_PONTO_DECIMAL = (
+    "Carteira Safra\nTOP 10 Ações\nSafra Corretora 1\nNovembro de 2026\n"
+    "Carteira Safra Top 10 Ações\nApós a forte volatilidade observada em outubro...\n"
+    "Recomendações para novembro\nFonte: Estimativas Safra e Bloomberg\n"
+    "Cauê Pinheiro\nEstrategista\nLuana Nunes \nEstrategista\nYves Adam, CFA\nEstrategista\n"
+    "Código Companhia Setor\nCot. fech. \n30/10/2026\n(BRL/ação)\nP/L 2026E Peso \n"
+    "anterior Peso atual\n"
+    "WEGE3 Weg Bens de Capital 48.36 29.4x 12.0% 12.0%\n"
+    "ITSA4 Itaúsa Serviços Financeiros 12.45 5.2x 0.0% 15.0%\n"
+    "CXSE3 Caixa Seguridade Serviços Financeiros 21.38 13.3x 10.0% 10.0%\n"
+    "SUZB3 Suzano Papel e Celulose 50.14 7.9x 0.0% 7.5%\n"
+    "VALE3 Vale Siderurgia e Mineração 62.02 8.4x 10.0% 7.5%\n"
+    "PETR4 Petrobras Petróleo e Gás 52.71 5.2x 10.0% 10.0%\n"
+    "IGTI11 Iguatemi Shoppings Centers 21.79 12.1x 10.0% 10.0%\n"
+    "TIMS3 TIM Brasil TMT 19.17 10.7x 0.0% 8.0%\n"
+    "ENEV3 Eneva Utilidades Básicas 25.70 58.0x 0.0% 10.0%\n"
+    "EQTL3 Equatorial Utilidades Básicas 32.60 13.5x 10.0% 10.0%"
+)
+_HOJE_NOVEMBRO = datetime.date(2026, 11, 23)
+_URL_PDF_NOVEMBRO = "https://www.safra.com.br/data/files/yyy/Novembro_Acoes.pdf"
+
+
+def test_parsear_texto_aceita_ponto_como_separador_decimal():
+    """Regressao do bug real encontrado em produção: o PDF de novembro
+    usa ponto decimal (48.36) em vez de vírgula (48,36) - o regex antigo
+    rejeitava TODAS as linhas da tabela (0 tickers), classificando a
+    fonte inteira como indisponível por semanas, mesmo com a página e o
+    PDF respondendo normalmente."""
+    itens = safra_mod._parsear_texto(TEXTO_PAGINA_1_REAL_PONTO_DECIMAL, _URL_PDF_NOVEMBRO, hoje=_HOJE_NOVEMBRO)
+    assert itens is not None
+    assert len(itens) == 10
+    tickers = {i["ticker"] for i in itens}
+    assert tickers == {
+        "WEGE3", "ITSA4", "CXSE3", "SUZB3", "VALE3",
+        "PETR4", "IGTI11", "TIMS3", "ENEV3", "EQTL3",
+    }
+
+
+def test_parsear_texto_cotacao_com_ponto_decimal_fica_float_valida():
+    itens = safra_mod._parsear_texto(TEXTO_PAGINA_1_REAL_PONTO_DECIMAL, _URL_PDF_NOVEMBRO, hoje=_HOJE_NOVEMBRO)
+    item = next(i for i in itens if i["ticker"] == "PETR4")
+    assert item["empresa"] == "Petrobras"
+
+
+def test_parsear_texto_separa_setor_tmt_do_nome_da_empresa():
+    """Achado real no mesmo PDF de novembro/2026: sem 'TMT' no vocabulario
+    de setores conhecidos, a empresa da TIM Brasil ficava poluída com o
+    setor colado ('TIM Brasil TMT') - o ticker/dado numérico continuavam
+    corretos, só o nome de exibição ficava errado."""
+    itens = safra_mod._parsear_texto(TEXTO_PAGINA_1_REAL_PONTO_DECIMAL, _URL_PDF_NOVEMBRO, hoje=_HOJE_NOVEMBRO)
+    item = next(i for i in itens if i["ticker"] == "TIMS3")
+    assert item["empresa"] == "TIM Brasil"
+
 
 def test_parsear_texto_extrai_os_10_tickers_reais():
     itens = safra_mod._parsear_texto(TEXTO_PAGINA_1_REAL, _URL_PDF, hoje=_HOJE)

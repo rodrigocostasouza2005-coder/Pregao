@@ -46,19 +46,37 @@ MESES = {
 # se um setor novo nao estiver aqui, o nome inteiro (empresa+setor) cai
 # em "empresa" sem quebrar o parsing (degradacao graciosa, nunca
 # descarta a linha so' por causa disso - o que o Radar precisa de
-# verdade e' so' o ticker).
+# verdade e' so' o ticker). "TMT" (achado real, PDF de novembro/2026:
+# "TIMS3 TIM Brasil TMT") adicionado junto da correcao do separador
+# decimal - sem ele, "empresa" da TIM Brasil ficava "TIM Brasil TMT" em
+# vez de so' "TIM Brasil" (ticker/dado numerico continuavam corretos,
+# so' o nome de exibicao ficava poluido).
 _SETORES_CONHECIDOS = sorted((
     "Bens de Capital", "Serviços Financeiros", "Saúde",
     "Siderurgia e Mineração", "Petróleo e Gás", "Shoppings Centers",
     "Utilidades Básicas", "Consumo e Varejo", "Educação",
     "Energia Elétrica e Saneamento", "Transportes", "Recursos Naturais",
     "Construção Civil", "Agronegócio", "Tecnologia", "Telecomunicações",
-    "Papel e Celulose", "Bebidas", "Alimentos e Bebidas", "Bancos",
+    "Papel e Celulose", "Bebidas", "Alimentos e Bebidas", "Bancos", "TMT",
 ), key=len, reverse=True)
 
 # linha da tabela: CODIGO  Empresa [Setor]  12,34  5,6x  7,0%  8,0%
+#
+# Decimal aceita VIRGULA (pt-BR, formato historico, confirmado no PDF de
+# outubro/2026) OU PONTO (confirmado ao vivo no PDF de novembro/2026,
+# ex: "WEGE3 Weg Bens de Capital 48.36 29.4x 12.0% 12.0%") - achado real
+# (investigacao Fase 5, 2026-11-23): a Safra trocou o separador decimal
+# de mes pra mes sem aviso (provavel mudanca na ferramenta de exportacao
+# do PDF, possivelmente locale en-US num mes especifico), e o regex so'
+# aceitava virgula - toda linha da tabela deixava de bater, "0 ticker(s)
+# encontrados" (MIN_TICKERS), coletor "fonte indisponivel" desde entao
+# (ver PR #347, que so' melhorou o DIAGNOSTICO dessa mesma falha sem
+# achar a causa). Reproduzido contra o PDF real de novembro/2026 (rede
+# deste ambiente alcanca www.safra.com.br sem bloqueio) antes de corrigir
+# - nao e' suposicao. Aceitar os dois formatos cobre a fonte voltando a
+# usar virgula em qualquer mes futuro, sem precisar de outro ajuste.
 _LINHA_TABELA_RE = re.compile(
-    r"^([A-Z][A-Z0-9]{3,5})\s+(.+?)\s+(\d+,\d+)\s+(\d+,\d+)x\s+(\d+,\d+)%\s+(\d+,\d+)%\s*$"
+    r"^([A-Z][A-Z0-9]{3,5})\s+(.+?)\s+(\d+[,.]\d+)\s+(\d+[,.]\d+)x\s+(\d+[,.]\d+)%\s+(\d+[,.]\d+)%\s*$"
 )
 MIN_TICKERS = 5  # Top 10 real tem ~10; abaixo disso, parsing suspeito -> rejeita
 
