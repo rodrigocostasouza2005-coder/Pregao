@@ -782,6 +782,74 @@ def _render_perfil_posicionamento(perguntas: dict):
     _render_pergunta_perfil((perguntas or {}).get("concorrentes"), "Concorrentes")
 
 
+def _render_perfil_research_consenso(research: dict):
+    """Achado real (auditoria de continuação, 2026-11-23): data/
+    empresa_perfil.py:obter_perfil_empresa já calcula e devolve a chave
+    'research' completa (dispersão de preço-alvo, divergência de
+    recomendação entre casas e evolução histórica - quem mudou de
+    posição hoje), mas o único consumidor desta função em ui/*.py nunca
+    lia essa chave - dado real já calculado (zero custo novo, zero IA
+    nova, mesma fonte já usada por ui/analises_tab.py) ficava sem tela
+    justamente na aba pensada pra responder "o que os analistas estão
+    dizendo" (pedido literal do Rodrigo). Mostra só o que já existe,
+    nunca recalcula nada; indisponibilidade é sempre explícita (nunca
+    uma seção ausente em silêncio)."""
+    research = research or {}
+    subtitulo("Consenso entre casas de research")
+    if not research.get("disponivel"):
+        st.caption(str(research.get("motivo") or "Research consolidado indisponível para este ticker."))
+        return
+    if not research.get("casas"):
+        # disponivel=True com 0 casas (ver data/research/comparador.py:
+        # comparar_ticker, "banco respondeu, zero publicacao estruturada
+        # pra esse ticker") - dispersao/divergencia/evolucao nem existem
+        # nesse caso (comparar_ticker não as calcula sem nenhuma casa).
+        # Mostra o motivo explícito em vez de uma seção silenciosamente
+        # vazia (mesmo princípio de todo o resto do Perfil da Empresa).
+        st.caption(str(research.get("motivo") or "Nenhuma casa de research monitorada cobre este ticker."))
+        return
+
+    dispersao = research.get("dispersao_precos_alvo") or {}
+    if dispersao:
+        if dispersao.get("amostra_insuficiente"):
+            st.caption(str(dispersao.get("resumo") or "Amostra insuficiente para medir dispersão de preço-alvo."))
+        else:
+            moeda = str(dispersao.get("moeda") or "BRL")
+            linhas_dispersao = [
+                f"Preço-alvo mínimo: {_moeda_html(dispersao.get('minimo'), moeda)}",
+                f"Preço-alvo mediano: {_moeda_html(dispersao.get('mediana'), moeda)}",
+                f"Preço-alvo máximo: {_moeda_html(dispersao.get('maximo'), moeda)}",
+            ]
+            lista_compacta(linhas_dispersao)
+            st.caption(str(dispersao.get("resumo") or ""))
+
+    divergencia = research.get("divergencia_recomendacao") or {}
+    if divergencia:
+        partes_divergencia = []
+        if divergencia.get("numerica"):
+            partes_divergencia.append(
+                f"Preços-alvo divergem numericamente entre {divergencia.get('n_casas_com_preco_alvo')} casa(s)."
+            )
+        if divergencia.get("qualitativa"):
+            partes_divergencia.append("Categorias de recomendação divergem entre as casas monitoradas.")
+        if divergencia.get("casa_mais_otimista") and divergencia.get("casa_mais_cautelosa"):
+            partes_divergencia.append(
+                f"Mais otimista: {divergencia['casa_mais_otimista']} · Mais cautelosa: {divergencia['casa_mais_cautelosa']}"
+                f" (critério: {divergencia.get('criterio_otimismo') or 'não informado'})."
+            )
+        if partes_divergencia:
+            lista_compacta([html.escape(p) for p in partes_divergencia])
+        elif not divergencia.get("amostra_insuficiente_qualitativa"):
+            st.caption("Casas monitoradas convergem na recomendação e no preço-alvo.")
+
+    evolucao = research.get("evolucao_historica") or {}
+    mudancas_hoje = sorted(
+        casa for casa, info in evolucao.items() if info.get("mudou_recomendacao_ou_alvo_hoje")
+    )
+    if mudancas_hoje:
+        st.caption("Mudou recomendação ou preço-alvo hoje: " + ", ".join(mudancas_hoje) + ".")
+
+
 def _render_perfil_noticias(perfil: dict):
     """Bloco (e) do Perfil da Empresa: até 5 notícias recentes
     (metadado - título/data/selo/link, nunca resumo editorial, ver
@@ -853,6 +921,8 @@ def render_perfil_empresa_tab(ticker: str):
         _render_perfil_momento_atual(perfil.get("perguntas") or {})
         divisor()
         _render_perfil_posicionamento(perfil.get("perguntas") or {})
+        divisor()
+        _render_perfil_research_consenso(perfil.get("research") or {})
         divisor()
         _render_perfil_noticias(perfil)
 
