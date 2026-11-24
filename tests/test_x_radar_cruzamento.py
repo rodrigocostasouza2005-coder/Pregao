@@ -64,6 +64,35 @@ def test_mesma_origem_detectada_contra_o_que_ja_esta_persistido():
     assert resultado["mesma_origem"] is True
 
 
+def test_contexto_news_falha_e_logada_e_degrada_pra_lista_vazia(capsys):
+    """Achado real (auditoria de continuação, 2026-11-23): esta exceção
+    degradava em silêncio (diferente de data/research/store.py, que
+    sempre loga em falha) - direção conservadora (nivel_evidencia nunca
+    é inflado por isso), mas sem rastro de diagnóstico. Agora loga a
+    causa sem mudar o fallback."""
+    with patch.object(cruzamento_mod, "obter_noticias", side_effect=RuntimeError("Google News indisponível")):
+        resultado = cruzamento_mod._contexto_news("WEGE3")
+    assert resultado == []
+    saida = capsys.readouterr().out
+    assert "_contexto_news" in saida and "Google News indisponível" in saida
+
+
+def test_existe_chave_acontecimento_falha_e_logada_e_trata_como_nao_persistido(capsys):
+    """Mesmo achado acima, no outro bloco except de cruzamento.py: uma
+    falha real na consulta de duplicata (ex: Supabase fora do ar)
+    degradava pra 'não está duplicado' sem nenhum log."""
+    with patch.object(cruzamento_mod, "_contexto_research", return_value=[]), \
+         patch.object(cruzamento_mod, "_contexto_news", return_value=[]), \
+         patch("data.x_radar.store.existe_chave_acontecimento", side_effect=RuntimeError("Supabase fora do ar")):
+        resultado = cruzamento_mod.cruzar_fontes(
+            SINAL_RUMOR, {"ok": True, "categoria": "noticia", "ticker": "WEGE3", "tema": "guidance"},
+            chaves_ja_vistas=set(),
+        )
+    assert resultado["mesma_origem"] is False  # mesmo fallback de antes
+    saida = capsys.readouterr().out
+    assert "existe_chave_acontecimento" in saida and "Supabase fora do ar" in saida
+
+
 def test_classificacao_sem_relevancia_fica_nao_confirmado_mesmo_com_contexto():
     contexto_research = [{"fonte": "research_casa", "casa": "XP", "link": "https://x/y", "data": "2026-10-29"}]
     with patch.object(cruzamento_mod, "_contexto_research", return_value=contexto_research), \

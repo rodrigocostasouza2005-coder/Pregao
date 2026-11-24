@@ -409,13 +409,22 @@ def _evolucao_historica(ticker: str, agrupado: dict) -> dict:
         atual = info["atual"]
         anteriores = info["todas"][1:]
 
+        # Achado real (auditoria de continuação, 2026-11-23): as duas
+        # exceções abaixo degradavam em silêncio pra lista vazia -
+        # indistinguível de "casa sem histórico estruturado" (ausência
+        # real, documentada na docstring acima). Uma falha de verdade
+        # (ex: Supabase fora do ar) virava a mesma saída, sem rastro.
+        # Loga a causa (mesmo padrão de data/research/store.py) sem
+        # mudar o fallback - histórico continua opcional por design.
         try:
             snapshots = historico.historico_ticker(casa, ticker, limite=10)
-        except Exception:
+        except Exception as exc:
+            print(f"[comparador] _evolucao_historica: historico_ticker({casa!r}, {ticker!r}) falhou: {exc!r}")
             snapshots = []
         try:
             mudancas_hoje_casa = historico.mudancas_hoje(casa)
-        except Exception:
+        except Exception as exc:
+            print(f"[comparador] _evolucao_historica: mudancas_hoje({casa!r}) falhou: {exc!r}")
             mudancas_hoje_casa = []
         mudou_hoje = any(m.get("ticker") == ticker for m in mudancas_hoje_casa)
 

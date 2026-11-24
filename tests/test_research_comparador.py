@@ -575,7 +575,12 @@ def test_evolucao_historica_casa_sem_historico_estruturado_nao_e_erro():
     assert evolucao["mudou_recomendacao_ou_alvo_hoje"] is False
 
 
-def test_evolucao_historica_falha_no_modulo_historico_nunca_propaga():
+def test_evolucao_historica_falha_no_modulo_historico_nunca_propaga(capsys):
+    """Achado real (auditoria de continuação, 2026-11-23): as duas
+    exceções aqui degradavam em silêncio - indistinguível de "casa sem
+    histórico estruturado" (ausência real, caso coberto pelo teste
+    acima). Agora loga a causa (sem mudar o fallback) - uma falha real
+    do Supabase deixa de ser invisível."""
     publicacoes = [_pub("Genial Analisa", "l1", data_publicacao="2026-10-20", recomendacao="COMPRA", preco_alvo=60.0)]
     with patch.object(comp_mod, "listar_premissas", return_value=publicacoes), \
          patch.object(comp_mod.historico, "historico_ticker", side_effect=RuntimeError("Supabase fora do ar")), \
@@ -583,6 +588,9 @@ def test_evolucao_historica_falha_no_modulo_historico_nunca_propaga():
          _mock_cobertura_vazia():
         comparacao = comp_mod.comparar_ticker("WEGE3")  # nunca lanca excecao
     assert comparacao["evolucao_historica"]["Genial Analisa"]["historico_estruturado_disponivel"] is False
+    saida = capsys.readouterr().out
+    assert "historico_ticker" in saida and "Supabase fora do ar" in saida
+    assert "mudancas_hoje" in saida
 
 
 # ============================================================

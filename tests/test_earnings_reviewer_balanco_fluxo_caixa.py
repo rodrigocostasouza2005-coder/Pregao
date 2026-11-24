@@ -201,7 +201,14 @@ def test_aliquota_nao_disponivel_bloqueia_roic_sem_assumir_padrao():
 def test_capital_investido_negativo_bloqueia_roic():
     """Patrimônio líquido muito negativo deixa capital investido <= 0 -
     ROIC sem significado econômico nesse caso, None (nunca um percentual
-    com denominador negativo, que inverteria o sinal de forma confusa)."""
+    com denominador negativo, que inverteria o sinal de forma confusa).
+
+    Achado real (auditoria de continuação, 2026-11-23): a limitação
+    textual gerada neste caso dizia "balanço... não pôde ser obtido" -
+    falso, o balanço FOI obtido (os 3 componentes estão presentes
+    acima), o problema real é capital investido <= 0. Agora a limitação
+    distingue os dois motivos (ver _MOTIVO_ROIC_CAPITAL_INVESTIDO_NEGATIVO
+    em data/earnings/reviewer.py)."""
     dre_sintetico = pd.DataFrame([
         {"CNPJ_CIA": _CNPJ_VALE, "DT_REFER": "2026-06-30", "DENOM_CIA": "VALE S.A.",
          "ORDEM_EXERC": "ÚLTIMO", "DT_INI_EXERC": "2026-04-01", "DT_FIM_EXERC": "2026-06-30",
@@ -218,6 +225,26 @@ def test_capital_investido_negativo_bloqueia_roic():
          patch.object(cvm_dfc, "obter_fluxo_caixa_trimestral", return_value=None):
         nota = reviewer.montar_nota_br("VALE3", 2026, 2)
     assert nota["balanco_fluxo_caixa"]["roic_pct"] is None
+    limitacao_roic = next(lim for lim in nota["limitacoes"] if "ROIC" in lim)
+    assert "capital investido" in limitacao_roic.lower()
+    assert "não pôde ser obtido" not in limitacao_roic
+
+
+def test_balanco_ausente_mantem_mensagem_original_de_roic_indisponivel():
+    """Contraste direto com o teste acima: quando o balanço de verdade
+    NÃO foi obtido (fonte fora do ar - mesmo cenário de
+    test_balanco_indisponivel_gera_limitacao_de_roic_e_divida), a
+    limitação continua sendo a mensagem original ("não pôde ser
+    obtido") - a correção de texto não reaproveitou a mensagem errada
+    pro caso em que ela já estava certa."""
+    with patch.object(cvm_dre, "obter_cnpj", return_value=_CNPJ_VALE), \
+         patch.object(cvm_dre, "_baixar_csv_do_zip", return_value=_VALE_DRE), \
+         patch.object(cvm_balanco, "obter_balanco_trimestral", return_value=None), \
+         patch.object(cvm_dfc, "obter_fluxo_caixa_trimestral", return_value=None):
+        nota = reviewer.montar_nota_br("VALE3", 2026, 2)
+    limitacao_roic = next(lim for lim in nota["limitacoes"] if "ROIC" in lim)
+    assert "não pôde ser obtido" in limitacao_roic
+    assert "capital investido" not in limitacao_roic.lower()
 
 
 # ---------------------------------------------------------------------
@@ -299,6 +326,37 @@ def test_serie_historica_br_capex_e_dividendos_sao_so_direcao_nao_julgamento():
         serie = reviewer.serie_historica_br("WEGE3", n_trimestres=2)
     assert serie["capex_ytd"]["tendencia"] == "RECUPERACAO"
     assert serie["dividendos_pagos_ytd"]["tendencia"] == "RECUPERACAO"
+
+
+def test_serie_historica_br_exception_num_trimestre_e_logada_e_pulada(capsys):
+    """Achado real (auditoria de continuação, 2026-11-23): único bloco
+    except deste arquivo sem log (os outros sempre fazem print/
+    registrar_tentativa) - uma exceção REAL dentro de montar_nota_br
+    (ex: KeyError por dado malformado da CVM) ficava indistinguível de
+    "trimestre sem DRE disponível" (caminho normal). Agora loga a causa
+    sem mudar o comportamento: o trimestre problemático é pulado, os
+    demais da série continuam normalmente, nunca interpola."""
+    nota_ok = {
+        "disponivel": True, "periodo_label": "2T2026",
+        "metricas": {"receita_liquida": {"yoy_variacao_pct": 5.0},
+                     "ebit": {"yoy_variacao_pct": 5.0},
+                     "lucro_liquido_consolidado": {"yoy_variacao_pct": 5.0}},
+        "margem_bruta_pct": 30.0,
+    }
+
+    def _montar(ticker, ano, tri):
+        if (ano, tri) == (2026, 1):
+            raise KeyError("CD_CONTA malformado")
+        return nota_ok
+
+    with patch.object(reviewer, "trimestres_candidatos_br", return_value=[(2026, 2), (2026, 1)]), \
+         patch.object(reviewer, "montar_nota_br", side_effect=_montar):
+        serie = reviewer.serie_historica_br("WEGE3", n_trimestres=2)
+    assert serie["disponivel"] is True
+    assert serie["roic_pct"]["serie"] == []  # só a nota sintética sem balanco_fluxo_caixa
+    saida = capsys.readouterr().out
+    assert "serie_historica_br" in saida
+    assert "CD_CONTA malformado" in saida
 
 
 def test_serie_historica_br_sem_bfc_fica_none_sem_quebrar():

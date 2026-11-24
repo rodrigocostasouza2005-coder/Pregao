@@ -132,6 +132,53 @@ def test_casa_citada_inventada_pela_ia_e_descartada():
     assert resultado["casas_citadas"] == ["Genial Analisa"]  # casa inventada nunca sobrevive à validação
 
 
+def test_casa_fora_da_cobertura_citada_no_texto_livre_rejeita_sintese_inteira():
+    """Achado real (auditoria de continuação, 2026-11-23): o teste acima
+    só cobre a lista estruturada 'casas_citadas' - esta cobre o TEXTO
+    LIVRE, onde a atribuição de fato aparece pro usuário. 'BTG Pactual
+    Research' é uma casa REAL do projeto (data/research/__init__.py:
+    CASAS), mas NÃO está em _COMPARACAO_2_CASAS (só Genial/XP cobrem
+    WEGE3 neste payload) - citá-la dentro de 'sintese' é evidência de
+    alucinação de atribuição, não um erro de formatação. A síntese
+    inteira é rejeitada (nunca só o nome removido da frase)."""
+    resposta_com_casa_fora_do_payload = json.dumps({
+        "sintese": "O BTG Pactual Research destaca o crescimento de margem da empresa.",
+        "convergencias": [], "divergencias": [], "pontos_atencao": [],
+        "casas_citadas": ["Genial Analisa"],
+    })
+    with patch("data.research.comparador.comparar_ticker", return_value=_COMPARACAO_2_CASAS), \
+         patch.object(mr.config, "obter_credenciais_groq", return_value=("fake-key", "modelo-principal")), \
+         patch.object(mr.config, "obter_modelo_groq_fallback", return_value="modelo-fallback"), \
+         patch.object(mr, "_chamar_groq_mr", return_value=(resposta_com_casa_fora_do_payload, None)), \
+         patch.object(mr.ia_hibrida_telemetria, "registrar_execucao") as telemetria_mock, \
+         _bypass_cache():
+        resultado = mr.sintese_qualitativa_research("WEGE3")
+    assert resultado["disponivel"] is False
+    assert "formato inesperado" in resultado["motivo"]
+    assert telemetria_mock.call_args.kwargs["sucesso"] is False
+
+
+def test_casa_dentro_da_cobertura_no_texto_livre_e_aceita_normalmente():
+    """Contraste com o teste acima: citar 'XP Investimentos' (casa real
+    E parte do payload desta análise) no texto livre é legítimo e não
+    deve disparar a rejeição - o validador só reage a casas FORA da
+    cobertura real, nunca a qualquer menção de nome de casa."""
+    resposta_legitima = json.dumps({
+        "sintese": "A XP Investimentos aponta valuation esticado, enquanto a Genial Analisa vê espaço de alta.",
+        "convergencias": [], "divergencias": ["XP Investimentos e Genial Analisa divergem sobre o preço justo."],
+        "pontos_atencao": [], "casas_citadas": ["Genial Analisa", "XP Investimentos"],
+    })
+    with patch("data.research.comparador.comparar_ticker", return_value=_COMPARACAO_2_CASAS), \
+         patch.object(mr.config, "obter_credenciais_groq", return_value=("fake-key", "modelo-principal")), \
+         patch.object(mr.config, "obter_modelo_groq_fallback", return_value="modelo-fallback"), \
+         patch.object(mr, "_chamar_groq_mr", return_value=(resposta_legitima, None)), \
+         patch.object(mr.ia_hibrida_telemetria, "registrar_execucao"), \
+         _bypass_cache():
+        resultado = mr.sintese_qualitativa_research("WEGE3")
+    assert resultado["disponivel"] is True
+    assert resultado["casas_citadas"] == ["Genial Analisa", "XP Investimentos"]
+
+
 def test_resposta_malformada_nunca_lanca_excecao():
     with patch("data.research.comparador.comparar_ticker", return_value=_COMPARACAO_2_CASAS), \
          patch.object(mr.config, "obter_credenciais_groq", return_value=("fake-key", "modelo-principal")), \

@@ -31,6 +31,7 @@ import requests
 
 import config
 from data import ia_cache, ia_hibrida_telemetria
+from data.coordenador_central.pareceres import IDS_ANALISTAS_COMITE
 
 _URL_GROQ_COORD = "https://api.groq.com/openai/v1/chat/completions"
 _MAX_TOKENS_SINTESE_COMITE = 600
@@ -165,7 +166,49 @@ def _montar_payload_sintese_comite(consolidado: dict) -> dict | None:
     }
 
 
+# Universo COMPLETO de ids de ANALISTA (pareceres_analistas.analistas -
+# ver data/coordenador_central/pareceres.py:IDS_ANALISTAS_COMITE), não
+# só os que de fato entraram no payload desta síntese - precisa do
+# universo inteiro pra detectar um analista REAL mas FORA do payload
+# sendo citado por engano (ver _especialistas_mencionados_fora_do_payload).
+# NUNCA confundir com data/coordenador_central/registro.py:REGISTRO -
+# aqueles são os ids das FONTES DE DADO (ex: "comparador",
+# "memoria_research"), namespace diferente do analista que assina o
+# parecer final. Mesmo padrão de data/market_researcher.py:
+# _NOMES_CASAS_CONHECIDAS/_casas_mencionadas_fora_da_cobertura - achado
+# da mesma auditoria.
+_IDS_ESPECIALISTAS_CONHECIDOS = IDS_ANALISTAS_COMITE
+
+
+def _especialistas_mencionados_fora_do_payload(textos: list, ids_reais: set) -> list:
+    """Achado real (auditoria de continuação, 2026-11-23): o validador
+    anterior só sanitizava a lista estruturada 'especialistas_citados' -
+    o TEXTO LIVRE ('leitura'/'fator_decisivo'), onde a atribuição de
+    fato aparece pro usuário (ver ui/coordenador_tab.py), nunca era
+    verificado. Um id de especialista REAL do Coordenador, mas que não
+    fez parte DESTE payload (ex: 'model_builder' quando o DCF não foi
+    calculado nesta análise - ver fluxos.py:analisar_ticker, 'pulado'),
+    citado na prosa passava intacta.
+
+    Varre `textos` por qualquer id do universo conhecido que NÃO esteja
+    em `ids_reais` (os que de fato tinham parecer no payload enviado à
+    IA). Substring simples (ids são tokens com underscore, ex:
+    'model_builder' - sem colisão com outra palavra do texto)."""
+    bruto = " ".join(t for t in textos if isinstance(t, str)).lower()
+    if not bruto:
+        return []
+    return [
+        especialista_id for especialista_id in _IDS_ESPECIALISTAS_CONHECIDOS
+        if especialista_id not in ids_reais and especialista_id in bruto
+    ]
+
+
 def _validar_sintese_comite(dados, ids_reais: set) -> dict | None:
+    """Rejeita a síntese INTEIRA (None) se o texto livre ('leitura' ou
+    'fator_decisivo') citar um especialista fora do payload real desta
+    análise (ver _especialistas_mencionados_fora_do_payload) - nunca
+    tenta "corrigir" removendo só o id, porque o resto da frase poderia
+    continuar atribuindo conteúdo a esse especialista."""
     if not isinstance(dados, dict):
         return None
     leitura = dados.get("leitura")
@@ -176,6 +219,8 @@ def _validar_sintese_comite(dados, ids_reais: set) -> dict | None:
     especialistas_citados = [
         i for i in (dados.get("especialistas_citados") or []) if isinstance(i, str) and i in ids_reais
     ]
+    if _especialistas_mencionados_fora_do_payload([leitura, fator_decisivo], ids_reais):
+        return None
     return {"leitura": leitura.strip(), "fator_decisivo": fator_decisivo, "especialistas_citados": especialistas_citados}
 
 

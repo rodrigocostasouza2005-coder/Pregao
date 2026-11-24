@@ -204,9 +204,17 @@ def consenso_research(cobertura: dict | None) -> dict:
 
 
 def _pais_code(ticker: str) -> str:
+    """Achado real (auditoria de continuação, 2026-11-23): diferente de
+    todo outro bloco deste módulo (que sempre loga antes de degradar),
+    esta função engolia a exceção em silêncio - uma falha real de
+    config.info_ativo ficava indistinguível de "sabemos que é BR".
+    Loga a causa (mesmo padrão do resto do arquivo) antes de aplicar o
+    mesmo fallback de sempre; o comportamento de degradação não muda,
+    só deixa de ser silencioso."""
     try:
         return "BR" if config.info_ativo(ticker).get("pais") == "Brasil" else "US"
-    except Exception:
+    except Exception as exc:
+        print(f"[market_researcher] _pais_code({ticker!r}): config.info_ativo falhou: {exc!r}")
         return "BR"
 
 
@@ -571,11 +579,49 @@ def _montar_payload_sintese_research(comparacao: dict) -> dict:
     }
 
 
+# Universo COMPLETO de casas conhecidas pelo projeto (data/research/
+# __init__.py:CASAS), não só as que cobrem o ticker desta síntese -
+# precisa do universo inteiro pra detectar uma casa REAL mas FORA do
+# payload sendo citada por engano (ver _casas_mencionadas_fora_da_cobertura).
+_NOMES_CASAS_CONHECIDAS = tuple(sorted({c["nome"] for c in CASAS if c.get("nome")}))
+
+
+def _casas_mencionadas_fora_da_cobertura(textos: list, casas_reais: set) -> list:
+    """Achado real (auditoria de continuação, 2026-11-23): o validador
+    anterior só sanitizava a lista estruturada 'casas_citadas' - o TEXTO
+    LIVRE ('sintese'/'convergencias'/'divergencias'/'pontos_atencao'),
+    onde a atribuição de fato aparece pro usuário (ver
+    ui/coordenador_tab.py, que exibe esses campos diretamente), nunca
+    era verificado. Uma casa inventada - ou uma casa REAL do projeto que
+    simplesmente não cobre este ticker - citada dentro da prosa passava
+    intacta.
+
+    Varre `textos` por nome de QUALQUER casa do universo conhecido que
+    NÃO esteja em `casas_reais` (as que de fato cobrem este ticker e
+    foram enviadas no payload). Encontrar uma é evidência de alucinação
+    de atribuição - a IA citou uma fonte que não fez parte dos dados que
+    recebeu. Substring simples (mesmo nível de rigor do resto do
+    projeto, nunca NLP) - falso positivo só ocorreria se o nome de uma
+    casa aparecesse por acaso dentro de outra palavra, o que não ocorre
+    com os nomes cadastrados hoje."""
+    bruto = " ".join(t for t in textos if isinstance(t, str)).lower()
+    if not bruto:
+        return []
+    return [
+        nome for nome in _NOMES_CASAS_CONHECIDAS
+        if nome not in casas_reais and nome.lower() in bruto
+    ]
+
+
 def _validar_sintese_research(dados, casas_reais: set) -> dict | None:
     """Validação de campo - nunca confia ciegamente na saída do modelo.
     Exige 'sintese' não vazia; descarta qualquer item de
     'casas_citadas' que não seja uma casa real do payload (nunca deixa
-    passar uma casa inventada)."""
+    passar uma casa inventada); rejeita a síntese INTEIRA (None) se o
+    texto livre citar uma casa fora da cobertura real desta análise (ver
+    _casas_mencionadas_fora_da_cobertura) - nunca tenta "corrigir"
+    removendo só o nome, porque o resto da frase poderia continuar
+    atribuindo conteúdo a essa casa inventada."""
     if not isinstance(dados, dict):
         return None
     sintese = dados.get("sintese")
@@ -585,6 +631,8 @@ def _validar_sintese_research(dados, casas_reais: set) -> dict | None:
     divergencias = [s for s in (dados.get("divergencias") or []) if isinstance(s, str) and s.strip()][:6]
     pontos_atencao = [s for s in (dados.get("pontos_atencao") or []) if isinstance(s, str) and s.strip()][:6]
     casas_citadas = [c for c in (dados.get("casas_citadas") or []) if isinstance(c, str) and c in casas_reais]
+    if _casas_mencionadas_fora_da_cobertura([sintese, *convergencias, *divergencias, *pontos_atencao], casas_reais):
+        return None
     return {
         "sintese": sintese.strip(), "convergencias": convergencias, "divergencias": divergencias,
         "pontos_atencao": pontos_atencao, "casas_citadas": casas_citadas,

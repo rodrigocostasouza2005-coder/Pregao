@@ -50,7 +50,8 @@ def _contexto_news(ticker: str) -> list[dict]:
         return []
     try:
         noticias = obter_noticias(ticker) or []
-    except Exception:
+    except Exception as exc:
+        print(f"[x_radar.cruzamento] _contexto_news({ticker!r}): obter_noticias falhou: {exc!r}")
         return []
     return [
         {"fonte": "news", "titulo": n.get("titulo"), "link": n.get("link"), "data": n.get("data")}
@@ -70,7 +71,8 @@ def cruzar_fontes(sinal, classificacao: dict, *, chaves_ja_vistas: set) -> dict:
     try:
         from data.x_radar.store import existe_chave_acontecimento
         ja_persistido = existe_chave_acontecimento(chave, excluir_post_id=sinal.post_id)
-    except Exception:
+    except Exception as exc:
+        print(f"[x_radar.cruzamento] cruzar_fontes: existe_chave_acontecimento({chave!r}) falhou: {exc!r}")
         ja_persistido = False
     mesma_origem = (chave in chaves_ja_vistas) or ja_persistido
     chaves_ja_vistas.add(chave)
