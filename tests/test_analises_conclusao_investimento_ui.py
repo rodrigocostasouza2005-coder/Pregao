@@ -504,7 +504,7 @@ def _capturar_dcf_inline(fundamentos, historico=None, crescimento=None, desconto
          patch.object(at_mod.st, "warning", side_effect=lambda texto, **_k: textos.append(str(texto))), \
          patch.object(at_mod.st, "expander", side_effect=lambda *_a, **_k: _container_cm()), \
          patch.object(at_mod.st, "dataframe", side_effect=lambda linhas, **_k: tabelas_sensibilidade.append(linhas)):
-        at_mod._controle_dcf_inline("WEGE3", fundamentos, historico)
+        at_mod.controle_dcf_inline("WEGE3", fundamentos, historico)
     return "\n".join(textos), tabelas_sensibilidade
 
 

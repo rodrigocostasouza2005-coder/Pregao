@@ -18,7 +18,7 @@ reformulação visual de 2026-11-06.
 - Analisar: dispara os 3 fluxos de verdade, com spinner REAL durante a
   execução (nunca simula progresso - ver render_analisar).
 
-A análise consolidada (_render_consolidado, usada por render_historico e
+A análise consolidada (render_consolidado, usada por render_historico e
 render_analisar) foi reorganizada em 2026-11-06 pra deixar explícito, em
 qualquer análise: (1) a RECOMENDAÇÃO fundamentada do Comitê bem no topo
 (_render_cabecalho_decisao - sinal_comite, nunca um resumo genérico);
@@ -886,7 +886,7 @@ def render_perfil_empresa_tab(ticker: str):
     (tests/test_empresa_perfil.py).
 
     Extraído do st.expander dentro de COMITÊ > Histórico (via
-    _render_consolidado) em 2026-11-23 - pedido explícito do Rodrigo pra
+    render_consolidado) em 2026-11-23 - pedido explícito do Rodrigo pra
     virar aba própria/independente (ANÁLISES > Perfil da Empresa, ver
     ui/navegacao.py e app.py rota ("analises", "perfil")), revertendo a
     decisão original de 2026-11-18 ('nunca em aba separada'). Função
@@ -1535,7 +1535,7 @@ def _render_sintese_ia(consolidado: dict):
             )
 
 
-def _render_consolidado(consolidado: dict):
+def render_consolidado(consolidado: dict):
     """Monta a análise consolidada em 3 blocos, nesta ordem (reformulação
     visual 2026-11-06, pedido do Rodrigo; perfil da empresa que viveu
     aqui entre 2026-11-18 e 2026-11-23 foi extraído pra aba própria -
@@ -1643,7 +1643,7 @@ def render_historico(prefs: dict = None):
     if not resultado:
         st.info("Esta análise ainda não tem resultado consolidado (pode estar em andamento).")
         return
-    _render_consolidado(resultado)
+    render_consolidado(resultado)
 
 
 # ============================================================
@@ -1666,6 +1666,18 @@ def render_analisar(prefs: dict = None):
 
     col_ticker, col_fluxo = st.columns([2, 2])
     with col_ticker:
+        # Compatibilidade com a Visão 360 (missão visao-360-empresa-20261124):
+        # este campo sempre foi 100% independente do ticker global (watchlist/
+        # seletor de ANÁLISES) - um usuário que chegasse aqui via o CTA
+        # "Executar Comitê para este ticker" (ver ui/visao_360_tab.py,
+        # navegacao.ir_para("comite", "visao-geral", ticker) grava
+        # "ticker_selecionado") encontrava o campo vazio, tendo que digitar o
+        # ticker de novo. Pré-popula SÓ quando este campo ainda não tem valor
+        # nenhum nesta sessão (nunca sobrescreve uma escolha que o usuário já
+        # tenha feito manualmente aqui, mesmo que ela seja diferente do
+        # ticker global).
+        if not st.session_state.get("coord_analisar_ticker") and st.session_state.get("ticker_selecionado"):
+            st.session_state["coord_analisar_ticker"] = st.session_state["ticker_selecionado"]
         ticker = st.text_input("Ticker", key="coord_analisar_ticker", placeholder="ex: PETR4").strip().upper()
     with col_fluxo:
         fluxo_escolhido = st.selectbox(
@@ -1790,4 +1802,4 @@ def render_analisar(prefs: dict = None):
             f"Análise finalizada em {duracao_txt} com status inesperado "
             f"({status_execucao or 'desconhecido'}) - não assuma que terminou bem."
         )
-    _render_consolidado(consolidado)
+    render_consolidado(consolidado)
