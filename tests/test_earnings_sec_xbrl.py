@@ -102,8 +102,20 @@ def _limpar_caches_mapa_ticker_cik():
 
 
 def test_mapa_ticker_cik_fonte_indisponivel_devolve_dict_vazio():
+    """Bug real encontrado na investigação Fase 5 (2026-11-23): este teste
+    não mockava `registrar_tentativa` - em qualquer ambiente com
+    secrets.toml real configurado (ex: pra consultar o Supabase de
+    produção, não só em CI sem credencial), a falha simulada aqui
+    ("timeout... boom", ticker fake "X") era gravada de verdade na tabela
+    `coletores_status` de PRODUÇÃO via o caminho real de
+    `registrar_tentativa` -> `data/coletores_status.py` -> Supabase,
+    sujando o painel SAÚDE DOS DADOS com dado de teste. Confirmado: antes
+    desta correção, rodar esta suíte com credencial real deixava
+    `coletores_status."SEC EDGAR (XBRL)".ultimo_erro` = literalmente
+    "timeout (>30s) ao buscar X: boom"."""
     _limpar_caches_mapa_ticker_cik()
-    with patch.object(sec_xbrl, "_get_json", return_value=(None, "timeout (>30s) ao buscar X: boom")):
+    with patch.object(sec_xbrl, "_get_json", return_value=(None, "timeout (>30s) ao buscar X: boom")), \
+         patch.object(sec_xbrl, "registrar_tentativa"):
         assert sec_xbrl._mapa_ticker_cik() == {}
     _limpar_caches_mapa_ticker_cik()
 
@@ -237,25 +249,34 @@ def test_falha_do_mapa_ticker_cik_nao_fica_presa_no_ttl_longo_de_sucesso():
     Este teste simula exatamente essa sequência (falha, depois sucesso
     LOGO em seguida, sem deixar o TTL de 24h expirar) e confirma que o
     sucesso aparece imediatamente - a falha só é protegida por um
-    cooldown de minutos (_TTL_FALHA_TICKERS), nunca pelas 24h de sucesso."""
+    cooldown de minutos (_TTL_FALHA_TICKERS), nunca pelas 24h de sucesso.
+
+    Mesmo bug real de isolamento de teste do grupo acima (ver docstring de
+    test_mapa_ticker_cik_fonte_indisponivel_devolve_dict_vazio): o bloco
+    de falha abaixo não mockava `registrar_tentativa`."""
     _limpar_caches_mapa_ticker_cik()
     resposta_boa = {"fields": ["cik", "name", "ticker", "exchange"],
                      "data": [[320193, "Apple Inc", "AAPL", "Nasdaq"]]}
 
     # 1) 1a tentativa falha (SEC fora do ar/bloqueada)
-    with patch.object(sec_xbrl, "_get_json", return_value=(None, "HTTP 503 ao buscar X: corpo='Service Unavailable'")):
+    with patch.object(sec_xbrl, "_get_json", return_value=(None, "HTTP 503 ao buscar X: corpo='Service Unavailable'")), \
+         patch.object(sec_xbrl, "registrar_tentativa"):
         assert sec_xbrl._mapa_ticker_cik() == {}
 
     # 2) a SEC volta a responder normalmente poucos segundos depois (bem
     # ANTES de qualquer TTL de 24h expirar) - como o cooldown de falha
     # (_TTL_FALHA_TICKERS) ainda não passou, _mapa_ticker_cik ainda NÃO
     # tenta de novo sozinho (evita martelar a fonte a cada rerun)...
-    with patch.object(sec_xbrl, "_get_json", return_value=(resposta_boa, None)):
+    with patch.object(sec_xbrl, "_get_json", return_value=(resposta_boa, None)), \
+         patch.object(sec_xbrl, "registrar_tentativa"):
         assert sec_xbrl._mapa_ticker_cik() == {}  # ainda dentro do cooldown curto
 
         # ...mas assim que o cooldown de falha expira (segundos, não 24h),
         # a MESMA chamada com a MESMA fonte já respondendo bem tem que
         # devolver o mapa de verdade - nunca ficar presa até o TTL de 24h.
+        # (sucesso TAMBÉM chama registrar_tentativa - ver
+        # _buscar_mapa_ticker_cik_ok - por isso o patch acima cobre os
+        # dois sub-blocos, não só a falha.)
         falha = sec_xbrl._ultima_falha_mapa_ticker_cik()
         falha["quando"] -= sec_xbrl._TTL_FALHA_TICKERS + 1
         assert sec_xbrl._mapa_ticker_cik() == {"AAPL": 320193}
@@ -269,15 +290,22 @@ def test_falha_apos_sucesso_reaproveita_ultimo_mapa_valido_nao_zera():
     a {} (derrubaria obter_cik pra TODO ticker) - tem que reaproveitar o
     último mapa bom conhecido (mesmo padrão de data/cvm.py:
     _ultimo_mapa_ticker_valido / data/ibovespa.py:_ultima_composicao_valida)."""
+    # Mesmo bug real do teste acima (ver docstring de
+    # test_mapa_ticker_cik_fonte_indisponivel_devolve_dict_vazio): o
+    # segundo bloco (falha simulada) não mockava `registrar_tentativa` -
+    # sem isso, gravava a falha fake de verdade em coletores_status de
+    # PRODUÇÃO quando a suíte roda com credencial real.
     _limpar_caches_mapa_ticker_cik()
     resposta_boa = {"fields": ["cik", "name", "ticker", "exchange"],
                      "data": [[320193, "Apple Inc", "AAPL", "Nasdaq"]]}
 
-    with patch.object(sec_xbrl, "_get_json", return_value=(resposta_boa, None)):
+    with patch.object(sec_xbrl, "_get_json", return_value=(resposta_boa, None)), \
+         patch.object(sec_xbrl, "registrar_tentativa"):
         assert sec_xbrl._mapa_ticker_cik() == {"AAPL": 320193}
 
     sec_xbrl._buscar_mapa_ticker_cik_ok.clear()  # simula o TTL de 24h expirando
-    with patch.object(sec_xbrl, "_get_json", return_value=(None, "timeout (>30s) ao buscar X: boom")):
+    with patch.object(sec_xbrl, "_get_json", return_value=(None, "timeout (>30s) ao buscar X: boom")), \
+         patch.object(sec_xbrl, "registrar_tentativa"):
         assert sec_xbrl._mapa_ticker_cik() == {"AAPL": 320193}  # reaproveita, nunca {}
 
     _limpar_caches_mapa_ticker_cik()
