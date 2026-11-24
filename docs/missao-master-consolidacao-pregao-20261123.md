@@ -12,16 +12,16 @@ Não adicionar funcionalidade nova indiscriminadamente. Transformar o Pregão nu
 
 ## As 6 frentes
 
-| Fase | Tema | Status |
-|---|---|---|
-| 1 | Estabilidade operacional e infraestrutura | disparado |
-| 2 | Comitê de Investimentos | disparado |
-| 3 | Valuation e modelos financeiros | disparado |
-| 4 | Radar inteligente e acompanhamento de teses | disparado |
-| 5 | Research e qualidade das fontes | disparado |
-| 6 | Interface, UX e consolidação do produto | disparado |
+| Fase | Tema | Status | PR(s) |
+|---|---|---|---|
+| 1 | Estabilidade operacional e infraestrutura | **concluída** | #354 |
+| 2 | Comitê de Investimentos | **concluída** | #355 |
+| 3 | Valuation e modelos financeiros | **concluída** | #353 |
+| 4 | Radar inteligente e acompanhamento de teses | **concluída** | #358 |
+| 5 | Research e qualidade das fontes | **concluída** | #356, #357 |
+| 6 | Interface, UX e consolidação do produto | **concluída** | #359 |
 
-(Atualizado pelo coordenador conforme os agentes reportam — os agentes não editam este arquivo diretamente, para não colidir entre si; cada um reporta ao coordenador, que consolida aqui.)
+Missão concluída em 2026-11-23, mesmo dia do disparo. As 6 frentes rodaram em paralelo, cada uma em worktree isolado; nenhuma fez merge (regra explícita da missão). 2 frentes (Fase 2 e Fase 5) tiveram interrupção por limite de sessão no meio da execução e foram retomadas pelo coordenador; a Fase 6 perdeu o transcript por completo e foi relançada como agente novo reaproveitando o worktree/branch já criado — sem perda de trabalho commitado em nenhum caso.
 
 ## Mapa de arquivos / ownership (evitar dois agentes implementando a mesma coisa)
 
@@ -36,18 +36,51 @@ Não adicionar funcionalidade nova indiscriminadamente. Transformar o Pregão nu
 
 Autorizado: auditoria, implementação, testes, branches, PRs — sem merge nesta missão. Proibido sem autorização explícita adicional: alterar secrets, expor credencial, operação destrutiva/migration em produção, envio real de e-mail em teste, qualquer ação irreversível, novo serviço pago, duplicar estrutura já existente. Problemas que dependam disso: documentar a solução pronta e a ação pendente, não executar.
 
-## Problemas encontrados
+## Problemas encontrados e corrigidos, por frente
 
-_(preenchido pelo coordenador conforme os relatórios chegam)_
+**Fase 1 (infra, PR #354)** — P0 investigado com evidência real de log (`gh run view --log`), não assumido por hipótese: `radar` saindo `skipped` é comportamento correto por design (jobs `radar`/`morning-call` respondem a listas de `schedule` disjuntas). A falha real era outra: quando o GitHub atrasa um disparo de `schedule` (já documentado desde 18/10 em `MANUAL.md` — atraso de ~12h observado, 8 reservas da manhã entregues de uma vez às 18h+ BRT), o job corretamente recusa enviar uma edição velha do Morning Call, mas devolvia código de saída 1, acendendo `failure` no Actions 8 vezes pela mesma causa — contrariando a própria política do projeto ("só vermelho em perda total"). Corrigido para `warning`, mantendo o registro em Saúde dos Dados.
 
-## PRs abertas nesta missão
+**Fase 2 (Comitê, PR #355)** — 2 bugs de corretude: (1) os validadores anti-alucinação da síntese de IA (`market_researcher`/`sintese_ia`) só sanitizavam a lista estruturada de casas/especialistas citados, nunca o texto livre — onde a atribuição indevida realmente apareceria pro usuário; agora rejeitam a síntese inteira se o texto citar fonte real fora da cobertura da análise. (2) 5 blocos `except` degradavam em silêncio sem log. Evolução: conectou dispersão de preço-alvo/divergência entre casas (já calculada, nunca exibida) numa seção nova do Perfil da Empresa. **Validado com 8 cenários reais (Groq/CVM/yfinance ao vivo, sem mock)**: PRIO3, GGBR4, LREN3, VALE3, CSNA3, AZUL4, MRVE3 — em todos, o sistema distinguiu fundamento de preço corretamente, nunca inventou número com dado faltante (P/L indefinido, ticker delistado tratados como limitação explícita), e toda divergência entre especialistas foi rastreável a um número real. Único ponto não fechado: validação numérica de "geração de caixa negativa" com um ticker que de fato tivesse FCF negativo (aceito como resultado parcial, não insistido).
 
-_(preenchido pelo coordenador)_
+**Fase 3 (Valuation, PR #353)** — bug real de magnitude alta no motor #1 de DCF: `ui/analises_tab.py` alimentava `calcular_dcf` com o FCF acumulado do ano (YTD, a integração CVM nunca cobre Q4) tratado como se fosse o FCF anual completo. Medido com o motor real: mesmas premissas, FCF anual verdadeiro R$1bi → preço-alvo R$119,42; FCF de 6 meses (YTD) tratado como anual → R$54,71 — menos da metade, só pelo erro de base temporal. Corrigido: sem o ponto anual real, o DCF agora bloqueia honestamente em vez de subavaliar silenciosamente. Também expôs o waterfall completo do cálculo na UI (rastreabilidade de premissa). Cenários Bear/Base/Bull confirmados já corretos (sem default silencioso, `revisar_valuation` já reprova ordenação incoerente). Nenhum motor novo criado.
 
-## Pendências
+**Fase 4 (Radar/teses, PR #358)** — nova função `estado_tese()` classifica cada ativo da Carteira Recomendada em PRESERVADA/FORTALECIDA/ENFRAQUECIDA/EM_REVISÃO/INVALIDADA/DADOS_INSUFICIENTES, com linha do tempo de eventos, retorno acumulado e relativo ao Ibovespa — 100% de dado já persistido, zero chamada nova a IA. **Achado crítico interceptado antes do commit**: a primeira versão comparava `sinal_comite`/`confianca_comite`/`score_comite` contra o snapshot anterior, mas confirmou por leitura real em produção que a tabela `carteira_recomendada_itens` nunca teve essas colunas — geraria "mudança" falsa em todo ticker, toda rodada, pra sempre. Corrigido antes de expor. Confirmado que queda de preço isolada nunca é tratada como sinal de compra (já estava correto). Confirmado que a pendência antiga "tabelas da Carteira Recomendada nunca existiam em produção" (registrada em missão de 13/11) está resolvida desde o PR #321.
 
-_(preenchido pelo coordenador)_
+**Fase 5 (Research, PRs #356/#357)** — causa raiz real do coletor Safra Corretora (carteiras): o PDF de novembro mudou separador decimal de vírgula pra ponto, e o regex só aceitava vírgula — zerava os 10 tickers da casa. Corrigido e reproduzido contra a rede real. Também: gate de tamanho mínimo de texto antes do resumo por IA no caminho PDF (só existia no caminho HTML), e setor "TMT" não reconhecido. **Incidente auto-corrigido**: 2 dos testes desta frente escreviam de fato na tabela `coletores_status` de produção (não mockavam `registrar_tentativa`) — poluição detectada, revertida e **confirmada por leitura real em produção** (não assumida) antes de prosseguir; isolamento de teste corrigido no PR #357. Métrica real medida: das 47 linhas de research de casas ativas (de 24.321 linhas totais em `research_itens`, o resto é CVM), 100% estão sem recomendação/preço-alvo porque o resumo por IA só roda quando um humano abre o item na UI, nunca em lote — com retenção de 5 dias, a maioria é apagada antes disso acontecer.
+
+**Fase 6 (UX, PR #359)** — bug real no CALENDÁRIO: rótulo de status (`● CONFIRMADO` etc.) tinha a borda da célula cruzando o texto na última linha do grid mensal — causa raiz medida via Playwright real (`getBoundingClientRect`), não estimada; o wrapper interno do Streamlit renderiza sistematicamente mais baixo que o conteúdo real e não é controlável via CSS no elemento interno — corrigido por compensação no padding da célula externa, validado em 1440px/390px com 1 e 4 eventos/dia. Os outros 2 pontos herdados (eixo Y do IPCA, responsividade 390px de MERCADO) foram **confirmados falsos alarmes** — já corrigidos ancestralmente ou sem overflow real. Confirmado via auditoria real: Streamlit é o terminal principal de fato; `web/` (Next.js) é deliberadamente um espelho somente-leitura mais leve, cobrindo um subconjunto de telas — não há reconstrução dupla, não há inconsistência de estratégia a corrigir agora.
+
+## PRs abertas nesta missão (nenhuma mergeada — regra da missão)
+
+Todas `MERGEABLE`/`CLEAN`, sem conflito de arquivo entre si (ownership por frente respeitado):
+
+| PR | Frente | Resumo |
+|---|---|---|
+| [#352](https://github.com/rodrigocostasouza2005-coder/Pregao/pull/352) | Coordenação | Este documento de continuidade (docs-only) |
+| [#353](https://github.com/rodrigocostasouza2005-coder/Pregao/pull/353) | Fase 3 | DCF nunca usa FCF acumulado (YTD) da CVM como anual |
+| [#354](https://github.com/rodrigocostasouza2005-coder/Pregao/pull/354) | Fase 1 | Disparo agendado tarde não derruba mais o job do Actions |
+| [#355](https://github.com/rodrigocostasouza2005-coder/Pregao/pull/355) | Fase 2 | Anti-alucinação em texto livre + consenso de research no Perfil |
+| [#356](https://github.com/rodrigocostasouza2005-coder/Pregao/pull/356) | Fase 5 | Safra Corretora (decimal) + gate de texto mínimo antes da IA |
+| [#357](https://github.com/rodrigocostasouza2005-coder/Pregao/pull/357) | Fase 5 | Isola testes de SEC XBRL de escrita real em produção |
+| [#358](https://github.com/rodrigocostasouza2005-coder/Pregao/pull/358) | Fase 4 | `estado_tese()` — acompanhamento real de tese na Carteira Recomendada |
+| [#359](https://github.com/rodrigocostasouza2005-coder/Pregao/pull/359) | Fase 6 | Corrige rótulo de status no grid do CALENDÁRIO |
+
+## Pendências (aguardando decisão/autorização do Rodrigo)
+
+**Schema/migration (nenhuma aplicada):**
+1. `ia_hibrida_execucoes` / `research_recomendacoes_historico` — ainda não existem no Supabase de produção (pendência já registrada em 13/11, reconfirmada agora: toda telemetria de IA híbrida falha silenciosa-mas-logada).
+2. 3 colunas aditivas em `carteira_recomendada_itens` (`sinal_comite`/`confianca_comite`/`score_comite`) — documentada em `sql/carteira_recomendada.sql`, não aplicada; sem ela, `estado_tese()` não detecta rebaixamento/elevação de recomendação para ativo que permanece na carteira.
+
+**Decisão de produto/custo:**
+3. Ativar `SINTESE_IA_COMITE_ATIVA` em produção (custo real de Groq) — guard-rails confirmados corretos pela Fase 2, decisão de custo continua do Rodrigo.
+4. Disparo externo via cron-job.org para mitigar o atraso de `schedule` do GitHub Actions na raiz (pendência pessoal antiga, não resolvida nesta missão — só a mitigação de alarme falso foi).
+
+**Achados novos, sem dono nesta missão (registrar para a próxima):**
+5. `CSNA3` (Companhia Siderúrgica Nacional, ticker líquido) não está mapeado em `data/cvm.py:_mapa_ticker_cnpj()` — quebra o Earnings Reviewer e qualquer feature de calendário/eventos para esse ticker especificamente.
+6. Sidebar sobrepõe todo o conteúdo em telas touch ~1024px (tablet), em qualquer aba — interação entre dois fixes anteriores corretos isoladamente (`app.py`/`style.css`).
+7. `divida_liquida_ebitda` em `data/prices.py` calcula a razão sem exigir EBITDA > 0 (diferente de `_ev_ebitda` em `data/radar.py`, que já bloqueia corretamente) — pode exibir "dívida baixa" quando o problema real é EBITDA negativo.
+8. Dimensão de research independente do sinal quantitativo do Comitê (`data/research/sinal.py`) quase nunca ativa na prática — confirmado real, não só teórico.
 
 ## Próxima missão recomendada
 
-_(preenchido ao final)_
+O maior gargalo real que sobrou, com evidência desta missão: **a camada de inteligência "híbrida" (telemetria de IA + Research Radar/"o que mudou") está arquitetada e codificada, mas nunca chegou a existir em produção** — duas tabelas-chave (`ia_hibrida_execucoes`, `research_recomendacoes_historico`) nunca foram migradas, então toda a parte do sistema que deveria *aprender/mudar ao longo do tempo* (telemetria de qualidade da IA, histórico de mudança de recomendação de research) degrada silenciosamente pra vazio desde sempre. Isso conecta diretamente com o `estado_tese()` novo da Fase 4 (que já documenta a mesma classe de limitação pra Carteira Recomendada) e com o achado da Fase 2 sobre telemetria falhando silenciosa-mas-logada. Recomendação: uma missão focada em (a) decidir e aplicar as migrations pendentes com segurança, (b) conectar o que já existe no código a elas, (c) medir de verdade o ganho antes de expandir mais escopo.
