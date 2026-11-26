@@ -1621,13 +1621,22 @@ def obter_perfil_para_tela(ticker: str) -> tuple:
     campo afetado, mas a chamada em si bate em yfinance/Supabase - uma
     falha de rede devolve `(None, motivo)` em vez de derrubar a tela.
     Extraída pra que a Visão 360 consuma o MESMO perfil sem repetir o
-    try/except nem chamar a fonte duas vezes na mesma página."""
+    try/except nem chamar a fonte duas vezes na mesma página.
+
+    O DETALHE TÉCNICO da falha (repr da exceção) vai pro log do servidor,
+    nunca pra tela - antes de 2026-11-26 o repr era concatenado na
+    mensagem do usuário, que via coisas como "KeyError('currentPrice')"
+    numa aba de análise. Regra explícita da missão de redesign: nome de
+    coluna, SQL, migration e exceção interna só existem em log/ferramenta
+    de dev; o usuário vê o FATO (a fonte não respondeu)."""
     if not ticker:
         return None, "Selecione um ticker para ver o perfil da empresa."
     try:
         return obter_perfil_empresa(ticker), None
     except Exception as exc:
-        return None, f"Perfil da empresa indisponível no momento (falha ao consultar as fontes: {exc!r})."
+        print(f"[coordenador_tab] perfil da empresa indisponível pra {ticker}: {exc!r}")
+        return None, ("Perfil da empresa indisponível no momento: as fontes de research/fundamentos "
+                      "não responderam nesta consulta.")
 
 
 def render_perfil_pergunta(pergunta: dict | None, rotulo: str):

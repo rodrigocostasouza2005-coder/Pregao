@@ -751,6 +751,52 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
 .st-key-nav_sub { margin-bottom: 0.4rem; gap: 0 !important; }
 .st-key-nav_sub iframe { display: block; }
 
+/* fita de tickers de ANÁLISES > Visão 360 (app.py, rota analises/panorama,
+   redesign 2026-11-26): o seletor de ticker daquela tela É a fita de
+   cotações dela - precisa de espaçamento consistente, marcação clara do
+   ticker selecionado (caixa âmbar discreta + borda, não só uma cor de
+   texto) e rolagem horizontal própria quando a watchlist é longa, sem
+   quebrar em 3 linhas e empurrar a tela pra baixo. Mesma linguagem da
+   navegação (texto mono, sem cantos arredondados), escopada por chave de
+   container pra não afetar os pills de filtro de RESEARCH/CVM/NEWS. */
+.st-key-v360_fita_ticker { margin-bottom: 0.45rem; }
+.st-key-v360_fita_ticker [data-testid="stButtonGroup"] {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 0.25rem !important;
+    border-bottom: 1px solid var(--borda);
+    padding-bottom: 0.3rem;
+}
+.st-key-v360_fita_ticker [data-testid="stButtonGroup"] button {
+    background-color: transparent !important;
+    border: 1px solid var(--borda) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    color: var(--cinza) !important;
+    font-size: 0.74rem !important;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+    padding: 0.22rem 0.7rem !important;
+    min-height: 30px !important;
+    flex: 0 0 auto !important;
+    white-space: nowrap;
+}
+.st-key-v360_fita_ticker [data-testid="stButtonGroup"] button:hover {
+    color: var(--destaque) !important;
+    border-color: var(--destaque) !important;
+}
+.st-key-v360_fita_ticker [data-testid="stButtonGroup"] button[aria-checked="true"],
+.st-key-v360_fita_ticker [data-testid="stButtonGroup"] button[aria-pressed="true"] {
+    background-color: color-mix(in srgb, var(--destaque) 12%, transparent) !important;
+    border-color: var(--destaque) !important;
+    color: var(--destaque) !important;
+}
+.st-key-v360_fita_ticker [data-testid="stButtonGroup"] button:focus-visible {
+    outline: 2px solid var(--destaque) !important;
+    outline-offset: -2px;
+}
+
 /* alertas (avisos) - barra fina de uma linha, sem bloco colorido alto ------------- */
 [data-testid="stAlert"] {
     background-color: var(--bg) !important;

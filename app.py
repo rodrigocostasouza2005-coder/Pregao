@@ -767,7 +767,16 @@ if rota == ("mais", "watchlist"):
 # - os blocos nunca executam no mesmo rerun, reusar a chave só faz o
 # ticker escolhido persistir ao trocar de subaba dentro de ANÁLISES, de
 # propósito). Composição pura (ui/visao_360_tab.py) - zero cálculo novo
-# aqui. ------------------------------------------------------------------
+# aqui.
+#
+# Redesign 2026-11-26 (missão visao-360-redesign): o seletor de ticker é a
+# "fita" desta tela e ganhou container com chave própria
+# (key="v360_fita_ticker") pra receber o visual de fita de cotações em
+# style.css - espaçamento consistente, ticker selecionado com marcação
+# âmbar clara e rolagem horizontal própria numa watchlist longa, em vez de
+# herdar o estilo genérico de pills de filtro. Mesmo widget, mesma chave de
+# estado, mesmo comportamento - só o invólucro visual.
+# ------------------------------------------------------------------
 if rota == ("analises", "panorama"):
     with st.container():
         ticker_externo = st.session_state.get(navegacao.KEY_TICKER_EXTERNO)
@@ -778,10 +787,11 @@ if rota == ("analises", "panorama"):
             st.info("Adicione um ticker na barra lateral para começar.")
         else:
             padrao_ticker, mem_ticker = _escolha_estavel("ticker_selecionado", opcoes_ticker, opcoes_ticker[0])
-            sel = st.segmented_control(
-                "Ticker", opcoes_ticker, default=padrao_ticker,
-                label_visibility="collapsed", key="ticker_selecionado",
-            )
+            with st.container(key="v360_fita_ticker"):
+                sel = st.segmented_control(
+                    "Ticker", opcoes_ticker, default=padrao_ticker,
+                    label_visibility="collapsed", key="ticker_selecionado",
+                )
             ticker_selecionado = sel or padrao_ticker
             st.session_state[mem_ticker] = ticker_selecionado
             visao_360_tab.render_visao_360(ticker_selecionado, prefs)

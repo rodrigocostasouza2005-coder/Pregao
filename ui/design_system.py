@@ -229,16 +229,21 @@ def divisor():
 # como alias destas funções (mesma assinatura, mesmo retorno) pra não
 # tocar nos 40+ pontos de chamada nem nos testes que os exercitam.
 
-def moeda_html(valor, moeda: str, casas: int = 2, fallback: str = "—") -> str:
+def moeda_html(valor, moeda: str, casas: int = 2, fallback: str = "—", formato: str = "BR") -> str:
     """Valor monetário alinhado/mono (`numero_financeiro_html`), com
     `fallback` ESCAPADO quando o valor não é um número real - nunca um
     "0,00" fabricado pra disfarçar dado ausente. `bool` é recusado de
     propósito (True é `int` em Python; um booleano chegando aqui é sempre
     bug de quem chama, não um preço). Já devolve HTML seguro - nunca
-    re-escapar o retorno."""
+    re-escapar o retorno.
+
+    `formato` default "BR" preserva exatamente o comportamento do
+    ex-`coordenador_tab._moeda_html` (que era sempre BR) nos 40+ pontos de
+    chamada de lá; telas que têm `prefs["formato_numerico"]` em mão (ex.:
+    ui/visao_360_tab.py) devem passar o formato do usuário."""
     if not isinstance(valor, (int, float)) or isinstance(valor, bool):
         return html.escape(fallback)
-    return numero_financeiro_html(valor, casas=casas, formato="BR", prefixo=f"{moeda} ")
+    return numero_financeiro_html(valor, casas=casas, formato=formato, prefixo=f"{moeda} ")
 
 
 def pct_html(valor, casas: int = 1, fallback: str = "—", escala: float = 100.0) -> str:
