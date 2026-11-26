@@ -1602,3 +1602,144 @@ div[data-testid="stVerticalBlock"].st-emotion-cache-1t2xbk4 {
 .ds-compacto > * + * {
     border-top: 1px solid color-mix(in srgb, var(--borda) 45%, transparent);
 }
+
+/* ---- onda "Visão 360" (2026-11-26): 6 padrões que estavam copiados em 3+
+   abas com medidas diferentes, agora com UMA definição. Ver docstring de
+   ui/design_system.py (bloco ONDA "VISÃO 360") pra qual helper Python gera
+   cada classe - nenhuma delas deve ser escrita à mão numa aba. ---- */
+
+/* micro-rótulo acima de um número (rotulo_html) */
+.ds-rotulo {
+    font-size: 0.6rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--cinza);
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* faixa de métricas (faixa_metricas_html): GRADE auto-fit - as colunas
+   alinham entre linhas e a faixa se reflui sozinha em tablet/notebook sem
+   nunca estourar a largura do painel (um `display:flex` com gap fixo, o
+   padrão antigo, empurrava a última métrica pra fora em ~1024px). O
+   grid-template-columns real vem inline do helper (largura mínima por
+   métrica varia com o tamanho do rótulo). */
+.ds-metricas {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+    gap: 0.35rem 1rem;
+    margin: 0.3rem 0 0.5rem 0;
+}
+.ds-metrica { min-width: 0; }
+.ds-metrica-valor {
+    font-size: 0.88rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ds-metrica-valor-g { font-size: 1.1rem; }
+.ds-metrica-nota {
+    font-size: 0.6rem;
+    color: var(--cinza);
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* selo de status/categoria (badge_html) - borda fina, fundo transparente,
+   quadrado; nunca pílula preenchida/arredondada. */
+.ds-badge {
+    display: inline-block;
+    border: 1px solid var(--borda);
+    padding: 0 0.35rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    font-family: 'IBM Plex Mono', monospace;
+    line-height: 1.5;
+}
+.ds-badge-ok { border-color: var(--alta); color: var(--alta); }
+.ds-badge-alerta { border-color: var(--destaque); color: var(--destaque); }
+.ds-badge-erro { border-color: var(--baixa); color: var(--baixa); }
+.ds-badge-neutro { border-color: var(--borda); color: var(--cinza); }
+
+/* tabela densa com rolagem horizontal PRÓPRIA (tabela_html) - a tabela
+   larga rola dentro do wrapper; o body da página nunca ganha scroll
+   horizontal (regra de responsividade do projeto). */
+.ds-tabela-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    margin: 0.2rem 0 0.5rem 0;
+}
+.ds-tabela { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+.ds-tabela th {
+    text-align: left;
+    color: var(--cinza);
+    font-size: 0.62rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem 0.25rem 0;
+    border-bottom: 1px solid var(--borda);
+    white-space: nowrap;
+}
+.ds-tabela td {
+    padding: 0.3rem 0.5rem 0.3rem 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--borda) 50%, transparent);
+    vertical-align: top;
+}
+.ds-tabela tr:last-child td { border-bottom: 0; }
+.ds-tabela th.ds-num, .ds-tabela td.ds-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    padding-right: 0;
+    padding-left: 0.5rem;
+}
+
+/* estado vazio elegante (vazio_html): a seção respondeu e não tem
+   conteúdo - visualmente diferente de um bloco que falhou em carregar. */
+.ds-vazio {
+    font-size: 0.72rem;
+    color: var(--cinza);
+    border-left: 2px solid var(--borda);
+    padding: 0.1rem 0 0.1rem 0.5rem;
+    margin: 0.25rem 0 0.4rem 0;
+    line-height: 1.5;
+}
+
+/* cabeçalho de seção interna (secao_html) - um degrau acima de
+   subtitulo() na hierarquia: régua fina na largura toda, pra separar
+   blocos grandes dentro do MESMO painel (em vez de um painel por bloco,
+   que é o que faz uma tela densa virar pilha de cards). */
+.ds-secao {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    border-bottom: 1px solid var(--borda);
+    margin: 0.85rem 0 0.45rem 0;
+    padding-bottom: 0.2rem;
+}
+.ds-secao-titulo {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--neutro);
+}
+.ds-secao-nota {
+    font-size: 0.62rem;
+    color: var(--cinza);
+    text-align: right;
+    min-width: 0;
+}
