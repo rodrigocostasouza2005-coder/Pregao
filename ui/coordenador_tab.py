@@ -687,9 +687,20 @@ def _render_pergunta_perfil(pergunta: dict | None, rotulo: str):
     regra explícita do pedido original do Rodrigo); disponivel=True sem
     evidências estruturadas (ex.: pressões de margem quando só há o dado
     numérico, já exibido nos indicadores financeiros do parecer do
-    especialista) mostra uma nota honesta em vez de uma lista vazia."""
+    especialista) mostra uma nota honesta em vez de uma lista vazia.
+
+    O rótulo usa `subtitulo()` (design system) desde 2026-11-26. Era
+    `st.markdown(f"**{rotulo}**")` - a única forma de conteúdo do app que
+    renderiza no tamanho de fonte PADRÃO do Streamlit, bem maior que o
+    resto da tela (ver docstring de ui/design_system.py, que nasceu
+    exatamente pra isso). Confirmado com Playwright na Visão 360: cada
+    pergunta do perfil saía com um título gigante no meio de um bloco de
+    texto de 0.78rem, quebrando a hierarquia visual da página. Mesmo
+    tratamento aplicado aos demais `**rótulos**` deste módulo (pontos
+    favoráveis/contrários, tese/riscos/projeções das casas e os blocos da
+    síntese de IA)."""
     pergunta = pergunta or {}
-    st.markdown(f"**{html.escape(rotulo)}**")
+    subtitulo(rotulo)
     if not pergunta.get("disponivel"):
         st.caption(str(pergunta.get("motivo_indisponivel") or "Dado indisponível para este ticker."))
         return
@@ -707,7 +718,7 @@ def _render_pergunta_quebra_tese_perfil(pergunta: dict | None):
     em data/research/comparador.py, nunca uma conclusão nova composta
     aqui)."""
     pergunta = pergunta or {}
-    st.markdown("**O que quebraria a tese**")
+    subtitulo("O que quebraria a tese")
     if not pergunta.get("disponivel"):
         st.caption(str(pergunta.get("motivo_indisponivel") or "Dado indisponível para este ticker."))
         return
@@ -1262,10 +1273,10 @@ def _render_parecer_analista(analista: dict):
         contras = analista.get("contras") or []
         col_pro, col_con = st.columns(2)
         with col_pro:
-            st.markdown("**Pontos favoráveis**")
+            subtitulo("Pontos favoráveis")
             lista_compacta(html.escape(str(x)) for x in pros) if pros else st.caption("Sem evidência favorável estruturada.")
         with col_con:
-            st.markdown("**Pontos contrários**")
+            subtitulo("Pontos contrários")
             lista_compacta(html.escape(str(x)) for x in contras) if contras else st.caption("Sem evidência contrária estruturada.")
 
     # Limitações declaradas pelo próprio especialista (ex.: Earnings
@@ -1316,12 +1327,12 @@ def _render_casas_research(casas: list, consenso: dict):
             premissas = casa.get("tese") or []
             riscos_casa = casa.get("contras") or []
             projecoes = casa.get("projecoes") or {}
-            st.markdown("**Tese / premissas publicadas**")
+            subtitulo("Tese / premissas publicadas")
             lista_compacta(html.escape(str(x)) for x in premissas) if premissas else st.caption("A extração estruturada não encontrou premissas para esta publicação.")
-            st.markdown("**Riscos apontados pela casa**")
+            subtitulo("Riscos apontados pela casa")
             lista_compacta(html.escape(str(x)) for x in riscos_casa) if riscos_casa else st.caption("A extração estruturada não encontrou riscos para esta publicação.")
             if projecoes:
-                st.markdown("**Projeções extraídas**")
+                subtitulo("Projeções extraídas")
                 lista_compacta(f"{html.escape(str(k))}: {html.escape(str(v))}" for k, v in projecoes.items() if v is not None)
     mediana = consenso.get("mediana")
     upside_consenso = consenso.get("upside_pct")
@@ -1521,7 +1532,7 @@ def _render_sintese_ia(consolidado: dict):
                 for rotulo, chave in (("Convergências", "convergencias"), ("Divergências", "divergencias"), ("Pontos de atenção", "pontos_atencao")):
                     itens = sintese_research.get(chave) or []
                     if itens:
-                        st.markdown(f"**{rotulo}**")
+                        subtitulo(rotulo)
                         lista_compacta(html.escape(str(i)) for i in itens)
         else:
             st.caption(

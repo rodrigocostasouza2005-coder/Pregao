@@ -117,6 +117,18 @@ TZ_SP = ZoneInfo("America/Sao_Paulo")
 # commit "sidebar touch empurra conteudo em tablets largos"), nunca um
 # número novo.
 _CSS_V360 = """
+/* Compensação do -1rem do Streamlit nos blocos de HTML cru desta tela -
+   mesma regra (e mesmo motivo medido com Playwright) documentada em
+   style.css, seção "COMPENSAÇÃO DO -1rem DO STREAMLIT". Sem isto, o
+   elemento seguinte a um destes blocos sobe 16px e fica por cima da
+   última linha dele (visto: a faixa de ações rápidas cobrindo a linha de
+   status da cotação). */
+[data-testid="stMarkdownContainer"] > .v360-cabecalho:last-child,
+[data-testid="stMarkdownContainer"] > .v360-veredito:last-child,
+[data-testid="stMarkdownContainer"] > .v360-cenarios:last-child,
+[data-testid="stMarkdownContainer"] > .v360-texto:last-child,
+[data-testid="stMarkdownContainer"] > .v360-nota:last-child { margin-bottom: 1rem; }
+
 /* --- cabeçalho do ativo --- */
 .v360-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.7rem; margin-bottom: 0.35rem; }
 .v360-ticker { font-size: 1.5rem; font-weight: 700; color: var(--destaque); letter-spacing: 0.02em; line-height: 1.1; }
@@ -138,7 +150,7 @@ _CSS_V360 = """
 }
 
 /* --- veredito do Comitê: recomendação e confiança nunca no mesmo peso --- */
-.v360-veredito { display: grid; grid-template-columns: minmax(200px, 0.9fr) minmax(0, 2.1fr); gap: 0.4rem 1.5rem; align-items: start; }
+.v360-veredito { display: grid; grid-template-columns: minmax(260px, 1.1fr) minmax(0, 2fr); gap: 0.4rem 1.5rem; align-items: start; }
 .v360-rec { font-size: 1.5rem; font-weight: 700; line-height: 1.1; letter-spacing: 0.02em; }
 .v360-conf { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.3rem; }
 .v360-conf-barra { display: inline-flex; gap: 2px; }
@@ -183,7 +195,21 @@ _CSS_V360 = """
     background-color: transparent !important; border-bottom: 2px solid var(--destaque) !important;
     color: var(--destaque) !important; font-weight: 600;
 }
-/* ações rápidas: botões de vínculo discretos, não uma fileira de CTAs */
+/* ações rápidas: botões de vínculo discretos, não uma fileira de CTAs.
+   Cada coluna encolhe pro tamanho do próprio botão (`flex: 0 0 auto`) e a
+   fileira quebra linha quando não couber - com as colunas padrão do
+   Streamlit (largura igual) o rótulo era cortado em telas de 1024px
+   ("Fundamentos ↗" virava "Fundament…", medido no Playwright) e ficava
+   esticado em telas largas. */
+.st-key-v360_acoes [data-testid="stHorizontalBlock"] {
+    flex-wrap: wrap !important;
+    gap: 0.3rem !important;
+}
+.st-key-v360_acoes [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+}
 .st-key-v360_acoes button {
     background-color: transparent !important; border: 1px solid var(--borda) !important;
     border-radius: 0 !important; color: var(--cinza) !important; font-size: 0.66rem !important;
@@ -382,12 +408,12 @@ def _render_cabecalho(ticker: str, linha: dict | None, prefs: dict):
 
     if cot.get("erro"):
         st.markdown(
-            identidade
+            "<div class='v360-cabecalho'>" + identidade
             + "<div class='v360-cotacao'><div>" + ds.rotulo_html("PREÇO")
             + "<div class='v360-preco'>—</div></div></div>"
             + "<div class='v360-status'>Preço atual indisponível agora: a fonte de cotação "
               "(Yahoo Finance) não respondeu nesta consulta. As demais seções desta tela "
-              "continuam válidas - elas não dependem da cotação do momento.</div>",
+              "continuam válidas - elas não dependem da cotação do momento.</div></div>",
             unsafe_allow_html=True,
         )
         return
@@ -417,17 +443,21 @@ def _render_cabecalho(ticker: str, linha: dict | None, prefs: dict):
     )
     hora = _hora_consulta(cot.get("cotacao_em"))
     st.markdown(
-        identidade
+        "<div class='v360-cabecalho'>" + identidade
         + "<div class='v360-cotacao'>"
         + "<div>" + ds.rotulo_html("PREÇO")
         + f"<div class='v360-preco'>{_reais(cot.get('preco'), fmt)}</div></div>"
         + "<div>" + ds.rotulo_html("VARIAÇÃO DO DIA") + bloco_variacao + "</div>"
-        + f"<div class='v360-cotacao-extra'>{ds.faixa_metricas_html(extras, minimo=132)}</div>"
+        # minimo=168: "MÁX/MÍN DIA" e "52 SEMANAS" são valores COMPOSTOS
+        # ("R$ 38,94 / R$ 37,80") e o número nunca quebra linha - medido a
+        # 1024px, com uma coluna menor o segundo valor era cortado com
+        # reticências e o usuário perdia a mínima do dia.
+        + f"<div class='v360-cotacao-extra'>{ds.faixa_metricas_html(extras, minimo=168)}</div>"
         + "</div>"
         + "<div class='v360-status'>"
         + html.escape(str(cot.get("tipo_cotacao") or "Origem da cotação não informada"))
         + (f" · consultado em {html.escape(hora)} (horário de Brasília)" if hora else "")
-        + ". O horário é o da CONSULTA, não o do último negócio.</div>",
+        + ". O horário é o da CONSULTA, não o do último negócio.</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -445,12 +475,20 @@ def _render_acoes_rapidas(ticker: str):
         ("Comitê ↗", "comite", "historico"),
     ]
     with st.container(key="v360_acoes"):
+        # 1 coluna por destino; a LARGURA de cada uma é resolvida no CSS
+        # (ver _CSS_V360, ".st-key-v360_acoes"): cada coluna encolhe pro
+        # tamanho do botão e a fileira quebra linha quando precisa. Com as
+        # colunas de largura igual do Streamlit, os botões ficavam gigantes
+        # a 1920px e com o rótulo cortado a 1024px.
         colunas = st.columns(len(destinos))
         for coluna, (rotulo, area, sub) in zip(colunas, destinos):
             with coluna:
+                # sem width="stretch": o botão fica do tamanho do próprio
+                # rótulo (medido a 1024px, esticado ele cortava
+                # "Fundamentos ↗" em "Fundament…"), e a coluna extra no fim
+                # mantém todos agrupados à esquerda em telas largas.
                 navegacao.link(
-                    rotulo, area, sub, chave=f"v360_acao_{area}_{sub}_{ticker}",
-                    ticker=ticker, width="stretch",
+                    rotulo, area, sub, chave=f"v360_acao_{area}_{sub}_{ticker}", ticker=ticker,
                 )
 
 
@@ -632,6 +670,7 @@ def _render_momento_mercado(ticker: str):
 
     catalisadores = contexto.get("catalisadores") or []
     mudancas = contexto.get("mudancas") or []
+    ds.subtitulo("Catalisadores (próximos 60 dias)")
     if catalisadores:
         linhas = []
         for item in catalisadores:
@@ -697,8 +736,14 @@ def _render_visao_executiva(ticker: str, perfil: dict | None, motivo_perfil: str
         comite_ui.render_perfil_pergunta(perguntas.get("riscos"), "Riscos identificados")
         comite_ui.render_perfil_pergunta_quebra_tese(perguntas.get("o_que_quebraria_a_tese"))
     with linha2_dir:
+        # As 3 perguntas, uma a uma, em vez de render_perfil_posicionamento
+        # (que embute um subtítulo "Posicionamento competitivo" próprio) -
+        # com o cabeçalho de seção acima, o subtítulo embutido repetia o
+        # mesmo rótulo 2x seguidas na tela (visto no Playwright).
         ds.secao("Posicionamento competitivo", "concorrentes, vantagens, barreiras")
-        comite_ui.render_perfil_posicionamento(perguntas)
+        comite_ui.render_perfil_pergunta(perguntas.get("posicao_competitiva"), "Posição competitiva")
+        comite_ui.render_perfil_pergunta(perguntas.get("vantagens_competitivas"), "Vantagens competitivas")
+        comite_ui.render_perfil_pergunta(perguntas.get("concorrentes"), "Concorrentes")
 
 
 # ============================================================

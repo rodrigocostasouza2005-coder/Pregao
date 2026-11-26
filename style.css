@@ -1689,13 +1689,16 @@ div[data-testid="stVerticalBlock"].st-emotion-cache-1t2xbk4 {
     text-overflow: ellipsis;
 }
 .ds-metrica-valor-g { font-size: 1.1rem; }
+/* a NOTA da métrica é texto explicativo curto ("especialistas com
+   parecer", "sobre a cotação") - quebra em 2 linhas em vez de cortar com
+   reticências (medido a 1024px: "especialistas com parec…" perdia a
+   palavra final). O VALOR acima dela continua `nowrap` de propósito:
+   número quebrado em duas linhas é ilegível. */
 .ds-metrica-nota {
     font-size: 0.6rem;
     color: var(--cinza);
     line-height: 1.3;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 
 /* selo de status/categoria (badge_html) - borda fina, fundo transparente,
@@ -1727,6 +1730,14 @@ div[data-testid="stVerticalBlock"].st-emotion-cache-1t2xbk4 {
     margin: 0.2rem 0 0.5rem 0;
 }
 .ds-tabela { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+/* Respiro em AMBOS os lados de toda célula (medido com Playwright a
+   1920px: com padding só à direita, uma coluna numérica alinhada à
+   direita encostava na coluna de texto seguinte e saía
+   "R$ 52,002026-11-18"). As bordas externas ficam sem padding pra tabela
+   alinhar com o resto do painel. */
+.ds-tabela th, .ds-tabela td { padding: 0.3rem 0.6rem; }
+.ds-tabela th:first-child, .ds-tabela td:first-child { padding-left: 0; }
+.ds-tabela th:last-child, .ds-tabela td:last-child { padding-right: 0; }
 .ds-tabela th {
     text-align: left;
     color: var(--cinza);
@@ -1734,12 +1745,10 @@ div[data-testid="stVerticalBlock"].st-emotion-cache-1t2xbk4 {
     letter-spacing: 0.05em;
     text-transform: uppercase;
     font-weight: 600;
-    padding: 0.25rem 0.5rem 0.25rem 0;
     border-bottom: 1px solid var(--borda);
     white-space: nowrap;
 }
 .ds-tabela td {
-    padding: 0.3rem 0.5rem 0.3rem 0;
     border-bottom: 1px solid color-mix(in srgb, var(--borda) 50%, transparent);
     vertical-align: top;
 }
@@ -1748,8 +1757,6 @@ div[data-testid="stVerticalBlock"].st-emotion-cache-1t2xbk4 {
     text-align: right;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-    padding-right: 0;
-    padding-left: 0.5rem;
 }
 
 /* estado vazio elegante (vazio_html): a seção respondeu e não tem
@@ -1761,6 +1768,32 @@ div[data-testid="stVerticalBlock"].st-emotion-cache-1t2xbk4 {
     padding: 0.1rem 0 0.1rem 0.5rem;
     margin: 0.25rem 0 0.4rem 0;
     line-height: 1.5;
+}
+
+/* COMPENSAÇÃO DO -1rem DO STREAMLIT (bug real medido com Playwright em
+   2026-11-26, missão visao-360-redesign - não é ajuste "no olho"):
+   o Streamlit aplica `margin-bottom: -16px` em TODO
+   [data-testid="stMarkdownContainer"] pra cancelar a margem inferior de
+   1rem que um <p> de markdown sempre tem. Quando o bloco termina num <p>
+   (markdown normal), as duas margens se cancelam e o espaçamento fica
+   certo. Quando o bloco é HTML cru e termina numa <div> (que NÃO tem
+   margem inferior), sobra um -16px real: o elemento seguinte - um botão,
+   uma coluna, outro painel - sobe 16px e fica POR CIMA da última linha do
+   bloco. Medido na Visão 360: a faixa de ações rápidas cobria a linha de
+   status da cotação (markdown com altura 83px pra um conteúdo de 99px).
+
+   A correção devolve 1rem SÓ quando uma classe do design system é o
+   último filho do container - ou seja, só nos blocos escritos com estes
+   helpers (código novo). Nenhum bloco antigo do app muda de espaçamento.
+   Quem escrever um bloco de HTML cru novo e não usar um destes helpers
+   pode marcar a raiz com a classe `ds-bloco` pra receber a mesma
+   compensação. */
+[data-testid="stMarkdownContainer"] > .ds-metricas:last-child,
+[data-testid="stMarkdownContainer"] > .ds-tabela-wrap:last-child,
+[data-testid="stMarkdownContainer"] > .ds-vazio:last-child,
+[data-testid="stMarkdownContainer"] > .ds-secao:last-child,
+[data-testid="stMarkdownContainer"] > .ds-bloco:last-child {
+    margin-bottom: 1rem;
 }
 
 /* cabeçalho de seção interna (secao_html) - um degrau acima de
