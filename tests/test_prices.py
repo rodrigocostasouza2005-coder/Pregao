@@ -527,6 +527,68 @@ def test_obter_cotacao_falha_registra_tentativa_com_erro():
     assert "timeout" in kwargs["erro"]
 
 
+def test_tk_info_com_retry_registrar_tentativa_nao_e_chamado_concorrentemente():
+    """Regressão (revisão independente da PR de paralelização de
+    obter_indicadores em app.py/ui/secoes.py/data/radar.py, 2026-11-27):
+    data/coletores_status.py:registrar_tentativa faz um read-modify-write
+    NÃO atômico (SELECT da linha existente -> soma em Python -> UPSERT) -
+    seguro enquanto obter_indicadores rodava em sequência (nunca 2
+    chamadas pro MESMO `nome`="EQUITY (Fundamentos)" ao mesmo tempo), mas
+    a paralelização via ThreadPoolExecutor agora chama obter_indicadores
+    (logo _tk_info_com_retry, logo este registrar_tentativa) de VÁRIAS
+    threads ao mesmo tempo pro MESMO nome - sem lock, 2+ threads liam a
+    MESMA linha "existente" e cada UPSERT sobrescrevia o anterior ("lost
+    update"), subcontando total_tentativas/total_sucessos/total_tempo_s
+    em SAÚDE DOS DADOS pra esse coletor.
+
+    Este teste força N threads reais a chamar _tk_info_com_retry ao mesmo
+    tempo (tickers diferentes, mas todos caem no MESMO `nome` de
+    instrumentação) e confirma que o lock real de produção
+    (data/prices.py:_LOCK_REGISTRAR_TENTATIVA_FUNDAMENTOS) nunca deixa 2
+    chamadas de registrar_tentativa rodarem simultaneamente - um
+    sleep deliberado dentro do fake de registrar_tentativa abre uma
+    janela de corrida grande o bastante pra qualquer lock faltando ser
+    pego quase sempre (determinístico o bastante pra CI: sem o lock, as
+    8 threads terminam o fetch do .info quase juntas e a fake dorme 50ms
+    em cada entrada - a chance de nenhuma delas se sobrepor é
+    desprezível)."""
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    n_threads = 8
+    contador_ativo = {"valor": 0}
+    pico_simultaneo = {"valor": 0}
+    lock_contador = threading.Lock()
+
+    def registrar_fake(*_a, **_k):
+        with lock_contador:
+            contador_ativo["valor"] += 1
+            pico_simultaneo["valor"] = max(pico_simultaneo["valor"], contador_ativo["valor"])
+        time.sleep(0.05)  # janela de corrida deliberada (ver docstring)
+        with lock_contador:
+            contador_ativo["valor"] -= 1
+
+    class _TickerInfoValido:
+        def __init__(self, *_a, **_k):
+            pass
+
+        @property
+        def info(self):
+            return {"trailingPE": 10.0}
+
+    with patch.object(prices_mod.yf, "Ticker", _TickerInfoValido), \
+         patch.object(prices_mod, "registrar_tentativa", registrar_fake):
+        with ThreadPoolExecutor(max_workers=n_threads) as executor:
+            list(executor.map(prices_mod._tk_info_com_retry, [f"TESTE_CONCORRENCIA_{i}.SA" for i in range(n_threads)]))
+
+    assert pico_simultaneo["valor"] == 1, (
+        f"registrar_tentativa foi chamado concorrentemente (pico de {pico_simultaneo['valor']} "
+        "threads simultâneas) - o lock de serialização da instrumentação não está protegendo "
+        "contra o lost update em data/coletores_status.py:registrar_tentativa"
+    )
+
+
 def test_obter_cotacao_rejeita_preco_nan_ou_infinito():
     class _TickerCotacaoInvalida:
         def __init__(self, *_a, **_k):

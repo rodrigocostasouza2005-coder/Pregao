@@ -35,6 +35,7 @@ com um FATO ou com a ESTIMATIVA de uma casa de research:
   (premissa, risco, preço-alvo-tese em research_teses) - nunca
   confundida com um FATO publicado ou uma ESTIMATIVA_TERCEIRO."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from statistics import median
 from zoneinfo import ZoneInfo
@@ -359,8 +360,24 @@ def comparaveis_setor(ticker: str, minimo_pares: int = 3) -> dict:
         return {"setor": None, "pares_considerados": 0, "insuficiente": True, "motivo": "ticker sem setor cadastrado"}
     pares = [t for t, s in config.IBOVESPA_SETORES.items() if s == setor and t != ticker]
     valores_pl, valores_pvp, valores_dy = [], [], []
-    for par in pares:
-        ind = obter_indicadores(par)
+    # ThreadPoolExecutor (achado real, auditoria de performance de
+    # navegacao 2026-11-26): setores grandes (ex: "Energia Elétrica", 11
+    # papeis) faziam ate' 10 chamadas SEQUENCIAIS de obter_indicadores
+    # aqui - medido direto contra o yfinance real (3 tickers nunca
+    # cacheados): ~10,6s em sequencia vs ~3,9s em paralelo (64% mais
+    # rapido). Essa funcao e' chamada (via data/market_researcher.py:
+    # analise_ticker, cache 90s) a cada ticker NOVO aberto em ANALISES >
+    # Empresas - era o principal contribuinte real pro ">20s" medido ali
+    # no cache-miss. Mesma tecnica ja aplicada em
+    # app.py:_painel_comparativo_watchlist e
+    # ui/secoes.py:_tabela_watchlist_comparativa - zero mudanca de dado/
+    # calculo, so' a forma de buscar (paralelo em vez de sequencial).
+    if pares:
+        with ThreadPoolExecutor(max_workers=len(pares)) as executor:
+            indicadores_pares = list(executor.map(obter_indicadores, pares))
+    else:
+        indicadores_pares = []
+    for ind in indicadores_pares:
         if ind.get("pl") is not None and ind["pl"] > 0:  # P/L negativo nao e' comparavel (empresa com prejuizo)
             valores_pl.append(ind["pl"])
         if ind.get("pvp") is not None:

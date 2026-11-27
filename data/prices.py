@@ -563,6 +563,29 @@ def _salvar_fallback_persistido(ticker: str, resultado: dict) -> None:
 _NOME_COLETOR_FUNDAMENTOS = "EQUITY (Fundamentos)"
 _FONTE_COLETOR_FUNDAMENTOS = "yfinance (tk.info - P/L, P/VP, DY, ROE, margens, dívida líquida)"
 
+# Lock SO' pra serializar as chamadas de registrar_tentativa daqui (achado
+# real, revisao independente da PR de paralelizacao de obter_indicadores,
+# 2026-11-27): data/coletores_status.py:registrar_tentativa faz um
+# read-modify-write NAO atomico (SELECT da linha existente -> soma em
+# Python -> UPSERT) - sempre seguro enquanto cada tentativa de
+# obter_indicadores rodava em sequencia (nunca 2 chamadas pro MESMO
+# `nome`="EQUITY (Fundamentos)" ao mesmo tempo), mas a paralelizacao via
+# ThreadPoolExecutor em app.py/_painel_comparativo_watchlist,
+# ui/secoes.py/_tabela_watchlist_comparativa e
+# data/radar.py/comparaveis_setor agora chama obter_indicadores (logo,
+# _tk_info_com_retry, logo, este registrar_tentativa) de VARIAS threads
+# ao mesmo tempo pro MESMO `nome` - sem este lock, 2+ threads leem a
+# MESMA linha "existente" e cada UPSERT sobrescreve o anterior ("lost
+# update"), subcontando total_tentativas/total_sucessos/total_tempo_s em
+# SAUDE DOS DADOS pra esse coletor. O lock protege SO' a instrumentacao
+# (SELECT+soma+UPSERT, poucos ms) - a chamada de rede real (tk.info, que
+# pode levar segundos) continua FORA do lock, entao o ganho de
+# paralelismo da fetch em si nao e' perdido. Nao muda
+# data/coletores_status.py (correcao fica so' no lado de quem chama
+# concorrentemente, conforme CLAUDE.md regra 8 - SAUDE DOS DADOS/seus
+# coletores continuam frente separada).
+_LOCK_REGISTRAR_TENTATIVA_FUNDAMENTOS = threading.Lock()
+
 
 def _tk_info_com_retry(symbol: str) -> dict:
     """tk.info com 2 tentativas: primeiro simulando um Chrome de verdade
@@ -612,29 +635,37 @@ def _tk_info_com_retry(symbol: str) -> dict:
                 "yfinance (tk.info)",
             )
             if info:
-                registrar_tentativa(_NOME_COLETOR_FUNDAMENTOS, _FONTE_COLETOR_FUNDAMENTOS,
-                                     execucao_ok=True, categoria="Fundamentos")
+                # lock so' em volta da instrumentacao (ver
+                # _LOCK_REGISTRAR_TENTATIVA_FUNDAMENTOS acima) - a chamada
+                # de rede (yf.Ticker(...).info, acima) ja terminou antes
+                # de chegar aqui, entao o lock nunca serializa a parte
+                # lenta/concorrente de verdade.
+                with _LOCK_REGISTRAR_TENTATIVA_FUNDAMENTOS:
+                    registrar_tentativa(_NOME_COLETOR_FUNDAMENTOS, _FONTE_COLETOR_FUNDAMENTOS,
+                                         execucao_ok=True, categoria="Fundamentos")
                 return info
             teve_retorno_vazio_sem_excecao = True
         except Exception as e:
             ultima_excecao = e
             continue
     if teve_retorno_vazio_sem_excecao:
-        registrar_tentativa(
-            _NOME_COLETOR_FUNDAMENTOS, _FONTE_COLETOR_FUNDAMENTOS, execucao_ok=False, categoria="Fundamentos",
-            erro="tk.info respondeu sem excecao mas vazio (retorno sem indicadores) - possivel "
-                 "bloqueio/rate-limit do Yahoo pro IP do servidor, nao confirmado como erro de rede local",
-        )
+        with _LOCK_REGISTRAR_TENTATIVA_FUNDAMENTOS:
+            registrar_tentativa(
+                _NOME_COLETOR_FUNDAMENTOS, _FONTE_COLETOR_FUNDAMENTOS, execucao_ok=False, categoria="Fundamentos",
+                erro="tk.info respondeu sem excecao mas vazio (retorno sem indicadores) - possivel "
+                     "bloqueio/rate-limit do Yahoo pro IP do servidor, nao confirmado como erro de rede local",
+            )
     elif ultima_excecao is not None:
         # str(e)[:300] (nao repr, nao sem limite): mesmo padrao ja usado
         # em data/macro.py pra registrar_tentativa - trunca qualquer
         # texto de excecao verboso e evita log gigante; endpoint publico
         # do Yahoo usado aqui nao leva token/cookie/credencial nenhuma,
         # mas o truncamento fica por seguranca/consistencia mesmo assim.
-        registrar_tentativa(
-            _NOME_COLETOR_FUNDAMENTOS, _FONTE_COLETOR_FUNDAMENTOS, execucao_ok=False, categoria="Fundamentos",
-            erro=f"excecao ao consultar tk.info (2 tentativas): {str(ultima_excecao)[:300]}",
-        )
+        with _LOCK_REGISTRAR_TENTATIVA_FUNDAMENTOS:
+            registrar_tentativa(
+                _NOME_COLETOR_FUNDAMENTOS, _FONTE_COLETOR_FUNDAMENTOS, execucao_ok=False, categoria="Fundamentos",
+                erro=f"excecao ao consultar tk.info (2 tentativas): {str(ultima_excecao)[:300]}",
+            )
     return {}
 
 

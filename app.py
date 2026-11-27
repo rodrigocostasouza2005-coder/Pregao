@@ -3,6 +3,7 @@
 
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -819,7 +820,6 @@ if rota == ("analises", "empresas"):
                 @st.fragment(run_every=prefs["atualizacao_intervalo"])
                 def _painel_comparativo_watchlist():
                     fmt = prefs["formato_numerico"]
-                    linhas_dados = []
                     # obter_cotacoes_lote (N+1 corrigido, FASE 8): 1 UNICA
                     # requisicao em lote pra cotacao da watchlist inteira.
                     # obter_indicadores CONTINUA por ticker de proposito:
@@ -829,13 +829,33 @@ if rota == ("analises", "empresas"):
                     # ticker (data/prices.py:_TTL_INDICADORES), bem acima
                     # do run_every deste fragment, entao o custo real de
                     # rede aqui ja' e' raro (so' no 1o load/expiracao).
+                    #
+                    # ThreadPoolExecutor (achado real, auditoria de
+                    # performance de navegacao 2026-11-26): essas N
+                    # chamadas SEQUENCIAIS de obter_indicadores (1 round-trip
+                    # de rede por ticker, no cache-miss) somavam - medido
+                    # direto contra o yfinance real, 3 tickers nunca
+                    # cacheados: ~10,6s em sequencia vs ~3,9s em paralelo
+                    # (64% mais rapido, gargalo e' I/O de rede, nao CPU) -
+                    # e' exatamente esse padrao que travava ANALISES>Empresas
+                    # por >20s no 1o load/expiracao do dia. Mesmo motivo do
+                    # ThreadPoolExecutor ja usado em data/news.py pro TOP
+                    # MERCADO. st.cache_data e' thread-safe (usado em
+                    # producao sob sessoes concorrentes o tempo todo) -
+                    # chamar a mesma funcao cacheada de varias threads do
+                    # MESMO rerun e' seguro.
                     cotacoes = obter_cotacoes_lote(tuple(prefs["watchlist"]))
-                    for t in prefs["watchlist"]:
-                        cot = cotacoes.get(t, {"erro": "sem dado"})
-                        if cot.get("erro"):
-                            continue
-                        ind = obter_indicadores(t)
-                        linhas_dados.append({"ticker": t, "cot": cot, "ind": ind})
+                    tickers_validos = [
+                        t for t in prefs["watchlist"] if not cotacoes.get(t, {"erro": "sem dado"}).get("erro")
+                    ]
+                    with ThreadPoolExecutor(max_workers=max(len(tickers_validos), 1)) as executor:
+                        indicadores_por_ticker = dict(
+                            zip(tickers_validos, executor.map(obter_indicadores, tickers_validos))
+                        )
+                    linhas_dados = [
+                        {"ticker": t, "cot": cotacoes[t], "ind": indicadores_por_ticker[t]}
+                        for t in tickers_validos
+                    ]
 
                     with st.container(border=True):
                         st.markdown('<div class="painel-titulo">COMPARATIVO DA WATCHLIST</div>', unsafe_allow_html=True)
