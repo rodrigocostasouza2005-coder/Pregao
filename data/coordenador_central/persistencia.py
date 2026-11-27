@@ -38,6 +38,35 @@ N_EXECUCOES_RECENTES = 10
 # existente (nunca um enum de status novo).
 _TENTATIVAS_UPDATE = 2
 
+# Leitura paginada de coordenador_especialistas_execucoes
+# (metricas_especialistas). Bug real: a query era um
+# `.select("*").execute()` seco, sem `.order()` nem paginação - o
+# PostgREST aplica o limite default (1000 linhas) e, sem ORDER BY, devolve
+# um subconjunto arbitrário (na prática as linhas mais antigas, ordem
+# física da heap). Com a tabela já em milhares de linhas em produção,
+# TODA execução recente de especialista ficava fora da amostra e o painel
+# (ui/coordenador_tab.py:render_especialistas e
+# ui/central_inteligencias_tab.py) mostrava taxa de sucesso/último erro
+# congelados há semanas, pra todos os especialistas.
+#
+# A paginação ordena por `id` (bigint identity, PK) e não por
+# `executado_em`: `id` é único e monotônico, então as páginas de
+# `.range()` nunca se sobrepõem nem perdem linha - com ORDER BY
+# `executado_em` (sem índice e com empates possíveis dentro da mesma
+# rodada) o Postgres não garante ordem estável entre duas consultas, o
+# que duplicaria/omitiria linhas na fronteira das páginas. Como `id`
+# cresce na ordem de inserção, `id desc` é equivalente a "mais recentes
+# primeiro" para efeito do teto abaixo; a agregação por especialista
+# continua reordenando por `executado_em` em Python.
+_TAMANHO_PAGINA_EXECUCOES = 1000
+# Teto de páginas por chamada (20 x 1000 = 20.000 execuções mais
+# recentes) - evita que o painel passe a fazer um número ilimitado de
+# requisições conforme a tabela cresce. Se o teto for atingido, as
+# métricas passam a cobrir só essa janela (as execuções mais recentes) e
+# um aviso vai pro log; hoje a tabela está na casa dos milhares, bem
+# abaixo disso.
+_MAX_PAGINAS_EXECUCOES = 20
+
 
 def _agora_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -232,6 +261,44 @@ def obter_analise(analise_id: str) -> dict | None:
         return None
 
 
+def _ler_execucoes_especialistas(cliente) -> list | None:
+    """Todas as linhas de coordenador_especialistas_execucoes, lidas em
+    páginas de _TAMANHO_PAGINA_EXECUCOES via `.range()` (mesmo padrão de
+    data/user_prefs.py:listar_assinantes_* e
+    jobs/comite_noturno.py:_tickers_com_analise_recente). Sem isso o
+    PostgREST devolve no máximo 1000 linhas arbitrárias - ver comentário
+    em _TAMANHO_PAGINA_EXECUCOES.
+
+    None (distinto de []) quando a consulta falha: quem chama precisa
+    diferenciar "não deu pra ler" de "não há execução registrada".
+    Nunca lança."""
+    linhas = []
+    inicio = 0
+    try:
+        for _pagina in range(_MAX_PAGINAS_EXECUCOES):
+            resp = (
+                cliente.table(_TABELA_ESPECIALISTAS_EXECUCOES).select("*")
+                .order("id", desc=True)
+                .range(inicio, inicio + _TAMANHO_PAGINA_EXECUCOES - 1)
+                .execute()
+            )
+            pagina = resp.data or []
+            linhas.extend(pagina)
+            if len(pagina) < _TAMANHO_PAGINA_EXECUCOES:
+                return linhas
+            inicio += _TAMANHO_PAGINA_EXECUCOES
+    except Exception as exc:
+        print(f"[coordenador_central] _ler_execucoes_especialistas falhou: {exc!r}")
+        return None
+    print(
+        f"[coordenador_central] metricas_especialistas: teto de "
+        f"{_MAX_PAGINAS_EXECUCOES} páginas x {_TAMANHO_PAGINA_EXECUCOES} linhas "
+        f"atingido ({len(linhas)} execuções lidas); métricas cobrem só as "
+        "execuções mais recentes dessa janela."
+    )
+    return linhas
+
+
 def metricas_especialistas() -> dict:
     """Por especialista: total de execuções, sucessos, taxa de sucesso
     (%), tempo médio (ms) e o erro técnico da ÚLTIMA execução quando ela
@@ -242,17 +309,16 @@ def metricas_especialistas() -> dict:
     nenhuma tela mostrava o erro técnico de uma execução específica (só
     a taxa de sucesso agregada); `ultimo_erro_tecnico` fecha esse gap em
     ui/coordenador_tab.py:render_especialistas, sem nenhuma coluna/tabela
-    nova. {} quando o Supabase está indisponível OU ainda não há nenhuma
+    nova. A leitura é paginada (_ler_execucoes_especialistas): sem isso o
+    PostgREST devolvia só 1000 linhas arbitrárias e o painel ficava
+    congelado nas execuções mais antigas. {} quando o Supabase está indisponível OU ainda não há nenhuma
     execução registrada - os dois casos degradam igual aqui (chamador só
     precisa saber "nada pra mostrar", ver ui/coordenador_tab.py)."""
     cliente = obter_cliente()
     if cliente is None:
         return {}
-    try:
-        resp = cliente.table(_TABELA_ESPECIALISTAS_EXECUCOES).select("*").execute()
-        linhas = resp.data or []
-    except Exception as exc:
-        print(f"[coordenador_central] metricas_especialistas falhou: {exc!r}")
+    linhas = _ler_execucoes_especialistas(cliente)
+    if linhas is None:
         return {}
 
     por_especialista = {}

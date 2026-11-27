@@ -13,6 +13,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data.coordenador_central import persistencia
 
 
+_LIMITE_DEFAULT_POSTGREST = 1000
+
+
 class _Resposta:
     def __init__(self, data):
         self.data = data
@@ -27,6 +30,7 @@ class _TabelaFake:
         self._filtros = []
         self._order = None
         self._limit = None
+        self._range = None
 
     def insert(self, payload):
         self._op, self._payload = "insert", dict(payload)
@@ -52,6 +56,12 @@ class _TabelaFake:
         self._limit = n
         return self
 
+    def range(self, inicio, fim):
+        """Mesma semântica do PostgREST: `fim` é inclusivo."""
+        self._range = (inicio, fim)
+        self.cliente.ranges_consultados.append((self.nome, inicio, fim))
+        return self
+
     def execute(self):
         linhas = self.cliente.tabelas.setdefault(self.nome, {})
         if self._op == "insert":
@@ -71,8 +81,16 @@ class _TabelaFake:
             if self._order:
                 campo, desc = self._order
                 resultado = sorted(resultado, key=lambda l: l.get(campo) or "", reverse=desc)
+            if self._range is not None:
+                inicio, fim = self._range
+                resultado = resultado[inicio : fim + 1]
             if self._limit is not None:
                 resultado = resultado[: self._limit]
+            # PostgREST corta toda resposta sem limite explícito em
+            # _LIMITE_DEFAULT_POSTGREST linhas - é exatamente o que
+            # congelava metricas_especialistas antes da paginação.
+            if self._range is None and self._limit is None:
+                resultado = resultado[:_LIMITE_DEFAULT_POSTGREST]
             return _Resposta(resultado)
         return _Resposta([])
 
@@ -80,6 +98,7 @@ class _TabelaFake:
 class _ClienteFake:
     def __init__(self):
         self.tabelas = {}
+        self.ranges_consultados = []
 
     def table(self, nome):
         return _TabelaFake(self, nome)
@@ -442,3 +461,130 @@ def test_concluir_analise_quando_tudo_falha_linha_fica_em_andamento_mas_tentativ
     linha = cliente.tabelas["coordenador_analises"][analise_id]
     assert linha["status"] == "EM_ANDAMENTO"
     assert len(cliente.chamadas_update) == 4  # 2 (completo) + 2 (fallback), todas falharam
+
+
+# ============================================================
+# Painel de especialistas congelado (auditoria 2026-11-26):
+# metricas_especialistas lia coordenador_especialistas_execucoes com um
+# `.select("*").execute()` seco - o PostgREST corta em 1000 linhas e, sem
+# ORDER BY, devolve a ordem física (as mais ANTIGAS). Com a tabela já em
+# milhares de linhas em produção, nenhuma execução recente entrava no
+# cálculo: Central de Inteligências e COMITÊ mostravam taxa de sucesso e
+# último erro de semanas atrás, pra todos os especialistas. A leitura
+# agora pagina com .range() ordenando por `id` (PK única e monotônica).
+# ============================================================
+
+def _popular_execucoes(cliente, execucoes):
+    """Insere linhas direto na tabela fake (mais rápido que milhares de
+    chamadas de insert), com `id` crescente igual ao bigint identity real."""
+    tabela = cliente.tabelas.setdefault("coordenador_especialistas_execucoes", {})
+    proximo = len(tabela) + 1
+    for linha in execucoes:
+        tabela[proximo] = {**linha, "id": proximo, "_seq": proximo}
+        proximo += 1
+
+
+def test_metricas_especialistas_agrega_todas_as_linhas_acima_do_limite_default_do_postgrest():
+    """2.300 execuções (> 1000, o limite default do PostgREST): a
+    paginação tem que agregar TODAS, não só a primeira página."""
+    cliente = _ClienteFake()
+    _popular_execucoes(cliente, [
+        {
+            "analise_id": f"a{i}", "especialista_id": "comparador",
+            "disponivel": True, "duracao_ms": 100, "erro": None,
+            "executado_em": f"2026-10-01T00:00:{i % 60:02d}Z",
+        }
+        for i in range(2300)
+    ])
+    with _patched(cliente):
+        metricas = persistencia.metricas_especialistas()
+
+    assert metricas["comparador"]["total_execucoes"] == 2300
+    assert metricas["comparador"]["sucessos"] == 2300
+    # 3 páginas: [0,999], [1000,1999], [2000,2999] (a última volta parcial e encerra o loop).
+    paginas = [r for r in cliente.ranges_consultados if r[0] == "coordenador_especialistas_execucoes"]
+    assert paginas == [
+        ("coordenador_especialistas_execucoes", 0, 999),
+        ("coordenador_especialistas_execucoes", 1000, 1999),
+        ("coordenador_especialistas_execucoes", 2000, 2999),
+    ]
+
+
+def test_metricas_especialistas_ve_execucoes_recentes_atras_das_1000_mais_antigas():
+    """Reprodução exata do sintoma: 1.500 falhas antigas (que por si só
+    estouram a primeira página) seguidas de 10 sucessos recentes. Sem
+    paginação, as 10 recentes ficavam invisíveis e o painel reportava 0%
+    de sucesso recente com o erro antigo como 'último erro'."""
+    cliente = _ClienteFake()
+    _popular_execucoes(cliente, [
+        {
+            "analise_id": f"antiga{i}", "especialista_id": "noticias",
+            "disponivel": False, "duracao_ms": None, "erro": "TimeoutError: antigo",
+            "executado_em": "2026-09-01T00:00:00Z",
+        }
+        for i in range(1500)
+    ])
+    _popular_execucoes(cliente, [
+        {
+            "analise_id": f"recente{i}", "especialista_id": "noticias",
+            "disponivel": True, "duracao_ms": 50, "erro": None,
+            "executado_em": f"2026-11-2{i}T00:00:00Z",
+        }
+        for i in range(10)
+    ])
+    with _patched(cliente):
+        metricas = persistencia.metricas_especialistas()
+
+    noticias = metricas["noticias"]
+    assert noticias["total_execucoes"] == 1510
+    assert noticias["ultima_execucao_em"] == "2026-11-29T00:00:00Z"
+    assert noticias["taxa_sucesso_recente_pct"] == 100.0  # as 10 recentes, todas com sucesso
+    assert noticias["ultimo_erro_tecnico"] is None
+
+
+def test_metricas_especialistas_falha_no_meio_da_paginacao_devolve_dict_vazio():
+    """Se uma página falhar, as métricas NUNCA são calculadas sobre o
+    pedaço lido até ali (número parcial exibido como total seria pior que
+    'nada pra mostrar') - degrada pra {}, igual a Supabase indisponível."""
+    class _TabelaFalhaNaSegundaPagina(_TabelaFake):
+        def execute(self):
+            if self._range is not None and self._range[0] > 0:
+                raise RuntimeError("falha simulada na 2a página")
+            return super().execute()
+
+    class _ClienteFalhaNaSegundaPagina(_ClienteFake):
+        def table(self, nome):
+            return _TabelaFalhaNaSegundaPagina(self, nome)
+
+    cliente = _ClienteFalhaNaSegundaPagina()
+    _popular_execucoes(cliente, [
+        {
+            "analise_id": f"a{i}", "especialista_id": "comparador",
+            "disponivel": True, "duracao_ms": 10, "erro": None,
+            "executado_em": "2026-10-01T00:00:00Z",
+        }
+        for i in range(1200)
+    ])
+    with _patched(cliente):
+        assert persistencia.metricas_especialistas() == {}
+
+
+def test_metricas_especialistas_respeita_teto_de_paginas():
+    """Teto de _MAX_PAGINAS_EXECUCOES páginas: o painel nunca faz um
+    número ilimitado de requisições conforme a tabela cresce."""
+    cliente = _ClienteFake()
+    with _patched(cliente), \
+            patch.object(persistencia, "_TAMANHO_PAGINA_EXECUCOES", 10), \
+            patch.object(persistencia, "_MAX_PAGINAS_EXECUCOES", 3):
+        _popular_execucoes(cliente, [
+            {
+                "analise_id": f"a{i}", "especialista_id": "comparador",
+                "disponivel": True, "duracao_ms": 10, "erro": None,
+                "executado_em": "2026-10-01T00:00:00Z",
+            }
+            for i in range(100)
+        ])
+        metricas = persistencia.metricas_especialistas()
+
+    assert len(cliente.ranges_consultados) == 3
+    assert metricas["comparador"]["total_execucoes"] == 30
