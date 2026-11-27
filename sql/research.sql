@@ -59,6 +59,16 @@ create index if not exists idx_research_hist_casa_ticker
 alter table research_recomendacoes_historico enable row level security;
 
 -- ===========================================================================
+-- MIGRATION PRONTA, EM ARQUIVO PROPRIO (auditoria 2026-11-26, Topico 4):
+-- o bloco acima (create table research_recomendacoes_historico + indice +
+-- RLS) foi extraido pra sql/research_recomendacoes_historico.sql, que e'
+-- o caminho RECOMENDADO de aplicacao - aplicar so' a tabela que falta,
+-- sem re-rodar contra research_itens (que ja' existe em producao com
+-- dado real) os ALTERs deste arquivo. O bloco fica aqui como registro
+-- historico; os dois sao idempotentes e equivalentes (mesmo nome de
+-- indice), e NENHUM dos dois foi aplicado - continua pendente de
+-- aprovacao explicita do Rodrigo.
+--
 -- CONFIRMADO AUSENTE EM PRODUCAO (missao "gap real de infraestrutura",
 -- 2026-11-24) - select("*") direto no Supabase REAL devolveu PGRST205
 -- "Could not find the table 'public.research_recomendacoes_historico' in
