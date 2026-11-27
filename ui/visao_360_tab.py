@@ -658,6 +658,17 @@ def _render_veredito(ticker: str, comite: dict, prefs: dict):
         "para o mesmo ticker, e isso não é erro.</div>",
         unsafe_allow_html=True,
     )
+    # Link sempre-visível no nível DECISÃO - existia aqui antes do
+    # redesign de 2026-11-26 e foi enterrado por engano dentro de
+    # APROFUNDAMENTO > HISTÓRICO DE ANÁLISES, atrás do seletor de seção
+    # (achado de revisão independente). O histórico completo continua
+    # disponível lá (com a lista de execuções), mas o atalho pro
+    # registro completo no Comitê precisa estar visível sem precisar
+    # abrir aprofundamento nenhum.
+    navegacao.link(
+        "Ver histórico completo ↗", "comite", "historico",
+        chave=f"v360_veredito_historico_{ticker}", ticker=ticker,
+    )
 
 
 # ============================================================

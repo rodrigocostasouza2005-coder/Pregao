@@ -232,6 +232,12 @@ def test_dado_completo_mostra_os_tres_andares_da_tela():
     assert "VALUATION" in textos
     assert "APROFUNDAMENTO" in textos
     assert "Executar Comitê" not in textos  # análise já existe - CTA de executar não aparece
+    # Regressão: o redesign enterrou este link dentro de APROFUNDAMENTO >
+    # HISTÓRICO DE ANÁLISES, atrás do seletor de seção, e o teste que
+    # cobria a presença dele no nível DECISÃO foi apagado em vez de
+    # ajustado - este assert existia antes do redesign (ver git log do
+    # arquivo) e volta a cobrir o link sempre-visível no veredito.
+    assert _tem_rotulo(at, "Ver histórico completo")
 
 
 def test_cabecalho_mostra_status_da_cotacao_e_complementares():
