@@ -32,12 +32,31 @@ Achados de desenho que esta suíte prova (pedidos explícitos do Rodrigo):
 """
 import sys
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from streamlit.testing.v1 import AppTest
 
+import ui.visao_360_tab as v360
+
 _RAIZ = str(Path(__file__).parent.parent)
+
+
+@pytest.fixture(autouse=True)
+def _limpa_cache_comite():
+    """_carregar_comite ganhou @st.cache_data (correção de performance -
+    ver test_carregar_comite_e_cacheado_nao_bate_supabase_em_toda_rerun).
+    O cache é por processo, não por AppTest.run(), então sem limpar aqui
+    um teste que roda PETR4 primeiro "vence" e deixa os testes seguintes
+    lendo o resultado cacheado do teste anterior em vez do mock dele
+    próprio - cada teste deste arquivo usa o mesmo ticker PETR4 de
+    propósito (ver _script())."""
+    v360._carregar_comite.clear()
+    yield
+    v360._carregar_comite.clear()
 
 
 def _roda(script: str):
@@ -428,6 +447,37 @@ def test_aprofundamento_historico_distingue_fonte_fora_do_ar_de_nunca_analisado(
     textos = _textos(at)
     assert "Histórico de análises indisponível agora" in textos
     assert "diferente de 'nunca analisado'" in textos
+
+
+# ============================================================
+# Regressão de performance: _carregar_comite tem que ser cacheado.
+# ============================================================
+
+def test_carregar_comite_e_cacheado_nao_bate_supabase_em_toda_rerun():
+    """Antes desta correção, _carregar_comite não tinha @st.cache_data e
+    a PR subiu limite=1 -> limite=12 em listar_analises_por_ticker.
+    Streamlit reexecuta o script inteiro em toda interação de widget
+    (clique no segmented-control, edição de premissa do DCF) - sem
+    cache, toda interação disparava uma leitura 12x maior no Supabase.
+    Chamadas repetidas com o mesmo ticker dentro do TTL não podem
+    disparar nova leitura (spy na função de persistência)."""
+    v360._carregar_comite.clear()
+    chamadas = []
+
+    def _fake_listar(ticker, limite=1):
+        chamadas.append((ticker, limite))
+        return [{"id": "analise-abc123", "status": "CONCLUIDA",
+                 "iniciado_em": "2026-11-24T12:00:00+00:00"}]
+
+    with patch.object(v360, "listar_analises_por_ticker", side_effect=_fake_listar), \
+         patch.object(v360, "obter_analise", return_value={
+             "id": "analise-abc123", "status": "CONCLUIDA",
+             "iniciado_em": "2026-11-24T12:00:00+00:00", "resultado": _CONSOLIDADO_OK,
+         }):
+        v360._carregar_comite("PETR4")
+        v360._carregar_comite("PETR4")
+        v360._carregar_comite("PETR4")
+    assert len(chamadas) == 1, f"esperava 1 leitura cacheada, teve {len(chamadas)}"
 
 
 # ============================================================

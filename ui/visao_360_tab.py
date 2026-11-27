@@ -262,6 +262,7 @@ def _contexto_cacheado(ticker: str) -> dict:
     return contexto_ticker(ticker)
 
 
+@st.cache_data(ttl=90, show_spinner=False)
 def _carregar_comite(ticker: str) -> dict:
     """Última análise do Comitê já persistida pra este ticker, como um
     estado explícito - nunca um `None` ambíguo:
@@ -275,7 +276,15 @@ def _carregar_comite(ticker: str) -> dict:
 
     Zero execução nova é disparada daqui (só leitura do que o Comitê já
     persistiu), e os 5 estados têm mensagem própria na tela - "nunca" e
-    "indisponivel" jamais compartilham texto (ver docstring do módulo)."""
+    "indisponivel" jamais compartilham texto (ver docstring do módulo).
+
+    Cacheado (mesmo TTL de `_contexto_cacheado` acima): Streamlit
+    reexecuta o script inteiro em cada interação de widget (clique no
+    segmented-control, edição de premissa do DCF), e `limite=12`
+    (antes `limite=1`) trouxe 12x mais linhas do Supabase por leitura -
+    sem cache, toda interação da tela disparava essa leitura maior de
+    novo. TTL curto de propósito: não precisa ficar eternamente fresco,
+    só não pode recarregar em todo rerun de widget."""
     try:
         analises = listar_analises_por_ticker(ticker, limite=12)
     except Exception:
