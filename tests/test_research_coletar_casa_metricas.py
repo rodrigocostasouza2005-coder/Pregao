@@ -87,5 +87,40 @@ def test_falha_na_fonte_passa_zeros_nas_metricas_de_volume():
     assert kwargs.get("tempo_s") is not None
 
 
+# ============================================================
+# Falha TOTAL de versionamento (store.consumir_falha_versionamento,
+# auditoria 2026-11-26): antes ela morria num print no console e nunca
+# chegava a registrar_tentativa. Agora entra como coleta `parcial` com o
+# motivo real - a coleta em si continua sucesso (o upsert principal
+# funcionou), so' deixa de ser reportada como 100% completa.
+# ============================================================
+
+def test_sem_falha_de_versionamento_nunca_marca_coleta_como_parcial():
+    casa = _casa_fake(itens=[{"link": "https://x/1"}])
+    with patch.object(research_mod, "registrar_tentativa") as mock_reg, \
+         patch.object(research_mod.store, "salvar_itens", return_value=True), \
+         patch.object(research_mod.store, "consumir_falha_versionamento", return_value=None):
+        research_mod.coletar_casa(casa)
+    _, kwargs = mock_reg.call_args
+    assert kwargs.get("parcial") is False
+    assert kwargs.get("erro") is None
+
+
+def test_falha_total_de_versionamento_chega_a_registrar_tentativa():
+    casa = _casa_fake(itens=[{"link": "https://x/1"}])
+    motivo = "VERSIONAMENTO: consulta das versoes atuais falhou em 5/5 lote(s)"
+    with patch.object(research_mod, "registrar_tentativa") as mock_reg, \
+         patch.object(research_mod.store, "salvar_itens", return_value=True), \
+         patch.object(research_mod.store, "consumir_falha_versionamento", return_value=motivo):
+        qtd, ok = research_mod.coletar_casa(casa)
+    # a coleta em si nao e' rebaixada: os itens foram encontrados e salvos
+    assert (qtd, ok) == (1, True)
+    _, kwargs = mock_reg.call_args
+    assert kwargs.get("execucao_ok") is True
+    assert kwargs.get("persistencia_ok") is True
+    assert kwargs.get("parcial") is True
+    assert kwargs.get("erro") == motivo
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

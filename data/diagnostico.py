@@ -38,7 +38,19 @@ def _testar_gnews_decode() -> tuple:
     link = entries[0].get("link") or ""
     if not link:
         return False, "entrada sem link"
-    texto, link_real, motivo = _extrair_texto_artigo(link)
+    # _extrair_texto_artigo devolve 4 valores (texto, imagem, link_real,
+    # motivo_falha) desde a fase 3 de NEWS (imagem nos cards), mas este
+    # desempacotamento ficou com 3: TODA execucao do teste "Google News
+    # (decode+extração)" levantava ValueError ("too many values to
+    # unpack (expected 3)") logo depois do download, e testar_fonte
+    # (que captura qualquer excecao) reportava a fonte como
+    # "erro: too many values to unpack" - ou seja, o painel DIAGNOSTICO
+    # DE FONTES acusava bloqueio da fonte quando o problema era este bug
+    # local, e o pipeline real nunca chegava a ser avaliado (achado da
+    # auditoria 2026-11-26). `imagem` nao interessa a este diagnostico
+    # (so' decode do link + extracao de texto), mas tem que ser
+    # desempacotada.
+    texto, _imagem, link_real, motivo = _extrair_texto_artigo(link)
     if texto is None:
         return False, f"falhou: {motivo}"
     return True, f"OK ({len(texto)} chars extraídos, via {(link_real or '')[:50]})"

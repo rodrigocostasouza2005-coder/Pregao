@@ -80,6 +80,7 @@ class _FakeTabela:
         self._filtros = []
         self._order = None
         self._limit = None
+        self._range = None
 
     def insert(self, payload):
         self._op, self._payload = "insert", dict(payload)
@@ -105,6 +106,12 @@ class _FakeTabela:
         self._limit = n
         return self
 
+    def range(self, inicio, fim):
+        """Leitura paginada (persistencia.py:_ler_execucoes_especialistas) -
+        `fim` inclusivo, igual ao PostgREST."""
+        self._range = (inicio, fim)
+        return self
+
     def execute(self):
         linhas = self.cliente.dados.setdefault(self.nome, {})
         if self._op == "insert":
@@ -123,6 +130,9 @@ class _FakeTabela:
             if self._order:
                 campo, desc = self._order
                 resultado = sorted(resultado, key=lambda r: r.get(campo) or "", reverse=desc)
+            if self._range is not None:
+                inicio, fim = self._range
+                resultado = resultado[inicio : fim + 1]
             if self._limit is not None:
                 resultado = resultado[: self._limit]
             return _FakeResposta(resultado)

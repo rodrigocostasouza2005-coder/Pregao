@@ -83,27 +83,20 @@ escondidos):
   real, o Rodrigo precisaria mudar "Network access" nas configurações
   do ambiente (cloud environment → Edit) pra incluir esses domínios -
   decisão dele, não tomada por esta sessão.
-- **CALENDARIO — `coletar_eventos_universo` sem try/except por ticker
-  em volta de `coletar_evento`**
-  PRIORIDADE: BAIXA · IMPACTO: TEÓRICO (nenhuma falha observável hoje)
-  · ESFORÇO: BAIXO
-  Achado do subagente de auditoria (continuação 2026-10-13):
-  `data/eventos_coleta.py:coletar_eventos_universo` (linha ~409) não
-  envolve a chamada a `coletar_evento` num `try/except` por ticker no
-  próprio loop do universo - diferente do padrão (isolamento por item)
-  já aplicado em vários coletores hoje. Não corrigido porque, lendo a
-  função inteira, **todo** caminho interno de `coletar_evento` já é
-  protegido (RI/NEWS/CVM/Supabase, cada um com seu próprio
-  `try/except`) - ou seja, hoje não há nenhum jeito conhecido de um
-  ticker malformado escapar e abortar os outros. Risco é que isso
-  depende inteiramente dessa proteção interna se manter conforme o
-  código evolui (`coletor_local.py` até comenta que "nunca lança
-  exceção", o que é verdade hoje mas não é garantido estruturalmente
-  por um try/except no próprio loop). Registrado pra quando algum dos
-  caminhos internos (RI/NEWS/CVM/Supabase) ganhar um novo código que
-  não respeite essa proteção - adicionar o try/except por item no
-  loop do universo nessa hora, não antes (mudança sem bug real pra
-  corrigir ainda).
+- ~~**CALENDARIO — `coletar_eventos_universo` sem try/except por ticker
+  em volta de `coletar_evento`**~~
+  **RESOLVIDO — não é mais pendência (atualizado na auditoria completa
+  de 2026-11-26).** O `try/except` por ticker existe:
+  `data/eventos_coleta.py:coletar_eventos_universo` (hoje linhas
+  ~746-772) envolve a chamada a `coletar_evento` num `try/except
+  Exception` dentro do próprio loop do universo, incrementando
+  `stats["falhas"]`, logando com `logging.exception` e contabilizando
+  `stats["processados"]` num `finally` - exatamente o isolamento por
+  item que este item pedia. O registro abaixo é o contexto histórico do
+  achado (continuação 2026-10-13), quando a proteção vinha só dos
+  caminhos internos de `coletar_evento` (RI/NEWS/CVM/Supabase, cada um
+  com seu próprio `try/except`) e não havia garantia estrutural no
+  loop; essa garantia agora existe.
 
 ## AUDITORIA DIRIGIDA — subagente, continuação 2026-10-13 (achados já corrigidos)
 
@@ -549,7 +542,21 @@ tinha sido limpo. Confirmado lendo o código atual (não só memória):
   breakpoint, tema).
 
 ## Research
-- BTG Research: investigado de novo em 2026-10-16 (ver motivo_indisponivel
+- ~~BTG Research: indisponível~~ **RESOLVIDO — não é mais pendência
+  (atualizado na auditoria completa de 2026-11-26).** A casa está ATIVA e
+  funcionando de verdade: `CASAS['btg']` em
+  `data/research/__init__.py` tem `disponivel=True` e
+  `ativa_por_padrao=True`, com coletor real em `data/research/btg.py`
+  lendo a API pública `content.btgpactual.com/api/research/...` (POST
+  `/filter`) e filtrando `tier=="AREA_PUBLICA"` antes de qualquer
+  persistência. Coleta real conferida na auditoria de 2026-11-26: **44
+  itens reais** na aba RESEARCH sob "BTG Pactual Research". O parágrafo
+  abaixo é o registro HISTÓRICO da investigação de 2026-10-16 (quando a
+  via tentada era o SPA `www.btgpactual.com/acoes/ultimos-relatorios`,
+  que segue bloqueado pra automação e que o coletor atual não usa) -
+  mantido só como contexto de por que a solução foi pela API, não pela
+  página.
+- (histórico) BTG Research: investigado de novo em 2026-10-16 (ver motivo_indisponivel
   em `data/research/__init__.py` pro resumo real) - testado DE VERDADE
   (nao so' suposto) em runner do GitHub Actions (mesma rede/IP que a
   producao usa): Chromium/Playwright headless NAO passa da pagina
@@ -572,11 +579,14 @@ tinha sido limpo. Confirmado lendo o código atual (não só memória):
   endpoint certo exigiria ler o bundle JS da própria página de
   relatórios pra mapear as rotas reais - exatamente a página que está
   bloqueada pra automação. Como a API de lives não serve o propósito
-  (não é "research" escrito) e não há endpoint de relatórios confirmado,
-  `disponivel` continua `False` - a diferença desta rodada é que a causa
-  registrada agora é a real (testada), não mais a suposição antiga
-  ("precisa so' de Playwright pra passar do desafio JS", que a evidência
-  real desta sessão contradiz).
+  (não é "research" escrito) e não havia endpoint de relatórios
+  confirmado, `disponivel` ficou `False` NAQUELA data - a diferença
+  daquela rodada foi que a causa registrada passou a ser a real
+  (testada), não mais a suposição antiga ("precisa so' de Playwright pra
+  passar do desafio JS", que a evidência real daquela sessão
+  contradiz). O endpoint de listagem de relatórios FOI encontrado
+  depois (POST `/filter` com `tier` por item, ver o item RESOLVIDO
+  acima) e a casa está ativa desde então.
 - XP Investimentos: implementada (`data/research/xp.py`), API pública do
   WordPress (`conteudos.xpi.com.br/wp-json/wp/v2/{rel-acoes-fund,
   rel-artigo-aloc,rel-acoes-tec}`). IP deste sandbox de dev é bloqueado

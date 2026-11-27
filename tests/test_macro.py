@@ -431,7 +431,8 @@ _COPOM_REAL = [  # formato real do endpoint (diagnóstico de 18/10/2026)
 
 def test_22_copom_devolve_a_meta_vigente():
     from datetime import date
-    with patch.object(macro_mod.requests, "get", return_value=_resposta_copom(_COPOM_REAL)):
+    with patch.object(macro_mod.requests, "get", return_value=_resposta_copom(_COPOM_REAL)), \
+         patch.object(macro_mod, "registrar_tentativa"):
         meta = macro_mod.obter_selic_meta_copom()
     _checar("22a meta vigente", meta == {"valor": 13.75, "vigente_desde": date(2026, 9, 17), "reuniao": 281},
             f"({meta})")
@@ -439,16 +440,51 @@ def test_22_copom_devolve_a_meta_vigente():
 
 def test_23_copom_sem_meta_vigente_unica_e_indisponivel():
     duas = [dict(_COPOM_REAL[0]), dict(_COPOM_REAL[0], NumeroReuniaoCopom=282.0)]
-    with patch.object(macro_mod.requests, "get", return_value=_resposta_copom(duas)):
+    with patch.object(macro_mod.requests, "get", return_value=_resposta_copom(duas)), \
+         patch.object(macro_mod, "registrar_tentativa"):
         _checar("23a duas metas vigentes -> None", macro_mod.obter_selic_meta_copom() is None)
     _checar("23b motivo registrado", "2 meta(s) vigente(s)" in (macro_mod.motivo_indisponivel("selic_copom") or ""))
     absurda = [dict(_COPOM_REAL[0], MetaSelic=1375.0)]
-    with patch.object(macro_mod.requests, "get", return_value=_resposta_copom(absurda)):
+    with patch.object(macro_mod.requests, "get", return_value=_resposta_copom(absurda)), \
+         patch.object(macro_mod, "registrar_tentativa"):
         _checar("23c valor fora de faixa -> None", macro_mod.obter_selic_meta_copom() is None)
 
 
 def test_24_copom_fora_do_ar_e_indisponivel_sem_excecao():
     from requests import Timeout
-    with patch.object(macro_mod.requests, "get", side_effect=Timeout("lento")):
+    with patch.object(macro_mod.requests, "get", side_effect=Timeout("lento")), \
+         patch.object(macro_mod, "registrar_tentativa"):
         _checar("24a timeout -> None", macro_mod.obter_selic_meta_copom() is None)
     _checar("24b motivo cita a fonte", "bcb.gov.br" in (macro_mod.motivo_indisponivel("selic_copom") or ""))
+
+
+# ============================================================
+# teste 25 (auditoria 2026-11-26): obter_selic_meta_copom era a UNICA
+# funcao de coleta de data/macro.py sem registrar_tentativa - uma quebra
+# do historico do Copom (www.bcb.gov.br, plano B acionado justamente
+# quando o SGS ja' falhou) nao deixava rastro nenhum na Saude dos Dados.
+# Linha propria, nunca reaproveitando "MACRO (BCB - Selic)": sao fontes
+# diferentes do mesmo numero.
+# ============================================================
+
+def test_25_copom_registra_linha_propria_na_saude_dos_dados():
+    with patch.object(macro_mod.requests, "get", return_value=_resposta_copom(_COPOM_REAL)), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg:
+        macro_mod.obter_selic_meta_copom()
+    _checar("25a sucesso registra 'MACRO (BCB - Selic Copom)' execucao_ok=True",
+            mock_reg.call_args.args[0] == "MACRO (BCB - Selic Copom)"
+            and mock_reg.call_args.kwargs.get("execucao_ok") is True
+            and mock_reg.call_args.kwargs.get("categoria") == "Macro",
+            f"(call={mock_reg.call_args})")
+    _checar("25b nome DIFERENTE da linha do SGS (fontes distintas do mesmo numero)",
+            mock_reg.call_args.args[0] != "MACRO (BCB - Selic)")
+
+    from requests import Timeout
+    with patch.object(macro_mod.requests, "get", side_effect=Timeout("site do BC fora")), \
+         patch.object(macro_mod, "registrar_tentativa") as mock_reg_falha:
+        macro_mod.obter_selic_meta_copom()
+    _checar("25c falha registra execucao_ok=False com o erro real",
+            mock_reg_falha.call_args.args[0] == "MACRO (BCB - Selic Copom)"
+            and mock_reg_falha.call_args.kwargs.get("execucao_ok") is False
+            and "site do BC fora" in (mock_reg_falha.call_args.kwargs.get("erro") or ""),
+            f"(call={mock_reg_falha.call_args})")

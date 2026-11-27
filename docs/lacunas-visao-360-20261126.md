@@ -193,3 +193,56 @@ pra extrair a ITERAÇÃO (`[(chave, cenarios.get(chave) or {}) for chave in
 literais, improvável de divergir sozinho), mas toca
 `ui/coordenador_tab.py`, que tem cobertura de teste extensa própria -
 mudar ali pedia validação maior que "rápido" permite nesta correção.
+
+---
+
+## PENDÊNCIA DE SCHEMA — `research_recomendacoes_historico` (auditoria completa 2026-11-26)
+
+**Status: migration PRONTA e NÃO APLICADA. Depende de aprovação explícita do
+Rodrigo — nenhum agente aplica schema em produção (CLAUDE.md).**
+
+**O que foi investigado (Tópico 4 da auditoria completa):** a tabela
+`research_recomendacoes_historico` não existe no Supabase de produção
+(`PGRST205`, confirmado múltiplas vezes em sessões anteriores), embora
+`PROGRESSO.md` a documente como "alimentada de verdade". A hipótese de SQL
+escrito e nunca aplicado **se confirmou**: o `create table` existe desde
+2026-10-01, mas estava **dentro de `sql/research.sql`** — o mesmo arquivo que
+cria e altera `research_itens`, tabela que já está em produção com dado real.
+Mesmo padrão do caso já documentado de `sql/carteira_recomendada.sql`
+(escrito em 11/2026, aplicado só em 2026-11-14).
+
+**O que foi preparado nesta missão:** `sql/research_recomendacoes_historico.sql`
+— migration isolada, idempotente, revisada contra o código que usa a tabela
+(`data/research/historico.py`: todas as colunas lidas/escritas existem no
+schema — `casa`, `ticker`, `recomendacao`, `preco_alvo`, `potencial_pct`,
+`capturado_em`), com RLS ativado sem policies (padrão do projeto) e **dois**
+índices: o já proposto `(casa, ticker, capturado_em desc)` e um novo
+`(casa, capturado_em desc)` para `_tickers_capturados_hoje`, que filtra por
+casa + data sem ticker no predicado. Inclui bloco de rollback. O bloco
+original em `sql/research.sql` foi mantido e passou a apontar para o arquivo
+novo (os dois são equivalentes e idempotentes; aplicar o isolado é o caminho
+recomendado, porque não re-roda nenhum `ALTER` contra `research_itens`).
+
+**Nada foi aplicado em produção.** Não houve nenhuma execução de SQL, e a
+ausência da tabela não foi reconfirmada nesta missão (sem acesso real ao
+Supabase de produção aqui) — a conclusão se apoia nas confirmações
+anteriores registradas em `sql/research.sql` e em
+`docs/continuidade-pregao-20261114.md`.
+
+**Ressalva importante para a decisão:** aplicar a migration é
+**necessário, não suficiente**. Hoje não existe fonte ATIVA escrevendo nessa
+tabela — `data/research/historico.py:COLETA_GENIAL_ATIVA = False` (coletor da
+Genial desativado por bloqueio externo) e a Genial é a única casa com dado
+estruturado de recomendação/preço-alvo pronto. Depois de aplicada, a tabela
+existe e fica vazia até alguma fonte voltar a alimentá-la; nada é preenchido
+retroativamente. O ganho imediato é parar de gerar `PGRST205` e sair do
+estado atual de "não existe onde guardar".
+
+**Achado adicional, não corrigido (fora do escopo da missão):**
+`ui/analises_tab.py:1980` chama `historico_ticker("genial", ticker, limite=5)`
+com a casa em minúsculas, enquanto todo o resto do projeto usa
+`"Genial Analisa"` (`ui/research_tab.py:361`, `data/radar.py`). Como a consulta
+filtra `.eq("casa", casa)`, essa chamada retornaria `[]` mesmo com histórico
+salvo. Não é observável hoje (a tabela não existe, então tudo retorna vazio
+de qualquer jeito) e virará um bug real no dia em que a migration for
+aplicada e a tabela tiver linhas. Decisão de corrigir: do Rodrigo.

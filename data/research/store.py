@@ -11,6 +11,40 @@ from data.supabase_client import obter_cliente
 TTL_RECOLETA_MIN = 30
 RETENCAO_DIAS = 5
 
+# Tamanho do lote na consulta das versoes atuais feita por
+# _versionar_antes_do_upsert. Bug real (auditoria 2026-11-26): o
+# `select(...).in_("link", links)` era montado com TODOS os links do lote
+# de uma vez e o PostgREST recebe o filtro `in` na QUERY STRING - numa
+# coleta grande (CVM, ~700 documentos numa rodada; links de 100+
+# caracteres cada) a URL estourava antes de sair da maquina
+# (httpx.InvalidURL: "query too long", ou "JSON could not be generated"),
+# a excecao caia no except de melhor-esforco e NENHUMA versao anterior era
+# arquivada - silenciosamente, so' com um print no console. Dividir em
+# lotes mantem cada URL curta; 150 links por consulta deixa a query
+# string na casa de ~20 KB no pior caso realista, bem abaixo de qualquer
+# limite de cliente/servidor.
+_LOTE_CONSULTA_VERSIONAMENTO = 150
+
+# Ultima falha TOTAL de versionamento (todos os lotes da consulta
+# falharam) - setada por salvar_itens e consumida por
+# data/research/__init__.py:coletar_casa, que e' quem tem o contexto da
+# casa pra registrar isso em registrar_tentativa (SAUDE DOS DADOS). Antes
+# desta correcao a falha morria num print: nunca chegava a nenhum
+# registro persistido. Leitura/escrita sempre no mesmo passo sequencial
+# de coleta (nenhum coletor de research roda em paralelo).
+_ultima_falha_versionamento = None
+
+
+def consumir_falha_versionamento() -> str | None:
+    """Devolve (e zera) a descricao da ultima falha TOTAL de
+    versionamento registrada por salvar_itens. None quando a ultima
+    chamada de salvar_itens conseguiu consultar as versoes atuais (o caso
+    normal) - 'zera ao ler' garante que a falha de uma casa nunca seja
+    atribuida a' casa seguinte."""
+    global _ultima_falha_versionamento
+    falha, _ultima_falha_versionamento = _ultima_falha_versionamento, None
+    return falha
+
 
 def _linha_para_item(linha: dict) -> dict:
     """Converte uma linha do banco pro mesmo formato que os coletores
@@ -159,6 +193,8 @@ def salvar_itens(itens: list) -> bool:
     itens = list({it["link"]: it for it in itens}.values())
     agora = datetime.now(timezone.utc).isoformat()
 
+    global _ultima_falha_versionamento
+    _ultima_falha_versionamento = None  # nunca herda a falha da casa anterior
     _versionar_antes_do_upsert(cliente, itens)
 
     campos_presentes = [
@@ -195,21 +231,57 @@ def salvar_itens(itens: list) -> bool:
             return False
 
 
+def _ler_versoes_atuais(cliente, links: list) -> tuple[list, int, int]:
+    """Linhas atuais de research_itens pros `links` dados, consultadas em
+    lotes de _LOTE_CONSULTA_VERSIONAMENTO (ver o comentario da constante:
+    um unico `in_` com todos os links estourava a URL em coleta grande).
+
+    Devolve (linhas, lotes_com_falha, total_de_lotes). Um lote que falha
+    nunca derruba os outros - versionar as versoes anteriores que DERAM
+    pra ler e' melhor que nao versionar nenhuma; o chamador usa a
+    contagem pra saber se a falha foi total (ai' sim e' registrada de
+    verdade, ver consumir_falha_versionamento)."""
+    linhas = []
+    lotes_com_falha = 0
+    total_lotes = 0
+    for inicio in range(0, len(links), _LOTE_CONSULTA_VERSIONAMENTO):
+        fatia = links[inicio:inicio + _LOTE_CONSULTA_VERSIONAMENTO]
+        total_lotes += 1
+        try:
+            resp = cliente.table("research_itens").select("*").in_("link", fatia).execute()
+            linhas.extend(resp.data or [])
+        except Exception as exc:
+            lotes_com_falha += 1
+            print(
+                f"[research.store] versionamento: leitura das versoes atuais falhou no lote "
+                f"{total_lotes} ({len(fatia)} link(s)) (ignorado): {exc!r}"
+            )
+    return linhas, lotes_com_falha, total_lotes
+
+
 def _versionar_antes_do_upsert(cliente, itens: list) -> None:
     """Implementacao real de _arquivar_versao_anterior (ver docstring de
     salvar_itens) - funcao separada (nao inline) pra poder ser testada
     isolada, mockando so' `cliente`. Melhor esforco SEMPRE: qualquer
     excecao (leitura OU escrita) so' loga e retorna, nunca propaga -
-    quem chama (salvar_itens) sempre segue pro upsert principal."""
+    quem chama (salvar_itens) sempre segue pro upsert principal.
+
+    A consulta das versoes atuais e' fatiada (_ler_versoes_atuais); se
+    TODOS os lotes falharem - ou seja, fatiar nao resolveu -, a falha fica
+    registrada em _ultima_falha_versionamento pra chegar ao painel de
+    Saude dos Dados via coletar_casa, em vez de morrer num print."""
+    global _ultima_falha_versionamento
     links = [it["link"] for it in itens if it.get("link")]
     if not links:
         return
-    try:
-        resp = cliente.table("research_itens").select("*").in_("link", links).execute()
-        existentes = resp.data or []
-    except Exception as exc:
-        print(f"[research.store] versionamento: leitura das versoes atuais falhou (ignorado): {exc!r}")
-        return
+    existentes, lotes_com_falha, total_lotes = _ler_versoes_atuais(cliente, links)
+    if lotes_com_falha and lotes_com_falha == total_lotes:
+        _ultima_falha_versionamento = (
+            f"VERSIONAMENTO: consulta das versoes atuais falhou em {lotes_com_falha}/"
+            f"{total_lotes} lote(s) de ate' {_LOTE_CONSULTA_VERSIONAMENTO} links "
+            f"({len(links)} links no total) - nenhuma versao anterior foi arquivada "
+            "nesta coleta (upsert principal nao foi afetado)"
+        )
     if not existentes:
         return
     por_link_novo = {it["link"]: it for it in itens}

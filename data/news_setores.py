@@ -18,9 +18,12 @@ SETORES = {
             "banco", "bancario", "bancaria", "bancos", "banking", "bank",
             "fintech", "correspondente bancario",
         ],
+        # BPAN4 (Banco Pan) removido na auditoria 2026-11-26: ticker morto,
+        # 404 real e confirmado na Yahoo Finance - nenhuma cotacao/noticia
+        # podia ser associada a ele, so' poluia a classificacao do setor.
         "tickers": [
             "ITUB4", "ITUB3", "BBDC4", "BBDC3", "BBAS3", "SANB11", "SANB3",
-            "SANB4", "BPAC11", "BPAN4", "ABCB4", "BRSR6", "BMGB4", "BSLI3",
+            "SANB4", "BPAC11", "ABCB4", "BRSR6", "BMGB4", "BSLI3",
         ],
     },
     "PETRÓLEO & GÁS": {
