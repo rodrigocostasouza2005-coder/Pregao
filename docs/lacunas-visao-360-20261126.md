@@ -124,3 +124,72 @@ A correção foi deliberadamente restrita às classes `.ds-*`/`.v360-*` (código
 novo) para não mexer no espaçamento de todas as telas antigas de uma vez.
 **Outras abas provavelmente têm o mesmo defeito**, em menor escala — vale uma
 varredura própria, com medição antes/depois tela a tela.
+
+---
+
+## Achados adicionais da revisão independente de 2026-11-27 (correções do PR #365)
+
+Os 4 itens abaixo vieram de uma segunda rodada de revisão (correção dos
+defeitos reais encontrados nesta PR — "None" literal, cache ausente,
+notícia curada perdida, indicador desaparecendo, link de histórico
+enterrado e rótulo divergente, todos corrigidos na própria branch). Estes 4
+são de baixo risco e foram deliberadamente **documentados em vez de
+corrigidos**, porque a correção de verdade teria escopo maior que "rápido":
+
+### 7. `render_perfil_posicionamento` continua sem nenhuma chamada externa
+
+**Onde:** `ui/coordenador_tab.py:1671`.
+
+**Status:** o item irmão, `render_perfil_noticias` (linha 1684), **deixou de
+ser dead code** nesta rodada de correções — agora é chamado de
+`ui/visao_360_tab.py:_render_noticias` (reincorporação da lista curada de
+notícias, item 3 da revisão). `render_perfil_posicionamento` continua sem
+nenhum chamador fora do próprio módulo (só a função privada
+`_render_perfil_posicionamento` é usada, internamente, por
+`render_perfil_empresa_tab`). Baixo risco - função pública wrapper sem uso,
+não lógica morta de verdade (a implementação privada roda normalmente em
+ANÁLISES > Perfil da Empresa). Remover o wrapper público ou usá-lo em algum
+outro ponto de composição são as 2 saídas; nenhuma foi tomada aqui por não
+ser pedida.
+
+### 8. Padrão de seletor CSS repetido 4x em `style.css`
+
+**Onde:** `[data-testid="stButtonGroup"] button[aria-checked="true"], ...
+[aria-pressed="true"]`, nas linhas ~655, ~704, ~744 e ~789.
+
+**Por que não foi unificado:** os 4 blocos repetem a MESMA estrutura de
+seletor (pills genéricas, navegação principal, subnavegação, fita de
+tickers da Visão 360), mas cada escopo tem valores DIFERENTES de
+background/borda/cor (sólido âmbar vs. `color-mix` transparente vs.
+sublinhado sem fundo). Unificar de verdade exigiria introduzir variáveis
+CSS por escopo (`--sc-ativo-bg`/`--sc-ativo-borda`/`--sc-ativo-cor`) na regra
+genérica e sobrescrevê-las em cada `.st-key-*` - mudança que toca a
+navegação principal do app inteiro (não só a Visão 360), fora do escopo
+desta PR e sem validação visual Playwright de todas as telas afetadas.
+
+### 9. Escape-hatch `ds-bloco` existe em CSS mas sem helper Python
+
+**Onde:** `style.css:1795` já inclui `.ds-bloco` na lista de seletores que
+recebem a compensação do `margin-bottom:-16px` (ver item 6 acima) - a classe
+já está pronta pra qualquer bloco de HTML cru novo se marcar com ela. Mas
+nenhuma função de `ui/design_system.py` hoje gera
+`<div class="ds-bloco">...</div>` - quem precisar dela tem que escrever a
+classe à mão no HTML literal. Proposta (rápida, mas não feita aqui por não
+ter nenhum chamador real no momento): um helper
+`ds.bloco_html(conteudo_html: str) -> str` que embrulha com a classe.
+
+### 10. Decodificação dos 3 cenários do DCF duplicada em 2 arquivos
+
+**Onde:** `ui/visao_360_tab.py:_render_cenarios_dcf` (~895-899) e
+`ui/coordenador_tab.py` (~986-997, dentro do parecer completo do Model
+Builder) - as duas leem `model_builder["cenarios"]` com a MESMA tupla de
+chaves `("pessimista", "base", "otimista")` e o mesmo `.get(chave) or {}`.
+
+**Por que não foi unificado:** as 2 funções renderizam de forma bem
+diferente (3 cards compactos lado a lado na Visão 360 vs. tabela de 8
+colunas no parecer detalhado do Comitê) - um helper comum só valeria a pena
+pra extrair a ITERAÇÃO (`[(chave, cenarios.get(chave) or {}) for chave in
+(...)]`), não a renderização. Baixo risco de bug (são só 3 chaves
+literais, improvável de divergir sozinho), mas toca
+`ui/coordenador_tab.py`, que tem cobertura de teste extensa própria -
+mudar ali pedia validação maior que "rápido" permite nesta correção.
