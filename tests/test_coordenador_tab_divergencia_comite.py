@@ -126,3 +126,26 @@ def test_painel_cross_comparador_memoria_tem_rotulo_distinto_do_painel_do_comite
     assert "Divergência: comparador × memória de research (1)" in rotulos_expander
     assert "Divergência entre especialistas do Comitê" in rotulos_expander
     assert rotulos_expander.count("Divergência entre especialistas do Comitê") == 1
+
+
+def test_divergencia_cross_comparador_memoria_com_valor_none_mostra_traco():
+    """Regressão: consolidacao.py devolve `comparador`/`memoria_research`
+    como None quando uma das 2 fontes não tem preço-alvo/recomendação
+    para aquela casa (caso legítimo). O painel tem que mostrar "—",
+    nunca a string literal "None"."""
+    consolidado = {
+        "conclusao": [], "pontos_atencao": [], "evidencias": [], "visao_especialistas": {},
+        "divergencias": {
+            "cross_comparador_memoria": {
+                "n_casas_comparadas": 1,
+                "divergencias": [
+                    {"casa": "XP", "tipo": "qualitativa", "campo": "recomendacao",
+                     "comparador": None, "memoria_research": None},
+                ],
+            },
+        },
+    }
+    with patch.object(tab, "subtitulo"):
+        html, _ = _capturar(tab._render_sintese_final, consolidado)
+    assert "None" not in html
+    assert "—" in html

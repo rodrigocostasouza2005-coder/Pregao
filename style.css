@@ -751,6 +751,52 @@ section[data-testid="stSidebar"] .block-container { padding-top: 1rem; }
 .st-key-nav_sub { margin-bottom: 0.4rem; gap: 0 !important; }
 .st-key-nav_sub iframe { display: block; }
 
+/* fita de tickers de ANÁLISES > Visão 360 (app.py, rota analises/panorama,
+   redesign 2026-11-26): o seletor de ticker daquela tela É a fita de
+   cotações dela - precisa de espaçamento consistente, marcação clara do
+   ticker selecionado (caixa âmbar discreta + borda, não só uma cor de
+   texto) e rolagem horizontal própria quando a watchlist é longa, sem
+   quebrar em 3 linhas e empurrar a tela pra baixo. Mesma linguagem da
+   navegação (texto mono, sem cantos arredondados), escopada por chave de
+   container pra não afetar os pills de filtro de RESEARCH/CVM/NEWS. */
+.st-key-v360_fita_ticker { margin-bottom: 0.45rem; }
+.st-key-v360_fita_ticker [data-testid="stButtonGroup"] {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 0.25rem !important;
+    border-bottom: 1px solid var(--borda);
+    padding-bottom: 0.3rem;
+}
+.st-key-v360_fita_ticker [data-testid="stButtonGroup"] button {
+    background-color: transparent !important;
+    border: 1px solid var(--borda) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    color: var(--cinza) !important;
+    font-size: 0.74rem !important;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+    padding: 0.22rem 0.7rem !important;
+    min-height: 30px !important;
+    flex: 0 0 auto !important;
+    white-space: nowrap;
+}
+.st-key-v360_fita_ticker [data-testid="stButtonGroup"] button:hover {
+    color: var(--destaque) !important;
+    border-color: var(--destaque) !important;
+}
+.st-key-v360_fita_ticker [data-testid="stButtonGroup"] button[aria-checked="true"],
+.st-key-v360_fita_ticker [data-testid="stButtonGroup"] button[aria-pressed="true"] {
+    background-color: color-mix(in srgb, var(--destaque) 12%, transparent) !important;
+    border-color: var(--destaque) !important;
+    color: var(--destaque) !important;
+}
+.st-key-v360_fita_ticker [data-testid="stButtonGroup"] button:focus-visible {
+    outline: 2px solid var(--destaque) !important;
+    outline-offset: -2px;
+}
+
 /* alertas (avisos) - barra fina de uma linha, sem bloco colorido alto ------------- */
 [data-testid="stAlert"] {
     background-color: var(--bg) !important;
@@ -1601,4 +1647,178 @@ div[data-testid="stVerticalBlock"].st-emotion-cache-1t2xbk4 {
 }
 .ds-compacto > * + * {
     border-top: 1px solid color-mix(in srgb, var(--borda) 45%, transparent);
+}
+
+/* ---- onda "Visão 360" (2026-11-26): 6 padrões que estavam copiados em 3+
+   abas com medidas diferentes, agora com UMA definição. Ver docstring de
+   ui/design_system.py (bloco ONDA "VISÃO 360") pra qual helper Python gera
+   cada classe - nenhuma delas deve ser escrita à mão numa aba. ---- */
+
+/* micro-rótulo acima de um número (rotulo_html) */
+.ds-rotulo {
+    font-size: 0.6rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--cinza);
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* faixa de métricas (faixa_metricas_html): GRADE auto-fit - as colunas
+   alinham entre linhas e a faixa se reflui sozinha em tablet/notebook sem
+   nunca estourar a largura do painel (um `display:flex` com gap fixo, o
+   padrão antigo, empurrava a última métrica pra fora em ~1024px). O
+   grid-template-columns real vem inline do helper (largura mínima por
+   métrica varia com o tamanho do rótulo). */
+.ds-metricas {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+    gap: 0.35rem 1rem;
+    margin: 0.3rem 0 0.5rem 0;
+}
+.ds-metrica { min-width: 0; }
+.ds-metrica-valor {
+    font-size: 0.88rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ds-metrica-valor-g { font-size: 1.1rem; }
+/* a NOTA da métrica é texto explicativo curto ("especialistas com
+   parecer", "sobre a cotação") - quebra em 2 linhas em vez de cortar com
+   reticências (medido a 1024px: "especialistas com parec…" perdia a
+   palavra final). O VALOR acima dela continua `nowrap` de propósito:
+   número quebrado em duas linhas é ilegível. */
+.ds-metrica-nota {
+    font-size: 0.6rem;
+    color: var(--cinza);
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+/* selo de status/categoria (badge_html) - borda fina, fundo transparente,
+   quadrado; nunca pílula preenchida/arredondada. */
+.ds-badge {
+    display: inline-block;
+    border: 1px solid var(--borda);
+    padding: 0 0.35rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    font-family: 'IBM Plex Mono', monospace;
+    line-height: 1.5;
+}
+.ds-badge-ok { border-color: var(--alta); color: var(--alta); }
+.ds-badge-alerta { border-color: var(--destaque); color: var(--destaque); }
+.ds-badge-erro { border-color: var(--baixa); color: var(--baixa); }
+.ds-badge-neutro { border-color: var(--borda); color: var(--cinza); }
+
+/* tabela densa com rolagem horizontal PRÓPRIA (tabela_html) - a tabela
+   larga rola dentro do wrapper; o body da página nunca ganha scroll
+   horizontal (regra de responsividade do projeto). */
+.ds-tabela-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    margin: 0.2rem 0 0.5rem 0;
+}
+.ds-tabela { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+/* Respiro em AMBOS os lados de toda célula (medido com Playwright a
+   1920px: com padding só à direita, uma coluna numérica alinhada à
+   direita encostava na coluna de texto seguinte e saía
+   "R$ 52,002026-11-18"). As bordas externas ficam sem padding pra tabela
+   alinhar com o resto do painel. */
+.ds-tabela th, .ds-tabela td { padding: 0.3rem 0.6rem; }
+.ds-tabela th:first-child, .ds-tabela td:first-child { padding-left: 0; }
+.ds-tabela th:last-child, .ds-tabela td:last-child { padding-right: 0; }
+.ds-tabela th {
+    text-align: left;
+    color: var(--cinza);
+    font-size: 0.62rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-weight: 600;
+    border-bottom: 1px solid var(--borda);
+    white-space: nowrap;
+}
+.ds-tabela td {
+    border-bottom: 1px solid color-mix(in srgb, var(--borda) 50%, transparent);
+    vertical-align: top;
+}
+.ds-tabela tr:last-child td { border-bottom: 0; }
+.ds-tabela th.ds-num, .ds-tabela td.ds-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* estado vazio elegante (vazio_html): a seção respondeu e não tem
+   conteúdo - visualmente diferente de um bloco que falhou em carregar. */
+.ds-vazio {
+    font-size: 0.72rem;
+    color: var(--cinza);
+    border-left: 2px solid var(--borda);
+    padding: 0.1rem 0 0.1rem 0.5rem;
+    margin: 0.25rem 0 0.4rem 0;
+    line-height: 1.5;
+}
+
+/* COMPENSAÇÃO DO -1rem DO STREAMLIT (bug real medido com Playwright em
+   2026-11-26, missão visao-360-redesign - não é ajuste "no olho"):
+   o Streamlit aplica `margin-bottom: -16px` em TODO
+   [data-testid="stMarkdownContainer"] pra cancelar a margem inferior de
+   1rem que um <p> de markdown sempre tem. Quando o bloco termina num <p>
+   (markdown normal), as duas margens se cancelam e o espaçamento fica
+   certo. Quando o bloco é HTML cru e termina numa <div> (que NÃO tem
+   margem inferior), sobra um -16px real: o elemento seguinte - um botão,
+   uma coluna, outro painel - sobe 16px e fica POR CIMA da última linha do
+   bloco. Medido na Visão 360: a faixa de ações rápidas cobria a linha de
+   status da cotação (markdown com altura 83px pra um conteúdo de 99px).
+
+   A correção devolve 1rem SÓ quando uma classe do design system é o
+   último filho do container - ou seja, só nos blocos escritos com estes
+   helpers (código novo). Nenhum bloco antigo do app muda de espaçamento.
+   Quem escrever um bloco de HTML cru novo e não usar um destes helpers
+   pode marcar a raiz com a classe `ds-bloco` pra receber a mesma
+   compensação. */
+[data-testid="stMarkdownContainer"] > .ds-metricas:last-child,
+[data-testid="stMarkdownContainer"] > .ds-tabela-wrap:last-child,
+[data-testid="stMarkdownContainer"] > .ds-vazio:last-child,
+[data-testid="stMarkdownContainer"] > .ds-secao:last-child,
+[data-testid="stMarkdownContainer"] > .ds-bloco:last-child {
+    margin-bottom: 1rem;
+}
+
+/* cabeçalho de seção interna (secao_html) - um degrau acima de
+   subtitulo() na hierarquia: régua fina na largura toda, pra separar
+   blocos grandes dentro do MESMO painel (em vez de um painel por bloco,
+   que é o que faz uma tela densa virar pilha de cards). */
+.ds-secao {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    border-bottom: 1px solid var(--borda);
+    margin: 0.85rem 0 0.45rem 0;
+    padding-bottom: 0.2rem;
+}
+.ds-secao-titulo {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--neutro);
+}
+.ds-secao-nota {
+    font-size: 0.62rem;
+    color: var(--cinza);
+    text-align: right;
+    min-width: 0;
 }

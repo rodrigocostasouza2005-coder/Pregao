@@ -47,6 +47,8 @@ from data.prices import obter_nome_yf
 from ui.design_system import (
     divisor, lista_compacta, numero_financeiro_html, subtitulo, variacao_html,
 )
+from ui.design_system import moeda_html as ds_moeda_html
+from ui.design_system import pct_html as ds_pct_html
 from ui.dcf_operacional import render_dcf_operacional
 
 _CSS_COORDENADOR = """
@@ -515,25 +517,15 @@ def _badge_recomendacao(recomendacao: str) -> str:
     return f"<span class='coord-badge {classe}'>{html.escape(str(recomendacao or '—'))}</span>"
 
 
-def _moeda_html(valor, moeda: str, casas: int = 2, fallback: str = "—") -> str:
-    """Valor monetário alinhado/mono via design_system.numero_financeiro_html
-    (substitui o `f"{moeda} {valor:,.2f}".replace(...)` que se repetia
-    mais de 10x neste módulo, antes da reformulação visual 2026-11-06).
-    Já devolve HTML seguro (numero_financeiro_html escapa internamente) -
-    nunca re-escapar o retorno desta função."""
-    if not isinstance(valor, (int, float)) or isinstance(valor, bool):
-        return html.escape(fallback)
-    return numero_financeiro_html(valor, casas=casas, formato="BR", prefixo=f"{moeda} ")
-
-
-def _pct_html(valor, casas: int = 1, fallback: str = "—", escala: float = 100.0) -> str:
-    """Taxa/premissa em %, alinhada/mono - SEM sinal/cor (não é uma
-    variação, é uma premissa ou taxa positiva por natureza como WACC ou
-    crescimento perpétuo; ver design_system.py ponto 2: cor é reservada
-    pra indicador de alta/baixa real, usar variacao_html() nesse caso)."""
-    if not isinstance(valor, (int, float)) or isinstance(valor, bool):
-        return html.escape(fallback)
-    return numero_financeiro_html(valor * escala, casas=casas, formato="BR", sufixo="%")
+# Promovidos pro design system na onda "Visão 360" (2026-11-26): a tela
+# nova (ui/visao_360_tab.py) precisava exatamente destes 2 formatadores -
+# duplicá-los lá seria a 2a cópia da mesma regra. A implementação agora
+# mora em ui/design_system.py (moeda_html/pct_html, docstrings completas
+# lá); estes 2 nomes continuam existindo como alias porque são usados 40+
+# vezes neste módulo e exercitados por nome nos testes - zero ponto de
+# chamada tocado, zero mudança de comportamento.
+_moeda_html = ds_moeda_html
+_pct_html = ds_pct_html
 
 
 _CORES_RECOMENDACAO = {"COMPRA": "var(--alta)", "VENDA": "var(--baixa)", "NEUTRO": "var(--neutro)"}
@@ -695,9 +687,20 @@ def _render_pergunta_perfil(pergunta: dict | None, rotulo: str):
     regra explícita do pedido original do Rodrigo); disponivel=True sem
     evidências estruturadas (ex.: pressões de margem quando só há o dado
     numérico, já exibido nos indicadores financeiros do parecer do
-    especialista) mostra uma nota honesta em vez de uma lista vazia."""
+    especialista) mostra uma nota honesta em vez de uma lista vazia.
+
+    O rótulo usa `subtitulo()` (design system) desde 2026-11-26. Era
+    `st.markdown(f"**{rotulo}**")` - a única forma de conteúdo do app que
+    renderiza no tamanho de fonte PADRÃO do Streamlit, bem maior que o
+    resto da tela (ver docstring de ui/design_system.py, que nasceu
+    exatamente pra isso). Confirmado com Playwright na Visão 360: cada
+    pergunta do perfil saía com um título gigante no meio de um bloco de
+    texto de 0.78rem, quebrando a hierarquia visual da página. Mesmo
+    tratamento aplicado aos demais `**rótulos**` deste módulo (pontos
+    favoráveis/contrários, tese/riscos/projeções das casas e os blocos da
+    síntese de IA)."""
     pergunta = pergunta or {}
-    st.markdown(f"**{html.escape(rotulo)}**")
+    subtitulo(rotulo)
     if not pergunta.get("disponivel"):
         st.caption(str(pergunta.get("motivo_indisponivel") or "Dado indisponível para este ticker."))
         return
@@ -715,7 +718,7 @@ def _render_pergunta_quebra_tese_perfil(pergunta: dict | None):
     em data/research/comparador.py, nunca uma conclusão nova composta
     aqui)."""
     pergunta = pergunta or {}
-    st.markdown("**O que quebraria a tese**")
+    subtitulo("O que quebraria a tese")
     if not pergunta.get("disponivel"):
         st.caption(str(pergunta.get("motivo_indisponivel") or "Dado indisponível para este ticker."))
         return
@@ -901,7 +904,11 @@ def render_perfil_empresa_tab(ticker: str):
     obter_indicadores - o try/except aqui segue o mesmo padrão de
     resiliência de render_analisar (linha ~1388): nunca deixa uma falha
     de rede quebrar a página; mostra uma mensagem honesta em vez de
-    `st.error` bloqueante."""
+    `st.error` bloqueante. A carga em si foi extraída pra
+    `obter_perfil_para_tela` (API pública, mais abaixo) em 2026-11-26, pra
+    ANÁLISES > Visão 360 consumir o MESMO perfil com o mesmo tratamento de
+    falha, sem repetir o try/except."""
+    _injetar_css()
     with st.container(border=True):
         st.markdown(
             '<div class="painel-titulo">PERFIL DA EMPRESA — RESUMO DO NEGÓCIO E MOMENTO ATUAL</div>',
@@ -910,10 +917,9 @@ def render_perfil_empresa_tab(ticker: str):
         if not ticker:
             st.info("Selecione um ticker para ver o perfil da empresa.")
             return
-        try:
-            perfil = obter_perfil_empresa(ticker)
-        except Exception as exc:
-            st.caption(f"Perfil da empresa indisponível no momento (falha ao consultar as fontes: {exc!r}).")
+        perfil, motivo_perfil = obter_perfil_para_tela(ticker)
+        if perfil is None:
+            st.caption(motivo_perfil)
             return
 
         _render_perfil_identificacao(perfil.get("identificacao") or {}, perfil.get("perguntas") or {})
@@ -1267,10 +1273,10 @@ def _render_parecer_analista(analista: dict):
         contras = analista.get("contras") or []
         col_pro, col_con = st.columns(2)
         with col_pro:
-            st.markdown("**Pontos favoráveis**")
+            subtitulo("Pontos favoráveis")
             lista_compacta(html.escape(str(x)) for x in pros) if pros else st.caption("Sem evidência favorável estruturada.")
         with col_con:
-            st.markdown("**Pontos contrários**")
+            subtitulo("Pontos contrários")
             lista_compacta(html.escape(str(x)) for x in contras) if contras else st.caption("Sem evidência contrária estruturada.")
 
     # Limitações declaradas pelo próprio especialista (ex.: Earnings
@@ -1321,12 +1327,12 @@ def _render_casas_research(casas: list, consenso: dict):
             premissas = casa.get("tese") or []
             riscos_casa = casa.get("contras") or []
             projecoes = casa.get("projecoes") or {}
-            st.markdown("**Tese / premissas publicadas**")
+            subtitulo("Tese / premissas publicadas")
             lista_compacta(html.escape(str(x)) for x in premissas) if premissas else st.caption("A extração estruturada não encontrou premissas para esta publicação.")
-            st.markdown("**Riscos apontados pela casa**")
+            subtitulo("Riscos apontados pela casa")
             lista_compacta(html.escape(str(x)) for x in riscos_casa) if riscos_casa else st.caption("A extração estruturada não encontrou riscos para esta publicação.")
             if projecoes:
-                st.markdown("**Projeções extraídas**")
+                subtitulo("Projeções extraídas")
                 lista_compacta(f"{html.escape(str(k))}: {html.escape(str(v))}" for k, v in projecoes.items() if v is not None)
     mediana = consenso.get("mediana")
     upside_consenso = consenso.get("upside_pct")
@@ -1406,8 +1412,8 @@ def _render_sintese_final(consolidado: dict):
             with st.expander(f"Divergência: comparador × memória de research ({len(divergencias['divergencias'])})"):
                 lista_compacta(
                     f"<b>{html.escape(d['casa'])}</b> ({html.escape(str(d['tipo']))}, {html.escape(str(d['campo']))}): "
-                    f"comparador=<code>{html.escape(str(d['comparador']))}</code> "
-                    f"vs memória de research=<code>{html.escape(str(d['memoria_research']))}</code>"
+                    f"comparador=<code>{html.escape(str(d['comparador'] if d['comparador'] is not None else '—'))}</code> "
+                    f"vs memória de research=<code>{html.escape(str(d['memoria_research'] if d['memoria_research'] is not None else '—'))}</code>"
                     for d in divergencias["divergencias"]
                 )
 
@@ -1526,7 +1532,7 @@ def _render_sintese_ia(consolidado: dict):
                 for rotulo, chave in (("Convergências", "convergencias"), ("Divergências", "divergencias"), ("Pontos de atenção", "pontos_atencao")):
                     itens = sintese_research.get(chave) or []
                     if itens:
-                        st.markdown(f"**{rotulo}**")
+                        subtitulo(rotulo)
                         lista_compacta(html.escape(str(i)) for i in itens)
         else:
             st.caption(
@@ -1577,6 +1583,170 @@ def render_consolidado(consolidado: dict):
     if consolidado.get("sintese_divergencia_comite_ia") or consolidado.get("sintese_qualitativa_research_ia"):
         divisor()
         _render_sintese_ia(consolidado)
+
+
+# ============================================================
+# API PÚBLICA DE COMPOSIÇÃO (consumida por ui/visao_360_tab.py)
+#
+# A Visão 360 (ANÁLISES > Visão 360, redesign 2026-11-26) precisa dos
+# MESMOS blocos que esta aba já renderiza - perfil da empresa pergunta por
+# pergunta, parecer de 1 especialista, casas de research, divergência entre
+# especialistas, síntese final e síntese de IA - mas numa hierarquia visual
+# própria (ex.: "Momento atual" e "Principais riscos" viram 2 blocos
+# separados lá, enquanto aqui são 1 só; os pareceres viram lista lateral em
+# vez de st.tabs). Em vez de duplicar o conteúdo desses blocos na tela nova
+# (ou de importar função privada de outro módulo de UI, o que a convenção
+# deste projeto evita - ver docstring de _nome_empresa_exibicao), cada
+# bloco ganha UM nome público aqui, delegando pra implementação privada que
+# já existia e continua sendo a única.
+#
+# Por que as privadas não foram simplesmente renomeadas: elas são
+# exercitadas POR NOME em tests/test_coordenador_tab_cards_especialistas.py,
+# tests/test_coordenador_tab_divergencia_comite.py,
+# tests/test_coordenador_tab_perfil_empresa.py e
+# tests/test_coordenador_central_consolidacao.py - renomear trocaria um
+# risco de duplicação por um churn de teste sem ganho nenhum.
+# ============================================================
+
+def injetar_css():
+    """Injeta o CSS deste módulo (`.coord-*`: nota, métrica, selo, tabela
+    com rolagem, destaque de valuation) - obrigatório antes de chamar
+    QUALQUER render_* daqui de fora.
+
+    Bug real encontrado nesta missão (2026-11-26): `render_perfil_empresa_tab`
+    e `render_consolidado` emitem markup `.coord-nota`/`.coord-metrica-valor`/
+    `.coord-badge`/`.coord-tabela`, mas nenhuma das duas injetava o CSS - só
+    as 5 subabas de COMITÊ chamavam `_injetar_css`. Resultado: em ANÁLISES >
+    Perfil da Empresa e em ANÁLISES > Visão 360 (que chamam as duas direto)
+    esses blocos renderizavam SEM estilo - texto no tamanho padrão do
+    Streamlit, selo sem borda/cor, tabela sem o wrapper de rolagem. Era uma
+    das causas concretas da tela de análise parecer "relatório bruto"."""
+    _injetar_css()
+
+
+def obter_perfil_para_tela(ticker: str) -> tuple:
+    """`(perfil, motivo)` - carrega data/empresa_perfil.py:
+    obter_perfil_empresa com o MESMO tratamento de falha de
+    `render_perfil_empresa_tab` (que agora usa esta função): a camada de
+    dados é pura e cada fonte que falha vira `disponivel=False` só no
+    campo afetado, mas a chamada em si bate em yfinance/Supabase - uma
+    falha de rede devolve `(None, motivo)` em vez de derrubar a tela.
+    Extraída pra que a Visão 360 consuma o MESMO perfil sem repetir o
+    try/except nem chamar a fonte duas vezes na mesma página.
+
+    O DETALHE TÉCNICO da falha (repr da exceção) vai pro log do servidor,
+    nunca pra tela - antes de 2026-11-26 o repr era concatenado na
+    mensagem do usuário, que via coisas como "KeyError('currentPrice')"
+    numa aba de análise. Regra explícita da missão de redesign: nome de
+    coluna, SQL, migration e exceção interna só existem em log/ferramenta
+    de dev; o usuário vê o FATO (a fonte não respondeu)."""
+    if not ticker:
+        return None, "Selecione um ticker para ver o perfil da empresa."
+    try:
+        return obter_perfil_empresa(ticker), None
+    except Exception as exc:
+        print(f"[coordenador_tab] perfil da empresa indisponível pra {ticker}: {exc!r}")
+        return None, ("Perfil da empresa indisponível no momento: as fontes de research/fundamentos "
+                      "não responderam nesta consulta.")
+
+
+def render_perfil_pergunta(pergunta: dict | None, rotulo: str):
+    """1 pergunta do Perfil da Empresa (evidências de research verbatim ou
+    o motivo_indisponivel literal da camada de dados)."""
+    _render_pergunta_perfil(pergunta, rotulo)
+
+
+def render_perfil_pergunta_quebra_tese(pergunta: dict | None):
+    """Pergunta "o que quebraria a tese" (evidências + divergência entre
+    casas sobre as premissas centrais)."""
+    _render_pergunta_quebra_tese_perfil(pergunta)
+
+
+def render_perfil_identificacao(identificacao: dict, perguntas: dict):
+    """Bloco "o que a empresa faz / como ganha dinheiro" + setor/indústria/
+    país."""
+    _render_perfil_identificacao(identificacao, perguntas)
+
+
+def render_perfil_posicionamento(perguntas: dict):
+    """Bloco "posicionamento competitivo" (posição, vantagens,
+    concorrentes)."""
+    _render_perfil_posicionamento(perguntas)
+
+
+def render_perfil_research_consenso(research: dict):
+    """Bloco de consenso entre casas de research já calculado por
+    data/empresa_perfil.py (dispersão de preço-alvo, divergência,
+    mudanças de hoje)."""
+    _render_perfil_research_consenso(research)
+
+
+def render_perfil_noticias(perfil: dict):
+    """Bloco de notícias recentes do perfil (metadado: título/data/selo/
+    link, nunca resumo editorial)."""
+    _render_perfil_noticias(perfil)
+
+
+def render_parecer_especialista(analista: dict):
+    """Parecer completo de 1 especialista do Comitê - método/dados, tese,
+    indicadores, pontos favoráveis/contrários, achados, limitações e (pro
+    Model Builder/Valuation Reviewer) o DCF com cenários/premissas/
+    sensibilidade."""
+    _render_parecer_analista(analista)
+
+
+def render_casas_research(casas: list, consenso: dict):
+    """Dado externo: o que cada casa de research publicou pro ticker
+    (preço-alvo sempre atribuído à casa, nunca ao Pregão)."""
+    _render_casas_research(casas, consenso)
+
+
+def render_divergencia_comite(divergencia_comite: dict | None):
+    """Painel de convergência/divergência ENTRE os especialistas do
+    Comitê (nunca um veredito de quem está certo)."""
+    _render_divergencia_comite(divergencia_comite)
+
+
+def render_sintese_final(consolidado: dict):
+    """Fecho da análise consolidada: conclusão determinística rotulada,
+    pontos de atenção, divergências e material de apoio."""
+    _render_sintese_final(consolidado)
+
+
+def render_sintese_ia(consolidado: dict):
+    """Leitura qualitativa de IA (Groq) sobre o consolidado - aditiva,
+    nunca recalcula recomendação/preço-alvo/confiança."""
+    _render_sintese_ia(consolidado)
+
+
+def badge_recomendacao_html(recomendacao: str) -> str:
+    """Selo da recomendação de 1 especialista/casa, cobrindo os 3
+    vocabulários que convivem no Comitê (ver _badge_recomendacao)."""
+    return _badge_recomendacao(recomendacao)
+
+
+def badge_confianca_html(categoria: str) -> str:
+    """Selo da confiança da consolidação (ALTA/MEDIA/BAIXA/
+    INSUFICIENTE), com cor variando por categoria."""
+    return _badge_confianca(categoria)
+
+
+def cor_recomendacao(recomendacao: str) -> str:
+    """Cor do texto grande de recomendação (var(--alta)/var(--baixa)/
+    var(--neutro)/var(--cinza) - nunca um hex novo)."""
+    return _cor_recomendacao(recomendacao)
+
+
+def fmt_data(valor) -> str:
+    """Data em texto curto (YYYY-MM-DD) ou "—" - mesma normalização usada
+    em toda esta aba."""
+    return _fmt_data(valor)
+
+
+def nome_empresa_exibicao(ticker: str | None) -> str | None:
+    """Nome de exibição da empresa (config.TICKER_NOME, fallback
+    obter_nome_yf cacheado 24h) - mesma cascata de sempre."""
+    return _nome_empresa_exibicao(ticker)
 
 
 def render_historico(prefs: dict = None):

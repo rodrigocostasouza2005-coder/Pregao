@@ -1,0 +1,125 @@
+{
+  "desktop-1920": {
+    "pagina_inteira": {
+      "innerWidth": 1920,
+      "bodyScrollWidth": 1920,
+      "htmlScrollWidth": 1920,
+      "alturaTotal": 1200,
+      "elementosEstourando": [],
+      "textoPreco": "R$ 38,52",
+      "nPaineis": 0
+    },
+    "PARECERES DOS ESPECIALISTAS": {
+      "innerWidth": 1920,
+      "bodyScrollWidth": 1920,
+      "htmlScrollWidth": 1920,
+      "alturaTotal": 1200,
+      "elementosEstourando": [],
+      "textoPreco": "R$ 38,52",
+      "nPaineis": 0
+    },
+    "RESEARCH E CONSENSO": {
+      "innerWidth": 1920,
+      "bodyScrollWidth": 1920,
+      "htmlScrollWidth": 1920,
+      "alturaTotal": 1200,
+      "elementosEstourando": [],
+      "textoPreco": "R$ 38,52",
+      "nPaineis": 0
+    },
+    "EVIDÊNCIAS E DIVERGÊNCIAS": {
+      "innerWidth": 1920,
+      "bodyScrollWidth": 1920,
+      "htmlScrollWidth": 1920,
+      "alturaTotal": 1200,
+      "elementosEstourando": [],
+      "textoPreco": "R$ 38,52",
+      "nPaineis": 0
+    },
+    "NOTÍCIAS": {
+      "innerWidth": 1920,
+      "bodyScrollWidth": 1920,
+      "htmlScrollWidth": 1920,
+      "alturaTotal": 1200,
+      "elementosEstourando": [],
+      "textoPreco": "R$ 38,52",
+      "nPaineis": 0
+    },
+    "HISTÓRICO DE ANÁLISES": {
+      "innerWidth": 1920,
+      "bodyScrollWidth": 1920,
+      "htmlScrollWidth": 1920,
+      "alturaTotal": 1200,
+      "elementosEstourando": [],
+      "textoPreco": "R$ 38,52",
+      "nPaineis": 0
+    }
+  },
+  "notebook-1440": {
+    "pagina_inteira": {
+      "innerWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "htmlScrollWidth": 1440,
+      "alturaTotal": 900,
+      "elementosEstourando": [],
+      "textoPreco": "R$ 38,52",
+      "nPaineis": 0
+    }
+  },
+  "tablet-1024": {
+    "pagina_inteira": {
+      "innerWidth": 1024,
+      "bodyScrollWidth": 1024,
+      "htmlScrollWidth": 1024,
+      "alturaTotal": 900,
+      "elementosEstourando": [],
+      "textoPreco": "R$ 38,52",
+      "nPaineis": 0
+    },
+    "PARECERES DOS ESPECIALISTAS": {
+      "innerWidth": 1024,
+      "bodyScrollWidth": 1024,
+      "htmlScrollWidth": 1024,
+      "alturaTotal": 900,
+      "elementosEstourando": [],
+      "textoPreco": "R$ 38,52",
+      "nPaineis": 0
+    },
+    "RESEARCH E CONSENSO": {
+      "innerWidth": 1024,
+      "bodyScrollWidth": 1024,
+      "htmlScrollWidth": 1024,
+      "alturaTotal": 900,
+      "elementosEstourando": [],
+      "textoPreco": "R$ 38,52",
+      "nPaineis": 0
+    },
+    "EVIDÊNCIAS E DIVERGÊNCIAS": {
+      "innerWidth": 1024,
+      "bodyScrollWidth": 1024,
+      "htmlScrollWidth": 1024,
+      "alturaTotal": 900,
+      "elementosEstourando": [],
+      "textoPreco": "R$ 38,52",
+      "nPaineis": 0
+    },
+    "NOTÍCIAS": {
+      "innerWidth": 1024,
+      "bodyScrollWidth": 1024,
+      "htmlScrollWidth": 1024,
+      "alturaTotal": 900,
+      "elementosEstourando": [],
+      "textoPreco": "R$ 38,52",
+      "nPaineis": 0
+    },
+    "HISTÓRICO DE ANÁLISES": {
+      "innerWidth": 1024,
+      "bodyScrollWidth": 1024,
+      "htmlScrollWidth": 1024,
+      "alturaTotal": 900,
+      "elementosEstourando": [],
+      "textoPreco": "R$ 38,52",
+      "nPaineis": 0
+    }
+  }
+}

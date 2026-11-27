@@ -1886,6 +1886,19 @@ def _potencial_pct(preco_alvo, preco_atual):
     return potencial if _numero_finito(potencial) is not None else None
 
 
+# === API pública reaproveitada por ANÁLISES > Visão 360 ====================
+#
+# A Visão 360 (ui/visao_360_tab.py, redesign 2026-11-26) consome 2 peças
+# que já existiam e eram testadas AQUI - o loader cacheado do comparativo
+# de casas e o potencial indicativo de um preço-alvo contra a cotação.
+# Expor por um nome público (em vez de a outra tela importar o nome
+# privado, ou pior, recriar os dois) mantém UMA implementação e UM cache
+# por ticker. Os nomes privados continuam existindo porque são usados
+# dezenas de vezes neste módulo; nenhum ponto de chamada mudou.
+comparativo_casas_cacheado = _comparativo_casas_cacheado
+potencial_pct = _potencial_pct
+
+
 def _alvo_positivo(snapshot):
     """Preço-alvo do snapshot informado, sem recorrer a registros antigos."""
     if not isinstance(snapshot, dict):

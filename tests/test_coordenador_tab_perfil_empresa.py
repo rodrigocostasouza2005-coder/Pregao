@@ -405,11 +405,21 @@ def test_pergunta_disponivel_sem_evidencias_mostra_nota_honesta_sem_inventar():
 # ============================================================
 
 def test_excecao_ao_obter_perfil_nao_quebra_e_mostra_mensagem_honesta():
+    """Falha na consulta degrada com mensagem honesta e NÃO derruba a aba.
+
+    Mudança de 2026-11-26 (missão visao-360-redesign, regra explícita do
+    pedido): o detalhe técnico da exceção (repr, nome de coluna, SQL) vai
+    pro log do servidor, nunca pra tela - antes o repr era concatenado na
+    mensagem e o usuário via coisas como "Exception('timeout ao consultar
+    yfinance')" numa aba de análise. O usuário continua sabendo o FATO (a
+    fonte não respondeu); quem depura lê o log."""
     with patch.object(tab, "obter_perfil_empresa", side_effect=Exception("timeout ao consultar yfinance")):
         textos = _capturar(tab.render_perfil_empresa_tab, "PETR4")
     assert "PERFIL DA EMPRESA" in textos
     assert "indisponível" in textos.lower()
-    assert "timeout ao consultar yfinance" in textos
+    assert "não responderam nesta consulta" in textos
+    assert "timeout ao consultar yfinance" not in textos
+    assert "Exception" not in textos
 
 
 def test_sem_ticker_mostra_aviso_e_nao_chama_obter_perfil():
