@@ -53,5 +53,57 @@ def test_teste_especifico_de_cada_casa_e_o_proprio_testar_conexao_do_modulo():
         assert diag_mod._TESTES_ESPECIFICOS[nome] is funcao_esperada
 
 
+# ============================================================
+# Bug de desempacotamento (auditoria 2026-11-26): _testar_gnews_decode
+# desempacotava 3 valores de news._extrair_texto_artigo, que devolve 4
+# (texto, imagem, link_real, motivo_falha) desde a fase 3 de NEWS. Como
+# testar_fonte captura qualquer excecao, o painel DIAGNOSTICO DE FONTES
+# reportava "erro: too many values to unpack (expected 3)" - acusando
+# bloqueio da fonte quando o problema era local, sem nunca avaliar o
+# pipeline real. Nada de rede aqui: _buscar_feed e _extrair_texto_artigo
+# sao mockados.
+# ============================================================
+
+_FONTE_GNEWS = {
+    "nome": "Google News (decode+extração)",
+    "url": "https://news.google.com/rss/search?q=Ibovespa",
+}
+
+
+def _com_news_mockado(retorno_extracao):
+    """Mocka data.news._buscar_feed/_extrair_texto_artigo - importados
+    DENTRO de _testar_gnews_decode, entao o patch e' no modulo data.news."""
+    from unittest.mock import patch
+
+    import data.news as news_mod
+    return (
+        patch.object(news_mod, "_buscar_feed", return_value=[{"link": "https://news.google.com/rss/articles/x"}]),
+        patch.object(news_mod, "_extrair_texto_artigo", return_value=retorno_extracao),
+    )
+
+
+def test_gnews_decode_com_extracao_bem_sucedida_nunca_levanta_valueerror():
+    patch_feed, patch_extrair = _com_news_mockado(
+        ("texto do artigo com conteudo real", "https://img/x.jpg", "https://infomoney.com.br/materia", None)
+    )
+    with patch_feed, patch_extrair:
+        resultado = diag_mod.testar_fonte(_FONTE_GNEWS)
+
+    assert resultado["ok"] is True
+    assert "unpack" not in resultado["status"]
+    assert "OK (" in resultado["status"]
+    assert "infomoney.com.br" in resultado["status"]  # link_real, nao a imagem
+
+
+def test_gnews_decode_com_extracao_falhando_reporta_o_motivo_real_nao_erro_de_unpack():
+    patch_feed, patch_extrair = _com_news_mockado((None, None, None, "bloqueado por paywall"))
+    with patch_feed, patch_extrair:
+        resultado = diag_mod.testar_fonte(_FONTE_GNEWS)
+
+    assert resultado["ok"] is False
+    assert resultado["status"] == "falhou: bloqueado por paywall"
+    assert "unpack" not in resultado["status"]
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
