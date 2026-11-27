@@ -201,7 +201,16 @@ def obter_selic_meta_copom() -> dict | None:
 
     Vigente = registro com DataFimVigencia nula e início já ocorrido.
     {"valor", "vigente_desde" (date), "reuniao" (int)} ou None (o motivo
-    fica em motivo_indisponivel("selic_copom"))."""
+    fica em motivo_indisponivel("selic_copom")).
+
+    Registra a tentativa na SAÚDE DOS DADOS como linha própria ("MACRO
+    (BCB - Selic Copom)"), separada de "MACRO (BCB - Selic)": são fontes
+    diferentes do mesmo número (www.bcb.gov.br vs. api.bcb.gov.br/SGS) e
+    esta é justamente o plano B acionado quando a outra falha - sem linha
+    própria, uma quebra DESTE endpoint (ex: o site do BC mudar o contrato
+    de /historicotaxasjuros) ficava 100% invisível no painel, exatamente
+    no momento em que ela importa mais. Achado da auditoria 2026-11-26:
+    era a única função de coleta de data/macro.py sem instrumentação."""
     try:
         r = requests.get(_COPOM_HISTORICO_URL, headers=_HEADERS, timeout=(5, 20))
         r.raise_for_status()
@@ -220,10 +229,14 @@ def obter_selic_meta_copom() -> dict | None:
             raise ValueError(f"histórico do Copom com {len(vigentes)} meta(s) vigente(s) - esperado exatamente 1")
         inicio, valor, reuniao = vigentes[0]
         _MOTIVO_FALHA.pop("selic_copom", None)
+        registrar_tentativa("MACRO (BCB - Selic Copom)", "Banco Central (histórico Copom)",
+                             execucao_ok=True, registros_novos=1, categoria="Macro")
         return {"valor": valor, "vigente_desde": inicio.tz_convert(TZ).date(),
                 "reuniao": int(reuniao) if reuniao is not None else None}
     except Exception as e:
         _MOTIVO_FALHA["selic_copom"] = f"histórico do Copom (bcb.gov.br): {str(e)[:150]}"
+        registrar_tentativa("MACRO (BCB - Selic Copom)", "Banco Central (histórico Copom)",
+                             execucao_ok=False, erro=str(e)[:300], categoria="Macro")
         return None
 
 
