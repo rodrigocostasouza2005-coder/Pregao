@@ -53,12 +53,18 @@ def test_contar_duplicados_ignora_item_sem_link():
 # ============================================================
 
 class _ClienteFakeCompleto:
-    def __init__(self, linhas_existentes: dict = None, efeitos_upsert: list = None, falhar_insert_historico: bool = False):
+    def __init__(self, linhas_existentes: dict = None, efeitos_upsert: list = None, falhar_insert_historico: bool = False,
+                 max_links_por_select: int = None):
         self._linhas = dict(linhas_existentes or {})  # link -> linha (simula research_itens)
         self._efeitos_upsert = list(efeitos_upsert or [None])  # 1 por chamada de upsert().execute()
         self._falhar_insert_historico = falhar_insert_historico
+        # Simula o limite real de tamanho da URL/query string do PostgREST:
+        # um `in_` com mais links que isso estoura, igual ao
+        # httpx.InvalidURL("query too long") visto na coleta da CVM.
+        self._max_links_por_select = max_links_por_select
         self.upsert_payloads = []
         self.historico_inserts = []
+        self.selects_in = []  # 1 entrada por SELECT ... in_("link", [...]) executado
         self._tabela = None
 
     def table(self, nome):
@@ -94,6 +100,11 @@ class _ClienteFakeCompleto:
 
     def execute(self):
         if self._tabela == "research_itens" and self._op == "select":
+            self.selects_in.append(list(self._in_valores))
+            if self._max_links_por_select is not None and len(self._in_valores) > self._max_links_por_select:
+                raise Exception(
+                    f"InvalidURL: query too long ({len(self._in_valores)} links no filtro `in`)"
+                )
             linhas = [self._linhas[link] for link in self._in_valores if link in self._linhas]
             return _Resposta(linhas)
         if self._tabela == "research_itens" and self._op == "upsert":
@@ -281,6 +292,130 @@ def test_versionar_antes_do_upsert_leitura_falha_nunca_propaga():
     # chamada direta (nao via salvar_itens) - isola a funcao, sem depender
     # do upsert() tambem estar mockado corretamente no MagicMock generico.
     store_mod._versionar_antes_do_upsert(cliente, itens)  # nao deve lancar
+    # limpa o estado global de falha pra nao vazar pro proximo teste
+    # (e confirma que a falha total ficou registrada, ver abaixo).
+    assert store_mod.consumir_falha_versionamento() is not None
+
+
+# ============================================================
+# Lote grande (auditoria 2026-11-26): o SELECT das versoes atuais era um
+# unico `in_("link", links)` com TODOS os links da coleta. Na CVM (~700
+# documentos por rodada) a URL estourava (httpx.InvalidURL "query too
+# long" / "JSON could not be generated"), a excecao caia no except de
+# melhor-esforco e o versionamento NUNCA rodava - sem nada registrado
+# alem de um print. Agora a consulta e' fatiada em lotes de
+# _LOTE_CONSULTA_VERSIONAMENTO links.
+# ============================================================
+
+def _itens_lote(n: int, titulo: str = "Versão nova") -> list:
+    return [
+        {
+            "link": f"https://cvm.gov.br/documento/{i:06d}/ver-documento-com-url-bem-longa",
+            "casa": "CVM", "titulo": titulo, "data": "2026-11-26",
+            "autor": "", "tipo": "FATO_RELEVANTE", "tickers": [],
+        }
+        for i in range(n)
+    ]
+
+
+def test_versionamento_fatia_consulta_em_lotes_em_coleta_grande():
+    """700 links: o fake recusa qualquer SELECT com mais de 200 links no
+    filtro `in` (como o cliente HTTP real recusava a URL). Antes do fix a
+    unica consulta estourava e nada era versionado; agora sao 5 lotes de
+    ate' 150 e o versionamento funciona de verdade."""
+    itens = _itens_lote(700)
+    # a versao ANTERIOR de 1 link especifico difere no titulo -> tem que ser arquivada
+    link_mudou = itens[500]["link"]
+    cliente = _ClienteFakeCompleto(
+        linhas_existentes={
+            link_mudou: {
+                "link": link_mudou, "casa": "CVM", "titulo": "Versão antiga",
+                "data": "2026-11-26", "autor": "", "tipo": "FATO_RELEVANTE", "tickers": [],
+                "coletado_em": "2026-11-25T09:00:00+00:00",
+            },
+        },
+        max_links_por_select=200,
+    )
+    import unittest.mock as mock
+    with mock.patch.object(store_mod, "obter_cliente", return_value=cliente):
+        ok = store_mod.salvar_itens(itens)
+
+    assert ok is True
+    assert len(cliente.selects_in) == 5  # ceil(700 / 150)
+    assert all(len(fatia) <= store_mod._LOTE_CONSULTA_VERSIONAMENTO for fatia in cliente.selects_in)
+    # todos os links consultados, nenhum perdido/duplicado entre lotes
+    consultados = [link for fatia in cliente.selects_in for link in fatia]
+    assert consultados == [it["link"] for it in itens]
+    assert len(cliente.historico_inserts) == 1
+    assert cliente.historico_inserts[0][0]["titulo"] == "Versão antiga"
+    assert store_mod.consumir_falha_versionamento() is None  # nenhuma falha a registrar
+
+
+def test_versionamento_lote_grande_nao_registra_falha_quando_funciona():
+    """Caminho normal de lote grande sem nenhum limite artificial: 700
+    links, 5 lotes, zero falha - a instrumentacao nova nunca marca a
+    coleta como parcial sem motivo real."""
+    cliente = _ClienteFakeCompleto()
+    import unittest.mock as mock
+    with mock.patch.object(store_mod, "obter_cliente", return_value=cliente):
+        ok = store_mod.salvar_itens(_itens_lote(700))
+    assert ok is True
+    assert len(cliente.selects_in) == 5
+    assert store_mod.consumir_falha_versionamento() is None
+
+
+def test_versionamento_falha_em_todos_os_lotes_e_registrada_de_verdade():
+    """Se fatiar nao resolve (falha em TODOS os lotes), a falha para de
+    morrer num print: fica disponivel em consumir_falha_versionamento pra
+    coletar_casa registrar na Saude dos Dados. O upsert principal
+    continua intacto (melhor esforco preservado)."""
+    cliente = _ClienteFakeCompleto(max_links_por_select=0)  # todo SELECT falha
+    import unittest.mock as mock
+    with mock.patch.object(store_mod, "obter_cliente", return_value=cliente):
+        ok = store_mod.salvar_itens(_itens_lote(300))
+
+    assert ok is True  # upsert principal nunca e' afetado
+    falha = store_mod.consumir_falha_versionamento()
+    assert falha is not None
+    assert "VERSIONAMENTO" in falha
+    assert "2/2 lote(s)" in falha
+    # consumida -> nao vaza pra casa seguinte
+    assert store_mod.consumir_falha_versionamento() is None
+
+
+def test_versionamento_falha_parcial_de_lote_nao_derruba_os_outros():
+    """1 lote falha, os demais funcionam: as versoes anteriores que DERAM
+    pra ler sao arquivadas normalmente e nada e' marcado como falha total
+    (a coleta nao vira 'parcial' por um lote isolado)."""
+    itens = _itens_lote(300)
+    link_mudou = itens[200]["link"]  # cai no 2o lote (indices 150-299)
+    cliente = _ClienteFakeCompleto(
+        linhas_existentes={
+            link_mudou: {
+                "link": link_mudou, "casa": "CVM", "titulo": "Versão antiga",
+                "data": "2026-11-26", "autor": "", "tipo": "FATO_RELEVANTE", "tickers": [],
+                "coletado_em": "2026-11-25T09:00:00+00:00",
+            },
+        },
+    )
+    chamadas = {"n": 0}
+    execute_original = cliente.execute
+
+    def execute_com_falha_no_primeiro_select():
+        if cliente._op == "select" and cliente._tabela == "research_itens":
+            chamadas["n"] += 1
+            if chamadas["n"] == 1:
+                raise Exception("InvalidURL: query too long")
+        return execute_original()
+
+    import unittest.mock as mock
+    with mock.patch.object(store_mod, "obter_cliente", return_value=cliente), \
+            mock.patch.object(cliente, "execute", side_effect=execute_com_falha_no_primeiro_select):
+        ok = store_mod.salvar_itens(itens)
+
+    assert ok is True
+    assert len(cliente.historico_inserts) == 1  # o 2o lote leu e arquivou
+    assert store_mod.consumir_falha_versionamento() is None  # falha parcial != falha total
 
 
 if __name__ == "__main__":

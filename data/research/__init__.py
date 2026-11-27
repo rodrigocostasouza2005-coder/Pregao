@@ -882,10 +882,17 @@ def coletar_casa(casa: dict) -> tuple[int, bool]:
         return 0, False
     duplicidades = store.contar_duplicados(itens)
     ok = store.salvar_itens(itens)
+    # Falha TOTAL no versionamento (store.consumir_falha_versionamento) nao
+    # invalida a coleta - o upsert principal e' independente -, mas tambem
+    # nao pode seguir invisivel: antes ela morria num print no console e
+    # nunca chegava a registrar_tentativa. Entra como coleta `parcial` com
+    # o motivo real; None (o caso normal) nao muda nada.
+    falha_versionamento = store.consumir_falha_versionamento()
     print(f"[research] coleta {casa['nome']}: {len(itens)} itens em {duracao:.1f}s (salvou={ok})")
     registrar_tentativa(
         casa["nome"], casa.get("fonte", casa["nome"]), execucao_ok=True,
         persistencia_ok=ok, registros_novos=len(itens), categoria="Research",
+        parcial=bool(falha_versionamento), erro=falha_versionamento,
         tempo_s=duracao, publicacoes_encontradas=len(itens),
         documentos_extraidos=len(itens) if ok else 0, duplicidades=duplicidades,
     )
