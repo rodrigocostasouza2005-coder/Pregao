@@ -827,12 +827,16 @@ def _render_fundamentos(ticker: str, linha: dict | None, consolidado: dict | Non
     ]
 
     for titulo, itens, nota_fonte in categorias:
-        disponiveis = [(rotulo, valor, nota) for rotulo, valor, nota in itens if valor]
-        ds.secao(titulo, f"{len(disponiveis)} de {len(itens)} indicadores disponíveis")
-        if disponiveis:
-            st.markdown(ds.faixa_metricas_html(disponiveis, minimo=142), unsafe_allow_html=True)
-        else:
-            ds.vazio("Nenhum indicador desta categoria foi reportado para este ticker nesta consulta.")
+        n_disponiveis = sum(1 for _, valor, _ in itens if valor)
+        # O indicador SEMPRE aparece na grade, mesmo sem valor (fallback
+        # "—", igual às demais telas do app) - só a contagem no rótulo da
+        # seção reflete quantos têm valor real. Descartar o campo inteiro
+        # da grade quando falta valor (comportamento anterior) escondia a
+        # existência do indicador em vez de dizer honestamente que ele
+        # não foi reportado para este ticker nesta consulta.
+        itens_grade = [(rotulo, valor or "—", nota) for rotulo, valor, nota in itens]
+        ds.secao(titulo, f"{n_disponiveis} de {len(itens)} indicadores disponíveis")
+        st.markdown(ds.faixa_metricas_html(itens_grade, minimo=142), unsafe_allow_html=True)
         st.markdown(f"<div class='v360-nota'>{html.escape(nota_fonte)}</div>", unsafe_allow_html=True)
 
     if linha.get("preco_erro"):

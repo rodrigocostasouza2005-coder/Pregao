@@ -255,6 +255,23 @@ def test_indicadores_saem_agrupados_por_categoria():
     assert "Nenhum indicador desta categoria" in textos or "Crescimento de receita" in textos
 
 
+def test_indicador_sem_valor_aparece_na_grade_com_traco_nunca_desaparece():
+    """Regressão: `disponiveis = [... if valor]` descartava o campo
+    inteiro da grade quando faltava valor, em vez de mostrar "—" (como
+    a contagem "N de M disponíveis" no rótulo da seção já insinuava que
+    deveria fazer). Neste mock (_CONSOLIDADO_OK com analistas=[]),
+    P/L MEDIANA SETOR e ROIC TRIMESTRAL não têm valor (vêm só do parecer
+    do market_researcher, que não existe aqui) - têm que continuar
+    listados na grade, com "—", nunca desaparecer."""
+    at = _roda(_script())
+    textos = _textos(at)
+    assert "P/L MEDIANA SETOR" in textos
+    assert "ROIC TRIMESTRAL" in textos
+    # Valuation (só P/L MEDIANA SETOR falta) e Rentabilidade (só ROIC
+    # falta) ficam 4 de 5 cada - a contagem conta valor real, não itens.
+    assert textos.count("4 de 5 indicadores disponíveis") == 2
+
+
 def test_valuation_mostra_resumo_e_cenarios_com_motivo_quando_nao_ha_dcf():
     at = _roda(_script())
     textos = _textos(at)
