@@ -1412,8 +1412,8 @@ def _render_sintese_final(consolidado: dict):
             with st.expander(f"Divergência: comparador × memória de research ({len(divergencias['divergencias'])})"):
                 lista_compacta(
                     f"<b>{html.escape(d['casa'])}</b> ({html.escape(str(d['tipo']))}, {html.escape(str(d['campo']))}): "
-                    f"comparador=<code>{html.escape(str(d['comparador']))}</code> "
-                    f"vs memória de research=<code>{html.escape(str(d['memoria_research']))}</code>"
+                    f"comparador=<code>{html.escape(str(d['comparador'] if d['comparador'] is not None else '—'))}</code> "
+                    f"vs memória de research=<code>{html.escape(str(d['memoria_research'] if d['memoria_research'] is not None else '—'))}</code>"
                     for d in divergencias["divergencias"]
                 )
 

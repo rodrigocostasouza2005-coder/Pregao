@@ -391,6 +391,30 @@ def test_aprofundamento_evidencias_sem_analise_do_comite_diz_o_motivo():
     assert "dependem de uma análise do Comitê" in textos
 
 
+def test_divergencia_cross_comparador_memoria_nunca_mostra_none_literal():
+    """Regressão: data/coordenador_central/consolidacao.py devolve
+    `comparador`/`memoria_research` como None quando uma das 2 fontes não
+    tem preço-alvo/recomendação para aquela casa (caso legítimo, não é
+    falta de dado por bug). A tabela de divergência tem que tratar isso
+    com o mesmo fallback "—" das colunas vizinhas (casa/tipo/campo),
+    nunca vazar a string literal "None" pro usuário."""
+    consolidado = _consolidado()
+    consolidado["divergencias"] = {
+        "cross_comparador_memoria": {
+            "n_casas_comparadas": 1,
+            "divergencias": [
+                {"casa": "XP", "tipo": "qualitativa", "campo": "recomendacao",
+                 "comparador": None, "memoria_research": None},
+            ],
+        },
+    }
+    at = _roda(_script(analise=consolidado, secao="EVIDÊNCIAS E DIVERGÊNCIAS"))
+    textos = _textos(at)
+    assert "COMPARADOR × MEMÓRIA DE RESEARCH" in textos
+    assert "None" not in textos
+    assert "—" in textos
+
+
 def test_aprofundamento_historico_lista_execucoes_do_ticker():
     at = _roda(_script(secao="HISTÓRICO DE ANÁLISES"))
     textos = _textos(at)
