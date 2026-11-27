@@ -188,6 +188,9 @@ def _script(*, cot=None, linha=None, perfil=None, analises="_SENTINEL_", analise
     pre_selecao = (
         f"st.session_state['v360_aprofundar_PETR4'] = {secao!r}\n" if secao else ""
     )
+    # render_news_ticker (feed genérico) é mockado de propósito - esta
+    # suíte não bate em fonte real de notícias; o conteúdo curado (via
+    # perfil['noticias_recentes']) vem do próprio mock de `perfil` acima.
     return f'''
 import sys
 sys.path.insert(0, r"{_RAIZ}")
@@ -203,7 +206,9 @@ with patch.object(v360, "obter_cotacao", return_value={cot!r}), \\
      patch.object(v360, "_contexto_cacheado", return_value={_CONTEXTO_VAZIO!r}), \\
      patch.object(v360, "listar_analises_por_ticker", return_value={analises_repr}), \\
      patch.object(v360, "obter_analise", return_value={analise_repr}), \\
+     patch.object(v360, "render_news_ticker") as mock_news, \\
      patch.object(coord, "obter_perfil_empresa", {perfil_mock}):
+    mock_news.side_effect = lambda *a, **k: st.caption("[feed genérico mockado nesta suíte]")
     v360.render_visao_360("PETR4", {{"formato_numerico": "BR"}})
 '''
 
@@ -432,6 +437,31 @@ def test_divergencia_cross_comparador_memoria_nunca_mostra_none_literal():
     assert "COMPARADOR × MEMÓRIA DE RESEARCH" in textos
     assert "None" not in textos
     assert "—" in textos
+
+
+def test_aprofundamento_noticias_mostra_lista_curada_do_perfil_antes_do_feed_generico():
+    """Regressão: o redesign de 2026-11-26 trocou a seção de notícias da
+    Visão 360 pela lista genérica de ui/news_tab.py:render_news_ticker,
+    perdendo a lista curada de data/empresa_perfil.py
+    (perfil['noticias_recentes'], com selo de confiabilidade próprio) que
+    existia antes em ui/coordenador_tab.py (ANÁLISES > Perfil da
+    Empresa). As 2 fontes continuam existindo agora, a curada primeiro."""
+    perfil = dict(_PERFIL_OK)
+    perfil["noticias_disponivel"] = True
+    perfil["noticias_recentes"] = [
+        {"titulo": "Petrobras anuncia novo plano de investimentos",
+         "data": "2026-11-20", "selo": "Fonte verificada", "link": "https://exemplo.com/n1"},
+    ]
+    at = _roda(_script(perfil=perfil, secao="NOTÍCIAS"))
+    textos = _textos(at)
+    assert "Notícias curadas do perfil da empresa" in textos
+    assert "Petrobras anuncia novo plano de investimentos" in textos
+    assert "Fonte verificada" in textos
+    assert "Feed geral de notícias" in textos
+    assert "[feed genérico mockado nesta suíte]" in textos
+    pos_curada = textos.index("Notícias curadas do perfil da empresa")
+    pos_feed = textos.index("Feed geral de notícias")
+    assert pos_curada < pos_feed  # curada aparece ANTES do feed genérico
 
 
 def test_aprofundamento_historico_lista_execucoes_do_ticker():

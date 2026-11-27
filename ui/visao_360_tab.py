@@ -1321,12 +1321,28 @@ def _render_historico_analises(ticker: str, comite: dict):
     )
 
 
-def _render_noticias(ticker: str, prefs: dict):
-    """Notícias do ticker - reusa ui/news_tab.py:render_news_ticker (a
-    mesma lista densa de hora/selo/manchete/fontes/link usada em TOP
-    MERCADO, incluindo o status de verificação da manchete). Nenhuma
-    segunda implementação de feed aqui; a fonte só é consultada quando
-    esta seção é a selecionada."""
+def _render_noticias(ticker: str, perfil: dict | None, prefs: dict):
+    """Notícias do ticker - 2 fontes DIFERENTES, nenhuma substitui a
+    outra, cada uma com seu próprio rótulo:
+
+    1. Lista curada de `data/empresa_perfil.py` (perfil['noticias_recentes']) -
+       metadado com selo de confiabilidade próprio, a mesma que
+       ui/coordenador_tab.py:render_perfil_noticias expõe em ANÁLISES >
+       Perfil da Empresa. Existia aqui até o redesign de 2026-11-26 ter
+       trocado a seção pelo feed genérico por engano (achado de revisão
+       independente - a PR afirmava não ter removido nada); reincorporada
+       em 2026-11-27, ANTES do feed genérico (mais específica pro ticker).
+    2. Feed geral de ui/news_tab.py:render_news_ticker (a mesma lista
+       densa de hora/selo/manchete/fontes/link usada em TOP MERCADO,
+       incluindo o status de verificação da manchete) - continua existindo,
+       com a fonte só consultada quando esta seção é a selecionada."""
+    ds.secao("Notícias curadas do perfil da empresa", "lista específica deste ticker, com selo próprio")
+    if perfil is not None:
+        comite_ui.render_perfil_noticias(perfil)
+    else:
+        ds.vazio("Perfil da empresa indisponível no momento - a lista curada de notícias depende dele.")
+
+    ds.secao("Feed geral de notícias", "mesma fonte de TOP MERCADO")
     try:
         render_news_ticker(ticker, prefs)
     except Exception as exc:
@@ -1416,6 +1432,6 @@ def render_visao_360(ticker: str, prefs: dict):
         elif escolha == _SECAO_EVIDENCIAS:
             _render_evidencias(comite)
         elif escolha == _SECAO_NOTICIAS:
-            _render_noticias(ticker, prefs)
+            _render_noticias(ticker, perfil, prefs)
         else:
             _render_historico_analises(ticker, comite)
