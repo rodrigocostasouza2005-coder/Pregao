@@ -278,6 +278,20 @@ def test_indicador_sem_valor_aparece_na_grade_com_traco_nunca_desaparece():
     assert textos.count("4 de 5 indicadores disponíveis") == 2
 
 
+def test_rotulos_dos_3_precos_alvo_sao_identicos_no_veredito_e_na_valuation():
+    """Regressão: preco_alvo_modelo/preco_alvo_pl_setorial/
+    preco_alvo_consenso de sinal_comite são os MESMOS 3 campos exibidos
+    tanto no veredito (topo da tela) quanto na seção Valuation, mas
+    _render_veredito e _render_valuation tinham cada um seu próprio
+    texto literal, e os rótulos divergiam pro mesmo número. Agora os 2
+    lugares usam v360._ROTULO_PRECO_ALVO - o mesmo rótulo tem que
+    aparecer nos 2 lugares (1x no veredito + 1x na valuation = 2x)."""
+    at = _roda(_script())
+    textos = _textos(at)
+    for rotulo in v360._ROTULO_PRECO_ALVO.values():
+        assert textos.count(rotulo) == 2, f"rótulo '{rotulo}' apareceu {textos.count(rotulo)}x, esperava 2x"
+
+
 def test_valuation_mostra_resumo_e_cenarios_com_motivo_quando_nao_ha_dcf():
     at = _roda(_script())
     textos = _textos(at)

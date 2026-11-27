@@ -557,6 +557,20 @@ def _cobertura_comite(consolidado: dict) -> dict:
     }
 
 
+# Rótulo de exibição dos 3 preços-alvo de `sinal_comite` - FONTE ÚNICA.
+# _render_veredito e _render_valuation mostram os 3 MESMOS campos (vêm
+# do mesmo dict, sem nenhum cálculo novo) em 2 lugares diferentes da
+# tela; antes desta correção cada função tinha seu próprio texto
+# literal e os rótulos divergiam entre si pro mesmo número (achado de
+# revisão independente). Qualquer rótulo novo pros 3 campos entra aqui,
+# nunca como string solta dentro de uma das 2 funções.
+_ROTULO_PRECO_ALVO = {
+    "preco_alvo_modelo": "PREÇO JUSTO · DCF",
+    "preco_alvo_pl_setorial": "REFERÊNCIA · P/L SETORIAL",
+    "preco_alvo_consenso": "CONSENSO DAS CASAS",
+}
+
+
 def _render_veredito(ticker: str, comite: dict, prefs: dict):
     """Resumo executivo do Comitê no topo da tela: RECOMENDAÇÃO,
     CONFIANÇA, PREÇO-ALVO, POTENCIAL, SCORE e COBERTURA - organizados em
@@ -621,17 +635,17 @@ def _render_veredito(ticker: str, comite: dict, prefs: dict):
         esquerda += f"<div class='v360-nota'>{html.escape(str(confianca['justificativa']))}</div>"
 
     metricas = [
-        ("PREÇO-ALVO · DCF", _reais(sinal.get("preco_alvo_modelo"), fmt, fallback="não calculado", moeda=moeda),
-         "Model Builder"),
+        (_ROTULO_PRECO_ALVO["preco_alvo_modelo"],
+         _reais(sinal.get("preco_alvo_modelo"), fmt, fallback="não calculado", moeda=moeda), "Model Builder"),
         ("POTENCIAL", ds.variacao_html(upside, fmt) if isinstance(upside, (int, float)) else "—",
          "sobre a cotação"),
         ("SCORE", html.escape(str(sinal.get("score"))) if sinal.get("score") is not None else "—",
          "sinal quantitativo"),
         ("COBERTURA", f"{cobertura['n_com_parecer']}/{cobertura['n_total']}", "especialistas com parecer"),
-        ("ALVO · P/L SETORIAL", _reais(sinal.get("preco_alvo_pl_setorial"), fmt, fallback="não calculado", moeda=moeda),
-         "múltiplo relativo"),
-        ("ALVO · CONSENSO", _reais(sinal.get("preco_alvo_consenso"), fmt, fallback="não disponível", moeda=moeda),
-         "casas de research"),
+        (_ROTULO_PRECO_ALVO["preco_alvo_pl_setorial"],
+         _reais(sinal.get("preco_alvo_pl_setorial"), fmt, fallback="não calculado", moeda=moeda), "múltiplo relativo"),
+        (_ROTULO_PRECO_ALVO["preco_alvo_consenso"],
+         _reais(sinal.get("preco_alvo_consenso"), fmt, fallback="não disponível", moeda=moeda), "casas de research"),
     ]
     st.markdown(
         "<div class='v360-veredito'>"
@@ -939,13 +953,14 @@ def _render_valuation(ticker: str, linha: dict | None, comite: dict, prefs: dict
     resumo = [
         ("PREÇO ATUAL", _reais(preco_atual, fmt, fallback="indisponível"),
          comite_ui.fmt_data(sinal.get("preco_atual_consultado_em")) if sinal.get("preco_atual_consultado_em") else None),
-        ("PREÇO JUSTO · DCF", _reais(alvo_modelo, fmt, fallback="não calculado", moeda=moeda), "Model Builder"),
+        (_ROTULO_PRECO_ALVO["preco_alvo_modelo"],
+         _reais(alvo_modelo, fmt, fallback="não calculado", moeda=moeda), "Model Builder"),
         ("POTENCIAL", ds.variacao_html(upside_modelo, fmt) if isinstance(upside_modelo, (int, float)) else "—",
          "DCF vs. cotação"),
-        ("REFERÊNCIA · P/L SETORIAL", _reais(alvo_pl, fmt, fallback="não calculado", moeda=moeda),
-         "múltiplo relativo"),
-        ("CONSENSO DAS CASAS", _reais(alvo_consenso, fmt, fallback="não disponível", moeda=moeda),
-         "estimativa de terceiro"),
+        (_ROTULO_PRECO_ALVO["preco_alvo_pl_setorial"],
+         _reais(alvo_pl, fmt, fallback="não calculado", moeda=moeda), "múltiplo relativo"),
+        (_ROTULO_PRECO_ALVO["preco_alvo_consenso"],
+         _reais(alvo_consenso, fmt, fallback="não disponível", moeda=moeda), "estimativa de terceiro"),
     ]
     st.markdown(ds.faixa_metricas_html(resumo, grande=True, minimo=150), unsafe_allow_html=True)
     _render_potencial_referencias(alvo_pl, alvo_consenso, preco_atual, fmt)
